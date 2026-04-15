@@ -40,6 +40,8 @@ public sealed partial class AlarmService : IDisposable
     {
         if (!_settings.Alarms.Enabled) return;
         if (e.Plot.CropType is null) return;
+        // Hydration (oldStage is null) is a restore, not a transition — never alarm.
+        if (e.OldStage is null) return;
         if (e.NewStage != PlotStage.Ripe || e.OldStage == PlotStage.Ripe) return;
         if (_settings.Alarms.MutedCrops.Contains(e.Plot.CropType)) return;
         if (_settings.Alarms.MutedCharacters.Contains(e.Plot.CharName)) return;

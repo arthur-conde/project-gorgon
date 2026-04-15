@@ -343,7 +343,7 @@ public sealed class GardenStateMachine
             var bucket = new Dictionary<string, Plot>(StringComparer.Ordinal);
             foreach (var (id, pp) in plots)
             {
-                bucket[id] = new Plot
+                var plot = new Plot
                 {
                     PlotId = id,
                     CharName = charName,
@@ -356,6 +356,8 @@ public sealed class GardenStateMachine
                     PlantedAt = pp.PlantedAt,
                     UpdatedAt = pp.UpdatedAt,
                 };
+                bucket[id] = plot;
+                RaisePlotChanged(plot, null, plot.Stage); // so the VM can render restored plots
             }
             _plotsByChar[charName] = bucket;
         }
