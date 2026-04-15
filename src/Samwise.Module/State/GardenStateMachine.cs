@@ -144,6 +144,14 @@ public sealed class GardenStateMachine
         }
 
         var resolved = alias.TryGetValue(model, out var cropName) ? cropName : model;
+
+        // Skip appearance loops that are almost certainly re-renders of plants we
+        // already know about: if we're currently tracking a non-harvested plot of
+        // this crop, this appearance is much more likely that plot re-asserting
+        // itself than a brand-new plant. Updating the cache would poison the next
+        // SetPetOwner. The crop can still be discovered via UpdateDescription.
+        if (IsLikelyReRender(resolved)) return;
+
         _lastCropAsset = resolved;
         _lastCropAssetTime = _time.GetUtcNow();
 
@@ -157,6 +165,18 @@ public sealed class GardenStateMachine
             _lastCropAssetUsed = true;
             RaisePlotChanged(plot, plot.Stage, plot.Stage);
         }
+    }
+
+    private bool IsLikelyReRender(string cropName)
+    {
+        if (_currentChar is null) return false;
+        if (!_plotsByChar.TryGetValue(_currentChar, out var plots)) return false;
+        foreach (var p in plots.Values)
+        {
+            if (p.Stage == PlotStage.Harvested) continue;
+            if (string.Equals(p.CropType, cropName, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     private void HandleUpdateDescription(UpdateDescription ud)

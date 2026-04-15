@@ -100,6 +100,35 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void Appearance_SkipsReRenderOfExistingCrop()
+    {
+        // Scenario: an Onion plot already exists. While planting a Violet,
+        // the game's appearance loop fires first for the existing Onion
+        // (re-render) and then for the new Violet. The Onion re-render must
+        // not poison the crop cache — SetPetOwner for the new plant should
+        // pick up Violet.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+
+        // 1) Establish an existing Onion plot.
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "onion-id"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "onion-id", "Onion", "", "Water Onion", 0.5));
+        sm.Snapshot()["Hits"]["onion-id"].CropType.Should().Be("Onion");
+
+        // 2) Onion re-render fires (scale update) while planting a new crop.
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+
+        // 3) Violet appearance for the actually-new plant.
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Violet"));
+
+        // 4) SetPetOwner for the new Violet.
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "violet-id"));
+
+        sm.Snapshot()["Hits"]["violet-id"].CropType.Should().Be("Violet");
+    }
+
+    [Fact]
     public void IsLikelyGarbageCollected_TrueAfterCropLifetime()
     {
         // Carrot growthSeconds = 175 → lifetime ≈ 2×175s + 10m = 13m50s.
@@ -166,11 +195,13 @@ public class GardenStateMachineTests
                     ["Carrot"] = new() { Max = 2 },
                     ["Onion"] = new() { Max = 2 },
                     ["Cotton"] = new() { Max = 5 },
+                    ["Flowers"] = new() { Max = 3 },
                 },
                 Crops = new()
                 {
                     ["Carrot"] = new() { SlotFamily = "Carrot", GrowthSeconds = 175 },
                     ["Onion"] = new() { SlotFamily = "Onion", GrowthSeconds = 50 },
+                    ["Violet"] = new() { SlotFamily = "Flowers", GrowthSeconds = 110 },
                     ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150, HarvestVerb = "Pick" },
                 },
             };
