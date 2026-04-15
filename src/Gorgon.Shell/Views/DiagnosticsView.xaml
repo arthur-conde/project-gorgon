@@ -10,7 +10,9 @@
                 <CheckBox Content="Info"  IsChecked="{Binding ShowInfo}"  Foreground="#AAFFFFFF" Margin="6,0"/>
                 <CheckBox Content="Warn"  IsChecked="{Binding ShowWarn}"  Foreground="#AAFFFFFF" Margin="6,0"/>
                 <CheckBox Content="Error" IsChecked="{Binding ShowError}" Foreground="#AAFFFFFF" Margin="6,0"/>
-                <ToggleButton Content="⏸ Pause" IsChecked="{Binding Paused}" Padding="8,4" Margin="12,0,4,0"/>
+                <ToggleButton Content="⇅ Follow" IsChecked="{Binding AutoScroll}" Padding="8,4" Margin="12,0,4,0"
+                              ToolTip="Scroll to newest entry as they arrive"/>
+                <ToggleButton Content="⏸ Pause" IsChecked="{Binding Paused}" Padding="8,4" Margin="0,0,4,0"/>
                 <Button Content="✕ Clear" Padding="8,4" Margin="0,0,4,0" Command="{Binding ClearCommand}"/>
                 <Button Content="📋 Copy" Padding="8,4" Command="{Binding CopyAllCommand}"/>
             </StackPanel>
@@ -46,7 +48,7 @@
             </DockPanel>
         </Border>
 
-        <ListBox ItemsSource="{Binding View}" Background="#FF101010" Foreground="#FFE8E8E8"
+        <ListBox x:Name="EntriesList" ItemsSource="{Binding View}" Background="#FF101010" Foreground="#FFE8E8E8"
                  BorderBrush="#33FFFFFF" FontFamily="Consolas" FontSize="12"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"

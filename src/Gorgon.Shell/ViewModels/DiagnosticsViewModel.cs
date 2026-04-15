@@ -42,6 +42,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
     public ListCollectionView View { get; }
 
     [ObservableProperty] private bool _paused;
+    [ObservableProperty] private bool _autoScroll = true;
     [ObservableProperty] private string _filterText = "";
     [ObservableProperty] private bool _showTrace = true;
     [ObservableProperty] private bool _showInfo = true;
