@@ -276,14 +276,14 @@ public class GardenStateMachineTests
     [Fact]
     public void PruneWithered_KeepsHarvestedPlots_WithinTtl()
     {
-        // Harvested plots stick around for 2 hours so the user can see the result.
+        // Default harvested TTL is 10 minutes.
         var (sm, time, _) = BuildSut();
         Login(sm, "Hits");
         sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
         sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
         sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
-        time.Advance(TimeSpan.FromMinutes(30));
+        time.Advance(TimeSpan.FromMinutes(5));
         sm.PruneWithered();
         sm.Snapshot()["Hits"]["1"].Stage.Should().Be(PlotStage.Harvested);
     }
@@ -297,7 +297,31 @@ public class GardenStateMachineTests
         sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
         sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
-        time.Advance(TimeSpan.FromHours(3));
+        time.Advance(TimeSpan.FromMinutes(15));
+        sm.PruneWithered();
+        sm.Snapshot().GetValueOrDefault("Hits")?.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void HarvestedTtl_RespectsSamwiseSettings()
+    {
+        var cfg = new InMemoryCropConfig();
+        var time = new FakeTime(Base);
+        var settings = new Samwise.Alarms.SamwiseSettings { HarvestedAutoClearMinutes = 2 };
+        var sm = new GardenStateMachine(cfg, time, settings: settings);
+        sm.Apply(new PlayerLogin(Base, "Hits"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
+        sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
+
+        // 90 seconds in: still there.
+        time.Advance(TimeSpan.FromSeconds(90));
+        sm.PruneWithered();
+        sm.Snapshot()["Hits"]["1"].Stage.Should().Be(PlotStage.Harvested);
+
+        // Past 2-minute TTL: gone.
+        time.Advance(TimeSpan.FromMinutes(2));
         sm.PruneWithered();
         sm.Snapshot().GetValueOrDefault("Hits")?.Count.Should().Be(0);
     }

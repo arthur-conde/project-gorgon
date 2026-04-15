@@ -18,6 +18,7 @@ public sealed class GardenStateMachine
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly LearnedAliasesStore? _learned;
+    private readonly Alarms.SamwiseSettings? _settings;
 
     private readonly Dictionary<string, Dictionary<string, Plot>> _plotsByChar = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _playerOwnedPetIds = new(StringComparer.Ordinal);
@@ -35,12 +36,14 @@ public sealed class GardenStateMachine
         ICropConfigStore config,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
-        LearnedAliasesStore? learned = null)
+        LearnedAliasesStore? learned = null,
+        Alarms.SamwiseSettings? settings = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
         _diag = diag;
         _learned = learned;
+        _settings = settings;
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -438,12 +441,8 @@ public sealed class GardenStateMachine
         }
     }
 
-    /// <summary>
-    /// TTL for harvested plots before they're auto-cleared from the UI.
-    /// Two hours is enough for a user to notice the card and re-plant in the
-    /// same slot without manual cleanup.
-    /// </summary>
-    private static readonly TimeSpan HarvestedTtl = TimeSpan.FromHours(2);
+    private TimeSpan HarvestedTtl =>
+        TimeSpan.FromMinutes(_settings?.HarvestedAutoClearMinutes ?? 10);
 
     /// <summary>
     /// Drops plots whose in-game entity has almost certainly been garbage-collected.

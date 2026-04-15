@@ -46,6 +46,24 @@ public sealed class SamwiseSettings : INotifyPropertyChanged
         }
     }
 
+    private double _harvestedAutoClearMinutes = 10;
+    /// <summary>
+    /// How long a harvested plot card lingers before being auto-removed.
+    /// Defaults to 10 minutes — plants grow in seconds to a few minutes,
+    /// so a long retention window just clutters the dashboard.
+    /// </summary>
+    public double HarvestedAutoClearMinutes
+    {
+        get => _harvestedAutoClearMinutes;
+        set
+        {
+            var clamped = Math.Clamp(value, 0.5, 24 * 60);
+            if (Math.Abs(_harvestedAutoClearMinutes - clamped) < 1e-6) return;
+            _harvestedAutoClearMinutes = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HarvestedAutoClearMinutes)));
+        }
+    }
+
     public SamwiseSettings() { _alarms.PropertyChanged += OnAlarmsChanged; }
 
     private void OnAlarmsChanged(object? sender, PropertyChangedEventArgs e)
