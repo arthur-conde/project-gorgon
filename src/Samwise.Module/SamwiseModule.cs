@@ -19,6 +19,7 @@ public sealed class SamwiseModule : IGorgonModule
     public string Id => "samwise";
     public string DisplayName => "Samwise · Garden";
     public string Icon => "🌱";
+    public string? IconUri => "pack://application:,,,/Samwise.Module;component/Resources/samwise.ico";
     public int SortOrder => 100;
     public ActivationMode DefaultActivation => ActivationMode.Eager;
     public Type ViewType => typeof(GardenView);

@@ -34,7 +34,13 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Margin="4">
-                                <TextBlock Text="{Binding Icon}" FontSize="16" Margin="0,0,8,0"/>
+                                <Grid Width="20" Height="20" Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding Icon}" FontSize="16"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding HasImage, Converter={StaticResource InverseBoolToVis}}"/>
+                                    <Image Source="{Binding ImageSource}" Width="20" Height="20"
+                                           Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
                                 <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                             </StackPanel>
                         </DataTemplate>

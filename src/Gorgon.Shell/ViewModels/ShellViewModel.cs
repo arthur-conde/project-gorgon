@@ -13,6 +13,10 @@ public sealed partial class ModuleEntry : ObservableObject
     public required IGorgonModule Module { get; init; }
     public string Title => Module.DisplayName;
     public string Icon => Module.Icon;
+    public bool HasImage => !string.IsNullOrEmpty(Module.IconUri);
+    public System.Windows.Media.ImageSource? ImageSource =>
+        string.IsNullOrEmpty(Module.IconUri) ? null
+            : new System.Windows.Media.Imaging.BitmapImage(new Uri(Module.IconUri, UriKind.Absolute));
 }
 
 public sealed partial class ShellViewModel : ObservableObject

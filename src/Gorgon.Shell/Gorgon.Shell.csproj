@@ -6,6 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Resources\gorgon.ico</ApplicationIcon>
     <RootNamespace>Gorgon.Shell</RootNamespace>
     <AssemblyName>Gorgon</AssemblyName>
   </PropertyGroup>
@@ -14,6 +15,10 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\gorgon.ico" />
+    <Resource Include="Resources\gorgon.jpg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
