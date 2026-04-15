@@ -52,6 +52,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void OpenGameConfig()
     {
+        SelectedModule = null; // so re-selecting a module fires the change event
         ActiveContent = _services.GetRequiredService<Views.GameConfigView>();
         StatusText = "Game configuration";
     }
@@ -59,6 +60,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void OpenHotkeys()
     {
+        SelectedModule = null;
         ActiveContent = _services.GetRequiredService<Views.HotkeyBindingsView>();
         StatusText = "Hotkeys";
     }
@@ -66,6 +68,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void OpenDiagnostics()
     {
+        SelectedModule = null;
         ActiveContent = _services.GetRequiredService<Views.DiagnosticsView>();
         StatusText = "Diagnostics";
     }
