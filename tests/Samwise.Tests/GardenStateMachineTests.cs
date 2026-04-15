@@ -100,6 +100,25 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void UnknownFlowerModel_UsedAsPlaceholder_CorrectedByUpdateDescription()
+    {
+        // Pansy's in-game model is @Flower6, which has no alias in crops.json.
+        // The plot should still be created, labelled "Flower6", and corrected
+        // to "Pansy" when the first UpdateDescription arrives.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        var plot = sm.Snapshot()["Hits"]["p1"];
+        plot.CropType.Should().Be("Flower6"); // placeholder
+
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Pansy", "needs water", "Water Pansy", 0.5));
+        plot.CropType.Should().Be("Pansy");
+        plot.Stage.Should().Be(PlotStage.Thirsty);
+    }
+
+    [Fact]
     public void PausedDuration_AccumulatesAcrossThirstyAndFertilizerCycles()
     {
         var (sm, time, _) = BuildSut();

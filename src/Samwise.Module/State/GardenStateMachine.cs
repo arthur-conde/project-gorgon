@@ -123,17 +123,12 @@ public sealed class GardenStateMachine
     private void HandleAppearance(AppearanceLoop al)
     {
         var model = al.ModelName;
-        var hasDigit = false;
-        foreach (var c in model) if (c >= '0' && c <= '9') { hasDigit = true; break; }
         var alias = _config.Current.ModelAliasToCrop;
 
-        if (hasDigit && !alias.ContainsKey(model))
-        {
-            // Digit-bearing model with no alias mapping — can't decode crop name
-            _lastCropAsset = null;
-            _pendingPlantForCrop = null;
-            return;
-        }
+        // Digit-bearing models like Flower6 (Pansy) or Flower11 (Cotton) don't
+        // name the crop directly. Cotton is aliased in crops.json; others fall
+        // through to the raw model name as a placeholder that UpdateDescription
+        // will overwrite with the real name on first interaction.
 
         if (_lastCropAssetUsed)
         {
