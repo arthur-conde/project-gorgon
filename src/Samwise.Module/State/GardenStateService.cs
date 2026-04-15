@@ -67,6 +67,7 @@ public sealed class GardenStateService : IDisposable
                     Title = p.Title, Description = p.Description,
                     Action = p.Action, Scale = p.Scale,
                     PlantedAt = p.PlantedAt, UpdatedAt = p.UpdatedAt,
+                    PausedSince = p.PausedSince, PausedDuration = p.PausedDuration,
                 };
             }
             s.PlotsByChar[charName] = bucket;

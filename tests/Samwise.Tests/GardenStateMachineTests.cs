@@ -100,6 +100,41 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void PausedDuration_AccumulatesAcrossThirstyAndFertilizerCycles()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Tend Onion", 0.5));
+        var plot = sm.Snapshot()["Hits"]["1"];
+        plot.PausedSince.Should().BeNull();
+        plot.PausedDuration.Should().Be(TimeSpan.Zero);
+
+        // Enter Thirsty — pause clock starts.
+        time.Advance(TimeSpan.FromSeconds(10));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Water Onion", 0.5));
+        plot.PausedSince.Should().NotBeNull();
+
+        // Pause for 15s, then water → resume.
+        time.Advance(TimeSpan.FromSeconds(15));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Tend Onion", 0.5));
+        plot.PausedSince.Should().BeNull();
+        plot.PausedDuration.Should().Be(TimeSpan.FromSeconds(15));
+
+        // Enter NeedsFertilizer — pause again.
+        time.Advance(TimeSpan.FromSeconds(5));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Fertilize Onion", 0.5));
+        plot.PausedSince.Should().NotBeNull();
+
+        // Pause for 20s, then fertilize → resume.
+        time.Advance(TimeSpan.FromSeconds(20));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Tend Onion", 0.5));
+        plot.PausedSince.Should().BeNull();
+        plot.PausedDuration.Should().Be(TimeSpan.FromSeconds(35));
+    }
+
+    [Fact]
     public void Appearance_SkipsReRenderOfExistingCrop()
     {
         // Scenario: an Onion plot already exists. While planting a Violet,

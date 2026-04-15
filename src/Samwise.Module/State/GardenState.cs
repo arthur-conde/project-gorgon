@@ -17,6 +17,8 @@ public sealed class PersistedPlot
     public double Scale { get; set; }
     public DateTimeOffset PlantedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? PausedSince { get; set; }
+    public TimeSpan PausedDuration { get; set; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]

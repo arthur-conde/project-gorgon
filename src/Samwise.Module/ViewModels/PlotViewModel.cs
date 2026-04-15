@@ -47,10 +47,8 @@ public sealed partial class PlotViewModel : ObservableObject
         get
         {
             if (Stage == PlotStage.Ripe || Stage == PlotStage.Harvested) return 1.0;
-            if (_plot.CropType is null) return 0.0;
-            if (!_config.Current.Crops.TryGetValue(_plot.CropType, out var def)) return 0.0;
-            if (def.GrowthSeconds is not int secs || secs <= 0) return 0.0;
-            var elapsed = (DateTimeOffset.UtcNow - _plot.PlantedAt).TotalSeconds;
+            if (EffectiveElapsedSeconds is not double elapsed) return 0.0;
+            if (GrowthSeconds is not int secs || secs <= 0) return 0.0;
             return Math.Clamp(elapsed / secs, 0.0, 1.0);
         }
     }
@@ -61,12 +59,34 @@ public sealed partial class PlotViewModel : ObservableObject
         {
             if (Stage == PlotStage.Ripe) return "ready!";
             if (Stage == PlotStage.Harvested) return "—";
-            if (_plot.CropType is null) return "?";
-            if (!_config.Current.Crops.TryGetValue(_plot.CropType, out var def)) return "?";
-            if (def.GrowthSeconds is not int secs) return "?";
-            var rem = secs - (int)(DateTimeOffset.UtcNow - _plot.PlantedAt).TotalSeconds;
+            if (Stage == PlotStage.Thirsty) return "needs water";
+            if (Stage == PlotStage.NeedsFertilizer) return "needs fertilizer";
+            if (EffectiveElapsedSeconds is not double elapsed) return "?";
+            if (GrowthSeconds is not int secs) return "?";
+            var rem = secs - (int)elapsed;
             if (rem <= 0) return "ready!";
             return rem >= 60 ? $"{rem / 60}m {rem % 60}s" : $"{rem}s";
+        }
+    }
+
+    private int? GrowthSeconds
+    {
+        get
+        {
+            if (_plot.CropType is null) return null;
+            if (!_config.Current.Crops.TryGetValue(_plot.CropType, out var def)) return null;
+            return def.GrowthSeconds;
+        }
+    }
+
+    private double? EffectiveElapsedSeconds
+    {
+        get
+        {
+            if (_plot.CropType is null) return null;
+            // Freeze the clock while the plot is paused (Thirsty / NeedsFertilizer).
+            var referenceTime = _plot.PausedSince ?? DateTimeOffset.UtcNow;
+            return (referenceTime - _plot.PlantedAt - _plot.PausedDuration).TotalSeconds;
         }
     }
 

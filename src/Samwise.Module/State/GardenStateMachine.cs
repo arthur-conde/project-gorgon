@@ -214,9 +214,28 @@ public sealed class GardenStateMachine
         plot.Action = ud.Action;
         plot.Scale = ud.Scale;
         plot.Stage = newStage;
+        UpdatePauseTracking(plot, oldStage, newStage);
         plot.UpdatedAt = _time.GetUtcNow();
         RaisePlotChanged(plot, oldStage, newStage);
     }
+
+    private void UpdatePauseTracking(Plot plot, PlotStage oldStage, PlotStage newStage)
+    {
+        var wasPaused = IsPausedStage(oldStage);
+        var isPaused = IsPausedStage(newStage);
+        var now = _time.GetUtcNow();
+        if (!wasPaused && isPaused)
+        {
+            plot.PausedSince = now;
+        }
+        else if (wasPaused && !isPaused && plot.PausedSince is { } since)
+        {
+            plot.PausedDuration += now - since;
+            plot.PausedSince = null;
+        }
+    }
+
+    private static bool IsPausedStage(PlotStage s) => s is PlotStage.Thirsty or PlotStage.NeedsFertilizer;
 
     private void HandleStartInteraction(StartInteraction si)
     {
@@ -368,6 +387,8 @@ public sealed class GardenStateMachine
                     Scale = pp.Scale,
                     PlantedAt = pp.PlantedAt,
                     UpdatedAt = pp.UpdatedAt,
+                    PausedSince = pp.PausedSince,
+                    PausedDuration = pp.PausedDuration,
                 };
                 bucket[id] = plot;
                 RaisePlotChanged(plot, null, plot.Stage); // so the VM can render restored plots

@@ -22,4 +22,10 @@ public sealed class Plot
     public double Scale { get; set; }
     public DateTimeOffset PlantedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>When the plot entered its current paused stage (Thirsty / NeedsFertilizer); null if not paused.</summary>
+    public DateTimeOffset? PausedSince { get; set; }
+
+    /// <summary>Total time the plot has spent in paused stages across all pause intervals.</summary>
+    public TimeSpan PausedDuration { get; set; }
 }
