@@ -17,7 +17,7 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"LocalPlayer: ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]
     private static partial Regex SetPetOwnerRx();
 
-    [GeneratedRegex(@"Download appearance loop @(\w+)\(scale=", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"Download appearance loop @(\w+)\(scale=([\d.]+)\)", RegexOptions.CultureInvariant)]
     private static partial Regex AppearanceRx();
 
     [GeneratedRegex(@"ProcessUpdateDescription\((\d+),\s*""([^""]+)"",\s*""([^""]+)"",\s*""([^""]+)"",\s*\w+,\s*""\w+\(Scale=([\d.]+)\)"",\s*\d+\)", RegexOptions.CultureInvariant)]
@@ -49,7 +49,11 @@ public sealed partial class GardenLogParser : ILogParser
         if (m.Success) return new SetPetOwner(timestamp, m.Groups[1].Value);
 
         m = AppearanceRx().Match(line);
-        if (m.Success) return new AppearanceLoop(timestamp, m.Groups[1].Value);
+        if (m.Success)
+        {
+            _ = double.TryParse(m.Groups[2].ValueSpan, System.Globalization.CultureInfo.InvariantCulture, out var scale);
+            return new AppearanceLoop(timestamp, m.Groups[1].Value, scale);
+        }
 
         m = UpdateDescRx().Match(line);
         if (m.Success)

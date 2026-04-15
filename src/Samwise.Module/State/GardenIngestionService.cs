@@ -62,11 +62,25 @@ public sealed class GardenIngestionService : BackgroundService
             var evt = _parser.TryParse(raw.Line, raw.Timestamp);
             if (evt is GardenEvent ge)
             {
-                _diag?.Trace("Samwise.Parse", ge.GetType().Name);
+                _diag?.Trace("Samwise.Parse", Describe(ge));
                 Dispatch(() => _state.Apply(ge));
             }
         }
     }
+
+    private static string Describe(GardenEvent e) => e switch
+    {
+        PlayerLogin pl => $"PlayerLogin  char={pl.CharName}",
+        SetPetOwner spo => $"SetPetOwner  entity={spo.EntityId}",
+        AppearanceLoop al => $"Appearance   model={al.ModelName}  scale={al.Scale:0.###}",
+        UpdateDescription ud => $"UpdateDesc   plot={ud.PlotId}  title={ud.Title}  action={ud.Action}  scale={ud.Scale:0.###}",
+        StartInteraction si => $"StartInter   plot={si.PlotId}  target={si.Target}",
+        AddItem ai => $"AddItem      id={ai.ItemId}  name={ai.ItemName}",
+        UpdateItemCode uic => $"UpdateItem   id={uic.ItemId}",
+        GardeningXp => "GardeningXp",
+        ScreenTextError => "ScreenError",
+        _ => e.GetType().Name,
+    };
 
     private static void Dispatch(Action a)
     {

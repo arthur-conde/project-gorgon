@@ -37,7 +37,20 @@ public class GardenLogParserTests
     public void Parses_AppearanceLoop()
     {
         var evt = _p.TryParse(@"Download appearance loop @Carrot(scale=1.0)", T);
-        evt.Should().BeOfType<AppearanceLoop>().Which.ModelName.Should().Be("Carrot");
+        var al = evt.Should().BeOfType<AppearanceLoop>().Subject;
+        al.ModelName.Should().Be("Carrot");
+        al.Scale.Should().Be(1.0);
+    }
+
+    [Fact]
+    public void Parses_AppearanceLoop_SmallScale_FromRealisticLine()
+    {
+        // Newly-placed seed: small scale, suffix after the closing paren.
+        var line = @"[16:22:58] Download appearance loop @Flower6(scale=0.1) is waiting on something";
+        var evt = _p.TryParse(line, T);
+        var al = evt.Should().BeOfType<AppearanceLoop>().Subject;
+        al.ModelName.Should().Be("Flower6");
+        al.Scale.Should().Be(0.1);
     }
 
     [Fact]

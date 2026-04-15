@@ -35,7 +35,10 @@ public sealed class SamwiseModule : IGorgonModule
 
         services.AddSingleton<ICropConfigStore>(_ => new CropConfigStore(bundledCrops, userCrops));
         services.AddSingleton<GardenLogParser>();
-        services.AddSingleton<GardenStateMachine>();
+        services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
+            sp.GetRequiredService<ICropConfigStore>(),
+            time: null,
+            diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
         services.AddSingleton<AlarmService>();
 
         services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>

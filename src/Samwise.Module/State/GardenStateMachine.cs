@@ -1,3 +1,4 @@
+using Gorgon.Shared.Diagnostics;
 using Samwise.Config;
 using Samwise.Parsing;
 
@@ -15,6 +16,7 @@ public sealed class GardenStateMachine
 {
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
+    private readonly IDiagnosticsSink? _diag;
 
     private readonly Dictionary<string, Dictionary<string, Plot>> _plotsByChar = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _playerOwnedPetIds = new(StringComparer.Ordinal);
@@ -28,10 +30,11 @@ public sealed class GardenStateMachine
     private bool _lastCropAssetUsed;
     private (string PlotId, string CharName)? _pendingPlantForCrop;
 
-    public GardenStateMachine(ICropConfigStore config, TimeProvider? time = null)
+    public GardenStateMachine(ICropConfigStore config, TimeProvider? time = null, IDiagnosticsSink? diag = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
+        _diag = diag;
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -117,18 +120,23 @@ public sealed class GardenStateMachine
         _lastCropAsset = null;
         _lastCropAssetUsed = false;
 
+        _diag?.Info("Samwise.Plant",
+            $"plot={plotId} char={_currentChar} cropGuess={crop ?? "(pending)"} cacheFresh={fresh}");
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
+
+    // Appearances with scale at or below this are treated as newly-placed seeds.
+    // Re-renders of existing plants come in at whatever scale they're currently
+    // at (typically 0.5+ for growing, 1.0 for ripe), so filtering on scale is
+    // the single strongest signal we have for separating "new plant" from
+    // "periodic re-render of an existing plant" — the log carries no entity id
+    // we could correlate against SetPetOwner.
+    private const double NewPlantScaleThreshold = 0.35;
 
     private void HandleAppearance(AppearanceLoop al)
     {
         var model = al.ModelName;
         var alias = _config.Current.ModelAliasToCrop;
-
-        // Digit-bearing models like Flower6 (Pansy) or Flower11 (Cotton) don't
-        // name the crop directly. Cotton is aliased in crops.json; others fall
-        // through to the raw model name as a placeholder that UpdateDescription
-        // will overwrite with the real name on first interaction.
 
         if (_lastCropAssetUsed)
         {
@@ -138,17 +146,24 @@ public sealed class GardenStateMachine
             return;
         }
 
+        // Skip anything that's clearly not a fresh seed placement.
+        if (al.Scale > NewPlantScaleThreshold)
+        {
+            _diag?.Trace("Samwise.Cache", $"skip re-render (scale={al.Scale:0.##}): {model}");
+            return;
+        }
+
         var resolved = alias.TryGetValue(model, out var cropName) ? cropName : model;
 
-        // Skip appearance loops that are almost certainly re-renders of plants we
-        // already know about: if we're currently tracking a non-harvested plot of
-        // this crop, this appearance is much more likely that plot re-asserting
-        // itself than a brand-new plant. Updating the cache would poison the next
-        // SetPetOwner. The crop can still be discovered via UpdateDescription.
-        if (IsLikelyReRender(resolved)) return;
+        if (IsLikelyReRender(resolved))
+        {
+            _diag?.Trace("Samwise.Cache", $"skip known-crop re-render: {resolved}");
+            return;
+        }
 
         _lastCropAsset = resolved;
         _lastCropAssetTime = _time.GetUtcNow();
+        _diag?.Trace("Samwise.Cache", $"cache crop '{resolved}' (scale={al.Scale:0.##})");
 
         if (_pendingPlantForCrop is { } pending
             && _plotsByChar.TryGetValue(pending.CharName, out var plots)

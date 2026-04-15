@@ -100,6 +100,26 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void Appearance_HighScale_IsTreatedAsReRender()
+    {
+        // Existing Squash plot emits re-render at scale=1.0 while user plants a
+        // new Pansy. The Squash re-render must not poison the cache.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "squash"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash", 0.1));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "squash", "Squash", "", "Water Squash", 1.0));
+
+        // Now plant a new Pansy. Squash re-renders meanwhile.
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash", 1.0)); // re-render, high scale
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6", 0.1)); // new Pansy seed
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "pansy"));
+
+        sm.Snapshot()["Hits"]["pansy"].CropType.Should().Be("Flower6");
+    }
+
+    [Fact]
     public void UnknownFlowerModel_UsedAsPlaceholder_CorrectedByUpdateDescription()
     {
         // Pansy's in-game model is @Flower6, which has no alias in crops.json.
