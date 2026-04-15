@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>Gorgon.Shell</RootNamespace>
+    <AssemblyName>Gorgon</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
+    <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
+  </ItemGroup>
+</Project>

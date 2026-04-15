@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Gorgon.Shared/Gorgon.Shared.csproj" />
+    <Project Path="src/Gorgon.Shell/Gorgon.Shell.csproj" />
+    <Project Path="src/Samwise.Module/Samwise.Module.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Gorgon.Shared.Tests/Gorgon.Shared.Tests.csproj" />
+    <Project Path="tests/Samwise.Tests/Samwise.Tests.csproj" />
+  </Folder>
+</Solution>

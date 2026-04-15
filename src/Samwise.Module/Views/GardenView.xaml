@@ -1,0 +1,58 @@
+<UserControl x:Class="Samwise.Views.GardenView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Samwise.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="🌱 Samwise — Gardening" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
+                <Button Content="▶ Start" Padding="12,4" Margin="0,0,4,0"
+                        Command="{Binding StartSessionCommand}"
+                        Visibility="{Binding SessionActive, Converter={StaticResource InverseBoolToVis}}"/>
+                <Button Content="⏹ Stop" Padding="12,4"
+                        Command="{Binding StopSessionCommand}"
+                        Visibility="{Binding SessionActive, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusText}" Foreground="#88FFFFFF" Margin="0,8,0,0"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Plots}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="180" Margin="6" Padding="10" CornerRadius="6"
+                                Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="{Binding CropType}" FontWeight="Bold" Foreground="#FFE8E8E8"/>
+                                <TextBlock Text="{Binding CharName}" FontSize="11" Foreground="#88FFFFFF"/>
+                                <TextBlock Text="{Binding StageLabel}" Margin="0,6,0,0">
+                                    <TextBlock.Foreground>
+                                        <SolidColorBrush Color="{Binding StageColor, Converter={StaticResource StringToColor}}"/>
+                                    </TextBlock.Foreground>
+                                </TextBlock>
+                                <ProgressBar Margin="0,4,0,0" Height="6"
+                                             Minimum="0" Maximum="1" Value="{Binding GrowthFraction, Mode=OneWay}"
+                                             Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"/>
+                                <TextBlock Text="{Binding TimeRemaining}" FontSize="11" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
+                                <Button Content="✓ Mark Harvested" Margin="0,8,0,0" Padding="0,4"
+                                        Command="{Binding DataContext.MarkHarvestedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        Visibility="{Binding Stage, Converter={StaticResource StageToHarvestVis}}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

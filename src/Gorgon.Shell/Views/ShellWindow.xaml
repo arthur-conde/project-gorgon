@@ -1,0 +1,48 @@
+<Window x:Class="Gorgon.Shell.Views.ShellWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tb="http://www.hardcodet.net/taskbar"
+        xmlns:vm="clr-namespace:Gorgon.Shell.ViewModels"
+        Title="Gorgon" Width="1100" Height="700"
+        Background="#FF1A1A1A" Foreground="#FFE8E8E8"
+        WindowStartupLocation="Manual">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Samwise.Module;component/Views/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    <DockPanel>
+        <tb:TaskbarIcon DockPanel.Dock="Top" Visibility="Visible"
+                        ToolTipText="Gorgon"
+                        IconSource="/icon.ico"/>
+        <Border DockPanel.Dock="Bottom" Background="#FF252525" Padding="8,4">
+            <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
+        </Border>
+        <Border DockPanel.Dock="Left" Width="200" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Margin="8">
+                    <Button Content="⌨ Hotkeys"   Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
+                            Command="{Binding OpenHotkeysCommand}"/>
+                    <Button Content="⚙ Game…"     Padding="8,4" HorizontalContentAlignment="Left"
+                            Command="{Binding OpenGameConfigCommand}"/>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Modules}"
+                         SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0" Padding="4">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="4">
+                                <TextBlock Text="{Binding Icon}" FontSize="16" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+        <ContentPresenter Content="{Binding ActiveContent}"/>
+    </DockPanel>
+</Window>

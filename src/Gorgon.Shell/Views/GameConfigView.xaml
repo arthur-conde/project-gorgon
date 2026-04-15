@@ -1,0 +1,24 @@
+<UserControl x:Class="Gorgon.Shell.Views.GameConfigView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A">
+    <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+        <TextBlock Text="⚙ Game Configuration" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847" Margin="0,0,0,16"/>
+
+        <TextBlock Text="Project Gorgon root folder" Foreground="#88FFFFFF" Margin="0,0,0,4"/>
+        <DockPanel LastChildFill="True">
+            <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseCommand}"/>
+            <Button DockPanel.Dock="Right" Content="Auto-detect" Padding="10,4" Margin="6,0,0,0" Command="{Binding AutoDetectCommand}"/>
+            <TextBox Text="{Binding GameRoot, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"/>
+        </DockPanel>
+
+        <TextBlock Text="Resolved Player.log" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
+        <TextBlock Text="{Binding PlayerLogPath}" FontFamily="Consolas" Foreground="#FFE8E8E8"/>
+
+        <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
+        <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
+
+        <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="11"
+                   Text="Modules subscribe to this folder. Changes apply immediately — the log tail restarts when the path changes."/>
+    </StackPanel>
+</UserControl>
