@@ -43,6 +43,8 @@ public sealed partial class AlarmService : IDisposable
         // Hydration (oldStage is null) is a restore, not a transition — never alarm.
         if (e.OldStage is null) return;
         if (e.NewStage != PlotStage.Ripe || e.OldStage == PlotStage.Ripe) return;
+        // Don't alarm on replayed events for entities the game has already GC'd.
+        if (_state.IsLikelyGarbageCollected(e.Plot)) return;
         if (_settings.Alarms.MutedCrops.Contains(e.Plot.CropType)) return;
         if (_settings.Alarms.MutedCharacters.Contains(e.Plot.CharName)) return;
 

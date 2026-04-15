@@ -111,6 +111,48 @@ public class GardenStateMachineTests
         sm.Snapshot().GetValueOrDefault("Hits")?.ContainsKey("1").Should().NotBe(true);
     }
 
+    [Fact]
+    public void IsLikelyGarbageCollected_TrueAfterCropLifetime()
+    {
+        // Carrot growthSeconds = 175 → lifetime ≈ 2×175s + 10m = 13m50s.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Carrot"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Carrot", "", "Tend Carrot", 0.5));
+        var plot = sm.Snapshot()["Hits"]["1"];
+        sm.IsLikelyGarbageCollected(plot).Should().BeFalse();
+        time.Advance(TimeSpan.FromMinutes(20));
+        sm.IsLikelyGarbageCollected(plot).Should().BeTrue();
+    }
+
+    [Fact]
+    public void PruneWithered_RemovesAgedNonHarvestedPlots()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Water Onion", 0.5));
+        time.Advance(TimeSpan.FromMinutes(15)); // onion lifetime ≈ 2×50s + 10m = 11m40s
+        sm.PruneWithered();
+        sm.Snapshot().GetValueOrDefault("Hits")?.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void PruneWithered_KeepsHarvestedPlots()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
+        sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
+        time.Advance(TimeSpan.FromHours(1));
+        sm.PruneWithered();
+        sm.Snapshot()["Hits"]["1"].Stage.Should().Be(PlotStage.Harvested);
+    }
+
     private static void Login(GardenStateMachine sm, string name)
         => sm.Apply(new PlayerLogin(Base, name));
 

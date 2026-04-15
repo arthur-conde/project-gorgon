@@ -363,7 +363,13 @@ public sealed class GardenStateMachine
         }
     }
 
-    public void PruneWithered(TimeSpan unknownTtl, TimeSpan knownTtl)
+    /// <summary>
+    /// Drops plots whose in-game entity has almost certainly been garbage-collected.
+    /// TTL is derived from the crop's expected lifetime: growthSeconds × 2 + 10m for
+    /// known crops, 5m for unknown. Harvested plots are not auto-pruned — the user
+    /// clears those explicitly.
+    /// </summary>
+    public void PruneWithered()
     {
         var now = _time.GetUtcNow();
         foreach (var plots in _plotsByChar.Values)
@@ -372,10 +378,28 @@ public sealed class GardenStateMachine
             foreach (var (id, p) in plots)
             {
                 if (p.Stage == PlotStage.Harvested) continue;
-                var ttl = p.CropType is null ? unknownTtl : knownTtl;
-                if (now - p.UpdatedAt > ttl) toRemove.Add(id);
+                if (now - p.UpdatedAt > ExpectedEntityLifetime(p)) toRemove.Add(id);
             }
             foreach (var id in toRemove) plots.Remove(id);
         }
+    }
+
+    /// <summary>
+    /// The window after planting during which the game is still likely to hold the
+    /// plot entity. Used by both the pruner and AlarmService to decide whether a
+    /// state transition reflects a still-interactable entity.
+    /// </summary>
+    public TimeSpan ExpectedEntityLifetime(Plot plot)
+    {
+        if (plot.CropType is null) return TimeSpan.FromMinutes(5);
+        if (!_config.Current.Crops.TryGetValue(plot.CropType, out var def)) return TimeSpan.FromMinutes(5);
+        if (def.GrowthSeconds is not int s || s <= 0) return TimeSpan.FromMinutes(5);
+        return TimeSpan.FromSeconds(s * 2) + TimeSpan.FromMinutes(10);
+    }
+
+    public bool IsLikelyGarbageCollected(Plot plot)
+    {
+        var age = _time.GetUtcNow() - plot.PlantedAt;
+        return age > ExpectedEntityLifetime(plot);
     }
 }

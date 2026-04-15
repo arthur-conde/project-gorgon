@@ -94,8 +94,15 @@ public sealed partial class GardenViewModel : ObservableObject
         }
     }
 
+    private int _tickCount;
     private void Tick()
     {
         foreach (var vm in Plots) vm.Refresh();
+        if (++_tickCount % 60 == 0)
+        {
+            var before = _plotVms.Count;
+            _state.PruneWithered();
+            if (_state.Snapshot().Sum(kv => kv.Value.Count) != before) SyncFromState();
+        }
     }
 }
