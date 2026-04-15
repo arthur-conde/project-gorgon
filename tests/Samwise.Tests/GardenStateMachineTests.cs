@@ -122,6 +122,47 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void LearnedAlias_PersistsPlaceholderToCropMapping()
+    {
+        // Plant a Pansy (model Flower6) → placeholder crop set. Water it →
+        // UpdateDescription resolves to "Pansy". The state machine should
+        // record Flower6 → Pansy in the learned-aliases store.
+        var cfg = new InMemoryCropConfig();
+        var time = new FakeTime(Base);
+        var store = new LearnedAliasesStore(System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"samwise-test-{Guid.NewGuid():N}.json"));
+        var sm = new GardenStateMachine(cfg, time, learned: store);
+        sm.Apply(new PlayerLogin(Base, "Hits"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Flower6");
+        store.Snapshot().Should().BeEmpty();
+
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Pansy", "", "Water Pansy", 0.5));
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Pansy");
+        store.Snapshot().Should().ContainKey("Flower6").WhoseValue.Should().Be("Pansy");
+    }
+
+    [Fact]
+    public void LearnedAlias_DoesNotFireForPlaceholderResolvedToPlaceholder()
+    {
+        // Defensive: if some future log format turns "Flower6" into another
+        // placeholder like "Flower99", don't record garbage.
+        var cfg = new InMemoryCropConfig();
+        var time = new FakeTime(Base);
+        var store = new LearnedAliasesStore(System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"samwise-test-{Guid.NewGuid():N}.json"));
+        var sm = new GardenStateMachine(cfg, time, learned: store);
+        sm.Apply(new PlayerLogin(Base, "Hits"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "", "", "Water Flower9", 0.5));
+        store.Snapshot().Should().BeEmpty();
+    }
+
+    [Fact]
     public void UnknownFlowerModel_UsedAsPlaceholder_CorrectedByUpdateDescription()
     {
         // Pansy's in-game model is @Flower6, which has no alias in crops.json.

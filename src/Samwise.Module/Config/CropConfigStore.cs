@@ -14,15 +14,24 @@ public sealed class CropConfigStore : ICropConfigStore, IDisposable
 {
     private readonly string _bundledPath;
     private readonly string _userPath;
+    private readonly LearnedAliasesStore? _learned;
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _debounceCts;
 
-    public CropConfigStore(string bundledPath, string userPath)
+    public CropConfigStore(string bundledPath, string userPath, LearnedAliasesStore? learned = null)
     {
         _bundledPath = bundledPath;
         _userPath = userPath;
+        _learned = learned;
+        if (_learned is not null) _learned.Changed += OnLearnedChanged;
         Current = LoadSync();
         WatchUser();
+    }
+
+    private void OnLearnedChanged(object? sender, EventArgs e)
+    {
+        Current = LoadSync();
+        Reloaded?.Invoke(this, EventArgs.Empty);
     }
 
     public CropConfig Current { get; private set; }
@@ -40,10 +49,22 @@ public sealed class CropConfigStore : ICropConfigStore, IDisposable
     {
         var bundled = ReadFile(_bundledPath) ?? new CropConfig();
         var user = ReadFile(_userPath);
-        if (user is null) { bundled.InvalidateCaches(); return bundled; }
-        // Deep-merge: user crops override bundled by name; user slot families override
-        foreach (var (k, v) in user.SlotFamilies) bundled.SlotFamilies[k] = v;
-        foreach (var (k, v) in user.Crops) bundled.Crops[k] = v;
+        if (user is not null)
+        {
+            foreach (var (k, v) in user.SlotFamilies) bundled.SlotFamilies[k] = v;
+            foreach (var (k, v) in user.Crops) bundled.Crops[k] = v;
+        }
+        // Third layer: learned model → crop mappings discovered at runtime.
+        if (_learned is not null)
+        {
+            foreach (var (model, cropName) in _learned.Snapshot())
+            {
+                if (!bundled.Crops.TryGetValue(cropName, out var def)) continue;
+                def.ModelAliases ??= new List<string>();
+                if (!def.ModelAliases.Contains(model, StringComparer.OrdinalIgnoreCase))
+                    def.ModelAliases.Add(model);
+            }
+        }
         bundled.InvalidateCaches();
         return bundled;
     }

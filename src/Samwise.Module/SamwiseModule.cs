@@ -32,13 +32,18 @@ public sealed class SamwiseModule : IGorgonModule
         var userCrops = Path.Combine(samwiseDir, "crops.json");
         var settingsPath = Path.Combine(samwiseDir, "settings.json");
         var statePath = Path.Combine(samwiseDir, "garden-state.json");
+        var learnedPath = Path.Combine(samwiseDir, "learned-aliases.json");
 
-        services.AddSingleton<ICropConfigStore>(_ => new CropConfigStore(bundledCrops, userCrops));
+        services.AddSingleton<LearnedAliasesStore>(_ => new LearnedAliasesStore(learnedPath));
+        services.AddSingleton<ICropConfigStore>(sp => new CropConfigStore(
+            bundledCrops, userCrops,
+            sp.GetRequiredService<LearnedAliasesStore>()));
         services.AddSingleton<GardenLogParser>();
         services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
             sp.GetRequiredService<ICropConfigStore>(),
             time: null,
-            diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
+            diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>(),
+            learned: sp.GetRequiredService<LearnedAliasesStore>()));
         services.AddSingleton<AlarmService>();
 
         services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>

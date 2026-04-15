@@ -17,6 +17,7 @@ public sealed class GardenStateMachine
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
+    private readonly LearnedAliasesStore? _learned;
 
     private readonly Dictionary<string, Dictionary<string, Plot>> _plotsByChar = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _playerOwnedPetIds = new(StringComparer.Ordinal);
@@ -30,11 +31,16 @@ public sealed class GardenStateMachine
     private bool _lastCropAssetUsed;
     private (string PlotId, string CharName)? _pendingPlantForCrop;
 
-    public GardenStateMachine(ICropConfigStore config, TimeProvider? time = null, IDiagnosticsSink? diag = null)
+    public GardenStateMachine(
+        ICropConfigStore config,
+        TimeProvider? time = null,
+        IDiagnosticsSink? diag = null,
+        LearnedAliasesStore? learned = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
         _diag = diag;
+        _learned = learned;
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -208,6 +214,7 @@ public sealed class GardenStateMachine
         }
 
         var oldStage = plot.Stage;
+        var oldCrop = plot.CropType;
         plot.CropType = crop;
         plot.Title = ud.Title;
         plot.Description = ud.Description;
@@ -216,7 +223,41 @@ public sealed class GardenStateMachine
         plot.Stage = newStage;
         UpdatePauseTracking(plot, oldStage, newStage);
         plot.UpdatedAt = _time.GetUtcNow();
+
+        // Alias learning: when a placeholder ("Flower6") is replaced by a real
+        // crop name ("Pansy"), persist the mapping so future plants of that
+        // model identify at plant-time. The learning store is authoritative
+        // because the game itself supplied the real name via the Action text.
+        TryLearnAlias(oldCrop, crop, ud.PlotId);
+
         RaisePlotChanged(plot, oldStage, newStage);
+    }
+
+    private void TryLearnAlias(string? oldCrop, string newCrop, string plotId)
+    {
+        if (_learned is null) return;
+        if (string.IsNullOrEmpty(oldCrop)) return;
+        if (string.Equals(oldCrop, newCrop, StringComparison.OrdinalIgnoreCase)) return;
+        if (!LooksLikePlaceholder(oldCrop)) return;
+        if (LooksLikePlaceholder(newCrop)) return;
+        if (_learned.Learn(oldCrop, newCrop))
+        {
+            _diag?.Info("Samwise.Learn", $"Learned {oldCrop} → {newCrop} (plot={plotId})");
+        }
+    }
+
+    /// <summary>True for model-style names like "Flower6" / "Flower11" that aren't real crops.</summary>
+    private static bool LooksLikePlaceholder(string name)
+    {
+        var sawLetter = false;
+        var sawDigit = false;
+        foreach (var c in name)
+        {
+            if (char.IsLetter(c)) sawLetter = true;
+            else if (char.IsDigit(c)) sawDigit = true;
+            else return false; // whitespace, punctuation → not a placeholder
+        }
+        return sawLetter && sawDigit;
     }
 
     private void UpdatePauseTracking(Plot plot, PlotStage oldStage, PlotStage newStage)
