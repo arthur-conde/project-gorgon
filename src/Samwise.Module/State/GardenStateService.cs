@@ -25,9 +25,7 @@ public sealed class GardenStateService : IDisposable
     public async Task LoadAsync(CancellationToken ct = default)
     {
         var loaded = await _store.LoadAsync(ct).ConfigureAwait(false);
-        _state.SessionActive = loaded.SessionActive;
-        // restore plots via internal hydrate path
-        Hydrate(loaded);
+        _state.Hydrate(loaded);
     }
 
     private void Hydrate(GardenState loaded)
@@ -57,7 +55,7 @@ public sealed class GardenStateService : IDisposable
 
     private GardenState BuildSnapshot()
     {
-        var s = new GardenState { SessionActive = _state.SessionActive };
+        var s = new GardenState();
         foreach (var (charName, plots) in _state.Snapshot())
         {
             var bucket = new Dictionary<string, PersistedPlot>(StringComparer.Ordinal);

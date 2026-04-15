@@ -27,18 +27,11 @@ public sealed class GardenStateMachine
     private DateTimeOffset _lastCropAssetTime;
     private bool _lastCropAssetUsed;
     private (string PlotId, string CharName)? _pendingPlantForCrop;
-    private bool _sessionActive;
 
     public GardenStateMachine(ICropConfigStore config, TimeProvider? time = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
-    }
-
-    public bool SessionActive
-    {
-        get => _sessionActive;
-        set => _sessionActive = value;
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -62,35 +55,35 @@ public sealed class GardenStateMachine
 
             case SetPetOwner spo:
                 _playerOwnedPetIds.Add(spo.EntityId);
-                if (_sessionActive) HandleSetPetOwnerSession(spo.EntityId);
+                HandleSetPetOwnerSession(spo.EntityId);
                 break;
 
             case AppearanceLoop al:
                 HandleAppearance(al);
                 break;
 
-            case UpdateDescription ud when _sessionActive:
+            case UpdateDescription ud:
                 HandleUpdateDescription(ud);
                 break;
 
-            case StartInteraction si when _sessionActive:
+            case StartInteraction si:
                 HandleStartInteraction(si);
                 break;
 
-            case ScreenTextError when _sessionActive:
+            case ScreenTextError:
                 _pendingHarvestPlotId = null;
                 _lastUpdateItemCropType = null;
                 break;
 
-            case AddItem ai when _sessionActive:
+            case AddItem ai:
                 HandleAddItem(ai);
                 break;
 
-            case UpdateItemCode uic when _sessionActive:
+            case UpdateItemCode uic:
                 if (_itemIdToCrop.TryGetValue(uic.ItemId, out var ct)) _lastUpdateItemCropType = ct;
                 break;
 
-            case GardeningXp when _sessionActive:
+            case GardeningXp:
                 HandleGardeningXp();
                 break;
         }

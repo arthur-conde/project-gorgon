@@ -4,7 +4,6 @@ namespace Samwise.State;
 
 public sealed class GardenState
 {
-    public bool SessionActive { get; set; }
     public Dictionary<string, Dictionary<string, PersistedPlot>> PlotsByChar { get; set; } = new();
 }
 

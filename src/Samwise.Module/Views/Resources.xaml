@@ -2,4 +2,6 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:c="clr-namespace:Samwise.Views">
     <c:StageToHarvestVisConverter x:Key="StageToHarvestVis"/>
+    <c:ZeroToVisConverter x:Key="ZeroToVis"/>
+    <c:NonZeroToVisConverter x:Key="NonZeroToVis"/>
 </ResourceDictionary>

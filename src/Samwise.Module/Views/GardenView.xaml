@@ -7,21 +7,35 @@
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <DockPanel Margin="12">
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <TextBlock Text="🌱 Samwise — Gardening" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
-                <Button Content="▶ Start" Padding="12,4" Margin="0,0,4,0"
-                        Command="{Binding StartSessionCommand}"
-                        Visibility="{Binding SessionActive, Converter={StaticResource InverseBoolToVis}}"/>
-                <Button Content="⏹ Stop" Padding="12,4"
-                        Command="{Binding StopSessionCommand}"
-                        Visibility="{Binding SessionActive, Converter={StaticResource BoolToVis}}"/>
+        <TextBlock DockPanel.Dock="Top" Text="🌱 Samwise — Gardening"
+                   FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847" Margin="0,0,0,8"/>
+
+        <Grid>
+            <!-- Empty state: shown when no plots are being tracked. -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MaxWidth="420"
+                        Visibility="{Binding Plots.Count, Converter={StaticResource ZeroToVis}}">
+                <TextBlock Text="🌱" FontSize="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
+                <TextBlock Text="No plots yet" FontFamily="Cambria" FontSize="18"
+                           HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
+                    Samwise watches Player.log for gardening events. Plant a seed in-game and it'll
+                    appear here. Interactions (water, fertilize, harvest) will update the card live;
+                    when a plot turns ripe, an alarm fires.
+                </TextBlock>
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="12" CornerRadius="3">
+                    <StackPanel>
+                        <TextBlock Text="Not seeing anything?" FontWeight="SemiBold" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+                        <TextBlock FontSize="11" Foreground="#AAFFFFFF" TextWrapping="Wrap">
+                            Check <Run Text="⚙ Game…" FontFamily="Consolas"/> to verify the Project Gorgon folder is set,
+                            then open <Run Text="🔍 Diagnostics" FontFamily="Consolas"/> to watch raw log lines flow in.
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </StackPanel>
-        </DockPanel>
 
-        <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusText}" Foreground="#88FFFFFF" Margin="0,8,0,0"/>
-
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}">
             <ItemsControl ItemsSource="{Binding Plots}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -53,6 +67,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
+            </ScrollViewer>
+        </Grid>
     </DockPanel>
 </UserControl>

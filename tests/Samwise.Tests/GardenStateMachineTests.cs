@@ -15,7 +15,6 @@ public class GardenStateMachineTests
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
         var sm = new GardenStateMachine(cfg, time);
-        sm.SessionActive = true;
         return (sm, time, cfg);
     }
 
@@ -98,17 +97,6 @@ public class GardenStateMachineTests
         // No SetPetOwner for 999 → not in playerOwnedPetIds → ignored
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "999", "Onion", "", "Water Onion", 0.5));
         sm.Snapshot().GetValueOrDefault("Hits")?.ContainsKey("999").Should().NotBe(true);
-    }
-
-    [Fact]
-    public void SessionInactive_IgnoresGardenEvents()
-    {
-        var (sm, time, _) = BuildSut();
-        sm.SessionActive = false;
-        Login(sm, "Hits");
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Water Onion", 0.5));
-        sm.Snapshot().GetValueOrDefault("Hits")?.ContainsKey("1").Should().NotBe(true);
     }
 
     [Fact]

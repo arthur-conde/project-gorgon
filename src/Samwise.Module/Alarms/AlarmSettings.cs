@@ -32,10 +32,24 @@ public sealed class AlarmSettings : INotifyPropertyChanged
 
 public sealed class SamwiseSettings : INotifyPropertyChanged
 {
-    private bool _sessionActive;
-    public bool SessionActive { get => _sessionActive; set { if (_sessionActive == value) return; _sessionActive = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SessionActive))); } }
+    private AlarmSettings _alarms = new();
+    public AlarmSettings Alarms
+    {
+        get => _alarms;
+        set
+        {
+            if (ReferenceEquals(_alarms, value)) return;
+            _alarms.PropertyChanged -= OnAlarmsChanged;
+            _alarms = value;
+            _alarms.PropertyChanged += OnAlarmsChanged;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Alarms)));
+        }
+    }
 
-    public AlarmSettings Alarms { get; set; } = new();
+    public SamwiseSettings() { _alarms.PropertyChanged += OnAlarmsChanged; }
+
+    private void OnAlarmsChanged(object? sender, PropertyChangedEventArgs e)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Alarms)));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }

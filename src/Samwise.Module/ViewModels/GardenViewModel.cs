@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Samwise.Alarms;
 using Samwise.Config;
 using Samwise.State;
 
@@ -12,15 +11,13 @@ public sealed partial class GardenViewModel : ObservableObject
 {
     private readonly GardenStateMachine _state;
     private readonly ICropConfigStore _config;
-    private readonly SamwiseSettings _settings;
     private readonly DispatcherTimer _refreshTimer;
     private readonly Dictionary<string, PlotViewModel> _plotVms = new(StringComparer.Ordinal);
 
-    public GardenViewModel(GardenStateMachine state, ICropConfigStore config, SamwiseSettings settings)
+    public GardenViewModel(GardenStateMachine state, ICropConfigStore config)
     {
         _state = state;
         _config = config;
-        _settings = settings;
         _state.PlotChanged += OnPlotChanged;
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _refreshTimer.Tick += (_, __) => Tick();
@@ -29,27 +26,6 @@ public sealed partial class GardenViewModel : ObservableObject
     }
 
     public ObservableCollection<PlotViewModel> Plots { get; } = new();
-
-    [ObservableProperty] private string _statusText = "";
-    [ObservableProperty] private bool _sessionActive;
-
-    [RelayCommand]
-    private void StartSession()
-    {
-        SessionActive = true;
-        _state.SessionActive = true;
-        _settings.SessionActive = true;
-        StatusText = "Listening for garden events…";
-    }
-
-    [RelayCommand]
-    private void StopSession()
-    {
-        SessionActive = false;
-        _state.SessionActive = false;
-        _settings.SessionActive = false;
-        StatusText = "Session stopped.";
-    }
 
     [RelayCommand]
     private void MarkHarvested(PlotViewModel? vm)
@@ -82,7 +58,6 @@ public sealed partial class GardenViewModel : ObservableObject
     {
         Plots.Clear();
         _plotVms.Clear();
-        SessionActive = _state.SessionActive;
         foreach (var (charName, plots) in _state.Snapshot())
         {
             foreach (var (id, p) in plots)
