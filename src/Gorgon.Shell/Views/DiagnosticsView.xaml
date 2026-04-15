@@ -20,6 +20,32 @@
                  Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
                  Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#33FFFFFF"/>
 
+        <Border DockPanel.Dock="Top" Margin="0,0,0,8" Padding="6" CornerRadius="3"
+                Background="#FF202020" BorderBrush="#22FFFFFF" BorderThickness="1">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                    <Button Content="All"  Padding="8,2" Margin="0,0,4,0" Command="{Binding CategoriesAllCommand}"/>
+                    <Button Content="None" Padding="8,2" Command="{Binding CategoriesNoneCommand}"/>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Categories}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="2" Padding="6,2" CornerRadius="2"
+                                    Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                    MouseRightButtonUp="CategoryChip_RightClick">
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsEnabled}"
+                                          Foreground="#FFE8E8E8" FontFamily="Consolas" FontSize="11"
+                                          ToolTip="Right-click to isolate only this category"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Border>
+
         <ListBox ItemsSource="{Binding View}" Background="#FF101010" Foreground="#FFE8E8E8"
                  BorderBrush="#33FFFFFF" FontFamily="Consolas" FontSize="12"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto"

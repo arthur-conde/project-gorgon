@@ -8,20 +8,37 @@ using Gorgon.Shared.Diagnostics;
 
 namespace Gorgon.Shell.ViewModels;
 
+public sealed partial class CategoryToggle : ObservableObject
+{
+    public CategoryToggle(string name, Action onChanged)
+    {
+        Name = name;
+        _onChanged = onChanged;
+    }
+
+    public string Name { get; }
+    private readonly Action _onChanged;
+    [ObservableProperty] private bool _isEnabled = true;
+
+    partial void OnIsEnabledChanged(bool value) => _onChanged();
+}
+
 public sealed partial class DiagnosticsViewModel : ObservableObject
 {
     private readonly IDiagnosticsSink _sink;
+    private readonly Dictionary<string, CategoryToggle> _categoryIndex = new(StringComparer.Ordinal);
 
     public DiagnosticsViewModel(IDiagnosticsSink sink)
     {
         _sink = sink;
-        foreach (var e in _sink.Snapshot()) Entries.Add(e);
+        foreach (var e in _sink.Snapshot()) { Entries.Add(e); TrackCategory(e.Category); }
         _sink.EntryAdded += OnEntryAdded;
         View = (ListCollectionView)CollectionViewSource.GetDefaultView(Entries);
         View.Filter = Filter;
     }
 
     public ObservableCollection<DiagnosticEntry> Entries { get; } = new();
+    public ObservableCollection<CategoryToggle> Categories { get; } = new();
     public ListCollectionView View { get; }
 
     [ObservableProperty] private bool _paused;
@@ -49,6 +66,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
             _ => true,
         };
         if (!levelOk) return false;
+        if (_categoryIndex.TryGetValue(e.Category, out var toggle) && !toggle.IsEnabled) return false;
         if (string.IsNullOrWhiteSpace(FilterText)) return true;
         return e.Category.Contains(FilterText, StringComparison.OrdinalIgnoreCase)
             || e.Message.Contains(FilterText, StringComparison.OrdinalIgnoreCase);
@@ -60,9 +78,36 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
     [RelayCommand]
     private void CopyAll()
     {
-        var text = string.Join('\n', Entries
+        var text = string.Join('\n', View.OfType<DiagnosticEntry>()
             .Select(e => $"{e.Timestamp:HH:mm:ss.fff} [{e.Level}] {e.Category}: {e.Message}"));
         try { System.Windows.Clipboard.SetText(text); } catch { }
+    }
+
+    [RelayCommand]
+    private void CategoriesAll()
+    {
+        foreach (var c in Categories) c.IsEnabled = true;
+    }
+
+    [RelayCommand]
+    private void CategoriesNone()
+    {
+        foreach (var c in Categories) c.IsEnabled = false;
+    }
+
+    [RelayCommand]
+    private void CategoriesOnly(CategoryToggle? only)
+    {
+        if (only is null) return;
+        foreach (var c in Categories) c.IsEnabled = ReferenceEquals(c, only);
+    }
+
+    private void TrackCategory(string name)
+    {
+        if (_categoryIndex.ContainsKey(name)) return;
+        var toggle = new CategoryToggle(name, () => View.Refresh());
+        _categoryIndex[name] = toggle;
+        Categories.Add(toggle);
     }
 
     private void OnEntryAdded(object? sender, DiagnosticEntry e)
@@ -75,6 +120,7 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
 
     private void Append(DiagnosticEntry e)
     {
+        TrackCategory(e.Category);
         Entries.Add(e);
         while (Entries.Count > 2000) Entries.RemoveAt(0);
     }
