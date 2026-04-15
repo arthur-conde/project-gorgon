@@ -49,7 +49,10 @@ public sealed class SamwiseModule : IGorgonModule
         services.AddSingleton<GardenStateService>();
 
         services.AddSingleton<GardenViewModel>();
-        services.AddSingleton<GardenView>();
+        services.AddSingleton<GardenView>(sp => new GardenView
+        {
+            DataContext = sp.GetRequiredService<GardenViewModel>(),
+        });
 
         services.AddSingleton<IHotkeyCommand, SnoozeAllAlarmsCommand>();
         services.AddSingleton<IHotkeyCommand, DismissAllAlarmsCommand>();
