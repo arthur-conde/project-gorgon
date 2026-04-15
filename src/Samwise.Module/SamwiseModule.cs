@@ -44,7 +44,7 @@ public sealed class SamwiseModule : IGorgonModule
             new JsonSettingsStore<GardenState>(statePath, GardenStateJsonContext.Default.GardenState));
 
         services.AddSingleton<SamwiseSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<SamwiseSettings>>().LoadAsync().GetAwaiter().GetResult());
+            sp.GetRequiredService<ISettingsStore<SamwiseSettings>>().Load());
         services.AddSingleton<SettingsAutoSaver<SamwiseSettings>>();
         services.AddSingleton<GardenStateService>();
 

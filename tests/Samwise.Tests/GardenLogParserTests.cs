@@ -10,10 +10,20 @@ public class GardenLogParserTests
     private static readonly DateTime T = new(2026, 4, 15, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void Parses_PlayerLogin()
+    public void Parses_PlayerLogin_RealisticLine()
     {
-        var evt = _p.TryParse(@"... LocalPlayer: ProcessAddPlayer(""Hitsuzen""); ...", T);
-        evt.Should().BeOfType<PlayerLogin>().Which.CharName.Should().Be("Hitsuzen");
+        // Captured from a live Player.log: char name is the 2nd quoted arg.
+        var line = @"[14:30:34] LocalPlayer: ProcessAddPlayer(-626625832, 290067, ""PlayerWolf(sex=m;race=e;@Hands=none)"", ""Emraell"", ""A player!"", System.String[], (1458, 41, 1404), (0, 0.87, 0, -0.49), Idle, Standing, 0, 2000, True)";
+        var evt = _p.TryParse(line, T);
+        evt.Should().BeOfType<PlayerLogin>().Which.CharName.Should().Be("Emraell");
+    }
+
+    [Fact]
+    public void Ignores_RemotePlayerAdd()
+    {
+        // Remote player events lack the "LocalPlayer:" prefix.
+        var line = @"ProcessAddPlayer(123, 456, ""OtherModel"", ""OtherPlayer"")";
+        _p.TryParse(line, T).Should().BeNull();
     }
 
     [Fact]

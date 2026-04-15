@@ -9,7 +9,9 @@ namespace Samwise.Parsing;
 /// </summary>
 public sealed partial class GardenLogParser : ILogParser
 {
-    [GeneratedRegex(@"ProcessAddPlayer\(""([^""]+)""", RegexOptions.CultureInvariant)]
+    // ProcessAddPlayer(entityId, uid, "PlayerModelDescriptor", "CharacterName", ...) — char name is the 2nd quoted arg.
+    // Only match when prefixed with LocalPlayer: so we don't latch onto remote players.
+    [GeneratedRegex(@"LocalPlayer:\s*ProcessAddPlayer\([^,]+,\s*[^,]+,\s*""[^""]*"",\s*""([^""]+)""", RegexOptions.CultureInvariant)]
     private static partial Regex AddPlayerRx();
 
     [GeneratedRegex(@"LocalPlayer: ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]

@@ -28,6 +28,42 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        DispatcherUnhandledException += (_, args) =>
+        {
+            ShowFatal(args.Exception);
+            args.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            if (args.ExceptionObject is Exception ex) ShowFatal(ex);
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            ShowFatal(args.Exception);
+            args.SetObserved();
+        };
+
+        try { await StartCoreAsync(e); }
+        catch (Exception ex) { ShowFatal(ex); Shutdown(); }
+    }
+
+    private static readonly string BootLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Gorgon", "Shell", "boot.log");
+
+    private static void Boot(string step)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(BootLogPath)!);
+            File.AppendAllText(BootLogPath, $"{DateTime.Now:HH:mm:ss.fff} {step}\n");
+        }
+        catch { }
+    }
+
+    private async Task StartCoreAsync(StartupEventArgs e)
+    {
+        Boot("=== startup ===");
         bool createdNew;
         _mutex = new Mutex(initiallyOwned: true, MutexName, out createdNew);
         if (!createdNew)
@@ -70,8 +106,11 @@ public partial class App : System.Windows.Application
         };
         builder.Services.AddSingleton(gameConfig);
 
-        // Shared services
-        builder.Services.AddSingleton<IDiagnosticsSink>(_ => new DiagnosticsSink());
+        // Shared services. Diagnostics sink is a ring-buffer decorated with
+        // Serilog so every entry is also written to a JSON file for post-hoc analysis.
+        var logDir = Path.Combine(shellDir, "logs");
+        builder.Services.AddSingleton<IDiagnosticsSink>(_ =>
+            new SerilogDiagnosticsSink(new DiagnosticsSink(), logDir));
         builder.Services.AddSingleton<IPlayerLogStream, PlayerLogStream>();
         builder.Services.AddSingleton<HotkeyRegistry>();
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
@@ -98,8 +137,11 @@ public partial class App : System.Windows.Application
             DataContext = sp.GetRequiredService<DiagnosticsViewModel>(),
         });
 
+        Boot($"modules discovered: {modules.Count}");
         _host = builder.Build();
+        Boot("host built");
         await _host.StartAsync().ConfigureAwait(true);
+        Boot("host started");
 
         // Open gates for Eager modules so their hosted services start working immediately.
         var gates = _host.Services.GetRequiredService<ModuleGates>();
@@ -112,8 +154,11 @@ public partial class App : System.Windows.Application
         }
 
         // Construct shell window, attach hotkey hwnd
+        Boot("resolving ShellWindow");
         var shell = _host.Services.GetRequiredService<ShellWindow>();
+        Boot("resolving ShellViewModel");
         shell.DataContext = _host.Services.GetRequiredService<ShellViewModel>();
+        Boot("shell DataContext set");
         shell.Left = shellSettings.WindowLeft;
         shell.Top = shellSettings.WindowTop;
         shell.Width = shellSettings.WindowWidth;
@@ -124,11 +169,14 @@ public partial class App : System.Windows.Application
         _host.Services.GetRequiredService<GameConfigView>().DataContext = _host.Services.GetRequiredService<GameConfigViewModel>();
         _host.Services.GetRequiredService<HotkeyBindingsView>().DataContext = _host.Services.GetRequiredService<HotkeyBindingsViewModel>();
 
+        Boot("calling shell.Show()");
         shell.Show();
+        Boot("shell shown");
         var hwnd = new WindowInteropHelper(shell).Handle;
         var hk = _host.Services.GetRequiredService<IHotkeyService>();
         hk.Attach(hwnd);
         hk.ReloadFromBindings(shellSettings.HotkeyBindings.Values);
+        Boot("=== startup done ===");
     }
 
     private async Task WatchActivateEvent(EventWaitHandle ev, CancellationToken ct)
@@ -147,6 +195,22 @@ public partial class App : System.Windows.Application
                 MainWindow.Topmost = false;
             });
         }
+    }
+
+    private static void ShowFatal(Exception ex)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Gorgon", "Shell");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "crash.log"),
+                $"\n=== {DateTime.Now:s} ===\n{ex}\n");
+        }
+        catch { }
+        System.Windows.MessageBox.Show(ex.ToString(), "Gorgon crashed",
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
     }
 
     private static List<IGorgonModule> DiscoverModules()

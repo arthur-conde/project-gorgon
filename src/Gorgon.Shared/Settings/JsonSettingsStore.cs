@@ -16,6 +16,14 @@ public sealed class JsonSettingsStore<T> : ISettingsStore<T> where T : class, ne
 
     public string FilePath { get; }
 
+    public T Load()
+    {
+        if (!File.Exists(FilePath)) return new T();
+        using var stream = File.OpenRead(FilePath);
+        var result = JsonSerializer.Deserialize(stream, _typeInfo);
+        return result ?? new T();
+    }
+
     public async Task<T> LoadAsync(CancellationToken ct = default)
     {
         if (!File.Exists(FilePath)) return new T();
