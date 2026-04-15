@@ -2,6 +2,7 @@ using System.IO;
 using System.Media;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Samwise.State;
 
@@ -62,19 +63,7 @@ public sealed partial class AlarmService : IDisposable
     {
         Dispatch(() =>
         {
-            try
-            {
-                if (!string.IsNullOrEmpty(soundFilePath) && File.Exists(soundFilePath))
-                {
-                    using var p = new SoundPlayer(soundFilePath);
-                    p.Play();
-                }
-                else
-                {
-                    SystemSounds.Asterisk.Play();
-                }
-            }
-            catch { }
+            AlarmSoundPlayer.Play(soundFilePath);
 
             if (_settings.Alarms.FlashWindow)
             {

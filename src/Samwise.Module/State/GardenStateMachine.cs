@@ -56,6 +56,7 @@ public sealed class GardenStateMachine
     }
 
     public event EventHandler<PlotChangedArgs>? PlotChanged;
+    public event EventHandler? PlotsRemoved;
 
     public void Apply(GardenEvent evt)
     {
@@ -454,6 +455,7 @@ public sealed class GardenStateMachine
     public void PruneWithered()
     {
         var now = _time.GetUtcNow();
+        var removed = 0;
         foreach (var plots in _plotsByChar.Values)
         {
             var toRemove = new List<string>();
@@ -463,7 +465,9 @@ public sealed class GardenStateMachine
                 if (now - p.UpdatedAt > ttl) toRemove.Add(id);
             }
             foreach (var id in toRemove) plots.Remove(id);
+            removed += toRemove.Count;
         }
+        if (removed > 0) PlotsRemoved?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Manually drop every harvested plot for every character.</summary>
@@ -475,6 +479,7 @@ public sealed class GardenStateMachine
             var toRemove = plots.Where(kv => kv.Value.Stage == PlotStage.Harvested).Select(kv => kv.Key).ToList();
             foreach (var id in toRemove) { plots.Remove(id); dropped++; }
         }
+        if (dropped > 0) PlotsRemoved?.Invoke(this, EventArgs.Empty);
         return dropped;
     }
 

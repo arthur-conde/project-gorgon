@@ -20,6 +20,7 @@ public sealed class GardenStateService : IDisposable
         _debounce = new System.Timers.Timer(500) { AutoReset = false };
         _debounce.Elapsed += (_, __) => Flush();
         _state.PlotChanged += OnChanged;
+        _state.PlotsRemoved += OnRemoved;
     }
 
     public async Task LoadAsync(CancellationToken ct = default)
@@ -39,7 +40,11 @@ public sealed class GardenStateService : IDisposable
         _state.Hydrate(loaded);
     }
 
-    private void OnChanged(object? sender, PlotChangedArgs e)
+    private void OnChanged(object? sender, PlotChangedArgs e) => MarkDirty();
+
+    private void OnRemoved(object? sender, EventArgs e) => MarkDirty();
+
+    private void MarkDirty()
     {
         _dirty = true;
         _debounce.Stop();
@@ -78,6 +83,7 @@ public sealed class GardenStateService : IDisposable
     public void Dispose()
     {
         _state.PlotChanged -= OnChanged;
+        _state.PlotsRemoved -= OnRemoved;
         _debounce.Stop();
         _debounce.Dispose();
         Flush();
