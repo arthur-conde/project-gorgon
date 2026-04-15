@@ -39,6 +39,14 @@ public sealed partial class GardenViewModel : ObservableObject
         vm.Refresh();
     }
 
+    [RelayCommand]
+    private void ClearHarvested()
+    {
+        _state.ClearHarvested();
+        SyncFromState();
+    }
+
+
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
     {
         var key = $"{e.Plot.CharName}|{e.Plot.PlotId}";

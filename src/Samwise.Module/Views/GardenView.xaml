@@ -7,8 +7,15 @@
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <DockPanel Margin="12">
-        <TextBlock DockPanel.Dock="Top" Text="🌱 Samwise — Gardening"
-                   FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847" Margin="0,0,0,8"/>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="🌱 Samwise — Gardening"
+                       FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                    Content="✕ Clear harvested" Padding="10,4"
+                    Command="{Binding ClearHarvestedCommand}"
+                    ToolTip="Remove all Harvested plots (auto-clears after 2 hours)"
+                    Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}"/>
+        </DockPanel>
 
         <Grid>
             <!-- Empty state: shown when no plots are being tracked. -->

@@ -439,10 +439,18 @@ public sealed class GardenStateMachine
     }
 
     /// <summary>
+    /// TTL for harvested plots before they're auto-cleared from the UI.
+    /// Two hours is enough for a user to notice the card and re-plant in the
+    /// same slot without manual cleanup.
+    /// </summary>
+    private static readonly TimeSpan HarvestedTtl = TimeSpan.FromHours(2);
+
+    /// <summary>
     /// Drops plots whose in-game entity has almost certainly been garbage-collected.
-    /// TTL is derived from the crop's expected lifetime: growthSeconds × 2 + 10m for
-    /// known crops, 5m for unknown. Harvested plots are not auto-pruned — the user
-    /// clears those explicitly.
+    /// TTL for growing plots is derived from the crop's expected lifetime
+    /// (growthSeconds × 2 + 10m, 5m for unknown crops). Harvested plots are
+    /// dropped 2 hours after harvest. A "Clear harvested" user action can
+    /// remove them sooner.
     /// </summary>
     public void PruneWithered()
     {
@@ -452,11 +460,23 @@ public sealed class GardenStateMachine
             var toRemove = new List<string>();
             foreach (var (id, p) in plots)
             {
-                if (p.Stage == PlotStage.Harvested) continue;
-                if (now - p.UpdatedAt > ExpectedEntityLifetime(p)) toRemove.Add(id);
+                var ttl = p.Stage == PlotStage.Harvested ? HarvestedTtl : ExpectedEntityLifetime(p);
+                if (now - p.UpdatedAt > ttl) toRemove.Add(id);
             }
             foreach (var id in toRemove) plots.Remove(id);
         }
+    }
+
+    /// <summary>Manually drop every harvested plot for every character.</summary>
+    public int ClearHarvested()
+    {
+        var dropped = 0;
+        foreach (var plots in _plotsByChar.Values)
+        {
+            var toRemove = plots.Where(kv => kv.Value.Stage == PlotStage.Harvested).Select(kv => kv.Key).ToList();
+            foreach (var id in toRemove) { plots.Remove(id); dropped++; }
+        }
+        return dropped;
     }
 
     /// <summary>

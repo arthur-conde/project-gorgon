@@ -274,7 +274,22 @@ public class GardenStateMachineTests
     }
 
     [Fact]
-    public void PruneWithered_KeepsHarvestedPlots()
+    public void PruneWithered_KeepsHarvestedPlots_WithinTtl()
+    {
+        // Harvested plots stick around for 2 hours so the user can see the result.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
+        sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
+        time.Advance(TimeSpan.FromMinutes(30));
+        sm.PruneWithered();
+        sm.Snapshot()["Hits"]["1"].Stage.Should().Be(PlotStage.Harvested);
+    }
+
+    [Fact]
+    public void PruneWithered_DropsHarvestedPlots_AfterTtl()
     {
         var (sm, time, _) = BuildSut();
         Login(sm, "Hits");
@@ -282,9 +297,28 @@ public class GardenStateMachineTests
         sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
         sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
-        time.Advance(TimeSpan.FromHours(1));
+        time.Advance(TimeSpan.FromHours(3));
         sm.PruneWithered();
-        sm.Snapshot()["Hits"]["1"].Stage.Should().Be(PlotStage.Harvested);
+        sm.Snapshot().GetValueOrDefault("Hits")?.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void ClearHarvested_DropsAllHarvestedPlotsImmediately()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
+        sm.Apply(new StartInteraction(time.Now.UtcDateTime, "1", "SummonedOnion"));
+        // Also have a still-growing plot; this one must survive.
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "2"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Carrot"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "2", "Carrot", "", "Water Carrot", 0.5));
+
+        var dropped = sm.ClearHarvested();
+        dropped.Should().Be(1);
+        sm.Snapshot()["Hits"].Should().ContainKey("2").And.NotContainKey("1");
     }
 
     private static void Login(GardenStateMachine sm, string name)
