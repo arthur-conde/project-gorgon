@@ -1,24 +1,63 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Samwise.State;
 
 namespace Samwise.Alarms;
+
+/// <summary>
+/// Per-stage alarm rule. When enabled, a transition into this stage will
+/// fire. SoundFilePath overrides the global default; leave blank to use
+/// the global SystemSounds.Asterisk fallback.
+/// </summary>
+public sealed class StageAlarmRule : INotifyPropertyChanged
+{
+    private bool _enabled;
+    private string? _soundFilePath;
+
+    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+    public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(f, v)) return;
+        f = v;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+    }
+}
 
 public sealed class AlarmSettings : INotifyPropertyChanged
 {
     private bool _enabled = true;
-    private string? _soundFilePath;
     private bool _balloonNotification = true;
     private bool _flashWindow = true;
     private double _snoozeMinutes = 5;
+    private Dictionary<PlotStage, StageAlarmRule> _rules = DefaultRules();
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
-    public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
     public bool BalloonNotification { get => _balloonNotification; set => Set(ref _balloonNotification, value); }
     public bool FlashWindow { get => _flashWindow; set => Set(ref _flashWindow, value); }
     public double SnoozeMinutes { get => _snoozeMinutes; set => Set(ref _snoozeMinutes, Math.Max(0.5, value)); }
+
+    /// <summary>Per-stage alarm rules. Persisted by stage name.</summary>
+    public Dictionary<PlotStage, StageAlarmRule> Rules
+    {
+        get => _rules;
+        set
+        {
+            if (ReferenceEquals(_rules, value)) return;
+            DetachRuleEvents(_rules);
+            _rules = value ?? DefaultRules();
+            AttachRuleEvents(_rules);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+        }
+    }
+
     public HashSet<string> MutedCrops { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> MutedCharacters { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public AlarmSettings() { AttachRuleEvents(_rules); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -28,6 +67,26 @@ public sealed class AlarmSettings : INotifyPropertyChanged
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
     }
+
+    private void AttachRuleEvents(Dictionary<PlotStage, StageAlarmRule> rules)
+    {
+        foreach (var r in rules.Values) r.PropertyChanged += OnRuleChanged;
+    }
+
+    private void DetachRuleEvents(Dictionary<PlotStage, StageAlarmRule> rules)
+    {
+        foreach (var r in rules.Values) r.PropertyChanged -= OnRuleChanged;
+    }
+
+    private void OnRuleChanged(object? sender, PropertyChangedEventArgs e)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+
+    private static Dictionary<PlotStage, StageAlarmRule> DefaultRules() => new()
+    {
+        [PlotStage.Ripe]            = new() { Enabled = true },
+        [PlotStage.Thirsty]         = new() { Enabled = false },
+        [PlotStage.NeedsFertilizer] = new() { Enabled = false },
+    };
 }
 
 public sealed class SamwiseSettings : INotifyPropertyChanged

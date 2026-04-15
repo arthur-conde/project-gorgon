@@ -42,29 +42,31 @@ public sealed partial class AlarmService : IDisposable
         if (e.Plot.CropType is null) return;
         // Hydration (oldStage is null) is a restore, not a transition — never alarm.
         if (e.OldStage is null) return;
-        if (e.NewStage != PlotStage.Ripe || e.OldStage == PlotStage.Ripe) return;
-        // Don't alarm on replayed events for entities the game has already GC'd.
+        if (e.NewStage == e.OldStage) return;
+        if (!_settings.Alarms.Rules.TryGetValue(e.NewStage, out var rule) || !rule.Enabled) return;
         if (_state.IsLikelyGarbageCollected(e.Plot)) return;
         if (_settings.Alarms.MutedCrops.Contains(e.Plot.CropType)) return;
         if (_settings.Alarms.MutedCharacters.Contains(e.Plot.CharName)) return;
 
-        var key = $"{e.Plot.CharName}|{e.Plot.PlotId}";
+        // Dedupe per (plot, stage) so a re-trigger for the same stage is ignored,
+        // but a later Ripe transition after an earlier Thirsty alarm still fires.
+        var key = $"{e.Plot.CharName}|{e.Plot.PlotId}|{e.NewStage}";
         if (_snoozedUntil.TryGetValue(key, out var until) && until > DateTimeOffset.UtcNow) return;
         if (_firedAt.ContainsKey(key)) return;
 
         _firedAt[key] = DateTimeOffset.UtcNow;
-        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow));
+        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), rule.SoundFilePath);
     }
 
-    private void Fire(ActiveAlarm alarm)
+    private void Fire(ActiveAlarm alarm, string? soundFilePath)
     {
         Dispatch(() =>
         {
             try
             {
-                if (!string.IsNullOrEmpty(_settings.Alarms.SoundFilePath) && File.Exists(_settings.Alarms.SoundFilePath))
+                if (!string.IsNullOrEmpty(soundFilePath) && File.Exists(soundFilePath))
                 {
-                    using var p = new SoundPlayer(_settings.Alarms.SoundFilePath);
+                    using var p = new SoundPlayer(soundFilePath);
                     p.Play();
                 }
                 else
@@ -92,9 +94,10 @@ public sealed partial class AlarmService : IDisposable
 
     public void HandleHarvested(Plot plot)
     {
-        var key = $"{plot.CharName}|{plot.PlotId}";
-        _firedAt.Remove(key);
-        _snoozedUntil.Remove(key);
+        // Strip any stage-tagged entries for this plot.
+        var prefix = $"{plot.CharName}|{plot.PlotId}|";
+        foreach (var k in _firedAt.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _firedAt.Remove(k);
+        foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _snoozedUntil.Remove(k);
     }
 
     public void Dispose() { _state.PlotChanged -= OnPlotChanged; }
