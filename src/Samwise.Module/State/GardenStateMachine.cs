@@ -125,14 +125,6 @@ public sealed class GardenStateMachine
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
 
-    // Appearances with scale at or below this are treated as newly-placed seeds.
-    // Re-renders of existing plants come in at whatever scale they're currently
-    // at (typically 0.5+ for growing, 1.0 for ripe), so filtering on scale is
-    // the single strongest signal we have for separating "new plant" from
-    // "periodic re-render of an existing plant" — the log carries no entity id
-    // we could correlate against SetPetOwner.
-    private const double NewPlantScaleThreshold = 0.35;
-
     private void HandleAppearance(AppearanceLoop al)
     {
         var model = al.ModelName;
@@ -146,18 +138,16 @@ public sealed class GardenStateMachine
             return;
         }
 
-        // Skip anything that's clearly not a fresh seed placement.
-        if (al.Scale > NewPlantScaleThreshold)
-        {
-            _diag?.Trace("Samwise.Cache", $"skip re-render (scale={al.Scale:0.##}): {model}");
-            return;
-        }
-
         var resolved = alias.TryGetValue(model, out var cropName) ? cropName : model;
 
+        // Skip re-renders of plots we already track with a resolved crop name.
+        // This is the main defence against a neighbouring Squash's scale update
+        // overwriting the cache for a new Pansy. It isn't perfect — unresolved
+        // plots (CropType = null or placeholder) slip through — but alias
+        // learning from UpdateDescription will tighten this over time.
         if (IsLikelyReRender(resolved))
         {
-            _diag?.Trace("Samwise.Cache", $"skip known-crop re-render: {resolved}");
+            _diag?.Trace("Samwise.Cache", $"skip known-crop re-render: {resolved} (scale={al.Scale:0.##})");
             return;
         }
 

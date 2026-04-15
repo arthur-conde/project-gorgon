@@ -100,20 +100,22 @@ public class GardenStateMachineTests
     }
 
     [Fact]
-    public void Appearance_HighScale_IsTreatedAsReRender()
+    public void ResolvedCropReRender_DoesNotPoisonCacheForNewPlant()
     {
-        // Existing Squash plot emits re-render at scale=1.0 while user plants a
-        // new Pansy. The Squash re-render must not poison the cache.
+        // Existing Squash plot (already resolved via UpdateDescription) emits
+        // a re-render while the user plants a new Pansy. The Squash re-render
+        // must not poison the cache — IsLikelyReRender catches it because the
+        // Squash plot has CropType="Squash" (resolved).
         var (sm, time, _) = BuildSut();
         Login(sm, "Hits");
 
         sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "squash"));
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash", 0.1));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash"));
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "squash", "Squash", "", "Water Squash", 1.0));
 
         // Now plant a new Pansy. Squash re-renders meanwhile.
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash", 1.0)); // re-render, high scale
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6", 0.1)); // new Pansy seed
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash"));   // re-render — skipped
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));  // new Pansy seed — cached
         sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "pansy"));
 
         sm.Snapshot()["Hits"]["pansy"].CropType.Should().Be("Flower6");
