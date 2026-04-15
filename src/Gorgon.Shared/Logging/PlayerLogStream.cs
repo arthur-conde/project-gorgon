@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Game;
 
 namespace Gorgon.Shared.Logging;
@@ -15,15 +16,17 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
 {
     private readonly GameConfig _config;
     private readonly TimeProvider _time;
+    private readonly IDiagnosticsSink? _diag;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
     private CancellationTokenSource? _runCts;
     private Task? _runTask;
     private string? _activePath;
 
-    public PlayerLogStream(GameConfig config, TimeProvider? time = null)
+    public PlayerLogStream(GameConfig config, IDiagnosticsSink? diag = null, TimeProvider? time = null)
     {
         _config = config;
+        _diag = diag;
         _time = time ?? TimeProvider.System;
         _config.PropertyChanged += OnConfigChanged;
     }
@@ -93,6 +96,7 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
 
     private async Task RunAsync(string path, CancellationToken ct)
     {
+        _diag?.Info("PlayerLog", $"Subscribing to {path}");
         var reader = new PlayerLogTailReader(path, _time);
         reader.SeedToSessionStart();
 
@@ -133,8 +137,10 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
         Channel<RawLogLine>[] snapshot;
         lock (_gate) { snapshot = _subs.ToArray(); }
         foreach (var line in lines)
-            foreach (var ch in snapshot)
-                ch.Writer.TryWrite(line);
+        {
+            _diag?.Trace("PlayerLog", line.Line);
+            foreach (var ch in snapshot) ch.Writer.TryWrite(line);
+        }
     }
 
     public void Dispose()

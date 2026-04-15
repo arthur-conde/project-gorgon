@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Interop;
+using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Game;
 using Gorgon.Shared.Hotkeys;
 using Gorgon.Shared.Logging;
@@ -70,6 +71,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton(gameConfig);
 
         // Shared services
+        builder.Services.AddSingleton<IDiagnosticsSink>(_ => new DiagnosticsSink());
         builder.Services.AddSingleton<IPlayerLogStream, PlayerLogStream>();
         builder.Services.AddSingleton<HotkeyRegistry>();
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
@@ -87,9 +89,14 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<ShellViewModel>();
         builder.Services.AddSingleton<GameConfigViewModel>();
         builder.Services.AddSingleton<HotkeyBindingsViewModel>();
+        builder.Services.AddSingleton<DiagnosticsViewModel>();
         builder.Services.AddSingleton<ShellWindow>();
         builder.Services.AddSingleton<GameConfigView>();
         builder.Services.AddSingleton<HotkeyBindingsView>();
+        builder.Services.AddSingleton<DiagnosticsView>(sp => new DiagnosticsView
+        {
+            DataContext = sp.GetRequiredService<DiagnosticsViewModel>(),
+        });
 
         _host = builder.Build();
         await _host.StartAsync().ConfigureAwait(true);

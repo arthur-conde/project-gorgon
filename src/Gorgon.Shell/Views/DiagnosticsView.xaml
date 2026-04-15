@@ -1,0 +1,58 @@
+<UserControl x:Class="Gorgon.Shell.Views.DiagnosticsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A">
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="🔍 Diagnostics" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <CheckBox Content="Trace" IsChecked="{Binding ShowTrace}" Foreground="#AAFFFFFF" Margin="6,0"/>
+                <CheckBox Content="Info"  IsChecked="{Binding ShowInfo}"  Foreground="#AAFFFFFF" Margin="6,0"/>
+                <CheckBox Content="Warn"  IsChecked="{Binding ShowWarn}"  Foreground="#AAFFFFFF" Margin="6,0"/>
+                <CheckBox Content="Error" IsChecked="{Binding ShowError}" Foreground="#AAFFFFFF" Margin="6,0"/>
+                <ToggleButton Content="⏸ Pause" IsChecked="{Binding Paused}" Padding="8,4" Margin="12,0,4,0"/>
+                <Button Content="✕ Clear" Padding="8,4" Margin="0,0,4,0" Command="{Binding ClearCommand}"/>
+                <Button Content="📋 Copy" Padding="8,4" Command="{Binding CopyAllCommand}"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TextBox DockPanel.Dock="Top" Margin="0,0,0,8" Padding="6,4"
+                 Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                 Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#33FFFFFF"/>
+
+        <ListBox ItemsSource="{Binding View}" Background="#FF101010" Foreground="#FFE8E8E8"
+                 BorderBrush="#33FFFFFF" FontFamily="Consolas" FontSize="12"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 VirtualizingStackPanel.IsVirtualizing="True"
+                 VirtualizingStackPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Timestamp, StringFormat=HH:mm:ss.fff}" Foreground="#66FFFFFF" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding Level}" Width="48" Margin="0,0,8,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#AAFFFFFF"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Level}" Value="Warn">
+                                            <Setter Property="Foreground" Value="#FFE0A030"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Error">
+                                            <Setter Property="Foreground" Value="#FFD04040"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Level}" Value="Info">
+                                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Category}" Foreground="#FF88B0E0" Width="140" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding Message}" TextWrapping="NoWrap"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

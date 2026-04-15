@@ -1,4 +1,5 @@
 using System.Windows;
+using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Logging;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Settings;
@@ -14,6 +15,7 @@ public sealed class GardenIngestionService : BackgroundService
     private readonly GardenLogParser _parser;
     private readonly GardenStateMachine _state;
     private readonly GardenStateService _stateService;
+    private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
 
     // These are pulled into the ctor so DI actually constructs them.
@@ -26,30 +28,41 @@ public sealed class GardenIngestionService : BackgroundService
         GardenStateService stateService,
         AlarmService alarms,
         SettingsAutoSaver<SamwiseSettings> autoSaver,
-        ModuleGates gates)
+        ModuleGates gates,
+        IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
         _state = state;
         _stateService = stateService;
+        _diag = diag;
         _ = alarms;      // subscribes to state.PlotChanged in ctor
         _ = autoSaver;   // subscribes to SamwiseSettings.PropertyChanged in ctor
         _gate = gates.For("samwise");
+
+        if (diag is not null)
+        {
+            state.PlotChanged += (_, e) => diag.Info("Samwise.State",
+                $"{e.Plot.CharName}/{e.Plot.PlotId} {e.OldStage?.ToString() ?? "-"} → {e.NewStage} ({e.Plot.CropType ?? "?"})");
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _diag?.Info("Samwise", "Waiting for module gate…");
         await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
+        _diag?.Info("Samwise", "Gate opened — loading persisted state and subscribing to Player.log");
 
         // Restore previous session before we start applying new events.
         try { await _stateService.LoadAsync(stoppingToken).ConfigureAwait(false); }
-        catch { /* corrupt file → start fresh */ }
+        catch (Exception ex) { _diag?.Warn("Samwise", $"Failed to load state: {ex.Message}"); }
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
             var evt = _parser.TryParse(raw.Line, raw.Timestamp);
             if (evt is GardenEvent ge)
             {
+                _diag?.Trace("Samwise.Parse", ge.GetType().Name);
                 Dispatch(() => _state.Apply(ge));
             }
         }

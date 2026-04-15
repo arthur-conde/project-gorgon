@@ -63,6 +63,13 @@ public sealed partial class ShellViewModel : ObservableObject
         StatusText = "Hotkeys";
     }
 
+    [RelayCommand]
+    private void OpenDiagnostics()
+    {
+        ActiveContent = _services.GetRequiredService<Views.DiagnosticsView>();
+        StatusText = "Diagnostics";
+    }
+
     private void ActivateModule(ModuleEntry entry)
     {
         SelectedModule = entry;

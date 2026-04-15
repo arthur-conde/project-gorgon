@@ -23,9 +23,11 @@
         <Border DockPanel.Dock="Left" Width="200" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Bottom" Margin="8">
-                    <Button Content="⌨ Hotkeys"   Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
+                    <Button Content="🔍 Diagnostics" Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
+                            Command="{Binding OpenDiagnosticsCommand}"/>
+                    <Button Content="⌨ Hotkeys"     Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
                             Command="{Binding OpenHotkeysCommand}"/>
-                    <Button Content="⚙ Game…"     Padding="8,4" HorizontalContentAlignment="Left"
+                    <Button Content="⚙ Game…"       Padding="8,4" HorizontalContentAlignment="Left"
                             Command="{Binding OpenGameConfigCommand}"/>
                 </StackPanel>
                 <ListBox ItemsSource="{Binding Modules}"
