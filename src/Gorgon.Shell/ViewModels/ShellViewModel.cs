@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Gorgon.Shell.ViewModels;
 
+
 public sealed partial class ModuleEntry : ObservableObject
 {
     public required IGorgonModule Module { get; init; }
@@ -19,10 +20,13 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IServiceProvider _services;
     private readonly ShellSettings _settings;
 
-    public ShellViewModel(IServiceProvider services, IEnumerable<IGorgonModule> modules, ShellSettings settings)
+    private readonly ModuleGates _gates;
+
+    public ShellViewModel(IServiceProvider services, IEnumerable<IGorgonModule> modules, ShellSettings settings, ModuleGates gates)
     {
         _services = services;
         _settings = settings;
+        _gates = gates;
         foreach (var m in modules.OrderBy(m => m.SortOrder))
             Modules.Add(new ModuleEntry { Module = m });
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -58,7 +62,8 @@ public sealed partial class ShellViewModel : ObservableObject
     private void ActivateModule(ModuleEntry entry)
     {
         SelectedModule = entry;
-        var view = (Control)_services.GetRequiredService(entry.Module.ViewType);
+        _gates.For(entry.Module.Id).Open();          // Lazy modules wake up here
+        var view = (System.Windows.Controls.Control)_services.GetRequiredService(entry.Module.ViewType);
         ActiveContent = view;
         _settings.ActiveModuleId = entry.Module.Id;
         StatusText = entry.Module.DisplayName;

@@ -15,9 +15,8 @@
         </ResourceDictionary>
     </Window.Resources>
     <DockPanel>
-        <tb:TaskbarIcon DockPanel.Dock="Top" Visibility="Visible"
-                        ToolTipText="Gorgon"
-                        IconSource="/icon.ico"/>
+        <tb:TaskbarIcon x:Name="Tray" DockPanel.Dock="Top" Visibility="Visible"
+                        ToolTipText="Gorgon"/>
         <Border DockPanel.Dock="Bottom" Background="#FF252525" Padding="8,4">
             <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
         </Border>

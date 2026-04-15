@@ -14,11 +14,14 @@ using Microsoft.Extensions.Hosting;
 
 namespace Gorgon.Shell;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private const string MutexName = @"Global\Gorgon.Shell.SingleInstance";
+    private const string ActivateEventName = @"Global\Gorgon.Shell.Activate";
     private IHost? _host;
     private Mutex? _mutex;
+    private EventWaitHandle? _activateEvent;
+    private CancellationTokenSource? _activateCts;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,10 +31,19 @@ public partial class App : Application
         _mutex = new Mutex(initiallyOwned: true, MutexName, out createdNew);
         if (!createdNew)
         {
-            // Another instance is running — exit silently. (TODO: signal it to foreground.)
+            // Signal the running instance to bring itself forward, then exit.
+            try
+            {
+                using var ev = EventWaitHandle.OpenExisting(ActivateEventName);
+                ev.Set();
+            }
+            catch { }
             Shutdown();
             return;
         }
+        _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        _activateCts = new CancellationTokenSource();
+        _ = WatchActivateEvent(_activateEvent, _activateCts.Token);
 
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var shellDir = Path.Combine(localApp, "Gorgon", "Shell");
@@ -61,6 +73,7 @@ public partial class App : Application
         builder.Services.AddSingleton<IPlayerLogStream, PlayerLogStream>();
         builder.Services.AddSingleton<HotkeyRegistry>();
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
+        builder.Services.AddSingleton<ModuleGates>();
 
         // Module discovery: scan all loaded assemblies for IGorgonModule impls
         var modules = DiscoverModules();
@@ -81,6 +94,16 @@ public partial class App : Application
         _host = builder.Build();
         await _host.StartAsync().ConfigureAwait(true);
 
+        // Open gates for Eager modules so their hosted services start working immediately.
+        var gates = _host.Services.GetRequiredService<ModuleGates>();
+        foreach (var module in modules)
+        {
+            var eager = shellSettings.ModuleEagerOverrides.TryGetValue(module.Id, out var v)
+                ? v
+                : module.DefaultActivation == ActivationMode.Eager;
+            if (eager) gates.For(module.Id).Open();
+        }
+
         // Construct shell window, attach hotkey hwnd
         var shell = _host.Services.GetRequiredService<ShellWindow>();
         shell.DataContext = _host.Services.GetRequiredService<ShellViewModel>();
@@ -99,6 +122,24 @@ public partial class App : Application
         var hk = _host.Services.GetRequiredService<IHotkeyService>();
         hk.Attach(hwnd);
         hk.ReloadFromBindings(shellSettings.HotkeyBindings.Values);
+    }
+
+    private async Task WatchActivateEvent(EventWaitHandle ev, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var signaled = await Task.Run(() => ev.WaitOne(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
+            if (!signaled) continue;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (MainWindow is null) return;
+                if (MainWindow.WindowState == WindowState.Minimized) MainWindow.WindowState = WindowState.Normal;
+                MainWindow.Show();
+                MainWindow.Activate();
+                MainWindow.Topmost = true;
+                MainWindow.Topmost = false;
+            });
+        }
     }
 
     private static List<IGorgonModule> DiscoverModules()
@@ -147,6 +188,8 @@ public partial class App : Application
             try { _host.StopAsync(TimeSpan.FromSeconds(2)).Wait(TimeSpan.FromSeconds(3)); } catch { }
             try { _host.Dispose(); } catch { }
         }
+        try { _activateCts?.Cancel(); _activateCts?.Dispose(); } catch { }
+        try { _activateEvent?.Dispose(); } catch { }
         try { _mutex?.ReleaseMutex(); } catch { }
         _mutex?.Dispose();
         base.OnExit(e);
