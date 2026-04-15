@@ -19,5 +19,10 @@ public interface IGorgonModule
     int SortOrder { get; }
     ActivationMode DefaultActivation { get; }
     Type ViewType { get; }
+    /// <summary>
+    /// Optional settings view resolved from DI and rendered inside the shell's
+    /// Settings host. Null if the module has nothing user-configurable.
+    /// </summary>
+    Type? SettingsViewType { get; }
     void Register(IServiceCollection services);
 }

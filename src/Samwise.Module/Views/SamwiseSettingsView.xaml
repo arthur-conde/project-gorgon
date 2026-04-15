@@ -1,0 +1,39 @@
+<UserControl x:Class="Samwise.Views.SamwiseSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A">
+    <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+        <TextBlock Text="🌱 Samwise Settings" FontFamily="Cambria" FontSize="20"
+                   Foreground="#FFD4A847" Margin="0,0,0,16"/>
+
+        <TextBlock Text="Plot cleanup" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+        <DockPanel Margin="0,0,0,4" LastChildFill="False">
+            <TextBlock Text="Auto-clear harvested plots after" VerticalAlignment="Center"
+                       Foreground="#FFE8E8E8"/>
+            <TextBox Width="70" Margin="8,0" Padding="6,4"
+                     Text="{Binding HarvestedAutoClearMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
+            <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="#88FFFFFF"/>
+        </DockPanel>
+        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#88FFFFFF" Margin="0,0,0,20">
+            Crops grow in seconds to a few minutes, so harvested cards don't need to linger.
+            Default 10 minutes. Clamped between 30 seconds and 24 hours.
+        </TextBlock>
+
+        <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+        <CheckBox Content="Enabled" IsChecked="{Binding Alarms.Enabled}"
+                  Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+        <CheckBox Content="Flash window when a plot ripens" IsChecked="{Binding Alarms.FlashWindow}"
+                  Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+        <DockPanel Margin="0,8,0,0" LastChildFill="False">
+            <TextBlock Text="Snooze duration" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+            <TextBox Width="70" Margin="8,0" Padding="6,4"
+                     Text="{Binding Alarms.SnoozeMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
+            <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="#88FFFFFF"/>
+        </DockPanel>
+
+        <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="11">
+            Settings are saved automatically to
+            %LOCALAPPDATA%\Gorgon\Samwise\settings.json.
+        </TextBlock>
+    </StackPanel>
+</UserControl>

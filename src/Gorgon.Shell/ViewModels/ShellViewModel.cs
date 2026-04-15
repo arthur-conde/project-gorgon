@@ -50,11 +50,11 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenGameConfig()
+    private void OpenSettings()
     {
-        SelectedModule = null; // so re-selecting a module fires the change event
-        ActiveContent = _services.GetRequiredService<Views.GameConfigView>();
-        StatusText = "Game configuration";
+        SelectedModule = null;
+        ActiveContent = _services.GetRequiredService<Views.SettingsHostView>();
+        StatusText = "Settings";
     }
 
     [RelayCommand]

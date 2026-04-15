@@ -129,12 +129,20 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<GameConfigViewModel>();
         builder.Services.AddSingleton<HotkeyBindingsViewModel>();
         builder.Services.AddSingleton<DiagnosticsViewModel>();
+        builder.Services.AddSingleton<SettingsHostViewModel>();
         builder.Services.AddSingleton<ShellWindow>();
-        builder.Services.AddSingleton<GameConfigView>();
+        builder.Services.AddSingleton<GameConfigView>(sp => new GameConfigView
+        {
+            DataContext = sp.GetRequiredService<GameConfigViewModel>(),
+        });
         builder.Services.AddSingleton<HotkeyBindingsView>();
         builder.Services.AddSingleton<DiagnosticsView>(sp => new DiagnosticsView
         {
             DataContext = sp.GetRequiredService<DiagnosticsViewModel>(),
+        });
+        builder.Services.AddSingleton<SettingsHostView>(sp => new SettingsHostView
+        {
+            DataContext = sp.GetRequiredService<SettingsHostViewModel>(),
         });
 
         Boot($"modules discovered: {modules.Count}");

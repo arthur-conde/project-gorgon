@@ -23,6 +23,7 @@ public sealed class SamwiseModule : IGorgonModule
     public int SortOrder => 100;
     public ActivationMode DefaultActivation => ActivationMode.Eager;
     public Type ViewType => typeof(GardenView);
+    public Type? SettingsViewType => typeof(SamwiseSettingsView);
 
     public void Register(IServiceCollection services)
     {
@@ -61,6 +62,10 @@ public sealed class SamwiseModule : IGorgonModule
         services.AddSingleton<GardenView>(sp => new GardenView
         {
             DataContext = sp.GetRequiredService<GardenViewModel>(),
+        });
+        services.AddSingleton<SamwiseSettingsView>(sp => new SamwiseSettingsView
+        {
+            DataContext = sp.GetRequiredService<SamwiseSettings>(),
         });
 
         services.AddSingleton<IHotkeyCommand, SnoozeAllAlarmsCommand>();

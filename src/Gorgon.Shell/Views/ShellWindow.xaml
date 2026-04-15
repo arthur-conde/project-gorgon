@@ -27,8 +27,8 @@
                             Command="{Binding OpenDiagnosticsCommand}"/>
                     <Button Content="⌨ Hotkeys"     Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
                             Command="{Binding OpenHotkeysCommand}"/>
-                    <Button Content="⚙ Game…"       Padding="8,4" HorizontalContentAlignment="Left"
-                            Command="{Binding OpenGameConfigCommand}"/>
+                    <Button Content="⚙ Settings"    Padding="8,4" HorizontalContentAlignment="Left"
+                            Command="{Binding OpenSettingsCommand}"/>
                 </StackPanel>
                 <ListBox ItemsSource="{Binding Modules}"
                          SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
