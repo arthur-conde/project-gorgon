@@ -26,7 +26,9 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessStartInteraction\((\d+),\s*\d+,\s*[\d.-]+,\s*\w+,\s*""(Summoned\w+)""\)", RegexOptions.CultureInvariant)]
     private static partial Regex StartInteractRx();
 
-    [GeneratedRegex(@"ProcessAddItem\((\d+),\s*""([^""]+)""", RegexOptions.CultureInvariant)]
+    // Real log shape: ProcessAddItem(BarleySeeds(86940428), -1, False)
+    // Captures: itemName, itemId
+    [GeneratedRegex(@"ProcessAddItem\((\w+)\((\d+)\)", RegexOptions.CultureInvariant)]
     private static partial Regex AddItemRx();
 
     [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
@@ -66,7 +68,7 @@ public sealed partial class GardenLogParser : ILogParser
         if (m.Success) return new StartInteraction(timestamp, m.Groups[1].Value, m.Groups[2].Value);
 
         m = AddItemRx().Match(line);
-        if (m.Success) return new AddItem(timestamp, m.Groups[1].Value, m.Groups[2].Value);
+        if (m.Success) return new AddItem(timestamp, m.Groups[2].Value, m.Groups[1].Value);
 
         m = UpdateItemCodeRx().Match(line);
         if (m.Success) return new UpdateItemCode(timestamp, m.Groups[1].Value);

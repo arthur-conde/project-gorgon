@@ -73,13 +73,14 @@ public class GardenLogParserTests
     }
 
     [Fact]
-    public void Parses_AddItem()
+    public void Parses_AddItem_RealLogFormat()
     {
-        var line = @"ProcessAddItem(99, ""Carrot""...)";
+        // Real Player.log shape: ProcessAddItem(BarleySeeds(86940428), -1, False)
+        var line = @"[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)";
         var evt = _p.TryParse(line, T);
         var ai = evt.Should().BeOfType<AddItem>().Subject;
-        ai.ItemId.Should().Be("99");
-        ai.ItemName.Should().Be("Carrot");
+        ai.ItemId.Should().Be("86940428");
+        ai.ItemName.Should().Be("BarleySeeds");
     }
 
     [Fact]
