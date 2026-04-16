@@ -13,4 +13,10 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Formatting.Compact" />
   </ItemGroup>
+  <ItemGroup>
+    <None Remove="Reference\BundledData\**\*.json" />
+    <Content Include="Reference\BundledData\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
