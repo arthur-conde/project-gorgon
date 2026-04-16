@@ -45,7 +45,8 @@ public sealed class SamwiseModule : IGorgonModule
             time: null,
             diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>(),
             learned: sp.GetRequiredService<LearnedAliasesStore>(),
-            settings: sp.GetRequiredService<SamwiseSettings>()));
+            settings: sp.GetRequiredService<SamwiseSettings>(),
+            referenceData: sp.GetService<Gorgon.Shared.Reference.IReferenceDataService>()));
         services.AddSingleton<AlarmService>();
 
         services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>

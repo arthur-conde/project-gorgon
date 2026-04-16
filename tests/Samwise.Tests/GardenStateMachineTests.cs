@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Gorgon.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
 using Samwise.State;
@@ -10,12 +11,23 @@ public class GardenStateMachineTests
 {
     private static readonly DateTime Base = new(2026, 4, 15, 12, 0, 0, DateTimeKind.Utc);
 
-    private static (GardenStateMachine sm, FakeTime time, ICropConfigStore cfg) BuildSut()
+    private static (GardenStateMachine sm, FakeTime time, ICropConfigStore cfg) BuildSut(IReferenceDataService? refData = null)
     {
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
-        var sm = new GardenStateMachine(cfg, time);
+        var sm = new GardenStateMachine(cfg, time, referenceData: refData);
         return (sm, time, cfg);
+    }
+
+    /// <summary>
+    /// Helper that establishes a seed → crop mapping via AddItem, then plants a
+    /// plot via SetPetOwner+UpdateItemCode. Mirrors the real Player.log sequence.
+    /// </summary>
+    private static void Plant(GardenStateMachine sm, FakeTime time, string plotId, string itemId, string itemName)
+    {
+        sm.Apply(new AddItem(time.Now.UtcDateTime, itemId, itemName));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, plotId));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, itemId));
     }
 
     [Fact]
@@ -100,85 +112,153 @@ public class GardenStateMachineTests
     }
 
     [Fact]
-    public void ResolvedCropReRender_DoesNotPoisonCacheForNewPlant()
+    public void TwoBarleyMassPlant_BothIdentifyAsBarley()
     {
-        // Existing Squash plot (already resolved via UpdateDescription) emits
-        // a re-render while the user plants a new Pansy. The Squash re-render
-        // must not poison the cache — IsLikelyReRender catches it because the
-        // Squash plot has CropType="Squash" (resolved).
+        // Regression for the 20:50:22 Player.log scenario: planting two Barley
+        // back-to-back. With the old AppearanceLoop cache the first SetPetOwner
+        // picked up a stale "Squash" left over from a prior harvest, identifying
+        // plot #1 as Squash. The itemId path resolves both correctly.
         var (sm, time, _) = BuildSut();
         Login(sm, "Hits");
 
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "squash"));
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash"));
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "squash", "Squash", "", "Water Squash", 1.0));
+        // Establish the Barley seed → crop mapping (fired earlier in session).
+        sm.Apply(new AddItem(Base, "barley-seed", "BarleySeeds"));
 
-        // Now plant a new Pansy. Squash re-renders meanwhile.
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash"));   // re-render — skipped
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));  // new Pansy seed — cached
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "pansy"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "barley-seed"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p2"));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "barley-seed"));
 
-        sm.Snapshot()["Hits"]["pansy"].CropType.Should().Be("Flower6");
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Barley");
+        sm.Snapshot()["Hits"]["p2"].CropType.Should().Be("Barley");
     }
 
     [Fact]
-    public void LearnedAlias_PersistsPlaceholderToCropMapping()
+    public void DifferentCropsBackToBack_ResolveIndependently()
     {
-        // Plant a Pansy (model Flower6) → placeholder crop set. Water it →
-        // UpdateDescription resolves to "Pansy". The state machine should
-        // record Flower6 → Pansy in the learned-aliases store.
-        var cfg = new InMemoryCropConfig();
-        var time = new FakeTime(Base);
-        var store = new LearnedAliasesStore(System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            $"samwise-test-{Guid.NewGuid():N}.json"));
-        var sm = new GardenStateMachine(cfg, time, learned: store);
-        sm.Apply(new PlayerLogin(Base, "Hits"));
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
-        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Flower6");
-        store.Snapshot().Should().BeEmpty();
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "carrot-seed", "CarrotSeeds"));
+        sm.Apply(new AddItem(Base, "onion-seed", "OnionSeedling"));
 
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Pansy", "", "Water Pansy", 0.5));
+        Plant(sm, time, "p1", "carrot-seed", "CarrotSeeds");
+        Plant(sm, time, "p2", "onion-seed", "OnionSeedling");
+
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Carrot");
+        sm.Snapshot()["Hits"]["p2"].CropType.Should().Be("Onion");
+    }
+
+    [Fact]
+    public void SetPetOwner_WithoutFollowingUpdateItemCode_StaysPendingUntilUpdateDescription()
+    {
+        // Player has no AddItem yet for this seed (e.g. mid-session edge).
+        // Plot is created with null crop, then UpdateDescription resolves it.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().BeNull();
+
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Onion", "", "Water Onion", 0.5));
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Onion");
+        sm.Snapshot()["Hits"]["p1"].Stage.Should().Be(PlotStage.Thirsty);
+    }
+
+    [Fact]
+    public void UpdateItemCode_OutsideResolveWindow_DoesNotResolvePlot()
+    {
+        // The 500ms window protects against unrelated inventory churn that
+        // happens to land after a plant — a delayed UpdateItemCode for the
+        // wrong seed must not retroactively assign a crop.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "carrot-seed", "CarrotSeeds"));
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        time.Advance(TimeSpan.FromSeconds(2));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "carrot-seed"));
+
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().BeNull();
+    }
+
+    [Fact]
+    public void UpdateItemCode_WithUnknownItemId_DoesNotCorruptPlot()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "unmapped-item"));
+
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().BeNull();
+    }
+
+    [Fact]
+    public void PendingPlant_ClearedByUpdateDescription()
+    {
+        // UpdateDescription wins over a pending UpdateItemCode resolution: once
+        // the description fires, the pending entry is dropped so a later
+        // unrelated UpdateItemCode can't overwrite the resolved crop.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "carrot-seed", "CarrotSeeds"));
+        sm.Apply(new AddItem(Base, "onion-seed", "OnionSeedling"));
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Onion", "", "Water Onion", 0.5));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "carrot-seed")); // would otherwise overwrite
+
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Onion");
+    }
+
+    [Fact]
+    public void DeletePlot_AlsoRemovesPendingEntry()
+    {
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "carrot-seed", "CarrotSeeds"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.DeletePlot("Hits", "p1").Should().BeTrue();
+
+        // No plot exists, but if pending wasn't cleared this would crash with
+        // a stale reference lookup. Verify resolution silently no-ops.
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "carrot-seed"));
+        sm.Snapshot().GetValueOrDefault("Hits")?.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void FlowerSeed_ResolvesViaReferenceDataService_NameField()
+    {
+        // FlowerSeeds6 is opaque — no crops.json prefix matches. The reference
+        // service supplies Name "Pansy Seeds" → strip suffix → "Pansy".
+        var refData = new FakeReferenceData();
+        refData.Add("FlowerSeeds6", "Pansy Seeds");
+        var (sm, time, _) = BuildSut(refData);
+        Login(sm, "Hits");
+
+        sm.Apply(new AddItem(Base, "flower6-seed", "FlowerSeeds6"));
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "flower6-seed"));
+
         sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Pansy");
-        store.Snapshot().Should().ContainKey("Flower6").WhoseValue.Should().Be("Pansy");
     }
 
     [Fact]
-    public void LearnedAlias_DoesNotFireForPlaceholderResolvedToPlaceholder()
+    public void AppearanceLoop_IsNoop_PlotResolutionUnaffected()
     {
-        // Defensive: if some future log format turns "Flower6" into another
-        // placeholder like "Flower99", don't record garbage.
-        var cfg = new InMemoryCropConfig();
-        var time = new FakeTime(Base);
-        var store = new LearnedAliasesStore(System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            $"samwise-test-{Guid.NewGuid():N}.json"));
-        var sm = new GardenStateMachine(cfg, time, learned: store);
-        sm.Apply(new PlayerLogin(Base, "Hits"));
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "", "", "Water Flower9", 0.5));
-        store.Snapshot().Should().BeEmpty();
-    }
-
-    [Fact]
-    public void UnknownFlowerModel_UsedAsPlaceholder_CorrectedByUpdateDescription()
-    {
-        // Pansy's in-game model is @Flower6, which has no alias in crops.json.
-        // The plot should still be created, labelled "Flower6", and corrected
-        // to "Pansy" when the first UpdateDescription arrives.
+        // Defensive: a stream of AppearanceLoops around a plant must not affect
+        // crop identification — the only path is itemId-driven.
         var (sm, time, _) = BuildSut();
         Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "onion-seed", "OnionSeedling"));
 
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower6"));
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Squash"));   // unrelated neighbour
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Flower9"));  // unrelated neighbour
         sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
-        var plot = sm.Snapshot()["Hits"]["p1"];
-        plot.CropType.Should().Be("Flower6"); // placeholder
+        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Carrot"));   // unrelated neighbour
+        sm.Apply(new UpdateItemCode(time.Now.UtcDateTime, "onion-seed"));
 
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "p1", "Thirsty Pansy", "needs water", "Water Pansy", 0.5));
-        plot.CropType.Should().Be("Pansy");
-        plot.Stage.Should().Be(PlotStage.Thirsty);
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Onion");
     }
 
     [Fact]
@@ -214,35 +294,6 @@ public class GardenStateMachineTests
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Tend Onion", 0.5));
         plot.PausedSince.Should().BeNull();
         plot.PausedDuration.Should().Be(TimeSpan.FromSeconds(35));
-    }
-
-    [Fact]
-    public void Appearance_SkipsReRenderOfExistingCrop()
-    {
-        // Scenario: an Onion plot already exists. While planting a Violet,
-        // the game's appearance loop fires first for the existing Onion
-        // (re-render) and then for the new Violet. The Onion re-render must
-        // not poison the crop cache — SetPetOwner for the new plant should
-        // pick up Violet.
-        var (sm, time, _) = BuildSut();
-        Login(sm, "Hits");
-
-        // 1) Establish an existing Onion plot.
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "onion-id"));
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
-        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "onion-id", "Onion", "", "Water Onion", 0.5));
-        sm.Snapshot()["Hits"]["onion-id"].CropType.Should().Be("Onion");
-
-        // 2) Onion re-render fires (scale update) while planting a new crop.
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
-
-        // 3) Violet appearance for the actually-new plant.
-        sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Violet"));
-
-        // 4) SetPetOwner for the new Violet.
-        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "violet-id"));
-
-        sm.Snapshot()["Hits"]["violet-id"].CropType.Should().Be("Violet");
     }
 
     [Fact]
@@ -356,6 +407,31 @@ public class GardenStateMachineTests
         public void Advance(TimeSpan ts) => Now += ts;
     }
 
+    private sealed class FakeReferenceData : IReferenceDataService
+    {
+        private readonly Dictionary<long, ItemEntry> _items = new();
+        private readonly Dictionary<string, ItemEntry> _byName = new(StringComparer.Ordinal);
+        private long _nextId = 1;
+
+        public IReadOnlyList<string> Keys { get; } = ["items"];
+        public IReadOnlyDictionary<long, ItemEntry> Items => _items;
+        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public ReferenceFileSnapshot GetSnapshot(string key)
+            => new("items", ReferenceFileSource.Bundled, "test", null, _items.Count);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated;
+
+        public void Add(string internalName, string displayName)
+        {
+            var entry = new ItemEntry(_nextId++, displayName, internalName, 1, 0);
+            _items[entry.Id] = entry;
+            _byName[internalName] = entry;
+            FileUpdated?.Invoke(this, "items");
+        }
+    }
+
     private sealed class InMemoryCropConfig : ICropConfigStore
     {
         public CropConfig Current { get; }
@@ -377,7 +453,9 @@ public class GardenStateMachineTests
                     ["Carrot"] = new() { SlotFamily = "Carrot", GrowthSeconds = 175 },
                     ["Onion"] = new() { SlotFamily = "Onion", GrowthSeconds = 50 },
                     ["Violet"] = new() { SlotFamily = "Flowers", GrowthSeconds = 110 },
+                    ["Pansy"] = new() { SlotFamily = "Flowers", GrowthSeconds = 140 },
                     ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150, HarvestVerb = "Pick" },
+                    ["Barley"] = new() { SlotFamily = "Carrot", GrowthSeconds = 150 },
                 },
             };
         }

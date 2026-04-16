@@ -1,4 +1,5 @@
 using Gorgon.Shared.Diagnostics;
+using Gorgon.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
 
@@ -7,18 +8,24 @@ namespace Samwise.State;
 public sealed record PlotChangedArgs(Plot Plot, PlotStage? OldStage, PlotStage NewStage);
 
 /// <summary>
-/// Single-threaded state machine. Mirrors the JS parse loop in
-/// GorgonHelper.html (lines 2680–2900) — including the four-tier harvest
-/// detection, the 5-second appearance-loop freshness window, and the
-/// pendingPlantForCrop fallback for cached crop ordering.
+/// Single-threaded state machine. Plant-time crop identification is itemId-driven:
+/// each <see cref="SetPetOwner"/> is followed within milliseconds by a
+/// <see cref="UpdateItemCode"/> carrying the seed's per-character inventory id,
+/// which we map to a crop name via <see cref="ProcessAddItem"/> events seen
+/// earlier in the session (resolved through crops.json prefixes and items.json).
+/// Harvest detection retains the four-tier waterfall mirrored from the JS in
+/// GorgonHelper.html (lines 2820–2900).
 /// </summary>
 public sealed class GardenStateMachine
 {
+    private static readonly TimeSpan PlantCropResolveWindow = TimeSpan.FromMilliseconds(500);
+
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly LearnedAliasesStore? _learned;
     private readonly Alarms.SamwiseSettings? _settings;
+    private readonly IReferenceDataService? _referenceData;
 
     private readonly Dictionary<string, Dictionary<string, Plot>> _plotsByChar = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _playerOwnedPetIds = new(StringComparer.Ordinal);
@@ -27,23 +34,22 @@ public sealed class GardenStateMachine
     private string? _currentChar;
     private string? _pendingHarvestPlotId;
     private string? _lastUpdateItemCropType;
-    private string? _lastCropAsset;
-    private DateTimeOffset _lastCropAssetTime;
-    private bool _lastCropAssetUsed;
-    private (string PlotId, string CharName)? _pendingPlantForCrop;
+    private (string PlotId, string CharName, DateTimeOffset At)? _pendingPlant;
 
     public GardenStateMachine(
         ICropConfigStore config,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
         LearnedAliasesStore? learned = null,
-        Alarms.SamwiseSettings? settings = null)
+        Alarms.SamwiseSettings? settings = null,
+        IReferenceDataService? referenceData = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
         _diag = diag;
         _learned = learned;
         _settings = settings;
+        _referenceData = referenceData;
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -68,11 +74,11 @@ public sealed class GardenStateMachine
 
             case SetPetOwner spo:
                 _playerOwnedPetIds.Add(spo.EntityId);
-                HandleSetPetOwnerSession(spo.EntityId);
+                HandlePlant(spo.EntityId);
                 break;
 
-            case AppearanceLoop al:
-                HandleAppearance(al);
+            case AppearanceLoop:
+                // No-op. Plant-time identification is now itemId-driven.
                 break;
 
             case UpdateDescription ud:
@@ -93,7 +99,7 @@ public sealed class GardenStateMachine
                 break;
 
             case UpdateItemCode uic:
-                if (_itemIdToCrop.TryGetValue(uic.ItemId, out var ct)) _lastUpdateItemCropType = ct;
+                HandleUpdateItemCode(uic);
                 break;
 
             case GardeningXp:
@@ -102,91 +108,56 @@ public sealed class GardenStateMachine
         }
     }
 
-    private void HandleSetPetOwnerSession(string plotId)
+    private void HandlePlant(string plotId)
     {
         if (_currentChar is null) return;
         EnsureCharBucket();
         var plots = _plotsByChar[_currentChar];
         if (plots.ContainsKey(plotId)) return;
 
-        var fresh = _lastCropAsset is not null
-                    && !_lastCropAssetUsed
-                    && (_time.GetUtcNow() - _lastCropAssetTime) < TimeSpan.FromSeconds(5);
-        var rawCrop = fresh ? _lastCropAsset : null;
-        var crop = (rawCrop is not null && !IsSlotFull(rawCrop, _currentChar)) ? rawCrop : null;
-
+        var now = _time.GetUtcNow();
         var plot = new Plot
         {
             PlotId = plotId,
             CharName = _currentChar,
-            CropType = crop,
+            CropType = null,
             Stage = PlotStage.Planted,
-            PlantedAt = _time.GetUtcNow(),
-            UpdatedAt = _time.GetUtcNow(),
+            PlantedAt = now,
+            UpdatedAt = now,
         };
         plots[plotId] = plot;
+        _pendingPlant = (plotId, _currentChar, now);
 
-        _pendingPlantForCrop = crop is null ? (plotId, _currentChar) : null;
-        _lastCropAsset = null;
-        _lastCropAssetUsed = false;
-
-        _diag?.Info("Samwise.Plant",
-            $"plot={plotId} char={_currentChar} cropGuess={crop ?? "(pending)"} cacheFresh={fresh}");
+        _diag?.Info("Samwise.Plant", $"plot={plotId} char={_currentChar} cropGuess=(pending)");
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
 
-    private void HandleAppearance(AppearanceLoop al)
+    private void HandleUpdateItemCode(UpdateItemCode uic)
     {
-        var model = al.ModelName;
-        var alias = _config.Current.ModelAliasToCrop;
+        // Tier-3 harvest hint: remember the crop type the player most recently
+        // received an item-code update for, in case GardeningXp later needs it.
+        if (_itemIdToCrop.TryGetValue(uic.ItemId, out var ct)) _lastUpdateItemCropType = ct;
 
-        if (_lastCropAssetUsed)
+        // Plant resolution: a fresh SetPetOwner is followed within milliseconds
+        // by an UpdateItemCode carrying the seed's per-character inventory id.
+        if (_pendingPlant is not { } pending) return;
+        if (_time.GetUtcNow() - pending.At > PlantCropResolveWindow)
         {
-            // "is done" follow-up for a crop already consumed by a pending fill
-            _lastCropAsset = null;
-            _lastCropAssetUsed = false;
+            _pendingPlant = null;
             return;
         }
+        if (!_itemIdToCrop.TryGetValue(uic.ItemId, out var crop)) return;
+        if (!_plotsByChar.TryGetValue(pending.CharName, out var plots)) return;
+        if (!plots.TryGetValue(pending.PlotId, out var plot)) return;
+        if (plot.CropType is not null) return;
+        if (IsSlotFull(crop, pending.CharName)) return;
 
-        var resolved = alias.TryGetValue(model, out var cropName) ? cropName : model;
-
-        // Skip re-renders of plots we already track with a resolved crop name.
-        // This is the main defence against a neighbouring Squash's scale update
-        // overwriting the cache for a new Pansy. It isn't perfect — unresolved
-        // plots (CropType = null or placeholder) slip through — but alias
-        // learning from UpdateDescription will tighten this over time.
-        if (IsLikelyReRender(resolved))
-        {
-            _diag?.Trace("Samwise.Cache", $"skip known-crop re-render: {resolved} (scale={al.Scale:0.##})");
-            return;
-        }
-
-        _lastCropAsset = resolved;
-        _lastCropAssetTime = _time.GetUtcNow();
-        _diag?.Trace("Samwise.Cache", $"cache crop '{resolved}' (scale={al.Scale:0.##})");
-
-        if (_pendingPlantForCrop is { } pending
-            && _plotsByChar.TryGetValue(pending.CharName, out var plots)
-            && plots.TryGetValue(pending.PlotId, out var plot))
-        {
-            plot.CropType = resolved;
-            plot.UpdatedAt = _time.GetUtcNow();
-            _pendingPlantForCrop = null;
-            _lastCropAssetUsed = true;
-            RaisePlotChanged(plot, plot.Stage, plot.Stage);
-        }
-    }
-
-    private bool IsLikelyReRender(string cropName)
-    {
-        if (_currentChar is null) return false;
-        if (!_plotsByChar.TryGetValue(_currentChar, out var plots)) return false;
-        foreach (var p in plots.Values)
-        {
-            if (p.Stage == PlotStage.Harvested) continue;
-            if (string.Equals(p.CropType, cropName, StringComparison.OrdinalIgnoreCase)) return true;
-        }
-        return false;
+        plot.CropType = crop;
+        plot.UpdatedAt = _time.GetUtcNow();
+        _pendingPlant = null;
+        _diag?.Info("Samwise.Plant",
+            $"resolved plot={pending.PlotId} crop={crop} via itemId={uic.ItemId}");
+        RaisePlotChanged(plot, plot.Stage, plot.Stage);
     }
 
     private void HandleUpdateDescription(UpdateDescription ud)
@@ -233,6 +204,8 @@ public sealed class GardenStateMachine
         // model identify at plant-time. The learning store is authoritative
         // because the game itself supplied the real name via the Action text.
         TryLearnAlias(oldCrop, crop, ud.PlotId);
+
+        if (_pendingPlant is { } pending && pending.PlotId == ud.PlotId) _pendingPlant = null;
 
         RaisePlotChanged(plot, oldStage, newStage);
     }
@@ -308,18 +281,10 @@ public sealed class GardenStateMachine
 
     private void HandleAddItem(AddItem ai)
     {
-        // Tier 2: record itemId → cropType using config's prefix map
-        if (_config.Current.ItemPrefixToCrop is { } prefixMap)
-        {
-            foreach (var (prefix, cropName) in prefixMap)
-            {
-                if (ai.ItemName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    _itemIdToCrop[ai.ItemId] = cropName;
-                    break;
-                }
-            }
-        }
+        // Map per-character itemId → crop name. Drives both the Tier-2 harvest
+        // confirmation below and the plant-time resolution in HandleUpdateItemCode.
+        var resolved = ResolveCropFromItemName(ai.ItemName);
+        if (resolved is not null) _itemIdToCrop[ai.ItemId] = resolved;
 
         if (_pendingHarvestPlotId is null || _currentChar is null) return;
         if (!_plotsByChar.TryGetValue(_currentChar, out var plots)) return;
@@ -391,6 +356,42 @@ public sealed class GardenStateMachine
         if (_currentChar is null) return;
         if (!_plotsByChar.ContainsKey(_currentChar))
             _plotsByChar[_currentChar] = new Dictionary<string, Plot>(StringComparer.Ordinal);
+    }
+
+    private string? ResolveCropFromItemName(string itemName)
+    {
+        // 1) crops.json prefixes — handles grain seeds ("BarleySeeds" → "Barley"),
+        //    veggie seedlings ("OnionSeedling" → "Onion"), harvested produce
+        //    ("Carrot" → "Carrot"), and Tier-2 confirmation lookups.
+        if (_config.Current.ItemPrefixToCrop is { } prefixMap)
+        {
+            foreach (var (prefix, cropName) in prefixMap)
+            {
+                if (itemName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return cropName;
+            }
+        }
+
+        // 2) items.json fallback — required for flowers whose seeds use opaque
+        //    InternalNames like "FlowerSeeds6" → Name "Pansy Seeds" → "Pansy".
+        if (_referenceData is not null
+            && _referenceData.ItemsByInternalName.TryGetValue(itemName, out var entry))
+        {
+            return TrimSeedSuffix(entry.Name);
+        }
+        return null;
+    }
+
+    private static readonly string[] SeedSuffixes = [" Seeds", " Seedling", " Leafling", " Sprout"];
+
+    private static string TrimSeedSuffix(string itemName)
+    {
+        foreach (var suffix in SeedSuffixes)
+        {
+            if (itemName.EndsWith(suffix, StringComparison.Ordinal))
+                return itemName[..^suffix.Length];
+        }
+        return itemName;
     }
 
     public bool IsSlotFull(string cropType, string charName)
@@ -468,6 +469,17 @@ public sealed class GardenStateMachine
             removed += toRemove.Count;
         }
         if (removed > 0) PlotsRemoved?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Manually drop a single plot (e.g. a stale plot that was planted/harvested while the app was offline).</summary>
+    public bool DeletePlot(string charName, string plotId)
+    {
+        if (!_plotsByChar.TryGetValue(charName, out var plots)) return false;
+        if (!plots.Remove(plotId)) return false;
+        if (_pendingHarvestPlotId == plotId) _pendingHarvestPlotId = null;
+        if (_pendingPlant is { } p && p.PlotId == plotId && p.CharName == charName) _pendingPlant = null;
+        PlotsRemoved?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     /// <summary>Manually drop every harvested plot for every character.</summary>
