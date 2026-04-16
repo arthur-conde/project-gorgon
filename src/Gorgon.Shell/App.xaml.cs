@@ -7,7 +7,9 @@ using Gorgon.Shared.Game;
 using Gorgon.Shared.Hotkeys;
 using Gorgon.Shared.Logging;
 using Gorgon.Shared.Modules;
+using Gorgon.Shared.Reference;
 using Gorgon.Shared.Settings;
+using System.Net.Http;
 using Gorgon.Shell.ViewModels;
 using Gorgon.Shell.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,6 +118,13 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<IHotkeyService, HotkeyService>();
         builder.Services.AddSingleton<ModuleGates>();
 
+        var referenceCacheDir = Path.Combine(localApp, "Gorgon", "Reference");
+        builder.Services.AddSingleton<HttpClient>(_ => new HttpClient { Timeout = TimeSpan.FromSeconds(30) });
+        builder.Services.AddSingleton<IReferenceDataService>(sp => new ReferenceDataService(
+            referenceCacheDir,
+            sp.GetRequiredService<HttpClient>(),
+            sp.GetRequiredService<IDiagnosticsSink>()));
+
         // Module discovery: scan all loaded assemblies for IGorgonModule impls
         var modules = DiscoverModules();
         foreach (var module in modules)
@@ -129,6 +138,7 @@ public partial class App : System.Windows.Application
         builder.Services.AddSingleton<GameConfigViewModel>();
         builder.Services.AddSingleton<HotkeyBindingsViewModel>();
         builder.Services.AddSingleton<DiagnosticsViewModel>();
+        builder.Services.AddSingleton<ReferenceDataViewModel>();
         builder.Services.AddSingleton<SettingsHostViewModel>();
         builder.Services.AddSingleton<ShellWindow>();
         builder.Services.AddSingleton<GameConfigView>(sp => new GameConfigView
@@ -140,6 +150,10 @@ public partial class App : System.Windows.Application
         {
             DataContext = sp.GetRequiredService<DiagnosticsViewModel>(),
         });
+        builder.Services.AddSingleton<ReferenceDataView>(sp => new ReferenceDataView
+        {
+            DataContext = sp.GetRequiredService<ReferenceDataViewModel>(),
+        });
         builder.Services.AddSingleton<SettingsHostView>(sp => new SettingsHostView
         {
             DataContext = sp.GetRequiredService<SettingsHostViewModel>(),
@@ -150,6 +164,8 @@ public partial class App : System.Windows.Application
         Boot("host built");
         await _host.StartAsync().ConfigureAwait(true);
         Boot("host started");
+
+        _host.Services.GetRequiredService<IReferenceDataService>().BeginBackgroundRefresh();
 
         // Open gates for Eager modules so their hosted services start working immediately.
         var gates = _host.Services.GetRequiredService<ModuleGates>();

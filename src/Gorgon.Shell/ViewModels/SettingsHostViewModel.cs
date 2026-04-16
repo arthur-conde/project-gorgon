@@ -27,6 +27,12 @@ public sealed partial class SettingsHostViewModel : ObservableObject
             Icon = "📁",
             ViewType = typeof(Views.GameConfigView),
         });
+        Sections.Add(new SettingsSection
+        {
+            Title = "Reference data",
+            Icon = "📦",
+            ViewType = typeof(Views.ReferenceDataView),
+        });
 
         foreach (var m in modules.OrderBy(m => m.SortOrder))
         {
