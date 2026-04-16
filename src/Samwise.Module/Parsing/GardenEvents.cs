@@ -11,5 +11,6 @@ public sealed record UpdateDescription(DateTime Timestamp, string PlotId, string
 public sealed record StartInteraction(DateTime Timestamp, string PlotId, string Target) : GardenEvent(Timestamp);
 public sealed record AddItem(DateTime Timestamp, string ItemId, string ItemName) : GardenEvent(Timestamp);
 public sealed record UpdateItemCode(DateTime Timestamp, string ItemId) : GardenEvent(Timestamp);
+public sealed record DeleteItem(DateTime Timestamp, string ItemId) : GardenEvent(Timestamp);
 public sealed record GardeningXp(DateTime Timestamp) : GardenEvent(Timestamp);
 public sealed record ScreenTextError(DateTime Timestamp) : GardenEvent(Timestamp);

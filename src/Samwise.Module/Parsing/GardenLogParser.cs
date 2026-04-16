@@ -34,6 +34,10 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateItemCodeRx();
 
+    // Fires instead of UpdateItemCode when a stack goes to zero (last seed used).
+    [GeneratedRegex(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex DeleteItemRx();
+
     [GeneratedRegex(@"ProcessUpdateSkill.*type=Gardening", RegexOptions.CultureInvariant)]
     private static partial Regex GardeningXpRx();
 
@@ -72,6 +76,9 @@ public sealed partial class GardenLogParser : ILogParser
 
         m = UpdateItemCodeRx().Match(line);
         if (m.Success) return new UpdateItemCode(timestamp, m.Groups[1].Value);
+
+        m = DeleteItemRx().Match(line);
+        if (m.Success) return new DeleteItem(timestamp, m.Groups[1].Value);
 
         if (GardeningXpRx().IsMatch(line)) return new GardeningXp(timestamp);
         if (ScreenTextErrorRx().IsMatch(line)) return new ScreenTextError(timestamp);

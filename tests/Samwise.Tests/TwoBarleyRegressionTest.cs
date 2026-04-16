@@ -16,6 +16,36 @@ namespace Samwise.Tests;
 public class TwoBarleyRegressionTest
 {
     [Fact]
+    public void LastSquashSeed_FiresDeleteItem_ResolvesPlant()
+    {
+        // Real Player.log slice for the Squash mis-identification report.
+        // Plot 803506 was planted as the player's last Squash seedling; the
+        // game emits ProcessDeleteItem (not UpdateItemCode) when the stack
+        // reaches zero. Without DeleteItem handling the plot stays "Unknown".
+        var parser = new GardenLogParser();
+        var cfg = new InMemoryCropConfigStore();
+        var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData());
+
+        var logLines = new (string line, DateTime ts)[]
+        {
+            ("[01:08:48] LocalPlayer: ProcessAddPlayer(123, 999, \"PlayerModelDescriptor\", \"Emraell\", 0)", new DateTime(2026, 4, 16, 1, 8, 48, DateTimeKind.Utc)),
+            ("[01:08:48] LocalPlayer: ProcessAddItem(SquashSeedling(93102594), -1, True)",       new DateTime(2026, 4, 16, 1, 8, 48, DateTimeKind.Utc)),
+            ("[01:09:44] LocalPlayer: ProcessSetPetOwner(803506, 791931, PassiveFollow)",        new DateTime(2026, 4, 16, 1, 9, 44, DateTimeKind.Utc)),
+            ("[01:09:44] LocalPlayer: ProcessSetPetCombatMode(803506, AttackMyTargetsFollow)",   new DateTime(2026, 4, 16, 1, 9, 44, DateTimeKind.Utc)),
+            ("[01:09:44] LocalPlayer: ProcessDeleteItem(93102594)",                              new DateTime(2026, 4, 16, 1, 9, 44, DateTimeKind.Utc)),
+            ("[01:09:44] Download appearance loop @Squash(scale=0.4) is done",                   new DateTime(2026, 4, 16, 1, 9, 44, DateTimeKind.Utc)),
+        };
+
+        foreach (var (line, ts) in logLines)
+        {
+            var evt = parser.TryParse(line, ts);
+            if (evt is GardenEvent ge) sm.Apply(ge);
+        }
+
+        sm.Snapshot()["Emraell"]["803506"].CropType.Should().Be("Squash");
+    }
+
+    [Fact]
     public void TwoSimultaneousBarleyPlants_BothIdentifyCorrectly()
     {
         var parser = new GardenLogParser();

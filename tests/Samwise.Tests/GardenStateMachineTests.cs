@@ -112,6 +112,21 @@ public class GardenStateMachineTests
     }
 
     [Fact]
+    public void LastSeedStack_FiresDeleteItem_StillResolvesPlant()
+    {
+        // When a seed stack count hits zero, the game emits ProcessDeleteItem
+        // instead of ProcessUpdateItemCode. Both must resolve the pending plant.
+        var (sm, time, _) = BuildSut();
+        Login(sm, "Hits");
+        sm.Apply(new AddItem(Base, "squash-seed", "SquashSeedling"));
+
+        sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "p1"));
+        sm.Apply(new DeleteItem(time.Now.UtcDateTime, "squash-seed"));
+
+        sm.Snapshot()["Hits"]["p1"].CropType.Should().Be("Squash");
+    }
+
+    [Fact]
     public void TwoBarleyMassPlant_BothIdentifyAsBarley()
     {
         // Regression for the 20:50:22 Player.log scenario: planting two Barley
@@ -452,6 +467,7 @@ public class GardenStateMachineTests
                 {
                     ["Carrot"] = new() { SlotFamily = "Carrot", GrowthSeconds = 175 },
                     ["Onion"] = new() { SlotFamily = "Onion", GrowthSeconds = 50 },
+                    ["Squash"] = new() { SlotFamily = "Onion", GrowthSeconds = 170 },
                     ["Violet"] = new() { SlotFamily = "Flowers", GrowthSeconds = 110 },
                     ["Pansy"] = new() { SlotFamily = "Flowers", GrowthSeconds = 140 },
                     ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150, HarvestVerb = "Pick" },

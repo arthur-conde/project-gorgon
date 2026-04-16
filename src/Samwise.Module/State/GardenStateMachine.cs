@@ -99,7 +99,11 @@ public sealed class GardenStateMachine
                 break;
 
             case UpdateItemCode uic:
-                HandleUpdateItemCode(uic);
+                HandleItemIdentified(uic.ItemId);
+                break;
+
+            case DeleteItem di:
+                HandleItemIdentified(di.ItemId);
                 break;
 
             case GardeningXp:
@@ -132,21 +136,24 @@ public sealed class GardenStateMachine
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
 
-    private void HandleUpdateItemCode(UpdateItemCode uic)
+    /// <summary>
+    /// Called for both <see cref="UpdateItemCode"/> (stack count decremented) and
+    /// <see cref="DeleteItem"/> (last seed consumed). Either is emitted
+    /// immediately after the <see cref="SetPetOwner"/> of a fresh plant.
+    /// </summary>
+    private void HandleItemIdentified(string itemId)
     {
         // Tier-3 harvest hint: remember the crop type the player most recently
         // received an item-code update for, in case GardeningXp later needs it.
-        if (_itemIdToCrop.TryGetValue(uic.ItemId, out var ct)) _lastUpdateItemCropType = ct;
+        if (_itemIdToCrop.TryGetValue(itemId, out var ct)) _lastUpdateItemCropType = ct;
 
-        // Plant resolution: a fresh SetPetOwner is followed within milliseconds
-        // by an UpdateItemCode carrying the seed's per-character inventory id.
         if (_pendingPlant is not { } pending) return;
         if (_time.GetUtcNow() - pending.At > PlantCropResolveWindow)
         {
             _pendingPlant = null;
             return;
         }
-        if (!_itemIdToCrop.TryGetValue(uic.ItemId, out var crop)) return;
+        if (!_itemIdToCrop.TryGetValue(itemId, out var crop)) return;
         if (!_plotsByChar.TryGetValue(pending.CharName, out var plots)) return;
         if (!plots.TryGetValue(pending.PlotId, out var plot)) return;
         if (plot.CropType is not null) return;
@@ -156,7 +163,7 @@ public sealed class GardenStateMachine
         plot.UpdatedAt = _time.GetUtcNow();
         _pendingPlant = null;
         _diag?.Info("Samwise.Plant",
-            $"resolved plot={pending.PlotId} crop={crop} via itemId={uic.ItemId}");
+            $"resolved plot={pending.PlotId} crop={crop} via itemId={itemId}");
         RaisePlotChanged(plot, plot.Stage, plot.Stage);
     }
 
