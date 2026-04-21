@@ -1,0 +1,313 @@
+<UserControl x:Class="Elrond.Views.SkillAdvisorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Elrond.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <icon:PackIconLucide Kind="BookOpen" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Elrond — Skill Advisor" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Controls bar -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"
+                    Command="{Binding RefreshCharacterDataCommand}"
+                    ToolTip="Re-scan the Reports folder for new character exports">
+                <StackPanel Orientation="Horizontal">
+                    <icon:PackIconLucide Kind="RefreshCw" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBlock Text="Refresh" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Character:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox Width="220" Margin="0,0,16,0"
+                          ItemsSource="{Binding AvailableCharacters}"
+                          SelectedItem="{Binding SelectedCharacter}"/>
+
+                <TextBlock Text="Skill:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox Width="180" Margin="0,0,16,0"
+                          ItemsSource="{Binding AvailableSkills}"
+                          SelectedItem="{Binding SelectedSkill}"/>
+
+                <TextBlock Text="Goal:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Width="50" Margin="0,0,6,0"
+                         Text="{Binding GoalLevel, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                         ToolTip="Target level (leave empty for next level)"/>
+                <Button Padding="8,4" Margin="0,0,16,0"
+                        Command="{Binding SimulateCommand}"
+                        ToolTip="Calculate optimal crafting path to goal level">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="Route" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <TextBlock Text="Simulate" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <CheckBox Content="Known only" VerticalAlignment="Center"
+                          IsChecked="{Binding ShowKnownOnly}"
+                          ToolTip="Show only recipes the character has learned"
+                          Margin="0,0,12,0"/>
+                <CheckBox Content="1st time available" VerticalAlignment="Center"
+                          IsChecked="{Binding ShowFirstTimeOnly}"
+                          ToolTip="Show only recipes with a first-time bonus still available"
+                          Margin="0,0,12,0"/>
+                <CheckBox Content="Craftable only" VerticalAlignment="Center"
+                          IsChecked="{Binding ShowCraftableOnly}"
+                          ToolTip="Show only recipes whose level requirement is at or below your current skill level"
+                          Margin="0,0,12,0"/>
+                <CheckBox Content="Include 0 XP" VerticalAlignment="Center"
+                          IsChecked="{Binding IncludeZeroXp}"
+                          ToolTip="Include recipes that give 0 repeatable XP (first-time bonus only)"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="4">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="11"/>
+        </Border>
+
+        <!-- Main content -->
+        <Grid>
+            <!-- Empty state when no analysis -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                        Visibility="{Binding Analysis, Converter={x:Static vm:NullToVisConverter.Instance}, ConverterParameter=invert}">
+                <icon:PackIconLucide Kind="BookOpen" Width="56" Height="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
+                <TextBlock Text="No skill selected" FontFamily="Cambria" FontSize="18"
+                           HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
+                    Select a character and skill above to see available recipes, XP rewards,
+                    and how many completions are needed to reach the next level.
+                </TextBlock>
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="12" CornerRadius="3">
+                    <StackPanel>
+                        <TextBlock Text="No character exports?" FontWeight="SemiBold" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+                        <TextBlock FontSize="11" Foreground="#AAFFFFFF" TextWrapping="Wrap">
+                            Run <Run Text="/exportcharacter" FontFamily="Consolas"/> in-game to create a character export file.
+                            Then click Refresh to load it.
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Analysis content -->
+            <DockPanel Visibility="{Binding Analysis, Converter={x:Static vm:NullToVisConverter.Instance}}">
+                <!-- Summary panel -->
+                <Border DockPanel.Dock="Top" Background="#FF252525" BorderBrush="#33FFFFFF"
+                        BorderThickness="1" Padding="12" CornerRadius="3" Margin="0,0,0,10">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,6">
+                            <TextBlock FontFamily="Cambria" FontSize="16" Foreground="#FFE8E8E8">
+                                <Run Text="{Binding Analysis.SkillName, Mode=OneWay}"/>
+                                <Run Text=" Level "/>
+                                <Run Text="{Binding Analysis.CurrentLevel, Mode=OneWay}"/>
+                            </TextBlock>
+                            <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                       Foreground="#AAFFFFFF" FontSize="12" VerticalAlignment="Center">
+                                <Run Text="{Binding Analysis.CurrentXp, Mode=OneWay, StringFormat=N0}"/>
+                                <Run Text=" / "/>
+                                <Run Text="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                <Run Text=" XP"/>
+                            </TextBlock>
+                        </DockPanel>
+                        <ProgressBar Height="8"
+                                     Minimum="0"
+                                     Maximum="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay}"
+                                     Value="{Binding Analysis.CurrentXp, Mode=OneWay}"
+                                     Foreground="#FFD4A847" Background="#FF333333"/>
+                        <TextBlock Foreground="#88FFFFFF" FontSize="11" Margin="0,4,0,0">
+                            <Run Text="{Binding Analysis.XpRemaining, Mode=OneWay, StringFormat=N0}"/>
+                            <Run Text=" XP remaining to "/>
+                            <Run Text="{Binding Analysis.GoalLevel, Mode=OneWay, TargetNullValue='next level', StringFormat='level {0}'}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Simulation results -->
+                <Border DockPanel.Dock="Top" Background="#FF252525" BorderBrush="#33D4A847"
+                        BorderThickness="1" Padding="12" CornerRadius="3" Margin="0,0,0,10"
+                        Visibility="{Binding SimulationResult, Converter={x:Static vm:NullToVisConverter.Instance}}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal">
+                                <icon:PackIconLucide Kind="Route" Width="14" Height="14" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                                <TextBlock FontFamily="Cambria" FontSize="14" Foreground="#FFD4A847">
+                                    <Run Text="Optimal Path"/>
+                                    <Run Text=" — "/>
+                                    <Run Text="{Binding SimulationResult.TotalCompletions, Mode=OneWay}"/>
+                                    <Run Text=" total crafts"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </DockPanel>
+                        <ItemsControl ItemsSource="{Binding SimulationResult.Steps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF1E1E1E" CornerRadius="2" Padding="8,5" Margin="0,0,0,3">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Foreground="#88FFFFFF" FontSize="11" VerticalAlignment="Center">
+                                                <Run Text="Lv "/>
+                                                <Run Text="{Binding LevelAtStart, Mode=OneWay}"/>
+                                                <Run Text=" &#x2192; "/>
+                                                <Run Text="{Binding LevelAtEnd, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <StackPanel Orientation="Horizontal">
+                                                <wpf:IconImage IconId="{Binding IconId}" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <TextBlock Foreground="#CCFFFFFF" FontSize="12" VerticalAlignment="Center">
+                                                    <Run Text="{Binding RecipeName, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock Foreground="#88FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                    <Run Text="x"/>
+                                                    <Run Text="{Binding Completions, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <Border Background="#44D4A847" CornerRadius="3" Padding="4,1" Margin="8,0,0,0"
+                                                        Visibility="{Binding UsesFirstTimeBonus, Converter={StaticResource BoolToVisibility}}">
+                                                    <TextBlock Text="1st time" Foreground="#FFD4A847" FontSize="10"/>
+                                                </Border>
+                                                <TextBlock Foreground="#88FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                    <Run Text="{Binding TotalXpFromStep, Mode=OneWay, StringFormat=N0}"/>
+                                                    <Run Text=" XP"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Recipe table -->
+                <DataGrid x:Name="RecipeGrid"
+                          ItemsSource="{Binding FilteredRecipes}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="120" SortMemberPath="RecipeName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding RecipeName}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Lvl Req" Binding="{Binding LevelRequired}" SortMemberPath="LevelRequired" Width="60">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Base XP" Binding="{Binding BaseXp}" SortMemberPath="BaseXp" Width="65">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="1st Time" Binding="{Binding FirstTimeXp}" SortMemberPath="FirstTimeXp" Width="65">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Done" Binding="{Binding TimesCompleted}" SortMemberPath="TimesCompleted" Width="50">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="1st?" Binding="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" SortMemberPath="FirstTimeBonusAvailable" Width="40">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Eff. XP" Binding="{Binding EffectiveXp}" SortMemberPath="EffectiveXp" Width="60">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="To Level" Binding="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" SortMemberPath="CompletionsToLevel" Width="65">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="ToolTip">
+                                <Setter.Value>
+                                    <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                             Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <ToolTip.ContentTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                        CornerRadius="4" Padding="10" MaxWidth="360">
+                                                    <StackPanel>
+                                                        <DockPanel Margin="0,0,0,6">
+                                                            <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                           Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                            <StackPanel VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding RecipeName}" FontWeight="Bold"
+                                                                           Foreground="#FFD4A847" FontSize="14" TextWrapping="Wrap"/>
+                                                                <TextBlock Foreground="#88FFFFFF" FontSize="11" Margin="0,2,0,0">
+                                                                    <Run Text="Level"/>
+                                                                    <Run Text="{Binding LevelRequired, Mode=OneWay}"/>
+                                                                    <Run Text=" &#x2022; "/>
+                                                                    <Run Text="{Binding BaseXp, Mode=OneWay}"/>
+                                                                    <Run Text=" XP"/>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                        <TextBlock Text="Ingredients" Foreground="#88FFFFFF" FontSize="11"
+                                                                   FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                                        <ItemsControl ItemsSource="{Binding Ingredients}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                        <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                                        <TextBlock Foreground="#88FFFFFF" FontSize="11">
+                                                                            <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
+                                                                        </TextBlock>
+                                                                        <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="11"/>
+                                                                        <TextBlock Text="{Binding ChanceToConsume, Mode=OneWay, StringFormat=' ({0:P0} chance)'}"
+                                                                                   Foreground="#88FFFFFF" FontSize="11" FontStyle="Italic"
+                                                                                   Visibility="{Binding ChanceToConsume, Converter={x:Static vm:NullToVisConverter.Instance}}"/>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ToolTip.ContentTemplate>
+                                    </ToolTip>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </DataGrid.RowStyle>
+                </DataGrid>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</UserControl>

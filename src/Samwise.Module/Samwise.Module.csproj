@@ -9,6 +9,8 @@
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="NAudio" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
@@ -21,7 +23,5 @@
   <ItemGroup>
     <Resource Include="Resources\samwise.ico" />
     <Resource Include="Resources\samwise.jpg" />
-    <Resource Include="Resources\legolas.ico" />
-    <Resource Include="Resources\legolas.jpg" />
   </ItemGroup>
 </Project>

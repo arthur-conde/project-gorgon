@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:Legolas.ViewModels"
+                    xmlns:views="clr-namespace:Legolas.Views">
+    <DataTemplate DataType="{x:Type vm:InventoryOverlayViewModel}">
+        <views:InventoryOverlayView />
+    </DataTemplate>
+</ResourceDictionary>

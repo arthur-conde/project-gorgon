@@ -1,0 +1,26 @@
+<UserControl x:Class="Pippin.Views.PippinSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="#FF1A1A1A">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="720" Margin="24,16">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <icon:PackIconLucide Kind="UtensilsCrossed" Width="20" Height="20"
+                                     Foreground="#FFD4A847" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="Pippin · Gourmand Settings" FontSize="16" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <TextBlock Text="The Gourmand module tracks which foods your character has eaten."
+                       Foreground="#CCFFFFFF" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="To sync your data, open the Gourmand skill panel in-game and click the 'Foods Eaten' report. The module will automatically parse the log entry."
+                       Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Data is stored at:" Foreground="#88FFFFFF" Margin="0,0,0,4"/>
+            <TextBlock Text="%LOCALAPPDATA%\Gorgon\Pippin\gourmand-state.json"
+                       Foreground="#55FFFFFF" FontFamily="Consolas" FontSize="11"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

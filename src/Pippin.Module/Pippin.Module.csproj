@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Pippin</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
+  </ItemGroup>
+</Project>

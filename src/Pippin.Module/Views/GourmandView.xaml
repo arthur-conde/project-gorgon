@@ -1,0 +1,139 @@
+<UserControl x:Class="Pippin.Views.GourmandView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Pippin.ViewModels"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:GourmandViewModel}"
+             Background="#FF1A1A1A">
+
+    <DockPanel Margin="16">
+        <!-- ── Header / Stats ── -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <icon:PackIconLucide Kind="UtensilsCrossed" Width="22" Height="22"
+                                     Foreground="#FFD4A847" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="Pippin · Gourmand" FontSize="18" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Margin="0,0,20,0">
+                    <Run Text="{Binding EatenCount, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                    <Run Text="/" Foreground="#88FFFFFF"/>
+                    <Run Text="{Binding TotalCount, Mode=OneWay}" Foreground="#88FFFFFF"/>
+                    <Run Text=" eaten" Foreground="#88FFFFFF"/>
+                </TextBlock>
+                <TextBlock Margin="0,0,20,0">
+                    <Run Text="{Binding CompletionPercent, Mode=OneWay, StringFormat={}{0:0.#}}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                    <Run Text="%" Foreground="#88FFFFFF"/>
+                </TextBlock>
+                <TextBlock Margin="0,0,20,0">
+                    <Run Text="Gourmand Lv " Foreground="#88FFFFFF"/>
+                    <Run Text="{Binding GourmandLevel, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                </TextBlock>
+                <TextBlock Foreground="#88FFFFFF">
+                    <Run Text="Synced: "/>
+                    <Run Text="{Binding LastSyncLabel, Mode=OneWay}" Foreground="#CCFFFFFF"/>
+                </TextBlock>
+            </WrapPanel>
+        </StackPanel>
+
+        <!-- ── Filters ── -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBox Width="200" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Margin="0,0,12,0" VerticalContentAlignment="Center"/>
+            <ComboBox SelectedItem="{Binding FoodTypeFilter}" Width="130" Margin="0,0,12,0">
+                <ComboBoxItem Content="All" IsSelected="True"/>
+                <ComboBoxItem Content="Meal"/>
+                <ComboBoxItem Content="Snack"/>
+                <ComboBoxItem Content="Instant Snack"/>
+            </ComboBox>
+            <ComboBox SelectedItem="{Binding EatenFilter}" Width="110">
+                <ComboBoxItem Content="All" IsSelected="True"/>
+                <ComboBoxItem Content="Eaten"/>
+                <ComboBoxItem Content="Uneaten"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- ── Empty state ── -->
+        <StackPanel Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+            <icon:PackIconLucide Kind="ChefHat" Width="48" Height="48"
+                                 Foreground="#55FFFFFF" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+            <TextBlock Text="No food data yet" FontSize="16" Foreground="#CCFFFFFF"
+                       HorizontalAlignment="Center" Margin="0,0,0,6"/>
+            <TextBlock Text="Open the Gourmand skill > Foods Eaten report in-game to sync"
+                       Foreground="#88FFFFFF" HorizontalAlignment="Center" TextWrapping="Wrap"
+                       MaxWidth="360" TextAlignment="Center"/>
+        </StackPanel>
+
+        <!-- ── Food grid ── -->
+        <DataGrid ItemsSource="{Binding Foods}"
+                  Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserSortColumns="True"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="None"
+                  BorderThickness="0"
+                  RowHeaderWidth="0"
+                  SelectionMode="Single"
+                  Background="#FF1A1A1A"
+                  RowBackground="#FF252525"
+                  AlternatingRowBackground="#FF1E1E1E">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
+                                        Width="32" IsReadOnly="True"/>
+                <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Type" Binding="{Binding FoodType}" Width="110"/>
+                <DataGridTextColumn Header="Level" Binding="{Binding FoodLevel}" Width="60"/>
+                <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
+                <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
+                <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
+            </DataGrid.Columns>
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="ToolTip">
+                        <Setter.Value>
+                            <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                     Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <ToolTip.ContentTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                CornerRadius="4" Padding="10" MaxWidth="320">
+                                            <DockPanel>
+                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                               Foreground="#FFD4A847" FontSize="14" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding FoodType}" Foreground="#CCFFFFFF"
+                                                               FontSize="11" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ToolTip.ContentTemplate>
+                            </ToolTip>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEaten}" Value="True">
+                            <Setter Property="Opacity" Value="0.6"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

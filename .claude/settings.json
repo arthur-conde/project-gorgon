@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(*)",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "WebSearch",
+      "WebFetch(domain:cdn.projectgorgon.com)",
+      "WebFetch(domain:wiki.projectgorgon.com)",
+      "Read(//c/Users/arthu/AppData/LocalLow/Elder Game/Project Gorgon/**)",
+      "WebFetch(domain:pgemissary.com)"
     ]
   }
 }

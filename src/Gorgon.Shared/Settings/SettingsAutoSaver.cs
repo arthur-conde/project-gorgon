@@ -25,6 +25,14 @@ public sealed class SettingsAutoSaver<T> : IDisposable where T : class, INotifyP
         if (!_timer.IsEnabled) _timer.Start();
     }
 
+    /// <summary>Mark settings dirty explicitly; used when a change happens
+    /// outside the INotifyPropertyChanged graph (e.g. window layout drag).</summary>
+    public void Touch()
+    {
+        _dirty = true;
+        if (!_timer.IsEnabled) _timer.Start();
+    }
+
     private void OnTick(object? sender, EventArgs e)
     {
         _timer.Stop();

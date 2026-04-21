@@ -1,8 +1,5 @@
-using System.IO;
-using System.Media;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Samwise.State;
 
@@ -16,6 +13,7 @@ public sealed partial class AlarmService : IDisposable
     private readonly SamwiseSettings _settings;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
     public event EventHandler<ActiveAlarm>? AlarmTriggered;
 
@@ -33,15 +31,30 @@ public sealed partial class AlarmService : IDisposable
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
+        StopAllPlayback();
     }
 
-    public void DismissAll() => _firedAt.Clear();
+    public void DismissAll()
+    {
+        _firedAt.Clear();
+        StopAllPlayback();
+    }
 
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
     {
+        if (e.OldStage is not null && e.NewStage != e.OldStage)
+        {
+            var resolvedKey = $"{e.Plot.CharName}|{e.Plot.PlotId}|{e.OldStage}";
+            if (_firedAt.Remove(resolvedKey)
+                && _settings.Alarms.Rules.TryGetValue(e.OldStage.Value, out var oldRule)
+                && oldRule.StopOnInteraction)
+            {
+                StopPlayback(resolvedKey);
+            }
+        }
+
         if (!_settings.Alarms.Enabled) return;
         if (e.Plot.CropType is null) return;
-        // Hydration (oldStage is null) is a restore, not a transition — never alarm.
         if (e.OldStage is null) return;
         if (e.NewStage == e.OldStage) return;
         if (!_settings.Alarms.Rules.TryGetValue(e.NewStage, out var rule) || !rule.Enabled) return;
@@ -63,7 +76,9 @@ public sealed partial class AlarmService : IDisposable
     {
         Dispatch(() =>
         {
-            AlarmSoundPlayer.Play(soundFilePath);
+            StopPlayback(alarm.Key);
+            var handle = AlarmSoundPlayer.Play(soundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise");
+            _playback[alarm.Key] = handle;
 
             if (_settings.Alarms.FlashWindow)
             {
@@ -83,13 +98,38 @@ public sealed partial class AlarmService : IDisposable
 
     public void HandleHarvested(Plot plot)
     {
-        // Strip any stage-tagged entries for this plot.
         var prefix = $"{plot.CharName}|{plot.PlotId}|";
-        foreach (var k in _firedAt.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _firedAt.Remove(k);
+        foreach (var k in _firedAt.Keys.Where(k => k.StartsWith(prefix)).ToArray())
+        {
+            _firedAt.Remove(k);
+            var stageName = k[(prefix.Length)..];
+            if (Enum.TryParse<PlotStage>(stageName, out var stage)
+                && _settings.Alarms.Rules.TryGetValue(stage, out var rule)
+                && rule.StopOnInteraction)
+            {
+                StopPlayback(k);
+            }
+        }
         foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _snoozedUntil.Remove(k);
     }
 
-    public void Dispose() { _state.PlotChanged -= OnPlotChanged; }
+    public void Dispose()
+    {
+        _state.PlotChanged -= OnPlotChanged;
+        StopAllPlayback();
+    }
+
+    private void StopPlayback(string key)
+    {
+        if (_playback.Remove(key, out var handle))
+            handle.Stop();
+    }
+
+    private void StopAllPlayback()
+    {
+        foreach (var h in _playback.Values) h.Stop();
+        _playback.Clear();
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FLASHWINFO

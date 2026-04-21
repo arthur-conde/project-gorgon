@@ -9,12 +9,15 @@
     <ApplicationIcon>Resources\gorgon.ico</ApplicationIcon>
     <RootNamespace>Gorgon.Shell</RootNamespace>
     <AssemblyName>Gorgon</AssemblyName>
+    <EnableDefaultApplicationEntryPoint>false</EnableDefaultApplicationEntryPoint>
+    <StartupObject>Gorgon.Shell.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\gorgon.ico" />
@@ -23,5 +26,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
     <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
+    <ProjectReference Include="..\Legolas.Module\Legolas.Module.csproj" />
+    <ProjectReference Include="..\Gandalf.Module\Gandalf.Module.csproj" />
+    <ProjectReference Include="..\Elrond.Module\Elrond.Module.csproj" />
+    <ProjectReference Include="..\Bilbo.Module\Bilbo.Module.csproj" />
+    <ProjectReference Include="..\Pippin.Module\Pippin.Module.csproj" />
   </ItemGroup>
 </Project>

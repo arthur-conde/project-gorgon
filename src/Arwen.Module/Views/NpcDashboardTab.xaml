@@ -1,0 +1,114 @@
+<UserControl x:Class="Arwen.Views.NpcDashboardTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Arwen.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:FavorDashboardViewModel}"
+             Background="#FF1A1A1A">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="NPC Favor" FontSize="18" FontWeight="SemiBold" Foreground="#FFE8E8E8"
+                       VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12"
+                       VerticalAlignment="Center" Margin="16,0,0,0"/>
+        </DockPanel>
+
+        <!-- Filters -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Width="200" FontSize="13" Padding="6,4"
+                     Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444">
+                <!-- Watermark via Tag -->
+            </TextBox>
+            <ComboBox ItemsSource="{Binding AvailableAreas}" SelectedItem="{Binding SelectedArea}"
+                      Width="160" Margin="8,0,0,0" FontSize="13"
+                      Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
+            <CheckBox Content="Known NPCs only" IsChecked="{Binding ShowKnownOnly}"
+                      Foreground="#CCFFFFFF" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"/>
+        </StackPanel>
+
+        <!-- NPC List -->
+        <DataGrid ItemsSource="{Binding FilteredNpcs}" AutoGenerateColumns="False"
+                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
+                  CanUserReorderColumns="False" GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="#FF333333" Background="#FF1A1A1A"
+                  RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
+                  BorderBrush="#FF333333" BorderThickness="1"
+                  HeadersVisibility="Column">
+
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="NPC" Binding="{Binding Name}" Width="180">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="FontWeight" Value="Medium"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="140">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <DataGridTemplateColumn Header="Favor" Width="220">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="6,3">
+                                <Grid>
+                                    <Border Background="#FF333333" CornerRadius="3" Height="14"/>
+                                    <Border Background="#FFD4A847" CornerRadius="3" Height="14"
+                                            HorizontalAlignment="Left"
+                                            Width="{Binding TierProgress,
+                                                Converter={StaticResource ProgressToWidthConverter},
+                                                ConverterParameter=200,
+                                                FallbackValue=0}"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding CurrentTier,
+                                                   Converter={StaticResource TierToDisplayNameConverter}}"
+                                               Foreground="#FFD4A847" FontSize="11"/>
+                                    <TextBlock Foreground="#88FFFFFF" FontSize="10" Margin="6,0,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value=""/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ExactFavor, TargetNullValue=''}" Value="">
+                                                        <Setter Property="Text" Value="(tier only)"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTextColumn Header="Exact Favor" Binding="{Binding ExactFavor, StringFormat=F0}" Width="90">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

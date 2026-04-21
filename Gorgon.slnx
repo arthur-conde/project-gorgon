@@ -3,9 +3,21 @@
     <Project Path="src/Gorgon.Shared/Gorgon.Shared.csproj" />
     <Project Path="src/Gorgon.Shell/Gorgon.Shell.csproj" />
     <Project Path="src/Samwise.Module/Samwise.Module.csproj" />
+    <Project Path="src/Legolas.Module/Legolas.Module.csproj" />
+    <Project Path="src/Gandalf.Module/Gandalf.Module.csproj" />
+    <Project Path="src/Elrond.Module/Elrond.Module.csproj" />
+    <Project Path="src/Bilbo.Module/Bilbo.Module.csproj" />
+    <Project Path="src/Arwen.Module/Arwen.Module.csproj" />
+    <Project Path="src/Pippin.Module/Pippin.Module.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Gorgon.Shared.Tests/Gorgon.Shared.Tests.csproj" />
+    <Project Path="tests/Pippin.Tests/Pippin.Tests.csproj" />
     <Project Path="tests/Samwise.Tests/Samwise.Tests.csproj" />
+    <Project Path="tests/Legolas.Tests/Legolas.Tests.csproj" />
+    <Project Path="tests/Gandalf.Tests/Gandalf.Tests.csproj" />
+    <Project Path="tests/Elrond.Tests/Elrond.Tests.csproj" />
+    <Project Path="tests/Bilbo.Tests/Bilbo.Tests.csproj" />
+    <Project Path="tests/Arwen.Tests/Arwen.Tests.csproj" />
   </Folder>
 </Solution>

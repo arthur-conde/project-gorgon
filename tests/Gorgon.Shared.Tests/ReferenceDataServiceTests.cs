@@ -137,7 +137,7 @@ public class ReferenceDataServiceTests : IDisposable
     {
         WriteBundled("""{}""", version: "v100");
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
-        var act = () => svc.GetSnapshot("npcs");
+        var act = () => svc.GetSnapshot("nonexistent");
         act.Should().Throw<ArgumentException>();
     }
 

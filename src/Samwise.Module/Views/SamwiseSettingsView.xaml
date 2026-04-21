@@ -1,11 +1,14 @@
 <UserControl x:Class="Samwise.Views.SamwiseSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
-            <TextBlock Text="🌱 Samwise Settings" FontFamily="Cambria" FontSize="20"
-                       Foreground="#FFD4A847" Margin="0,0,0,20"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <icon:PackIconLucide Kind="Sprout" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Samwise Settings" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+            </StackPanel>
 
             <!-- Plot cleanup -->
             <TextBlock Text="Plot cleanup" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
@@ -23,8 +26,19 @@
             <!-- Alarms: master toggles -->
             <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
             <CheckBox Content="Enabled" IsChecked="{Binding Alarms.Enabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Allow concurrent alarm sounds"
+                      IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <CheckBox Content="Flash the Gorgon window when firing" IsChecked="{Binding Alarms.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                <TextBlock Text="Volume" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="50"
+                           Text="{Binding Alarms.AlarmVolume, StringFormat={}{0:P0}}"/>
+                <Slider Minimum="0" Maximum="2" SmallChange="0.05" LargeChange="0.1" TickFrequency="0.1"
+                        IsSnapToTickEnabled="False" VerticalAlignment="Center" Margin="8,0"
+                        Value="{Binding Alarms.AlarmVolume}"/>
+            </DockPanel>
             <DockPanel Margin="0,8,0,16" LastChildFill="False">
                 <TextBlock Text="Snooze duration" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                 <TextBox Width="70" Margin="8,0" Padding="6,4"
@@ -42,20 +56,30 @@
                     <DataTemplate>
                         <Border Margin="0,0,0,6" Padding="10" CornerRadius="3"
                                 Background="#FF252525" BorderBrush="#22FFFFFF" BorderThickness="1">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Value.Enabled}"
-                                          Content="{Binding Key}" FontWeight="SemiBold"
-                                          Foreground="#FFE8E8E8" VerticalAlignment="Center" MinWidth="140"/>
-                                <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0"
-                                        Click="BrowseSound_Click" Tag="{Binding Value}"/>
-                                <Button DockPanel.Dock="Right" Content="▶" Padding="10,4" Margin="6,0,0,0"
-                                        Click="TestSound_Click" Tag="{Binding Value}" ToolTip="Play this stage's sound"/>
-                                <Button DockPanel.Dock="Right" Content="✕" Padding="8,4"
-                                        Click="ClearSound_Click" Tag="{Binding Value}" ToolTip="Reset to system default"/>
-                                <TextBox Text="{Binding Value.SoundFilePath, UpdateSourceTrigger=LostFocus}"
-                                         Padding="6,4" Margin="8,0"
-                                         IsEnabled="{Binding Value.Enabled}"/>
-                            </DockPanel>
+                            <StackPanel>
+                                <DockPanel>
+                                    <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Value.Enabled}"
+                                              Content="{Binding Key}" FontWeight="SemiBold"
+                                              Foreground="#FFE8E8E8" VerticalAlignment="Center" MinWidth="140"/>
+                                    <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0"
+                                            Click="BrowseSound_Click" Tag="{Binding Value}"/>
+                                    <Button DockPanel.Dock="Right" Padding="10,4" Margin="6,0,0,0"
+                                            Click="TestSound_Click" Tag="{Binding Value}" ToolTip="Play this stage's sound">
+                                        <icon:PackIconLucide Kind="Play" Width="12" Height="12"/>
+                                    </Button>
+                                    <Button DockPanel.Dock="Right" Padding="8,4"
+                                            Click="ClearSound_Click" Tag="{Binding Value}" ToolTip="Reset to system default">
+                                        <icon:PackIconLucide Kind="X" Width="12" Height="12"/>
+                                    </Button>
+                                    <TextBox Text="{Binding Value.SoundFilePath, UpdateSourceTrigger=LostFocus}"
+                                             Padding="6,4" Margin="8,0"
+                                             IsEnabled="{Binding Value.Enabled}"/>
+                                </DockPanel>
+                                <CheckBox Margin="0,6,0,0" Foreground="#FFE8E8E8"
+                                          Content="Stop sound when resolved"
+                                          IsChecked="{Binding Value.StopOnInteraction}"
+                                          IsEnabled="{Binding Value.Enabled}"/>
+                            </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>

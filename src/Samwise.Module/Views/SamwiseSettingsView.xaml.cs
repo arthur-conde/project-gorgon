@@ -1,4 +1,5 @@
 using System.Windows;
+using Gorgon.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
 
@@ -6,7 +7,11 @@ namespace Samwise.Views;
 
 public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
 {
+    private IPlaybackHandle? _testHandle;
+
     public SamwiseSettingsView() { InitializeComponent(); }
+
+    public AudioSettings? Audio { get; set; }
 
     private void BrowseSound_Click(object sender, RoutedEventArgs e)
     {
@@ -21,8 +26,12 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
 
     private void TestSound_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule)
-            AlarmSoundPlayer.Play(rule.SoundFilePath);
+        if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule
+            && DataContext is SamwiseSettings s)
+        {
+            _testHandle?.Stop();
+            _testHandle = AlarmSoundPlayer.Play(rule.SoundFilePath, (float)s.Alarms.AlarmVolume, "samwise");
+        }
     }
 
     private void ClearSound_Click(object sender, RoutedEventArgs e)

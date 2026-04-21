@@ -1,12 +1,16 @@
 <UserControl x:Class="Gorgon.Shell.Views.HotkeyBindingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:hk="clr-namespace:Gorgon.Shared.Hotkeys.Controls;assembly=Gorgon.Shared"
              xmlns:vm="clr-namespace:Gorgon.Shell.ViewModels"
              Background="#FF1A1A1A">
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Top">
-            <TextBlock Text="⌨ Hotkeys" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847" Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <icon:PackIconLucide Kind="Keyboard" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Hotkeys" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+            </StackPanel>
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4" Margin="0,0,0,12">
                 <TextBox.Resources>
@@ -41,12 +45,18 @@
                                                       HotkeyService="{Binding DataContext.HotkeyService, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                                 <StackPanel>
                                     <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8"/>
-                                    <TextBlock Text="{Binding ConflictWith, StringFormat='⚠ Conflicts with {0}'}"
-                                               Foreground="#FFE0A030" FontSize="11"
-                                               Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}"/>
-                                    <TextBlock Text="{Binding Error, StringFormat='✕ {0}'}"
-                                               Foreground="#FFD04040" FontSize="11"
-                                               Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"/>
+                                    <StackPanel Orientation="Horizontal"
+                                               Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
+                                        <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11" Foreground="#FFE0A030" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                        <TextBlock Text="{Binding ConflictWith, StringFormat='Conflicts with {0}'}"
+                                                   Foreground="#FFE0A030" FontSize="11"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal"
+                                               Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                                        <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#FFD04040" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                        <TextBlock Text="{Binding Error}"
+                                                   Foreground="#FFD04040" FontSize="11"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </DockPanel>
                         </Border>

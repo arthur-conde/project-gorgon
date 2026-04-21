@@ -1,6 +1,7 @@
 <UserControl x:Class="Gorgon.Shell.Views.ReferenceDataView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              Background="#FF1A1A1A">
     <UserControl.Resources>
@@ -8,7 +9,10 @@
         <wpf:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyVisibility"/>
     </UserControl.Resources>
     <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
-        <TextBlock Text="📦 Reference Data" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847" Margin="0,0,0,8"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <icon:PackIconLucide Kind="Package" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+            <TextBlock Text="Reference Data" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+        </StackPanel>
         <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,16"
                    Text="Game data published by the developer at cdn.projectgorgon.com. Refreshed in the background on app start. Use Refresh to pull the latest version on demand."/>
 

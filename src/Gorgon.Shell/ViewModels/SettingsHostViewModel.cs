@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gorgon.Shared.Modules;
+using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Gorgon.Shell.ViewModels;
@@ -8,7 +9,7 @@ namespace Gorgon.Shell.ViewModels;
 public sealed partial class SettingsSection : ObservableObject
 {
     public required string Title { get; init; }
-    public required string Icon { get; init; }
+    public required PackIconLucideKind Icon { get; init; }
     public required Type ViewType { get; init; }
 }
 
@@ -24,14 +25,20 @@ public sealed partial class SettingsHostViewModel : ObservableObject
         Sections.Add(new SettingsSection
         {
             Title = "Game folder",
-            Icon = "📁",
+            Icon = PackIconLucideKind.FolderOpen,
             ViewType = typeof(Views.GameConfigView),
         });
         Sections.Add(new SettingsSection
         {
             Title = "Reference data",
-            Icon = "📦",
+            Icon = PackIconLucideKind.Package,
             ViewType = typeof(Views.ReferenceDataView),
+        });
+        Sections.Add(new SettingsSection
+        {
+            Title = "Icons",
+            Icon = PackIconLucideKind.Image,
+            ViewType = typeof(Views.IconSettingsView),
         });
 
         foreach (var m in modules.OrderBy(m => m.SortOrder))

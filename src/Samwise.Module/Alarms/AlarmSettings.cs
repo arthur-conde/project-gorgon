@@ -14,9 +14,11 @@ public sealed class StageAlarmRule : INotifyPropertyChanged
 {
     private bool _enabled;
     private string? _soundFilePath;
+    private bool _stopOnInteraction = true;
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
+    public bool StopOnInteraction { get => _stopOnInteraction; set => Set(ref _stopOnInteraction, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
@@ -33,12 +35,14 @@ public sealed class AlarmSettings : INotifyPropertyChanged
     private bool _balloonNotification = true;
     private bool _flashWindow = true;
     private double _snoozeMinutes = 5;
+    private double _alarmVolume = 0.8;
     private Dictionary<PlotStage, StageAlarmRule> _rules = DefaultRules();
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public bool BalloonNotification { get => _balloonNotification; set => Set(ref _balloonNotification, value); }
     public bool FlashWindow { get => _flashWindow; set => Set(ref _flashWindow, value); }
     public double SnoozeMinutes { get => _snoozeMinutes; set => Set(ref _snoozeMinutes, Math.Max(0.5, value)); }
+    public double AlarmVolume { get => _alarmVolume; set => Set(ref _alarmVolume, Math.Clamp(value, 0.0, 2.0)); }
 
     /// <summary>Per-stage alarm rules. Persisted by stage name.</summary>
     public Dictionary<PlotStage, StageAlarmRule> Rules

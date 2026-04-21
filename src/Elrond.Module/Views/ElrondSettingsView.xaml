@@ -1,0 +1,17 @@
+<UserControl x:Class="Elrond.Views.ElrondSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <StackPanel Margin="12" MaxWidth="500">
+        <TextBlock Text="Elrond · Skill Advisor Settings"
+                   FontFamily="Cambria" FontSize="16" Foreground="#FFD4A847" Margin="0,0,0,12"/>
+        <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF" FontSize="12">
+            The Skill Advisor reads character export files from the game's Reports folder.
+            Run <Run Text="/exportcharacter" FontFamily="Consolas"/> in-game to create an export,
+            then the advisor will pick it up automatically.
+        </TextBlock>
+    </StackPanel>
+</UserControl>

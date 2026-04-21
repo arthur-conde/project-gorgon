@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Modules;
+using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Gorgon.Shell.ViewModels;
@@ -12,7 +13,7 @@ public sealed partial class ModuleEntry : ObservableObject
 {
     public required IGorgonModule Module { get; init; }
     public string Title => Module.DisplayName;
-    public string Icon => Module.Icon;
+    public PackIconLucideKind Icon => Module.Icon;
     public bool HasImage => !string.IsNullOrEmpty(Module.IconUri);
     public System.Windows.Media.ImageSource? ImageSource =>
         string.IsNullOrEmpty(Module.IconUri) ? null

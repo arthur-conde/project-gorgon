@@ -1,0 +1,141 @@
+using Arwen.Domain;
+using Gorgon.Shared.Character;
+using Gorgon.Shared.Reference;
+
+namespace Arwen.State;
+
+/// <summary>
+/// Unified NPC favor state entry merging CDN metadata, character export tier, and persisted exact favor.
+/// </summary>
+public sealed class NpcFavorEntry
+{
+    public required string NpcKey { get; init; }
+    public required string Name { get; init; }
+    public required string Area { get; init; }
+    public required IReadOnlyList<NpcPreference> Preferences { get; init; }
+    public required IReadOnlyList<string> ItemGiftTiers { get; init; }
+
+    /// <summary>Best-known favor tier (from exact favor if available, else character export).</summary>
+    public FavorTier CurrentTier { get; set; } = FavorTier.Neutral;
+
+    /// <summary>Exact absolute favor from Player.log, or null if unknown.</summary>
+    public double? ExactFavor { get; set; }
+
+    /// <summary>0.0–1.0 progress within current tier. NaN if tier has no cap or exact favor unknown.</summary>
+    public double TierProgress { get; set; } = double.NaN;
+
+    /// <summary>Whether this NPC appears in the character export (player has interacted with them).</summary>
+    public bool IsKnown { get; set; }
+}
+
+/// <summary>
+/// Merges three data sources into a unified NPC favor view:
+/// 1. CDN NPC metadata (name, area, preferences)
+/// 2. Character export tier (fallback)
+/// 3. Persisted exact favor from Player.log (highest priority)
+/// </summary>
+public sealed class FavorStateService
+{
+    private readonly IReferenceDataService _refData;
+    private readonly ICharacterDataService _charData;
+    private readonly ArwenSettings _settings;
+
+    private IReadOnlyList<NpcFavorEntry> _entries = [];
+
+    public IReadOnlyList<NpcFavorEntry> Entries => _entries;
+
+    public event EventHandler? StateChanged;
+
+    public FavorStateService(
+        IReferenceDataService refData,
+        ICharacterDataService charData,
+        ArwenSettings settings)
+    {
+        _refData = refData;
+        _charData = charData;
+        _settings = settings;
+
+        _refData.FileUpdated += (_, key) => { if (key == "npcs") Rebuild(); };
+        _charData.CharactersChanged += (_, _) => Rebuild();
+        Rebuild();
+    }
+
+    /// <summary>Called by the ingestion service when a single NPC's favor is updated.</summary>
+    public void OnFavorUpdated(string npcKey)
+    {
+        // Update the specific entry in-place if it exists
+        foreach (var entry in _entries)
+        {
+            if (entry.NpcKey != npcKey) continue;
+            ApplyFavorData(entry);
+            StateChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        // NPC not in list yet — full rebuild
+        Rebuild();
+    }
+
+    public void Rebuild()
+    {
+        var npcs = _refData.Npcs;
+        var activeChar = _charData.ActiveCharacter;
+        var charName = activeChar?.Name;
+
+        var entries = new List<NpcFavorEntry>(npcs.Count);
+
+        foreach (var (key, npc) in npcs)
+        {
+            var entry = new NpcFavorEntry
+            {
+                NpcKey = key,
+                Name = npc.Name,
+                Area = npc.Area,
+                Preferences = npc.Preferences,
+                ItemGiftTiers = npc.ItemGiftTiers,
+            };
+
+            // Check if player knows this NPC (from character export)
+            if (activeChar?.NpcFavor.ContainsKey(key) == true)
+                entry.IsKnown = true;
+
+            ApplyFavorData(entry);
+            entries.Add(entry);
+        }
+
+        _entries = entries;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ApplyFavorData(NpcFavorEntry entry)
+    {
+        var activeChar = _charData.ActiveCharacter;
+        var charName = activeChar?.Name;
+
+        // Priority 1: Persisted exact favor from Player.log
+        var snapshot = charName is not null ? _settings.GetExactFavor(charName, entry.NpcKey) : null;
+        if (snapshot is not null)
+        {
+            entry.ExactFavor = snapshot.ExactFavor;
+            entry.CurrentTier = FavorTiers.TierForFavor(snapshot.ExactFavor);
+            entry.TierProgress = FavorTiers.ProgressInTier(snapshot.ExactFavor, entry.CurrentTier);
+            entry.IsKnown = true;
+            return;
+        }
+
+        // Priority 2: Character export tier (no exact value)
+        if (activeChar?.NpcFavor.TryGetValue(entry.NpcKey, out var tierName) == true &&
+            FavorTiers.TryParse(tierName, out var tier))
+        {
+            entry.CurrentTier = tier;
+            entry.ExactFavor = null;
+            entry.TierProgress = double.NaN;
+            entry.IsKnown = true;
+            return;
+        }
+
+        // Priority 3: Unknown
+        entry.CurrentTier = FavorTier.Neutral;
+        entry.ExactFavor = null;
+        entry.TierProgress = double.NaN;
+    }
+}

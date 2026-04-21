@@ -1,0 +1,245 @@
+<UserControl x:Class="Legolas.Views.LegolasPanelView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Legolas.ViewModels"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:controls="clr-namespace:Legolas.Controls"
+             Background="{StaticResource BgPrimaryBrush}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <icon:PackIconLucide Kind="Target" Width="20" Height="20" VerticalAlignment="Center"
+                                     Foreground="{StaticResource AccentBrush}" Margin="0,0,6,0"/>
+                <TextBlock Text="Legolas — Survey"
+                           FontFamily="Cambria" FontSize="20"
+                           Foreground="{StaticResource AccentBrush}"/>
+            </StackPanel>
+
+            <!-- Overlay visibility -->
+            <WrapPanel Margin="0,0,0,12">
+                <Button Content="Inventory Overlay" Click="ShowInventory_Click" Padding="10,4" Margin="0,0,8,8" />
+                <Button Content="Map Overlay" Click="ShowMap_Click" Padding="10,4" Margin="0,0,8,8" />
+            </WrapPanel>
+
+            <!-- Mode -->
+            <GroupBox Header="Mode" Padding="8" Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Content="Survey" Margin="0,0,16,0" VerticalAlignment="Center"
+                                 IsChecked="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToBool}, ConverterParameter=Survey}" />
+                    <RadioButton Content="Motherlode" VerticalAlignment="Center"
+                                 IsChecked="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToBool}, ConverterParameter=Motherlode}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Session controls -->
+            <GroupBox Header="Session" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <WrapPanel>
+                        <Button Content="Start / Reset" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding ControlPanel.StartSessionCommand}"
+                                ToolTip="Clear surveys; preserves player position once one has been set" />
+                        <Button Content="Set Player Position" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding ControlPanel.SetPlayerPositionCommand}"
+                                ToolTip="The next click on the map sets the player position and projector origin" />
+                        <Button Content="Optimize Route" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding MapOverlay.OptimizeRouteCommand}" />
+                        <Button Content="Mark Collected" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding ControlPanel.MarkCurrentCollectedCommand}"
+                                ToolTip="Manually mark the highlighted next-up survey as collected" />
+                    </WrapPanel>
+                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="2" Padding="6,4" Margin="0,4,0,6">
+                        <TextBlock Text="{Binding Session.PhaseDescription}"
+                                   Foreground="{StaticResource AccentSoftTextBrush}" TextWrapping="Wrap" />
+                    </Border>
+                    <CheckBox Content="Auto-reset when all surveys collected"
+                              IsChecked="{Binding ControlPanel.AutoResetWhenAllCollected}"
+                              Margin="0,0,0,6" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock Text="Dedup radius (m):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="60" Text="{Binding ControlPanel.SurveyDedupRadiusMetres, UpdateSourceTrigger=LostFocus}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock Text="re-pings within this radius are treated as the same target"
+                                   Foreground="{StaticResource TextTertiaryBrush}" Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock Text="Pin radius (px):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Slider Width="120" Minimum="1" Maximum="100"
+                                Value="{Binding ControlPanel.SurveyPinRadiusMetres}" VerticalAlignment="Center" />
+                        <TextBox Width="48" Margin="6,0,0,0" VerticalAlignment="Center"
+                                 Text="{Binding ControlPanel.SurveyPinRadiusMetres, StringFormat=0.0, UpdateSourceTrigger=LostFocus}" />
+                    </StackPanel>
+                    <Border Background="{StaticResource BgSurfaceBrush}" CornerRadius="2"
+                            Padding="6,4" Margin="0,8,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Last event:"
+                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding Session.LastLogEvent}"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Overlay options -->
+            <GroupBox Header="Overlay Options" Padding="8" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Map opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
+                    <Slider   Grid.Row="0" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                              Value="{Binding Session.MapOpacity}" VerticalAlignment="Center" />
+                    <TextBox  Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                              Text="{Binding Session.MapOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Inv opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
+                    <Slider   Grid.Row="1" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                              Value="{Binding Session.InventoryOpacity}" VerticalAlignment="Center" />
+                    <TextBox  Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                              Text="{Binding Session.InventoryOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+
+                    <CheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                              Content="Show bearing wedges" Margin="0,8,0,4"
+                              IsChecked="{Binding Session.ShowBearingWedges}" />
+                    <CheckBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3"
+                              Content="Show route lines"
+                              IsChecked="{Binding Session.ShowRouteLines}" />
+                </Grid>
+            </GroupBox>
+
+            <!-- Click-through -->
+            <GroupBox Header="Click-Through" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <CheckBox Content="Map overlay" Margin="0,0,0,4"
+                              IsChecked="{Binding ControlPanel.ClickThroughMap}"
+                              ToolTip="Mouse clicks pass through the map overlay" />
+                    <CheckBox Content="Inventory overlay"
+                              IsChecked="{Binding ControlPanel.ClickThroughInventory}"
+                              ToolTip="Mouse clicks pass through the inventory overlay" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Inventory grid settings -->
+            <GroupBox Header="Inventory Grid Settings" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid DataContext="{Binding GridSettings.Grid}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="40" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Columns" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="20" Value="{Binding Columns}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding Columns, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Cell Width" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="1" Grid.Column="1" Minimum="20" Maximum="200" Value="{Binding CellWidth}" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding CellWidth, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Cell Height" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="2" Grid.Column="1" Minimum="20" Maximum="200" Value="{Binding CellHeight}" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding CellHeight, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Column Gap" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="20" Value="{Binding ColumnGap}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding ColumnGap, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Row Gap" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="20" Value="{Binding RowGap}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding RowGap, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
+                            Padding="10,4" Command="{Binding GridSettings.ResetToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Motherlode -->
+            <GroupBox Header="Motherlode" Padding="8" Margin="0,0,0,12"
+                      Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Motherlode}"
+                      DataContext="{Binding Motherlode}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Positions recorded:" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding RecordedPositions}" Margin="6,0,0,0" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text=" / 3" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <WrapPanel Margin="0,0,0,6">
+                        <Button Content="Record Player Position" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding RecordPlayerPositionCommand}" />
+                        <Button Content="Reset" Padding="10,4" Margin="0,0,8,8"
+                                Command="{Binding ResetCommand}" />
+                    </WrapPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Distance (m):" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Width="60" Text="{Binding DistanceInput, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center" />
+                        <Button Content="Record Distance" Padding="10,4" Margin="8,0,0,0"
+                                Command="{Binding RecordCurrentDistanceCommand}" />
+                    </StackPanel>
+                    <Button Content="Optimize Route" Padding="10,4" HorizontalAlignment="Left" Margin="0,4,0,8"
+                            Command="{Binding OptimizeRouteCommand}" />
+                    <TextBlock Text="Treasures" FontWeight="SemiBold" Margin="0,4,0,4" />
+                    <ItemsControl ItemsSource="{Binding Slots}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:MotherlodeSlotViewModel}">
+                                <Border BorderBrush="#FF303030" BorderThickness="1" Padding="6" Margin="0,0,0,4" CornerRadius="2">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Distances:" Foreground="{StaticResource TextTertiaryBrush}" />
+                                            <ItemsControl ItemsSource="{Binding Distances}" Margin="6,0,0,0">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding}" Margin="0,0,8,0" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock Text="Estimate:" Foreground="{StaticResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding EstimatedPosition, TargetNullValue='(pending)'}" Margin="6,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock Text="Route order:" Foreground="{StaticResource TextTertiaryBrush}" />
+                                            <TextBlock Text="{Binding RouteOrder, TargetNullValue='—'}" Margin="6,0,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </GroupBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

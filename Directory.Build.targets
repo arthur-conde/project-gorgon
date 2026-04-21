@@ -1,0 +1,38 @@
+<Project>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!--
+      VSTHRD002 (sync-over-async deadlock) is the rule we care about — keep it as error.
+      Other VSTHRD rules assume a VS-extension JoinableTaskFactory context that doesn't
+      apply to a standalone WPF app, so suppress them.
+    -->
+    <NoWarn>$(NoWarn);VSTHRD001;VSTHRD003;VSTHRD100;VSTHRD101;VSTHRD103;VSTHRD110;VSTHRD200</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Projects whose folder name ends with .Module are Gorgon modules by convention. -->
+    <IsGorgonModule Condition="'$(IsGorgonModule)' == '' and $(MSBuildProjectName.EndsWith('.Module'))">true</IsGorgonModule>
+    <IsGorgonModule Condition="'$(IsGorgonModule)' == ''">false</IsGorgonModule>
+  </PropertyGroup>
+
+  <!--
+    After a module builds, copy its primary output into the Shell's modules/ folder.
+    GorgonShellOutputPath must be passed by the Shell project (or resolved here by
+    convention from the solution layout).
+  -->
+  <PropertyGroup Condition="'$(IsGorgonModule)' == 'true'">
+    <GorgonModulesDir>$(MSBuildThisFileDirectory)src\Gorgon.Shell\$(OutputPath)modules\</GorgonModulesDir>
+  </PropertyGroup>
+
+  <Target Name="CopyModuleToShell"
+          AfterTargets="Build"
+          Condition="'$(IsGorgonModule)' == 'true'">
+    <MakeDir Directories="$(GorgonModulesDir)" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(GorgonModulesDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

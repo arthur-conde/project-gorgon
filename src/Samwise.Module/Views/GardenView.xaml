@@ -2,19 +2,27 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Samwise.ViewModels"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <DockPanel Margin="12">
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <TextBlock Text="🌱 Samwise — Gardening"
-                       FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            <StackPanel Orientation="Horizontal">
+                <icon:PackIconLucide Kind="Sprout" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Samwise — Gardening" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            </StackPanel>
             <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
-                    Content="✕ Clear harvested" Padding="10,4"
+                    Padding="10,4"
                     Command="{Binding ClearHarvestedCommand}"
                     ToolTip="Remove all Harvested plots (auto-clears after 2 hours)"
-                    Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}"/>
+                    Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}">
+                <StackPanel Orientation="Horizontal">
+                    <icon:PackIconLucide Kind="X" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBlock Text="Clear harvested" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
         </DockPanel>
 
         <Grid>
@@ -22,7 +30,7 @@
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                         MaxWidth="420"
                         Visibility="{Binding Plots.Count, Converter={StaticResource ZeroToVis}}">
-                <TextBlock Text="🌱" FontSize="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
+                <icon:PackIconLucide Kind="Sprout" Width="56" Height="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
                 <TextBlock Text="No plots yet" FontFamily="Cambria" FontSize="18"
                            HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
                 <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
@@ -34,8 +42,8 @@
                     <StackPanel>
                         <TextBlock Text="Not seeing anything?" FontWeight="SemiBold" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
                         <TextBlock FontSize="11" Foreground="#AAFFFFFF" TextWrapping="Wrap">
-                            Check <Run Text="⚙ Game…" FontFamily="Consolas"/> to verify the Project Gorgon folder is set,
-                            then open <Run Text="🔍 Diagnostics" FontFamily="Consolas"/> to watch raw log lines flow in.
+                            Check <Run Text="Settings > Game folder" FontFamily="Consolas"/> to verify the Project Gorgon folder is set,
+                            then open <Run Text="Diagnostics" FontFamily="Consolas"/> to watch raw log lines flow in.
                         </TextBlock>
                     </StackPanel>
                 </Border>
@@ -54,8 +62,21 @@
                         <Border Width="180" Margin="6" Padding="10" CornerRadius="6"
                                 Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
                             <StackPanel>
-                                <TextBlock Text="{Binding CropType}" FontWeight="Bold" Foreground="#FFE8E8E8"/>
-                                <TextBlock Text="{Binding CharName}" FontSize="11" Foreground="#88FFFFFF"/>
+                                <Grid>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding CropType}" FontWeight="Bold" Foreground="#FFE8E8E8"/>
+                                        <TextBlock Text="{Binding CharName}" FontSize="11" Foreground="#88FFFFFF"/>
+                                    </StackPanel>
+                                    <Button HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Width="20" Height="20" Padding="0"
+                                            Background="Transparent" BorderThickness="0"
+                                            Cursor="Hand"
+                                            ToolTip="Delete this plot (use for stale plots planted/harvested while app was offline)"
+                                            Command="{Binding DataContext.DeletePlotCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                    </Button>
+                                </Grid>
                                 <TextBlock Text="{Binding StageLabel}" Margin="0,6,0,0">
                                     <TextBlock.Foreground>
                                         <SolidColorBrush Color="{Binding StageColor, Converter={StaticResource StringToColor}}"/>
@@ -65,10 +86,15 @@
                                              Minimum="0" Maximum="1" Value="{Binding GrowthFraction, Mode=OneWay}"
                                              Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"/>
                                 <TextBlock Text="{Binding TimeRemaining}" FontSize="11" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
-                                <Button Content="✓ Mark Harvested" Margin="0,8,0,0" Padding="0,4"
+                                <Button Margin="0,8,0,0" Padding="0,4"
                                         Command="{Binding DataContext.MarkHarvestedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
-                                        Visibility="{Binding Stage, Converter={StaticResource StageToHarvestVis}}"/>
+                                        Visibility="{Binding Stage, Converter={StaticResource StageToHarvestVis}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icon:PackIconLucide Kind="Check" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                        <TextBlock Text="Mark Harvested" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Border>
                     </DataTemplate>

@@ -40,6 +40,14 @@ public sealed partial class GardenViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void DeletePlot(PlotViewModel? vm)
+    {
+        if (vm is null) return;
+        if (_state.DeletePlot(vm.CharName, vm.PlotId))
+            SyncFromState();
+    }
+
+    [RelayCommand]
     private void ClearHarvested()
     {
         _state.ClearHarvested();

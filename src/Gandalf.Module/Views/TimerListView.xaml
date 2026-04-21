@@ -1,0 +1,138 @@
+<UserControl x:Class="Gandalf.Views.TimerListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:vm="clr-namespace:Gandalf.ViewModels"
+             Background="#FF1A1A1A">
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <icon:PackIconLucide Kind="Timer" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Gandalf — Timers" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Clear done" Padding="10,4" Margin="4,0"
+                        Command="{Binding ClearDoneCommand}"/>
+                <Button Content="Paste" Padding="10,4" Margin="4,0"
+                        Command="{Binding PasteTimersCommand}"
+                        ToolTip="Paste timers from clipboard (JSON)"/>
+                <Button Content="+ Add Timer" Padding="10,4"
+                        Command="{Binding AddTimerCommand}"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Timer List -->
+        <Grid>
+            <!-- Empty state -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
+                        Visibility="{Binding Timers.Count, Converter={StaticResource ZeroToVis}}">
+                <TextBlock Text="No timers yet" FontFamily="Cambria" FontSize="18"
+                           HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
+                    Click "+ Add Timer" to create a reusable timer for loot lockouts, respawns,
+                    or crafting cooldowns. Paste timer definitions from the clipboard to import.
+                    Running timers persist across app restarts.
+                </TextBlock>
+            </StackPanel>
+
+            <!-- Timer cards -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding Timers.Count, Converter={StaticResource NonZeroToVis}}">
+                <ItemsControl ItemsSource="{Binding TimersView}">
+                    <ItemsControl.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"
+                                               Foreground="#FFD4A847" Margin="4,12,0,4"/>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ItemsControl.GroupStyle>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="200" Margin="6" Padding="10" CornerRadius="6"
+                                    Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
+                                <StackPanel>
+                                    <!-- Header: name, duration, action buttons -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#FFE8E8E8"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Name}"/>
+                                            <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="#88FFFFFF"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                            <Button Width="20" Height="20" Padding="0"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Cursor="Hand" ToolTip="Edit this timer"
+                                                    Command="{Binding DataContext.EditTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <icon:PackIconLucide Kind="Pencil" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                            </Button>
+                                            <Button Width="20" Height="20" Padding="0"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Cursor="Hand" ToolTip="Copy timer to clipboard"
+                                                    Command="{Binding DataContext.CopyTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <icon:PackIconLucide Kind="Copy" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                            </Button>
+                                            <Button Width="20" Height="20" Padding="0"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Cursor="Hand" ToolTip="Delete this timer"
+                                                    Command="{Binding DataContext.DeleteTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Status label -->
+                                    <TextBlock Margin="0,6,0,0">
+                                        <TextBlock.Text>
+                                            <Binding Path="StatusLabel"/>
+                                        </TextBlock.Text>
+                                        <TextBlock.Foreground>
+                                            <SolidColorBrush Color="{Binding StatusColor, Converter={StaticResource StringToColor}}"/>
+                                        </TextBlock.Foreground>
+                                    </TextBlock>
+
+                                    <!-- Progress bar (hidden when idle) -->
+                                    <ProgressBar Margin="0,4,0,0" Height="6"
+                                                 Minimum="0" Maximum="1" Value="{Binding Fraction, Mode=OneWay}"
+                                                 Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"
+                                                 Visibility="{Binding ShowProgressBar, Converter={StaticResource BoolToVis}}"/>
+
+                                    <!-- Time display -->
+                                    <TextBlock Text="{Binding TimeDisplay}" FontSize="11" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
+
+                                    <!-- Start button (idle state) -->
+                                    <Button Content="Start" Margin="0,8,0,0" Padding="0,4"
+                                            Visibility="{Binding ShowStartButton, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding DataContext.StartTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+
+                                    <!-- Restart button (done state) -->
+                                    <Button Content="Restart" Margin="0,8,0,0" Padding="0,4"
+                                            Visibility="{Binding ShowRestartButton, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding DataContext.RestartTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>

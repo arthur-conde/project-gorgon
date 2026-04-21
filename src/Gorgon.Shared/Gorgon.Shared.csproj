@@ -12,11 +12,15 @@
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Reference\BundledData\**\*.json" />
     <Content Include="Reference\BundledData\**\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Icons\placeholder.png" />
   </ItemGroup>
 </Project>

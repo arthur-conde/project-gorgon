@@ -431,6 +431,11 @@ public class GardenStateMachineTests
         public IReadOnlyList<string> Keys { get; } = ["items"];
         public IReadOnlyDictionary<long, ItemEntry> Items => _items;
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public ReferenceFileSnapshot GetSnapshot(string key)
             => new("items", ReferenceFileSource.Bundled, "test", null, _items.Count);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
@@ -440,7 +445,7 @@ public class GardenStateMachineTests
 
         public void Add(string internalName, string displayName)
         {
-            var entry = new ItemEntry(_nextId++, displayName, internalName, 1, 0);
+            var entry = new ItemEntry(_nextId++, displayName, internalName, 1, 0, []);
             _items[entry.Id] = entry;
             _byName[internalName] = entry;
             FileUpdated?.Invoke(this, "items");

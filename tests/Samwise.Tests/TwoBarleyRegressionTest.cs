@@ -87,12 +87,17 @@ public class TwoBarleyRegressionTest
         public IReadOnlyList<string> Keys { get; } = ["items"];
         public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>
         {
-            [10251L] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0),
+            [10251L] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
         };
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>(StringComparer.Ordinal)
         {
-            ["BarleySeeds"] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0),
+            ["BarleySeeds"] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
         };
+        public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public ReferenceFileSnapshot GetSnapshot(string key)
             => new("items", ReferenceFileSource.Bundled, "test", null, 1);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

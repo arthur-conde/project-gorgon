@@ -1,0 +1,52 @@
+<UserControl x:Class="Gandalf.Views.GandalfSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
+            <TextBlock Text="Gandalf Settings" FontFamily="Cambria" FontSize="20"
+                       Foreground="#FFD4A847" Margin="0,0,0,20"/>
+
+            <!-- Alarm settings -->
+            <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <CheckBox Content="Enabled" IsChecked="{Binding AlarmEnabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Allow concurrent alarm sounds"
+                      IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Flash the Gorgon window when a timer completes" IsChecked="{Binding FlashWindow}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+
+            <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                <TextBlock Text="Volume" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="50"
+                           Text="{Binding AlarmVolume, StringFormat={}{0:P0}}"/>
+                <Slider Minimum="0" Maximum="2" SmallChange="0.05" LargeChange="0.1" TickFrequency="0.1"
+                        IsSnapToTickEnabled="False" VerticalAlignment="Center" Margin="8,0"
+                        Value="{Binding AlarmVolume}"/>
+            </DockPanel>
+
+            <DockPanel Margin="0,8,0,0" LastChildFill="False">
+                <TextBlock Text="Snooze duration" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+                <TextBox Width="70" Margin="8,0" Padding="6,4"
+                         Text="{Binding SnoozeMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
+                <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="#88FFFFFF"/>
+            </DockPanel>
+
+            <!-- Sound file -->
+            <TextBlock Text="Alarm sound" Foreground="#88FFFFFF" Margin="0,16,0,6" FontWeight="SemiBold"/>
+            <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,4" Margin="6,0,0,0"
+                        Click="BrowseSound_Click"/>
+                <Button DockPanel.Dock="Right" Content="Test" Padding="10,4" Margin="6,0,0,0"
+                        Click="TestSound_Click"/>
+                <Button DockPanel.Dock="Right" Content="Clear" Padding="8,4" Margin="6,0,0,0"
+                        Click="ClearSound_Click" ToolTip="Reset to system default"/>
+                <TextBox Text="{Binding SoundFilePath, UpdateSourceTrigger=LostFocus}" Padding="6,4"/>
+            </DockPanel>
+
+            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="11">
+                Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Gandalf\settings.json.
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
