@@ -1,0 +1,164 @@
+<UserControl x:Class="Samwise.Views.GrowthCalibrationTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Samwise.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:GrowthCalibrationViewModel}"
+             Background="#FF1A1A1A">
+
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12"
+                           VerticalAlignment="Center"/>
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"
+                        Padding="10,3" FontSize="11"
+                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Crop Growth Rates -->
+        <TextBlock DockPanel.Dock="Top" Text="Crop Growth Rates" Foreground="#FFD4A847" FontSize="13"
+                   FontWeight="SemiBold" Margin="0,4,0,4"/>
+        <DataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}" AutoGenerateColumns="False"
+                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
+                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
+                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
+                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column"
+                  MaxHeight="260" Margin="0,0,0,12">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="FontWeight" Value="Medium"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Avg" Binding="{Binding AvgFormatted}" Width="80">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="65">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FF7AB880"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Min" Binding="{Binding MinFormatted}" Width="70">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Max" Binding="{Binding MaxFormatted}" Width="70">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Config" Binding="{Binding ConfigFormatted}" Width="70">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#AAFFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Delta" Binding="{Binding DeltaLabel}" Width="100">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFCC6666"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Observations filter -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <TextBlock Text="Observations" Foreground="#FFD4A847" FontSize="13"
+                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Filter" Foreground="#88FFFFFF" FontSize="11"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Text="{Binding CropFilter, UpdateSourceTrigger=PropertyChanged}"
+                         Width="240" FontSize="12"
+                         Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"
+                         Padding="4,3"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Raw observations -->
+        <DataGrid ItemsSource="{Binding Observations}" AutoGenerateColumns="False"
+                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
+                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
+                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
+                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="FontWeight" Value="Medium"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Char" Binding="{Binding CharName}" Width="100">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Effective" Binding="{Binding EffectiveFormatted}" Width="80">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Phases" Binding="{Binding PhaseSummary}" Width="*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm}" Width="130">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#66FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

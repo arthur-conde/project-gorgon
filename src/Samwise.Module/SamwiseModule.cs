@@ -2,9 +2,11 @@ using System.IO;
 using Gorgon.Shared.Hotkeys;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Settings;
+using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Samwise.Alarms;
+using Samwise.Calibration;
 using Samwise.Config;
 using Samwise.Hotkeys;
 using Samwise.Parsing;
@@ -18,11 +20,11 @@ public sealed class SamwiseModule : IGorgonModule
 {
     public string Id => "samwise";
     public string DisplayName => "Samwise · Garden";
-    public string Icon => "🌱";
+    public PackIconLucideKind Icon => PackIconLucideKind.Sprout;
     public string? IconUri => "pack://application:,,,/Samwise.Module;component/Resources/samwise.ico";
     public int SortOrder => 100;
     public ActivationMode DefaultActivation => ActivationMode.Eager;
-    public Type ViewType => typeof(GardenView);
+    public Type ViewType => typeof(SamwiseView);
     public Type? SettingsViewType => typeof(SamwiseSettingsView);
 
     public void Register(IServiceCollection services)
@@ -59,19 +61,31 @@ public sealed class SamwiseModule : IGorgonModule
         services.AddSingleton<SettingsAutoSaver<SamwiseSettings>>();
         services.AddSingleton<GardenStateService>();
 
+        services.AddSingleton<GrowthCalibrationService>(sp => new GrowthCalibrationService(
+            sp.GetRequiredService<GardenStateMachine>(),
+            sp.GetRequiredService<ICropConfigStore>(),
+            samwiseDir,
+            sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
+
         services.AddSingleton<GardenViewModel>();
-        services.AddSingleton<GardenView>(sp => new GardenView
+        services.AddSingleton<GrowthCalibrationViewModel>();
+        services.AddSingleton<SamwiseView>(sp =>
         {
-            DataContext = sp.GetRequiredService<GardenViewModel>(),
+            var view = new SamwiseView();
+            view.AddTab("Garden", new GardenView { DataContext = sp.GetRequiredService<GardenViewModel>() });
+            view.AddTab("Growth Calibration", new GrowthCalibrationTab { DataContext = sp.GetRequiredService<GrowthCalibrationViewModel>() });
+            return view;
         });
         services.AddSingleton<SamwiseSettingsView>(sp => new SamwiseSettingsView
         {
             DataContext = sp.GetRequiredService<SamwiseSettings>(),
+            Audio = sp.GetRequiredService<AudioSettings>(),
         });
 
         services.AddSingleton<IHotkeyCommand, SnoozeAllAlarmsCommand>();
         services.AddSingleton<IHotkeyCommand, DismissAllAlarmsCommand>();
         services.AddSingleton<IHotkeyCommand, MarkOldestRipeHarvestedCommand>();
+        services.AddSingleton<IHotkeyCommand, StopAllSoundsCommand>();
 
         services.AddHostedService<GardenIngestionService>();
     }

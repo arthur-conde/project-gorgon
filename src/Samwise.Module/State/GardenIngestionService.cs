@@ -5,6 +5,7 @@ using Gorgon.Shared.Modules;
 using Gorgon.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using Samwise.Alarms;
+using Samwise.Calibration;
 using Samwise.Parsing;
 
 namespace Samwise.State;
@@ -27,6 +28,7 @@ public sealed class GardenIngestionService : BackgroundService
         GardenStateMachine state,
         GardenStateService stateService,
         AlarmService alarms,
+        GrowthCalibrationService calibration,
         SettingsAutoSaver<SamwiseSettings> autoSaver,
         ModuleGates gates,
         IDiagnosticsSink? diag = null)
@@ -36,8 +38,9 @@ public sealed class GardenIngestionService : BackgroundService
         _state = state;
         _stateService = stateService;
         _diag = diag;
-        _ = alarms;      // subscribes to state.PlotChanged in ctor
-        _ = autoSaver;   // subscribes to SamwiseSettings.PropertyChanged in ctor
+        _ = alarms;       // subscribes to state.PlotChanged in ctor
+        _ = calibration;  // subscribes to state.PlotChanged in ctor
+        _ = autoSaver;    // subscribes to SamwiseSettings.PropertyChanged in ctor
         _gate = gates.For("samwise");
 
         if (diag is not null)
