@@ -15,7 +15,7 @@ public sealed class ElrondModule : IGorgonModule
     public string Id => "elrond";
     public string DisplayName => "Elrond · Skills";
     public PackIconLucideKind Icon => PackIconLucideKind.BookOpen;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Elrond.Module;component/Resources/elrond.ico";
     public int SortOrder => 200;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(SkillAdvisorView);

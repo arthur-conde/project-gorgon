@@ -26,11 +26,11 @@
     <DockPanel Margin="16">
         <!-- Header -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <icon:PackIconLucide Kind="BookOpen" Width="22" Height="22"
-                                     Foreground="{StaticResource AccentBrush}"
-                                     VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="Saruman · Words of Power" FontSize="18" FontWeight="SemiBold"
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <Image Source="pack://application:,,,/Saruman.Module;component/Resources/saruman.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Saruman · Words of Power"
+                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
             </StackPanel>
             <WrapPanel>
@@ -54,24 +54,31 @@
                       VerticalAlignment="Center" Margin="8,0,0,0"/>
         </StackPanel>
 
-        <!-- Empty state -->
-        <StackPanel Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"
-                    VerticalAlignment="Center" HorizontalAlignment="Center">
-            <icon:PackIconLucide Kind="BookOpen" Width="48" Height="48"
-                                 Foreground="{StaticResource BorderStrongBrush}"
-                                 HorizontalAlignment="Center" Margin="0,0,0,12"/>
-            <TextBlock Text="No Words of Power discovered yet"
-                       FontSize="16" Foreground="{StaticResource TextSecondaryBrush}"
-                       HorizontalAlignment="Center" Margin="0,0,0,6"/>
-            <TextBlock Text="Craft a Word of Power recipe in-game; discoveries will appear here automatically."
-                       Foreground="{StaticResource TextTertiaryBrush}"
-                       HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" TextAlignment="Center"/>
-        </StackPanel>
+        <!-- Content area: empty state and codebook overlay the same cell so the
+             empty panel can center against the full remaining space. -->
+        <Grid>
+            <!-- Empty state -->
+            <StackPanel Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"
+                        VerticalAlignment="Center" HorizontalAlignment="Center"
+                        MaxWidth="420">
+                <icon:PackIconLucide Kind="BookOpen" Width="56" Height="56"
+                                     Foreground="#66D4A847"
+                                     HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock Text="No Words of Power discovered yet"
+                           FontFamily="Cambria" FontSize="18"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center"
+                           Foreground="{StaticResource TextTertiaryBrush}" FontSize="12">
+                    Craft a Word of Power recipe in-game; discoveries will appear here automatically.
+                    Anyone speaking a tracked code in chat will mark it spent.
+                </TextBlock>
+            </StackPanel>
 
-        <!-- Codebook grid -->
-        <DataGrid ItemsSource="{Binding WordsView}"
-                  Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
-                  CanUserSortColumns="False">
+            <!-- Codebook grid -->
+            <DataGrid ItemsSource="{Binding WordsView}"
+                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
+                      CanUserSortColumns="False">
             <DataGrid.GroupStyle>
                 <GroupStyle>
                     <GroupStyle.ContainerStyle>
@@ -164,6 +171,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
             </DataGrid.Columns>
-        </DataGrid>
+            </DataGrid>
+        </Grid>
     </DockPanel>
 </UserControl>

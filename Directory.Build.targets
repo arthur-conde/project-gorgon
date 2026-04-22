@@ -1,6 +1,7 @@
 <Project>
   <ItemGroup>
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
   </ItemGroup>
 
   <PropertyGroup>

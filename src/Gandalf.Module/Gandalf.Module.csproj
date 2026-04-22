@@ -16,4 +16,8 @@
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
     <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\gandalf.ico" />
+    <Resource Include="Resources\gandalf.jpg" />
+  </ItemGroup>
 </Project>

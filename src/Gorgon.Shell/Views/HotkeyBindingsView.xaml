@@ -7,9 +7,11 @@
              Background="#FF1A1A1A">
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Top">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <icon:PackIconLucide Kind="Keyboard" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-                <TextBlock Text="Hotkeys" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <Image Source="pack://application:,,,/Gorgon;component/Resources/hotkeys.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Hotkeys" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4" Margin="0,0,0,12">

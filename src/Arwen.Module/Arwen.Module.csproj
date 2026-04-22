@@ -13,4 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\arwen.ico" />
+    <Resource Include="Resources\arwen.jpg" />
+  </ItemGroup>
 </Project>

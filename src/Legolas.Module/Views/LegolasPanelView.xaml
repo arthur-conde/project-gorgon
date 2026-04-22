@@ -8,11 +8,11 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="12">
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                <icon:PackIconLucide Kind="Target" Width="20" Height="20" VerticalAlignment="Center"
-                                     Foreground="{StaticResource AccentBrush}" Margin="0,0,6,0"/>
-                <TextBlock Text="Legolas — Survey"
-                           FontFamily="Cambria" FontSize="20"
-                           Foreground="{StaticResource AccentBrush}"/>
+                <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Legolas · Survey"
+                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
             </StackPanel>
 
             <!-- Overlay visibility -->

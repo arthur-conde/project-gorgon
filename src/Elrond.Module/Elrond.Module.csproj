@@ -14,4 +14,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\elrond.ico" />
+    <Resource Include="Resources\elrond.jpg" />
+  </ItemGroup>
 </Project>

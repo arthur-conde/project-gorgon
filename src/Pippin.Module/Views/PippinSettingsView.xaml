@@ -5,11 +5,12 @@
              Background="#FF1A1A1A">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="720" Margin="24,16">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                <icon:PackIconLucide Kind="UtensilsCrossed" Width="20" Height="20"
-                                     Foreground="#FFD4A847" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="Pippin · Gourmand Settings" FontSize="16" FontWeight="SemiBold"
+        <StackPanel MaxWidth="720" Margin="24,16" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Image Source="pack://application:,,,/Pippin.Module;component/Resources/pippin.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Pippin · Gourmand Settings"
+                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 

@@ -22,6 +22,18 @@
   <ItemGroup>
     <Resource Include="Resources\gorgon.ico" />
     <Resource Include="Resources\gorgon.jpg" />
+    <Resource Include="Resources\game-folder.ico" />
+    <Resource Include="Resources\game-folder.jpg" />
+    <Resource Include="Resources\reference-data.ico" />
+    <Resource Include="Resources\reference-data.jpg" />
+    <Resource Include="Resources\icons.ico" />
+    <Resource Include="Resources\icons.jpg" />
+    <Resource Include="Resources\diagnostics.ico" />
+    <Resource Include="Resources\diagnostics.jpg" />
+    <Resource Include="Resources\hotkeys.ico" />
+    <Resource Include="Resources\hotkeys.jpg" />
+    <Resource Include="Resources\settings.ico" />
+    <Resource Include="Resources\settings.jpg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />

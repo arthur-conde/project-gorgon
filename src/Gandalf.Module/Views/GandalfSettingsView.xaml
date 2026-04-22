@@ -3,9 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="#FF1A1A1A">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
-            <TextBlock Text="Gandalf Settings" FontFamily="Cambria" FontSize="20"
-                       Foreground="#FFD4A847" Margin="0,0,0,20"/>
+        <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Gandalf · Timers Settings"
+                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
 
             <!-- Alarm settings -->
             <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>

@@ -16,7 +16,7 @@ public sealed class SarumanModule : IGorgonModule
     public string Id => "saruman";
     public string DisplayName => "Saruman · Words of Power";
     public PackIconLucideKind Icon => PackIconLucideKind.BookOpen;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Saruman.Module;component/Resources/saruman.ico";
     public int SortOrder => 275;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(SarumanView);

@@ -18,7 +18,7 @@ public sealed class ArwenModule : IGorgonModule
     public string Id => "arwen";
     public string DisplayName => "Arwen \u00b7 Favor";
     public PackIconLucideKind Icon => PackIconLucideKind.Heart;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Arwen.Module;component/Resources/arwen.ico";
     public int SortOrder => 250;
     // Eager so the ingestion service subscribes to Player.log from session start,
     // ensuring all ProcessAddItem events are captured for gift calibration.

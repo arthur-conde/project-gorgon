@@ -13,10 +13,10 @@
     <DockPanel Margin="16">
         <!-- ── Header / Stats ── -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <icon:PackIconLucide Kind="UtensilsCrossed" Width="22" Height="22"
-                                     Foreground="#FFD4A847" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="Pippin · Gourmand" FontSize="18" FontWeight="SemiBold"
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <Image Source="pack://application:,,,/Pippin.Module;component/Resources/pippin.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Pippin · Gourmand" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 

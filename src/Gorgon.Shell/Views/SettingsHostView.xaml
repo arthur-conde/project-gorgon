@@ -4,9 +4,11 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
     <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,12,16,8">
-            <icon:PackIconLucide Kind="Settings" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-            <TextBlock Text="Settings" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,12,16,12">
+            <Image Source="pack://application:,,,/Gorgon;component/Resources/settings.ico"
+                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBlock Text="Settings" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                       Foreground="#FFD4A847" VerticalAlignment="Center"/>
         </StackPanel>
 
         <Border DockPanel.Dock="Left" Width="200" Background="#FF202020"
@@ -17,7 +19,13 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Orientation="Horizontal" Margin="4">
-                            <icon:PackIconLucide Kind="{Binding Icon}" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <Grid Width="20" Height="20" Margin="0,0,8,0">
+                                <icon:PackIconLucide Kind="{Binding Icon}" Width="15" Height="15"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="{Binding HasImage, Converter={StaticResource InverseBoolToVis}}"/>
+                                <Image Source="{Binding ImageSource}" Width="20" Height="20"
+                                       Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
+                            </Grid>
                             <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                         </StackPanel>
                     </DataTemplate>

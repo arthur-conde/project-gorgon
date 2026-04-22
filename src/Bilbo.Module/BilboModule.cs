@@ -14,7 +14,7 @@ public sealed class BilboModule : IGorgonModule
     public string Id => "bilbo";
     public string DisplayName => "Bilbo \u00b7 Storage";
     public PackIconLucideKind Icon => PackIconLucideKind.Package;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Bilbo.Module;component/Resources/bilbo.ico";
     public int SortOrder => 400;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(StorageView);

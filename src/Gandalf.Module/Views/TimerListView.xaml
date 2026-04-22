@@ -6,10 +6,12 @@
              Background="#FF1A1A1A">
     <DockPanel Margin="12">
         <!-- Header -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal">
-                <icon:PackIconLucide Kind="Timer" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-                <TextBlock Text="Gandalf — Timers" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+                <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Gandalf · Timers" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Clear done" Padding="10,4" Margin="4,0"

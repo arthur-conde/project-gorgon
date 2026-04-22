@@ -21,47 +21,54 @@
         <tb:TaskbarIcon x:Name="Tray" DockPanel.Dock="Top" Visibility="Visible"
                         ToolTipText="Gorgon"/>
         <Border DockPanel.Dock="Bottom" Background="#FF252525" Padding="8,4">
-            <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
-        </Border>
-        <Border DockPanel.Dock="Left" Width="200" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Bottom" Margin="8">
-                    <Button Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
+                <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}"
+                           Foreground="#66FFFFFF" Margin="12,0,0,0"/>
+                <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
+            </DockPanel>
+        </Border>
+        <Border DockPanel.Dock="Left" Width="260" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Margin="10">
+                    <Button Margin="0,0,0,6" Padding="10,6" HorizontalContentAlignment="Left"
                             Command="{Binding OpenDiagnosticsCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <icon:PackIconLucide Kind="Search" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="Diagnostics" VerticalAlignment="Center"/>
+                            <Image Source="pack://application:,,,/Gorgon;component/Resources/diagnostics.ico"
+                                   Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Diagnostics" FontSize="14" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Margin="0,0,0,4" Padding="8,4" HorizontalContentAlignment="Left"
+                    <Button Margin="0,0,0,6" Padding="10,6" HorizontalContentAlignment="Left"
                             Command="{Binding OpenHotkeysCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <icon:PackIconLucide Kind="Keyboard" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="Hotkeys" VerticalAlignment="Center"/>
+                            <Image Source="pack://application:,,,/Gorgon;component/Resources/hotkeys.ico"
+                                   Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Hotkeys" FontSize="14" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button Padding="8,4" HorizontalContentAlignment="Left"
+                    <Button Padding="10,6" HorizontalContentAlignment="Left"
                             Command="{Binding OpenSettingsCommand}">
                         <StackPanel Orientation="Horizontal">
-                            <icon:PackIconLucide Kind="Settings" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="Settings" VerticalAlignment="Center"/>
+                            <Image Source="pack://application:,,,/Gorgon;component/Resources/settings.ico"
+                                   Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Settings" FontSize="14" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
                 <ListBox ItemsSource="{Binding Modules}"
                          SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
-                         Background="Transparent" BorderThickness="0" Padding="4">
+                         Background="Transparent" BorderThickness="0" Padding="6">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Orientation="Horizontal" Margin="4">
-                                <Grid Width="20" Height="20" Margin="0,0,8,0">
-                                    <icon:PackIconLucide Kind="{Binding Icon}" Width="16" Height="16"
+                            <StackPanel Orientation="Horizontal" Margin="4,6">
+                                <Grid Width="28" Height="28" Margin="0,0,10,0">
+                                    <icon:PackIconLucide Kind="{Binding Icon}" Width="22" Height="22"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Visibility="{Binding HasImage, Converter={StaticResource InverseBoolToVis}}"/>
-                                    <Image Source="{Binding ImageSource}" Width="20" Height="20"
+                                    <Image Source="{Binding ImageSource}" Width="28" Height="28"
                                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
                                 </Grid>
-                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+                                <TextBlock Text="{Binding Title}" FontSize="14" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

@@ -7,4 +7,16 @@
     <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>Gorgon</Product>
+    <Authors>Arthur Conde</Authors>
+    <Company>Arthur Conde</Company>
+    <Copyright>Copyright © Arthur Conde 2026</Copyright>
+    <Description>Modular WPF desktop companion app for the MMORPG Project Gorgon.</Description>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <RepositoryUrl>https://github.com/arthur-conde/project-gorgon.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
 </Project>

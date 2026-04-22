@@ -17,10 +17,12 @@
 
     <DockPanel Margin="12">
         <!-- Header -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal">
-                <icon:PackIconLucide Kind="Package" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-                <TextBlock Text="Bilbo — Storage Browser" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+                <Image Source="pack://application:,,,/Bilbo.Module;component/Resources/bilbo.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Bilbo · Storage" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
         </DockPanel>
 

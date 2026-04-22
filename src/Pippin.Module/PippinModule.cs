@@ -18,7 +18,7 @@ public sealed class PippinModule : IGorgonModule
     public string Id => "pippin";
     public string DisplayName => "Pippin · Gourmand";
     public PackIconLucideKind Icon => PackIconLucideKind.UtensilsCrossed;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Pippin.Module;component/Resources/pippin.ico";
     public int SortOrder => 150;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(GourmandView);

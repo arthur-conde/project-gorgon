@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reflection;
 using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -41,9 +42,21 @@ public sealed partial class ShellViewModel : ObservableObject
 
     public ObservableCollection<ModuleEntry> Modules { get; } = new();
 
+    public string VersionText { get; } = BuildVersionText();
+
     [ObservableProperty] private ModuleEntry? _selectedModule;
     [ObservableProperty] private object? _activeContent;
     [ObservableProperty] private string _statusText = "";
+
+    private static string BuildVersionText()
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (string.IsNullOrEmpty(info))
+            return "v" + (asm.GetName().Version?.ToString(3) ?? "?");
+        var plus = info.IndexOf('+');
+        return "v" + (plus >= 0 ? info[..plus] : info);
+    }
 
     partial void OnSelectedModuleChanged(ModuleEntry? value)
     {

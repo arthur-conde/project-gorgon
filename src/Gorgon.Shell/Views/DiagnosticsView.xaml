@@ -4,10 +4,12 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
     <DockPanel Margin="12">
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal">
-                <icon:PackIconLucide Kind="Search" Width="18" Height="18" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-                <TextBlock Text="Diagnostics" FontFamily="Cambria" FontSize="18" Foreground="#FFD4A847"/>
+                <Image Source="pack://application:,,,/Gorgon;component/Resources/diagnostics.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Diagnostics" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                 <CheckBox Content="Trace" IsChecked="{Binding ShowTrace}" Foreground="#AAFFFFFF" Margin="6,0"/>

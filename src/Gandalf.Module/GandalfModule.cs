@@ -16,7 +16,7 @@ public sealed class GandalfModule : IGorgonModule
     public string Id => "gandalf";
     public string DisplayName => "Gandalf · Timers";
     public PackIconLucideKind Icon => PackIconLucideKind.Timer;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico";
     public int SortOrder => 300;
     public ActivationMode DefaultActivation => ActivationMode.Eager;
     public Type ViewType => typeof(TimerListView);
