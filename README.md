@@ -74,7 +74,6 @@ tests/
 
 tools/
   CropsExtractor/           Helper for building reference data
-garden/                     Legacy browser-based garden helper (HTML + Python bridge)
 ```
 
 ## Architecture
@@ -155,3 +154,7 @@ App settings persist under `%LocalAppData%\Gorgon\` — each module gets its own
 - New log parsers belong in the owning module unless they're reused — parsers used by two or more modules get promoted into `Gorgon.Shared`.
 - Match the existing MVVM and settings conventions (source-generated, not reflection).
 - Every behavioral change ships with a test. The test projects mirror the module layout one-for-one.
+
+## Acknowledgements
+
+The Samwise garden module began as a direct C# port of [Goozify/GorgonHelper](https://github.com/Goozify/GorgonHelper), a browser-based garden helper for *Project Gorgon*, and has since evolved on top of that foundation. Thanks to its author for the original log-tailing and garden-state logic that this project is built on.
