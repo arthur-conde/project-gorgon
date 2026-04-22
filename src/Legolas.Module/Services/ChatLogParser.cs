@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Gorgon.Shared.Logging;
 using Legolas.Domain;
 
 namespace Legolas.Services;
@@ -17,7 +18,7 @@ public sealed partial class ChatLogParser : IChatLogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MotherlodeRegex();
 
-    public GameEvent? TryParse(string line, DateTime timestamp)
+    public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrWhiteSpace(line))
         {

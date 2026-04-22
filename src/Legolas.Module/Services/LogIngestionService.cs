@@ -47,9 +47,8 @@ public sealed class LogIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            var evt = _parser.TryParse(raw.Line, raw.Timestamp);
-            if (evt is null) continue;
-            Dispatch(evt);
+            if (_parser.TryParse(raw.Line, raw.Timestamp) is GameEvent evt)
+                Dispatch(evt);
         }
     }
 

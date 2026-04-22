@@ -1,6 +1,8 @@
+using Gorgon.Shared.Logging;
+
 namespace Legolas.Domain;
 
-public abstract record GameEvent(DateTime Timestamp);
+public abstract record GameEvent(DateTime Timestamp) : LogEvent(Timestamp);
 
 public sealed record SurveyDetected(
     DateTime Timestamp,
