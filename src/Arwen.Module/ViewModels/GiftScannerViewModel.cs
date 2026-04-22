@@ -3,6 +3,7 @@ using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Game;
 using Gorgon.Shared.Storage;
 
@@ -26,17 +27,20 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     private readonly FavorStateService _state;
     private readonly GiftIndex _giftIndex;
     private readonly GameConfig _gameConfig;
+    private readonly ICharacterDataService _charData;
     private StorageReport? _loadedReport;
 
     private readonly CalibrationService _calibration;
 
-    public GiftScannerViewModel(FavorStateService state, GiftIndex giftIndex, CalibrationService calibration, GameConfig gameConfig)
+    public GiftScannerViewModel(FavorStateService state, GiftIndex giftIndex, CalibrationService calibration, GameConfig gameConfig, ICharacterDataService charData)
     {
         _state = state;
         _giftIndex = giftIndex;
         _calibration = calibration;
         _gameConfig = gameConfig;
+        _charData = charData;
         _state.StateChanged += (_, _) => RefreshNpcList();
+        _charData.CharactersChanged += (_, _) => RefreshReports();
         RefreshNpcList();
         RefreshReports();
     }
@@ -56,6 +60,9 @@ public sealed partial class GiftScannerViewModel : ObservableObject
 
     [ObservableProperty]
     private ReportFileInfo? _selectedReport;
+
+    [ObservableProperty]
+    private bool _showAllReports;
 
     // ── Results ─────────────────────────────────────────────────────────
 
@@ -78,17 +85,59 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         Scan();
     }
 
+    partial void OnShowAllReportsChanged(bool value) => RefreshReports();
+
     // ── Commands ────────────────────────────────────────────────────────
 
     [RelayCommand]
     private void RefreshReports()
     {
         var dir = _gameConfig.ReportsDirectory;
-        var reports = StorageReportLoader.ScanForReports(dir);
-        AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
+        var all = StorageReportLoader.ScanForReports(dir);
 
-        if (reports.Count > 0 && SelectedReport is null)
-            SelectedReport = reports[0];
+        var active = _charData.ActiveCharacter;
+        List<ReportFileInfo> reports;
+        string? fallbackHint = null;
+        if (active is null)
+        {
+            reports = all.ToList();
+        }
+        else
+        {
+            var matching = all.Where(r =>
+                    r.Character.Equals(active.Name, StringComparison.OrdinalIgnoreCase) &&
+                    r.Server.Equals(active.Server, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (matching.Count > 0)
+            {
+                reports = matching;
+            }
+            else
+            {
+                reports = all.ToList();
+                if (reports.Count > 0)
+                    fallbackHint = "No storage exports match the active character — showing all.";
+            }
+        }
+
+        // When the toggle is off, collapse to newest snapshot per (Character, Server).
+        if (!ShowAllReports)
+        {
+            reports = reports
+                .GroupBy(r => (r.Character.ToLowerInvariant(), r.Server.ToLowerInvariant()))
+                .Select(g => g.OrderByDescending(r => r.LastModifiedUtc).First())
+                .OrderByDescending(r => r.LastModifiedUtc)
+                .ToList();
+        }
+
+        var previousPath = SelectedReport?.FilePath;
+        AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
+        SelectedReport = reports.FirstOrDefault(r =>
+            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase))
+            ?? reports.FirstOrDefault();
+
+        if (fallbackHint is not null)
+            StatusMessage = fallbackHint;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -97,13 +146,26 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     {
         var previousKey = SelectedNpc?.NpcKey;
 
-        var entries = _state.Entries
+        var newEntries = _state.Entries
             .Where(e => e.Preferences.Count > 0)
             .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        NpcList = new ObservableCollection<NpcFavorEntry>(entries);
 
-        if (previousKey is not null)
+        // Sync NpcList in place so ComboBox.SelectedItem isn't invalidated by an ItemsSource swap.
+        var newKeys = new HashSet<string>(newEntries.Select(e => e.NpcKey), StringComparer.Ordinal);
+        for (var i = NpcList.Count - 1; i >= 0; i--)
+        {
+            if (!newKeys.Contains(NpcList[i].NpcKey))
+                NpcList.RemoveAt(i);
+        }
+        var existingKeys = new HashSet<string>(NpcList.Select(e => e.NpcKey), StringComparer.Ordinal);
+        for (var i = 0; i < newEntries.Count; i++)
+        {
+            if (!existingKeys.Contains(newEntries[i].NpcKey))
+                NpcList.Insert(i, newEntries[i]);
+        }
+
+        if (SelectedNpc is null && previousKey is not null)
             SelectedNpc = NpcList.FirstOrDefault(e => e.NpcKey == previousKey);
     }
 

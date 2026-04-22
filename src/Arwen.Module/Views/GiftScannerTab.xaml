@@ -28,6 +28,10 @@
                                   Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
                         <Button Content="Refresh" Command="{Binding RefreshReportsCommand}"
                                 Margin="6,0,0,0" Padding="10,4" FontSize="12"/>
+                        <CheckBox Content="Show all snapshots" IsChecked="{Binding ShowAllReports}"
+                                  Margin="10,0,0,0" VerticalAlignment="Center"
+                                  Foreground="#CCFFFFFF" FontSize="12"
+                                  ToolTip="When unchecked, only the newest storage export per character is shown."/>
                     </StackPanel>
                 </StackPanel>
             </StackPanel>

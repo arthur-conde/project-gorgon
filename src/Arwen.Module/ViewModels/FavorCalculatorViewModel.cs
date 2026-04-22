@@ -111,14 +111,27 @@ public sealed partial class FavorCalculatorViewModel : ObservableObject
     {
         var previousKey = SelectedNpc?.NpcKey;
 
-        var entries = _state.Entries
+        var newEntries = _state.Entries
             .Where(e => e.Preferences.Count > 0)
             .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        NpcList = new ObservableCollection<NpcFavorEntry>(entries);
+
+        // Sync NpcList in place so ComboBox.SelectedItem isn't invalidated by an ItemsSource swap.
+        var newKeys = new HashSet<string>(newEntries.Select(e => e.NpcKey), StringComparer.Ordinal);
+        for (var i = NpcList.Count - 1; i >= 0; i--)
+        {
+            if (!newKeys.Contains(NpcList[i].NpcKey))
+                NpcList.RemoveAt(i);
+        }
+        var existingKeys = new HashSet<string>(NpcList.Select(e => e.NpcKey), StringComparer.Ordinal);
+        for (var i = 0; i < newEntries.Count; i++)
+        {
+            if (!existingKeys.Contains(newEntries[i].NpcKey))
+                NpcList.Insert(i, newEntries[i]);
+        }
         FilterNpcList();
 
-        if (previousKey is not null)
+        if (SelectedNpc is null && previousKey is not null)
             SelectedNpc = NpcList.FirstOrDefault(e => e.NpcKey == previousKey);
     }
 

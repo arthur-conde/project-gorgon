@@ -77,5 +77,6 @@ public sealed record ReportFileInfo(
     string Server,
     DateTime LastModifiedUtc)
 {
-    public override string ToString() => $"{Character} ({Server})";
+    public override string ToString() =>
+        $"{Character} ({Server}) — {LastModifiedUtc.ToLocalTime():MMM d, HH:mm}";
 }
