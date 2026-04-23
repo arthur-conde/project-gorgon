@@ -3,7 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
-using Gorgon.Shared.Settings;
+using Gorgon.Shared.Character;
 using Xunit;
 
 namespace Gandalf.Tests;
@@ -143,27 +143,32 @@ public class GandalfTimerTests
     {
         var dir = Path.Combine(Path.GetTempPath(), $"gandalf_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "state.json");
         try
         {
-            var store = new JsonSettingsStore<GandalfState>(path, GandalfStateJsonContext.Default.GandalfState);
+            var active = new FakeActiveCharacterService();
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+            var store = new PerCharacterStore<GandalfState>(dir, "gandalf.json",
+                GandalfStateJsonContext.Default.GandalfState);
 
             // Simulate: create service, add timer, start it, dispose (flush to disk)
-            var svc = new TimerStateService(store);
-            svc.Add(new GandalfTimer
+            using (var view = new PerCharacterView<GandalfState>(active, store))
             {
-                Name = "Test",
-                Duration = TimeSpan.FromHours(1),
-                Region = "Serbule",
-                Map = "Serbule",
-            });
-            svc.Start(svc.Timers[0].Id);
-            svc.Timers[0].StartedAt.Should().NotBeNull();
-            svc.Dispose(); // triggers Flush
+                var svc = new TimerStateService(view);
+                svc.Add(new GandalfTimer
+                {
+                    Name = "Test",
+                    Duration = TimeSpan.FromHours(1),
+                    Region = "Serbule",
+                    Map = "Serbule",
+                });
+                svc.Start(svc.Timers[0].Id);
+                svc.Timers[0].StartedAt.Should().NotBeNull();
+                svc.Dispose(); // triggers Flush
+            }
 
             // Simulate: new app session, load from disk
-            var svc2 = new TimerStateService(store);
-            svc2.Load();
+            using var view2 = new PerCharacterView<GandalfState>(active, store);
+            var svc2 = new TimerStateService(view2);
 
             svc2.Timers.Should().HaveCount(1);
             svc2.Timers[0].Name.Should().Be("Test");

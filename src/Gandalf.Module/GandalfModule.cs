@@ -3,6 +3,8 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
+using Gorgon.Shared.Character;
+using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
@@ -28,29 +30,26 @@ public sealed class GandalfModule : IGorgonModule
         var gandalfDir = Path.Combine(localApp, "Gorgon", "Gandalf");
         Directory.CreateDirectory(gandalfDir);
         var settingsPath = Path.Combine(gandalfDir, "settings.json");
-        var statePath = Path.Combine(gandalfDir, "state.json");
 
+        // Global user preferences (alarm volume, sound picker, etc) stay app-wide.
         services.AddSingleton<ISettingsStore<GandalfSettings>>(_ =>
             new JsonSettingsStore<GandalfSettings>(settingsPath, GandalfSettingsJsonContext.Default.GandalfSettings));
-        services.AddSingleton<ISettingsStore<GandalfState>>(_ =>
-            new JsonSettingsStore<GandalfState>(statePath, GandalfStateJsonContext.Default.GandalfState));
-
         services.AddSingleton<GandalfSettings>(sp =>
             sp.GetRequiredService<ISettingsStore<GandalfSettings>>().Load());
         services.AddSingleton<SettingsAutoSaver<GandalfSettings>>();
 
+        // Timer list is per-character with one-shot migration from the old flat state.json.
+        services.AddSingleton<ILegacyMigration<GandalfState>>(_ =>
+            new GandalfLegacyMigration(gandalfDir, GandalfStateJsonContext.Default.GandalfState));
+        services.AddPerCharacterModuleStore<GandalfState>(Id, GandalfStateJsonContext.Default.GandalfState);
+
         services.AddSingleton<TimerStateService>();
         services.AddSingleton<TimerAlarmService>();
 
-        services.AddSingleton<TimerListViewModel>(sp =>
-        {
-            var stateService = sp.GetRequiredService<TimerStateService>();
-            stateService.Load();
-            return new TimerListViewModel(
-                stateService,
-                sp.GetRequiredService<TimerAlarmService>(),
-                sp.GetRequiredService<IDialogService>());
-        });
+        services.AddSingleton<TimerListViewModel>(sp => new TimerListViewModel(
+            sp.GetRequiredService<TimerStateService>(),
+            sp.GetRequiredService<TimerAlarmService>(),
+            sp.GetRequiredService<IDialogService>()));
 
         services.AddSingleton<TimerListView>(sp => new TimerListView
         {

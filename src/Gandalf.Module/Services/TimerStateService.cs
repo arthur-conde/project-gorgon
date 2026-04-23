@@ -1,42 +1,41 @@
 using Gandalf.Domain;
-using Gorgon.Shared.Settings;
+using Gorgon.Shared.Character;
 
 namespace Gandalf.Services;
 
+/// <summary>
+/// Owns the timer list for the currently active character. Reads/writes through
+/// <see cref="PerCharacterView{T}"/>; on a character switch the list is swapped to the
+/// new character's timers and <see cref="TimerChanged"/> fires so the VM re-syncs.
+/// </summary>
 public sealed class TimerStateService : IDisposable
 {
-    private readonly ISettingsStore<GandalfState> _store;
+    private readonly PerCharacterView<GandalfState> _view;
     private readonly System.Timers.Timer _debounce;
     private readonly Lock _flushLock = new();
     private bool _dirty;
 
-    public List<GandalfTimer> Timers { get; private set; } = [];
+    public List<GandalfTimer> Timers => _view.Current?.Timers ?? [];
 
     public event EventHandler? TimerChanged;
     public event EventHandler<GandalfTimer>? TimerExpired;
 
-    public TimerStateService(ISettingsStore<GandalfState> store)
+    public TimerStateService(PerCharacterView<GandalfState> view)
     {
-        _store = store;
+        _view = view;
+        _view.CurrentChanged += OnCurrentChanged;
         _debounce = new System.Timers.Timer(500) { AutoReset = false };
         _debounce.Elapsed += (_, _) => Flush();
     }
 
-    public void Load()
-    {
-        var state = _store.Load();
-        Timers = state.Timers;
-    }
-
-    public async Task LoadAsync(CancellationToken ct = default)
-    {
-        var state = await _store.LoadAsync(ct).ConfigureAwait(false);
-        Timers = state.Timers;
-    }
+    private void OnCurrentChanged(object? sender, EventArgs e)
+        => TimerChanged?.Invoke(this, EventArgs.Empty);
 
     public void Add(GandalfTimer timer)
     {
-        Timers.Add(timer);
+        var current = _view.Current;
+        if (current is null) return;
+        current.Timers.Add(timer);
         MarkDirty();
         TimerChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -70,7 +69,9 @@ public sealed class TimerStateService : IDisposable
 
     public void Remove(string id)
     {
-        if (Timers.RemoveAll(t => t.Id == id) > 0)
+        var current = _view.Current;
+        if (current is null) return;
+        if (current.Timers.RemoveAll(t => t.Id == id) > 0)
         {
             MarkDirty();
             TimerChanged?.Invoke(this, EventArgs.Empty);
@@ -79,7 +80,9 @@ public sealed class TimerStateService : IDisposable
 
     public void ClearCompleted()
     {
-        if (Timers.RemoveAll(t => t.State == TimerState.Done) > 0)
+        var current = _view.Current;
+        if (current is null) return;
+        if (current.Timers.RemoveAll(t => t.State == TimerState.Done) > 0)
         {
             MarkDirty();
             TimerChanged?.Invoke(this, EventArgs.Empty);
@@ -119,12 +122,13 @@ public sealed class TimerStateService : IDisposable
     {
         lock (_flushLock)
         {
-            _store.Save(new GandalfState { Timers = Timers });
+            try { _view.Save(); } catch { /* best-effort */ }
         }
     }
 
     public void Dispose()
     {
+        _view.CurrentChanged -= OnCurrentChanged;
         _debounce.Stop();
         _debounce.Dispose();
         if (_dirty)
