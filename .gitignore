@@ -8,6 +8,7 @@ artifacts/
 
 # Temp files for Claude
 src/temp
+.claude/settings.local.json
 
 # Legacy browser-based garden helper (superseded by Samwise module)
 garden/
