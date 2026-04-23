@@ -23,22 +23,14 @@ public sealed class GardenStateService : IDisposable
         _state.PlotsRemoved += OnRemoved;
     }
 
-    public async Task LoadAsync(CancellationToken ct = default)
-    {
-        var loaded = await _store.LoadAsync(ct).ConfigureAwait(false);
-        _state.Hydrate(loaded);
-    }
-
-    private void Hydrate(GardenState loaded)
-    {
-        // Replay each plot as a synthetic UpdateDescription would be wasteful;
-        // instead, call into a hydration entry point on the state machine.
-        // For simplicity we expose this via a public Snapshot writer; keep it
-        // here as a minimal no-side-effect populate.
-        // (The state machine's internal dictionaries are not mutated externally;
-        //  hydration walks plot rows and inserts directly via a new Hydrate API.)
-        _state.Hydrate(loaded);
-    }
+    /// <summary>
+    /// Reads persisted state from disk. Does NOT hydrate the state machine —
+    /// <see cref="GardenStateMachine.Hydrate"/> raises <c>PlotChanged</c> which
+    /// mutates the VM's bound <c>ObservableCollection</c>, so callers must
+    /// invoke it on the WPF dispatcher thread.
+    /// </summary>
+    public Task<GardenState> LoadAsync(CancellationToken ct = default)
+        => _store.LoadAsync(ct);
 
     private void OnChanged(object? sender, PlotChangedArgs e) => MarkDirty();
 
