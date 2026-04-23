@@ -16,7 +16,7 @@ public sealed class FavorIngestionService : BackgroundService
     private readonly FavorLogParser _parser;
     private readonly FavorStateService _state;
     private readonly CalibrationService _calibration;
-    private readonly ArwenSettings _settings;
+    private readonly PerCharacterView<ArwenFavorState> _favorView;
     private readonly IActiveCharacterService _activeChar;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
@@ -26,7 +26,7 @@ public sealed class FavorIngestionService : BackgroundService
         FavorLogParser parser,
         FavorStateService state,
         CalibrationService calibration,
-        ArwenSettings settings,
+        PerCharacterView<ArwenFavorState> favorView,
         IActiveCharacterService activeChar,
         SettingsAutoSaver<ArwenSettings> autoSaver,
         ModuleGates gates,
@@ -36,7 +36,7 @@ public sealed class FavorIngestionService : BackgroundService
         _parser = parser;
         _state = state;
         _calibration = calibration;
-        _settings = settings;
+        _favorView = favorView;
         _activeChar = activeChar;
         _diag = diag;
         _ = autoSaver; // keep alive for PropertyChanged subscription
@@ -59,15 +59,14 @@ public sealed class FavorIngestionService : BackgroundService
                 case FavorUpdate update:
                     _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
                     _calibration.OnStartInteraction(update.NpcKey);
-                    var charName = _activeChar.ActiveCharacterName;
-                    if (!string.IsNullOrEmpty(charName))
+                    Dispatch(() =>
                     {
-                        Dispatch(() =>
-                        {
-                            _settings.SetExactFavor(charName, update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
-                            _state.OnFavorUpdated(update.NpcKey);
-                        });
-                    }
+                        var favor = _favorView.Current;
+                        if (favor is null) return;
+                        favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
+                        _favorView.Save();
+                        _state.OnFavorUpdated(update.NpcKey);
+                    });
                     break;
 
                 case ItemAdded added:

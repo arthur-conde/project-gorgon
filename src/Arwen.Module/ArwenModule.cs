@@ -4,12 +4,15 @@ using Arwen.Parsing;
 using Arwen.State;
 using Arwen.ViewModels;
 using Arwen.Views;
+using Gorgon.Shared.Character;
+using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Reference;
 using Gorgon.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Arwen;
 
@@ -29,13 +32,27 @@ public sealed class ArwenModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var settingsPath = Path.Combine(localApp, "Gorgon", "Arwen", "settings.json");
+        var arwenDir = Path.Combine(localApp, "Gorgon", "Arwen");
+        var settingsPath = Path.Combine(arwenDir, "settings.json");
 
+        // Global preferences (just Calibration now that FavorStates has split into per-char arwen.json).
         services.AddSingleton<ISettingsStore<ArwenSettings>>(_ =>
             new JsonSettingsStore<ArwenSettings>(settingsPath, ArwenJsonContext.Default.ArwenSettings));
         services.AddSingleton<ArwenSettings>(sp =>
             sp.GetRequiredService<ISettingsStore<ArwenSettings>>().Load());
         services.AddSingleton<SettingsAutoSaver<ArwenSettings>>();
+
+        // Per-character favor state (exact favor values parsed from Player.log).
+        services.AddPerCharacterModuleStore<ArwenFavorState>(Id, ArwenFavorStateJsonContext.Default.ArwenFavorState);
+
+        // One-shot startup fanout: split legacy FavorStates dict → per-char arwen.json files.
+        services.AddHostedService(sp => new ArwenFavorFanoutMigration(
+            arwenDir,
+            sp.GetRequiredService<PerCharacterStore<ArwenFavorState>>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetRequiredService<ISettingsStore<ArwenSettings>>(),
+            sp.GetRequiredService<ArwenSettings>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         services.AddSingleton<FavorLogParser>();
         services.AddSingleton<FavorStateService>();

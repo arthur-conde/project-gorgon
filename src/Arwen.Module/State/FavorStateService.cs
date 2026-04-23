@@ -38,7 +38,7 @@ public sealed class FavorStateService : IFavorLookupService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _charData;
-    private readonly ArwenSettings _settings;
+    private readonly PerCharacterView<ArwenFavorState> _favorView;
 
     private IReadOnlyList<NpcFavorEntry> _entries = [];
     private Dictionary<string, FavorTier> _tierByNpcKey = new(StringComparer.Ordinal);
@@ -64,11 +64,11 @@ public sealed class FavorStateService : IFavorLookupService
     public FavorStateService(
         IReferenceDataService refData,
         IActiveCharacterService charData,
-        ArwenSettings settings)
+        PerCharacterView<ArwenFavorState> favorView)
     {
         _refData = refData;
         _charData = charData;
-        _settings = settings;
+        _favorView = favorView;
 
         _refData.FileUpdated += (_, key) => { if (key == "npcs") Rebuild(); };
         _charData.ActiveCharacterChanged += (_, _) => Rebuild();
@@ -97,7 +97,6 @@ public sealed class FavorStateService : IFavorLookupService
     {
         var npcs = _refData.Npcs;
         var activeChar = _charData.ActiveCharacter;
-        var charName = activeChar?.Name;
 
         var entries = new List<NpcFavorEntry>(npcs.Count);
 
@@ -131,10 +130,9 @@ public sealed class FavorStateService : IFavorLookupService
     private void ApplyFavorData(NpcFavorEntry entry)
     {
         var activeChar = _charData.ActiveCharacter;
-        var charName = activeChar?.Name;
 
         // Priority 1: Persisted exact favor from Player.log
-        var snapshot = charName is not null ? _settings.GetExactFavor(charName, entry.NpcKey) : null;
+        var snapshot = _favorView.Current?.GetExactFavor(entry.NpcKey);
         if (snapshot is not null)
         {
             entry.ExactFavor = snapshot.ExactFavor;
