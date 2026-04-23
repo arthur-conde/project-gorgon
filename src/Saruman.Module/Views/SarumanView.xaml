@@ -143,10 +143,25 @@
                 </Style>
             </wpf:GorgonDataGrid.RowStyle>
             <wpf:GorgonDataGrid.Columns>
-                <DataGridTemplateColumn Header="Code" Width="140">
+                <DataGridTemplateColumn Header="Code" Width="180">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Code}" Style="{StaticResource CodeCellText}"/>
+                            <DockPanel LastChildFill="False">
+                                <TextBlock DockPanel.Dock="Left"
+                                           Text="{Binding Code}" Style="{StaticResource CodeCellText}"/>
+                                <Button DockPanel.Dock="Left"
+                                        Padding="0" Margin="6,0,0,0"
+                                        Width="22" Height="20"
+                                        Background="Transparent" BorderThickness="0"
+                                        Cursor="Hand"
+                                        IsEnabled="{Binding IsKnown}"
+                                        Command="{Binding DataContext.CopyCodeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                        CommandParameter="{Binding Code}"
+                                        ToolTip="Copy this code to the clipboard">
+                                    <icon:PackIconLucide Kind="Copy" Width="12" Height="12"
+                                                         Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </Button>
+                            </DockPanel>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -160,18 +175,6 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
                 <DataGridTextColumn Header="Discovered" Binding="{Binding FirstDiscoveredAt, StringFormat=g}" Width="130"/>
-                <DataGridTemplateColumn Header="" Width="70">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Button Content="Copy"
-                                    Padding="8,2" MinHeight="20"
-                                    IsEnabled="{Binding IsKnown}"
-                                    Command="{Binding DataContext.CopyCodeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                    CommandParameter="{Binding Code}"
-                                    ToolTip="Copy this code to the clipboard"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
             </wpf:GorgonDataGrid.Columns>
             </wpf:GorgonDataGrid>
         </Grid>
