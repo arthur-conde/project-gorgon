@@ -31,6 +31,11 @@ public sealed class GiftIndex
     private IReadOnlyDictionary<long, ItemEntry> _items =
         new Dictionary<long, ItemEntry>();
 
+    // Per-NPC, per-item: all preferences that matched (not just the best).
+    // Used by calibration to record multi-preference matches for rate modeling.
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<long, IReadOnlyList<MatchedPreference>>> _allMatchesByNpcItem =
+        new Dictionary<string, IReadOnlyDictionary<long, IReadOnlyList<MatchedPreference>>>(StringComparer.Ordinal);
+
     public event EventHandler? Rebuilt;
 
     public void Build(IReadOnlyDictionary<long, ItemEntry> items, IReadOnlyDictionary<string, NpcEntry> npcs)
@@ -54,15 +59,16 @@ public sealed class GiftIndex
 
         // Step 2: For each NPC preference, find items matching ALL keywords (AND logic)
         var npcGifts = new Dictionary<string, IReadOnlyList<GiftMatch>>(npcs.Count, StringComparer.Ordinal);
+        var allMatchesByNpcItem = new Dictionary<string, IReadOnlyDictionary<long, IReadOnlyList<MatchedPreference>>>(npcs.Count, StringComparer.Ordinal);
         foreach (var (npcKey, npc) in npcs)
         {
             var bestPerItem = new Dictionary<long, GiftMatch>();
+            var allPrefsPerItem = new Dictionary<long, List<MatchedPreference>>();
 
             foreach (var pref in npc.Preferences)
             {
                 if (pref.Keywords.Count == 0) continue;
 
-                // Find candidate items: start with the first keyword, then intersect
                 foreach (var (itemId, item) in items)
                 {
                     if (!itemKeywordSets.TryGetValue(itemId, out var itemTags)) continue;
@@ -85,16 +91,36 @@ public sealed class GiftIndex
                             itemId, item.Name, item.IconId, pref.Desire, pref.Pref, itemValue, relativeScore,
                             pref.RequiredFavorTier, matchedKw);
                     }
+
+                    // Also record this preference on the item's full match list
+                    if (!allPrefsPerItem.TryGetValue(itemId, out var list))
+                    {
+                        list = new List<MatchedPreference>();
+                        allPrefsPerItem[itemId] = list;
+                    }
+                    list.Add(new MatchedPreference
+                    {
+                        Name = pref.Name,
+                        Desire = pref.Desire,
+                        Pref = pref.Pref,
+                        Keywords = [.. pref.Keywords],
+                    });
                 }
             }
 
             var matches = bestPerItem.Values.ToList();
             matches.Sort((a, b) => b.RelativeScore.CompareTo(a.RelativeScore));
             npcGifts[npcKey] = matches;
+
+            var allMatches = new Dictionary<long, IReadOnlyList<MatchedPreference>>(allPrefsPerItem.Count);
+            foreach (var (itemId, list) in allPrefsPerItem)
+                allMatches[itemId] = list;
+            allMatchesByNpcItem[npcKey] = allMatches;
         }
 
         _npcGifts = npcGifts;
         _items = items;
+        _allMatchesByNpcItem = allMatchesByNpcItem;
         Rebuilt?.Invoke(this, EventArgs.Empty);
     }
 
@@ -110,6 +136,17 @@ public sealed class GiftIndex
             if (g.ItemId == itemId)
                 return g;
         return null;
+    }
+
+    /// <summary>
+    /// All NPC preferences the given item satisfies. An item may match multiple preferences
+    /// (e.g. "Ring" + "MinRarity:Rare"), and the game's favor-per-gift rate appears to depend
+    /// on the full set, not just the highest-scoring one.
+    /// </summary>
+    public IReadOnlyList<MatchedPreference> MatchAllPreferencesForItem(long itemId, string npcKey)
+    {
+        if (!_allMatchesByNpcItem.TryGetValue(npcKey, out var perItem)) return [];
+        return perItem.TryGetValue(itemId, out var list) ? list : [];
     }
 
     /// <summary>All NPCs who want a specific item, sorted by pref descending.</summary>

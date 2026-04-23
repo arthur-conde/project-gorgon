@@ -82,6 +82,7 @@ public sealed class GardenIngestionService : BackgroundService
         UpdateItemCode uic => $"UpdateItem   id={uic.ItemId}",
         GardeningXp => "GardeningXp",
         ScreenTextError => "ScreenError",
+        PlantingCapReached pcr => $"PlantingCap  seed={pcr.SeedDisplayName}",
         _ => e.GetType().Name,
     };
 

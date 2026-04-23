@@ -99,9 +99,35 @@
                                         <SolidColorBrush Color="{Binding StageColor, Converter={StaticResource StringToColor}}"/>
                                     </TextBlock.Foreground>
                                 </TextBlock>
-                                <ProgressBar Margin="0,4,0,0" Height="6"
-                                             Minimum="0" Maximum="1" Value="{Binding GrowthFraction, Mode=OneWay}"
-                                             Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"/>
+                                <Grid Margin="0,4,0,0" Height="10">
+                                    <ProgressBar x:Name="GrowthBar" Height="6" VerticalAlignment="Center"
+                                                 Minimum="0" Maximum="1" Value="{Binding GrowthFraction, Mode=OneWay}"
+                                                 Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"/>
+                                    <ItemsControl ItemsSource="{Binding PhaseTicks}"
+                                                  ToolTipService.ShowOnDisabled="True"
+                                                  Background="Transparent">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <Canvas/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Rectangle Width="2" Height="10" ToolTip="{Binding Tooltip}">
+                                                    <Rectangle.Fill>
+                                                        <SolidColorBrush Color="{Binding Color, Converter={StaticResource StringToColor}}"/>
+                                                    </Rectangle.Fill>
+                                                    <Canvas.Left>
+                                                        <MultiBinding Converter="{StaticResource FractionToCanvasLeft}">
+                                                            <Binding Path="Fraction"/>
+                                                            <Binding ElementName="GrowthBar" Path="ActualWidth"/>
+                                                        </MultiBinding>
+                                                    </Canvas.Left>
+                                                </Rectangle>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
                                 <TextBlock Text="{Binding TimeRemaining}" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
                                 <Button Margin="0,8,0,0" Padding="0,4"
                                         Command="{Binding DataContext.MarkHarvestedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

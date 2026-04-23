@@ -46,7 +46,15 @@ public sealed class GrowthCalibrationService
 
         _state.PlotChanged += OnPlotChanged;
         _state.PlotsRemoved += OnPlotsRemoved;
+        _state.SlotCapObserved += OnSlotCapObserved;
     }
+
+    /// <summary>
+    /// Dedup window for slot-cap errors. The game emits the same error
+    /// repeatedly when the player spam-clicks a seed against a full family.
+    /// Each burst counts as one observation.
+    /// </summary>
+    private static readonly TimeSpan SlotCapDedupWindow = TimeSpan.FromSeconds(2);
 
     private static string TrackingKey(string charName, string plotId) => $"{charName}|{plotId}";
 
@@ -75,6 +83,10 @@ public sealed class GrowthCalibrationService
         var last = phases[^1];
         last.DurationSeconds = (now - last.EnteredAt).TotalSeconds;
 
+        // Emit a per-phase observation for the just-closed phase. Even if the
+        // plot never reaches Ripe, partial-cycle phase data is useful.
+        RecordPhaseTransition(e.Plot, last.Stage, e.NewStage, last.DurationSeconds, now);
+
         if (e.NewStage == PlotStage.Ripe)
         {
             // Record the Ripe phase entry (with 0 duration — it's the terminal state).
@@ -88,17 +100,62 @@ public sealed class GrowthCalibrationService
         {
             // Harvested without us seeing Ripe (e.g. Tier-1 immediate harvest on ripe plot
             // where UpdateDescription + StartInteraction fire in the same batch).
-            // Still try to record if we have enough data.
-            if (e.OldStage == PlotStage.Ripe || phases.Any(p => p.Stage == PlotStage.Ripe))
-            {
-                // Already recorded at Ripe — just clean up.
-            }
             _activeTracking.Remove(key);
             return;
         }
 
         // Append the new phase.
         phases.Add(new PhaseRecord { Stage = e.NewStage, EnteredAt = now });
+    }
+
+    private void RecordPhaseTransition(Plot plot, PlotStage from, PlotStage to, double durationSeconds, DateTimeOffset at)
+    {
+        if (string.IsNullOrEmpty(plot.CropType)) return;
+        // Drop sub-second durations as noise — log timestamps are second-precision,
+        // so anything under 1s is either a genuinely rapid transition (not worth
+        // measuring) or collapsed timestamps from backfill. Same for absurd upper bounds.
+        if (durationSeconds < 1 || durationSeconds > 86_400) return;
+
+        _data.PhaseTransitions.Add(new PhaseTransitionObservation
+        {
+            CropType = plot.CropType,
+            CharName = plot.CharName,
+            FromStage = from,
+            ToStage = to,
+            DurationSeconds = durationSeconds,
+            Timestamp = at,
+        });
+        RecomputePhaseRates();
+        Save();
+        DataChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnSlotCapObserved(object? sender, SlotCapObservedArgs e)
+    {
+        // Dedup: the game emits the same cap error multiple times when a
+        // player spam-clicks a seed. Collapse identical (family, cap) events
+        // within SlotCapDedupWindow into one observation.
+        var cutoff = e.Timestamp - SlotCapDedupWindow;
+        var recent = _data.SlotCapObservations
+            .Where(o => o.Family == e.Family && o.ObservedCap == e.ObservedCap
+                        && o.CharName == e.CharName && o.Timestamp >= cutoff)
+            .Any();
+        if (recent) return;
+
+        _data.SlotCapObservations.Add(new SlotCapObservation
+        {
+            CharName = e.CharName,
+            Family = e.Family,
+            ObservedCap = e.ObservedCap,
+            Timestamp = e.Timestamp,
+        });
+        RecomputeSlotCapRates();
+        Save();
+
+        _diag?.Info("Samwise.Calibration",
+            $"Slot cap observed: family={e.Family} cap={e.ObservedCap} char={e.CharName}");
+
+        DataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnPlotsRemoved(object? sender, EventArgs e)
@@ -133,7 +190,9 @@ public sealed class GrowthCalibrationService
         var wallSeconds = (ripeAt - plot.PlantedAt).TotalSeconds;
         var effectiveSeconds = wallSeconds - totalPausedSeconds;
 
-        if (effectiveSeconds <= 0 || effectiveSeconds > 86_400)
+        // Minimum 10s: the fastest real crop (Potato/Onion) is ~50s, so anything
+        // under 10s is backfill-induced collapse or noise.
+        if (effectiveSeconds < 10 || effectiveSeconds > 86_400)
         {
             _diag?.Trace("Samwise.Calibration",
                 $"Plot {plot.PlotId} effective={effectiveSeconds:F1}s — out of range, skipping");
@@ -188,7 +247,68 @@ public sealed class GrowthCalibrationService
             };
         }
         _data.Rates = rates;
+
+        RecomputePhaseRates();
+        RecomputeSlotCapRates();
     }
+
+    private void RecomputePhaseRates()
+    {
+        var rates = new Dictionary<string, PhaseTransitionRate>(StringComparer.Ordinal);
+        // Exclude player-reaction transitions from rate aggregation. Raw
+        // observations are still stored for transparency.
+        foreach (var group in _data.PhaseTransitions
+                     .Where(IsGrowthTransition)
+                     .GroupBy(o => PhaseRateKey(o.CropType, o.FromStage, o.ToStage)))
+        {
+            var durs = group.Select(o => o.DurationSeconds).ToList();
+            var first = group.First();
+            rates[group.Key] = new PhaseTransitionRate
+            {
+                CropType = first.CropType,
+                FromStage = first.FromStage,
+                ToStage = first.ToStage,
+                AvgSeconds = durs.Average(),
+                SampleCount = durs.Count,
+                MinSeconds = durs.Min(),
+                MaxSeconds = durs.Max(),
+            };
+        }
+        _data.PhaseRates = rates;
+    }
+
+    private void RecomputeSlotCapRates()
+    {
+        var rates = new Dictionary<string, SlotCapRate>(StringComparer.Ordinal);
+        foreach (var group in _data.SlotCapObservations.GroupBy(o => o.Family, StringComparer.Ordinal))
+        {
+            var caps = group.Select(o => o.ObservedCap).ToList();
+            var configMax = _config.Current.SlotFamilies.TryGetValue(group.Key, out var fam)
+                ? (int?)fam.Max : null;
+            rates[group.Key] = new SlotCapRate
+            {
+                Family = group.Key,
+                ObservedMax = caps.Max(),
+                SampleCount = caps.Count,
+                ConfigMax = configMax,
+            };
+        }
+        _data.SlotCapRates = rates;
+    }
+
+    /// <summary>
+    /// True for transitions that measure actual crop growth time. Excludes
+    /// Thirsty→Growing and NeedsFertilizer→Growing — those measure player
+    /// reaction time (how long before they watered/fertilized).
+    /// </summary>
+    private static bool IsGrowthTransition(PhaseTransitionObservation o) => o.FromStage switch
+    {
+        PlotStage.Thirsty or PlotStage.NeedsFertilizer => false,
+        _ => true,
+    };
+
+    private static string PhaseRateKey(string cropType, PlotStage from, PlotStage to)
+        => $"{cropType}|{from}→{to}";
 
     /// <summary>Get the calibrated growth rate for a crop, or null if not yet observed.</summary>
     public CropGrowthRate? GetRate(string cropType) =>
@@ -197,6 +317,10 @@ public sealed class GrowthCalibrationService
     /// <summary>Get the calibrated average growth seconds for a crop, falling back to null.</summary>
     public double? GetCalibratedGrowthSeconds(string cropType) =>
         _data.Rates.TryGetValue(cropType, out var r) ? r.AvgSeconds : null;
+
+    /// <summary>Get the crowdsourced max plot count for a slot family, or null if not yet observed.</summary>
+    public int? GetCalibratedSlotMax(string family) =>
+        _data.SlotCapRates.TryGetValue(family, out var r) ? r.ObservedMax : null;
 
     // ── Persistence ─────────────────────────────────────────────────
 
@@ -245,6 +369,10 @@ public sealed class GrowthCalibrationService
             ExportedAt = DateTimeOffset.UtcNow,
             Observations = _data.Observations,
             Rates = _data.Rates,
+            PhaseTransitions = _data.PhaseTransitions,
+            PhaseRates = _data.PhaseRates,
+            SlotCapObservations = _data.SlotCapObservations,
+            SlotCapRates = _data.SlotCapRates,
         };
         return JsonSerializer.Serialize(export, GrowthCalibrationJsonContext.Default.GrowthCalibrationData);
     }
@@ -281,16 +409,17 @@ public sealed class GrowthCalibrationService
             return count;
         }
 
-        var existingKeys = new HashSet<string>(_data.Observations.Select(ObservationKey));
+        var existingObsKeys = new HashSet<string>(_data.Observations.Select(ObservationKey));
+        var existingPhaseKeys = new HashSet<string>(_data.PhaseTransitions.Select(PhaseTransitionKey));
+        var existingSlotCapKeys = new HashSet<string>(_data.SlotCapObservations.Select(SlotCapKey));
         var added = 0;
+
         foreach (var obs in incoming.Observations)
-        {
-            if (existingKeys.Add(ObservationKey(obs)))
-            {
-                _data.Observations.Add(obs);
-                added++;
-            }
-        }
+            if (existingObsKeys.Add(ObservationKey(obs))) { _data.Observations.Add(obs); added++; }
+        foreach (var pt in incoming.PhaseTransitions)
+            if (existingPhaseKeys.Add(PhaseTransitionKey(pt))) { _data.PhaseTransitions.Add(pt); added++; }
+        foreach (var sc in incoming.SlotCapObservations)
+            if (existingSlotCapKeys.Add(SlotCapKey(sc))) { _data.SlotCapObservations.Add(sc); added++; }
 
         if (added > 0)
         {
@@ -299,13 +428,20 @@ public sealed class GrowthCalibrationService
             DataChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        var incomingTotal = incoming.Observations.Count + incoming.PhaseTransitions.Count + incoming.SlotCapObservations.Count;
         _diag?.Info("Samwise.Calibration",
-            $"Imported {added} new observations ({incoming.Observations.Count - added} duplicates skipped)");
+            $"Imported {added} new observations ({incomingTotal - added} duplicates skipped)");
         return added;
     }
 
     private static string ObservationKey(GrowthObservation o) =>
         $"{o.CropType}|{o.CharName}|{o.EffectiveSeconds:F1}|{o.Timestamp:O}";
+
+    private static string PhaseTransitionKey(PhaseTransitionObservation o) =>
+        $"{o.CropType}|{o.CharName}|{o.FromStage}→{o.ToStage}|{o.DurationSeconds:F1}|{o.Timestamp:O}";
+
+    private static string SlotCapKey(SlotCapObservation o) =>
+        $"{o.Family}|{o.CharName}|{o.ObservedCap}|{o.Timestamp:O}";
 
     // ── Test support ────────────────────────────────────────────────
 

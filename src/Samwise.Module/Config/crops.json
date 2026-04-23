@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slotFamilies": {
     "Potato":      { "max": 2 },
     "Onion":       { "max": 2 },
@@ -22,23 +22,23 @@
     "Grass":       { "max": 2 }
   },
   "crops": {
-    "Potato":           { "slotFamily": "Potato",      "growthSeconds": 50,  "iconId": 5022 },
-    "Onion":            { "slotFamily": "Onion",       "growthSeconds": 50,  "iconId": 5024 },
-    "Cabbage":          { "slotFamily": "Lettuce",     "growthSeconds": 55,  "iconId": 5103 },
+    "Potato":           { "slotFamily": "Potato",      "growthSeconds": 50 },
+    "Onion":            { "slotFamily": "Onion",       "growthSeconds": 50 },
+    "Cabbage":          { "slotFamily": "Lettuce",     "growthSeconds": 55 },
     "Escarole":         { "slotFamily": "Lettuce",     "growthSeconds": 295 },
-    "Beet":             { "slotFamily": "Beet",        "growthSeconds": 65,  "iconId": 5101 },
-    "Squash":           { "slotFamily": "Squash",      "growthSeconds": 170, "iconId": 5105 },
-    "Broccoli":         { "slotFamily": "Broccoli",    "growthSeconds": 175, "iconId": 5135 },
-    "Carrot":           { "slotFamily": "Carrot",      "growthSeconds": 175, "iconId": 5134 },
+    "Beet":             { "slotFamily": "Beet",        "growthSeconds": 65 },
+    "Squash":           { "slotFamily": "Squash",      "growthSeconds": 170 },
+    "Broccoli":         { "slotFamily": "Broccoli",    "growthSeconds": 175 },
+    "Carrot":           { "slotFamily": "Carrot",      "growthSeconds": 175 },
     "Green Pepper":     { "slotFamily": "Pepper",      "growthSeconds": 245 },
     "Red Pepper":       { "slotFamily": "Pepper",      "growthSeconds": 274 },
     "Corn":             { "slotFamily": "Corn",        "growthSeconds": 285 },
     "Basil":            { "slotFamily": "Basil",       "growthSeconds": 304 },
     "Cantaloupe":       { "slotFamily": "Gourd",       "growthSeconds": 311 },
-    "Pumpkin":          { "slotFamily": "Gourd",       "growthSeconds": 170, "iconId": 5404 },
+    "Pumpkin":          { "slotFamily": "Gourd",       "growthSeconds": 170 },
     "Pea":              { "slotFamily": "Pea",         "growthSeconds": 310 },
     "Soybean":          { "slotFamily": "Soybean",     "growthSeconds": 310 },
-    "Tomato":           { "slotFamily": "Tomato",      "iconId": 5458 },
+    "Tomato":           { "slotFamily": "Tomato" },
     "Flax":             { "slotFamily": "Flax",        "growthSeconds": 282 },
     "Red-Leaf Lettuce": { "slotFamily": "Red Lettuce" },
     "Bluebell":         { "slotFamily": "Flowers",     "growthSeconds": 70 },
@@ -47,7 +47,7 @@
     "Dahlia":           { "slotFamily": "Flowers",     "growthSeconds": 120 },
     "Daisy":            { "slotFamily": "Flowers",     "growthSeconds": 130 },
     "Pansy":            { "slotFamily": "Flowers",     "growthSeconds": 140 },
-    "Marigold":         { "slotFamily": "Flowers",     "growthSeconds": 150, "iconId": 5285 },
+    "Marigold":         { "slotFamily": "Flowers",     "growthSeconds": 150 },
     "Poppy":            { "slotFamily": "Flowers",     "growthSeconds": 160 },
     "Red Rose":         { "slotFamily": "Flowers",     "growthSeconds": 170 },
     "Elven Lily":       { "slotFamily": "Flowers",     "growthSeconds": 180 },
@@ -60,9 +60,9 @@
     "Hyacinth":         { "slotFamily": "Flowers" },
     "Swamp Lily":       { "slotFamily": "Flowers" },
     "Lavender":         { "slotFamily": "Flowers" },
-    "Cotton":           { "slotFamily": "Cotton",      "growthSeconds": 150, "iconId": 5360, "harvestVerb": "Pick", "modelAliases": ["Flower11", "Flower7"] },
-    "Cotton Plant":     { "slotFamily": "Cotton",      "growthSeconds": 150, "iconId": 5360, "harvestVerb": "Pick", "modelAliases": ["Flower11", "Flower7"] },
+    "Cotton":           { "slotFamily": "Cotton",      "growthSeconds": 150 },
+    "Cotton Plant":     { "slotFamily": "Cotton",      "growthSeconds": 150 },
     "Sugarcane":        { "slotFamily": "Grass",       "growthSeconds": 128 },
-    "Barley":           { "slotFamily": "Grass",       "growthSeconds": 150, "iconId": 5717 }
+    "Barley":           { "slotFamily": "Grass",       "growthSeconds": 150 }
   }
 }

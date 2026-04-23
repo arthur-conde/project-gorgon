@@ -4,8 +4,10 @@ using Bilbo.Domain;
 using Bilbo.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Game;
 using Gorgon.Shared.Reference;
+using Gorgon.Shared.Storage;
 using Gorgon.Shared.Wpf;
 
 namespace Bilbo.ViewModels;
@@ -15,15 +17,35 @@ public sealed partial class StorageViewModel : ObservableObject
     private readonly GameConfig _gameConfig;
     private readonly BilboSettings _settings;
     private readonly IReferenceDataService _refData;
+    private readonly ICharacterDataService _characterData;
+    private readonly IStorageReportWatcher _reportWatcher;
     private IReadOnlyList<StorageItemRow> _allItems = [];
 
-    public StorageViewModel(GameConfig gameConfig, BilboSettings settings, IReferenceDataService refData)
+    public StorageViewModel(
+        GameConfig gameConfig,
+        BilboSettings settings,
+        IReferenceDataService refData,
+        ICharacterDataService characterData,
+        IStorageReportWatcher reportWatcher)
     {
         _gameConfig = gameConfig;
         _settings = settings;
         _refData = refData;
+        _characterData = characterData;
+        _reportWatcher = reportWatcher;
+        _characterData.CharactersChanged += OnCharactersChanged;
+        _reportWatcher.ReportsChanged += (_, _) => DispatchRefreshReports();
         RefreshReports();
     }
+
+    private void DispatchRefreshReports()
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshReports();
+        else d.InvokeAsync(RefreshReports);
+    }
+
+    private void OnCharactersChanged(object? sender, EventArgs e) => ApplyFilter();
 
     public DataGridState GridState => _settings.StorageGrid;
 
@@ -50,16 +72,40 @@ public sealed partial class StorageViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "No storage export loaded.";
 
+    [ObservableProperty]
+    private IReadOnlyList<CraftableRecipeRow> _craftableRecipes = [];
+
+    [ObservableProperty]
+    private string _recipeQueryText = "";
+
+    [ObservableProperty]
+    private ConfidenceLevel _confidence = ConfidenceLevel.P95;
+
+    public IReadOnlyList<ConfidenceOption> ConfidenceOptions { get; } =
+    [
+        new("Assume always consumes", ConfidenceLevel.WorstCase),
+        new("Median (50%)", ConfidenceLevel.P50),
+        new("95% confident", ConfidenceLevel.P95),
+        new("99% confident", ConfidenceLevel.P99),
+    ];
+
+    public sealed record ConfidenceOption(string Label, ConfidenceLevel Value);
+
     // ── Property change handlers ─────────────────────────────────────────
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
 
     partial void OnSelectedLocationChanged(string value) => ApplyFilter();
 
+    partial void OnConfidenceChanged(ConfidenceLevel value) => ApplyFilter();
+
     partial void OnSelectedReportChanged(ReportFileInfo? value)
     {
         if (value is not null)
+        {
+            _characterData.SetActiveCharacter(value.Character, value.Server);
             LoadReport(value.FilePath);
+        }
     }
 
     // ── Commands ─────────────────────────────────────────────────────────
@@ -74,21 +120,33 @@ public sealed partial class StorageViewModel : ObservableObject
 
     private void RefreshReports()
     {
-        var dir = _gameConfig.ReportsDirectory;
-        var reports = StorageReportLoader.ScanForReports(dir);
+        var reports = _reportWatcher.Reports;
+        var previousPath = SelectedReport?.FilePath;
+        var previousMtime = SelectedReport?.LastModifiedUtc;
         AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
 
-        if (reports.Count > 0)
-        {
-            SelectedReport = reports[0]; // triggers OnSelectedReportChanged → LoadReport
-        }
-        else
+        if (reports.Count == 0)
         {
             _allItems = [];
             AvailableLocations = new ObservableCollection<string>(["All"]);
             SelectedLocation = "All";
             FilteredItems = [];
             StatusMessage = "No storage exports found. Run /exportstorage in-game.";
+            return;
+        }
+
+        // Preserve selection when possible; auto-reload if the selected file was rewritten.
+        var match = reports.FirstOrDefault(r =>
+            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            SelectedReport = match;
+            if (previousMtime.HasValue && match.LastModifiedUtc > previousMtime.Value)
+                LoadReport(match.FilePath);
+        }
+        else
+        {
+            SelectedReport = reports[0]; // triggers OnSelectedReportChanged → LoadReport
         }
     }
 
@@ -158,6 +216,9 @@ public sealed partial class StorageViewModel : ObservableObject
         var result = items.ToList();
         FilteredItems = result;
         StatusMessage = $"Showing {result.Count:N0} of {_allItems.Count:N0} items";
+
+        CraftableRecipes = CraftableRecipeCalculator.Compute(
+            result, _refData, _characterData.ActiveCharacter, Confidence);
     }
 
     private static string GetCellText(StorageItemRow row, string key) => key switch

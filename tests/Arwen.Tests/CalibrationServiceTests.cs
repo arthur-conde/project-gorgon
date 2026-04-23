@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using Arwen.Domain;
 using FluentAssertions;
 using Gorgon.Shared.Reference;
@@ -18,6 +19,21 @@ public sealed class CalibrationServiceTests
             [2] = new(2, "Apple", "Apple", 1, 0,
                 [new ItemKeyword("Fruit", 0)],
                 Value: 5m),
+            // Ring items sharing a "Ring" + "MinRarity:Rare" signature with Makara
+            [3] = new(3, "StafflordsRing", "StafflordsRing", 1, 0,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)],
+                Value: 150m),
+            [4] = new(4, "Mindroot", "Mindroot", 1, 0,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)],
+                Value: 105m),
+            // A rare item with no extra distinctive keywords (baseline rare signature)
+            [5] = new(5, "PlainRareThing", "PlainRareThing", 1, 0,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("MinRarity:Rare", 0)],
+                Value: 90m),
+            // For dislike-test: a common necklace that Yetta likes (Amulet) but also dislikes (TestDislike)
+            [6] = new(6, "TestDislikedNecklace", "TestDislikedNecklace", 1, 0,
+                [new ItemKeyword("Amulet", 0), new ItemKeyword("TestDislike", 0)],
+                Value: 100m),
         };
         var npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal)
         {
@@ -26,6 +42,18 @@ public sealed class CalibrationServiceTests
                 ["Friends"]),
             ["NPC_Test"] = new("NPC_Test", "Test", "Serbule",
                 [new NpcPreference("Love", ["Fruit"], "Fruit", 2.0, null)],
+                ["Friends"]),
+            ["NPC_Makara"] = new("NPC_Makara", "Makara", "Serbule",
+                [
+                    new NpcPreference("Love", ["MinRarity:Rare"], "Rare or Better Magic Gear", 2.0, null),
+                    new NpcPreference("Love", ["Ring"], "Rings", 1.0, null),
+                ],
+                ["Friends"]),
+            ["NPC_Yetta"] = new("NPC_Yetta", "Yetta", "Serbule",
+                [
+                    new NpcPreference("Love", ["Amulet"], "Necklaces", 2.0, null),
+                    new NpcPreference("Dislike", ["TestDislike"], "Yetta Test Dislikes", -5.0, null),
+                ],
                 ["Friends"]),
         };
         return new FakeRefData(items, npcs);
@@ -41,14 +69,13 @@ public sealed class CalibrationServiceTests
     }
 
     [Fact]
-    public void DetectsGiftAndComputesRate()
+    public void DetectsGiftAndRecordsFullKeywords()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
         try
         {
             var (svc, _) = BuildService(dir);
 
-            // Simulate: player picks up moonstone, talks to Sanja, gifts it, gets favor
             svc.OnItemAdded("Moonstone", 12345);
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(12345);
@@ -59,7 +86,11 @@ public sealed class CalibrationServiceTests
             obs.NpcKey.Should().Be("NPC_Sanja");
             obs.ItemInternalName.Should().Be("Moonstone");
             obs.FavorDelta.Should().Be(22.5);
-            obs.MatchedKeyword.Should().Be("Moonstone");
+            obs.ItemKeywords.Should().BeEquivalentTo("Crystal", "Moonstone");
+            obs.MatchedPreferences.Should().HaveCount(1);
+            obs.MatchedPreferences[0].Name.Should().Be("Moonstones");
+            obs.MatchedPreferences[0].Pref.Should().Be(1.5);
+            obs.EffectivePref.Should().Be(1.5);
 
             // rate = 22.5 / (1.5 * 100) = 0.15
             obs.DerivedRate.Should().BeApproximately(0.15, 0.001);
@@ -72,24 +103,100 @@ public sealed class CalibrationServiceTests
     }
 
     [Fact]
-    public void EstimateFavor_UsesCalibrated_Rate()
+    public void RecordsAllMatchingPreferences_SignatureCoversMultiplePrefs()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            var (svc, _) = BuildService(dir);
+
+            // StafflordsRing matches both Makara prefs: "MinRarity:Rare" (pref=2) and "Ring" (pref=1)
+            svc.OnItemAdded("StafflordsRing", 1001);
+            svc.OnStartInteraction("NPC_Makara");
+            svc.OnItemDeleted(1001);
+            svc.OnDeltaFavor("NPC_Makara", 48.7557);
+
+            var obs = svc.Data.Observations[0];
+            obs.MatchedPreferences.Should().HaveCount(2);
+            obs.EffectivePref.Should().Be(3.0); // 2 + 1
+            obs.Signature.Should().Be("Rare or Better Magic Gear,Rings"); // sorted
+            // rate = 48.7557 / (150 * 3) = 0.108346
+            obs.DerivedRate.Should().BeApproximately(0.10834, 0.0001);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void EstimateFavor_PrefersItemRate()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
         try
         {
             var (svc, index) = BuildService(dir);
 
-            // Calibrate the Moonstone category
             svc.OnItemAdded("Moonstone", 100);
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
 
-            // Now estimate for another moonstone gift
             var match = index.MatchItemToNpc(1, "NPC_Sanja");
             match.Should().NotBeNull();
-            var est = svc.EstimateFavor(match!);
-            est.Should().BeApproximately(22.5, 0.01); // 1.5 * 100 * 0.15
+            var est = svc.EstimateFavor(match!, "NPC_Sanja");
+            est.Should().NotBeNull();
+            est!.Tier.Should().Be("Item");
+            est.Value.Should().BeApproximately(22.5, 0.01);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void EstimateFavor_FallsBackThroughHierarchy()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            var (svc, index) = BuildService(dir);
+
+            // Record a gift of StafflordsRing — populates ItemRate for (Makara, StafflordsRing)
+            // plus SignatureRate for (Makara, "Rare or Better Magic Gear,Rings") and NPC baseline.
+            svc.OnItemAdded("StafflordsRing", 1001);
+            svc.OnStartInteraction("NPC_Makara");
+            svc.OnItemDeleted(1001);
+            svc.OnDeltaFavor("NPC_Makara", 48.7557);
+
+            // Estimating the SAME item → Item tier
+            var stafflords = index.MatchItemToNpc(3, "NPC_Makara")!;
+            svc.EstimateFavor(stafflords, "NPC_Makara")!.Tier.Should().Be("Item");
+
+            // Estimating Mindroot (same ring signature) → Signature tier
+            var mindroot = index.MatchItemToNpc(4, "NPC_Makara")!;
+            svc.EstimateFavor(mindroot, "NPC_Makara")!.Tier.Should().Be("Signature");
+
+            // Estimating PlainRareThing (different signature — only MinRarity:Rare, no Ring) → NPC baseline
+            var plain = index.MatchItemToNpc(5, "NPC_Makara")!;
+            svc.EstimateFavor(plain, "NPC_Makara")!.Tier.Should().Be("NPC");
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void EstimateFavor_ReturnsNullWhenNoCalibration()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            var (svc, index) = BuildService(dir);
+            var match = index.MatchItemToNpc(1, "NPC_Sanja");
+            svc.EstimateFavor(match!, "NPC_Sanja").Should().BeNull();
         }
         finally
         {
@@ -100,7 +207,6 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void DetectsGift_DeltaBeforeDelete()
     {
-        // Order B: game emits DeltaFavor before DeleteItem
         var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
         try
         {
@@ -108,15 +214,11 @@ public sealed class CalibrationServiceTests
 
             svc.OnItemAdded("Moonstone", 12345);
             svc.OnStartInteraction("NPC_Sanja");
-            // Delta comes FIRST, then delete
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
             svc.OnItemDeleted(12345);
 
             svc.Data.Observations.Should().HaveCount(1);
             var obs = svc.Data.Observations[0];
-            obs.NpcKey.Should().Be("NPC_Sanja");
-            obs.ItemInternalName.Should().Be("Moonstone");
-            obs.FavorDelta.Should().Be(22.5);
             obs.DerivedRate.Should().BeApproximately(0.15, 0.001);
         }
         finally
@@ -134,7 +236,6 @@ public sealed class CalibrationServiceTests
             var (svc, _) = BuildService(dir);
 
             svc.OnItemAdded("Moonstone", 100);
-            // No OnStartInteraction — not talking to NPC
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
 
@@ -157,7 +258,29 @@ public sealed class CalibrationServiceTests
             svc.OnItemAdded("Moonstone", 100);
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
-            svc.OnDeltaFavor("NPC_Sanja", -10); // hate gift
+            svc.OnDeltaFavor("NPC_Sanja", -10);
+
+            svc.Data.Observations.Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void SkipsObservation_WhenEffectivePrefNonPositive()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            var (svc, _) = BuildService(dir);
+
+            // TestDislikedNecklace matches Yetta's Amulet (pref=2) and TestDislike (pref=-5) → net -3
+            svc.OnItemAdded("TestDislikedNecklace", 7777);
+            svc.OnStartInteraction("NPC_Yetta");
+            svc.OnItemDeleted(7777);
+            svc.OnDeltaFavor("NPC_Yetta", 10); // would be positive but pref math is negative
 
             svc.Data.Observations.Should().BeEmpty();
         }
@@ -182,7 +305,6 @@ public sealed class CalibrationServiceTests
 
             var json = svc1.ExportJson("test contributor");
 
-            // Import into fresh service
             var (svc2, _) = BuildService(dir2);
             var imported = svc2.ImportJson(json);
             imported.Should().Be(1);
@@ -209,8 +331,8 @@ public sealed class CalibrationServiceTests
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
 
             var json = svc.ExportJson();
-            var imported = svc.ImportJson(json); // import same data again
-            imported.Should().Be(0); // all duplicates
+            var imported = svc.ImportJson(json);
+            imported.Should().Be(0);
             svc.Data.Observations.Should().HaveCount(1);
         }
         finally
@@ -227,7 +349,6 @@ public sealed class CalibrationServiceTests
         {
             var (svc, _) = BuildService(dir);
 
-            // Two observations with slightly different rates
             svc.OnItemAdded("Moonstone", 100);
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
@@ -238,13 +359,74 @@ public sealed class CalibrationServiceTests
             svc.OnItemDeleted(101);
             svc.OnDeltaFavor("NPC_Sanja", 24.0); // rate = 0.16
 
-            var rate = svc.GetRate("Moonstone");
-            rate.Should().BeApproximately(0.155, 0.001); // average of 0.15 and 0.16
+            svc.GetRate("Moonstone").Should().BeApproximately(0.155, 0.001);
 
-            var categoryRate = svc.Data.Rates["Moonstone"];
-            categoryRate.SampleCount.Should().Be(2);
-            categoryRate.MinRate.Should().BeApproximately(0.15, 0.001);
-            categoryRate.MaxRate.Should().BeApproximately(0.16, 0.001);
+            var itemRate = svc.Data.ItemRates[$"NPC_Sanja|Moonstone"];
+            itemRate.SampleCount.Should().Be(2);
+            itemRate.MinRate.Should().BeApproximately(0.15, 0.001);
+            itemRate.MaxRate.Should().BeApproximately(0.16, 0.001);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void MigratesV1CalibrationFile_PopulatesKeywordsAndPreferences()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var v1Path = Path.Combine(dir, "calibration.json");
+            // A v1-shape file: old schema with matchedKeyword/pref/derivedRate and no itemKeywords/matchedPreferences.
+            var v1Json = """
+                {
+                  "version": 1,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "matchedKeyword": "Moonstone",
+                      "itemValue": 100,
+                      "pref": 1.5,
+                      "favorDelta": 22.5,
+                      "derivedRate": 0.15,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    },
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "DoesNotExistAnymore",
+                      "matchedKeyword": "Obsolete",
+                      "itemValue": 50,
+                      "pref": 1.0,
+                      "favorDelta": 10,
+                      "derivedRate": 0.2,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """;
+            File.WriteAllText(v1Path, v1Json);
+
+            var refData = BuildRefData();
+            var index = new GiftIndex();
+            index.Build(refData.Items, refData.Npcs);
+            var svc = new CalibrationService(refData, index, dir);
+
+            svc.Data.Version.Should().Be(CalibrationService.CurrentSchemaVersion);
+            svc.Data.Observations.Should().HaveCount(1); // unknown item dropped
+            var obs = svc.Data.Observations[0];
+            obs.ItemInternalName.Should().Be("Moonstone");
+            obs.ItemKeywords.Should().NotBeEmpty();
+            obs.MatchedPreferences.Should().HaveCount(1);
+            obs.MatchedPreferences[0].Name.Should().Be("Moonstones");
+
+            // File should now be v2 on disk
+            var savedBytes = File.ReadAllBytes(v1Path);
+            using var doc = JsonDocument.Parse(savedBytes);
+            doc.RootElement.GetProperty("version").GetInt32().Should().Be(CalibrationService.CurrentSchemaVersion);
         }
         finally
         {

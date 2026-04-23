@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Samwise.Calibration;
 using Samwise.Config;
 using Samwise.State;
 
@@ -11,18 +12,26 @@ public sealed partial class GardenViewModel : ObservableObject
 {
     private readonly GardenStateMachine _state;
     private readonly ICropConfigStore _config;
+    private readonly GrowthCalibrationService? _calibration;
     private readonly DispatcherTimer _refreshTimer;
     private readonly Dictionary<string, PlotViewModel> _plotVms = new(StringComparer.Ordinal);
 
-    public GardenViewModel(GardenStateMachine state, ICropConfigStore config)
+    public GardenViewModel(GardenStateMachine state, ICropConfigStore config, GrowthCalibrationService? calibration = null)
     {
         _state = state;
         _config = config;
+        _calibration = calibration;
         _state.PlotChanged += OnPlotChanged;
+        if (_calibration is not null) _calibration.DataChanged += OnCalibrationChanged;
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _refreshTimer.Tick += (_, __) => Tick();
         _refreshTimer.Start();
         SyncFromState();
+    }
+
+    private void OnCalibrationChanged(object? sender, EventArgs e)
+    {
+        foreach (var vm in _plotVms.Values) vm.InvalidateTicks();
     }
 
     public ObservableCollection<PlotViewModel> Plots { get; } = new();
@@ -60,7 +69,7 @@ public sealed partial class GardenViewModel : ObservableObject
         var key = $"{e.Plot.CharName}|{e.Plot.PlotId}";
         if (!_plotVms.TryGetValue(key, out var vm))
         {
-            vm = new PlotViewModel(e.Plot, _config);
+            vm = new PlotViewModel(e.Plot, _config, _calibration);
             _plotVms[key] = vm;
             Plots.Add(vm);
         }
@@ -78,7 +87,7 @@ public sealed partial class GardenViewModel : ObservableObject
         {
             foreach (var (id, p) in plots)
             {
-                var vm = new PlotViewModel(p, _config);
+                var vm = new PlotViewModel(p, _config, _calibration);
                 _plotVms[$"{charName}|{id}"] = vm;
                 Plots.Add(vm);
             }

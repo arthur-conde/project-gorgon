@@ -17,8 +17,17 @@ public sealed record GiftScannerRow(
     double Pref,
     decimal ItemValue,
     double? EstimatedFavor,
+    string? EstimateSource,
+    int EstimateSamples,
     double RelativeScore,
     string Location,
+    double? CurrentFavor,
+    double? ProjectedFavor,
+    FavorTier CurrentTier,
+    FavorTier ProjectedTier,
+    double CurrentTierCeiling,
+    double CurrentProgressFraction,
+    double ProjectedProgressFraction,
     long ItemId,
     int IconId);
 
@@ -28,21 +37,37 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     private readonly GiftIndex _giftIndex;
     private readonly GameConfig _gameConfig;
     private readonly ICharacterDataService _charData;
+    private readonly IStorageReportWatcher _reportWatcher;
     private StorageReport? _loadedReport;
 
     private readonly CalibrationService _calibration;
 
-    public GiftScannerViewModel(FavorStateService state, GiftIndex giftIndex, CalibrationService calibration, GameConfig gameConfig, ICharacterDataService charData)
+    public GiftScannerViewModel(
+        FavorStateService state,
+        GiftIndex giftIndex,
+        CalibrationService calibration,
+        GameConfig gameConfig,
+        ICharacterDataService charData,
+        IStorageReportWatcher reportWatcher)
     {
         _state = state;
         _giftIndex = giftIndex;
         _calibration = calibration;
         _gameConfig = gameConfig;
         _charData = charData;
+        _reportWatcher = reportWatcher;
         _state.StateChanged += (_, _) => RefreshNpcList();
-        _charData.CharactersChanged += (_, _) => RefreshReports();
+        _charData.CharactersChanged += (_, _) => DispatchRefreshReports();
+        _reportWatcher.ReportsChanged += (_, _) => DispatchRefreshReports();
         RefreshNpcList();
         RefreshReports();
+    }
+
+    private void DispatchRefreshReports()
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshReports();
+        else d.InvokeAsync(RefreshReports);
     }
 
     // ── NPC selection ───────────────────────────────────────────────────
@@ -92,8 +117,7 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     [RelayCommand]
     private void RefreshReports()
     {
-        var dir = _gameConfig.ReportsDirectory;
-        var all = StorageReportLoader.ScanForReports(dir);
+        var all = _reportWatcher.Reports;
 
         var active = _charData.ActiveCharacter;
         List<ReportFileInfo> reports;
@@ -131,10 +155,18 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         }
 
         var previousPath = SelectedReport?.FilePath;
+        var previousMtime = SelectedReport?.LastModifiedUtc;
         AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
-        SelectedReport = reports.FirstOrDefault(r =>
-            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase))
-            ?? reports.FirstOrDefault();
+        var match = reports.FirstOrDefault(r =>
+            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase));
+        SelectedReport = match ?? reports.FirstOrDefault();
+
+        // If the selected report's file was rewritten in place, force a reload + rescan.
+        if (match is not null && previousMtime.HasValue && match.LastModifiedUtc > previousMtime.Value)
+        {
+            LoadReport(match.FilePath);
+            Scan();
+        }
 
         if (fallbackHint is not null)
             StatusMessage = fallbackHint;
@@ -204,18 +236,51 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         foreach (var gm in giftMatches)
             matchByItemId.TryAdd(gm.ItemId, gm);
 
+        // Current favor snapshot — prefer exact value from Player.log, fall back to tier floor
+        var currentFavor = SelectedNpc.ExactFavor
+                           ?? (double?)FavorTiers.FloorOf(SelectedNpc.CurrentTier);
+
         var rows = new List<GiftScannerRow>();
         foreach (var item in _loadedReport.Items)
         {
             if (!matchByItemId.TryGetValue(item.TypeID, out var match)) continue;
             // Skip items from Hate/Dislike preferences
             if (match.Desire is "Hate" or "Dislike") continue;
-            // Verify rarity/value filters against the actual inventory item
-            if (!PassesStorageFilters(item, match)) continue;
+
+            // Verify rarity/value filters against the actual inventory item. An item may have matched
+            // multiple NPC preferences; each preference's filter-type keywords (MinRarity, Rarity,
+            // MinValue, Crafted) must pass for the item to qualify.
+            var allPrefs = _giftIndex.MatchAllPreferencesForItem(match.ItemId, SelectedNpc.NpcKey);
+            if (!PassesStorageFilters(item, allPrefs)) continue;
 
             var location = StorageReportLoader.NormalizeLocation(item.StorageVault, item.IsInInventory);
-            var estimatedPerGift = _calibration.EstimateFavor(match, SelectedNpc.NpcKey);
-            var estimatedTotal = estimatedPerGift.HasValue ? estimatedPerGift.Value * item.StackSize : (double?)null;
+            var estimate = _calibration.EstimateFavor(match, SelectedNpc.NpcKey);
+            var estimatedTotal = estimate is not null ? estimate.Value * item.StackSize : (double?)null;
+
+            double? projectedFavor = null;
+            var currentTier = SelectedNpc.CurrentTier;
+            var projectedTier = currentTier;
+            var currentFrac = double.NaN;
+            var projectedFrac = double.NaN;
+            var tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? FavorTiers.FloorOf(currentTier));
+
+            if (currentFavor.HasValue)
+            {
+                currentTier = FavorTiers.TierForFavor(currentFavor.Value);
+                tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? currentFavor.Value);
+                currentFrac = FavorTiers.ProgressInTier(currentFavor.Value, currentTier);
+
+                if (estimatedTotal.HasValue)
+                {
+                    var proj = currentFavor.Value + estimatedTotal.Value;
+                    projectedFavor = proj;
+                    projectedTier = FavorTiers.TierForFavor(proj);
+                    projectedFrac = projectedTier == currentTier
+                        ? FavorTiers.ProgressInTier(proj, currentTier)
+                        : 1.0; // projection crosses into a higher tier — show full bar
+                }
+            }
+
             rows.Add(new GiftScannerRow(
                 item.Name,
                 item.StackSize,
@@ -223,8 +288,17 @@ public sealed partial class GiftScannerViewModel : ObservableObject
                 match.Pref,
                 item.Value,
                 estimatedTotal,
+                estimate?.Tier,
+                estimate?.SampleCount ?? 0,
                 match.Pref * (double)Math.Max(item.Value, 1) * item.StackSize,
                 location,
+                currentFavor,
+                projectedFavor,
+                currentTier,
+                projectedTier,
+                tierCeiling,
+                double.IsNaN(currentFrac) ? 0 : currentFrac,
+                double.IsNaN(projectedFrac) ? 0 : projectedFrac,
                 item.TypeID,
                 match.IconId));
         }
@@ -240,43 +314,49 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Checks whether a real inventory item passes the filter criteria implied by the
-    /// GiftMatch's matched keyword. CDN template matching is over-inclusive for filter
-    /// keywords like MinRarity/MinValue/Rarity — the scanner can verify against actual
-    /// inventory item properties.
+    /// Checks whether a real inventory item passes every filter-style keyword across all
+    /// matched NPC preferences. CDN template matching is over-inclusive for filter keywords
+    /// like MinRarity/MinValue/Rarity — the scanner verifies against actual inventory item
+    /// properties. All filter checks must pass.
     /// </summary>
-    private static bool PassesStorageFilters(StorageItem item, GiftMatch match)
+    private static bool PassesStorageFilters(StorageItem item, IReadOnlyList<MatchedPreference> allPrefs)
     {
-        var kw = match.MatchedKeyword;
+        foreach (var pref in allPrefs)
+        {
+            foreach (var kw in pref.Keywords)
+            {
+                if (!PassesSingleFilter(item, kw)) return false;
+            }
+        }
+        return true;
+    }
 
-        // MinRarity:{tier} — the actual item must be at or above that rarity
+    private static bool PassesSingleFilter(StorageItem item, string kw)
+    {
         if (kw.StartsWith("MinRarity:", StringComparison.Ordinal))
         {
             var required = kw["MinRarity:".Length..];
             return RarityRank(item.Rarity) >= RarityRank(required);
         }
 
-        // Rarity:{tier} — the actual item must be exactly that rarity
         if (kw.StartsWith("Rarity:", StringComparison.Ordinal))
         {
             var required = kw["Rarity:".Length..];
             if (required == "Common")
-                return item.Rarity is null; // Common items have no Rarity field
+                return item.Rarity is null;
             return string.Equals(item.Rarity, required, StringComparison.OrdinalIgnoreCase);
         }
 
-        // MinValue:{amount} — the actual item's value must be at or above
         if (kw.StartsWith("MinValue:", StringComparison.Ordinal))
         {
             if (int.TryParse(kw.AsSpan("MinValue:".Length), out var minVal))
                 return item.Value >= minVal;
         }
 
-        // Crafted:y — the item must be player-crafted
         if (kw == "Crafted:y")
             return item.IsCrafted;
 
-        return true; // all other keywords pass (already matched at template level)
+        return true;
     }
 
     private static int RarityRank(string? rarity) => rarity switch

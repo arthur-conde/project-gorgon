@@ -5,9 +5,12 @@ using Gorgon.Shared.Reference;
 
 namespace Arwen.Domain;
 
+/// <summary>Result of <see cref="CalibrationService.EstimateFavor"/> — value plus which specificity tier supplied the rate.</summary>
+public sealed record EstimateResult(double Value, string Tier, int SampleCount);
+
 /// <summary>
 /// Tracks item instance IDs, detects gift events from the log event sequence,
-/// records observations, and computes per-keyword category rates.
+/// records observations, and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
 /// 1. ProcessAddItem(InternalName(instanceId)) → build instanceId → InternalName map
@@ -17,6 +20,8 @@ namespace Arwen.Domain;
 /// </summary>
 public sealed class CalibrationService
 {
+    public const int CurrentSchemaVersion = 2;
+
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
     private readonly IDiagnosticsSink? _diag;
@@ -52,7 +57,6 @@ public sealed class CalibrationService
     public void OnItemAdded(string internalName, long instanceId)
     {
         _instanceMap[instanceId] = internalName;
-        // Cap map size to avoid unbounded growth
         if (_instanceMap.Count > 10_000)
         {
             var oldest = _instanceMap.Keys.Take(5000).ToList();
@@ -73,7 +77,6 @@ public sealed class CalibrationService
         if (!_instanceMap.TryGetValue(instanceId, out var internalName)) return;
         _instanceMap.Remove(instanceId);
 
-        // Order B: we already have a pending delta — complete the observation now
         if (_pendingDelta is var (npcKey, delta))
         {
             _pendingDelta = null;
@@ -81,7 +84,6 @@ public sealed class CalibrationService
             return;
         }
 
-        // Order A: stash the deleted item and wait for DeltaFavor
         _pendingDeletedItem = (instanceId, internalName);
     }
 
@@ -90,7 +92,6 @@ public sealed class CalibrationService
         if (delta <= 0) return;
         if (_activeNpcKey != npcKey) return;
 
-        // Order A: we already have a pending deleted item — complete the observation now
         if (_pendingDeletedItem is var (_, internalName))
         {
             _pendingDeletedItem = null;
@@ -99,7 +100,6 @@ public sealed class CalibrationService
             return;
         }
 
-        // Order B: stash the delta and wait for DeleteItem
         _pendingDelta = (npcKey, delta);
     }
 
@@ -117,24 +117,28 @@ public sealed class CalibrationService
             return;
         }
 
-        var match = _giftIndex.MatchItemToNpc(item.Id, npcKey);
-        if (match is null)
+        var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, npcKey);
+        if (matchedPrefs.Count == 0)
         {
             _diag?.Trace("Arwen.Calibration", $"Item '{internalName}' doesn't match any preference for {npcKey}");
             return;
         }
 
-        var rate = delta / (match.Pref * (double)item.Value);
+        var effectivePref = matchedPrefs.Sum(p => p.Pref);
+        if (effectivePref <= 0)
+        {
+            _diag?.Trace("Arwen.Calibration", $"Item '{internalName}' nets non-positive pref for {npcKey} — skipping");
+            return;
+        }
 
         var observation = new GiftObservation
         {
             NpcKey = npcKey,
             ItemInternalName = internalName,
-            MatchedKeyword = match.MatchedKeyword,
+            ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
+            MatchedPreferences = [.. matchedPrefs],
             ItemValue = (double)item.Value,
-            Pref = match.Pref,
             FavorDelta = delta,
-            DerivedRate = rate,
             Timestamp = DateTimeOffset.UtcNow,
         };
 
@@ -143,7 +147,7 @@ public sealed class CalibrationService
         Save();
 
         _diag?.Info("Arwen.Calibration",
-            $"Gift observed: {internalName} → {npcKey}, +{delta} favor, rate={rate:F4} (keyword={match.MatchedKeyword})");
+            $"Gift observed: {internalName} → {npcKey}, +{delta} favor, rate={observation.DerivedRate:F4} (signature={observation.Signature})");
 
         DataChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -152,11 +156,23 @@ public sealed class CalibrationService
 
     private void RecomputeRates()
     {
-        // Global rates: one per keyword category, averaged across all NPCs
-        _data.Rates = BuildRateTable(_data.Observations.GroupBy(o => o.MatchedKeyword, StringComparer.Ordinal));
+        // Per-item: most specific — "NpcKey|ItemInternalName"
+        _data.ItemRates = BuildRateTable(
+            _data.Observations.GroupBy(o => ItemRateKey(o.NpcKey, o.ItemInternalName), StringComparer.Ordinal));
 
-        // Per-NPC rates: keyed by "NpcKey|Keyword"
-        _data.NpcRates = BuildRateTable(_data.Observations.GroupBy(o => NpcRateKey(o.NpcKey, o.MatchedKeyword), StringComparer.Ordinal));
+        // Per-signature: items sharing the same matched-preference set — "NpcKey|signature"
+        _data.SignatureRates = BuildRateTable(
+            _data.Observations.GroupBy(o => SignatureRateKey(o.NpcKey, o.Signature), StringComparer.Ordinal));
+
+        // Per-NPC baseline — "NpcKey"
+        _data.NpcRates = BuildRateTable(
+            _data.Observations.GroupBy(o => o.NpcKey, StringComparer.Ordinal));
+
+        // Legacy: global per-keyword, keyed by the first matched preference's first keyword.
+        _data.KeywordRates = BuildRateTable(
+            _data.Observations
+                .Where(o => o.MatchedPreferences.Count > 0 && o.MatchedPreferences[0].Keywords.Count > 0)
+                .GroupBy(o => o.MatchedPreferences[0].Keywords[0], StringComparer.Ordinal));
     }
 
     private static Dictionary<string, CategoryRate> BuildRateTable(IEnumerable<IGrouping<string, GiftObservation>> groups)
@@ -165,6 +181,7 @@ public sealed class CalibrationService
         foreach (var g in groups)
         {
             var derivedRates = g.Select(o => o.DerivedRate).ToList();
+            if (derivedRates.Count == 0) continue;
             rates[g.Key] = new CategoryRate
             {
                 Keyword = g.Key,
@@ -177,25 +194,51 @@ public sealed class CalibrationService
         return rates;
     }
 
-    private static string NpcRateKey(string npcKey, string keyword) => $"{npcKey}|{keyword}";
+    internal static string ItemRateKey(string npcKey, string internalName) => $"{npcKey}|{internalName}";
+    internal static string SignatureRateKey(string npcKey, string signature) => $"{npcKey}|{signature}";
 
-    /// <summary>Get the calibrated rate for a keyword, or null if not yet observed.</summary>
+    /// <summary>Legacy accessor: global rate for a single keyword. Prefer <see cref="EstimateFavor"/> for hierarchical lookup.</summary>
     public double? GetRate(string keyword) =>
-        _data.Rates.TryGetValue(keyword, out var r) ? r.Rate : null;
+        _data.KeywordRates.TryGetValue(keyword, out var r) ? r.Rate : null;
 
-    /// <summary>Get the NPC-specific rate, falling back to global rate.</summary>
-    public double? GetRate(string npcKey, string keyword) =>
-        _data.NpcRates.TryGetValue(NpcRateKey(npcKey, keyword), out var npcRate) ? npcRate.Rate
-        : _data.Rates.TryGetValue(keyword, out var globalRate) ? globalRate.Rate
-        : null;
-
-    /// <summary>Estimate favor for an item given calibration data. Prefers NPC-specific rate if available.</summary>
-    public double? EstimateFavor(GiftMatch match, string? npcKey = null)
+    /// <summary>
+    /// Estimate favor for an item given calibration data. Walks a specificity hierarchy:
+    /// per-(NPC,item) → per-(NPC,preference-signature) → per-NPC baseline → global keyword.
+    /// Returns null if no tier has data.
+    /// </summary>
+    public EstimateResult? EstimateFavor(GiftMatch match, string? npcKey = null)
     {
-        var rate = npcKey is not null ? GetRate(npcKey, match.MatchedKeyword) : GetRate(match.MatchedKeyword);
-        if (rate is null) return null;
-        return match.Pref * match.ItemValue * rate.Value;
+        if (npcKey is not null)
+        {
+            var allPrefs = _giftIndex.MatchAllPreferencesForItem(match.ItemId, npcKey);
+            var effectivePref = allPrefs.Sum(p => p.Pref);
+
+            // Tier 1: per-item rate
+            if (_data.ItemRates.TryGetValue(ItemRateKey(npcKey, InternalNameFromMatch(match)), out var itemRate))
+                return new EstimateResult(effectivePref * match.ItemValue * itemRate.Rate, "Item", itemRate.SampleCount);
+
+            // Tier 2: signature rate
+            if (allPrefs.Count > 0)
+            {
+                var signature = GiftObservation.BuildSignature(allPrefs);
+                if (_data.SignatureRates.TryGetValue(SignatureRateKey(npcKey, signature), out var sigRate))
+                    return new EstimateResult(effectivePref * match.ItemValue * sigRate.Rate, "Signature", sigRate.SampleCount);
+            }
+
+            // Tier 3: NPC baseline
+            if (_data.NpcRates.TryGetValue(npcKey, out var npcRate))
+                return new EstimateResult(effectivePref * match.ItemValue * npcRate.Rate, "NPC", npcRate.SampleCount);
+        }
+
+        // Tier 4 (global fallback): legacy per-keyword. Uses the best-match keyword and its single pref.
+        if (_data.KeywordRates.TryGetValue(match.MatchedKeyword, out var kwRate))
+            return new EstimateResult(match.Pref * match.ItemValue * kwRate.Rate, "Global", kwRate.SampleCount);
+
+        return null;
     }
+
+    private string InternalNameFromMatch(GiftMatch match) =>
+        _giftIndex.GetItem(match.ItemId)?.InternalName ?? "";
 
     // ── Persistence ─────────────────────────────────────────────────
 
@@ -205,15 +248,75 @@ public sealed class CalibrationService
         try
         {
             var json = File.ReadAllBytes(_dataPath);
-            _data = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData) ?? new();
-            RecomputeRates(); // backfill NpcRates from existing observations
-            _diag?.Info("Arwen.Calibration", $"Loaded {_data.Observations.Count} observations, {_data.Rates.Count} global rates, {_data.NpcRates.Count} NPC rates");
+            var loaded = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData) ?? new();
+            _data = loaded;
+
+            if (_data.Version < CurrentSchemaVersion)
+            {
+                var (kept, dropped) = MigrateObservationsToV2(_data.Observations);
+                _diag?.Info("Arwen.Calibration",
+                    $"Migrating calibration v{_data.Version} → v{CurrentSchemaVersion}: kept {kept.Count}, dropped {dropped}");
+                _data.Observations = kept;
+                _data.Version = CurrentSchemaVersion;
+                RecomputeRates();
+                Save();
+            }
+            else
+            {
+                RecomputeRates();
+            }
+
+            _diag?.Info("Arwen.Calibration",
+                $"Loaded {_data.Observations.Count} observations " +
+                $"({_data.ItemRates.Count} item rates, {_data.SignatureRates.Count} signature rates, " +
+                $"{_data.NpcRates.Count} NPC baselines, {_data.KeywordRates.Count} keyword rates)");
         }
         catch (Exception ex)
         {
             _diag?.Warn("Arwen.Calibration", $"Failed to load calibration: {ex.Message}");
             _data = new();
         }
+    }
+
+    /// <summary>
+    /// Re-derive <see cref="GiftObservation.ItemKeywords"/> and <see cref="GiftObservation.MatchedPreferences"/>
+    /// for observations that predate schema v2. Observations whose item is no longer in reference data
+    /// (or no longer matches any preference for the NPC) are dropped and counted.
+    /// </summary>
+    private (List<GiftObservation> Kept, int Dropped) MigrateObservationsToV2(List<GiftObservation> legacy)
+    {
+        var kept = new List<GiftObservation>(legacy.Count);
+        var dropped = 0;
+        foreach (var obs in legacy)
+        {
+            // If already populated (e.g. mixed file), keep as-is.
+            if (obs.MatchedPreferences.Count > 0 && obs.ItemKeywords.Count > 0)
+            {
+                kept.Add(obs);
+                continue;
+            }
+
+            if (!_refData.ItemsByInternalName.TryGetValue(obs.ItemInternalName, out var item))
+            {
+                _diag?.Trace("Arwen.Calibration", $"Migration: dropping '{obs.ItemInternalName}' (not in reference data)");
+                dropped++;
+                continue;
+            }
+
+            var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, obs.NpcKey);
+            if (matchedPrefs.Count == 0)
+            {
+                _diag?.Trace("Arwen.Calibration", $"Migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (no matching preferences)");
+                dropped++;
+                continue;
+            }
+
+            obs.ItemKeywords = [.. item.Keywords.Select(k => k.Tag)];
+            obs.MatchedPreferences = [.. matchedPrefs];
+            // ItemValue / FavorDelta / Timestamp already present from v1.
+            kept.Add(obs);
+        }
+        return (kept, dropped);
     }
 
     private void Save()
@@ -238,11 +341,14 @@ public sealed class CalibrationService
     {
         var export = new CalibrationData
         {
-            Version = 1,
+            Version = CurrentSchemaVersion,
             ContributorNote = contributorNote,
             ExportedAt = DateTimeOffset.UtcNow,
             Observations = _data.Observations,
-            Rates = _data.Rates,
+            ItemRates = _data.ItemRates,
+            SignatureRates = _data.SignatureRates,
+            NpcRates = _data.NpcRates,
+            KeywordRates = _data.KeywordRates,
         };
         return JsonSerializer.Serialize(export, CalibrationJsonContext.Default.CalibrationData);
     }
@@ -258,6 +364,16 @@ public sealed class CalibrationService
     {
         var imported = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData);
         if (imported is null) return 0;
+
+        if (imported.Version < CurrentSchemaVersion)
+        {
+            var (kept, dropped) = MigrateObservationsToV2(imported.Observations);
+            _diag?.Info("Arwen.Calibration",
+                $"Importing v{imported.Version} payload: migrated {kept.Count}, dropped {dropped}");
+            imported.Observations = kept;
+            imported.Version = CurrentSchemaVersion;
+        }
+
         return MergeData(imported, replaceExisting);
     }
 
@@ -279,7 +395,6 @@ public sealed class CalibrationService
             return count;
         }
 
-        // Deduplicate by (NpcKey, ItemInternalName, FavorDelta, Timestamp)
         var existingKeys = new HashSet<string>(
             _data.Observations.Select(ObservationKey));
         var added = 0;

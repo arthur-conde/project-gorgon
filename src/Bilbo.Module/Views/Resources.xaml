@@ -4,4 +4,5 @@
     <views:NullDashConverter x:Key="NullDash"/>
     <views:DecimalFormatConverter x:Key="DecimalFormat"/>
     <views:RarityToBrushConverter x:Key="RarityBrush"/>
+    <views:NonEmptyToVisibleConverter x:Key="NonEmptyToVisible"/>
 </ResourceDictionary>

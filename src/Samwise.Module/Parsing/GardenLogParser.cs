@@ -44,6 +44,11 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessScreenText.*ErrorMessage", RegexOptions.CultureInvariant)]
     private static partial Regex ScreenTextErrorRx();
 
+    // Real log shape: ProcessErrorMessage(ItemUnusable, "Barley Seeds can't be used: You already have the maximum of that type of plant growing")
+    // Captures the seed display name (group 1).
+    [GeneratedRegex(@"ProcessErrorMessage\(ItemUnusable,\s*""([^""]+?) can't be used: You already have the maximum of that type of plant growing""", RegexOptions.CultureInvariant)]
+    private static partial Regex PlantingCapRx();
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrEmpty(line)) return null;
@@ -81,6 +86,10 @@ public sealed partial class GardenLogParser : ILogParser
         if (m.Success) return new DeleteItem(timestamp, m.Groups[1].Value);
 
         if (GardeningXpRx().IsMatch(line)) return new GardeningXp(timestamp);
+
+        m = PlantingCapRx().Match(line);
+        if (m.Success) return new PlantingCapReached(timestamp, m.Groups[1].Value);
+
         if (ScreenTextErrorRx().IsMatch(line)) return new ScreenTextError(timestamp);
 
         return null;

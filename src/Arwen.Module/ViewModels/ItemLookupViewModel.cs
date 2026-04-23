@@ -116,7 +116,7 @@ public sealed partial class ItemLookupViewModel : ObservableObject
                 MatchedKeyword = nm.Match.MatchedKeyword,
                 CurrentTier = favorEntry is not null ? FavorTiers.DisplayName(favorEntry.CurrentTier) : "",
                 HasMet = hasMet,
-                EstimatedFavor = _calibration.EstimateFavor(nm.Match, nm.NpcKey),
+                EstimatedFavor = _calibration.EstimateFavor(nm.Match, nm.NpcKey)?.Value,
             });
         }
 

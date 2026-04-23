@@ -102,4 +102,23 @@ public class GardenLogParserTests
     {
         _p.TryParse(@"some unrelated junk", T).Should().BeNull();
     }
+
+    [Fact]
+    public void Parses_PlantingCapReached_FromRealLogLine()
+    {
+        // Captured from a live Player.log.
+        var line = @"[10:26:30] LocalPlayer: ProcessErrorMessage(ItemUnusable, ""Barley Seeds can't be used: You already have the maximum of that type of plant growing"")";
+        var evt = _p.TryParse(line, T);
+        evt.Should().BeOfType<PlantingCapReached>()
+            .Which.SeedDisplayName.Should().Be("Barley Seeds");
+    }
+
+    [Fact]
+    public void Ignores_OtherItemUnusableErrors()
+    {
+        // Different ItemUnusable messages shouldn't match the slot-cap pattern.
+        // Currently no other pattern exists for these so the parser returns null.
+        var line = @"[10:26:30] LocalPlayer: ProcessErrorMessage(ItemUnusable, ""You don't have enough water!"")";
+        _p.TryParse(line, T).Should().BeNull();
+    }
 }

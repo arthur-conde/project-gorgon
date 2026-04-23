@@ -9,78 +9,121 @@
              d:DataContext="{d:DesignInstance vm:CalibrationViewModel}"
              Background="#FF1A1A1A">
 
-    <DockPanel Margin="12">
-        <!-- Header -->
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal">
+    <UserControl.Resources>
+        <Style x:Key="RateTextCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+        </Style>
+        <Style x:Key="RateNumCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFD4A847"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="RateSampleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF7AB880"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="RateMinMaxCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#88FFFFFF"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="SubtleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="12">
+            <!-- Header -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
                            VerticalAlignment="Center"/>
                 <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"
                         Padding="10,3" FontSize="{DynamicResource AppFontSizeHint}"
                         Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
             </StackPanel>
-        </StackPanel>
 
-        <!-- Category Rates -->
-        <TextBlock DockPanel.Dock="Top" Text="Category Rates" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
-                   FontWeight="SemiBold" Margin="0,4,0,4"/>
-        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}"
-                            Mode="ReadOnly" CanUserResizeRows="False"
-                            MaxHeight="220" Margin="0,0,0,12">
-            <wpf:GorgonDataGrid.Columns>
-                <DataGridTextColumn Header="Keyword" Binding="{Binding Keyword}" Width="180">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="FontWeight" Value="Medium"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Rate" Binding="{Binding Rate, StringFormat=F4}" Width="90">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FFD4A847"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="70">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FF7AB880"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Min" Binding="{Binding MinRate, StringFormat=F4}" Width="90">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#88FFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#88FFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            <!-- Per-item rates -->
+            <Expander IsExpanded="True" Margin="0,4,0,8" Foreground="#FFD4A847">
+                <Expander.Header>
+                    <TextBlock Text="Per-item rates (most specific)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
+                </Expander.Header>
+                <wpf:GorgonDataGrid ItemsSource="{Binding ItemRates}"
+                                    Mode="ReadOnly" CanUserResizeRows="False"
+                                    MaxHeight="220" Margin="0,4,0,0">
+                    <wpf:GorgonDataGrid.Columns>
+                        <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
+                                            ElementStyle="{StaticResource RateTextCol}"/>
+                        <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="220"
+                                            ElementStyle="{StaticResource SubtleCol}"/>
+                        <DataGridTextColumn Header="Rate" Binding="{Binding Rate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateNumCol}"/>
+                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="70"
+                                            ElementStyle="{StaticResource RateSampleCol}"/>
+                        <DataGridTextColumn Header="Min" Binding="{Binding MinRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                        <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                    </wpf:GorgonDataGrid.Columns>
+                </wpf:GorgonDataGrid>
+            </Expander>
 
-        <!-- Observations filter -->
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <!-- Signature rates -->
+            <Expander IsExpanded="True" Margin="0,4,0,8" Foreground="#FFD4A847">
+                <Expander.Header>
+                    <TextBlock Text="Signature rates (preference-set)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
+                </Expander.Header>
+                <wpf:GorgonDataGrid ItemsSource="{Binding SignatureRates}"
+                                    Mode="ReadOnly" CanUserResizeRows="False"
+                                    MaxHeight="200" Margin="0,4,0,0">
+                    <wpf:GorgonDataGrid.Columns>
+                        <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
+                                            ElementStyle="{StaticResource RateTextCol}"/>
+                        <DataGridTextColumn Header="Signature" Binding="{Binding Signature}" Width="260"
+                                            ElementStyle="{StaticResource SubtleCol}"/>
+                        <DataGridTextColumn Header="Rate" Binding="{Binding Rate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateNumCol}"/>
+                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="70"
+                                            ElementStyle="{StaticResource RateSampleCol}"/>
+                        <DataGridTextColumn Header="Min" Binding="{Binding MinRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                        <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                    </wpf:GorgonDataGrid.Columns>
+                </wpf:GorgonDataGrid>
+            </Expander>
+
+            <!-- NPC baselines -->
+            <Expander IsExpanded="True" Margin="0,4,0,8" Foreground="#FFD4A847">
+                <Expander.Header>
+                    <TextBlock Text="NPC baselines (least specific)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
+                </Expander.Header>
+                <wpf:GorgonDataGrid ItemsSource="{Binding NpcBaselines}"
+                                    Mode="ReadOnly" CanUserResizeRows="False"
+                                    MaxHeight="200" Margin="0,4,0,0">
+                    <wpf:GorgonDataGrid.Columns>
+                        <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="160"
+                                            ElementStyle="{StaticResource RateTextCol}"/>
+                        <DataGridTextColumn Header="Rate" Binding="{Binding Rate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateNumCol}"/>
+                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="70"
+                                            ElementStyle="{StaticResource RateSampleCol}"/>
+                        <DataGridTextColumn Header="Min" Binding="{Binding MinRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                        <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
+                                            ElementStyle="{StaticResource RateMinMaxCol}"/>
+                    </wpf:GorgonDataGrid.Columns>
+                </wpf:GorgonDataGrid>
+            </Expander>
+
+            <!-- Observations -->
             <TextBlock Text="Observations" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
-                       FontWeight="SemiBold" Margin="0,0,0,4"/>
-            <Grid>
+                       FontWeight="SemiBold" Margin="0,8,0,4"/>
+            <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -90,89 +133,40 @@
                 <wpf:GorgonQueryBox Grid.Column="1"
                                     Grid="{Binding ElementName=ObservationsGrid}"
                                     QueryText="{Binding ElementName=ObservationsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                    Watermark="type text, or grammar like Keyword CONTAINS 'weapon'"/>
+                                    Watermark="type text, or grammar like Signature CONTAINS 'Ring'"/>
             </Grid>
             <TextBlock Text="{Binding ElementName=ObservationsGrid, Path=QueryError}"
                        Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
                        Visibility="{Binding ElementName=ObservationsGrid, Path=QueryError,
                            Converter={StaticResource NullOrEmptyToVis}}"/>
+            <wpf:GorgonDataGrid x:Name="ObservationsGrid" ItemsSource="{Binding Observations}"
+                                Mode="ReadOnly" CanUserResizeRows="False"
+                                MaxHeight="320" Margin="0,4,0,0">
+                <wpf:GorgonDataGrid.Columns>
+                    <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
+                                        ElementStyle="{StaticResource RateTextCol}"/>
+                    <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="160"
+                                        ElementStyle="{StaticResource SubtleCol}"/>
+                    <DataGridTextColumn Header="Signature" Binding="{Binding Signature}" Width="200"
+                                        ElementStyle="{StaticResource RateMinMaxCol}"/>
+                    <DataGridTextColumn Header="Value" Binding="{Binding ItemValue, StringFormat=N0}" Width="70"
+                                        ElementStyle="{StaticResource SubtleCol}"/>
+                    <DataGridTextColumn Header="Pref" Binding="{Binding EffectivePref, StringFormat=+0.#;-0.#;0}" Width="55"
+                                        ElementStyle="{StaticResource RateNumCol}"/>
+                    <DataGridTextColumn Header="Favor" Binding="{Binding FavorDelta, StringFormat=+0.0;-0.0;0}" Width="70"
+                                        ElementStyle="{StaticResource RateSampleCol}"/>
+                    <DataGridTextColumn Header="Rate" Binding="{Binding DerivedRate, StringFormat=F4}" Width="80"
+                                        ElementStyle="{StaticResource RateNumCol}"/>
+                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm}" Width="130">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="#66FFFFFF"/>
+                                <Setter Property="Padding" Value="6,4"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                </wpf:GorgonDataGrid.Columns>
+            </wpf:GorgonDataGrid>
         </StackPanel>
-
-        <!-- Raw observations -->
-        <wpf:GorgonDataGrid x:Name="ObservationsGrid" ItemsSource="{Binding Observations}"
-                            Mode="ReadOnly" CanUserResizeRows="False"
-                            Margin="0,4,0,0">
-            <wpf:GorgonDataGrid.Columns>
-                <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="FontWeight" Value="Medium"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="160">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Keyword" Binding="{Binding Keyword}" Width="130">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#88FFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Value" Binding="{Binding ItemValue, StringFormat=N0}" Width="70">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Pref" Binding="{Binding Pref, StringFormat=+0.#;-0.#}" Width="55">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FFD4A847"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Favor" Binding="{Binding FavorDelta, StringFormat=+0.0;-0.0;0}" Width="70">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FF7AB880"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Rate" Binding="{Binding DerivedRate, StringFormat=F4}" Width="80">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#FFD4A847"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="TextAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm}" Width="130">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="#66FFFFFF"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
-    </DockPanel>
+    </ScrollViewer>
 </UserControl>

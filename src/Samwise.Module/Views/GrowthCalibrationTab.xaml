@@ -94,6 +94,127 @@
             </wpf:GorgonDataGrid.Columns>
         </wpf:GorgonDataGrid>
 
+        <!-- Phase Transitions: per-step growth timing. Growing→Ripe, Planted→Thirsty etc.
+             Player-reaction transitions (Thirsty→Growing) are filtered out of rates. -->
+        <TextBlock DockPanel.Dock="Top" Text="Phase Transitions" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
+                   FontWeight="SemiBold" Margin="0,4,0,4"/>
+        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding PhaseRates}"
+                            Mode="ReadOnly"
+                            CanUserResizeRows="False"
+                            MaxHeight="200" Margin="0,0,0,12">
+            <wpf:GorgonDataGrid.Columns>
+                <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130" SortMemberPath="CropType">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="FontWeight" Value="Medium"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Transition" Binding="{Binding Transition}" Width="180" SortMemberPath="Transition">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Avg" Binding="{Binding AvgFormatted}" Width="75" SortMemberPath="AvgSeconds">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="65" SortMemberPath="SampleCount">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FF7AB880"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Min" Binding="{Binding MinFormatted}" Width="70" SortMemberPath="MinSeconds">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Max" Binding="{Binding MaxFormatted}" Width="70" SortMemberPath="MaxSeconds">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
+
+        <!-- Slot Family Caps: crowdsourced max plot count per family, derived from
+             ProcessErrorMessage(ItemUnusable) events in Player.log. -->
+        <TextBlock DockPanel.Dock="Top" Text="Slot Family Caps" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
+                   FontWeight="SemiBold" Margin="0,4,0,4"/>
+        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding SlotCaps}"
+                            Mode="ReadOnly"
+                            CanUserResizeRows="False"
+                            MaxHeight="140" Margin="0,0,0,12">
+            <wpf:GorgonDataGrid.Columns>
+                <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="140" SortMemberPath="Family">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="FontWeight" Value="Medium"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Observed" Binding="{Binding ObservedMax}" Width="80" SortMemberPath="ObservedMax">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="65" SortMemberPath="SampleCount">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FF7AB880"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Config" Binding="{Binding ConfigLabel}" Width="70" SortMemberPath="ConfigMax">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#AAFFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Match" Binding="{Binding MatchLabel}" Width="*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#FFCC6666"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
+
         <!-- Observations: single filter box — plain text does a cross-column substring
              match on string columns; grammar (detected via uppercase keywords or operator
              characters) runs through the SQL-like compiler with syntax highlighting and

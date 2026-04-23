@@ -4,4 +4,5 @@
     <c:StageToHarvestVisConverter x:Key="StageToHarvestVis"/>
     <c:ZeroToVisConverter x:Key="ZeroToVis"/>
     <c:NonZeroToVisConverter x:Key="NonZeroToVis"/>
+    <c:FractionToCanvasLeftConverter x:Key="FractionToCanvasLeft"/>
 </ResourceDictionary>

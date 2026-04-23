@@ -475,7 +475,7 @@ public class GardenStateMachineTests
                     ["Squash"] = new() { SlotFamily = "Onion", GrowthSeconds = 170 },
                     ["Violet"] = new() { SlotFamily = "Flowers", GrowthSeconds = 110 },
                     ["Pansy"] = new() { SlotFamily = "Flowers", GrowthSeconds = 140 },
-                    ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150, HarvestVerb = "Pick" },
+                    ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150 },
                     ["Barley"] = new() { SlotFamily = "Carrot", GrowthSeconds = 150 },
                 },
             };

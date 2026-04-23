@@ -62,88 +62,217 @@
             <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
         </Border>
 
-        <!-- DataGrid -->
-        <wpf:GorgonDataGrid x:Name="ItemsGrid"
-                            ItemsSource="{Binding FilteredItems}"
-                            Mode="ReadOnly">
-            <wpf:GorgonDataGrid.Columns>
-                <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Location" Binding="{Binding Location}" SortMemberPath="Location" Width="160"/>
-                <DataGridTextColumn Header="Stack" Binding="{Binding StackSize}" SortMemberPath="StackSize" Width="60">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Total Value" Binding="{Binding TotalValue, Converter={StaticResource DecimalFormat}}" SortMemberPath="TotalValue" Width="85">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Right"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Rarity" Binding="{Binding Rarity, Converter={StaticResource NullDash}}" SortMemberPath="Rarity" Width="90">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Center"/>
-                            <Setter Property="Foreground" Value="{Binding Rarity, Converter={StaticResource RarityBrush}}"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Slot" Binding="{Binding Slot, Converter={StaticResource NullDash}}" SortMemberPath="Slot" Width="90">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Center"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Lvl" Binding="{Binding Level, Converter={StaticResource NullDash}}" SortMemberPath="Level" Width="50">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Center"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-                <DataGridTextColumn Header="Mods" Binding="{Binding ModCount}" SortMemberPath="ModCount" Width="50">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Center"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-            <wpf:GorgonDataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
-                    <Setter Property="ToolTip">
+        <!-- Tabs: Inventory / Craftable Recipes -->
+        <TabControl Background="Transparent" BorderThickness="0" Padding="0">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                    <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMedium}"/>
+                    <Setter Property="Padding" Value="14,6"/>
+                    <Setter Property="Template">
                         <Setter.Value>
-                            <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
-                                     Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <ToolTip.ContentTemplate>
-                                    <DataTemplate>
-                                        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
-                                                CornerRadius="4" Padding="10" MaxWidth="320">
-                                            <DockPanel>
-                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
-                                                <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"
-                                                           VerticalAlignment="Center"/>
-                                            </DockPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ToolTip.ContentTemplate>
-                            </ToolTip>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
+                                        BorderBrush="Transparent" BorderThickness="0,0,0,2" Margin="0,0,2,0">
+                                    <ContentPresenter ContentSource="Header"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
+                                        <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#18FFFFFF"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </wpf:GorgonDataGrid.RowStyle>
-        </wpf:GorgonDataGrid>
+            </TabControl.Resources>
+            <TabItem Header="Inventory">
+                <wpf:GorgonDataGrid x:Name="ItemsGrid"
+                                    ItemsSource="{Binding FilteredItems}"
+                                    Mode="ReadOnly">
+                    <wpf:GorgonDataGrid.Columns>
+                        <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location}" SortMemberPath="Location" Width="160"/>
+                        <DataGridTextColumn Header="Stack" Binding="{Binding StackSize}" SortMemberPath="StackSize" Width="60">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Total Value" Binding="{Binding TotalValue, Converter={StaticResource DecimalFormat}}" SortMemberPath="TotalValue" Width="85">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Rarity" Binding="{Binding Rarity, Converter={StaticResource NullDash}}" SortMemberPath="Rarity" Width="90">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="Foreground" Value="{Binding Rarity, Converter={StaticResource RarityBrush}}"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Slot" Binding="{Binding Slot, Converter={StaticResource NullDash}}" SortMemberPath="Slot" Width="90">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Lvl" Binding="{Binding Level, Converter={StaticResource NullDash}}" SortMemberPath="Level" Width="50">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Mods" Binding="{Binding ModCount}" SortMemberPath="ModCount" Width="50">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </wpf:GorgonDataGrid.Columns>
+                    <wpf:GorgonDataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+                            <Setter Property="ToolTip">
+                                <Setter.Value>
+                                    <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                             Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <ToolTip.ContentTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                        CornerRadius="4" Padding="10" MaxWidth="320">
+                                                    <DockPanel>
+                                                        <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                       Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"
+                                                                   VerticalAlignment="Center"/>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ToolTip.ContentTemplate>
+                                    </ToolTip>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </wpf:GorgonDataGrid.RowStyle>
+                </wpf:GorgonDataGrid>
+            </TabItem>
+            <TabItem Header="Craftable Recipes">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
+                        <TextBlock Text="Confidence:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="170" Margin="0,0,16,0"
+                                  ItemsSource="{Binding ConfidenceOptions}"
+                                  DisplayMemberPath="Label"
+                                  SelectedValuePath="Value"
+                                  SelectedValue="{Binding Confidence}"/>
+                        <wpf:GorgonQueryBox Grid="{Binding ElementName=RecipesGrid}"
+                                            QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
+                                            Watermark="e.g. MaxCraftable &gt; 0 AND IsKnown AND SkillLevelMet"/>
+                    </DockPanel>
+                    <wpf:GorgonDataGrid x:Name="RecipesGrid"
+                                        ItemsSource="{Binding CraftableRecipes}"
+                                        QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
+                                        Mode="ReadOnly">
+                        <wpf:GorgonDataGrid.Columns>
+                            <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="200" SortMemberPath="Name">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Skill" Binding="{Binding Skill}" SortMemberPath="Skill" Width="110"/>
+                            <DataGridTextColumn Header="Req" Binding="{Binding SkillLevelReq}" SortMemberPath="SkillLevelReq" Width="45">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Char Lvl" Binding="{Binding CharacterSkillLevel, Converter={StaticResource NullDash}}" SortMemberPath="CharacterSkillLevel" Width="60">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridCheckBoxColumn Header="Met" Binding="{Binding SkillLevelMet}" SortMemberPath="SkillLevelMet" Width="45"/>
+                            <DataGridCheckBoxColumn Header="Known" Binding="{Binding IsKnown}" SortMemberPath="IsKnown" Width="55"/>
+                            <DataGridTextColumn Header="Done" Binding="{Binding TimesCompleted}" SortMemberPath="TimesCompleted" Width="50">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Max" Binding="{Binding MaxCraftable}" SortMemberPath="MaxCraftable" Width="60">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Result" Binding="{Binding ResultItem}" SortMemberPath="ResultItem" Width="*" MinWidth="160"/>
+                        </wpf:GorgonDataGrid.Columns>
+                        <wpf:GorgonDataGrid.RowStyle>
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+                                <Setter Property="ToolTip">
+                                    <Setter.Value>
+                                        <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                                 Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <ToolTip.ContentTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                            CornerRadius="4" Padding="10" MaxWidth="380">
+                                                        <StackPanel>
+                                                            <DockPanel Margin="0,0,0,6">
+                                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}"
+                                                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                            </DockPanel>
+                                                            <TextBlock Text="Ingredients" Foreground="#88FFFFFF"
+                                                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,2"/>
+                                                            <TextBlock Text="{Binding Ingredients}" Foreground="#FFE8E8E8"
+                                                                       TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                                            <TextBlock Text="Missing" Foreground="#88FFFFFF"
+                                                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,2"
+                                                                       Visibility="{Binding MissingIngredients, Converter={StaticResource NonEmptyToVisible}}"/>
+                                                            <TextBlock Text="{Binding MissingIngredients}" Foreground="#FFE09090"
+                                                                       TextWrapping="Wrap"
+                                                                       Visibility="{Binding MissingIngredients, Converter={StaticResource NonEmptyToVisible}}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ToolTip.ContentTemplate>
+                                        </ToolTip>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </wpf:GorgonDataGrid.RowStyle>
+                    </wpf:GorgonDataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
     </DockPanel>
 </UserControl>

@@ -7,6 +7,7 @@ using Gorgon.Shared.Logging;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Reference;
 using Gorgon.Shared.Settings;
+using Gorgon.Shared.Storage;
 using Gorgon.Shared.Wpf.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +24,9 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IPlayerLogStream, PlayerLogStream>()
             .AddSingleton<IChatLogStream, ChatLogStream>()
             .AddSingleton<ICharacterDataService>(sp => new CharacterDataService(
+                sp.GetRequiredService<Game.GameConfig>(),
+                sp.GetRequiredService<IDiagnosticsSink>()))
+            .AddSingleton<IStorageReportWatcher>(sp => new StorageReportWatcher(
                 sp.GetRequiredService<Game.GameConfig>(),
                 sp.GetRequiredService<IDiagnosticsSink>()));
 

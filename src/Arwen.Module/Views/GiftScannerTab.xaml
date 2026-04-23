@@ -136,6 +136,78 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
 
+                <DataGridTemplateColumn Header="Src" Width="64" SortMemberPath="EstimateSource">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Margin="4,3" Padding="5,1" CornerRadius="3" HorizontalAlignment="Left"
+                                    Visibility="{Binding EstimateSource, Converter={StaticResource NullOrEmptyToVis}}"
+                                    ToolTip="{Binding EstimateSamples, StringFormat='{}{0} sample(s)'}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="#FF333333"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding EstimateSource}" Value="Item">
+                                                <Setter Property="Background" Value="#FF3F5A2E"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding EstimateSource}" Value="Signature">
+                                                <Setter Property="Background" Value="#FF3E4B66"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding EstimateSource}" Value="NPC">
+                                                <Setter Property="Background" Value="#FF5E4A28"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding EstimateSource}" Value="Global">
+                                                <Setter Property="Background" Value="#FF4A4A4A"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding EstimateSource}" Foreground="#FFE8E8E8"
+                                           FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Header="Favor After Gift" Width="220">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="6,3">
+                                <Grid Height="14">
+                                    <Border Background="#FF333333" CornerRadius="3"/>
+                                    <!-- Projected favor (green, drawn under current) -->
+                                    <Border Background="#FF7AB880" CornerRadius="3"
+                                            HorizontalAlignment="Left"
+                                            Width="{Binding ProjectedProgressFraction,
+                                                Converter={StaticResource ProgressToWidthConverter},
+                                                ConverterParameter=200,
+                                                FallbackValue=0}"/>
+                                    <!-- Current favor (gold, drawn on top) -->
+                                    <Border Background="#FFD4A847" CornerRadius="3"
+                                            HorizontalAlignment="Left"
+                                            Width="{Binding CurrentProgressFraction,
+                                                Converter={StaticResource ProgressToWidthConverter},
+                                                ConverterParameter=200,
+                                                FallbackValue=0}"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding CurrentFavor, StringFormat=F0, TargetNullValue='?'}"
+                                               Foreground="#FFD4A847" FontSize="10"/>
+                                    <TextBlock Text=" → " Foreground="#88FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="{Binding ProjectedFavor, StringFormat=F0, TargetNullValue='?'}"
+                                               Foreground="#FF7AB880" FontSize="10"/>
+                                    <TextBlock Text="  /  " Foreground="#88FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="{Binding CurrentTierCeiling, StringFormat=F0}"
+                                               Foreground="#88FFFFFF" FontSize="10"/>
+                                    <TextBlock Text=" (" Foreground="#88FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="{Binding ProjectedTier, Converter={StaticResource TierToDisplayNameConverter}}"
+                                               Foreground="#88FFFFFF" FontSize="10"/>
+                                    <TextBlock Text=")" Foreground="#88FFFFFF" FontSize="10"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
                 <DataGridTextColumn Header="Score" Binding="{Binding RelativeScore, StringFormat=N0}" Width="90">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">

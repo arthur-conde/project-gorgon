@@ -46,6 +46,38 @@ public sealed class GrowthObservationRow
         : $"{EffectiveSeconds:F0}s";
 }
 
+public sealed class PhaseTransitionRow
+{
+    public required string CropType { get; init; }
+    public required string Transition { get; init; }
+    public required double AvgSeconds { get; init; }
+    public required int SampleCount { get; init; }
+    public required double MinSeconds { get; init; }
+    public required double MaxSeconds { get; init; }
+
+    public string AvgFormatted => $"{AvgSeconds:F1}s";
+    public string MinFormatted => $"{MinSeconds:F1}s";
+    public string MaxFormatted => $"{MaxSeconds:F1}s";
+}
+
+public sealed class SlotCapRow
+{
+    public required string Family { get; init; }
+    public required int ObservedMax { get; init; }
+    public required int SampleCount { get; init; }
+    public required int? ConfigMax { get; init; }
+
+    public string ConfigLabel => ConfigMax is int m ? m.ToString() : "—";
+
+    public string MatchLabel => ConfigMax switch
+    {
+        null => "—",
+        int m when m == ObservedMax => "match",
+        int m when m > ObservedMax => $"config +{m - ObservedMax}",
+        int m => $"config {m - ObservedMax}",
+    };
+}
+
 public sealed partial class GrowthCalibrationViewModel : ObservableObject
 {
     private readonly GrowthCalibrationService _calibration;
@@ -62,6 +94,12 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
 
     [ObservableProperty]
     private ObservableCollection<GrowthObservationRow> _observations = [];
+
+    [ObservableProperty]
+    private ObservableCollection<PhaseTransitionRow> _phaseRates = [];
+
+    [ObservableProperty]
+    private ObservableCollection<SlotCapRow> _slotCaps = [];
 
     [ObservableProperty]
     private string _statusMessage = "";
@@ -100,7 +138,35 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
             .ToList();
         Observations = new ObservableCollection<GrowthObservationRow>(observations);
 
-        StatusMessage = $"{data.Rates.Count} crop(s) calibrated from {data.Observations.Count} observation(s)";
+        var phaseRates = data.PhaseRates.Values
+            .OrderBy(r => r.CropType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => (int)r.FromStage)
+            .Select(r => new PhaseTransitionRow
+            {
+                CropType = r.CropType,
+                Transition = $"{StageName(r.FromStage)} → {StageName(r.ToStage)}",
+                AvgSeconds = r.AvgSeconds,
+                SampleCount = r.SampleCount,
+                MinSeconds = r.MinSeconds,
+                MaxSeconds = r.MaxSeconds,
+            })
+            .ToList();
+        PhaseRates = new ObservableCollection<PhaseTransitionRow>(phaseRates);
+
+        var slotCaps = data.SlotCapRates.Values
+            .OrderBy(r => r.Family, StringComparer.OrdinalIgnoreCase)
+            .Select(r => new SlotCapRow
+            {
+                Family = r.Family,
+                ObservedMax = r.ObservedMax,
+                SampleCount = r.SampleCount,
+                ConfigMax = r.ConfigMax,
+            })
+            .ToList();
+        SlotCaps = new ObservableCollection<SlotCapRow>(slotCaps);
+
+        StatusMessage = $"{data.Rates.Count} crop(s) calibrated from {data.Observations.Count} cycle(s), "
+            + $"{data.PhaseRates.Count} phase transition(s), {data.SlotCapRates.Count} slot cap(s)";
     }
 
     private static string BuildPhaseSummary(List<PhaseRecord> phases)

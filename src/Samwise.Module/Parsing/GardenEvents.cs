@@ -14,3 +14,10 @@ public sealed record UpdateItemCode(DateTime Timestamp, string ItemId) : GardenE
 public sealed record DeleteItem(DateTime Timestamp, string ItemId) : GardenEvent(Timestamp);
 public sealed record GardeningXp(DateTime Timestamp) : GardenEvent(Timestamp);
 public sealed record ScreenTextError(DateTime Timestamp) : GardenEvent(Timestamp);
+
+/// <summary>
+/// Fired when the player tries to plant a seed but has already hit the slot
+/// cap for that crop's family. The seed's display name (e.g. "Barley Seeds")
+/// drives the lookup to resolve which family was capped.
+/// </summary>
+public sealed record PlantingCapReached(DateTime Timestamp, string SeedDisplayName) : GardenEvent(Timestamp);

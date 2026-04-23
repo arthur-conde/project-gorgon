@@ -261,11 +261,14 @@ public class GrowthCalibrationServiceTests
             var sm2 = new GardenStateMachine(cfg2, time2);
             var cal2 = new GrowthCalibrationService(sm2, cfg2, dir2);
 
+            // Import count is observations + phase transitions + slot caps.
+            // One Plant→Ripe cycle produces 1 full-cycle observation plus
+            // per-phase transitions, so the count is >= 1.
             var added1 = cal2.ImportJson(json);
-            added1.Should().Be(1);
+            added1.Should().BeGreaterThan(0);
             cal2.Data.Observations.Should().HaveCount(1);
 
-            // Import again — should be deduplicated
+            // Import again — everything should be deduplicated.
             var added2 = cal2.ImportJson(json);
             added2.Should().Be(0);
             cal2.Data.Observations.Should().HaveCount(1);
@@ -332,6 +335,131 @@ public class GrowthCalibrationServiceTests
         fired.Should().BeTrue();
     }
 
+    // ── Phase transition observations ───────────────────────────────
+
+    [Fact]
+    public void PhaseTransition_RecordedForEachStep_NotJustRipe()
+    {
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+
+        // Planted → Growing (the initial UpdateDescription with "Tend Onion" in
+        // PlantWithCrop transitioned Planted → Growing immediately, duration 0
+        // which is filtered out). Now: Growing for 10s, then Thirsty.
+        time.Advance(TimeSpan.FromSeconds(10));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Thirsty Onion", "", "Water Onion", 0.5));
+
+        // At this point we should have a Growing → Thirsty observation.
+        cal.Data.PhaseTransitions.Should().ContainSingle(pt =>
+            pt.FromStage == PlotStage.Growing && pt.ToStage == PlotStage.Thirsty);
+        cal.Data.PhaseTransitions
+            .Single(pt => pt.FromStage == PlotStage.Growing && pt.ToStage == PlotStage.Thirsty)
+            .DurationSeconds.Should().BeApproximately(10, 0.1);
+    }
+
+    [Fact]
+    public void PhaseTransition_PartialCycle_ContributesData()
+    {
+        // Plant → thirsty → growing → [plot abandoned, never reaches Ripe].
+        // Full cycle never completes, but we still have Growing→Thirsty and
+        // Growing→... transition data.
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+
+        time.Advance(TimeSpan.FromSeconds(12));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Thirsty Onion", "", "Water Onion", 0.5));
+        time.Advance(TimeSpan.FromSeconds(3));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Growing Onion", "", "Tend Onion", 0.6));
+
+        // No full-cycle observation yet.
+        cal.Data.Observations.Should().BeEmpty();
+        // But phase transitions are recorded.
+        cal.Data.PhaseTransitions.Should().HaveCountGreaterOrEqualTo(2);
+    }
+
+    [Fact]
+    public void PhaseRates_ExcludePlayerReactionTransitions()
+    {
+        // Thirsty → Growing and NeedsFertilizer → Growing measure how long the
+        // player took to water/fertilize, not growth. They must be recorded raw
+        // (for transparency) but excluded from rate aggregation.
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+
+        time.Advance(TimeSpan.FromSeconds(10));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Thirsty Onion", "", "Water Onion", 0.5));
+        time.Advance(TimeSpan.FromSeconds(5));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Growing Onion", "", "Tend Onion", 0.6));
+
+        // Raw: both Growing→Thirsty and Thirsty→Growing recorded.
+        cal.Data.PhaseTransitions.Should().HaveCount(2);
+        // Rates: only Growing→Thirsty (growth data), not Thirsty→Growing (reaction).
+        cal.Data.PhaseRates.Should().ContainKey("Onion|Growing→Thirsty");
+        cal.Data.PhaseRates.Should().NotContainKey("Onion|Thirsty→Growing");
+    }
+
+    // ── Slot cap observations ───────────────────────────────────────
+
+    [Fact]
+    public void SlotCap_Recorded_WhenPlantingCapErrorFires()
+    {
+        // Plant 2 Onions (fills the slot). Then a PlantingCapReached error
+        // fires (player tried to plant a 3rd). The service records ObservedCap=2.
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+        PlantWithCrop(sm, time, "2", "Onion");
+
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+
+        cal.Data.SlotCapObservations.Should().ContainSingle();
+        var obs = cal.Data.SlotCapObservations[0];
+        obs.Family.Should().Be("Onion");
+        obs.ObservedCap.Should().Be(2);
+        obs.CharName.Should().Be("Hits");
+
+        cal.Data.SlotCapRates.Should().ContainKey("Onion");
+        cal.Data.SlotCapRates["Onion"].ObservedMax.Should().Be(2);
+        cal.Data.SlotCapRates["Onion"].ConfigMax.Should().Be(2);
+    }
+
+    [Fact]
+    public void SlotCap_DedupsBurstWithinWindow()
+    {
+        // Spam-clicking a seed against a full family produces bursts of
+        // identical errors. Only the first in each 2s window counts.
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+        PlantWithCrop(sm, time, "2", "Onion");
+
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+        time.Advance(TimeSpan.FromMilliseconds(300));
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+
+        cal.Data.SlotCapObservations.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void SlotCap_SeparateObservations_AfterDedupWindow()
+    {
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Hits");
+        PlantWithCrop(sm, time, "1", "Onion");
+        PlantWithCrop(sm, time, "2", "Onion");
+
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+        time.Advance(TimeSpan.FromSeconds(5));
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+
+        cal.Data.SlotCapObservations.Should().HaveCount(2);
+    }
+
     // ── Test helpers ────────────────────────────────────────────────
 
     private sealed class FakeTime : TimeProvider
@@ -365,7 +493,7 @@ public class GrowthCalibrationServiceTests
                     ["Squash"] = new() { SlotFamily = "Onion", GrowthSeconds = 170 },
                     ["Violet"] = new() { SlotFamily = "Flowers", GrowthSeconds = 110 },
                     ["Pansy"] = new() { SlotFamily = "Flowers", GrowthSeconds = 140 },
-                    ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150, HarvestVerb = "Pick" },
+                    ["Cotton Plant"] = new() { SlotFamily = "Cotton", GrowthSeconds = 150 },
                     ["Barley"] = new() { SlotFamily = "Carrot", GrowthSeconds = 150 },
                 },
             };

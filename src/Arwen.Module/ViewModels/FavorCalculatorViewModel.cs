@@ -96,8 +96,8 @@ public sealed partial class FavorCalculatorViewModel : ObservableObject
         else
         {
             var estimated = _calibration.EstimateFavor(value, SelectedNpc?.NpcKey);
-            FavorPerGiftText = estimated.HasValue
-                ? $"~{estimated.Value:F1} favor (calibrated: {value.MatchedKeyword})"
+            FavorPerGiftText = estimated is not null
+                ? $"~{estimated.Value:F1} favor (calibrated: {estimated.Tier})"
                 : $"pref {value.Pref:+0.#;-0.#} × value {value.ItemValue:N0} (not yet calibrated)";
         }
         Recalculate();
@@ -190,7 +190,7 @@ public sealed partial class FavorCalculatorViewModel : ObservableObject
         }
 
         var estimated = _calibration.EstimateFavor(SelectedItem, SelectedNpc.NpcKey);
-        if (estimated.HasValue && estimated.Value > 0)
+        if (estimated is not null && estimated.Value > 0)
         {
             var itemsNeeded = (int)Math.Ceiling(remaining / estimated.Value);
             ResultText = $"~{itemsNeeded:N0} items needed (~{estimated.Value:F1} favor each, calibrated)";
