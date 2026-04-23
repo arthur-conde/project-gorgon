@@ -62,8 +62,13 @@
             <wpf:GorgonDataGrid.Columns>
                 <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="160"
                                     ElementStyle="{StaticResource TextCol}"/>
-                <DataGridTextColumn Header="Item" Binding="{Binding Item}" Width="220"
-                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTemplateColumn Header="Item" Width="220" SortMemberPath="Item">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Item}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Favor" Binding="{Binding FavorTier}" Width="110"
                                     ElementStyle="{StaticResource SubtleCol}"/>
                 <DataGridTextColumn Header="Civic" Binding="{Binding CivicPride}" Width="70"

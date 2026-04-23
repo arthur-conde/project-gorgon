@@ -155,8 +155,13 @@
                 <wpf:GorgonDataGrid x:Name="ItemsGrid" ItemsSource="{Binding SelectedVendorItems}"
                                     Mode="ReadOnly" CanUserResizeRows="False">
                     <wpf:GorgonDataGrid.Columns>
-                        <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="*"
-                                            ElementStyle="{StaticResource TextCol}"/>
+                        <DataGridTemplateColumn Header="Item" Width="*" SortMemberPath="ItemName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding ItemName}"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Value" Binding="{Binding BaseValue, StringFormat=N0}" Width="100"
                                             ElementStyle="{StaticResource NumCol}"/>
                     </wpf:GorgonDataGrid.Columns>

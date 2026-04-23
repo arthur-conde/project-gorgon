@@ -18,6 +18,7 @@ public sealed class VendorRow
 public sealed class VendorShopItemRow
 {
     public required string ItemName { get; init; }
+    public required int IconId { get; init; }
     public required decimal BaseValue { get; init; }
 }
 
@@ -97,6 +98,7 @@ public sealed partial class VendorShopViewModel : ObservableObject
             SelectedVendorItems.Add(new VendorShopItemRow
             {
                 ItemName = e.ItemName,
+                IconId = e.ItemIconId,
                 BaseValue = e.ItemBaseValue,
             });
         }

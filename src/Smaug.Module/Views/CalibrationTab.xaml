@@ -49,8 +49,13 @@
                                     ElementStyle="{StaticResource SubtleCol}"/>
                 <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="140"
                                     ElementStyle="{StaticResource TextCol}"/>
-                <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="180"
-                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTemplateColumn Header="Item" Width="180" SortMemberPath="ItemName">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding ItemName}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Favor" Binding="{Binding FavorTier}" Width="110"
                                     ElementStyle="{StaticResource SubtleCol}"/>
                 <DataGridTextColumn Header="CivicPride" Binding="{Binding CivicPride}" Width="75"

@@ -1,3 +1,4 @@
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Logging;
 using Gorgon.Shared.Modules;
@@ -17,6 +18,7 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly VendorLogParser _parser;
     private readonly PriceCalibrationService _calibration;
     private readonly VendorSellContext _context;
+    private readonly IActiveCharacterService _activeCharacter;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
 
@@ -25,6 +27,7 @@ public sealed class VendorIngestionService : BackgroundService
         VendorLogParser parser,
         PriceCalibrationService calibration,
         VendorSellContext context,
+        IActiveCharacterService activeCharacter,
         ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
@@ -32,6 +35,7 @@ public sealed class VendorIngestionService : BackgroundService
         _parser = parser;
         _calibration = calibration;
         _context = context;
+        _activeCharacter = activeCharacter;
         _diag = diag;
         _gate = gates.For("smaug");
     }
@@ -41,6 +45,15 @@ public sealed class VendorIngestionService : BackgroundService
         _diag?.Info("Smaug", "Waiting for module gate…");
         await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
         _diag?.Info("Smaug", "Gate opened — subscribing to Player.log for vendor events");
+
+        PrimeCivicPrideFromActiveCharacter();
+        _activeCharacter.ActiveCharacterChanged += OnActiveCharacterChanged;
+        _activeCharacter.CharacterExportsChanged += OnActiveCharacterChanged;
+        stoppingToken.Register(() =>
+        {
+            _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+            _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
+        });
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
@@ -81,5 +94,27 @@ public sealed class VendorIngestionService : BackgroundService
                     break;
             }
         }
+    }
+
+    private void OnActiveCharacterChanged(object? sender, EventArgs e) =>
+        PrimeCivicPrideFromActiveCharacter(overwrite: true);
+
+    /// <summary>
+    /// Fallback path for lazy-activated sessions: if the ProcessLoadSkills line scrolled past
+    /// before Smaug's ingestion loop was running, pull Civic Pride from the character export.
+    /// When the active character changes, overwrites unconditionally; on first prime, only fills in
+    /// a zero level so a live log-parsed value is not clobbered by a stale export.
+    /// </summary>
+    private void PrimeCivicPrideFromActiveCharacter(bool overwrite = false)
+    {
+        if (!overwrite && _context.CivicPrideLevel > 0) return;
+        var snapshot = _activeCharacter.ActiveCharacter;
+        if (snapshot is null) return;
+        if (!snapshot.Skills.TryGetValue("CivicPride", out var skill)) return;
+        var effective = skill.Level + skill.BonusLevels;
+        if (effective <= 0) return;
+        _context.CivicPrideLevel = effective;
+        _diag?.Info("Smaug",
+            $"Primed CivicPride from export: level={effective} (raw={skill.Level}+bonus={skill.BonusLevels})");
     }
 }

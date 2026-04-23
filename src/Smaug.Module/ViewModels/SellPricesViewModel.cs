@@ -9,6 +9,7 @@ public sealed class SellPricesRow
 {
     public required string NpcName { get; init; }
     public required string Item { get; init; }
+    public int IconId { get; init; }
     public required string FavorTier { get; init; }
     public required string CivicPride { get; init; }
     public required double ExpectedPrice { get; init; }
@@ -66,6 +67,7 @@ public sealed partial class SellPricesViewModel : ObservableObject
             {
                 NpcName = npcEntry?.Name ?? npc.Replace("NPC_", ""),
                 Item = itemEntry?.Name ?? item,
+                IconId = itemEntry?.IconId ?? 0,
                 FavorTier = tier,
                 CivicPride = cp,
                 ExpectedPrice = rate.AvgPrice,

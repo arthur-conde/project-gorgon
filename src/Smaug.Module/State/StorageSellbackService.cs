@@ -2,26 +2,33 @@ using Gorgon.Shared.Character;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Reference;
 using Gorgon.Shared.Storage;
+using Smaug.Domain;
 
 namespace Smaug.State;
 
 public sealed record StorageSellbackItem(
     int TypeId,
     string ItemName,
+    int IconId,
     int StackSize,
     decimal UnitValue,
-    string Location);
+    string Location,
+    bool? IsAcceptable,
+    int? EffectiveMaxGold);
 
 public sealed record StorageSellbackVendor(
     string NpcKey,
     string NpcName,
     string Area,
     string? MinFavorTier,
+    string? PlayerFavorTier,
     IReadOnlyList<StorageSellbackItem> Items)
 {
     public int DistinctItemCount => Items.Count;
     public int TotalStackCount => Items.Sum(i => i.StackSize);
     public decimal TotalStackValue => Items.Sum(i => i.UnitValue * i.StackSize);
+    public decimal AcceptableStackValue =>
+        Items.Where(i => i.IsAcceptable != false).Sum(i => i.UnitValue * i.StackSize);
 }
 
 /// <summary>
@@ -33,6 +40,8 @@ public sealed class StorageSellbackService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeCharSvc;
+    private readonly VendorSellContext _sellContext;
+    private readonly IFavorLookupService? _favorLookup;
     private readonly IDiagnosticsSink? _diag;
 
     private IReadOnlyList<StorageSellbackVendor> _vendors = [];
@@ -47,10 +56,14 @@ public sealed class StorageSellbackService
     public StorageSellbackService(
         IReferenceDataService refData,
         IActiveCharacterService activeCharSvc,
+        VendorSellContext sellContext,
+        IFavorLookupService? favorLookup = null,
         IDiagnosticsSink? diag = null)
     {
         _refData = refData;
         _activeCharSvc = activeCharSvc;
+        _sellContext = sellContext;
+        _favorLookup = favorLookup;
         _diag = diag;
 
         _activeCharSvc.ActiveCharacterChanged += (_, _) => Rebuild();
@@ -59,6 +72,8 @@ public sealed class StorageSellbackService
         {
             if (key is "items" or "npcs") Rebuild();
         };
+        if (_favorLookup is not null)
+            _favorLookup.FavorChanged += (_, _) => Rebuild();
 
         Rebuild();
     }
@@ -91,18 +106,31 @@ public sealed class StorageSellbackService
                 string.Equals(s.Type, "Store", StringComparison.Ordinal));
             if (store is null) continue;
 
+            var playerTier = _favorLookup?.GetFavorTier(npcKey);
             var buyableItems = new List<StorageSellbackItem>();
             foreach (var stockItem in report.Items)
             {
                 if (!itemKeywords.TryGetValue(stockItem.TypeID, out var ctx)) continue;
                 if (!VendorAcceptsItem(store, ctx.Keywords)) continue;
 
+                int? maxGold = null;
+                bool? acceptable = null;
+                if (playerTier is not null)
+                {
+                    maxGold = VendorCapResolver.ResolveMaxGold(
+                        store, playerTier, ctx.Keywords, _sellContext.CivicPrideLevel);
+                    acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;
+                }
+
                 buyableItems.Add(new StorageSellbackItem(
                     TypeId: stockItem.TypeID,
                     ItemName: ctx.Entry.Name,
+                    IconId: ctx.Entry.IconId,
                     StackSize: stockItem.StackSize,
                     UnitValue: ctx.Entry.Value,
-                    Location: StorageReportLoader.NormalizeLocation(stockItem.StorageVault, stockItem.IsInInventory)));
+                    Location: StorageReportLoader.NormalizeLocation(stockItem.StorageVault, stockItem.IsInInventory),
+                    IsAcceptable: acceptable,
+                    EffectiveMaxGold: maxGold));
             }
 
             if (buyableItems.Count == 0) continue;
@@ -112,6 +140,7 @@ public sealed class StorageSellbackService
                 NpcName: npc.Name,
                 Area: string.IsNullOrEmpty(npc.Area) ? "(Unknown Area)" : npc.Area,
                 MinFavorTier: store.MinFavorTier,
+                PlayerFavorTier: playerTier,
                 Items: buyableItems));
         }
 

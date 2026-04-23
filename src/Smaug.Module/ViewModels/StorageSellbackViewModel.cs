@@ -12,18 +12,23 @@ public sealed class StorageSellbackVendorRow
     public required string NpcName { get; init; }
     public required string Area { get; init; }
     public required string MinFavorTier { get; init; }
+    public required string PlayerFavorTier { get; init; }
     public required int DistinctItemCount { get; init; }
     public required int TotalStackCount { get; init; }
     public required decimal TotalStackValue { get; init; }
+    public required decimal AcceptableStackValue { get; init; }
 }
 
 public sealed class StorageSellbackItemRow
 {
     public required string ItemName { get; init; }
+    public required int IconId { get; init; }
     public required int StackSize { get; init; }
     public required decimal UnitValue { get; init; }
     public required decimal TotalValue { get; init; }
     public required string Location { get; init; }
+    public required bool? IsAcceptable { get; init; }
+    public required string Acceptance { get; init; }
 }
 
 /// <summary>
@@ -69,9 +74,11 @@ public sealed partial class StorageSellbackViewModel : ObservableObject
                 NpcName = v.NpcName,
                 Area = v.Area,
                 MinFavorTier = v.MinFavorTier ?? "",
+                PlayerFavorTier = v.PlayerFavorTier ?? "",
                 DistinctItemCount = v.DistinctItemCount,
                 TotalStackCount = v.TotalStackCount,
                 TotalStackValue = v.TotalStackValue,
+                AcceptableStackValue = v.AcceptableStackValue,
             });
         }
 
@@ -97,12 +104,23 @@ public sealed partial class StorageSellbackViewModel : ObservableObject
             SelectedVendorItems.Add(new StorageSellbackItemRow
             {
                 ItemName = it.ItemName,
+                IconId = it.IconId,
                 StackSize = it.StackSize,
                 UnitValue = it.UnitValue,
                 TotalValue = it.UnitValue * it.StackSize,
                 Location = it.Location,
+                IsAcceptable = it.IsAcceptable,
+                Acceptance = FormatAcceptance(it),
             });
         }
+    }
+
+    private static string FormatAcceptance(StorageSellbackItem it)
+    {
+        if (it.IsAcceptable is null) return "—";
+        return it.IsAcceptable.Value
+            ? (it.EffectiveMaxGold is not null ? $"≤ {it.EffectiveMaxGold:N0}c" : "OK")
+            : $"over {it.EffectiveMaxGold:N0}c cap";
     }
 
     private string BuildStatus()

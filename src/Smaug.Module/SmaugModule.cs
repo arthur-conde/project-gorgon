@@ -39,6 +39,7 @@ public sealed class SmaugModule : IGorgonModule
         services.AddSingleton<VendorSellContext>();
         services.AddSingleton<VendorCatalogService>();
         services.AddSingleton<StorageSellbackService>();
+        services.AddSingleton<SellPlannerService>();
         services.AddSingleton<PriceCalibrationService>(sp => new PriceCalibrationService(
             sp.GetRequiredService<IReferenceDataService>(),
             Path.Combine(localApp, "Gorgon", "Smaug"),
@@ -49,6 +50,7 @@ public sealed class SmaugModule : IGorgonModule
         services.AddSingleton<VendorCatalogViewModel>();
         services.AddSingleton<VendorShopViewModel>();
         services.AddSingleton<StorageSellbackViewModel>();
+        services.AddSingleton<SellPlannerViewModel>();
         services.AddSingleton<SellPricesViewModel>();
         services.AddSingleton<CalibrationViewModel>();
 
@@ -57,6 +59,7 @@ public sealed class SmaugModule : IGorgonModule
             var view = new SmaugView();
             view.AddTab("Vendor Shop", new VendorShopTab { DataContext = sp.GetRequiredService<VendorShopViewModel>() });
             view.AddTab("Storage Sellback", new StorageSellbackTab { DataContext = sp.GetRequiredService<StorageSellbackViewModel>() });
+            view.AddTab("Sell Planner", new SellPlannerTab { DataContext = sp.GetRequiredService<SellPlannerViewModel>() });
             view.AddTab("Vendor Catalog", new VendorCatalogTab { DataContext = sp.GetRequiredService<VendorCatalogViewModel>() });
             view.AddTab("Sell Prices", new SellPricesTab { DataContext = sp.GetRequiredService<SellPricesViewModel>() });
             view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });

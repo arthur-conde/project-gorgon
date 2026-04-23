@@ -23,6 +23,14 @@
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="TextAlignment" Value="Right"/>
         </Style>
+        <Style x:Key="CatalogRowStyle" TargetType="DataGridRow">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAcceptable}" Value="False">
+                    <Setter Property="Foreground" Value="#66FFFFFF"/>
+                    <Setter Property="Opacity" Value="0.55"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <DockPanel Margin="12">
@@ -53,10 +61,16 @@
                        Converter={StaticResource NullOrEmptyToVis}}"/>
 
         <wpf:GorgonDataGrid x:Name="CatalogGrid" ItemsSource="{Binding Rows}"
-                            Mode="ReadOnly" CanUserResizeRows="False">
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            RowStyle="{StaticResource CatalogRowStyle}">
             <wpf:GorgonDataGrid.Columns>
-                <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="220"
-                                    ElementStyle="{StaticResource TextCol}"/>
+                <DataGridTemplateColumn Header="Item" Width="220" SortMemberPath="ItemName">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding ItemName}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="170"
                                     ElementStyle="{StaticResource TextCol}"/>
                 <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="150"
@@ -64,6 +78,8 @@
                 <DataGridTextColumn Header="Value" Binding="{Binding BaseValue, StringFormat=N0}" Width="80"
                                     ElementStyle="{StaticResource NumCol}"/>
                 <DataGridTextColumn Header="Req. Favor" Binding="{Binding MinFavorTier}" Width="110"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Accepts" Binding="{Binding Acceptance}" Width="130"
                                     ElementStyle="{StaticResource SubtleCol}"/>
             </wpf:GorgonDataGrid.Columns>
         </wpf:GorgonDataGrid>

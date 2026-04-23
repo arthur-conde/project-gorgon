@@ -44,6 +44,10 @@ Subject: the round green-door-shaped archway of a hobbit hole, shown as a gold o
 
 Subject: an open grimoire held upright, pages fanned, with glowing runes lifting off the page and arranging themselves into a ring above the book. A single dominant rune-sigil sits at the center of the ring. Faint pattern of concentric runic circles in the background texture.
 
+## Smaug · Vendor prices (NPC buy/sell price calibration)
+
+Subject: a dragon's clawed forefoot resting possessively atop a heaped pile of gold coins, gems, and a single ornate goblet tipped on its side. One serpentine eye glints from the upper field, half-lidded and watchful over the hoard. A scattering of coins tumbles forward from the pile into the lower frame. Faint pattern of stacked coins and scale-texture in the background.
+
 ## Shell settings (non-module sections)
 
 These are the three shell-owned entries at the top of the Settings sidebar. They share the same gold-on-charcoal style but skip the LOTR-character framing — the subjects are generic "tool" emblems.

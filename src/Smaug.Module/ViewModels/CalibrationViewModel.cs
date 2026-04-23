@@ -10,6 +10,7 @@ public sealed class ObservationRow
 {
     public required string NpcName { get; init; }
     public required string ItemName { get; init; }
+    public int IconId { get; init; }
     public required string FavorTier { get; init; }
     public required int CivicPride { get; init; }
     public required decimal BaseValue { get; init; }
@@ -58,6 +59,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
             {
                 NpcName = npc?.Name ?? obs.NpcKey.Replace("NPC_", ""),
                 ItemName = item?.Name ?? obs.InternalName,
+                IconId = item?.IconId ?? 0,
                 FavorTier = obs.FavorTier,
                 CivicPride = obs.CivicPrideLevel,
                 BaseValue = obs.BaseValue,
