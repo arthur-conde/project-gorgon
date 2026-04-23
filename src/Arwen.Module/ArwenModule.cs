@@ -39,6 +39,7 @@ public sealed class ArwenModule : IGorgonModule
 
         services.AddSingleton<FavorLogParser>();
         services.AddSingleton<FavorStateService>();
+        services.AddSingleton<IFavorLookupService>(sp => sp.GetRequiredService<FavorStateService>());
         services.AddSingleton<GiftIndex>(sp =>
         {
             var index = new GiftIndex();

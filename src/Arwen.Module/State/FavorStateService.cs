@@ -34,17 +34,32 @@ public sealed class NpcFavorEntry
 /// 2. Character export tier (fallback)
 /// 3. Persisted exact favor from Player.log (highest priority)
 /// </summary>
-public sealed class FavorStateService
+public sealed class FavorStateService : IFavorLookupService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _charData;
     private readonly ArwenSettings _settings;
 
     private IReadOnlyList<NpcFavorEntry> _entries = [];
+    private Dictionary<string, FavorTier> _tierByNpcKey = new(StringComparer.Ordinal);
 
     public IReadOnlyList<NpcFavorEntry> Entries => _entries;
 
     public event EventHandler? StateChanged;
+    public event EventHandler? FavorChanged;
+
+    public string? GetFavorTier(string npcKey)
+    {
+        if (string.IsNullOrEmpty(npcKey)) return null;
+        return _tierByNpcKey.TryGetValue(npcKey, out var tier) ? ToGameLogName(tier) : null;
+    }
+
+    // Arwen's enum uses "Hatred"; the game's log emits "Hated". Everything else already matches.
+    private static string ToGameLogName(FavorTier tier) => tier switch
+    {
+        FavorTier.Hatred => "Hated",
+        _ => tier.ToString(),
+    };
 
     public FavorStateService(
         IReferenceDataService refData,
@@ -69,7 +84,9 @@ public sealed class FavorStateService
         {
             if (entry.NpcKey != npcKey) continue;
             ApplyFavorData(entry);
+            _tierByNpcKey[entry.NpcKey] = entry.CurrentTier;
             StateChanged?.Invoke(this, EventArgs.Empty);
+            FavorChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
         // NPC not in list yet — full rebuild
@@ -104,7 +121,11 @@ public sealed class FavorStateService
         }
 
         _entries = entries;
+        _tierByNpcKey = entries
+            .Where(e => e.IsKnown)
+            .ToDictionary(e => e.NpcKey, e => e.CurrentTier, StringComparer.Ordinal);
         StateChanged?.Invoke(this, EventArgs.Empty);
+        FavorChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void ApplyFavorData(NpcFavorEntry entry)
