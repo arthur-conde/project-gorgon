@@ -50,7 +50,7 @@
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
             <Button Content="Copy all tracked" Margin="0,0,8,0"
                     Command="{Binding CopyAllTrackedCommand}"
-                    ToolTip="Copy every still-usable code (grouped by tier) to the clipboard"/>
+                    ToolTip="Copy every still-usable code (grouped by effect) to the clipboard"/>
             <CheckBox Content="Hide spent" IsChecked="{Binding HideSpent}"
                       VerticalAlignment="Center" Margin="8,0,0,0"/>
         </StackPanel>

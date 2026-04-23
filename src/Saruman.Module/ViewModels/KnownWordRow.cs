@@ -8,7 +8,6 @@ public sealed partial class KnownWordRow : ObservableObject
     public KnownWordRow(KnownWord w)
     {
         Code = w.Code;
-        Tier = w.Tier;
         FirstDiscoveredAt = w.FirstDiscoveredAt;
         _effectName = w.EffectName;
         _description = w.Description;
@@ -18,10 +17,7 @@ public sealed partial class KnownWordRow : ObservableObject
     }
 
     public string Code { get; }
-    public WordOfPowerTier Tier { get; }
     public DateTime FirstDiscoveredAt { get; }
-
-    public string TierLabel => $"Tier {(int)Tier} · {(int)Tier + 1}-syllable";
 
     [ObservableProperty] private string _effectName;
     [ObservableProperty] private string _description;
@@ -30,6 +26,7 @@ public sealed partial class KnownWordRow : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSpent))]
     [NotifyPropertyChangedFor(nameof(IsKnown))]
+    [NotifyPropertyChangedFor(nameof(StateOrder))]
     private WordOfPowerState _state;
 
     [ObservableProperty] private DateTime? _spentAt;
@@ -37,7 +34,7 @@ public sealed partial class KnownWordRow : ObservableObject
     public bool IsSpent => State == WordOfPowerState.Spent;
     public bool IsKnown => State == WordOfPowerState.Known;
 
-    /// <summary>Used to sort Known above Spent within a tier group.</summary>
+    /// <summary>Sorts Known above Spent within an effect group.</summary>
     public int StateOrder => IsKnown ? 0 : 1;
 
     public void UpdateFrom(KnownWord w)

@@ -26,7 +26,6 @@ public sealed class SarumanCodebookServiceTests
         svc.IsTracked("FEAVEG").Should().BeTrue();
         var w = svc.TryGet("FEAVEG")!;
         w.EffectName.Should().Be("Fast Swimmer");
-        w.Tier.Should().Be(WordOfPowerTier.Tier1);
         w.State.Should().Be(WordOfPowerState.Known);
         w.DiscoveryCount.Should().Be(1);
     }

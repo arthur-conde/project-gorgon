@@ -14,15 +14,6 @@ public sealed class SarumanCodebookService
     {
         _store = store;
         _state = store.Load();
-        // Persisted entries may carry tier values from an older heuristic; recompute
-        // from the code so a heuristic improvement rolls forward without manual rebuild.
-        var rewrote = false;
-        foreach (var w in _state.Codebook.Values)
-        {
-            var inferred = TierInference.FromCode(w.Code);
-            if (w.Tier != inferred) { w.Tier = inferred; rewrote = true; }
-        }
-        if (rewrote) Persist();
     }
 
     public event EventHandler? CodebookChanged;
@@ -75,7 +66,6 @@ public sealed class SarumanCodebookService
                     Code = evt.Code,
                     EffectName = evt.EffectName,
                     Description = evt.Description,
-                    Tier = TierInference.FromCode(evt.Code),
                     FirstDiscoveredAt = evt.Timestamp,
                 };
             }

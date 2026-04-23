@@ -19,8 +19,8 @@ public sealed partial class SarumanViewModel : ObservableObject
         _codebook = codebook;
 
         WordsView = CollectionViewSource.GetDefaultView(Words);
-        WordsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(KnownWordRow.TierLabel)));
-        WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.Tier), ListSortDirection.Ascending));
+        WordsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(KnownWordRow.EffectName)));
+        WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.EffectName), ListSortDirection.Ascending));
         WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.StateOrder), ListSortDirection.Ascending));
         WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.Code), ListSortDirection.Ascending));
         WordsView.Filter = FilterPredicate;
@@ -97,14 +97,15 @@ public sealed partial class SarumanViewModel : ObservableObject
     private void CopyAllTracked()
     {
         var sb = new StringBuilder();
-        WordOfPowerTier? lastTier = null;
+        string? lastEffect = null;
         foreach (var row in Words
             .Where(r => r.IsKnown)
-            .OrderBy(r => r.Tier)
+            .OrderBy(r => r.EffectName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Code, StringComparer.Ordinal))
         {
-            if (lastTier is not null && lastTier != row.Tier) sb.AppendLine();
-            lastTier = row.Tier;
+            if (lastEffect is not null && !string.Equals(lastEffect, row.EffectName, StringComparison.OrdinalIgnoreCase))
+                sb.AppendLine();
+            lastEffect = row.EffectName;
             sb.Append(row.Code).Append(" — ").AppendLine(row.EffectName);
         }
         if (sb.Length == 0) return;
