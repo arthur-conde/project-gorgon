@@ -1,4 +1,6 @@
 using System.IO;
+using Gorgon.Shared.Character;
+using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Hotkeys;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Settings;
@@ -34,7 +36,6 @@ public sealed class SamwiseModule : IGorgonModule
         var bundledCrops = Path.Combine(AppContext.BaseDirectory, "Config", "crops.json");
         var userCrops = Path.Combine(samwiseDir, "crops.json");
         var settingsPath = Path.Combine(samwiseDir, "settings.json");
-        var statePath = Path.Combine(samwiseDir, "garden-state.json");
 
         services.AddSingleton<ICropConfigStore>(_ => new CropConfigStore(bundledCrops, userCrops));
         services.AddSingleton<GardenLogParser>();
@@ -47,15 +48,27 @@ public sealed class SamwiseModule : IGorgonModule
             activeChar: sp.GetService<Gorgon.Shared.Character.IActiveCharacterService>()));
         services.AddSingleton<AlarmService>();
 
+        // Global preferences stay app-wide.
         services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>
             new JsonSettingsStore<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings));
-        services.AddSingleton<ISettingsStore<GardenState>>(_ =>
-            new JsonSettingsStore<GardenState>(statePath, GardenStateJsonContext.Default.GardenState));
-
         services.AddSingleton<SamwiseSettings>(sp =>
             sp.GetRequiredService<ISettingsStore<SamwiseSettings>>().Load());
         services.AddSingleton<SettingsAutoSaver<SamwiseSettings>>();
-        services.AddSingleton<GardenStateService>();
+
+        // Garden state is per-character; store each char's plot dict in its own file.
+        services.AddPerCharacterModuleStore<GardenCharacterState>(Id,
+            GardenCharacterStateJsonContext.Default.GardenCharacterState);
+        services.AddSingleton<GardenStateService>(sp => new GardenStateService(
+            sp.GetRequiredService<GardenStateMachine>(),
+            sp.GetRequiredService<PerCharacterStore<GardenCharacterState>>(),
+            sp.GetRequiredService<IActiveCharacterService>()));
+
+        // One-shot startup fanout: split legacy garden-state.json into per-char files.
+        services.AddHostedService(sp => new GardenFanoutMigration(
+            samwiseDir,
+            sp.GetRequiredService<PerCharacterStore<GardenCharacterState>>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
 
         services.AddSingleton<GrowthCalibrationService>(sp => new GrowthCalibrationService(
             sp.GetRequiredService<GardenStateMachine>(),

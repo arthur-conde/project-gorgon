@@ -496,30 +496,35 @@ public sealed class GardenStateMachine
     {
         _plotsByChar.Clear();
         foreach (var (charName, plots) in loaded.PlotsByChar)
+            HydrateCharacter(charName, plots);
+    }
+
+    /// <summary>Replace (or add) a single character's plot bucket. Raises <see cref="PlotChanged"/>
+    /// for each restored plot so VMs can render them.</summary>
+    public void HydrateCharacter(string charName, IReadOnlyDictionary<string, PersistedPlot> plots)
+    {
+        var bucket = new Dictionary<string, Plot>(StringComparer.Ordinal);
+        foreach (var (id, pp) in plots)
         {
-            var bucket = new Dictionary<string, Plot>(StringComparer.Ordinal);
-            foreach (var (id, pp) in plots)
+            var plot = new Plot
             {
-                var plot = new Plot
-                {
-                    PlotId = id,
-                    CharName = charName,
-                    CropType = pp.CropType,
-                    Stage = pp.Stage,
-                    Title = pp.Title,
-                    Description = pp.Description,
-                    Action = pp.Action,
-                    Scale = pp.Scale,
-                    PlantedAt = pp.PlantedAt,
-                    UpdatedAt = pp.UpdatedAt,
-                    PausedSince = pp.PausedSince,
-                    PausedDuration = pp.PausedDuration,
-                };
-                bucket[id] = plot;
-                RaisePlotChanged(plot, null, plot.Stage); // so the VM can render restored plots
-            }
-            _plotsByChar[charName] = bucket;
+                PlotId = id,
+                CharName = charName,
+                CropType = pp.CropType,
+                Stage = pp.Stage,
+                Title = pp.Title,
+                Description = pp.Description,
+                Action = pp.Action,
+                Scale = pp.Scale,
+                PlantedAt = pp.PlantedAt,
+                UpdatedAt = pp.UpdatedAt,
+                PausedSince = pp.PausedSince,
+                PausedDuration = pp.PausedDuration,
+            };
+            bucket[id] = plot;
+            RaisePlotChanged(plot, null, plot.Stage);
         }
+        _plotsByChar[charName] = bucket;
     }
 
     private TimeSpan HarvestedTtl =>

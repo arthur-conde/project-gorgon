@@ -57,13 +57,17 @@ public sealed class GardenIngestionService : BackgroundService
         _diag?.Info("Samwise", "Gate opened — loading persisted state and subscribing to Player.log");
 
         // Restore previous session before we start applying new events.
-        // Hydrate must run on the UI thread: it raises PlotChanged for each
+        // HydrateCharacter must run on the UI thread: it raises PlotChanged for each
         // persisted plot, and the VM responds by mutating an ObservableCollection
         // already bound to the garden view's ListCollectionView.
         try
         {
-            var loaded = await _stateService.LoadAsync(stoppingToken).ConfigureAwait(false);
-            Dispatch(() => _state.Hydrate(loaded));
+            var loaded = await _stateService.LoadAllAsync(stoppingToken).ConfigureAwait(false);
+            Dispatch(() =>
+            {
+                foreach (var (charName, plots) in loaded)
+                    _state.HydrateCharacter(charName, plots);
+            });
         }
         catch (Exception ex) { _diag?.Warn("Samwise", $"Failed to load state: {ex.Message}"); }
 
