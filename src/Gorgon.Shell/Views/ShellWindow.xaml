@@ -35,7 +35,7 @@
                         <StackPanel Orientation="Horizontal">
                             <Image Source="pack://application:,,,/Gorgon;component/Resources/diagnostics.ico"
                                    Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Diagnostics" FontSize="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="Diagnostics" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                     <Button Margin="0,0,0,6" Padding="10,6" HorizontalContentAlignment="Left"
@@ -43,7 +43,7 @@
                         <StackPanel Orientation="Horizontal">
                             <Image Source="pack://application:,,,/Gorgon;component/Resources/hotkeys.ico"
                                    Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Hotkeys" FontSize="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="Hotkeys" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                     <Button Padding="10,6" HorizontalContentAlignment="Left"
@@ -51,7 +51,7 @@
                         <StackPanel Orientation="Horizontal">
                             <Image Source="pack://application:,,,/Gorgon;component/Resources/settings.ico"
                                    Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Settings" FontSize="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="Settings" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -68,7 +68,7 @@
                                     <Image Source="{Binding ImageSource}" Width="28" Height="28"
                                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
                                 </Grid>
-                                <TextBlock Text="{Binding Title}" FontSize="14" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+                                <TextBlock Text="{Binding Title}" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

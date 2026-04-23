@@ -16,7 +16,7 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <Image Source="pack://application:,,,/Pippin.Module;component/Resources/pippin.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Pippin · Gourmand" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Pippin · Gourmand" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 
@@ -43,20 +43,34 @@
         </StackPanel>
 
         <!-- ── Filters ── -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
-            <TextBox Width="200" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     Margin="0,0,12,0" VerticalContentAlignment="Center"/>
-            <ComboBox SelectedItem="{Binding FoodTypeFilter}" Width="130" Margin="0,0,12,0">
-                <ComboBoxItem Content="All" IsSelected="True"/>
-                <ComboBoxItem Content="Meal"/>
-                <ComboBoxItem Content="Snack"/>
-                <ComboBoxItem Content="Instant Snack"/>
-            </ComboBox>
-            <ComboBox SelectedItem="{Binding EatenFilter}" Width="110">
-                <ComboBoxItem Content="All" IsSelected="True"/>
-                <ComboBoxItem Content="Eaten"/>
-                <ComboBoxItem Content="Uneaten"/>
-            </ComboBox>
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <wpf:GorgonQueryBox Grid.Column="0"
+                                    Grid="{Binding ElementName=FoodsGrid}"
+                                    QueryText="{Binding ElementName=FoodsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Watermark="type text, or grammar like FoodLevel &gt;= 40 AND IsEaten = FALSE"
+                                    Margin="0,0,12,0"/>
+                <ComboBox Grid.Column="1" SelectedItem="{Binding FoodTypeFilter}" Width="130" Margin="0,0,12,0">
+                    <ComboBoxItem Content="All" IsSelected="True"/>
+                    <ComboBoxItem Content="Meal"/>
+                    <ComboBoxItem Content="Snack"/>
+                    <ComboBoxItem Content="Instant Snack"/>
+                </ComboBox>
+                <ComboBox Grid.Column="2" SelectedItem="{Binding EatenFilter}" Width="110">
+                    <ComboBoxItem Content="All" IsSelected="True"/>
+                    <ComboBoxItem Content="Eaten"/>
+                    <ComboBoxItem Content="Uneaten"/>
+                </ComboBox>
+            </Grid>
+            <TextBlock Text="{Binding ElementName=FoodsGrid, Path=QueryError}"
+                       Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
+                       Visibility="{Binding ElementName=FoodsGrid, Path=QueryError,
+                           Converter={StaticResource NullOrEmptyToVis}}"/>
         </StackPanel>
 
         <!-- ── Empty state ── -->
@@ -64,7 +78,7 @@
                     VerticalAlignment="Center" HorizontalAlignment="Center">
             <icon:PackIconLucide Kind="ChefHat" Width="48" Height="48"
                                  Foreground="#55FFFFFF" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-            <TextBlock Text="No food data yet" FontSize="16" Foreground="#CCFFFFFF"
+            <TextBlock Text="No food data yet" FontSize="{DynamicResource AppFontSizeXLarge}" Foreground="#CCFFFFFF"
                        HorizontalAlignment="Center" Margin="0,0,0,6"/>
             <TextBlock Text="Open the Gourmand skill > Foods Eaten report in-game to sync"
                        Foreground="#88FFFFFF" HorizontalAlignment="Center" TextWrapping="Wrap"
@@ -72,23 +86,23 @@
         </StackPanel>
 
         <!-- ── Food grid ── -->
-        <DataGrid ItemsSource="{Binding Foods}"
-                  Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  CanUserSortColumns="True"
-                  HeadersVisibility="Column"
-                  GridLinesVisibility="None"
-                  BorderThickness="0"
-                  RowHeaderWidth="0"
-                  SelectionMode="Single"
-                  Background="#FF1A1A1A"
-                  RowBackground="#FF252525"
-                  AlternatingRowBackground="#FF1E1E1E">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid x:Name="FoodsGrid"
+                            ItemsSource="{Binding Foods}"
+                            Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
+                            Mode="ReadOnly"
+                            GridLinesVisibility="None"
+                            EnableRowVirtualization="True"
+                            EnableColumnVirtualization="True"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling"
+                            VirtualizingPanel.ScrollUnit="Pixel"
+                            ScrollViewer.CanContentScroll="True">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
-                                        Width="32" IsReadOnly="True"/>
-                <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending">
+                                        Width="32" IsReadOnly="True"
+                                        wpf:GorgonDataGrid.QueryName="IsEaten"/>
+                <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending"
+                                        wpf:GorgonDataGrid.QueryName="Name">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
@@ -100,9 +114,9 @@
                 <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
                 <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
                 <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
-            </DataGrid.Columns>
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow">
+            </wpf:GorgonDataGrid.Columns>
+            <wpf:GorgonDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
                     <Setter Property="ToolTip">
                         <Setter.Value>
                             <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -116,9 +130,9 @@
                                                                Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
                                                 <StackPanel>
                                                     <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                               Foreground="#FFD4A847" FontSize="14" TextWrapping="Wrap"/>
+                                                               Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
                                                     <TextBlock Text="{Binding FoodType}" Foreground="#CCFFFFFF"
-                                                               FontSize="11" Margin="0,2,0,0"/>
+                                                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"/>
                                                 </StackPanel>
                                             </DockPanel>
                                         </Border>
@@ -133,7 +147,7 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </DataGrid.RowStyle>
-        </DataGrid>
+            </wpf:GorgonDataGrid.RowStyle>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>

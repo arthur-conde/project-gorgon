@@ -16,6 +16,12 @@ public sealed class ShellSettings : INotifyPropertyChanged
     private bool _concurrentAlarms;
     public bool ConcurrentAlarms { get => _concurrentAlarms; set => Set(ref _concurrentAlarms, value); }
 
+    private string _uiFontFamily = "Segoe UI";
+    public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
+
+    private double _uiFontSize = 12.0;
+    public double UiFontSize { get => _uiFontSize; set => Set(ref _uiFontSize, value); }
+
     private double _windowLeft = 200, _windowTop = 200, _windowWidth = 1100, _windowHeight = 700;
     public double WindowLeft { get => _windowLeft; set => Set(ref _windowLeft, value); }
     public double WindowTop { get => _windowTop; set => Set(ref _windowTop, value); }

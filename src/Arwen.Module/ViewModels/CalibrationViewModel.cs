@@ -48,11 +48,6 @@ public sealed partial class CalibrationViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "";
 
-    [ObservableProperty]
-    private string _keywordFilter = "";
-
-    partial void OnKeywordFilterChanged(string value) => Refresh();
-
     [RelayCommand]
     private void Refresh()
     {
@@ -73,13 +68,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
             .ToList();
         Rates = new ObservableCollection<CategoryRateRow>(rates);
 
-        // Observations — apply keyword filter
-        var filter = KeywordFilter;
         var observations = data.Observations
-            .Where(o => string.IsNullOrWhiteSpace(filter)
-                || o.MatchedKeyword.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                || o.NpcKey.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                || o.ItemInternalName.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(o => o.Timestamp)
             .Select(o => new ObservationRow
             {

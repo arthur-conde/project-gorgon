@@ -66,11 +66,6 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "";
 
-    [ObservableProperty]
-    private string _cropFilter = "";
-
-    partial void OnCropFilterChanged(string value) => Refresh();
-
     [RelayCommand]
     private void Refresh()
     {
@@ -92,11 +87,7 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
             .ToList();
         Rates = new ObservableCollection<CropGrowthRateRow>(rates);
 
-        var filter = CropFilter;
         var observations = data.Observations
-            .Where(o => string.IsNullOrWhiteSpace(filter)
-                || o.CropType.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                || o.CharName.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(o => o.Timestamp)
             .Select(o => new GrowthObservationRow
             {

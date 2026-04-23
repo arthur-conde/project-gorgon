@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:ItemLookupViewModel}"
              Background="#FF1A1A1A">
@@ -11,27 +12,45 @@
     <DockPanel Margin="12">
         <!-- Item search -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <TextBlock Text="Item" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
+            <TextBlock Text="Item" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
             <ComboBox ItemsSource="{Binding MatchingItems}" SelectedItem="{Binding SelectedItem}"
                       DisplayMemberPath="Name" IsEditable="True" IsTextSearchEnabled="True"
                       Text="{Binding ItemSearchText, UpdateSourceTrigger=PropertyChanged}"
-                      Width="360" HorizontalAlignment="Left" FontSize="13"
+                      Width="360" HorizontalAlignment="Left" FontSize="{DynamicResource AppFontSizeMedium}"
                       Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <CheckBox Content="Show all NPCs" IsChecked="{Binding ShowAllNpcs}"
-                          Foreground="#CCFFFFFF" VerticalAlignment="Center" FontSize="12"/>
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12"
+                          Foreground="#CCFFFFFF" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize}"/>
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
                            VerticalAlignment="Center" Margin="16,0,0,0"/>
             </StackPanel>
         </StackPanel>
 
+        <!-- NPC results filter -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <wpf:GorgonQueryBox Grid.Column="1"
+                                    Grid="{Binding ElementName=ResultsGrid}"
+                                    QueryText="{Binding ElementName=ResultsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Watermark="type text, or grammar like Desire = 'Love' AND HasMet = TRUE"/>
+            </Grid>
+            <TextBlock Text="{Binding ElementName=ResultsGrid, Path=QueryError}"
+                       Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
+                       Visibility="{Binding ElementName=ResultsGrid, Path=QueryError,
+                           Converter={StaticResource NullOrEmptyToVis}}"/>
+        </StackPanel>
+
         <!-- NPC results -->
-        <DataGrid ItemsSource="{Binding Results}" AutoGenerateColumns="False"
-                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
-                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
-                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
-                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}"
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            Margin="0,4,0,0">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTemplateColumn Header="NPC" Width="170">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -124,7 +143,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>

@@ -48,6 +48,13 @@ public sealed partial class SettingsHostViewModel : ObservableObject
             ViewType = typeof(Views.IconSettingsView),
             IconUri = "pack://application:,,,/Gorgon;component/Resources/icons.ico",
         });
+        Sections.Add(new SettingsSection
+        {
+            Title = "Appearance",
+            Icon = PackIconLucideKind.Type,
+            ViewType = typeof(Views.AppearanceSettingsView),
+            IconUri = "pack://application:,,,/Gorgon;component/Resources/appearance.ico",
+        });
 
         foreach (var m in modules.OrderBy(m => m.SortOrder))
         {

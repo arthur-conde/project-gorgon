@@ -6,6 +6,24 @@
     <c:BoolToVisibilityConverter x:Key="BoolToVis"/>
     <c:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
     <c:StringToColorConverter x:Key="StringToColor"/>
+    <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
+
+    <!-- Font resources — overridden at runtime from ShellSettings (UiFontFamily, UiFontSize).
+         Defaults here match the original hand-authored look so XAML designers render sensibly
+         without the shell. All size keys scale proportionally from AppFontSize. -->
+    <FontFamily x:Key="AppFontFamily">Segoe UI</FontFamily>
+    <FontFamily x:Key="AppHeaderFontFamily">Cambria</FontFamily>
+    <FontFamily x:Key="AppMonoFontFamily">Consolas</FontFamily>
+    <sys:Double x:Key="AppFontSize">12</sys:Double>
+    <sys:Double x:Key="AppFontSizeXSmall">9</sys:Double>
+    <sys:Double x:Key="AppFontSizeSmall">10</sys:Double>
+    <sys:Double x:Key="AppFontSizeHint">11</sys:Double>
+    <sys:Double x:Key="AppFontSizeMedium">13</sys:Double>
+    <sys:Double x:Key="AppFontSizeLarge">14</sys:Double>
+    <sys:Double x:Key="AppFontSizeXLarge">16</sys:Double>
+    <sys:Double x:Key="AppFontSizeHeader">18</sys:Double>
+    <sys:Double x:Key="AppFontSizeTitle">20</sys:Double>
+    <sys:Double x:Key="AppFontSizeHero">22</sys:Double>
 
     <!-- Palette — matches hand-authored colors in Samwise/Shell/Legolas views -->
     <SolidColorBrush x:Key="BgPrimaryBrush"      Color="#FF1A1A1A"/>
@@ -26,6 +44,8 @@
 
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="TextBox">
@@ -35,23 +55,33 @@
         <Setter Property="CaretBrush"     Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}"/>
         <Setter Property="Padding"        Value="4,2"/>
+        <Setter Property="FontFamily"     Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"       Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="RadioButton">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="GroupBox">
         <Setter Property="Foreground"  Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="Label">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
     </Style>
 
     <Style TargetType="Button">
@@ -60,6 +90,8 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
         <Setter Property="Padding"     Value="10,4"/>
         <Setter Property="MinHeight"   Value="24"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSize}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -78,6 +110,50 @@
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
                             <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ToggleButton">
+        <Setter Property="Background"  Value="{StaticResource BgSurfaceBrush}"/>
+        <Setter Property="Foreground"  Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Padding"     Value="10,4"/>
+        <Setter Property="MinHeight"   Value="24"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSize}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="Foreground"  Value="{StaticResource AccentSoftTextBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
@@ -127,6 +203,8 @@
         <Setter Property="Background"  Value="{StaticResource BgSurfaceBrush}"/>
         <Setter Property="Foreground"  Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="Padding"     Value="6,4"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSize}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBoxItem">
@@ -152,6 +230,8 @@
         <Setter Property="Padding"      Value="6,3"/>
         <Setter Property="MinHeight"    Value="24"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="FontFamily"   Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"     Value="{DynamicResource AppFontSize}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -239,7 +319,8 @@
         <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
         <Setter Property="FontWeight"  Value="SemiBold"/>
-        <Setter Property="FontSize"    Value="11"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSizeHint}"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
         <Setter Property="MinHeight"   Value="28"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -249,34 +330,19 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="0,0,1,1"
-                                Padding="6,4,6,0">
-                            <StackPanel>
-                                <!-- Header text + sort glyph -->
-                                <DockPanel>
-                                    <Path x:Name="SortArrow" DockPanel.Dock="Right"
-                                          Margin="4,0,0,0" VerticalAlignment="Center"
-                                          Data="M 0 0 L 4 4 L 8 0 Z"
-                                          Fill="{StaticResource TextSecondaryBrush}"
-                                          Visibility="Collapsed"
-                                          RenderTransformOrigin="0.5,0.5"/>
-                                    <ContentPresenter VerticalAlignment="Center"
-                                                      RecognizesAccessKey="True"
-                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                                </DockPanel>
-                                <!-- Per-column filter TextBox -->
-                                <TextBox x:Name="PART_FilterBox"
-                                         Margin="0,3,0,3" Padding="3,1" Height="20"
-                                         FontSize="10" FontWeight="Normal"
-                                         Background="#FF2A2A2A"
-                                         Foreground="{StaticResource TextPrimaryBrush}"
-                                         BorderBrush="{StaticResource BorderSubtleBrush}"
-                                         BorderThickness="1"
-                                         CaretBrush="{StaticResource TextPrimaryBrush}"
-                                         ToolTip="Type to filter this column"
-                                         VerticalContentAlignment="Center"/>
-                            </StackPanel>
+                                Padding="6,4">
+                            <DockPanel>
+                                <Path x:Name="SortArrow" DockPanel.Dock="Right"
+                                      Margin="4,0,0,0" VerticalAlignment="Center"
+                                      Data="M 0 0 L 4 4 L 8 0 Z"
+                                      Fill="{StaticResource TextSecondaryBrush}"
+                                      Visibility="Collapsed"
+                                      RenderTransformOrigin="0.5,0.5"/>
+                                <ContentPresenter VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </DockPanel>
                         </Border>
-                        <!-- Resize grippers -->
                         <Thumb x:Name="PART_LeftHeaderGripper"
                                HorizontalAlignment="Left"
                                Style="{StaticResource DataGridHeaderGripperStyle}"/>
@@ -358,7 +424,144 @@
         <Setter Property="CanUserReorderColumns"    Value="True"/>
         <Setter Property="CanUserResizeColumns"     Value="True"/>
         <Setter Property="RowHeaderWidth"           Value="0"/>
-        <Setter Property="FontSize"                 Value="12"/>
+        <Setter Property="FontSize"                 Value="{DynamicResource AppFontSize}"/>
+        <Setter Property="FontFamily"               Value="{DynamicResource AppFontFamily}"/>
+    </Style>
+
+    <!-- ═══════════════════ GorgonDataGrid ═══════════════════ -->
+
+    <!-- Column header variant whose PART_FilterBox visibility is gated by the
+         parent GorgonDataGrid's FilterMode flag. Used only by GorgonDataGrid;
+         the existing DataGridColumnHeader style above keeps the always-on filter
+         row for legacy DataGrid consumers. -->
+    <!-- Single-row column header for GorgonDataGrid — no per-column filter box.
+         The grid's sole filter surface is the companion GorgonQueryBox. -->
+    <Style x:Key="GorgonDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+        <Setter Property="Background"  Value="{StaticResource BgSurfaceBrush}"/>
+        <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="FontWeight"  Value="SemiBold"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSizeHint}"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="MinHeight"   Value="28"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridColumnHeader">
+                    <Grid>
+                        <Border x:Name="HeaderBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="0,0,1,1"
+                                Padding="6,4">
+                            <DockPanel>
+                                <Path x:Name="SortArrow" DockPanel.Dock="Right"
+                                      Margin="4,0,0,0" VerticalAlignment="Center"
+                                      Data="M 0 0 L 4 4 L 8 0 Z"
+                                      Fill="{StaticResource TextSecondaryBrush}"
+                                      Visibility="Collapsed"
+                                      RenderTransformOrigin="0.5,0.5"/>
+                                <ContentPresenter VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </DockPanel>
+                        </Border>
+                        <Thumb x:Name="PART_LeftHeaderGripper"
+                               HorizontalAlignment="Left"
+                               Style="{StaticResource DataGridHeaderGripperStyle}"/>
+                        <Thumb x:Name="PART_RightHeaderGripper"
+                               HorizontalAlignment="Right"
+                               Style="{StaticResource DataGridHeaderGripperStyle}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="SortDirection" Value="Ascending">
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="SortArrow" Property="RenderTransform">
+                                <Setter.Value>
+                                    <RotateTransform Angle="180"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="SortDirection" Value="Descending">
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="HeaderBorder" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Row style: extra padding for ReadOnly mode comfort. -->
+    <Style x:Key="GorgonDataGridRowStyle" TargetType="DataGridRow">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource AccentSoftTextBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Cell style tweaks per Mode — ReadOnly uses tighter look, Editable shows focus ring. -->
+    <Style x:Key="GorgonDataGridCellStyle" TargetType="DataGridCell">
+        <Setter Property="Padding" Value="6,5"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridCell">
+                    <Border x:Name="CellBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                <Condition Binding="{Binding Mode, RelativeSource={RelativeSource AncestorType={x:Type c:GorgonDataGrid}}}" Value="Editable"/>
+                            </MultiDataTrigger.Conditions>
+                            <Setter TargetName="CellBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </MultiDataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource AccentSoftTextBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="{x:Type c:GorgonDataGrid}" BasedOn="{StaticResource {x:Type DataGrid}}">
+        <!-- Alt-row contrast bumped so rows read as distinct without grid lines. -->
+        <Setter Property="RowBackground"            Value="#FF1E1E1E"/>
+        <Setter Property="AlternatingRowBackground" Value="#FF262626"/>
+        <Setter Property="ColumnHeaderStyle"        Value="{StaticResource GorgonDataGridColumnHeaderStyle}"/>
+        <Setter Property="CellStyle"                Value="{StaticResource GorgonDataGridCellStyle}"/>
+        <Setter Property="RowStyle"                 Value="{StaticResource GorgonDataGridRowStyle}"/>
+        <Style.Triggers>
+            <Trigger Property="Mode" Value="Editable">
+                <Setter Property="IsReadOnly" Value="False"/>
+                <Setter Property="CanUserAddRows" Value="False"/>
+                <Setter Property="CanUserDeleteRows" Value="False"/>
+            </Trigger>
+            <Trigger Property="Mode" Value="ReadOnly">
+                <Setter Property="IsReadOnly" Value="True"/>
+                <Setter Property="CanUserAddRows" Value="False"/>
+                <Setter Property="CanUserDeleteRows" Value="False"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="ToolTip">
@@ -366,5 +569,142 @@
         <Setter Property="Foreground"  Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
         <Setter Property="Padding"     Value="6,3"/>
+    </Style>
+
+    <!-- ═══════════════════ GorgonQueryBox ═══════════════════ -->
+
+    <!-- Highlight brushes — reused by GorgonQueryBox when coloring tokens. -->
+    <SolidColorBrush x:Key="QueryColumnBrush"   Color="#FFD4A847"/>
+    <SolidColorBrush x:Key="QueryKeywordBrush"  Color="#FFCFE8FF"/>
+    <SolidColorBrush x:Key="QueryOperatorBrush" Color="#FFAAAAAA"/>
+    <SolidColorBrush x:Key="QueryStringBrush"   Color="#FF7AB880"/>
+    <SolidColorBrush x:Key="QueryNumberBrush"   Color="#FFE0BF7A"/>
+    <SolidColorBrush x:Key="QueryDurationBrush" Color="#FFE0BF7A"/>
+    <SolidColorBrush x:Key="QueryPunctBrush"    Color="#FF999999"/>
+    <SolidColorBrush x:Key="QueryErrorBrush"    Color="#FFCC6666"/>
+
+    <Style TargetType="{x:Type c:GorgonQueryBox}">
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:GorgonQueryBox}">
+                    <Border Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <TextBlock x:Name="PART_Overlay"
+                                       Margin="5,3"
+                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                       FontSize="{DynamicResource AppFontSize}"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="None"
+                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBox x:Name="PART_Editor"
+                                     Padding="5,3"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     FontFamily="{DynamicResource AppMonoFontFamily}"
+                                     FontSize="{DynamicResource AppFontSize}"
+                                     Foreground="Transparent"
+                                     CaretBrush="{StaticResource TextPrimaryBrush}"
+                                     SelectionBrush="{StaticResource AccentBrush}"
+                                     SelectionOpacity="0.35"
+                                     VerticalContentAlignment="Center"
+                                     AcceptsReturn="False"
+                                     AcceptsTab="False"
+                                     AutoWordSelection="True"/>
+                            <TextBlock x:Name="Watermark"
+                                       Margin="6,3"
+                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                       FontSize="{DynamicResource AppFontSize}"
+                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Text="{TemplateBinding Watermark}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=PART_Editor}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Relative"
+                                   StaysOpen="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade">
+                                <Border Background="{StaticResource BgSurfaceBrush}"
+                                        BorderBrush="{StaticResource BorderStrongBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="0,0,3,3"
+                                        SnapsToDevicePixels="True">
+                                    <ListBox x:Name="PART_List"
+                                             Background="Transparent"
+                                             Foreground="{StaticResource TextPrimaryBrush}"
+                                             BorderThickness="0"
+                                             MaxHeight="240"
+                                             MinWidth="260"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"
+                                             FontSize="{DynamicResource AppFontSize}"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="6,3"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border x:Name="Bd"
+                                                                    Background="Transparent"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Kind}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}" Foreground="{StaticResource TextTertiaryBrush}"
+                                                               VerticalAlignment="Center" Width="58"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Label}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}" Foreground="{StaticResource TextTertiaryBrush}"
+                                                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 </ResourceDictionary>

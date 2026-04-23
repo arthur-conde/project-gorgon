@@ -8,7 +8,7 @@
                 <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Gandalf · Timers Settings"
-                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 
@@ -49,7 +49,7 @@
                 <TextBox Text="{Binding SoundFilePath, UpdateSourceTrigger=LostFocus}" Padding="6,4"/>
             </DockPanel>
 
-            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="11">
+            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
                 Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Gandalf\settings.json.
             </TextBlock>
         </StackPanel>

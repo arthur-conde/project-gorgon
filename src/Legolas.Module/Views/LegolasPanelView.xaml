@@ -11,7 +11,7 @@
                 <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Legolas · Survey"
-                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
             </StackPanel>
 

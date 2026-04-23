@@ -126,6 +126,8 @@ public static class Program
             app.Init(activateEvent, activateCts);
             app.InitializeComponent();
 
+            _ = new UiFontApplier(app, shellSettings);
+
             Boot("resolving ShellWindow");
             var shell = host.Services.GetRequiredService<ShellWindow>();
             shell.DataContext = host.Services.GetRequiredService<ShellViewModel>();

@@ -66,15 +66,15 @@
                             <Grid>
                                 <TextBlock Text="{Binding Name}" Foreground="White"
                                            TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
-                                           Margin="4" FontSize="10" />
+                                           Margin="4" FontSize="{DynamicResource AppFontSizeSmall}" />
                                 <TextBlock Text="{Binding GridIndex, Converter={x:Static controls:OneBasedConverter.Instance}}"
                                            Foreground="#FFAAAAAA"
                                            HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                           Margin="4,0,0,2" FontSize="9" />
+                                           Margin="4,0,0,2" FontSize="{DynamicResource AppFontSizeXSmall}" />
                                 <TextBlock Text="{Binding RouteOrder, Converter={x:Static controls:OneBasedConverter.Instance}}"
                                            Foreground="Gold"
                                            HorizontalAlignment="Right" VerticalAlignment="Top"
-                                           Margin="0,2,4,0" FontSize="10" FontWeight="Bold"
+                                           Margin="0,2,4,0" FontSize="{DynamicResource AppFontSizeSmall}" FontWeight="Bold"
                                            Visibility="{Binding RouteOrder, Converter={x:Static controls:NullToVisibilityConverter.Instance}}" />
                             </Grid>
                         </Border>

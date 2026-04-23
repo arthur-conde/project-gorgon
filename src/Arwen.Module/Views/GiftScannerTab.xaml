@@ -14,37 +14,55 @@
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
                 <StackPanel Margin="0,0,16,0">
-                    <TextBlock Text="NPC" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                    <TextBlock Text="NPC" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <ComboBox ItemsSource="{Binding NpcList}" SelectedItem="{Binding SelectedNpc}"
                               DisplayMemberPath="Name" IsEditable="True" IsTextSearchEnabled="True"
-                              Width="220" FontSize="13"
+                              Width="220" FontSize="{DynamicResource AppFontSizeMedium}"
                               Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
                 </StackPanel>
                 <StackPanel>
-                    <TextBlock Text="Storage Export" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                    <TextBlock Text="Storage Export" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <StackPanel Orientation="Horizontal">
                         <ComboBox ItemsSource="{Binding AvailableReports}" SelectedItem="{Binding SelectedReport}"
-                                  Width="260" FontSize="13"
+                                  Width="260" FontSize="{DynamicResource AppFontSizeMedium}"
                                   Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
                         <Button Content="Refresh" Command="{Binding RefreshReportsCommand}"
-                                Margin="6,0,0,0" Padding="10,4" FontSize="12"/>
+                                Margin="6,0,0,0" Padding="10,4" FontSize="{DynamicResource AppFontSize}"/>
                         <CheckBox Content="Show all snapshots" IsChecked="{Binding ShowAllReports}"
                                   Margin="10,0,0,0" VerticalAlignment="Center"
-                                  Foreground="#CCFFFFFF" FontSize="12"
+                                  Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSize}"
                                   ToolTip="When unchecked, only the newest storage export per character is shown."/>
                     </StackPanel>
                 </StackPanel>
             </StackPanel>
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12" Margin="0,8,0,0"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,8,0,0"/>
+        </StackPanel>
+
+        <!-- Filter row -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <wpf:GorgonQueryBox Grid.Column="1"
+                                    Grid="{Binding ElementName=ResultsGrid}"
+                                    QueryText="{Binding ElementName=ResultsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Watermark="type text, or grammar like Desire = 'Love' AND Score > 0"/>
+            </Grid>
+            <TextBlock Text="{Binding ElementName=ResultsGrid, Path=QueryError}"
+                       Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
+                       Visibility="{Binding ElementName=ResultsGrid, Path=QueryError,
+                           Converter={StaticResource NullOrEmptyToVis}}"/>
         </StackPanel>
 
         <!-- Results grid -->
-        <DataGrid ItemsSource="{Binding Results}" AutoGenerateColumns="False"
-                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
-                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
-                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
-                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}"
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            Margin="0,4,0,0">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTemplateColumn Header="Item" Width="*" SortMemberPath="ItemName">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -137,9 +155,9 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow">
+            </wpf:GorgonDataGrid.Columns>
+            <wpf:GorgonDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
                     <Setter Property="ToolTip">
                         <Setter.Value>
                             <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -152,7 +170,7 @@
                                                 <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
                                                                Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
                                                 <TextBlock Text="{Binding ItemName}" FontWeight="Bold"
-                                                           Foreground="#FFD4A847" FontSize="14" TextWrapping="Wrap"
+                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"
                                                            VerticalAlignment="Center"/>
                                             </DockPanel>
                                         </Border>
@@ -162,7 +180,7 @@
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </DataGrid.RowStyle>
-        </DataGrid>
+            </wpf:GorgonDataGrid.RowStyle>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>

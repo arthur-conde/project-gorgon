@@ -34,6 +34,8 @@
     <Resource Include="Resources\hotkeys.jpg" />
     <Resource Include="Resources\settings.ico" />
     <Resource Include="Resources\settings.jpg" />
+    <Resource Include="Resources\appearance.ico" />
+    <Resource Include="Resources\appearance.jpg" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />

@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Samwise.ViewModels"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -27,9 +28,9 @@
                         MaxWidth="420"
                         Visibility="{Binding Plots.Count, Converter={StaticResource ZeroToVis}}">
                 <icon:PackIconLucide Kind="Sprout" Width="56" Height="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
-                <TextBlock Text="No plots yet" FontFamily="Cambria" FontSize="18"
+                <TextBlock Text="No plots yet" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHeader}"
                            HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,0,0,16">
                     Samwise watches Player.log for gardening events. Plant a seed in-game and it'll
                     appear here. Interactions (water, fertilize, harvest) will update the card live;
                     when a plot turns ripe, an alarm fires.
@@ -37,23 +38,43 @@
                 <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="12" CornerRadius="3">
                     <StackPanel>
                         <TextBlock Text="Not seeing anything?" FontWeight="SemiBold" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-                        <TextBlock FontSize="11" Foreground="#AAFFFFFF" TextWrapping="Wrap">
-                            Check <Run Text="Settings > Game folder" FontFamily="Consolas"/> to verify the Project Gorgon folder is set,
-                            then open <Run Text="Diagnostics" FontFamily="Consolas"/> to watch raw log lines flow in.
+                        <TextBlock FontSize="{DynamicResource AppFontSizeHint}" Foreground="#AAFFFFFF" TextWrapping="Wrap">
+                            Check <Run Text="Settings > Game folder" FontFamily="{DynamicResource AppMonoFontFamily}"/> to verify the Project Gorgon folder is set,
+                            then open <Run Text="Diagnostics" FontFamily="{DynamicResource AppMonoFontFamily}"/> to watch raw log lines flow in.
                         </TextBlock>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}">
-            <ItemsControl ItemsSource="{Binding Plots}">
-                <ItemsControl.ItemsPanel>
+            <ListBox ItemsSource="{Binding Plots}"
+                     Background="Transparent" BorderThickness="0"
+                     Visibility="{Binding Plots.Count, Converter={StaticResource NonZeroToVis}}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel/>
+                        <wpf:GorgonVirtualizingWrapPanel ItemWidth="192" ItemHeight="180"/>
                     </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Border Width="180" Margin="6" Padding="10" CornerRadius="6"
                                 Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
@@ -61,7 +82,7 @@
                                 <Grid>
                                     <StackPanel>
                                         <TextBlock Text="{Binding CropType}" FontWeight="Bold" Foreground="#FFE8E8E8"/>
-                                        <TextBlock Text="{Binding CharName}" FontSize="11" Foreground="#88FFFFFF"/>
+                                        <TextBlock Text="{Binding CharName}" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF"/>
                                     </StackPanel>
                                     <Button HorizontalAlignment="Right" VerticalAlignment="Top"
                                             Width="20" Height="20" Padding="0"
@@ -81,7 +102,7 @@
                                 <ProgressBar Margin="0,4,0,0" Height="6"
                                              Minimum="0" Maximum="1" Value="{Binding GrowthFraction, Mode=OneWay}"
                                              Foreground="#FFD4A847" Background="#33FFFFFF" BorderThickness="0"/>
-                                <TextBlock Text="{Binding TimeRemaining}" FontSize="11" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding TimeRemaining}" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
                                 <Button Margin="0,8,0,0" Padding="0,4"
                                         Command="{Binding DataContext.MarkHarvestedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
@@ -94,9 +115,8 @@
                             </StackPanel>
                         </Border>
                     </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
     </DockPanel>
 </UserControl>

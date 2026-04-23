@@ -29,7 +29,7 @@
                             ToolTip="Close" Click="CloseButton_Click">
                         <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
                     </Button>
-                    <TextBlock x:Name="TitleText" FontFamily="Cambria" FontSize="16"
+                    <TextBlock x:Name="TitleText" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeXLarge}"
                                Foreground="#FFD4A847" VerticalAlignment="Center"/>
                 </DockPanel>
             </Border>

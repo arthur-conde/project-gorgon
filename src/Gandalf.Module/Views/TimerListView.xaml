@@ -10,7 +10,7 @@
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Gandalf · Timers" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Gandalf · Timers" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
@@ -29,9 +29,9 @@
             <!-- Empty state -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
                         Visibility="{Binding Timers.Count, Converter={StaticResource ZeroToVis}}">
-                <TextBlock Text="No timers yet" FontFamily="Cambria" FontSize="18"
+                <TextBlock Text="No timers yet" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHeader}"
                            HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="12" Margin="0,0,0,16">
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,0,0,16">
                     Click "+ Add Timer" to create a reusable timer for loot lockouts, respawns,
                     or crafting cooldowns. Paste timer definitions from the clipboard to import.
                     Running timers persist across app restarts.
@@ -39,25 +39,42 @@
             </StackPanel>
 
             <!-- Timer cards -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          Visibility="{Binding Timers.Count, Converter={StaticResource NonZeroToVis}}">
-                <ItemsControl ItemsSource="{Binding TimersView}">
-                    <ItemsControl.GroupStyle>
-                        <GroupStyle>
-                            <GroupStyle.HeaderTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"
-                                               Foreground="#FFD4A847" Margin="4,12,0,4"/>
-                                </DataTemplate>
-                            </GroupStyle.HeaderTemplate>
-                        </GroupStyle>
-                    </ItemsControl.GroupStyle>
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
+            <ListBox ItemsSource="{Binding TimersView}"
+                     Background="Transparent" BorderThickness="0"
+                     Visibility="{Binding Timers.Count, Converter={StaticResource NonZeroToVis}}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeMedium}"
+                                           Foreground="#FFD4A847" Margin="4,12,0,4"/>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ListBox.GroupStyle>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Width="200" Margin="6" Padding="10" CornerRadius="6"
                                     Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
@@ -72,7 +89,7 @@
                                             <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#FFE8E8E8"
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding Name}"/>
-                                            <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="#88FFFFFF"/>
+                                            <TextBlock Text="{Binding DurationLabel}" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                             <Button Width="20" Height="20" Padding="0"
@@ -116,7 +133,7 @@
                                                  Visibility="{Binding ShowProgressBar, Converter={StaticResource BoolToVis}}"/>
 
                                     <!-- Time display -->
-                                    <TextBlock Text="{Binding TimeDisplay}" FontSize="11" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding TimeDisplay}" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#AAFFFFFF" Margin="0,2,0,0"/>
 
                                     <!-- Start button (idle state) -->
                                     <Button Content="Start" Margin="0,8,0,0" Padding="0,4"
@@ -132,9 +149,8 @@
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
     </DockPanel>
 </UserControl>

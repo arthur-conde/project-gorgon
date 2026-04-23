@@ -8,7 +8,7 @@
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Gorgon;component/Resources/diagnostics.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Diagnostics" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Diagnostics" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
@@ -65,7 +65,7 @@
                                     Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
                                     MouseRightButtonUp="CategoryChip_RightClick">
                                 <CheckBox Content="{Binding Name}" IsChecked="{Binding IsEnabled}"
-                                          Foreground="#FFE8E8E8" FontFamily="Consolas" FontSize="11"
+                                          Foreground="#FFE8E8E8" FontFamily="{DynamicResource AppMonoFontFamily}" FontSize="{DynamicResource AppFontSizeHint}"
                                           ToolTip="Right-click to isolate only this category"/>
                             </Border>
                         </DataTemplate>
@@ -75,7 +75,7 @@
         </Border>
 
         <ListBox x:Name="EntriesList" ItemsSource="{Binding View}" Background="#FF101010" Foreground="#FFE8E8E8"
-                 BorderBrush="#33FFFFFF" FontFamily="Consolas" FontSize="12"
+                 BorderBrush="#33FFFFFF" FontFamily="{DynamicResource AppMonoFontFamily}" FontSize="{DynamicResource AppFontSize}"
                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  VirtualizingStackPanel.IsVirtualizing="True"

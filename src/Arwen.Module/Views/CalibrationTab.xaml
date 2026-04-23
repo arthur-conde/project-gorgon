@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:CalibrationViewModel}"
              Background="#FF1A1A1A">
@@ -12,24 +13,21 @@
         <!-- Header -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12"
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
                            VerticalAlignment="Center"/>
                 <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"
-                        Padding="10,3" FontSize="11"
+                        Padding="10,3" FontSize="{DynamicResource AppFontSizeHint}"
                         Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
             </StackPanel>
         </StackPanel>
 
         <!-- Category Rates -->
-        <TextBlock DockPanel.Dock="Top" Text="Category Rates" Foreground="#FFD4A847" FontSize="13"
+        <TextBlock DockPanel.Dock="Top" Text="Category Rates" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                    FontWeight="SemiBold" Margin="0,4,0,4"/>
-        <DataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}" AutoGenerateColumns="False"
-                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
-                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
-                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
-                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column"
-                  MaxHeight="220" Margin="0,0,0,12">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}"
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            MaxHeight="220" Margin="0,0,0,12">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTextColumn Header="Keyword" Binding="{Binding Keyword}" Width="180">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -75,30 +73,36 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
 
         <!-- Observations filter -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-            <TextBlock Text="Observations" Foreground="#FFD4A847" FontSize="13"
+            <TextBlock Text="Observations" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                        FontWeight="SemiBold" Margin="0,0,0,4"/>
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Filter" Foreground="#88FFFFFF" FontSize="11"
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Text="{Binding KeywordFilter, UpdateSourceTrigger=PropertyChanged}"
-                         Width="240" FontSize="12"
-                         Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"
-                         Padding="4,3"/>
-            </StackPanel>
+                <wpf:GorgonQueryBox Grid.Column="1"
+                                    Grid="{Binding ElementName=ObservationsGrid}"
+                                    QueryText="{Binding ElementName=ObservationsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Watermark="type text, or grammar like Keyword CONTAINS 'weapon'"/>
+            </Grid>
+            <TextBlock Text="{Binding ElementName=ObservationsGrid, Path=QueryError}"
+                       Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
+                       Visibility="{Binding ElementName=ObservationsGrid, Path=QueryError,
+                           Converter={StaticResource NullOrEmptyToVis}}"/>
         </StackPanel>
 
         <!-- Raw observations -->
-        <DataGrid ItemsSource="{Binding Observations}" AutoGenerateColumns="False"
-                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
-                  GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF333333"
-                  Background="#FF1A1A1A" RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
-                  BorderBrush="#FF333333" BorderThickness="1" HeadersVisibility="Column">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid x:Name="ObservationsGrid" ItemsSource="{Binding Observations}"
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            Margin="0,4,0,0">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -168,7 +172,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>

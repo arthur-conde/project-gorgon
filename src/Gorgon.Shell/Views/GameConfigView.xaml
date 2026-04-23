@@ -6,7 +6,7 @@
     <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
         <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
             <icon:PackIconLucide Kind="Settings" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-            <TextBlock Text="Game Configuration" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+            <TextBlock Text="Game Configuration" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
         </StackPanel>
 
         <TextBlock Text="Project Gorgon root folder" Foreground="#88FFFFFF" Margin="0,0,0,4"/>
@@ -17,12 +17,12 @@
         </DockPanel>
 
         <TextBlock Text="Resolved Player.log" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
-        <TextBlock Text="{Binding PlayerLogPath}" FontFamily="Consolas" Foreground="#FFE8E8E8"/>
+        <TextBlock Text="{Binding PlayerLogPath}" FontFamily="{DynamicResource AppMonoFontFamily}" Foreground="#FFE8E8E8"/>
 
         <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
         <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
 
-        <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="11"
+        <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                    Text="Modules subscribe to this folder. Changes apply immediately — the log tail restarts when the path changes."/>
     </StackPanel>
 </UserControl>

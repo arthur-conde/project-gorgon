@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Saruman.ViewModels"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -10,7 +11,7 @@
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <Style x:Key="CodeCellText" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
@@ -30,7 +31,7 @@
                 <Image Source="pack://application:,,,/Saruman.Module;component/Resources/saruman.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Saruman · Words of Power"
-                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
             </StackPanel>
             <WrapPanel>
@@ -65,21 +66,22 @@
                                      Foreground="#66D4A847"
                                      HorizontalAlignment="Center" Margin="0,0,0,12"/>
                 <TextBlock Text="No Words of Power discovered yet"
-                           FontFamily="Cambria" FontSize="18"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHeader}"
                            HorizontalAlignment="Center"
                            Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
                 <TextBlock TextWrapping="Wrap" TextAlignment="Center"
-                           Foreground="{StaticResource TextTertiaryBrush}" FontSize="12">
+                           Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSize}">
                     Craft a Word of Power recipe in-game; discoveries will appear here automatically.
                     Anyone speaking a tracked code in chat will mark it spent.
                 </TextBlock>
             </StackPanel>
 
             <!-- Codebook grid -->
-            <DataGrid ItemsSource="{Binding WordsView}"
-                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
-                      CanUserSortColumns="False">
-            <DataGrid.GroupStyle>
+            <wpf:GorgonDataGrid ItemsSource="{Binding WordsView}"
+                                Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
+                                Mode="ReadOnly"
+                                CanUserSortColumns="False">
+            <wpf:GorgonDataGrid.GroupStyle>
                 <GroupStyle>
                     <GroupStyle.ContainerStyle>
                         <Style TargetType="GroupItem">
@@ -111,9 +113,9 @@
                         </Style>
                     </GroupStyle.ContainerStyle>
                 </GroupStyle>
-            </DataGrid.GroupStyle>
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+            </wpf:GorgonDataGrid.GroupStyle>
+            <wpf:GorgonDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
                     <Setter Property="ContextMenu">
                         <Setter.Value>
                             <ContextMenu>
@@ -139,8 +141,8 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </DataGrid.RowStyle>
-            <DataGrid.Columns>
+            </wpf:GorgonDataGrid.RowStyle>
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTemplateColumn Header="Code" Width="140">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -170,8 +172,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-            </DataGrid.Columns>
-            </DataGrid>
+            </wpf:GorgonDataGrid.Columns>
+            </wpf:GorgonDataGrid>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -58,6 +58,7 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<HotkeyBindingsViewModel>()
             .AddSingleton<DiagnosticsViewModel>()
             .AddSingleton<ReferenceDataViewModel>()
+            .AddSingleton<AppearanceSettingsViewModel>()
             .AddSingleton<SettingsHostViewModel>()
             // Views
             .AddSingleton<ShellWindow>()
@@ -80,6 +81,10 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<ReferenceDataView>(sp => new ReferenceDataView
             {
                 DataContext = sp.GetRequiredService<ReferenceDataViewModel>(),
+            })
+            .AddSingleton<AppearanceSettingsView>(sp => new AppearanceSettingsView
+            {
+                DataContext = sp.GetRequiredService<AppearanceSettingsViewModel>(),
             })
             .AddSingleton<SettingsHostView>(sp => new SettingsHostView
             {

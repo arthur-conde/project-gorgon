@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gorgon.Shared.Character;
 using Pippin.Domain;
@@ -11,7 +13,7 @@ public sealed partial class GourmandViewModel : ObservableObject
     private readonly GourmandStateMachine _state;
     private readonly FoodCatalog _catalog;
     private readonly ICharacterDataService? _characterData;
-    private List<FoodItemViewModel> _allFoods = [];
+    private readonly ICollectionView _foodsView;
 
     public GourmandViewModel(
         GourmandStateMachine state,
@@ -21,15 +23,20 @@ public sealed partial class GourmandViewModel : ObservableObject
         _state = state;
         _catalog = catalog;
         _characterData = characterData;
+
+        Foods = new ObservableCollection<FoodItemViewModel>();
+        _foodsView = CollectionViewSource.GetDefaultView(Foods);
+        // Grid composes its QueryText predicate on top of this combo-level filter.
+        _foodsView.Filter = PassesComboFilters;
+
         _state.StateChanged += (_, _) => Rebuild();
         if (_characterData is not null)
             _characterData.CharactersChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
         Rebuild();
     }
 
-    public ObservableCollection<FoodItemViewModel> Foods { get; } = [];
+    public ObservableCollection<FoodItemViewModel> Foods { get; }
 
-    [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private string _foodTypeFilter = "All";
     [ObservableProperty] private string _eatenFilter = "All";
 
@@ -53,31 +60,32 @@ public sealed partial class GourmandViewModel : ObservableObject
         }
     }
 
-    partial void OnSearchTextChanged(string value) => ApplyFilters();
-    partial void OnFoodTypeFilterChanged(string value) => ApplyFilters();
-    partial void OnEatenFilterChanged(string value) => ApplyFilters();
+    partial void OnFoodTypeFilterChanged(string value) => _foodsView.Refresh();
+    partial void OnEatenFilterChanged(string value) => _foodsView.Refresh();
 
     private void Rebuild()
     {
         var eaten = _state.EatenFoods;
-        var list = new List<FoodItemViewModel>(_catalog.TotalCount);
 
-        // Add all catalog foods with eaten status
+        // Build the full list off the bound collection, then swap in a single Reset
+        // to avoid per-item CollectionChanged notifications on large catalogs.
+        var list = new List<FoodItemViewModel>(_catalog.TotalCount + eaten.Count);
         foreach (var food in _catalog.ByName.Values)
         {
             var isEaten = eaten.TryGetValue(food.Name, out var count);
             list.Add(new FoodItemViewModel(food, isEaten, isEaten ? count : 0));
         }
-
-        // Add eaten foods not in catalog (edge case: CDN data mismatch)
         foreach (var (name, count) in eaten)
         {
             if (!_catalog.ByName.ContainsKey(name))
                 list.Add(new FoodItemViewModel(name, count));
         }
-
         list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-        _allFoods = list;
+
+        Foods.Clear();
+        foreach (var vm in list)
+            Foods.Add(vm);
+        _foodsView.Refresh();
 
         EatenCount = eaten.Count;
         TotalCount = _catalog.TotalCount;
@@ -96,25 +104,11 @@ public sealed partial class GourmandViewModel : ObservableObject
         {
             LastSyncLabel = "Not yet synced";
         }
-
-        ApplyFilters();
     }
 
-    private void ApplyFilters()
+    private bool PassesComboFilters(object obj)
     {
-        Foods.Clear();
-        foreach (var vm in _allFoods)
-        {
-            if (!PassesFilter(vm)) continue;
-            Foods.Add(vm);
-        }
-    }
-
-    private bool PassesFilter(FoodItemViewModel vm)
-    {
-        if (!string.IsNullOrWhiteSpace(SearchText) &&
-            !vm.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-            return false;
+        if (obj is not FoodItemViewModel vm) return false;
 
         if (FoodTypeFilter != "All" &&
             !vm.FoodType.Equals(FoodTypeFilter, StringComparison.OrdinalIgnoreCase))

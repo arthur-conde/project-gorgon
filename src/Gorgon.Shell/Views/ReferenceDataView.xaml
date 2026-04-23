@@ -11,9 +11,9 @@
     <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
             <icon:PackIconLucide Kind="Package" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-            <TextBlock Text="Reference Data" FontFamily="Cambria" FontSize="20" Foreground="#FFD4A847"/>
+            <TextBlock Text="Reference Data" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
         </StackPanel>
-        <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,16"
+        <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,16"
                    Text="Game data published by the developer at cdn.projectgorgon.com. Refreshed in the background on app start. Use Refresh to pull the latest version on demand."/>
 
         <Button Content="Refresh all from CDN"
@@ -36,7 +36,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Key}" FontWeight="Bold" Foreground="#FFE8E8E8" FontSize="14"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Key}" FontWeight="Bold" Foreground="#FFE8E8E8" FontSize="{DynamicResource AppFontSizeLarge}"/>
                             <Button Grid.Row="0" Grid.Column="1" Content="Refresh"
                                     Command="{Binding RefreshFromCdnCommand}"
                                     IsEnabled="{Binding IsRefreshing, Converter={StaticResource InverseBool}}"
@@ -55,7 +55,7 @@
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                                        Text="{Binding LastError}"
-                                       Foreground="#FFFF6B6B" FontSize="11" Margin="0,8,0,0"
+                                       Foreground="#FFFF6B6B" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,8,0,0"
                                        TextWrapping="Wrap"
                                        Visibility="{Binding LastError, Converter={StaticResource NullOrEmptyVisibility}}"/>
                         </Grid>

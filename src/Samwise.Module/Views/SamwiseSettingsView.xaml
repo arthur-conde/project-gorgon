@@ -9,7 +9,7 @@
                 <Image Source="pack://application:,,,/Samwise.Module;component/Resources/samwise.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Samwise · Garden Settings"
-                           FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 
@@ -21,7 +21,7 @@
                          Text="{Binding HarvestedAutoClearMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
                 <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="#88FFFFFF"/>
             </DockPanel>
-            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#88FFFFFF" Margin="0,0,0,24">
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,24">
                 Crops grow in seconds to a few minutes, so harvested cards don't need to linger.
                 Default 10 minutes. Clamped between 30 seconds and 24 hours.
             </TextBlock>
@@ -52,7 +52,7 @@
             <!-- Per-stage alarm rules -->
             <TextBlock Text="Per-stage rules" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
             <TextBlock Text="Choose which plot transitions trigger an alarm and optionally a custom .wav file."
-                       FontSize="11" Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                       FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
             <ItemsControl ItemsSource="{Binding Alarms.Rules}">
                 <ItemsControl.ItemTemplate>
@@ -88,7 +88,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="11">
+            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
                 Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Samwise\settings.json.
             </TextBlock>
         </StackPanel>

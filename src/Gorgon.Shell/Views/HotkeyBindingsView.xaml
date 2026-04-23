@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:hk="clr-namespace:Gorgon.Shared.Hotkeys.Controls;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              xmlns:vm="clr-namespace:Gorgon.Shell.ViewModels"
              Background="#FF1A1A1A">
     <DockPanel Margin="16">
@@ -10,7 +11,7 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <Image Source="pack://application:,,,/Gorgon;component/Resources/hotkeys.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Hotkeys" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Hotkeys" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
@@ -24,47 +25,85 @@
                 </TextBox.Resources>
             </TextBox>
         </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding RowsView}">
-                <ItemsControl.GroupStyle>
-                    <GroupStyle>
-                        <GroupStyle.HeaderTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Name}" Foreground="#FFD4A847"
-                                           FontFamily="Cambria" FontSize="14"
-                                           Margin="0,12,0,4"/>
-                            </DataTemplate>
-                        </GroupStyle.HeaderTemplate>
-                    </GroupStyle>
-                </ItemsControl.GroupStyle>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Padding="8,6" Margin="0,2" CornerRadius="3"
-                                Background="#FF252525" BorderBrush="#22FFFFFF" BorderThickness="1">
-                            <DockPanel>
-                                <hk:HotkeyChipControl DockPanel.Dock="Right"
-                                                      Binding="{Binding Binding, Mode=TwoWay}"
-                                                      HotkeyService="{Binding DataContext.HotkeyService, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8"/>
-                                    <StackPanel Orientation="Horizontal"
-                                               Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
-                                        <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11" Foreground="#FFE0A030" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                                        <TextBlock Text="{Binding ConflictWith, StringFormat='Conflicts with {0}'}"
-                                                   Foreground="#FFE0A030" FontSize="11"/>
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal"
-                                               Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                                        <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#FFD04040" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                                        <TextBlock Text="{Binding Error}"
-                                                   Foreground="#FFD04040" FontSize="11"/>
-                                    </StackPanel>
+        <ListBox ItemsSource="{Binding RowsView}"
+                 Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                 VirtualizingPanel.ScrollUnit="Pixel">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel/>
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.ContainerStyle>
+                        <Style TargetType="{x:Type GroupItem}">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type GroupItem}">
+                                        <StackPanel>
+                                            <Border wpf:StickyGroupHeader.IsSticky="True"
+                                                    Background="#FF1A1A1A" Padding="0,12,0,4" Panel.ZIndex="1">
+                                                <TextBlock Text="{Binding Name}" Foreground="#FFD4A847"
+                                                           FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}"/>
+                                            </Border>
+                                            <ItemsPresenter/>
+                                        </StackPanel>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </GroupStyle.ContainerStyle>
+                </GroupStyle>
+            </ListBox.GroupStyle>
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <ContentPresenter/>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Border Padding="8,6" Margin="0,2" CornerRadius="3"
+                            Background="#FF252525" BorderBrush="#22FFFFFF" BorderThickness="1">
+                        <DockPanel>
+                            <hk:HotkeyChipControl DockPanel.Dock="Right"
+                                                  Binding="{Binding Binding, Mode=TwoWay}"
+                                                  HotkeyService="{Binding DataContext.HotkeyService, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                            <StackPanel>
+                                <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8"/>
+                                <StackPanel Orientation="Horizontal"
+                                           Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
+                                    <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11" Foreground="#FFE0A030" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                    <TextBlock Text="{Binding ConflictWith, StringFormat='Conflicts with {0}'}"
+                                               Foreground="#FFE0A030" FontSize="{DynamicResource AppFontSizeHint}"/>
                                 </StackPanel>
-                            </DockPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                                <StackPanel Orientation="Horizontal"
+                                           Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                                    <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#FFD04040" VerticalAlignment="Center" Margin="0,0,3,0"/>
+                                    <TextBlock Text="{Binding Error}"
+                                               Foreground="#FFD04040" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
     </DockPanel>
 </UserControl>

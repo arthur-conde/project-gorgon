@@ -21,7 +21,7 @@
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Bilbo.Module;component/Resources/bilbo.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Bilbo · Storage" FontFamily="Cambria" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Bilbo · Storage" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
         </DockPanel>
@@ -59,13 +59,14 @@
 
         <!-- Status bar -->
         <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="4">
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="11"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
         </Border>
 
         <!-- DataGrid -->
-        <DataGrid x:Name="ItemsGrid"
-                  ItemsSource="{Binding FilteredItems}">
-            <DataGrid.Columns>
+        <wpf:GorgonDataGrid x:Name="ItemsGrid"
+                            ItemsSource="{Binding FilteredItems}"
+                            Mode="ReadOnly">
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -117,9 +118,9 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow">
+            </wpf:GorgonDataGrid.Columns>
+            <wpf:GorgonDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
                     <Setter Property="ToolTip">
                         <Setter.Value>
                             <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -132,7 +133,7 @@
                                                 <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
                                                                Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
                                                 <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                           Foreground="#FFD4A847" FontSize="14" TextWrapping="Wrap"
+                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"
                                                            VerticalAlignment="Center"/>
                                             </DockPanel>
                                         </Border>
@@ -142,7 +143,7 @@
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </DataGrid.RowStyle>
-        </DataGrid>
+            </wpf:GorgonDataGrid.RowStyle>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>

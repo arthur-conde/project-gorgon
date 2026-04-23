@@ -151,7 +151,7 @@
                                             <TextBlock Text="{Binding RouteOrder, Converter={x:Static controls:OneBasedConverter.Instance}}"
                                                        Foreground="White"
                                                        HorizontalAlignment="Center" VerticalAlignment="Top"
-                                                       Margin="0,2,0,0" FontSize="10" FontWeight="Bold" />
+                                                       Margin="0,2,0,0" FontSize="{DynamicResource AppFontSizeSmall}" FontWeight="Bold" />
                                         </Grid>
                                     </ControlTemplate>
                                 </Thumb.Template>

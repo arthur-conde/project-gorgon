@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:FavorDashboardViewModel}"
              Background="#FF1A1A1A">
@@ -15,36 +16,32 @@
     <DockPanel Margin="12">
         <!-- Header -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-            <TextBlock Text="NPC Favor" FontSize="18" FontWeight="SemiBold" Foreground="#FFE8E8E8"
+            <TextBlock Text="NPC Favor" FontSize="{DynamicResource AppFontSizeHeader}" FontWeight="SemiBold" Foreground="#FFE8E8E8"
                        VerticalAlignment="Center"/>
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="12"
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
                        VerticalAlignment="Center" Margin="16,0,0,0"/>
         </DockPanel>
 
         <!-- Filters -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     Width="200" FontSize="13" Padding="6,4"
+                     Width="200" FontSize="{DynamicResource AppFontSizeMedium}" Padding="6,4"
                      Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444">
                 <!-- Watermark via Tag -->
             </TextBox>
             <ComboBox ItemsSource="{Binding AvailableAreas}" SelectedItem="{Binding SelectedArea}"
-                      Width="160" Margin="8,0,0,0" FontSize="13"
+                      Width="160" Margin="8,0,0,0" FontSize="{DynamicResource AppFontSizeMedium}"
                       Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
             <CheckBox Content="Known NPCs only" IsChecked="{Binding ShowKnownOnly}"
-                      Foreground="#CCFFFFFF" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"/>
+                      Foreground="#CCFFFFFF" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="{DynamicResource AppFontSize}"/>
         </StackPanel>
 
         <!-- NPC List -->
-        <DataGrid ItemsSource="{Binding FilteredNpcs}" AutoGenerateColumns="False"
-                  IsReadOnly="True" SelectionMode="Single" CanUserResizeRows="False"
-                  CanUserReorderColumns="False" GridLinesVisibility="Horizontal"
-                  HorizontalGridLinesBrush="#FF333333" Background="#FF1A1A1A"
-                  RowBackground="#FF1E1E1E" AlternatingRowBackground="#FF232323"
-                  BorderBrush="#FF333333" BorderThickness="1"
-                  HeadersVisibility="Column">
+        <wpf:GorgonDataGrid ItemsSource="{Binding FilteredNpcs}"
+                            Mode="ReadOnly" CanUserResizeRows="False"
+                            CanUserReorderColumns="False">
 
-            <DataGrid.Columns>
+            <wpf:GorgonDataGrid.Columns>
                 <DataGridTextColumn Header="NPC" Binding="{Binding Name}" Width="180">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -80,8 +77,8 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                     <TextBlock Text="{Binding CurrentTier,
                                                    Converter={StaticResource TierToDisplayNameConverter}}"
-                                               Foreground="#FFD4A847" FontSize="11"/>
-                                    <TextBlock Foreground="#88FFFFFF" FontSize="10" Margin="6,0,0,0">
+                                               Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                    <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeSmall}" Margin="6,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Text" Value=""/>
@@ -108,7 +105,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
     </DockPanel>
 </UserControl>
