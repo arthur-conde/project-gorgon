@@ -1,20 +1,26 @@
 namespace Gorgon.Shared.Character;
 
 /// <summary>
-/// Typed wrapper over a <c>Dictionary&lt;string, T&gt;</c> that auto-tracks the active
-/// character and exposes <see cref="Current"/> as the entry for the current character,
-/// creating it lazily on first access. Fires <see cref="CurrentChanged"/> on switch.
+/// Active-character-aware wrapper over <see cref="PerCharacterStore{T}"/>. Holds the
+/// current character's <typeparamref name="T"/> in memory, lazy-loads it from disk on
+/// first access after a character switch, and raises <see cref="CurrentChanged"/> when
+/// the active character changes.
 ///
-/// Modules still own the dictionary (it is the persisted form); the view provides
-/// a convenient handle for reading/writing per-character state and a single event
-/// to subscribe to instead of <see cref="IActiveCharacterService.ActiveCharacterChanged"/>.
+/// Modules typically inject <see cref="PerCharacterView{T}"/> rather than the underlying
+/// store — they only care about "the current character's state," and the view owns the
+/// load-on-switch + save-on-switch lifecycle.
 /// </summary>
-public sealed class PerCharacterView<T> where T : class, new()
+public sealed class PerCharacterView<T> : IDisposable
+    where T : class, IVersionedState<T>, new()
 {
     private readonly IActiveCharacterService _active;
-    private readonly Dictionary<string, T> _store;
+    private readonly PerCharacterStore<T> _store;
+    private readonly Lock _gate = new();
 
-    public PerCharacterView(IActiveCharacterService active, Dictionary<string, T> store)
+    private T? _cached;
+    private (string Name, string Server)? _cachedKey;
+
+    public PerCharacterView(IActiveCharacterService active, PerCharacterStore<T> store)
     {
         _active = active;
         _store = store;
@@ -22,39 +28,96 @@ public sealed class PerCharacterView<T> where T : class, new()
     }
 
     /// <summary>
-    /// Entry for the currently active character, or null if no character is active.
-    /// The entry is created on demand (a missing key lazily inserts a <c>new T()</c>).
+    /// State for the currently active character. <c>null</c> until both name and server
+    /// are resolved. First access after construction or a character switch loads from disk.
     /// </summary>
     public T? Current
     {
         get
         {
             var name = _active.ActiveCharacterName;
-            if (string.IsNullOrEmpty(name)) return null;
-            if (!_store.TryGetValue(name, out var value))
+            var server = _active.ActiveServer;
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(server)) return null;
+
+            lock (_gate)
             {
-                value = new T();
-                _store[name] = value;
+                if (_cachedKey is { } key &&
+                    string.Equals(key.Name, name, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(key.Server, server, StringComparison.OrdinalIgnoreCase))
+                {
+                    return _cached;
+                }
+
+                var loaded = _store.Load(name, server);
+                _cached = loaded;
+                _cachedKey = (name, server);
+                return loaded;
             }
-            return value;
         }
     }
 
-    /// <summary>Entry for a specific character, creating it lazily if absent.</summary>
-    public T GetFor(string characterName)
+    /// <summary>Persist the cached state for the currently loaded character.</summary>
+    public void Save()
     {
-        if (string.IsNullOrEmpty(characterName)) throw new ArgumentException("Character name required", nameof(characterName));
-        if (!_store.TryGetValue(characterName, out var value))
+        T? toSave;
+        (string Name, string Server)? key;
+        lock (_gate)
         {
-            value = new T();
-            _store[characterName] = value;
+            toSave = _cached;
+            key = _cachedKey;
         }
-        return value;
+        if (toSave is null || key is null) return;
+        _store.Save(key.Value.Name, key.Value.Server, toSave);
     }
 
-    /// <summary>Fires when <see cref="Current"/> transitions to a new character's entry.</summary>
+    /// <summary>Persist the cached state for the currently loaded character.</summary>
+    public Task SaveAsync(CancellationToken ct = default)
+    {
+        T? toSave;
+        (string Name, string Server)? key;
+        lock (_gate)
+        {
+            toSave = _cached;
+            key = _cachedKey;
+        }
+        if (toSave is null || key is null) return Task.CompletedTask;
+        return _store.SaveAsync(key.Value.Name, key.Value.Server, toSave, ct);
+    }
+
+    /// <summary>Underlying store — exposed for cross-character access and tests.</summary>
+    public PerCharacterStore<T> Store => _store;
+
+    /// <summary>Fires when the active character changes. Subscribers should re-read <see cref="Current"/>.</summary>
     public event EventHandler? CurrentChanged;
 
+    public void Dispose()
+    {
+        _active.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        FlushCached();
+    }
+
     private void OnActiveCharacterChanged(object? sender, EventArgs e)
-        => CurrentChanged?.Invoke(this, EventArgs.Empty);
+    {
+        FlushCached();
+        lock (_gate)
+        {
+            _cached = null;
+            _cachedKey = null;
+        }
+        CurrentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void FlushCached()
+    {
+        T? toSave;
+        (string Name, string Server)? key;
+        lock (_gate)
+        {
+            toSave = _cached;
+            key = _cachedKey;
+        }
+        if (toSave is null || key is null) return;
+        try { _store.Save(key.Value.Name, key.Value.Server, toSave); }
+        catch { /* best-effort on switch/dispose */ }
+    }
 }

@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text.Json.Serialization.Metadata;
 using Gorgon.Shared.Character;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Hotkeys;
@@ -9,6 +10,7 @@ using Gorgon.Shared.Reference;
 using Gorgon.Shared.Settings;
 using Gorgon.Shared.Wpf.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Gorgon.Shared.DependencyInjection;
 
@@ -27,6 +29,60 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IActiveCharacterPersistence>(),
                 sp.GetRequiredService<IDiagnosticsSink>()))
             .AddHostedService<ActiveCharacterLogSynchronizer>();
+
+    /// <summary>
+    /// Register the root directory for per-character storage (typically
+    /// <c>%LocalAppData%/Gorgon/characters</c>). Must be called before any
+    /// <see cref="AddPerCharacterStore{T}"/> / <see cref="AddPerCharacterModuleStore{T}"/>.
+    /// </summary>
+    public static IServiceCollection AddGorgonPerCharacterStorage(
+        this IServiceCollection services,
+        string charactersRootDir)
+    {
+        services.AddSingleton(new PerCharacterStoreOptions { CharactersRootDir = charactersRootDir });
+        services.AddPerCharacterStore<CharacterPresence>("character.json", CharacterPresenceJsonContext.Default.CharacterPresence);
+        services.AddSingleton<CharacterPresenceService>();
+        services.AddSingleton<ICharacterPresenceService>(sp => sp.GetRequiredService<CharacterPresenceService>());
+        services.AddHostedService(sp => sp.GetRequiredService<CharacterPresenceService>());
+        return services;
+    }
+
+    /// <summary>
+    /// Register a <see cref="PerCharacterStore{T}"/> + <see cref="PerCharacterView{T}"/> pair.
+    /// If an <see cref="ILegacyMigration{T}"/> has already been registered, the store will
+    /// pick it up automatically.
+    /// </summary>
+    public static IServiceCollection AddPerCharacterStore<T>(
+        this IServiceCollection services,
+        string fileName,
+        JsonTypeInfo<T> typeInfo)
+        where T : class, IVersionedState<T>, new()
+    {
+        services.AddSingleton(sp => new PerCharacterStore<T>(
+            sp.GetRequiredService<PerCharacterStoreOptions>().CharactersRootDir,
+            fileName,
+            typeInfo,
+            sp.GetService<ILegacyMigration<T>>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton(sp => new PerCharacterView<T>(
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetRequiredService<PerCharacterStore<T>>()));
+        return services;
+    }
+
+    /// <summary>
+    /// Per-character/per-module convenience: file name is derived from the module id
+    /// (<c>"{moduleId}.json"</c>).
+    /// </summary>
+    public static IServiceCollection AddPerCharacterModuleStore<T>(
+        this IServiceCollection services,
+        string moduleId,
+        JsonTypeInfo<T> typeInfo)
+        where T : class, IVersionedState<T>, new()
+    {
+        if (string.IsNullOrEmpty(moduleId)) throw new ArgumentException("moduleId required", nameof(moduleId));
+        return services.AddPerCharacterStore<T>($"{moduleId}.json", typeInfo);
+    }
 
     public static IServiceCollection AddGorgonReferenceData(this IServiceCollection services, string cacheDirectory) =>
         services

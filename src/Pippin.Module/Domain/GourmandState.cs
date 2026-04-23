@@ -1,12 +1,20 @@
 using System.Text.Json.Serialization;
+using Gorgon.Shared.Character;
 
 namespace Pippin.Domain;
 
 /// <summary>
-/// Persistence model for the Gourmand module — serialized to gourmand-state.json.
+/// Persistence model for the Gourmand module — one file per character, written under
+/// <c>characters/{slug}/pippin.json</c>.
 /// </summary>
-public sealed class GourmandState
+public sealed class GourmandState : IVersionedState<GourmandState>
 {
+    public const int Version = 1;
+    public static int CurrentVersion => Version;
+    public static GourmandState Migrate(GourmandState loaded) => loaded;
+
+    public int SchemaVersion { get; set; } = Version;
+
     /// <summary>Food display name → times eaten.</summary>
     public Dictionary<string, int> EatenFoods { get; set; } = new();
 

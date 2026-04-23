@@ -32,7 +32,11 @@ public sealed partial class GourmandViewModel : ObservableObject
         _state.StateChanged += (_, _) => Rebuild();
         if (_activeChar is not null)
         {
-            _activeChar.ActiveCharacterChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
+            _activeChar.ActiveCharacterChanged += (_, _) =>
+            {
+                OnPropertyChanged(nameof(GourmandLevel));
+                Rebuild();
+            };
             _activeChar.CharacterExportsChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
         }
         Rebuild();

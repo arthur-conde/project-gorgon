@@ -1,8 +1,8 @@
 using System.IO;
 using Gorgon.Shared.Character;
+using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Reference;
-using Gorgon.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Pippin.Domain;
@@ -27,12 +27,12 @@ public sealed class PippinModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var pippinDir = Path.Combine(localApp, "Gorgon", "Pippin");
-        var statePath = Path.Combine(pippinDir, "gourmand-state.json");
+        var legacyPippinDir = Path.Combine(localApp, "Gorgon", "Pippin");
 
-        // Persistence
-        services.AddSingleton<ISettingsStore<GourmandState>>(_ =>
-            new JsonSettingsStore<GourmandState>(statePath, GourmandStateJsonContext.Default.GourmandState));
+        // Per-character persistence with a one-shot migration from the legacy flat file.
+        services.AddSingleton<ILegacyMigration<GourmandState>>(_ =>
+            new GourmandLegacyMigration(legacyPippinDir, GourmandStateJsonContext.Default.GourmandState));
+        services.AddPerCharacterModuleStore<GourmandState>(Id, GourmandStateJsonContext.Default.GourmandState);
 
         // Domain
         services.AddSingleton<FoodCatalog>(sp =>

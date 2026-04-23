@@ -32,31 +32,9 @@ public sealed class JsonSettingsStore<T> : ISettingsStore<T> where T : class, ne
         return result ?? new T();
     }
 
-    public async Task SaveAsync(T value, CancellationToken ct = default)
-    {
-        EnsureDirectory();
-        var tmp = FilePath + ".tmp";
-        await using (var stream = File.Create(tmp))
-        {
-            await JsonSerializer.SerializeAsync(stream, value, _typeInfo, ct);
-        }
-        File.Move(tmp, FilePath, overwrite: true);
-    }
+    public Task SaveAsync(T value, CancellationToken ct = default)
+        => AtomicJsonWriter.WriteAsync(FilePath, value, _typeInfo, ct);
 
     public void Save(T value)
-    {
-        EnsureDirectory();
-        var tmp = FilePath + ".tmp";
-        using (var stream = File.Create(tmp))
-        {
-            JsonSerializer.Serialize(stream, value, _typeInfo);
-        }
-        File.Move(tmp, FilePath, overwrite: true);
-    }
-
-    private void EnsureDirectory()
-    {
-        var dir = Path.GetDirectoryName(FilePath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-    }
+        => AtomicJsonWriter.Write(FilePath, value, _typeInfo);
 }

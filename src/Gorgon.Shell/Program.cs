@@ -82,6 +82,7 @@ public static class Program
             var referenceCacheDir = Path.Combine(localApp, "Gorgon", "Reference");
             var communityCalibrationCacheDir = Path.Combine(localApp, "Gorgon", "Reference", "CommunityCalibration");
             var iconCacheDir = Path.Combine(localApp, "Gorgon", "Icons");
+            var charactersRootDir = Path.Combine(localApp, "Gorgon", "characters");
 
             var builder = Host.CreateApplicationBuilder(args);
             var audioSettings = new AudioSettings { ConcurrentAlarms = shellSettings.ConcurrentAlarms };
@@ -94,6 +95,7 @@ public static class Program
                 .AddSingleton(gameConfig)
                 .AddGorgonDiagnostics(logDir)
                 .AddGorgonGameServices()
+                .AddGorgonPerCharacterStorage(charactersRootDir)
                 .AddGorgonReferenceData(referenceCacheDir)
                 .AddGorgonCommunityCalibration(communityCalibrationCacheDir)
                 .AddGorgonIcons(iconCacheDir)
