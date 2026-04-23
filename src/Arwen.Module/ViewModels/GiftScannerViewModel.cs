@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Character;
 using Gorgon.Shared.Game;
 using Gorgon.Shared.Storage;
@@ -37,7 +36,6 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     private readonly GiftIndex _giftIndex;
     private readonly GameConfig _gameConfig;
     private readonly IActiveCharacterService _activeChar;
-    private StorageReport? _loadedReport;
 
     private readonly CalibrationService _calibration;
 
@@ -54,18 +52,17 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         _gameConfig = gameConfig;
         _activeChar = activeChar;
         _state.StateChanged += (_, _) => RefreshNpcList();
-        _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshReports();
-        _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshReports();
-        _activeChar.StorageReportsChanged += (_, _) => DispatchRefreshReports();
+        _activeChar.ActiveCharacterChanged += (_, _) => DispatchRescan();
+        _activeChar.StorageReportsChanged += (_, _) => DispatchRescan();
         RefreshNpcList();
-        RefreshReports();
+        Scan();
     }
 
-    private void DispatchRefreshReports()
+    private void DispatchRescan()
     {
         var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) RefreshReports();
-        else d.InvokeAsync(RefreshReports);
+        if (d is null || d.CheckAccess()) Scan();
+        else d.InvokeAsync(Scan);
     }
 
     // ── NPC selection ───────────────────────────────────────────────────
@@ -76,99 +73,23 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     [ObservableProperty]
     private NpcFavorEntry? _selectedNpc;
 
-    // ── Storage report selection ────────────────────────────────────────
-
-    [ObservableProperty]
-    private ObservableCollection<ReportFileInfo> _availableReports = [];
-
-    [ObservableProperty]
-    private ReportFileInfo? _selectedReport;
-
-    [ObservableProperty]
-    private bool _showAllReports;
-
     // ── Results ─────────────────────────────────────────────────────────
 
     [ObservableProperty]
     private ObservableCollection<GiftScannerRow> _results = [];
 
     [ObservableProperty]
-    private string _statusMessage = "Select an NPC and storage report to scan.";
+    private string _statusMessage = "Select an NPC to scan the active character's storage.";
+
+    public string? ActiveCharacterLabel => _activeChar.ActiveCharacterName is null
+        ? null
+        : string.IsNullOrEmpty(_activeChar.ActiveServer)
+            ? _activeChar.ActiveCharacterName
+            : $"{_activeChar.ActiveCharacterName} · {_activeChar.ActiveServer}";
 
     // ── Change handlers ─────────────────────────────────────────────────
 
     partial void OnSelectedNpcChanged(NpcFavorEntry? value) => Scan();
-
-    partial void OnSelectedReportChanged(ReportFileInfo? value)
-    {
-        if (value is not null)
-            LoadReport(value.FilePath);
-        else
-            _loadedReport = null;
-        Scan();
-    }
-
-    partial void OnShowAllReportsChanged(bool value) => RefreshReports();
-
-    // ── Commands ────────────────────────────────────────────────────────
-
-    [RelayCommand]
-    private void RefreshReports()
-    {
-        var all = _activeChar.StorageReports;
-
-        var active = _activeChar.ActiveCharacter;
-        List<ReportFileInfo> reports;
-        string? fallbackHint = null;
-        if (active is null)
-        {
-            reports = all.ToList();
-        }
-        else
-        {
-            var matching = all.Where(r =>
-                    r.Character.Equals(active.Name, StringComparison.OrdinalIgnoreCase) &&
-                    r.Server.Equals(active.Server, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (matching.Count > 0)
-            {
-                reports = matching;
-            }
-            else
-            {
-                reports = all.ToList();
-                if (reports.Count > 0)
-                    fallbackHint = "No storage exports match the active character — showing all.";
-            }
-        }
-
-        // When the toggle is off, collapse to newest snapshot per (Character, Server).
-        if (!ShowAllReports)
-        {
-            reports = reports
-                .GroupBy(r => (r.Character.ToLowerInvariant(), r.Server.ToLowerInvariant()))
-                .Select(g => g.OrderByDescending(r => r.LastModifiedUtc).First())
-                .OrderByDescending(r => r.LastModifiedUtc)
-                .ToList();
-        }
-
-        var previousPath = SelectedReport?.FilePath;
-        var previousMtime = SelectedReport?.LastModifiedUtc;
-        AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
-        var match = reports.FirstOrDefault(r =>
-            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase));
-        SelectedReport = match ?? reports.FirstOrDefault();
-
-        // If the selected report's file was rewritten in place, force a reload + rescan.
-        if (match is not null && previousMtime.HasValue && match.LastModifiedUtc > previousMtime.Value)
-        {
-            LoadReport(match.FilePath);
-            Scan();
-        }
-
-        if (fallbackHint is not null)
-            StatusMessage = fallbackHint;
-    }
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -199,25 +120,16 @@ public sealed partial class GiftScannerViewModel : ObservableObject
             SelectedNpc = NpcList.FirstOrDefault(e => e.NpcKey == previousKey);
     }
 
-    private void LoadReport(string filePath)
-    {
-        try
-        {
-            _loadedReport = StorageReportLoader.Load(filePath);
-        }
-        catch (Exception ex)
-        {
-            _loadedReport = null;
-            StatusMessage = $"Error loading report: {ex.Message}";
-        }
-    }
-
     private void Scan()
     {
-        if (SelectedNpc is null || _loadedReport is null)
+        OnPropertyChanged(nameof(ActiveCharacterLabel));
+        var report = _activeChar.ActiveStorageContents;
+        if (SelectedNpc is null || report is null)
         {
             Results = [];
-            StatusMessage = "Select an NPC and storage report to scan.";
+            StatusMessage = report is null
+                ? "No storage export for the active character — run /exportstorage in-game."
+                : "Select an NPC to scan.";
             return;
         }
 
@@ -239,7 +151,7 @@ public sealed partial class GiftScannerViewModel : ObservableObject
                            ?? (double?)FavorTiers.FloorOf(SelectedNpc.CurrentTier);
 
         var rows = new List<GiftScannerRow>();
-        foreach (var item in _loadedReport.Items)
+        foreach (var item in report.Items)
         {
             if (!matchByItemId.TryGetValue(item.TypeID, out var match)) continue;
             // Skip items from Hate/Dislike preferences

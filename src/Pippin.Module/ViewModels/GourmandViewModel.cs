@@ -53,13 +53,9 @@ public sealed partial class GourmandViewModel : ObservableObject
     {
         get
         {
-            if (_activeChar is null) return 0;
-            foreach (var c in _activeChar.Characters)
-            {
-                if (c.Skills.TryGetValue("Gourmand", out var skill))
-                    return skill.Level;
-            }
-            return 0;
+            var active = _activeChar?.ActiveCharacter;
+            if (active is null) return 0;
+            return active.Skills.TryGetValue("Gourmand", out var skill) ? skill.Level : 0;
         }
     }
 

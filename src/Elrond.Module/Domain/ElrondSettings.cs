@@ -7,20 +7,6 @@ namespace Elrond.Domain;
 
 public sealed class ElrondSettings : INotifyPropertyChanged
 {
-    private string _lastCharacterName = "";
-    public string LastCharacterName
-    {
-        get => _lastCharacterName;
-        set => Set(ref _lastCharacterName, value);
-    }
-
-    private string _lastServer = "";
-    public string LastServer
-    {
-        get => _lastServer;
-        set => Set(ref _lastServer, value);
-    }
-
     private string _lastSkill = "";
     public string LastSkill
     {

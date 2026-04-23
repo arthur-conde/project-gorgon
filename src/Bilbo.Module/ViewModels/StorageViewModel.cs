@@ -30,20 +30,17 @@ public sealed partial class StorageViewModel : ObservableObject
         _settings = settings;
         _refData = refData;
         _activeChar = activeChar;
-        _activeChar.ActiveCharacterChanged += OnCharactersChanged;
-        _activeChar.CharacterExportsChanged += OnCharactersChanged;
-        _activeChar.StorageReportsChanged += (_, _) => DispatchRefreshReports();
-        RefreshReports();
+        _activeChar.ActiveCharacterChanged += (_, _) => DispatchReload();
+        _activeChar.StorageReportsChanged += (_, _) => DispatchReload();
+        Reload();
     }
 
-    private void DispatchRefreshReports()
+    private void DispatchReload()
     {
         var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) RefreshReports();
-        else d.InvokeAsync(RefreshReports);
+        if (d is null || d.CheckAccess()) Reload();
+        else d.InvokeAsync(Reload);
     }
-
-    private void OnCharactersChanged(object? sender, EventArgs e) => ApplyFilter();
 
     public DataGridState GridState => _settings.StorageGrid;
 
@@ -62,13 +59,18 @@ public sealed partial class StorageViewModel : ObservableObject
     private IReadOnlyList<StorageItemRow> _filteredItems = [];
 
     [ObservableProperty]
-    private ObservableCollection<ReportFileInfo> _availableReports = [];
-
-    [ObservableProperty]
-    private ReportFileInfo? _selectedReport;
-
-    [ObservableProperty]
     private string _statusMessage = "No storage export loaded.";
+
+    public string? ActiveCharacterLabel
+    {
+        get
+        {
+            var name = _activeChar.ActiveCharacterName;
+            if (string.IsNullOrEmpty(name)) return null;
+            var server = _activeChar.ActiveServer;
+            return string.IsNullOrEmpty(server) ? name : $"{name} · {server}";
+        }
+    }
 
     [ObservableProperty]
     private IReadOnlyList<CraftableRecipeRow> _craftableRecipes = [];
@@ -97,82 +99,47 @@ public sealed partial class StorageViewModel : ObservableObject
 
     partial void OnConfidenceChanged(ConfidenceLevel value) => ApplyFilter();
 
-    partial void OnSelectedReportChanged(ReportFileInfo? value)
-    {
-        if (value is not null)
-        {
-            _activeChar.SetActiveCharacter(value.Character, value.Server);
-            LoadReport(value.FilePath);
-        }
-    }
-
     // ── Commands ─────────────────────────────────────────────────────────
 
     [RelayCommand]
     private void Refresh()
     {
-        RefreshReports();
+        _activeChar.Refresh();
+        Reload();
     }
 
     // ── Private helpers ──────────────────────────────────────────────────
 
-    private void RefreshReports()
+    private void Reload()
     {
-        var reports = _activeChar.StorageReports;
-        var previousPath = SelectedReport?.FilePath;
-        var previousMtime = SelectedReport?.LastModifiedUtc;
-        AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
+        OnPropertyChanged(nameof(ActiveCharacterLabel));
 
-        if (reports.Count == 0)
+        var report = _activeChar.ActiveStorageContents;
+        if (report is null)
         {
             _allItems = [];
             AvailableLocations = new ObservableCollection<string>(["All"]);
             SelectedLocation = "All";
             FilteredItems = [];
-            StatusMessage = "No storage exports found. Run /exportstorage in-game.";
+            StatusMessage = _activeChar.ActiveCharacterName is null
+                ? "No active character — switch one from the shell header."
+                : $"No storage export found for {_activeChar.ActiveCharacterName}. Run /exportstorage in-game.";
+            CraftableRecipes = [];
             return;
         }
 
-        // Preserve selection when possible; auto-reload if the selected file was rewritten.
-        var match = reports.FirstOrDefault(r =>
-            string.Equals(r.FilePath, previousPath, StringComparison.OrdinalIgnoreCase));
-        if (match is not null)
-        {
-            SelectedReport = match;
-            if (previousMtime.HasValue && match.LastModifiedUtc > previousMtime.Value)
-                LoadReport(match.FilePath);
-        }
-        else
-        {
-            SelectedReport = reports[0]; // triggers OnSelectedReportChanged → LoadReport
-        }
-    }
+        _allItems = StorageRowMapper.ToRows(report, _refData);
 
-    private void LoadReport(string filePath)
-    {
-        try
-        {
-            var report = StorageReportLoader.Load(filePath);
-            _allItems = StorageRowMapper.ToRows(report, _refData);
+        var locations = _allItems
+            .Select(r => r.Location)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        locations.Insert(0, "All");
+        AvailableLocations = new ObservableCollection<string>(locations);
+        SelectedLocation = "All";
 
-            // Build location list
-            var locations = _allItems
-                .Select(r => r.Location)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            locations.Insert(0, "All");
-            AvailableLocations = new ObservableCollection<string>(locations);
-            SelectedLocation = "All";
-
-            ApplyFilter();
-        }
-        catch (Exception ex)
-        {
-            _allItems = [];
-            FilteredItems = [];
-            StatusMessage = $"Error loading report: {ex.Message}";
-        }
+        ApplyFilter();
     }
 
     public void ApplyFilter()

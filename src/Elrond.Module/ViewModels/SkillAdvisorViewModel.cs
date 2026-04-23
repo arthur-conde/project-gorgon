@@ -32,19 +32,14 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
         _goalLevel = settings.LastGoalLevel;
 
-        _activeChar.ActiveCharacterChanged += OnCharactersChanged;
+        _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
+        _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
-        ReloadCharacters();
+        ReloadSkills();
     }
 
     // ── Observable properties ────────────────────────────────────────────
-
-    [ObservableProperty]
-    private ObservableCollection<CharacterSummary> _availableCharacters = [];
-
-    [ObservableProperty]
-    private CharacterSummary? _selectedCharacter;
 
     [ObservableProperty]
     private ObservableCollection<string> _availableSkills = [];
@@ -81,19 +76,17 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     public DataGridState GridState => _settings.RecipeGrid;
 
-    // ── Property change handlers ─────────────────────────────────────────
-
-    partial void OnSelectedCharacterChanged(CharacterSummary? value)
+    public string? ActiveCharacterLabel
     {
-        if (value is not null)
+        get
         {
-            _activeChar.SetActiveCharacter(value.Name, value.Server);
-            _settings.LastCharacterName = value.Name;
-            _settings.LastServer = value.Server;
+            var c = _activeChar.ActiveCharacter;
+            if (c is null) return null;
+            return string.IsNullOrEmpty(c.Server) ? c.Name : $"{c.Name} · {c.Server}";
         }
-        ReloadSkills();
-        Reanalyze();
     }
+
+    // ── Property change handlers ─────────────────────────────────────────
 
     partial void OnSelectedSkillChanged(string? value)
     {
@@ -137,24 +130,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     // ── Private helpers ──────────────────────────────────────────────────
 
-    private void ReloadCharacters()
-    {
-        var chars = _activeChar.Characters
-            .Select(c => new CharacterSummary(c.Name, c.Server, c.ExportedAt))
-            .ToList();
-        AvailableCharacters = new ObservableCollection<CharacterSummary>(chars);
-
-        // Restore last selection or pick first
-        SelectedCharacter =
-            chars.FirstOrDefault(c =>
-                c.Name.Equals(_settings.LastCharacterName, StringComparison.OrdinalIgnoreCase) &&
-                c.Server.Equals(_settings.LastServer, StringComparison.OrdinalIgnoreCase))
-            ?? chars.FirstOrDefault();
-
-        if (chars.Count == 0)
-            StatusMessage = "No character exports found. Run /exportcharacter in-game.";
-    }
-
     private void ReloadSkills()
     {
         var skills = _engine.GetSkillsWithRecipes();
@@ -175,9 +150,16 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     private void Reanalyze()
     {
         var active = _activeChar.ActiveCharacter;
-        if (active is null || string.IsNullOrEmpty(SelectedSkill))
+        if (active is null)
         {
             Analysis = null;
+            StatusMessage = "No active character — switch one from the shell header.";
+            return;
+        }
+        if (string.IsNullOrEmpty(SelectedSkill))
+        {
+            Analysis = null;
+            StatusMessage = $"{active.Name} on {active.Server} — select a skill.";
             return;
         }
 
@@ -257,7 +239,13 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _ => "",
     };
 
-    private void OnCharactersChanged(object? sender, EventArgs e) => ReloadCharacters();
+    private void OnActiveCharacterChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(ActiveCharacterLabel));
+        ReloadSkills();
+        Reanalyze();
+    }
+
     private void OnReferenceUpdated(object? sender, string key)
     {
         if (key is "recipes" or "skills" or "xptables")
@@ -269,13 +257,8 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     public void Dispose()
     {
-        _activeChar.ActiveCharacterChanged -= OnCharactersChanged;
+        _activeChar.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _activeChar.CharacterExportsChanged -= OnActiveCharacterChanged;
         _referenceData.FileUpdated -= OnReferenceUpdated;
     }
-}
-
-/// <summary>Display-friendly summary of a character for the picker ComboBox.</summary>
-public sealed record CharacterSummary(string Name, string Server, DateTimeOffset ExportedAt)
-{
-    public override string ToString() => $"{Name} ({Server}) — {ExportedAt:g}";
 }
