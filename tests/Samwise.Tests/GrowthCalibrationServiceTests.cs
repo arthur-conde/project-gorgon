@@ -460,6 +460,40 @@ public class GrowthCalibrationServiceTests
         cal.Data.SlotCapObservations.Should().HaveCount(2);
     }
 
+    // ── Community export sanitization ───────────────────────────────
+
+    [Fact]
+    public void ExportCommunityJson_ContainsNoRawObservations_NoCharNames()
+    {
+        var (sm, cal, time) = BuildSut();
+        Login(sm, "Emraell");
+        PlantWithCrop(sm, time, "1", "Onion");
+        time.Advance(TimeSpan.FromSeconds(45));
+        sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Ripe Onion", "", "Harvest Onion", 1.0));
+        sm.Apply(new PlantingCapReached(time.Now.UtcDateTime, "Onion Seedling"));
+
+        cal.Data.Observations.Should().NotBeEmpty();
+        cal.Data.Observations[0].CharName.Should().Be("Emraell"); // sanity check: the char name exists in raw data
+
+        var json = cal.ExportCommunityJson("a note");
+
+        // Must NOT contain any observation-shaped fields
+        json.Should().NotContain("charName", because: "community payload is sanitized");
+        json.Should().NotContain("Emraell", because: "character names must never leak to the community");
+        json.Should().NotContain("observations", because: "community payload carries rates only");
+        json.Should().NotContain("plantedAt", because: "community payload carries rates only");
+        json.Should().NotContain("ripeAt", because: "community payload carries rates only");
+        json.Should().NotContain("phaseTransitions", because: "community payload carries rates only");
+        json.Should().NotContain("slotCapObservations", because: "community payload carries rates only");
+
+        // Must contain the schema header and the aggregated dictionaries
+        json.Should().Contain("\"schemaVersion\": 1");
+        json.Should().Contain("\"module\": \"samwise\"");
+        json.Should().Contain("\"rates\"");
+        json.Should().Contain("Onion");
+        json.Should().Contain("\"slotCapRates\"");
+    }
+
     // ── Test helpers ────────────────────────────────────────────────
 
     private sealed class FakeTime : TimeProvider

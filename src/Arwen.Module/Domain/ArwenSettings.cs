@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Gorgon.Shared.Reference;
 
 namespace Arwen.Domain;
 
@@ -12,10 +13,33 @@ public sealed class ArwenSettings : INotifyPropertyChanged
     /// </summary>
     public Dictionary<string, Dictionary<string, NpcFavorSnapshot>> FavorStates { get; set; } = new();
 
+    private CalibrationSettings _calibration = new();
+    /// <summary>Merge mode + auto-refresh toggle for the community-aggregated gift rates.</summary>
+    public CalibrationSettings Calibration
+    {
+        get => _calibration;
+        set
+        {
+            if (ReferenceEquals(_calibration, value)) return;
+            _calibration.PropertyChanged -= OnCalibrationChanged;
+            _calibration = value;
+            _calibration.PropertyChanged += OnCalibrationChanged;
+            OnChanged(nameof(Calibration));
+        }
+    }
+
+    public ArwenSettings()
+    {
+        _calibration.PropertyChanged += OnCalibrationChanged;
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal void OnChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private void OnCalibrationChanged(object? sender, PropertyChangedEventArgs e)
+        => OnChanged(nameof(Calibration));
 
     /// <summary>Record or update exact favor for an NPC and trigger auto-save.</summary>
     public void SetExactFavor(string charName, string npcKey, double exactFavor, DateTimeOffset timestamp)
@@ -51,4 +75,5 @@ public sealed class NpcFavorSnapshot
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ArwenSettings))]
+[JsonSerializable(typeof(CalibrationSettings))]
 public partial class ArwenJsonContext : JsonSerializerContext;

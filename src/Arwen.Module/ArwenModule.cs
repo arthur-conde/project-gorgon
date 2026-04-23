@@ -24,7 +24,7 @@ public sealed class ArwenModule : IGorgonModule
     // ensuring all ProcessAddItem events are captured for gift calibration.
     public ActivationMode DefaultActivation => ActivationMode.Eager;
     public Type ViewType => typeof(FavorView);
-    public Type? SettingsViewType => null;
+    public Type? SettingsViewType => typeof(ArwenSettingsView);
 
     public void Register(IServiceCollection services)
     {
@@ -51,6 +51,8 @@ public sealed class ArwenModule : IGorgonModule
             sp.GetRequiredService<IReferenceDataService>(),
             sp.GetRequiredService<GiftIndex>(),
             Path.Combine(localApp, "Gorgon", "Arwen"),
+            sp.GetService<ICommunityCalibrationService>(),
+            sp.GetRequiredService<ArwenSettings>().Calibration,
             sp.GetService<IDiagnosticsSink>()));
 
         services.AddSingleton<FavorDashboardViewModel>();
@@ -68,6 +70,10 @@ public sealed class ArwenModule : IGorgonModule
             view.AddTab("Item Lookup", new ItemLookupTab { DataContext = sp.GetRequiredService<ItemLookupViewModel>() });
             view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
             return view;
+        });
+        services.AddSingleton<ArwenSettingsView>(sp => new ArwenSettingsView
+        {
+            DataContext = sp.GetRequiredService<ArwenSettings>(),
         });
 
         services.AddHostedService<FavorIngestionService>();

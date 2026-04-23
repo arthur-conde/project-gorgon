@@ -40,3 +40,20 @@ public sealed class InverseBoolConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => value is bool b && !b;
 }
+
+/// <summary>
+/// Two-way converter between an enum value and <c>bool</c> for radio-button bindings.
+/// Usage: <c>IsChecked="{Binding Foo, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=SomeEnumValue}"</c>.
+/// </summary>
+public sealed class EnumToBoolConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value?.ToString() == parameter?.ToString();
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is bool b && b && parameter is string s && !string.IsNullOrEmpty(s))
+            return Enum.Parse(targetType, s);
+        return Binding.DoNothing;
+    }
+}

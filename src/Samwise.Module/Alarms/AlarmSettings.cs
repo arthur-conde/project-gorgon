@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Gorgon.Shared.Reference;
 using Samwise.State;
 
 namespace Samwise.Alarms;
@@ -109,6 +110,21 @@ public sealed class SamwiseSettings : INotifyPropertyChanged
         }
     }
 
+    private CalibrationSettings _calibration = new();
+    /// <summary>Merge mode + auto-refresh toggle for the community-aggregated growth rates.</summary>
+    public CalibrationSettings Calibration
+    {
+        get => _calibration;
+        set
+        {
+            if (ReferenceEquals(_calibration, value)) return;
+            _calibration.PropertyChanged -= OnCalibrationChanged;
+            _calibration = value;
+            _calibration.PropertyChanged += OnCalibrationChanged;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Calibration)));
+        }
+    }
+
     private double _harvestedAutoClearMinutes = 10;
     /// <summary>
     /// How long a harvested plot card lingers before being auto-removed.
@@ -127,14 +143,22 @@ public sealed class SamwiseSettings : INotifyPropertyChanged
         }
     }
 
-    public SamwiseSettings() { _alarms.PropertyChanged += OnAlarmsChanged; }
+    public SamwiseSettings()
+    {
+        _alarms.PropertyChanged += OnAlarmsChanged;
+        _calibration.PropertyChanged += OnCalibrationChanged;
+    }
 
     private void OnAlarmsChanged(object? sender, PropertyChangedEventArgs e)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Alarms)));
+
+    private void OnCalibrationChanged(object? sender, PropertyChangedEventArgs e)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Calibration)));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(SamwiseSettings))]
+[JsonSerializable(typeof(CalibrationSettings))]
 public partial class SamwiseSettingsJsonContext : JsonSerializerContext { }

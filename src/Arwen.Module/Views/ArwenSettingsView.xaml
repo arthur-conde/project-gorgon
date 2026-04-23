@@ -1,0 +1,39 @@
+<UserControl x:Class="Arwen.Views.ArwenSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Image Source="pack://application:,,,/Arwen.Module;component/Resources/arwen.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Arwen · Favor Settings"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Community calibration -->
+            <TextBlock Text="Community calibration" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,8">
+                Merge your local gift-rate observations with community-aggregated rates from the gorgon-calibration repo.
+                Local data is always preserved — this only affects which rate <Run FontStyle="Italic">looks up</Run> via the estimator.
+            </TextBlock>
+            <RadioButton GroupName="ArwenCalibrationSource" Content="Prefer local (recommended)"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=PreferLocal}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <RadioButton GroupName="ArwenCalibrationSource" Content="Blend (weighted by sample count)"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=Blend}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <RadioButton GroupName="ArwenCalibrationSource" Content="Prefer community"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=PreferCommunity}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Auto-refresh on startup"
+                      IsChecked="{Binding Calibration.AutoRefreshCommunityData}"
+                      Foreground="#FFE8E8E8" Margin="0,8,0,0"/>
+
+            <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Arwen\settings.json.
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

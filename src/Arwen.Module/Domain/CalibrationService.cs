@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using Gorgon.Shared.Diagnostics;
@@ -24,8 +25,17 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
+    private readonly ICommunityCalibrationService? _community;
+    private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
+
+    // Resolved (local ⊕ community) lookup tables. EstimateFavor reads from these.
+    // Rebuilt after RecomputeRates, on community FileUpdated, on settings Source change.
+    private IReadOnlyDictionary<string, CategoryRate> _resolvedItemRates = new Dictionary<string, CategoryRate>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, CategoryRate> _resolvedSignatureRates = new Dictionary<string, CategoryRate>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, CategoryRate> _resolvedNpcRates = new Dictionary<string, CategoryRate>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, CategoryRate> _resolvedKeywordRates = new Dictionary<string, CategoryRate>(StringComparer.Ordinal);
 
     // Transient state for gift detection.
     // The game emits DeleteItem and DeltaFavor in EITHER order:
@@ -41,15 +51,48 @@ public sealed class CalibrationService
 
     public CalibrationData Data => _data;
 
+    /// <summary>Effective item-tier rates (local ⊕ community). Read-only view onto merged data.</summary>
+    public IReadOnlyDictionary<string, CategoryRate> EffectiveItemRates => _resolvedItemRates;
+    public IReadOnlyDictionary<string, CategoryRate> EffectiveSignatureRates => _resolvedSignatureRates;
+    public IReadOnlyDictionary<string, CategoryRate> EffectiveNpcRates => _resolvedNpcRates;
+    public IReadOnlyDictionary<string, CategoryRate> EffectiveKeywordRates => _resolvedKeywordRates;
+
     public event EventHandler? DataChanged;
 
-    public CalibrationService(IReferenceDataService refData, GiftIndex giftIndex, string dataDir, IDiagnosticsSink? diag = null)
+    public CalibrationService(
+        IReferenceDataService refData,
+        GiftIndex giftIndex,
+        string dataDir,
+        ICommunityCalibrationService? community = null,
+        CalibrationSettings? calibrationSettings = null,
+        IDiagnosticsSink? diag = null)
     {
         _refData = refData;
         _giftIndex = giftIndex;
+        _community = community;
+        _calibrationSettings = calibrationSettings;
         _diag = diag;
         _dataPath = Path.Combine(dataDir, "calibration.json");
         Load();
+
+        if (_community is not null)
+            _community.FileUpdated += OnCommunityFileUpdated;
+        if (_calibrationSettings is not null)
+            _calibrationSettings.PropertyChanged += OnCalibrationSettingsChanged;
+    }
+
+    private void OnCommunityFileUpdated(object? sender, string key)
+    {
+        if (key != "arwen") return;
+        RebuildResolvedTables();
+        DataChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnCalibrationSettingsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(CalibrationSettings.Source)) return;
+        RebuildResolvedTables();
+        DataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── Log event handlers (called by FavorIngestionService) ─────────
@@ -173,6 +216,47 @@ public sealed class CalibrationService
             _data.Observations
                 .Where(o => o.MatchedPreferences.Count > 0 && o.MatchedPreferences[0].Keywords.Count > 0)
                 .GroupBy(o => o.MatchedPreferences[0].Keywords[0], StringComparer.Ordinal));
+
+        RebuildResolvedTables();
+    }
+
+    /// <summary>
+    /// Rebuild the effective (local ⊕ community) lookup tables at all four tiers, per the
+    /// configured <see cref="CalibrationSource"/>. <see cref="EstimateFavor"/> reads from these.
+    /// </summary>
+    private void RebuildResolvedTables()
+    {
+        var mode = _calibrationSettings?.Source ?? CalibrationSource.PreferLocal;
+        var community = _community?.ArwenRates;
+
+        _resolvedItemRates = MergeTier(_data.ItemRates, community?.ItemRates, mode);
+        _resolvedSignatureRates = MergeTier(_data.SignatureRates, community?.SignatureRates, mode);
+        _resolvedNpcRates = MergeTier(_data.NpcRates, community?.NpcRates, mode);
+        _resolvedKeywordRates = MergeTier(_data.KeywordRates, community?.KeywordRates, mode);
+    }
+
+    private static Dictionary<string, CategoryRate> MergeTier(
+        Dictionary<string, CategoryRate> local,
+        Dictionary<string, CategoryRatePayload>? community,
+        CalibrationSource mode)
+    {
+        var keys = new HashSet<string>(local.Keys, StringComparer.Ordinal);
+        if (community is not null) foreach (var k in community.Keys) keys.Add(k);
+
+        var merged = new Dictionary<string, CategoryRate>(StringComparer.Ordinal);
+        foreach (var k in keys)
+        {
+            local.TryGetValue(k, out var localRate);
+            CategoryRatePayload? communityPayload = null;
+            community?.TryGetValue(k, out communityPayload);
+            var resolved = CommunityRatesMerger.ResolveRate(localRate, communityPayload, k, mode);
+            if (resolved is not null)
+            {
+                resolved.Keyword = k;
+                merged[k] = resolved;
+            }
+        }
+        return merged;
     }
 
     private static Dictionary<string, CategoryRate> BuildRateTable(IEnumerable<IGrouping<string, GiftObservation>> groups)
@@ -197,14 +281,14 @@ public sealed class CalibrationService
     internal static string ItemRateKey(string npcKey, string internalName) => $"{npcKey}|{internalName}";
     internal static string SignatureRateKey(string npcKey, string signature) => $"{npcKey}|{signature}";
 
-    /// <summary>Legacy accessor: global rate for a single keyword. Prefer <see cref="EstimateFavor"/> for hierarchical lookup.</summary>
+    /// <summary>Legacy accessor: global rate for a single keyword (merged with community). Prefer <see cref="EstimateFavor"/>.</summary>
     public double? GetRate(string keyword) =>
-        _data.KeywordRates.TryGetValue(keyword, out var r) ? r.Rate : null;
+        _resolvedKeywordRates.TryGetValue(keyword, out var r) ? r.Rate : null;
 
     /// <summary>
     /// Estimate favor for an item given calibration data. Walks a specificity hierarchy:
     /// per-(NPC,item) → per-(NPC,preference-signature) → per-NPC baseline → global keyword.
-    /// Returns null if no tier has data.
+    /// Reads from resolved (local ⊕ community) tables. Returns null if no tier has data.
     /// </summary>
     public EstimateResult? EstimateFavor(GiftMatch match, string? npcKey = null)
     {
@@ -214,24 +298,24 @@ public sealed class CalibrationService
             var effectivePref = allPrefs.Sum(p => p.Pref);
 
             // Tier 1: per-item rate
-            if (_data.ItemRates.TryGetValue(ItemRateKey(npcKey, InternalNameFromMatch(match)), out var itemRate))
+            if (_resolvedItemRates.TryGetValue(ItemRateKey(npcKey, InternalNameFromMatch(match)), out var itemRate))
                 return new EstimateResult(effectivePref * match.ItemValue * itemRate.Rate, "Item", itemRate.SampleCount);
 
             // Tier 2: signature rate
             if (allPrefs.Count > 0)
             {
                 var signature = GiftObservation.BuildSignature(allPrefs);
-                if (_data.SignatureRates.TryGetValue(SignatureRateKey(npcKey, signature), out var sigRate))
+                if (_resolvedSignatureRates.TryGetValue(SignatureRateKey(npcKey, signature), out var sigRate))
                     return new EstimateResult(effectivePref * match.ItemValue * sigRate.Rate, "Signature", sigRate.SampleCount);
             }
 
             // Tier 3: NPC baseline
-            if (_data.NpcRates.TryGetValue(npcKey, out var npcRate))
+            if (_resolvedNpcRates.TryGetValue(npcKey, out var npcRate))
                 return new EstimateResult(effectivePref * match.ItemValue * npcRate.Rate, "NPC", npcRate.SampleCount);
         }
 
         // Tier 4 (global fallback): legacy per-keyword. Uses the best-match keyword and its single pref.
-        if (_data.KeywordRates.TryGetValue(match.MatchedKeyword, out var kwRate))
+        if (_resolvedKeywordRates.TryGetValue(match.MatchedKeyword, out var kwRate))
             return new EstimateResult(match.Pref * match.ItemValue * kwRate.Rate, "Global", kwRate.SampleCount);
 
         return null;
@@ -351,6 +435,34 @@ public sealed class CalibrationService
             KeywordRates = _data.KeywordRates,
         };
         return JsonSerializer.Serialize(export, CalibrationJsonContext.Default.CalibrationData);
+    }
+
+    /// <summary>
+    /// Sanitized export for community sharing: only aggregated rates + sample counts.
+    /// No raw observations (which carry item keywords and timestamps), no NPC-specific favor snapshots.
+    /// </summary>
+    public string ExportCommunityJson(string? contributorNote = null)
+    {
+        static CategoryRatePayload Project(CategoryRate r) => new()
+        {
+            Rate = r.Rate,
+            SampleCount = r.SampleCount,
+            MinRate = r.MinRate,
+            MaxRate = r.MaxRate,
+        };
+
+        var payload = new GiftRatesPayload
+        {
+            SchemaVersion = CurrentSchemaVersion,
+            Module = "arwen",
+            ExportedAt = DateTimeOffset.UtcNow,
+            ContributorNote = contributorNote,
+            ItemRates = _data.ItemRates.ToDictionary(kv => kv.Key, kv => Project(kv.Value), StringComparer.Ordinal),
+            SignatureRates = _data.SignatureRates.ToDictionary(kv => kv.Key, kv => Project(kv.Value), StringComparer.Ordinal),
+            NpcRates = _data.NpcRates.ToDictionary(kv => kv.Key, kv => Project(kv.Value), StringComparer.Ordinal),
+            KeywordRates = _data.KeywordRates.ToDictionary(kv => kv.Key, kv => Project(kv.Value), StringComparer.Ordinal),
+        };
+        return JsonSerializer.Serialize(payload, CommunityCalibrationJsonContext.Default.GiftRatesPayload);
     }
 
     public void ExportToFile(string path, string? contributorNote = null)

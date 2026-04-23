@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf.Dialogs;
 
 namespace Arwen.ViewModels;
 
@@ -53,11 +55,19 @@ public sealed class ObservationRow
 public sealed partial class CalibrationViewModel : ObservableObject
 {
     private readonly CalibrationService _calibration;
+    private readonly ICommunityCalibrationService? _community;
+    private readonly IDialogService? _dialogService;
 
-    public CalibrationViewModel(CalibrationService calibration)
+    public CalibrationViewModel(
+        CalibrationService calibration,
+        ICommunityCalibrationService? community = null,
+        IDialogService? dialogService = null)
     {
         _calibration = calibration;
+        _community = community;
+        _dialogService = dialogService;
         _calibration.DataChanged += (_, _) => Refresh();
+        if (_community is not null) _community.FileUpdated += (_, _) => Refresh();
         Refresh();
     }
 
@@ -75,6 +85,30 @@ public sealed partial class CalibrationViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusMessage = "";
+
+    [ObservableProperty]
+    private string _communitySummary = "";
+
+    [RelayCommand]
+    private void Share()
+    {
+        if (_dialogService is null) return;
+        var vm = new CommunityShareDialogViewModel(
+            moduleDisplayName: "Arwen",
+            issueTemplateFile: "arwen-contribution.yml",
+            exportJson: note => _calibration.ExportCommunityJson(note));
+        _dialogService.ShowDialog(vm, new CommunityShareDialog { DataContext = vm });
+    }
+
+    [RelayCommand]
+    private async Task RefreshCommunityAsync()
+    {
+        if (_community is null) return;
+        CommunitySummary = "Refreshing…";
+        try { await _community.RefreshAsync("arwen"); }
+        catch { /* swallow — state reflected in Refresh() */ }
+        Refresh();
+    }
 
     [RelayCommand]
     private void Refresh()
@@ -148,6 +182,27 @@ public sealed partial class CalibrationViewModel : ObservableObject
             $"{data.ItemRates.Count} item rate(s) · " +
             $"{data.SignatureRates.Count} signature rate(s) · " +
             $"{data.NpcRates.Count} NPC baseline(s)";
+
+        UpdateCommunitySummary();
+    }
+
+    private void UpdateCommunitySummary()
+    {
+        if (_community is null)
+        {
+            CommunitySummary = "";
+            return;
+        }
+        var payload = _community.ArwenRates;
+        if (payload is null)
+        {
+            CommunitySummary = "No community data yet.";
+            return;
+        }
+        var snap = _community.GetSnapshot("arwen");
+        var total = payload.ItemRates.Count + payload.SignatureRates.Count + payload.NpcRates.Count + payload.KeywordRates.Count;
+        var when = snap.FetchedAtUtc is { } t ? $"refreshed {t.LocalDateTime:yyyy-MM-dd HH:mm}" : "no refresh yet";
+        CommunitySummary = $"Using {total} community entries · {when}";
     }
 
     private static (string Left, string Right) SplitPipe(string key)

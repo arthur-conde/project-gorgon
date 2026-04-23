@@ -373,6 +373,41 @@ public sealed class CalibrationServiceTests
     }
 
     [Fact]
+    public void ExportCommunityJson_ContainsNoRawObservations()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        try
+        {
+            var (svc, _) = BuildService(dir);
+            svc.OnItemAdded("Moonstone", 100);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(100);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5);
+
+            svc.Data.Observations.Should().NotBeEmpty();
+
+            var json = svc.ExportCommunityJson("a note");
+
+            json.Should().NotContain("observations", because: "community payload carries rates only");
+            json.Should().NotContain("itemKeywords", because: "per-item keyword lists are observation-scoped");
+            json.Should().NotContain("matchedPreferences", because: "matched preference lists are observation-scoped");
+            json.Should().NotContain("derivedRate", because: "observation-scoped derived fields don't belong in aggregates");
+
+            json.Should().Contain("\"schemaVersion\": 2");
+            json.Should().Contain("\"module\": \"arwen\"");
+            json.Should().Contain("\"itemRates\"");
+            json.Should().Contain("\"signatureRates\"");
+            json.Should().Contain("\"npcRates\"");
+            json.Should().Contain("\"keywordRates\"");
+            json.Should().Contain("Moonstone");
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public void MigratesV1CalibrationFile_PopulatesKeywordsAndPreferences()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");

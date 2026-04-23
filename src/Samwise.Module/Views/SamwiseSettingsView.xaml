@@ -88,6 +88,24 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <!-- Community calibration -->
+            <TextBlock Text="Community calibration" Foreground="#88FFFFFF" Margin="0,24,0,6" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,8">
+                Merge your local growth observations with community-aggregated rates from the gorgon-calibration repo.
+            </TextBlock>
+            <RadioButton GroupName="SamwiseCalibrationSource" Content="Prefer local (recommended)"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=PreferLocal}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <RadioButton GroupName="SamwiseCalibrationSource" Content="Blend (weighted by sample count)"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=Blend}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <RadioButton GroupName="SamwiseCalibrationSource" Content="Prefer community"
+                         IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=PreferCommunity}"
+                         Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Auto-refresh on startup"
+                      IsChecked="{Binding Calibration.AutoRefreshCommunityData}"
+                      Foreground="#FFE8E8E8" Margin="0,8,0,0"/>
+
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
                 Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Samwise\settings.json.
             </TextBlock>

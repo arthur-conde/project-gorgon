@@ -39,12 +39,27 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="12">
             <!-- Header -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
-                           VerticalAlignment="Center"/>
-                <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"
-                        Padding="10,3" FontSize="{DynamicResource AppFontSizeHint}"
-                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            <StackPanel Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}"
+                               VerticalAlignment="Center"/>
+                    <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="16,0,0,0"
+                            Padding="10,3" FontSize="{DynamicResource AppFontSizeHint}"
+                            Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+                    <Button Command="{Binding ShareCommand}" Margin="6,0,0,0"
+                            Padding="10,3"
+                            Background="#FFD4A847" BorderBrush="#FFD4A847">
+                        <TextBlock Text="Share with community" Foreground="#FF1A1A1A"
+                                   FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock Text="{Binding CommunitySummary}" Foreground="#FF7AB880"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                    <Button Content="Refresh community data" Command="{Binding RefreshCommunityCommand}" Margin="10,0,0,0"
+                            Padding="6,2" FontSize="{DynamicResource AppFontSizeHint}"
+                            Background="Transparent" Foreground="#88FFFFFF" BorderBrush="#FF333333"/>
+                </StackPanel>
             </StackPanel>
 
             <!-- Per-item rates -->

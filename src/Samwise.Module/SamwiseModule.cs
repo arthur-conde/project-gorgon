@@ -60,6 +60,8 @@ public sealed class SamwiseModule : IGorgonModule
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<ICropConfigStore>(),
             samwiseDir,
+            sp.GetService<Gorgon.Shared.Reference.ICommunityCalibrationService>(),
+            sp.GetRequiredService<SamwiseSettings>().Calibration,
             sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
 
         services.AddSingleton<GardenViewModel>();

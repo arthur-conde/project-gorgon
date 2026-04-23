@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf.Dialogs;
 using Samwise.Calibration;
 using Samwise.State;
 
@@ -81,11 +83,19 @@ public sealed class SlotCapRow
 public sealed partial class GrowthCalibrationViewModel : ObservableObject
 {
     private readonly GrowthCalibrationService _calibration;
+    private readonly ICommunityCalibrationService? _community;
+    private readonly IDialogService? _dialogService;
 
-    public GrowthCalibrationViewModel(GrowthCalibrationService calibration)
+    public GrowthCalibrationViewModel(
+        GrowthCalibrationService calibration,
+        ICommunityCalibrationService? community = null,
+        IDialogService? dialogService = null)
     {
         _calibration = calibration;
+        _community = community;
+        _dialogService = dialogService;
         _calibration.DataChanged += (_, _) => Refresh();
+        if (_community is not null) _community.FileUpdated += (_, _) => Refresh();
         Refresh();
     }
 
@@ -103,6 +113,30 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusMessage = "";
+
+    [ObservableProperty]
+    private string _communitySummary = "";
+
+    [RelayCommand]
+    private void Share()
+    {
+        if (_dialogService is null) return;
+        var vm = new CommunityShareDialogViewModel(
+            moduleDisplayName: "Samwise",
+            issueTemplateFile: "samwise-contribution.yml",
+            exportJson: note => _calibration.ExportCommunityJson(note));
+        _dialogService.ShowDialog(vm, new CommunityShareDialog { DataContext = vm });
+    }
+
+    [RelayCommand]
+    private async Task RefreshCommunityAsync()
+    {
+        if (_community is null) return;
+        CommunitySummary = "Refreshing…";
+        try { await _community.RefreshAsync("samwise"); }
+        catch { /* swallow — state reflected in Refresh() */ }
+        Refresh();
+    }
 
     [RelayCommand]
     private void Refresh()
@@ -167,6 +201,27 @@ public sealed partial class GrowthCalibrationViewModel : ObservableObject
 
         StatusMessage = $"{data.Rates.Count} crop(s) calibrated from {data.Observations.Count} cycle(s), "
             + $"{data.PhaseRates.Count} phase transition(s), {data.SlotCapRates.Count} slot cap(s)";
+
+        UpdateCommunitySummary();
+    }
+
+    private void UpdateCommunitySummary()
+    {
+        if (_community is null)
+        {
+            CommunitySummary = "";
+            return;
+        }
+        var payload = _community.SamwiseRates;
+        if (payload is null)
+        {
+            CommunitySummary = "No community data yet.";
+            return;
+        }
+        var snap = _community.GetSnapshot("samwise");
+        var total = payload.Rates.Count + payload.PhaseRates.Count + payload.SlotCapRates.Count;
+        var when = snap.FetchedAtUtc is { } t ? $"refreshed {t.LocalDateTime:yyyy-MM-dd HH:mm}" : "no refresh yet";
+        CommunitySummary = $"Using {total} community entries · {when}";
     }
 
     private static string BuildPhaseSummary(List<PhaseRecord> phases)

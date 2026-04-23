@@ -7,6 +7,7 @@
     <c:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
     <c:StringToColorConverter x:Key="StringToColor"/>
     <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
+    <c:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
 
     <!-- Font resources — overridden at runtime from ShellSettings (UiFontFamily, UiFontSize).
          Defaults here match the original hand-authored look so XAML designers render sensibly

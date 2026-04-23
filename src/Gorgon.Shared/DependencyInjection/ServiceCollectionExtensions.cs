@@ -38,6 +38,13 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<HttpClient>(),
                 sp.GetRequiredService<IDiagnosticsSink>()));
 
+    public static IServiceCollection AddGorgonCommunityCalibration(this IServiceCollection services, string cacheDirectory) =>
+        services
+            .AddSingleton<ICommunityCalibrationService>(sp => new CommunityCalibrationService(
+                cacheDirectory,
+                sp.GetRequiredService<HttpClient>(),
+                sp.GetRequiredService<IDiagnosticsSink>()));
+
     public static IServiceCollection AddGorgonIcons(this IServiceCollection services, string cacheDirectory)
     {
         var settingsPath = System.IO.Path.Combine(cacheDirectory, "settings.json");

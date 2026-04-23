@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Gorgon.Shared.Diagnostics;
+using Gorgon.Shared.Reference;
 using Samwise.Config;
 using Samwise.State;
 
@@ -16,6 +17,8 @@ public sealed class GrowthCalibrationService
 {
     private readonly GardenStateMachine _state;
     private readonly ICropConfigStore _config;
+    private readonly ICommunityCalibrationService? _community;
+    private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
 
@@ -27,7 +30,18 @@ public sealed class GrowthCalibrationService
 
     private GrowthCalibrationData _data = new();
 
+    // Resolved (local ⊕ community) lookup tables. Rebuilt on every RecomputeRates() and on
+    // community FileUpdated / CalibrationSettings.Source change. Persistence still uses _data.*.
+    private IReadOnlyDictionary<string, CropGrowthRate> _resolvedRates = new Dictionary<string, CropGrowthRate>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, PhaseTransitionRate> _resolvedPhaseRates = new Dictionary<string, PhaseTransitionRate>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, SlotCapRate> _resolvedSlotCapRates = new Dictionary<string, SlotCapRate>(StringComparer.Ordinal);
+
     public GrowthCalibrationData Data => _data;
+
+    /// <summary>Effective per-crop rates: local observations blended/overridden per the configured <see cref="CalibrationSource"/>.</summary>
+    public IReadOnlyDictionary<string, CropGrowthRate> EffectiveRates => _resolvedRates;
+    public IReadOnlyDictionary<string, PhaseTransitionRate> EffectivePhaseRates => _resolvedPhaseRates;
+    public IReadOnlyDictionary<string, SlotCapRate> EffectiveSlotCapRates => _resolvedSlotCapRates;
 
     public event EventHandler? DataChanged;
 
@@ -35,10 +49,14 @@ public sealed class GrowthCalibrationService
         GardenStateMachine state,
         ICropConfigStore config,
         string dataDir,
+        ICommunityCalibrationService? community = null,
+        CalibrationSettings? calibrationSettings = null,
         IDiagnosticsSink? diag = null)
     {
         _state = state;
         _config = config;
+        _community = community;
+        _calibrationSettings = calibrationSettings;
         _diag = diag;
         _dataPath = Path.Combine(dataDir, "growth-calibration.json");
 
@@ -47,6 +65,25 @@ public sealed class GrowthCalibrationService
         _state.PlotChanged += OnPlotChanged;
         _state.PlotsRemoved += OnPlotsRemoved;
         _state.SlotCapObserved += OnSlotCapObserved;
+
+        if (_community is not null)
+            _community.FileUpdated += OnCommunityFileUpdated;
+        if (_calibrationSettings is not null)
+            _calibrationSettings.PropertyChanged += OnCalibrationSettingsChanged;
+    }
+
+    private void OnCommunityFileUpdated(object? sender, string key)
+    {
+        if (key != "samwise") return;
+        RebuildResolvedTables();
+        DataChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnCalibrationSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(CalibrationSettings.Source)) return;
+        RebuildResolvedTables();
+        DataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -250,6 +287,58 @@ public sealed class GrowthCalibrationService
 
         RecomputePhaseRates();
         RecomputeSlotCapRates();
+        RebuildResolvedTables();
+    }
+
+    /// <summary>
+    /// Rebuild the effective (local ⊕ community) lookup tables per the configured merge mode.
+    /// Called after <see cref="RecomputeRates"/>, on community <c>FileUpdated</c>, and on
+    /// <see cref="CalibrationSettings.Source"/> changes.
+    /// </summary>
+    private void RebuildResolvedTables()
+    {
+        var mode = _calibrationSettings?.Source ?? CalibrationSource.PreferLocal;
+        var community = _community?.SamwiseRates;
+
+        // Crop rates
+        var resolvedRates = new Dictionary<string, CropGrowthRate>(StringComparer.Ordinal);
+        var cropKeys = new HashSet<string>(_data.Rates.Keys, StringComparer.Ordinal);
+        if (community is not null) foreach (var k in community.Rates.Keys) cropKeys.Add(k);
+        foreach (var k in cropKeys)
+        {
+            _data.Rates.TryGetValue(k, out var local);
+            community?.Rates.TryGetValue(k, out var wire);
+            var wirePayload = community is not null && community.Rates.TryGetValue(k, out var w) ? w : null;
+            var merged = CommunityRatesMerger.ResolveCropRate(local, wirePayload, mode);
+            if (merged is not null) { merged.CropType = k; resolvedRates[k] = merged; }
+        }
+        _resolvedRates = resolvedRates;
+
+        // Phase rates
+        var resolvedPhaseRates = new Dictionary<string, PhaseTransitionRate>(StringComparer.Ordinal);
+        var phaseKeys = new HashSet<string>(_data.PhaseRates.Keys, StringComparer.Ordinal);
+        if (community is not null) foreach (var k in community.PhaseRates.Keys) phaseKeys.Add(k);
+        foreach (var k in phaseKeys)
+        {
+            _data.PhaseRates.TryGetValue(k, out var local);
+            var wirePayload = community is not null && community.PhaseRates.TryGetValue(k, out var w) ? w : null;
+            var merged = CommunityRatesMerger.ResolvePhaseRate(local, wirePayload, mode);
+            if (merged is not null) resolvedPhaseRates[k] = merged;
+        }
+        _resolvedPhaseRates = resolvedPhaseRates;
+
+        // Slot caps
+        var resolvedSlotCaps = new Dictionary<string, SlotCapRate>(StringComparer.Ordinal);
+        var slotKeys = new HashSet<string>(_data.SlotCapRates.Keys, StringComparer.Ordinal);
+        if (community is not null) foreach (var k in community.SlotCapRates.Keys) slotKeys.Add(k);
+        foreach (var k in slotKeys)
+        {
+            _data.SlotCapRates.TryGetValue(k, out var local);
+            var wirePayload = community is not null && community.SlotCapRates.TryGetValue(k, out var w) ? w : null;
+            var merged = CommunityRatesMerger.ResolveSlotCap(local, wirePayload, mode);
+            if (merged is not null) { merged.Family = k; resolvedSlotCaps[k] = merged; }
+        }
+        _resolvedSlotCapRates = resolvedSlotCaps;
     }
 
     private void RecomputePhaseRates()
@@ -310,17 +399,17 @@ public sealed class GrowthCalibrationService
     private static string PhaseRateKey(string cropType, PlotStage from, PlotStage to)
         => $"{cropType}|{from}→{to}";
 
-    /// <summary>Get the calibrated growth rate for a crop, or null if not yet observed.</summary>
+    /// <summary>Get the effective (local ⊕ community) rate for a crop, or null if not yet observed.</summary>
     public CropGrowthRate? GetRate(string cropType) =>
-        _data.Rates.TryGetValue(cropType, out var r) ? r : null;
+        _resolvedRates.TryGetValue(cropType, out var r) ? r : null;
 
-    /// <summary>Get the calibrated average growth seconds for a crop, falling back to null.</summary>
+    /// <summary>Get the effective average growth seconds for a crop, falling back to null.</summary>
     public double? GetCalibratedGrowthSeconds(string cropType) =>
-        _data.Rates.TryGetValue(cropType, out var r) ? r.AvgSeconds : null;
+        _resolvedRates.TryGetValue(cropType, out var r) ? r.AvgSeconds : null;
 
-    /// <summary>Get the crowdsourced max plot count for a slot family, or null if not yet observed.</summary>
+    /// <summary>Get the effective max plot count for a slot family, or null if not yet observed.</summary>
     public int? GetCalibratedSlotMax(string family) =>
-        _data.SlotCapRates.TryGetValue(family, out var r) ? r.ObservedMax : null;
+        _resolvedSlotCapRates.TryGetValue(family, out var r) ? r.ObservedMax : null;
 
     // ── Persistence ─────────────────────────────────────────────────
 
@@ -375,6 +464,50 @@ public sealed class GrowthCalibrationService
             SlotCapRates = _data.SlotCapRates,
         };
         return JsonSerializer.Serialize(export, GrowthCalibrationJsonContext.Default.GrowthCalibrationData);
+    }
+
+    /// <summary>
+    /// Sanitized export for community sharing: only aggregated rates + sample counts.
+    /// No raw observations (which carry character names and timestamps), no slot-cap observations.
+    /// </summary>
+    public string ExportCommunityJson(string? contributorNote = null)
+    {
+        var payload = new GrowthRatesPayload
+        {
+            SchemaVersion = 1,
+            Module = "samwise",
+            ExportedAt = DateTimeOffset.UtcNow,
+            ContributorNote = contributorNote,
+            Rates = _data.Rates.ToDictionary(
+                kv => kv.Key,
+                kv => new GrowthRatePayload
+                {
+                    AvgSeconds = kv.Value.AvgSeconds,
+                    SampleCount = kv.Value.SampleCount,
+                    MinSeconds = kv.Value.MinSeconds,
+                    MaxSeconds = kv.Value.MaxSeconds,
+                },
+                StringComparer.Ordinal),
+            PhaseRates = _data.PhaseRates.ToDictionary(
+                kv => kv.Key,
+                kv => new GrowthRatePayload
+                {
+                    AvgSeconds = kv.Value.AvgSeconds,
+                    SampleCount = kv.Value.SampleCount,
+                    MinSeconds = kv.Value.MinSeconds,
+                    MaxSeconds = kv.Value.MaxSeconds,
+                },
+                StringComparer.Ordinal),
+            SlotCapRates = _data.SlotCapRates.ToDictionary(
+                kv => kv.Key,
+                kv => new SlotCapRatePayload
+                {
+                    ObservedMax = kv.Value.ObservedMax,
+                    SampleCount = kv.Value.SampleCount,
+                },
+                StringComparer.Ordinal),
+        };
+        return JsonSerializer.Serialize(payload, CommunityCalibrationJsonContext.Default.GrowthRatesPayload);
     }
 
     public void ExportToFile(string path, string? contributorNote = null)

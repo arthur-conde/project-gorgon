@@ -79,6 +79,7 @@ public static class Program
             // Build host
             var logDir = Path.Combine(shellDir, "logs");
             var referenceCacheDir = Path.Combine(localApp, "Gorgon", "Reference");
+            var communityCalibrationCacheDir = Path.Combine(localApp, "Gorgon", "Reference", "CommunityCalibration");
             var iconCacheDir = Path.Combine(localApp, "Gorgon", "Icons");
 
             var builder = Host.CreateApplicationBuilder(args);
@@ -92,6 +93,7 @@ public static class Program
                 .AddGorgonDiagnostics(logDir)
                 .AddGorgonGameServices()
                 .AddGorgonReferenceData(referenceCacheDir)
+                .AddGorgonCommunityCalibration(communityCalibrationCacheDir)
                 .AddGorgonIcons(iconCacheDir)
                 .AddGorgonHotkeys()
                 .AddGorgonDialogs()
@@ -107,6 +109,13 @@ public static class Program
             Boot("host started");
 
             host.Services.GetRequiredService<IReferenceDataService>().BeginBackgroundRefresh();
+
+            // Community-calibration refresh is a single HTTP GET per module and fails gracefully
+            // offline; always kick it. Per-module settings control merge behavior (PreferLocal /
+            // Blend / PreferCommunity), not whether we fetch — users who want zero network can
+            // firewall the host.
+            host.Services.GetRequiredService<ICommunityCalibrationService>().BeginBackgroundRefresh();
+
             IconImage.SetCacheService(host.Services.GetRequiredService<IIconCacheService>());
 
             // Open gates for Eager modules
