@@ -1,6 +1,6 @@
 using System.IO;
 using FluentAssertions;
-using Gorgon.Shared.Settings;
+using Gorgon.Shared.Character;
 using Saruman.Domain;
 using Saruman.Parsing;
 using Saruman.Services;
@@ -13,9 +13,13 @@ public sealed class WordOfPowerChatParserTests
 {
     private static WordOfPowerChatParser NewParser(params string[] trackedCodes)
     {
-        var tmp = Path.Combine(Path.GetTempPath(), $"saruman-chat-{Guid.NewGuid():N}.json");
-        var store = new JsonSettingsStore<SarumanState>(tmp, SarumanJsonContext.Default.SarumanState);
-        var svc = new SarumanCodebookService(store);
+        var dir = Path.Combine(Path.GetTempPath(), $"saruman-chat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var active = new FakeActiveCharacterService();
+        active.SetActiveCharacter("Arthur", "Kwatoxi");
+        var store = new PerCharacterStore<SarumanState>(dir, "saruman.json", SarumanJsonContext.Default.SarumanState);
+        var view = new PerCharacterView<SarumanState>(active, store);
+        var svc = new SarumanCodebookService(view);
         foreach (var c in trackedCodes)
             svc.RecordDiscovery(new WordOfPowerDiscovered(DateTime.UtcNow, c, $"Effect for {c}", "desc"));
         return new WordOfPowerChatParser(svc);

@@ -1,6 +1,7 @@
 using System.IO;
+using Gorgon.Shared.Character;
+using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Modules;
-using Gorgon.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Saruman.Parsing;
@@ -25,10 +26,12 @@ public sealed class SarumanModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var settingsPath = Path.Combine(localApp, "Gorgon", "Saruman", "settings.json");
+        var legacySarumanDir = Path.Combine(localApp, "Gorgon", "Saruman");
 
-        services.AddSingleton<ISettingsStore<SarumanState>>(_ =>
-            new JsonSettingsStore<SarumanState>(settingsPath, SarumanJsonContext.Default.SarumanState));
+        // Codebook is per-character — each character discovers words independently.
+        services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>
+            new SarumanLegacyMigration(legacySarumanDir, SarumanJsonContext.Default.SarumanState));
+        services.AddPerCharacterModuleStore<SarumanState>(Id, SarumanJsonContext.Default.SarumanState);
 
         services.AddSingleton<SarumanCodebookService>();
         services.AddSingleton<WordOfPowerDiscoveredParser>();

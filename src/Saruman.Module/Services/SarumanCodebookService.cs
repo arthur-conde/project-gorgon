@@ -1,19 +1,24 @@
-using Gorgon.Shared.Settings;
+using Gorgon.Shared.Character;
 using Saruman.Domain;
 using Saruman.Settings;
 
 namespace Saruman.Services;
 
+/// <summary>
+/// Owns the Words-of-Power codebook for the currently active character. Reads and writes
+/// through <see cref="PerCharacterView{T}"/>; on a character switch the codebook swaps
+/// to the new character's file and <see cref="CodebookChanged"/> fires so the VM re-renders.
+/// Mutations no-op when no character is active.
+/// </summary>
 public sealed class SarumanCodebookService
 {
-    private readonly ISettingsStore<SarumanState> _store;
-    private readonly SarumanState _state;
-    private readonly object _lock = new();
+    private readonly PerCharacterView<SarumanState> _view;
+    private readonly Lock _lock = new();
 
-    public SarumanCodebookService(ISettingsStore<SarumanState> store)
+    public SarumanCodebookService(PerCharacterView<SarumanState> view)
     {
-        _store = store;
-        _state = store.Load();
+        _view = view;
+        _view.CurrentChanged += (_, _) => CodebookChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public event EventHandler? CodebookChanged;
@@ -22,33 +27,38 @@ public sealed class SarumanCodebookService
     {
         get
         {
-            lock (_lock)
-            {
-                return _state.Codebook.Values.ToArray();
-            }
+            var state = _view.Current;
+            if (state is null) return [];
+            lock (_lock) return state.Codebook.Values.ToArray();
         }
     }
 
     public bool IsTracked(string code)
     {
-        lock (_lock) return _state.Codebook.ContainsKey(code);
+        var state = _view.Current;
+        if (state is null) return false;
+        lock (_lock) return state.Codebook.ContainsKey(code);
     }
 
     public KnownWord? TryGet(string code)
     {
-        lock (_lock) return _state.Codebook.GetValueOrDefault(code);
+        var state = _view.Current;
+        if (state is null) return null;
+        lock (_lock) return state.Codebook.GetValueOrDefault(code);
     }
 
     /// <summary>
-    /// Record a discovery event. If the code is new, add it. If it already
-    /// exists, bump <see cref="KnownWord.DiscoveryCount"/>; re-discovery of a
-    /// spent word flips it back to <see cref="WordOfPowerState.Known"/>.
+    /// Record a discovery event. If the code is new, add it. If it already exists, bump
+    /// <see cref="KnownWord.DiscoveryCount"/>; re-discovery of a spent word flips it
+    /// back to <see cref="WordOfPowerState.Known"/>. No-op when no character is active.
     /// </summary>
     public void RecordDiscovery(WordOfPowerDiscovered evt)
     {
+        var state = _view.Current;
+        if (state is null) return;
         lock (_lock)
         {
-            if (_state.Codebook.TryGetValue(evt.Code, out var existing))
+            if (state.Codebook.TryGetValue(evt.Code, out var existing))
             {
                 existing.DiscoveryCount++;
                 existing.EffectName = evt.EffectName;
@@ -61,7 +71,7 @@ public sealed class SarumanCodebookService
             }
             else
             {
-                _state.Codebook[evt.Code] = new KnownWord
+                state.Codebook[evt.Code] = new KnownWord
                 {
                     Code = evt.Code,
                     EffectName = evt.EffectName,
@@ -76,10 +86,12 @@ public sealed class SarumanCodebookService
 
     public bool MarkSpent(string code, DateTime spokenAt)
     {
+        var state = _view.Current;
+        if (state is null) return false;
         bool changed;
         lock (_lock)
         {
-            if (!_state.Codebook.TryGetValue(code, out var w)) return false;
+            if (!state.Codebook.TryGetValue(code, out var w)) return false;
             if (w.State == WordOfPowerState.Spent) return false;
             w.State = WordOfPowerState.Spent;
             w.SpentAt = spokenAt;
@@ -92,10 +104,12 @@ public sealed class SarumanCodebookService
 
     public bool MarkKnown(string code)
     {
+        var state = _view.Current;
+        if (state is null) return false;
         bool changed;
         lock (_lock)
         {
-            if (!_state.Codebook.TryGetValue(code, out var w)) return false;
+            if (!state.Codebook.TryGetValue(code, out var w)) return false;
             if (w.State == WordOfPowerState.Known) return false;
             w.State = WordOfPowerState.Known;
             w.SpentAt = null;
@@ -108,10 +122,12 @@ public sealed class SarumanCodebookService
 
     public bool Remove(string code)
     {
+        var state = _view.Current;
+        if (state is null) return false;
         bool changed;
         lock (_lock)
         {
-            changed = _state.Codebook.Remove(code);
+            changed = state.Codebook.Remove(code);
             if (changed) Persist();
         }
         if (changed) CodebookChanged?.Invoke(this, EventArgs.Empty);
@@ -120,7 +136,7 @@ public sealed class SarumanCodebookService
 
     private void Persist()
     {
-        try { _store.Save(_state); }
+        try { _view.Save(); }
         catch { /* best-effort persistence */ }
     }
 }
