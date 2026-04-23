@@ -1,3 +1,4 @@
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Reference;
 using Samwise.Config;
@@ -27,6 +28,7 @@ public sealed class GardenStateMachine
     private readonly IDiagnosticsSink? _diag;
     private readonly Alarms.SamwiseSettings? _settings;
     private readonly IReferenceDataService? _referenceData;
+    private readonly IActiveCharacterService? _activeChar;
 
     private readonly Dictionary<string, Dictionary<string, Plot>> _plotsByChar = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _playerOwnedPetIds = new(StringComparer.Ordinal);
@@ -40,23 +42,27 @@ public sealed class GardenStateMachine
     /// </summary>
     private Dictionary<string, string> _seedToCrop = new(StringComparer.Ordinal);
 
-    private string? _currentChar;
     private string? _pendingHarvestPlotId;
     private string? _lastUpdateItemCropType;
     private (string PlotId, string CharName, DateTimeOffset At)? _pendingPlant;
+
+    /// <summary>Read the active character from the shared service; null-safe for tests.</summary>
+    private string? _currentChar => _activeChar?.ActiveCharacterName;
 
     public GardenStateMachine(
         ICropConfigStore config,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
         Alarms.SamwiseSettings? settings = null,
-        IReferenceDataService? referenceData = null)
+        IReferenceDataService? referenceData = null,
+        IActiveCharacterService? activeChar = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
         _diag = diag;
         _settings = settings;
         _referenceData = referenceData;
+        _activeChar = activeChar;
 
         BuildSeedMap();
         if (_referenceData is not null)
@@ -108,10 +114,6 @@ public sealed class GardenStateMachine
     {
         switch (evt)
         {
-            case PlayerLogin pl:
-                _currentChar = pl.CharName;
-                break;
-
             case SetPetOwner spo:
                 _playerOwnedPetIds.Add(spo.EntityId);
                 HandlePlant(spo.EntityId, spo.Timestamp);

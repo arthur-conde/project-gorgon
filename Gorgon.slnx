@@ -10,6 +10,7 @@
     <Project Path="src/Arwen.Module/Arwen.Module.csproj" />
     <Project Path="src/Pippin.Module/Pippin.Module.csproj" />
     <Project Path="src/Saruman.Module/Saruman.Module.csproj" />
+    <Project Path="src/Smaug.Module/Smaug.Module.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Gorgon.Shared.Tests/Gorgon.Shared.Tests.csproj" />
@@ -21,5 +22,6 @@
     <Project Path="tests/Bilbo.Tests/Bilbo.Tests.csproj" />
     <Project Path="tests/Arwen.Tests/Arwen.Tests.csproj" />
     <Project Path="tests/Saruman.Tests/Saruman.Tests.csproj" />
+    <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
   </Folder>
 </Solution>

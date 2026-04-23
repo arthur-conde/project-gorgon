@@ -80,10 +80,46 @@ public sealed class CategoryRatePayload
     public double MaxRate { get; set; }
 }
 
+// ── Smaug ──────────────────────────────────────────────────────────────────
+
+public sealed class VendorRatesPayload
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string Module { get; set; } = "smaug";
+    public DateTimeOffset? ExportedAt { get; set; }
+    public DateTimeOffset? AggregatedAt { get; set; }
+    public string? ContributorNote { get; set; }
+    public string? Submitter { get; set; }
+    public bool AttributionOptOut { get; set; }
+
+    /// <summary>Keyed by "NpcKey|ItemInternalName|FavorTier|CivicPrideBucket". Covers fixed-Value items.</summary>
+    public Dictionary<string, AbsolutePriceRatePayload> AbsoluteRates { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Keyed by "NpcKey|KeywordBucket|FavorTier|CivicPrideBucket". Covers variable-Value items (augments, loot).</summary>
+    public Dictionary<string, RatioPriceRatePayload> RatioRates { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AbsolutePriceRatePayload
+{
+    public double AvgPrice { get; set; }
+    public int SampleCount { get; set; }
+    public long MinPrice { get; set; }
+    public long MaxPrice { get; set; }
+}
+
+public sealed class RatioPriceRatePayload
+{
+    public double AvgRatio { get; set; }
+    public int SampleCount { get; set; }
+    public double MinRatio { get; set; }
+    public double MaxRatio { get; set; }
+}
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(GrowthRatesPayload))]
 [JsonSerializable(typeof(GiftRatesPayload))]
+[JsonSerializable(typeof(VendorRatesPayload))]
 public partial class CommunityCalibrationJsonContext : JsonSerializerContext;

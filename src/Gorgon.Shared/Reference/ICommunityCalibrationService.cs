@@ -14,7 +14,10 @@ public interface ICommunityCalibrationService
     /// <summary>Current Arwen payload in memory, or null if never loaded.</summary>
     GiftRatesPayload? ArwenRates { get; }
 
-    /// <summary>File keys this service knows about: "samwise", "arwen".</summary>
+    /// <summary>Current Smaug payload in memory, or null if never loaded.</summary>
+    VendorRatesPayload? SmaugRates { get; }
+
+    /// <summary>File keys this service knows about: "samwise", "arwen", "smaug".</summary>
     IReadOnlyList<string> Keys { get; }
 
     /// <summary>Snapshot metadata for a file (source, fetched-at, entry count).</summary>

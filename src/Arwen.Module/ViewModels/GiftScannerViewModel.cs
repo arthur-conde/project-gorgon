@@ -36,8 +36,7 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     private readonly FavorStateService _state;
     private readonly GiftIndex _giftIndex;
     private readonly GameConfig _gameConfig;
-    private readonly ICharacterDataService _charData;
-    private readonly IStorageReportWatcher _reportWatcher;
+    private readonly IActiveCharacterService _activeChar;
     private StorageReport? _loadedReport;
 
     private readonly CalibrationService _calibration;
@@ -47,18 +46,17 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         GiftIndex giftIndex,
         CalibrationService calibration,
         GameConfig gameConfig,
-        ICharacterDataService charData,
-        IStorageReportWatcher reportWatcher)
+        IActiveCharacterService activeChar)
     {
         _state = state;
         _giftIndex = giftIndex;
         _calibration = calibration;
         _gameConfig = gameConfig;
-        _charData = charData;
-        _reportWatcher = reportWatcher;
+        _activeChar = activeChar;
         _state.StateChanged += (_, _) => RefreshNpcList();
-        _charData.CharactersChanged += (_, _) => DispatchRefreshReports();
-        _reportWatcher.ReportsChanged += (_, _) => DispatchRefreshReports();
+        _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshReports();
+        _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshReports();
+        _activeChar.StorageReportsChanged += (_, _) => DispatchRefreshReports();
         RefreshNpcList();
         RefreshReports();
     }
@@ -117,9 +115,9 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     [RelayCommand]
     private void RefreshReports()
     {
-        var all = _reportWatcher.Reports;
+        var all = _activeChar.StorageReports;
 
-        var active = _charData.ActiveCharacter;
+        var active = _activeChar.ActiveCharacter;
         List<ReportFileInfo> reports;
         string? fallbackHint = null;
         if (active is null)

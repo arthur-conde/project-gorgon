@@ -39,22 +39,22 @@ public sealed class CalibrationServiceTests
         {
             ["NPC_Sanja"] = new("NPC_Sanja", "Sanja", "Serbule",
                 [new NpcPreference("Love", ["Moonstone"], "Moonstones", 1.5, null)],
-                ["Friends"]),
+                ["Friends"], []),
             ["NPC_Test"] = new("NPC_Test", "Test", "Serbule",
                 [new NpcPreference("Love", ["Fruit"], "Fruit", 2.0, null)],
-                ["Friends"]),
+                ["Friends"], []),
             ["NPC_Makara"] = new("NPC_Makara", "Makara", "Serbule",
                 [
                     new NpcPreference("Love", ["MinRarity:Rare"], "Rare or Better Magic Gear", 2.0, null),
                     new NpcPreference("Love", ["Ring"], "Rings", 1.0, null),
                 ],
-                ["Friends"]),
+                ["Friends"], []),
             ["NPC_Yetta"] = new("NPC_Yetta", "Yetta", "Serbule",
                 [
                     new NpcPreference("Love", ["Amulet"], "Necklaces", 2.0, null),
                     new NpcPreference("Dislike", ["TestDislike"], "Yetta Test Dislikes", -5.0, null),
                 ],
-                ["Friends"]),
+                ["Friends"], []),
         };
         return new FakeRefData(items, npcs);
     }
@@ -492,6 +492,7 @@ public sealed class CalibrationServiceTests
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
         public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;

@@ -33,17 +33,6 @@ public sealed class FavorLogParserTests
     }
 
     [Fact]
-    public void ParsesPlayerLogin()
-    {
-        var line = "LocalPlayer: ProcessAddPlayer(42, 100, \"HumanMale\", \"Emraell_Laeth\", 1)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
-
-        evt.Should().BeOfType<FavorPlayerLogin>();
-        var login = (FavorPlayerLogin)evt!;
-        login.CharName.Should().Be("Emraell_Laeth");
-    }
-
-    [Fact]
     public void ParsesDeltaFavor()
     {
         var line = "[18:14:21] LocalPlayer: ProcessDeltaFavor(0, \"NPC_Fainor\", 23, True)";

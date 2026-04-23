@@ -39,6 +39,11 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, NpcEntry> _npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _npcsSnapshot;
 
+    // Item sources (sources_items.json)
+    private IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> _itemSources =
+        new Dictionary<string, IReadOnlyList<ItemSource>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _itemSourcesSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -51,15 +56,17 @@ public sealed class ReferenceDataService : IReferenceDataService
         _skillsSnapshot = new ReferenceFileSnapshot("skills", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _xpTablesSnapshot = new ReferenceFileSnapshot("xptables", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
         LoadSkills();
         LoadXpTables();
         LoadNpcs();
+        LoadItemSources();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -68,6 +75,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
+    public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -76,6 +84,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "skills" => _skillsSnapshot,
         "xptables" => _xpTablesSnapshot,
         "npcs" => _npcsSnapshot,
+        "sources_items" => _itemSourcesSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -88,6 +97,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "skills" => RefreshFileAsync("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills, ct),
         "xptables" => RefreshFileAsync("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables, ct),
         "npcs" => RefreshFileAsync("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs, ct),
+        "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -98,6 +108,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("skills", ct);
         await RefreshAsync("xptables", ct);
         await RefreshAsync("npcs", ct);
+        await RefreshAsync("sources_items", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -209,6 +220,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadSkills() => LoadFile("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills);
     private void LoadXpTables() => LoadFile("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables);
     private void LoadNpcs() => LoadFile("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs);
+    private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -376,17 +388,71 @@ public sealed class ReferenceDataService : IReferenceDataService
                     p.Favor))
                 .ToList();
 
+            var services = (v.Services ?? [])
+                .Where(s => !string.IsNullOrEmpty(s.Type))
+                .Select(s => new NpcService(
+                    s.Type!,
+                    s.Favor,
+                    ParseCapIncreases(s.CapIncreases)))
+                .ToList();
+
             var entry = new NpcEntry(
                 key,
                 v.Name ?? key.Replace("NPC_", ""),
                 v.AreaFriendlyName ?? "",
                 prefs,
-                (IReadOnlyList<string>)(v.ItemGifts ?? []));
+                (IReadOnlyList<string>)(v.ItemGifts ?? []),
+                services);
 
             byKey[key] = entry;
         }
         _npcs = byKey;
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>
+    private static IReadOnlyList<NpcStoreCapIncrease> ParseCapIncreases(List<string>? raw)
+    {
+        if (raw is null || raw.Count == 0) return [];
+        var result = new List<NpcStoreCapIncrease>(raw.Count);
+        foreach (var line in raw)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var parts = line.Split(':', 3);
+            if (parts.Length < 2) continue;
+            if (!int.TryParse(parts[1], out var cap)) continue;
+            var keywords = parts.Length == 3 && !string.IsNullOrWhiteSpace(parts[2])
+                ? (IReadOnlyList<string>)parts[2].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                : [];
+            result.Add(new NpcStoreCapIncrease(parts[0], cap, keywords));
+        }
+        return result;
+    }
+
+    private void ParseAndSwapItemSources(Dictionary<string, RawItemSourceEnvelope> raw, ReferenceFileMetadata meta)
+    {
+        // sources_items.json shape: { "item_N": { "entries": [ { npc, type, ... }, ... ] } }
+        var byInternalName = new Dictionary<string, IReadOnlyList<ItemSource>>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, envelope) in raw)
+        {
+            var underscore = key.IndexOf('_');
+            if (underscore < 0) continue;
+            if (!long.TryParse(key.AsSpan(underscore + 1), out var id)) continue;
+            if (!_items.TryGetValue(id, out var item) || string.IsNullOrEmpty(item.InternalName)) continue;
+            if (envelope.Entries is null || envelope.Entries.Count == 0) continue;
+
+            var projected = new List<ItemSource>(envelope.Entries.Count);
+            foreach (var r in envelope.Entries)
+            {
+                if (string.IsNullOrEmpty(r.Type)) continue;
+                var context = r.Recipe ?? r.Quest ?? r.Monster ?? r.Source ?? r.Interactor;
+                projected.Add(new ItemSource(r.Type!, r.Npc, context));
+            }
+            if (projected.Count > 0)
+                byInternalName[item.InternalName] = projected;
+        }
+        _itemSources = byInternalName;
+        _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────

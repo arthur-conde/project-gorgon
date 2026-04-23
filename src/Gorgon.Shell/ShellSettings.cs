@@ -1,17 +1,24 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Hotkeys;
 
 namespace Gorgon.Shell;
 
-public sealed class ShellSettings : INotifyPropertyChanged
+public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPersistence
 {
     private string _gameRoot = "";
     public string GameRoot { get => _gameRoot; set => Set(ref _gameRoot, value); }
 
     private string _activeModuleId = "";
     public string ActiveModuleId { get => _activeModuleId; set => Set(ref _activeModuleId, value); }
+
+    private string? _activeCharacterName;
+    public string? ActiveCharacterName { get => _activeCharacterName; set => Set(ref _activeCharacterName, value); }
+
+    private string? _activeServer;
+    public string? ActiveServer { get => _activeServer; set => Set(ref _activeServer, value); }
 
     private bool _concurrentAlarms;
     public bool ConcurrentAlarms { get => _concurrentAlarms; set => Set(ref _concurrentAlarms, value); }

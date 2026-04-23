@@ -80,7 +80,6 @@ public sealed class GardenIngestionService : BackgroundService
 
     private static string Describe(GardenEvent e) => e switch
     {
-        PlayerLogin pl => $"PlayerLogin  char={pl.CharName}",
         SetPetOwner spo => $"SetPetOwner  entity={spo.EntityId}",
         AppearanceLoop al => $"Appearance   model={al.ModelName}  scale={al.Scale:0.###}",
         UpdateDescription ud => $"UpdateDesc   plot={ud.PlotId}  title={ud.Title}  action={ud.Action}  scale={ud.Scale:0.###}",

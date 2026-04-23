@@ -9,11 +9,7 @@ namespace Samwise.Parsing;
 /// </summary>
 public sealed partial class GardenLogParser : ILogParser
 {
-    // ProcessAddPlayer(entityId, uid, "PlayerModelDescriptor", "CharacterName", ...) — char name is the 2nd quoted arg.
-    // Only match when prefixed with LocalPlayer: so we don't latch onto remote players.
-    [GeneratedRegex(@"LocalPlayer:\s*ProcessAddPlayer\([^,]+,\s*[^,]+,\s*""[^""]*"",\s*""([^""]+)""", RegexOptions.CultureInvariant)]
-    private static partial Regex AddPlayerRx();
-
+    // Active-character tracking lives in ActiveCharacterLogSynchronizer.
     [GeneratedRegex(@"LocalPlayer: ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]
     private static partial Regex SetPetOwnerRx();
 
@@ -53,10 +49,7 @@ public sealed partial class GardenLogParser : ILogParser
     {
         if (string.IsNullOrEmpty(line)) return null;
 
-        var m = AddPlayerRx().Match(line);
-        if (m.Success) return new PlayerLogin(timestamp, m.Groups[1].Value);
-
-        m = SetPetOwnerRx().Match(line);
+        var m = SetPetOwnerRx().Match(line);
         if (m.Success) return new SetPetOwner(timestamp, m.Groups[1].Value);
 
         m = AppearanceRx().Match(line);

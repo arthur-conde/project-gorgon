@@ -3,7 +3,6 @@ using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Character;
 using Gorgon.Shared.Reference;
 
 namespace Arwen.ViewModels;
@@ -11,13 +10,11 @@ namespace Arwen.ViewModels;
 public sealed partial class FavorDashboardViewModel : ObservableObject
 {
     private readonly FavorStateService _state;
-    private readonly ICharacterDataService _charData;
     private IReadOnlyList<NpcFavorEntry> _allEntries = [];
 
-    public FavorDashboardViewModel(FavorStateService state, ICharacterDataService charData)
+    public FavorDashboardViewModel(FavorStateService state)
     {
         _state = state;
-        _charData = charData;
         _state.StateChanged += (_, _) => RefreshList();
         RefreshList();
     }

@@ -17,24 +17,22 @@ public sealed partial class StorageViewModel : ObservableObject
     private readonly GameConfig _gameConfig;
     private readonly BilboSettings _settings;
     private readonly IReferenceDataService _refData;
-    private readonly ICharacterDataService _characterData;
-    private readonly IStorageReportWatcher _reportWatcher;
+    private readonly IActiveCharacterService _activeChar;
     private IReadOnlyList<StorageItemRow> _allItems = [];
 
     public StorageViewModel(
         GameConfig gameConfig,
         BilboSettings settings,
         IReferenceDataService refData,
-        ICharacterDataService characterData,
-        IStorageReportWatcher reportWatcher)
+        IActiveCharacterService activeChar)
     {
         _gameConfig = gameConfig;
         _settings = settings;
         _refData = refData;
-        _characterData = characterData;
-        _reportWatcher = reportWatcher;
-        _characterData.CharactersChanged += OnCharactersChanged;
-        _reportWatcher.ReportsChanged += (_, _) => DispatchRefreshReports();
+        _activeChar = activeChar;
+        _activeChar.ActiveCharacterChanged += OnCharactersChanged;
+        _activeChar.CharacterExportsChanged += OnCharactersChanged;
+        _activeChar.StorageReportsChanged += (_, _) => DispatchRefreshReports();
         RefreshReports();
     }
 
@@ -103,7 +101,7 @@ public sealed partial class StorageViewModel : ObservableObject
     {
         if (value is not null)
         {
-            _characterData.SetActiveCharacter(value.Character, value.Server);
+            _activeChar.SetActiveCharacter(value.Character, value.Server);
             LoadReport(value.FilePath);
         }
     }
@@ -120,7 +118,7 @@ public sealed partial class StorageViewModel : ObservableObject
 
     private void RefreshReports()
     {
-        var reports = _reportWatcher.Reports;
+        var reports = _activeChar.StorageReports;
         var previousPath = SelectedReport?.FilePath;
         var previousMtime = SelectedReport?.LastModifiedUtc;
         AvailableReports = new ObservableCollection<ReportFileInfo>(reports);
@@ -218,7 +216,7 @@ public sealed partial class StorageViewModel : ObservableObject
         StatusMessage = $"Showing {result.Count:N0} of {_allItems.Count:N0} items";
 
         CraftableRecipes = CraftableRecipeCalculator.Compute(
-            result, _refData, _characterData.ActiveCharacter, Confidence);
+            result, _refData, _activeChar.ActiveCharacter, Confidence);
     }
 
     private static string GetCellText(StorageItemRow row, string key) => key switch

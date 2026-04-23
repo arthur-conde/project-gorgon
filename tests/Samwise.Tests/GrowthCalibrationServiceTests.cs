@@ -13,18 +13,22 @@ public class GrowthCalibrationServiceTests
 {
     private static readonly DateTime Base = new(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc);
 
+    private static readonly Dictionary<GardenStateMachine, FakeActiveCharacterService> _sutActiveChars = new();
+
     private static (GardenStateMachine sm, GrowthCalibrationService cal, FakeTime time) BuildSut(string? dataDir = null)
     {
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
-        var sm = new GardenStateMachine(cfg, time);
+        var ac = new FakeActiveCharacterService();
+        var sm = new GardenStateMachine(cfg, time, activeChar: ac);
+        _sutActiveChars[sm] = ac;
         var dir = dataDir ?? Path.Combine(Path.GetTempPath(), $"gorgon-cal-{Guid.NewGuid():N}");
         var cal = new GrowthCalibrationService(sm, cfg, dir);
         return (sm, cal, time);
     }
 
     private static void Login(GardenStateMachine sm, string name)
-        => sm.Apply(new PlayerLogin(Base, name));
+        => _sutActiveChars[sm].SetActiveCharacter(name, "");
 
     private static void PlantWithCrop(GardenStateMachine sm, FakeTime time, string plotId, string crop)
     {

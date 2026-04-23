@@ -1,0 +1,181 @@
+<UserControl x:Class="Smaug.Views.StorageSellbackTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Smaug.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:StorageSellbackViewModel}"
+             Background="#FF1A1A1A">
+
+    <UserControl.Resources>
+        <Style x:Key="TextCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="SubtleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#88FFFFFF"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="NumCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFD4A847"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="CountCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF7AB880"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="Storage Sellback" FontSize="{DynamicResource AppFontSizeHeader}"
+                       FontWeight="SemiBold" Foreground="#FFE8E8E8" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSize}"
+                       VerticalAlignment="Center" Margin="16,0,0,0"/>
+        </DockPanel>
+
+        <!-- Two-column master/detail -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: vendors grouped by Area, sorted by descending total value -->
+            <Border Grid.Column="0" BorderBrush="#33FFFFFF" BorderThickness="1" Background="#FF1F1F1F">
+                <ListBox ItemsSource="{Binding VendorsView}"
+                         SelectedItem="{Binding SelectedVendor}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingPanel.IsVirtualizing="True">
+                    <ListBox.Resources>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="10,6"/>
+                            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#3FD4A847"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#18FFFFFF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.Resources>
+                    <ListBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF2A2A2A" Padding="10,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" Foreground="#FFD4A847"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="{DynamicResource AppFontSizeMedium}"/>
+                                            <TextBlock Text="{Binding ItemCount, StringFormat=' · {0} vendors'}"
+                                                       Foreground="#66FFFFFF"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding NpcName}"
+                                               Foreground="#FFE8E8E8"
+                                               FontSize="{DynamicResource AppFontSizeMedium}"/>
+                                    <TextBlock Foreground="#66FFFFFF"
+                                               FontSize="{DynamicResource AppFontSizeHint}">
+                                        <Run Text="{Binding DistinctItemCount, Mode=OneWay}"/>
+                                        <Run Text=" items · req. "/>
+                                        <Run Text="{Binding MinFavorTier, Mode=OneWay, FallbackValue='—'}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding TotalStackValue, StringFormat=N0}"
+                                           Foreground="#FFD4A847"
+                                           FontSize="{DynamicResource AppFontSizeMedium}"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" Margin="6,0"/>
+                                <TextBlock Grid.Column="2" Text="c"
+                                           Foreground="#88D4A847"
+                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- Right: items from storage this vendor will buy -->
+            <DockPanel Grid.Column="2">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding SelectedVendor.NpcName, FallbackValue='No vendor selected'}"
+                                   FontSize="{DynamicResource AppFontSizeMedium}"
+                                   FontWeight="SemiBold" Foreground="#FFD4A847"/>
+                        <TextBlock Text="{Binding SelectedVendor.Area, StringFormat=' — {0}', FallbackValue=''}"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeMedium}" Margin="6,0,0,0"/>
+                        <TextBlock Text="{Binding SelectedVendor.TotalStackValue, StringFormat=' · up to {0:N0}c', FallbackValue=''}"
+                                   Foreground="#FFD4A847"
+                                   FontSize="{DynamicResource AppFontSizeMedium}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <wpf:GorgonQueryBox Grid.Column="1"
+                                        Grid="{Binding ElementName=ItemsGrid}"
+                                        QueryText="{Binding ElementName=ItemsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Watermark="type text, or grammar like Location CONTAINS 'Vault'"/>
+                </Grid>
+                <TextBlock DockPanel.Dock="Top"
+                           Text="{Binding ElementName=ItemsGrid, Path=QueryError}"
+                           Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                           Visibility="{Binding ElementName=ItemsGrid, Path=QueryError,
+                               Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                <wpf:GorgonDataGrid x:Name="ItemsGrid" ItemsSource="{Binding SelectedVendorItems}"
+                                    Mode="ReadOnly" CanUserResizeRows="False">
+                    <wpf:GorgonDataGrid.Columns>
+                        <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="*"
+                                            ElementStyle="{StaticResource TextCol}"/>
+                        <DataGridTextColumn Header="Stack" Binding="{Binding StackSize, StringFormat=N0}" Width="70"
+                                            ElementStyle="{StaticResource CountCol}"/>
+                        <DataGridTextColumn Header="Unit" Binding="{Binding UnitValue, StringFormat=N0}" Width="80"
+                                            ElementStyle="{StaticResource SubtleCol}"/>
+                        <DataGridTextColumn Header="Total" Binding="{Binding TotalValue, StringFormat=N0}" Width="100"
+                                            ElementStyle="{StaticResource NumCol}"/>
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="160"
+                                            ElementStyle="{StaticResource SubtleCol}"/>
+                    </wpf:GorgonDataGrid.Columns>
+                </wpf:GorgonDataGrid>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</UserControl>

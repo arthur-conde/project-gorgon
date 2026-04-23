@@ -12,17 +12,17 @@ public sealed partial class GourmandViewModel : ObservableObject
 {
     private readonly GourmandStateMachine _state;
     private readonly FoodCatalog _catalog;
-    private readonly ICharacterDataService? _characterData;
+    private readonly IActiveCharacterService? _activeChar;
     private readonly ICollectionView _foodsView;
 
     public GourmandViewModel(
         GourmandStateMachine state,
         FoodCatalog catalog,
-        ICharacterDataService? characterData = null)
+        IActiveCharacterService? characterData = null)
     {
         _state = state;
         _catalog = catalog;
-        _characterData = characterData;
+        _activeChar = characterData;
 
         Foods = new ObservableCollection<FoodItemViewModel>();
         _foodsView = CollectionViewSource.GetDefaultView(Foods);
@@ -30,8 +30,11 @@ public sealed partial class GourmandViewModel : ObservableObject
         _foodsView.Filter = PassesComboFilters;
 
         _state.StateChanged += (_, _) => Rebuild();
-        if (_characterData is not null)
-            _characterData.CharactersChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
+        if (_activeChar is not null)
+        {
+            _activeChar.ActiveCharacterChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
+            _activeChar.CharacterExportsChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
+        }
         Rebuild();
     }
 
@@ -50,8 +53,8 @@ public sealed partial class GourmandViewModel : ObservableObject
     {
         get
         {
-            if (_characterData is null) return 0;
-            foreach (var c in _characterData.Characters)
+            if (_activeChar is null) return 0;
+            foreach (var c in _activeChar.Characters)
             {
                 if (c.Skills.TryGetValue("Gourmand", out var skill))
                     return skill.Level;

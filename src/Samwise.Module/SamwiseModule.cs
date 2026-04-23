@@ -43,7 +43,8 @@ public sealed class SamwiseModule : IGorgonModule
             time: null,
             diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>(),
             settings: sp.GetRequiredService<SamwiseSettings>(),
-            referenceData: sp.GetService<Gorgon.Shared.Reference.IReferenceDataService>()));
+            referenceData: sp.GetService<Gorgon.Shared.Reference.IReferenceDataService>(),
+            activeChar: sp.GetService<Gorgon.Shared.Character.IActiveCharacterService>()));
         services.AddSingleton<AlarmService>();
 
         services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>

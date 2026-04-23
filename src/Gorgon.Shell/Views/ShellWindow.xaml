@@ -55,6 +55,73 @@
                         </StackPanel>
                     </Button>
                 </StackPanel>
+                <!-- Active character chip (click to open character picker) -->
+                <ToggleButton DockPanel.Dock="Top" x:Name="CharacterChipToggle" Margin="10,10,10,0"
+                              Padding="10,6" HorizontalContentAlignment="Stretch"
+                              Background="#FF2A2A2A" BorderBrush="#FF444444">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="User" Width="18" Height="18"
+                                             VerticalAlignment="Center" Margin="0,0,8,0"
+                                             Foreground="#FFD4A847"/>
+                        <StackPanel>
+                            <TextBlock Text="{Binding ActiveCharacterName, TargetNullValue='No character'}"
+                                       FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"
+                                       Foreground="#FFE8E8E8">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasActiveCharacter}" Value="False">
+                                                <Setter Property="Text" Value="No character"/>
+                                                <Setter Property="Foreground" Value="#88FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding ActiveServer}"
+                                       FontSize="{DynamicResource AppFontSizeHint}" Foreground="#66FFFFFF"
+                                       Visibility="{Binding HasActiveCharacter, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ToggleButton>
+                <Popup IsOpen="{Binding ElementName=CharacterChipToggle, Path=IsChecked, Mode=TwoWay}"
+                       StaysOpen="False" Placement="Bottom" PlacementTarget="{Binding ElementName=CharacterChipToggle}"
+                       AllowsTransparency="True">
+                    <Border Background="#FF1F1F1F" BorderBrush="#55FFFFFF" BorderThickness="1" Padding="4"
+                            MinWidth="240">
+                        <StackPanel>
+                            <TextBlock Text="Active character"
+                                       Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                       Margin="8,6,8,4"/>
+                            <ItemsControl ItemsSource="{Binding AvailableCharacters}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,2"
+                                                Background="Transparent" BorderThickness="0"
+                                                Command="{Binding DataContext.SelectCharacterCommand,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Display}" Foreground="#FFE8E8E8"
+                                                           FontSize="{DynamicResource AppFontSizeMedium}"/>
+                                                <TextBlock Text="{Binding ExportLabel, StringFormat='exported {0}'}"
+                                                           Foreground="#66FFFFFF"
+                                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                                           Visibility="{Binding ExportLabel,
+                                                               Converter={StaticResource NullOrEmptyToVis}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="No character exports found — run /exportcharacter in-game."
+                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="8,6"
+                                       Visibility="{Binding HasNoCharacters, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
                 <ListBox ItemsSource="{Binding Modules}"
                          SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0" Padding="6">

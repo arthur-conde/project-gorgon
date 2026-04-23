@@ -33,7 +33,8 @@ public sealed class CommunityCalibrationServiceTests : IDisposable
 
         svc.SamwiseRates.Should().BeNull();
         svc.ArwenRates.Should().BeNull();
-        svc.Keys.Should().BeEquivalentTo("samwise", "arwen");
+        svc.SmaugRates.Should().BeNull();
+        svc.Keys.Should().BeEquivalentTo("samwise", "arwen", "smaug");
     }
 
     [Fact]

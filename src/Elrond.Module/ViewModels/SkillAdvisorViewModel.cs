@@ -13,26 +13,26 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 {
     private readonly SkillAdvisorEngine _engine;
     private readonly LevelingSimulator _simulator;
-    private readonly ICharacterDataService _characterData;
+    private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
 
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
         LevelingSimulator simulator,
-        ICharacterDataService characterData,
+        IActiveCharacterService characterData,
         IReferenceDataService referenceData,
         ElrondSettings settings)
     {
         _engine = engine;
         _simulator = simulator;
-        _characterData = characterData;
+        _activeChar = characterData;
         _referenceData = referenceData;
         _settings = settings;
 
         _goalLevel = settings.LastGoalLevel;
 
-        _characterData.CharactersChanged += OnCharactersChanged;
+        _activeChar.ActiveCharacterChanged += OnCharactersChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
         ReloadCharacters();
@@ -87,7 +87,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     {
         if (value is not null)
         {
-            _characterData.SetActiveCharacter(value.Name, value.Server);
+            _activeChar.SetActiveCharacter(value.Name, value.Server);
             _settings.LastCharacterName = value.Name;
             _settings.LastServer = value.Server;
         }
@@ -119,13 +119,13 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     [RelayCommand]
     private void RefreshCharacterData()
     {
-        _characterData.Refresh();
+        _activeChar.Refresh();
     }
 
     [RelayCommand]
     private void Simulate()
     {
-        var active = _characterData.ActiveCharacter;
+        var active = _activeChar.ActiveCharacter;
         if (active is null || string.IsNullOrEmpty(SelectedSkill) || GoalLevel is not { } goal)
         {
             SimulationResult = null;
@@ -139,7 +139,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     private void ReloadCharacters()
     {
-        var chars = _characterData.Characters
+        var chars = _activeChar.Characters
             .Select(c => new CharacterSummary(c.Name, c.Server, c.ExportedAt))
             .ToList();
         AvailableCharacters = new ObservableCollection<CharacterSummary>(chars);
@@ -160,7 +160,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         var skills = _engine.GetSkillsWithRecipes();
 
         // If a character is selected, filter to skills the character has
-        var active = _characterData.ActiveCharacter;
+        var active = _activeChar.ActiveCharacter;
         if (active is not null)
         {
             skills = skills.Where(s => active.Skills.ContainsKey(s)).ToList();
@@ -174,7 +174,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     private void Reanalyze()
     {
-        var active = _characterData.ActiveCharacter;
+        var active = _activeChar.ActiveCharacter;
         if (active is null || string.IsNullOrEmpty(SelectedSkill))
         {
             Analysis = null;
@@ -269,7 +269,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     public void Dispose()
     {
-        _characterData.CharactersChanged -= OnCharactersChanged;
+        _activeChar.ActiveCharacterChanged -= OnCharactersChanged;
         _referenceData.FileUpdated -= OnReferenceUpdated;
     }
 }

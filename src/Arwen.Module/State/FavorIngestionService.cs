@@ -1,6 +1,7 @@
 using System.Windows;
 using Arwen.Domain;
 using Arwen.Parsing;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Logging;
 using Gorgon.Shared.Modules;
@@ -16,9 +17,9 @@ public sealed class FavorIngestionService : BackgroundService
     private readonly FavorStateService _state;
     private readonly CalibrationService _calibration;
     private readonly ArwenSettings _settings;
+    private readonly IActiveCharacterService _activeChar;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
-    private string? _currentChar;
 
     public FavorIngestionService(
         IPlayerLogStream stream,
@@ -26,6 +27,7 @@ public sealed class FavorIngestionService : BackgroundService
         FavorStateService state,
         CalibrationService calibration,
         ArwenSettings settings,
+        IActiveCharacterService activeChar,
         SettingsAutoSaver<ArwenSettings> autoSaver,
         ModuleGates gates,
         IDiagnosticsSink? diag = null)
@@ -35,6 +37,7 @@ public sealed class FavorIngestionService : BackgroundService
         _state = state;
         _calibration = calibration;
         _settings = settings;
+        _activeChar = activeChar;
         _diag = diag;
         _ = autoSaver; // keep alive for PropertyChanged subscription
         _gate = gates.For("arwen");
@@ -53,19 +56,15 @@ public sealed class FavorIngestionService : BackgroundService
 
             switch (evt)
             {
-                case FavorPlayerLogin login:
-                    _currentChar = login.CharName;
-                    _diag?.Trace("Arwen.Parse", $"PlayerLogin char={login.CharName}");
-                    break;
-
                 case FavorUpdate update:
                     _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
                     _calibration.OnStartInteraction(update.NpcKey);
-                    if (_currentChar is not null)
+                    var charName = _activeChar.ActiveCharacterName;
+                    if (!string.IsNullOrEmpty(charName))
                     {
                         Dispatch(() =>
                         {
-                            _settings.SetExactFavor(_currentChar, update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
+                            _settings.SetExactFavor(charName, update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
                             _state.OnFavorUpdated(update.NpcKey);
                         });
                     }

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Modules;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,32 +22,90 @@ public sealed partial class ModuleEntry : ObservableObject
             : new System.Windows.Media.Imaging.BitmapImage(new Uri(Module.IconUri, UriKind.Absolute));
 }
 
+public sealed partial class CharacterChip : ObservableObject
+{
+    public required string Name { get; init; }
+    public required string Server { get; init; }
+    public string? ExportLabel { get; init; }
+
+    public string Display => string.IsNullOrEmpty(Server) ? Name : $"{Name} · {Server}";
+}
+
 public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly IServiceProvider _services;
     private readonly ShellSettings _settings;
+    private readonly IActiveCharacterService _activeChar;
 
     private readonly ModuleGates _gates;
 
-    public ShellViewModel(IServiceProvider services, IEnumerable<IGorgonModule> modules, ShellSettings settings, ModuleGates gates)
+    public ShellViewModel(
+        IServiceProvider services,
+        IEnumerable<IGorgonModule> modules,
+        ShellSettings settings,
+        ModuleGates gates,
+        IActiveCharacterService activeChar)
     {
         _services = services;
         _settings = settings;
         _gates = gates;
+        _activeChar = activeChar;
         foreach (var m in modules.OrderBy(m => m.SortOrder))
             Modules.Add(new ModuleEntry { Module = m });
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
                       ?? Modules.FirstOrDefault();
         if (initial is not null) ActivateModule(initial);
+
+        _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshCharacter();
+        _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
+        RefreshCharacter();
     }
 
     public ObservableCollection<ModuleEntry> Modules { get; } = new();
+    public ObservableCollection<CharacterChip> AvailableCharacters { get; } = new();
 
     public string VersionText { get; } = BuildVersionText();
 
     [ObservableProperty] private ModuleEntry? _selectedModule;
     [ObservableProperty] private object? _activeContent;
     [ObservableProperty] private string _statusText = "";
+    [ObservableProperty] private string _activeCharacterName = "";
+    [ObservableProperty] private string _activeServer = "";
+    [ObservableProperty] private bool _hasActiveCharacter;
+    [ObservableProperty] private bool _hasNoCharacters;
+
+    [RelayCommand]
+    private void SelectCharacter(CharacterChip? chip)
+    {
+        if (chip is null) return;
+        _activeChar.SetActiveCharacter(chip.Name, chip.Server);
+    }
+
+    private void DispatchRefreshCharacter()
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshCharacter();
+        else d.InvokeAsync(RefreshCharacter);
+    }
+
+    private void RefreshCharacter()
+    {
+        ActiveCharacterName = _activeChar.ActiveCharacterName ?? "";
+        ActiveServer = _activeChar.ActiveServer ?? "";
+        HasActiveCharacter = !string.IsNullOrEmpty(ActiveCharacterName);
+
+        AvailableCharacters.Clear();
+        foreach (var c in _activeChar.Characters)
+        {
+            AvailableCharacters.Add(new CharacterChip
+            {
+                Name = c.Name,
+                Server = c.Server,
+                ExportLabel = c.ExportedAt == default ? null : c.ExportedAt.LocalDateTime.ToString("MMM d, HH:mm"),
+            });
+        }
+        HasNoCharacters = AvailableCharacters.Count == 0;
+    }
 
     private static string BuildVersionText()
     {

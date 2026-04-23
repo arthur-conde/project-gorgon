@@ -37,7 +37,7 @@ public sealed class NpcFavorEntry
 public sealed class FavorStateService
 {
     private readonly IReferenceDataService _refData;
-    private readonly ICharacterDataService _charData;
+    private readonly IActiveCharacterService _charData;
     private readonly ArwenSettings _settings;
 
     private IReadOnlyList<NpcFavorEntry> _entries = [];
@@ -48,7 +48,7 @@ public sealed class FavorStateService
 
     public FavorStateService(
         IReferenceDataService refData,
-        ICharacterDataService charData,
+        IActiveCharacterService charData,
         ArwenSettings settings)
     {
         _refData = refData;
@@ -56,7 +56,8 @@ public sealed class FavorStateService
         _settings = settings;
 
         _refData.FileUpdated += (_, key) => { if (key == "npcs") Rebuild(); };
-        _charData.CharactersChanged += (_, _) => Rebuild();
+        _charData.ActiveCharacterChanged += (_, _) => Rebuild();
+        _charData.CharacterExportsChanged += (_, _) => Rebuild();
         Rebuild();
     }
 

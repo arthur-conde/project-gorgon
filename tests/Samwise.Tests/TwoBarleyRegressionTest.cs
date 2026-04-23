@@ -24,7 +24,9 @@ public class TwoBarleyRegressionTest
         // reaches zero. Without DeleteItem handling the plot stays "Unknown".
         var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
-        var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData());
+        var ac = new FakeActiveCharacterService();
+        ac.SetActiveCharacter("Emraell", "");
+        var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData(), activeChar: ac);
 
         var logLines = new (string line, DateTime ts)[]
         {
@@ -51,7 +53,9 @@ public class TwoBarleyRegressionTest
         var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var refData = new BarleyOnlyReferenceData();
-        var sm = new GardenStateMachine(cfg, referenceData: refData);
+        var ac = new FakeActiveCharacterService();
+        ac.SetActiveCharacter("Hits", "");
+        var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: ac);
 
         // Real Player.log slice covering the seed AddItem + the two plants.
         var logLines = new[]
@@ -98,6 +102,7 @@ public class TwoBarleyRegressionTest
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public ReferenceFileSnapshot GetSnapshot(string key)
             => new("items", ReferenceFileSource.Bundled, "test", null, 1);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

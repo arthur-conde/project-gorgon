@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Interop;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Game;
 using Gorgon.Shared.Hotkeys;
@@ -88,6 +89,7 @@ public static class Program
             builder.Services
                 .AddSingleton<ISettingsStore<ShellSettings>>(shellStore)
                 .AddSingleton(shellSettings)
+                .AddSingleton<IActiveCharacterPersistence>(shellSettings)
                 .AddSingleton(audioSettings)
                 .AddSingleton(gameConfig)
                 .AddGorgonDiagnostics(logDir)
@@ -107,6 +109,13 @@ public static class Program
             host.StartAsync().GetAwaiter().GetResult();
 #pragma warning restore VSTHRD002
             Boot("host started");
+
+            // Persist active-character selection on every switch (log or UI).
+            var activeCharSvc = host.Services.GetRequiredService<IActiveCharacterService>();
+            activeCharSvc.ActiveCharacterChanged += (_, _) =>
+            {
+                try { shellStore.Save(shellSettings); } catch { /* best-effort */ }
+            };
 
             host.Services.GetRequiredService<IReferenceDataService>().BeginBackgroundRefresh();
 

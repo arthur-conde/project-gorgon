@@ -74,6 +74,7 @@ public sealed class RawNpc
     public string? AreaFriendlyName { get; set; }
     public List<RawNpcPreference>? Preferences { get; set; }
     public List<string>? ItemGifts { get; set; }
+    public List<RawNpcService>? Services { get; set; }
 }
 
 public sealed class RawNpcPreference
@@ -83,6 +84,39 @@ public sealed class RawNpcPreference
     public string? Name { get; set; }
     public double? Pref { get; set; }
     public string? Favor { get; set; }
+}
+
+public sealed class RawNpcService
+{
+    public string? Type { get; set; }
+    public string? Favor { get; set; }
+    public List<string>? CapIncreases { get; set; }
+}
+
+/// <summary>
+/// Raw sources_items.json envelope. The file shape is
+/// <c>{ "item_N": { "entries": [ { npc, type, ... }, ... ] } }</c>.
+/// </summary>
+public sealed class RawItemSourceEnvelope
+{
+    public List<RawItemSource>? Entries { get; set; }
+}
+
+/// <summary>
+/// One entry inside <see cref="RawItemSourceEnvelope.Entries"/>. Vendor entries have
+/// <c>type: "Vendor"</c> and an <c>npc</c> field; other source types (Recipe, HangOut,
+/// NpcGift, Quest, Barter, Monster, Angling, …) use different fields which we surface
+/// via <see cref="Recipe"/> / <see cref="Quest"/> / etc.
+/// </summary>
+public sealed class RawItemSource
+{
+    public string? Type { get; set; }
+    public string? Npc { get; set; }
+    public string? Recipe { get; set; }
+    public string? Quest { get; set; }
+    public string? Monster { get; set; }
+    public string? Source { get; set; }
+    public string? Interactor { get; set; }
 }
 
 [JsonSourceGenerationOptions(
@@ -96,4 +130,5 @@ public sealed class RawNpcPreference
 [JsonSerializable(typeof(Dictionary<string, RawSkill>))]
 [JsonSerializable(typeof(Dictionary<string, RawXpTable>))]
 [JsonSerializable(typeof(Dictionary<string, RawNpc>))]
+[JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
 public partial class ReferenceJsonContext : JsonSerializerContext { }

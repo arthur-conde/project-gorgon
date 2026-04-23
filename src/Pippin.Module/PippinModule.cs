@@ -49,7 +49,7 @@ public sealed class PippinModule : IGorgonModule
         services.AddSingleton<GourmandViewModel>(sp => new GourmandViewModel(
             sp.GetRequiredService<GourmandStateMachine>(),
             sp.GetRequiredService<FoodCatalog>(),
-            sp.GetService<ICharacterDataService>()));
+            sp.GetService<IActiveCharacterService>()));
         services.AddSingleton<GourmandView>(sp => new GourmandView
         {
             DataContext = sp.GetRequiredService<GourmandViewModel>(),

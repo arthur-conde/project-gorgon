@@ -30,6 +30,13 @@ public interface IReferenceDataService
     /// <summary>NPC key (e.g. "NPC_Marna") → NpcEntry with gift preferences.</summary>
     IReadOnlyDictionary<string, NpcEntry> Npcs { get; }
 
+    /// <summary>
+    /// Item InternalName → sources describing how the item can be obtained
+    /// (Vendor / Recipe / Quest / Monster / HangOut / NpcGift / Barter / Angling / …).
+    /// Pulled from <c>sources_items.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

@@ -11,11 +11,18 @@ public class GardenStateMachineTests
 {
     private static readonly DateTime Base = new(2026, 4, 15, 12, 0, 0, DateTimeKind.Utc);
 
+    // Tracks the fake active-character service backing each constructed state machine,
+    // so the Login() helper can set the name without needing an extra tuple element
+    // at every call site.
+    private static readonly Dictionary<GardenStateMachine, FakeActiveCharacterService> _sutActiveChars = new();
+
     private static (GardenStateMachine sm, FakeTime time, ICropConfigStore cfg) BuildSut(IReferenceDataService? refData = null)
     {
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
-        var sm = new GardenStateMachine(cfg, time, referenceData: refData);
+        var ac = new FakeActiveCharacterService();
+        var sm = new GardenStateMachine(cfg, time, referenceData: refData, activeChar: ac);
+        _sutActiveChars[sm] = ac;
         return (sm, time, cfg);
     }
 
@@ -374,8 +381,9 @@ public class GardenStateMachineTests
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
         var settings = new Samwise.Alarms.SamwiseSettings { HarvestedAutoClearMinutes = 2 };
-        var sm = new GardenStateMachine(cfg, time, settings: settings);
-        sm.Apply(new PlayerLogin(Base, "Hits"));
+        var ac = new FakeActiveCharacterService();
+        var sm = new GardenStateMachine(cfg, time, settings: settings, activeChar: ac);
+        ac.SetActiveCharacter("Hits", "");
         sm.Apply(new SetPetOwner(time.Now.UtcDateTime, "1"));
         sm.Apply(new AppearanceLoop(time.Now.UtcDateTime, "Onion"));
         sm.Apply(new UpdateDescription(time.Now.UtcDateTime, "1", "Onion", "", "Harvest Onion", 1.0));
@@ -412,7 +420,7 @@ public class GardenStateMachineTests
     }
 
     private static void Login(GardenStateMachine sm, string name)
-        => sm.Apply(new PlayerLogin(Base, name));
+        => _sutActiveChars[sm].SetActiveCharacter(name, "");
 
     private sealed class FakeTime : TimeProvider
     {
@@ -436,6 +444,7 @@ public class GardenStateMachineTests
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public ReferenceFileSnapshot GetSnapshot(string key)
             => new("items", ReferenceFileSource.Bundled, "test", null, _items.Count);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

@@ -38,7 +38,7 @@ public sealed class GiftIndexTests
                 string.Join(", ", p.Keywords),
                 p.Pref,
                 null)).ToList();
-            dict[key] = new NpcEntry(key, name, "TestArea", prefList, ["Friends"]);
+            dict[key] = new NpcEntry(key, name, "TestArea", prefList, ["Friends"], []);
         }
         return dict;
     }

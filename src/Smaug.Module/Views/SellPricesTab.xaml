@@ -1,0 +1,86 @@
+<UserControl x:Class="Smaug.Views.SellPricesTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Smaug.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:SellPricesViewModel}"
+             Background="#FF1A1A1A">
+
+    <UserControl.Resources>
+        <Style x:Key="TextCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="SubtleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#88FFFFFF"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="NumCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFD4A847"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+        <Style x:Key="SampleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FF7AB880"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock Text="Sell Prices" FontSize="{DynamicResource AppFontSizeHeader}"
+                       FontWeight="SemiBold" Foreground="#FFE8E8E8" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+        </DockPanel>
+
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <wpf:GorgonQueryBox Grid.Column="1"
+                                Grid="{Binding ElementName=PricesGrid}"
+                                QueryText="{Binding ElementName=PricesGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Watermark="type text, or grammar like FavorTier = 'Friends'"/>
+        </Grid>
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{Binding ElementName=PricesGrid, Path=QueryError}"
+                   Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                   Visibility="{Binding ElementName=PricesGrid, Path=QueryError,
+                       Converter={StaticResource NullOrEmptyToVis}}"/>
+
+        <wpf:GorgonDataGrid x:Name="PricesGrid" ItemsSource="{Binding Rows}"
+                            Mode="ReadOnly" CanUserResizeRows="False">
+            <wpf:GorgonDataGrid.Columns>
+                <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="160"
+                                    ElementStyle="{StaticResource TextCol}"/>
+                <DataGridTextColumn Header="Item" Binding="{Binding Item}" Width="220"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Favor" Binding="{Binding FavorTier}" Width="110"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Civic" Binding="{Binding CivicPride}" Width="70"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Avg" Binding="{Binding ExpectedPrice, StringFormat=F2}" Width="90"
+                                    ElementStyle="{StaticResource NumCol}"/>
+                <DataGridTextColumn Header="Min" Binding="{Binding MinPrice}" Width="80"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Max" Binding="{Binding MaxPrice}" Width="80"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Local" Binding="{Binding LocalSamples}" Width="60"
+                                    ElementStyle="{StaticResource SampleCol}"/>
+                <DataGridTextColumn Header="Community" Binding="{Binding CommunitySamples}" Width="90"
+                                    ElementStyle="{StaticResource SampleCol}"/>
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="80"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
+    </DockPanel>
+</UserControl>

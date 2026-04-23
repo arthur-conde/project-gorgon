@@ -1,0 +1,67 @@
+<UserControl x:Class="Smaug.Views.CalibrationTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Smaug.ViewModels"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:CalibrationViewModel}"
+             Background="#FF1A1A1A">
+
+    <UserControl.Resources>
+        <Style x:Key="TextCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE8E8E8"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="SubtleCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#88FFFFFF"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style x:Key="NumCol" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFD4A847"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center"/>
+                <Button Content="Refresh community data" Command="{Binding RefreshCommunityCommand}" Margin="16,0,0,0"
+                        Padding="10,3" FontSize="{DynamicResource AppFontSizeHint}"
+                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            </StackPanel>
+            <TextBlock Text="{Binding CommunitySummary}" Foreground="#FF7AB880"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,6,0,0"/>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Top" Text="Recent sell observations"
+                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
+                   FontWeight="SemiBold" Margin="0,4,0,6"/>
+
+        <wpf:GorgonDataGrid ItemsSource="{Binding Observations}"
+                            Mode="ReadOnly" CanUserResizeRows="False">
+            <wpf:GorgonDataGrid.Columns>
+                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm}" Width="130"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="140"
+                                    ElementStyle="{StaticResource TextCol}"/>
+                <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="180"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Favor" Binding="{Binding FavorTier}" Width="110"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="CivicPride" Binding="{Binding CivicPride}" Width="75"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Value" Binding="{Binding BaseValue, StringFormat=N0}" Width="80"
+                                    ElementStyle="{StaticResource SubtleCol}"/>
+                <DataGridTextColumn Header="Paid" Binding="{Binding PricePaid, StringFormat=N0}" Width="80"
+                                    ElementStyle="{StaticResource NumCol}"/>
+                <DataGridTextColumn Header="Ratio" Binding="{Binding Ratio, StringFormat=F2}" Width="70"
+                                    ElementStyle="{StaticResource NumCol}"/>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
+    </DockPanel>
+</UserControl>
