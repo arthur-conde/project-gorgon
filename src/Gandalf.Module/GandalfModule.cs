@@ -3,13 +3,13 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
-using Gorgon.Shared.Character;
 using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Gorgon.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Gandalf;
 
@@ -30,6 +30,7 @@ public sealed class GandalfModule : IGorgonModule
         var gandalfDir = Path.Combine(localApp, "Gorgon", "Gandalf");
         Directory.CreateDirectory(gandalfDir);
         var settingsPath = Path.Combine(gandalfDir, "settings.json");
+        var defsPath = Path.Combine(gandalfDir, "definitions.json");
 
         // Global user preferences (alarm volume, sound picker, etc) stay app-wide.
         services.AddSingleton<ISettingsStore<GandalfSettings>>(_ =>
@@ -38,16 +39,26 @@ public sealed class GandalfModule : IGorgonModule
             sp.GetRequiredService<ISettingsStore<GandalfSettings>>().Load());
         services.AddSingleton<SettingsAutoSaver<GandalfSettings>>();
 
-        // Timer list is per-character with one-shot migration from the old flat state.json.
-        services.AddSingleton<ILegacyMigration<GandalfState>>(_ =>
-            new GandalfLegacyMigration(gandalfDir, GandalfStateJsonContext.Default.GandalfState));
-        services.AddPerCharacterModuleStore<GandalfState>(Id, GandalfStateJsonContext.Default.GandalfState);
+        // Global timer definitions — one file, shared across every character.
+        services.AddSingleton<ISettingsStore<GandalfDefinitions>>(_ =>
+            new JsonSettingsStore<GandalfDefinitions>(defsPath, GandalfDefinitionsJsonContext.Default.GandalfDefinitions));
+        services.AddSingleton<GandalfDefinitions>(sp =>
+            sp.GetRequiredService<ISettingsStore<GandalfDefinitions>>().Load());
 
-        services.AddSingleton<TimerStateService>();
+        // Per-character timer progress (StartedAt / CompletedAt keyed by timer id).
+        services.AddPerCharacterModuleStore<GandalfProgress>(Id, GandalfProgressJsonContext.Default.GandalfProgress);
+
+        // One-shot startup fanout: split the old combined per-char gandalf.json into the
+        // global definitions file + per-char progress files. Runs before module gates open.
+        services.AddHostedService<GandalfSplitMigration>();
+
+        services.AddSingleton<TimerDefinitionsService>();
+        services.AddSingleton<TimerProgressService>();
         services.AddSingleton<TimerAlarmService>();
 
         services.AddSingleton<TimerListViewModel>(sp => new TimerListViewModel(
-            sp.GetRequiredService<TimerStateService>(),
+            sp.GetRequiredService<TimerDefinitionsService>(),
+            sp.GetRequiredService<TimerProgressService>(),
             sp.GetRequiredService<TimerAlarmService>(),
             sp.GetRequiredService<IDialogService>()));
 

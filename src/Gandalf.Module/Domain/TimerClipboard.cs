@@ -18,14 +18,14 @@ public partial class TimerClipboardJsonContext : JsonSerializerContext { }
 
 public static class TimerClipboard
 {
-    public static string Serialize(IEnumerable<GandalfTimer> timers)
+    public static string Serialize(IEnumerable<GandalfTimerDef> defs)
     {
-        var entries = timers.Select(t => new TimerClipboardEntry
+        var entries = defs.Select(d => new TimerClipboardEntry
         {
-            Name = t.Name,
-            Duration = t.Duration.ToString(),
-            Region = t.Region,
-            Map = t.Map,
+            Name = d.Name,
+            Duration = d.Duration.ToString(),
+            Region = d.Region,
+            Map = d.Map,
         }).ToList();
         return JsonSerializer.Serialize(entries, TimerClipboardJsonContext.Default.ListTimerClipboardEntry);
     }
@@ -47,10 +47,14 @@ public static class TimerClipboard
         catch { return null; }
     }
 
-    public static GandalfTimer? ToTimer(TimerClipboardEntry entry)
+    /// <summary>
+    /// Builds a fresh definition (new Id, no progress) from a clipboard entry. Returns null
+    /// when the duration is missing or non-positive.
+    /// </summary>
+    public static GandalfTimerDef? ToDef(TimerClipboardEntry entry)
     {
         if (!TimeSpan.TryParse(entry.Duration, out var dur) || dur <= TimeSpan.Zero) return null;
-        return new GandalfTimer
+        return new GandalfTimerDef
         {
             Name = entry.Name,
             Duration = dur,

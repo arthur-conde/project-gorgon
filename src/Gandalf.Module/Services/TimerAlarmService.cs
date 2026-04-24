@@ -8,17 +8,17 @@ namespace Gandalf.Services;
 
 public sealed partial class TimerAlarmService : IDisposable
 {
-    private readonly TimerStateService _state;
+    private readonly TimerProgressService _progress;
     private readonly GandalfSettings _settings;
     private readonly HashSet<string> _firedIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
-    public TimerAlarmService(TimerStateService state, GandalfSettings settings)
+    public TimerAlarmService(TimerProgressService progress, GandalfSettings settings)
     {
-        _state = state;
+        _progress = progress;
         _settings = settings;
-        _state.TimerExpired += OnTimerExpired;
+        _progress.TimerExpired += OnTimerExpired;
     }
 
     public void SnoozeAll()
@@ -42,17 +42,18 @@ public sealed partial class TimerAlarmService : IDisposable
             handle.Stop();
     }
 
-    private void OnTimerExpired(object? sender, GandalfTimer timer)
+    private void OnTimerExpired(object? sender, TimerExpiredEventArgs e)
     {
         if (!_settings.AlarmEnabled) return;
-        if (_firedIds.Contains(timer.Id)) return;
-        if (_snoozedUntil.TryGetValue(timer.Id, out var until) && until > DateTimeOffset.UtcNow) return;
+        var id = e.Def.Id;
+        if (_firedIds.Contains(id)) return;
+        if (_snoozedUntil.TryGetValue(id, out var until) && until > DateTimeOffset.UtcNow) return;
 
-        _firedIds.Add(timer.Id);
+        _firedIds.Add(id);
         Dispatch(() =>
         {
             var handle = AlarmSoundPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
-            _playback[timer.Id] = handle;
+            _playback[id] = handle;
             if (_settings.FlashWindow)
             {
                 var win = Application.Current?.MainWindow;
@@ -69,7 +70,7 @@ public sealed partial class TimerAlarmService : IDisposable
 
     public void Dispose()
     {
-        _state.TimerExpired -= OnTimerExpired;
+        _progress.TimerExpired -= OnTimerExpired;
         StopAllPlayback();
     }
 

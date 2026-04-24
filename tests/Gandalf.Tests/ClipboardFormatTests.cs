@@ -9,7 +9,7 @@ public class ClipboardFormatTests
     [Fact]
     public void Serialize_roundtrips_through_deserialize()
     {
-        var timer = new GandalfTimer
+        var def = new GandalfTimerDef
         {
             Name = "Mushroom Substrate",
             Duration = TimeSpan.FromHours(4) + TimeSpan.FromMinutes(30),
@@ -17,7 +17,7 @@ public class ClipboardFormatTests
             Map = "Serbule Sewers",
         };
 
-        var json = TimerClipboard.Serialize([timer]);
+        var json = TimerClipboard.Serialize([def]);
         var entries = TimerClipboard.TryDeserialize(json);
 
         entries.Should().NotBeNull();
@@ -58,14 +58,14 @@ public class ClipboardFormatTests
     }
 
     [Fact]
-    public void ToTimer_rejects_zero_duration()
+    public void ToDef_rejects_zero_duration()
     {
         var entry = new TimerClipboardEntry { Name = "X", Duration = "0:00:00", Region = "R", Map = "M" };
-        TimerClipboard.ToTimer(entry).Should().BeNull();
+        TimerClipboard.ToDef(entry).Should().BeNull();
     }
 
     [Fact]
-    public void ToTimer_creates_idle_timer()
+    public void ToDef_creates_fresh_def_with_new_id()
     {
         var entry = new TimerClipboardEntry
         {
@@ -75,14 +75,13 @@ public class ClipboardFormatTests
             Map = "Eltibule Keep",
         };
 
-        var timer = TimerClipboard.ToTimer(entry);
+        var def = TimerClipboard.ToDef(entry);
 
-        timer.Should().NotBeNull();
-        timer!.Name.Should().Be("Leather Tanning");
-        timer.Duration.Should().Be(TimeSpan.FromHours(2) + TimeSpan.FromMinutes(30));
-        timer.Region.Should().Be("Eltibule");
-        timer.Map.Should().Be("Eltibule Keep");
-        timer.State.Should().Be(TimerState.Idle);
-        timer.StartedAt.Should().BeNull();
+        def.Should().NotBeNull();
+        def!.Name.Should().Be("Leather Tanning");
+        def.Duration.Should().Be(TimeSpan.FromHours(2) + TimeSpan.FromMinutes(30));
+        def.Region.Should().Be("Eltibule");
+        def.Map.Should().Be("Eltibule Keep");
+        def.Id.Should().NotBeNullOrEmpty();
     }
 }

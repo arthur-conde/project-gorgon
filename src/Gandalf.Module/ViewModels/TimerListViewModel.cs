@@ -14,21 +14,25 @@ namespace Gandalf.ViewModels;
 
 public sealed partial class TimerListViewModel : ObservableObject
 {
-    private readonly TimerStateService _stateService;
+    private readonly TimerDefinitionsService _defs;
+    private readonly TimerProgressService _progress;
     private readonly TimerAlarmService _alarmService;
     private readonly IDialogService _dialogService;
     private readonly DispatcherTimer _refreshTimer;
 
     public TimerListViewModel(
-        TimerStateService stateService,
+        TimerDefinitionsService defs,
+        TimerProgressService progress,
         TimerAlarmService alarmService,
         IDialogService dialogService)
     {
-        _stateService = stateService;
+        _defs = defs;
+        _progress = progress;
         _alarmService = alarmService;
         _dialogService = dialogService;
 
-        _stateService.TimerChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
+        _defs.DefinitionsChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
+        _progress.ProgressChanged += (_, _) => SyncFromState();
 
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
@@ -53,19 +57,18 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void AddTimer()
     {
-        var vm = new TimerDialogViewModel(null, KnownRegions, KnownMaps);
+        var vm = new TimerDialogViewModel(existing: null, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;
 
-        var timer = new GandalfTimer
+        _defs.Add(new GandalfTimerDef
         {
             Name = vm.ResultName,
             Duration = vm.ResultDuration,
             Region = vm.ResultRegion,
             Map = vm.ResultMap,
-        };
-        _stateService.Add(timer);
+        });
     }
 
     [RelayCommand]
@@ -73,21 +76,22 @@ public sealed partial class TimerListViewModel : ObservableObject
     {
         if (item is null) return;
 
-        var vm = new TimerDialogViewModel(item.Timer, KnownRegions, KnownMaps);
+        var vm = new TimerDialogViewModel(item.View, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;
 
-        _stateService.Update(item.Id, t =>
+        var isIdleOnActive = item.State == TimerState.Idle;
+        _defs.Update(item.Id, d =>
         {
-            t.Name = vm.ResultName;
-            t.Region = vm.ResultRegion;
-            t.Map = vm.ResultMap;
-            if (t.State == TimerState.Idle)
+            d.Name = vm.ResultName;
+            d.Region = vm.ResultRegion;
+            d.Map = vm.ResultMap;
+            if (isIdleOnActive)
             {
                 var duration = vm.ResultDuration;
                 if (duration > TimeSpan.Zero)
-                    t.Duration = duration;
+                    d.Duration = duration;
             }
         });
     }
@@ -96,31 +100,28 @@ public sealed partial class TimerListViewModel : ObservableObject
     private void StartTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
-        _stateService.Start(vm.Id);
+        _progress.Start(vm.Id);
     }
 
     [RelayCommand]
     private void RestartTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
-        _stateService.Restart(vm.Id);
+        _progress.Restart(vm.Id);
     }
 
     [RelayCommand]
     private void DeleteTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
-        _stateService.Remove(vm.Id);
+        _defs.Remove(vm.Id);
     }
-
-    [RelayCommand]
-    private void ClearDone() => _stateService.ClearCompleted();
 
     [RelayCommand]
     private void CopyTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
-        var json = TimerClipboard.Serialize([vm.Timer]);
+        var json = TimerClipboard.Serialize([vm.View.Def]);
         try { Clipboard.SetText(json); } catch { }
     }
 
@@ -136,9 +137,8 @@ public sealed partial class TimerListViewModel : ObservableObject
 
         foreach (var entry in entries)
         {
-            var timer = TimerClipboard.ToTimer(entry);
-            if (timer is not null)
-                _stateService.Add(timer);
+            var def = TimerClipboard.ToDef(entry);
+            if (def is not null) _defs.Add(def);
         }
     }
 
@@ -151,15 +151,18 @@ public sealed partial class TimerListViewModel : ObservableObject
     private void SyncFromState()
     {
         Timers.Clear();
-        foreach (var t in _stateService.Timers)
-            Timers.Add(new TimerItemViewModel(t));
+        foreach (var def in _defs.Definitions)
+        {
+            var progress = _progress.GetProgress(def.Id) ?? new TimerProgress();
+            Timers.Add(new TimerItemViewModel(new TimerView(def, progress)));
+        }
         TimersView.Refresh();
     }
 
     private void RefreshAutocomplete()
     {
-        var regions = _stateService.Timers
-            .Select(t => t.Region)
+        var regions = _defs.Definitions
+            .Select(d => d.Region)
             .Where(r => !string.IsNullOrWhiteSpace(r))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(r => r);
@@ -167,8 +170,8 @@ public sealed partial class TimerListViewModel : ObservableObject
         KnownRegions.Clear();
         foreach (var r in regions) KnownRegions.Add(r);
 
-        var maps = _stateService.Timers
-            .Select(t => t.Map)
+        var maps = _defs.Definitions
+            .Select(d => d.Map)
             .Where(m => !string.IsNullOrWhiteSpace(m))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(m => m);
@@ -179,7 +182,14 @@ public sealed partial class TimerListViewModel : ObservableObject
 
     private void Tick()
     {
-        _stateService.CheckExpirations();
-        foreach (var vm in Timers) vm.Refresh();
+        _progress.CheckExpirations();
+        // Re-join with latest progress in case CheckExpirations stamped a CompletedAt.
+        foreach (var vm in Timers)
+        {
+            var def = _defs.Definitions.FirstOrDefault(d => d.Id == vm.Id);
+            if (def is null) continue;
+            var progress = _progress.GetProgress(def.Id) ?? new TimerProgress();
+            vm.UpdateView(new TimerView(def, progress));
+        }
     }
 }
