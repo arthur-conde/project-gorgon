@@ -96,9 +96,29 @@
                                                 <DataTemplate>
                                                     <Button Command="{Binding DataContext.OpenItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                             CommandParameter="{Binding InternalName}"
-                                                            ToolTip="{Binding Name}"
                                                             Cursor="Hand" Padding="0" Margin="0,0,3,0"
-                                                            Background="Transparent" BorderThickness="0">
+                                                            Background="Transparent" BorderThickness="0"
+                                                            ToolTipService.InitialShowDelay="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            ToolTipService.BetweenShowDelay="0">
+                                                        <Button.ToolTip>
+                                                            <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                                                     Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                                                <ToolTip.ContentTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                                                CornerRadius="4" Padding="10" MaxWidth="320">
+                                                                            <DockPanel>
+                                                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}"
+                                                                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                                            </DockPanel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ToolTip.ContentTemplate>
+                                                            </ToolTip>
+                                                        </Button.ToolTip>
                                                         <Button.Template>
                                                             <ControlTemplate TargetType="Button">
                                                                 <Border x:Name="Bd" Background="Transparent"
