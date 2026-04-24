@@ -87,8 +87,13 @@ public class ReferenceDataServiceTests : IDisposable
         svc.Items.Should().ContainKey(99L).And.NotContainKey(1L);
         svc.GetSnapshot("items").Source.Should().Be(ReferenceFileSource.Cdn);
         svc.GetSnapshot("items").CdnVersion.Should().Be("v500");
-        File.Exists(Path.Combine(_cacheDir, "items.json")).Should().BeTrue();
-        File.Exists(Path.Combine(_cacheDir, "items.meta.json")).Should().BeTrue();
+        var itemsPath = Path.Combine(_cacheDir, "items.json");
+        var itemsMetaPath = Path.Combine(_cacheDir, "items.meta.json");
+        var dirContents = Directory.Exists(_cacheDir)
+            ? string.Join(",", Directory.GetFileSystemEntries(_cacheDir))
+            : "<dir missing>";
+        File.Exists(itemsPath).Should().BeTrue(because: $"wrote to {itemsPath}; cacheDir contents: [{dirContents}]");
+        File.Exists(itemsMetaPath).Should().BeTrue(because: $"wrote to {itemsMetaPath}; cacheDir contents: [{dirContents}]");
         raisedFor.Should().Equal("items");
     }
 

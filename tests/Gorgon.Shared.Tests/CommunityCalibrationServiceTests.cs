@@ -103,10 +103,14 @@ public sealed class CommunityCalibrationServiceTests : IDisposable
 
         // Cache file written atomically
         var cachePath = Path.Combine(_cacheDir, "samwise.json");
-        File.Exists(cachePath).Should().BeTrue();
+        var metaPath = Path.Combine(_cacheDir, "samwise.meta.json");
+        var dirContents = Directory.Exists(_cacheDir)
+            ? string.Join(",", Directory.GetFileSystemEntries(_cacheDir))
+            : "<dir missing>";
+        File.Exists(cachePath).Should().BeTrue(because: $"wrote to {cachePath}; cacheDir contents: [{dirContents}]");
 
         // Meta sidecar also written
-        File.Exists(Path.Combine(_cacheDir, "samwise.meta.json")).Should().BeTrue();
+        File.Exists(metaPath).Should().BeTrue(because: $"wrote to {metaPath}; cacheDir contents: [{dirContents}]");
     }
 
     [Fact]
