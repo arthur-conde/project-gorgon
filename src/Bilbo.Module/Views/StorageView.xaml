@@ -27,8 +27,8 @@
         </DockPanel>
 
         <!-- Controls bar -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <Button DockPanel.Dock="Right" Padding="10,4" Margin="8,0,0,0"
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Padding="10,4"
                     Command="{Binding RefreshCommand}"
                     ToolTip="Re-scan the Reports folder for new storage exports">
                 <StackPanel Orientation="Horizontal">
@@ -36,20 +36,6 @@
                     <TextBlock Text="Refresh" VerticalAlignment="Center"/>
                 </StackPanel>
             </Button>
-
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Location:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox Width="180" Margin="0,0,16,0"
-                          ItemsSource="{Binding AvailableLocations}"
-                          SelectedItem="{Binding SelectedLocation}"/>
-
-                <TextBlock Text="Search:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox Width="200"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                         Background="#FF2A2A2A" Foreground="#FFE8E8E8"
-                         BorderBrush="#55FFFFFF" Padding="4,3"
-                         ToolTip="Filter items by name"/>
-            </StackPanel>
         </DockPanel>
 
         <!-- Status bar -->
@@ -86,10 +72,21 @@
                 </Style>
             </TabControl.Resources>
             <TabItem Header="Inventory">
-                <wpf:GorgonDataGrid x:Name="ItemsGrid"
-                                    ItemsSource="{Binding FilteredItems}"
-                                    Mode="ReadOnly"
-                                    MouseDoubleClick="ItemsGrid_OnMouseDoubleClick">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
+                        <TextBlock Text="Location:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="180" Margin="0,0,16,0"
+                                  ItemsSource="{Binding AvailableLocations}"
+                                  SelectedItem="{Binding SelectedLocation}"/>
+                        <wpf:GorgonQueryBox Grid="{Binding ElementName=ItemsGrid}"
+                                            QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
+                                            Watermark="bare text, or e.g. Rarity = 'Epic' AND Level &gt;= 50"/>
+                    </DockPanel>
+                    <wpf:GorgonDataGrid x:Name="ItemsGrid"
+                                        ItemsSource="{Binding FilteredItems}"
+                                        QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
+                                        Mode="ReadOnly"
+                                        MouseDoubleClick="ItemsGrid_OnMouseDoubleClick">
                     <wpf:GorgonDataGrid.Columns>
                         <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
                             <DataGridTemplateColumn.CellTemplate>
@@ -168,7 +165,8 @@
                             </Setter>
                         </Style>
                     </wpf:GorgonDataGrid.RowStyle>
-                </wpf:GorgonDataGrid>
+                    </wpf:GorgonDataGrid>
+                </DockPanel>
             </TabItem>
             <TabItem Header="Craftable Recipes">
                 <DockPanel>

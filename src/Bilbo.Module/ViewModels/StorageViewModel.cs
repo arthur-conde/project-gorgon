@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Text.RegularExpressions;
 using Bilbo.Domain;
 using Bilbo.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -47,9 +48,6 @@ public sealed partial class StorageViewModel : ObservableObject
     // ── Observable properties ────────────────────────────────────────────
 
     [ObservableProperty]
-    private string _searchText = "";
-
-    [ObservableProperty]
     private string _selectedLocation = "All";
 
     [ObservableProperty]
@@ -68,6 +66,9 @@ public sealed partial class StorageViewModel : ObservableObject
     private string _recipeQueryText = "";
 
     [ObservableProperty]
+    private string _inventoryQueryText = "";
+
+    [ObservableProperty]
     private ConfidenceLevel _confidence = ConfidenceLevel.P95;
 
     public IReadOnlyList<ConfidenceOption> ConfidenceOptions { get; } =
@@ -82,9 +83,19 @@ public sealed partial class StorageViewModel : ObservableObject
 
     // ── Property change handlers ─────────────────────────────────────────
 
-    partial void OnSearchTextChanged(string value) => ApplyFilter();
-
-    partial void OnSelectedLocationChanged(string value) => ApplyFilter();
+    partial void OnSelectedLocationChanged(string value)
+    {
+        var stripped = StripLocationClauses(InventoryQueryText ?? string.Empty);
+        if (string.Equals(value, "All", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(value))
+        {
+            InventoryQueryText = stripped;
+        }
+        else
+        {
+            var clause = $"Location = '{value.Replace("'", "''")}'";
+            InventoryQueryText = stripped.Length == 0 ? clause : $"{stripped} AND {clause}";
+        }
+    }
 
     partial void OnConfidenceChanged(ConfidenceLevel value) => ApplyFilter();
 
@@ -133,19 +144,6 @@ public sealed partial class StorageViewModel : ObservableObject
     {
         IEnumerable<StorageItemRow> items = _allItems;
 
-        // Global filters
-        if (!string.Equals(SelectedLocation, "All", StringComparison.OrdinalIgnoreCase))
-        {
-            items = items.Where(i =>
-                i.Location.Equals(SelectedLocation, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (!string.IsNullOrWhiteSpace(SearchText))
-        {
-            items = items.Where(i =>
-                i.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
-        }
-
         // Per-column filters
         foreach (var col in GridState.Columns)
         {
@@ -170,7 +168,24 @@ public sealed partial class StorageViewModel : ObservableObject
         StatusMessage = $"Showing {result.Count:N0} of {_allItems.Count:N0} items";
 
         CraftableRecipes = CraftableRecipeCalculator.Compute(
-            result, _refData, _activeChar.ActiveCharacter, Confidence);
+            _allItems, _refData, _activeChar.ActiveCharacter, Confidence);
+    }
+
+    // Strip any `Location = '...'` clause (optionally joined by AND) so the dropdown can
+    // re-emit a fresh one on selection change without producing contradictory queries.
+    private static readonly Regex s_leadingLocationAnd = new(
+        @"^\s*Location\s*=\s*'(?:[^']|'')*'\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex s_trailingAndLocation = new(
+        @"\s+AND\s+Location\s*=\s*'(?:[^']|'')*'\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex s_aloneLocation = new(
+        @"^\s*Location\s*=\s*'(?:[^']|'')*'\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static string StripLocationClauses(string query)
+    {
+        query = s_leadingLocationAnd.Replace(query, "");
+        query = s_trailingAndLocation.Replace(query, "");
+        query = s_aloneLocation.Replace(query, "");
+        return query.Trim();
     }
 
     private static string GetCellText(StorageItemRow row, string key) => key switch
