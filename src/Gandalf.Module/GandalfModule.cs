@@ -66,9 +66,11 @@ public sealed class GandalfModule : IGorgonModule
         {
             DataContext = sp.GetRequiredService<TimerListViewModel>(),
         });
+
+        services.AddSingleton<GandalfSettingsViewModel>();
         services.AddSingleton<GandalfSettingsView>(sp => new GandalfSettingsView
         {
-            DataContext = sp.GetRequiredService<GandalfSettings>(),
+            DataContext = sp.GetRequiredService<GandalfSettingsViewModel>(),
             Audio = sp.GetRequiredService<AudioSettings>(),
         });
     }

@@ -38,7 +38,8 @@ public class TimerServicesTests : IDisposable
         var store = new PerCharacterStore<GandalfProgress>(_charactersDir, "gandalf.json",
             GandalfProgressJsonContext.Default.GandalfProgress);
         var view = new PerCharacterView<GandalfProgress>(active, store);
-        var progressSvc = new TimerProgressService(view, defsSvc);
+        var progressSvc = new TimerProgressService(view, defsSvc,
+            new PerCharacterStoreOptions { CharactersRootDir = _charactersDir });
         return (defsSvc, progressSvc, view, active);
     }
 
@@ -185,6 +186,36 @@ public class TimerServicesTests : IDisposable
 
         progress.ClearAllDoneOnActive();
         view.Current!.ByTimerId.Should().NotContainKey("orphan-id");
+
+        defs.Dispose();
+        progress.Dispose();
+        view.Dispose();
+    }
+
+    [Fact]
+    public void ClearAllProgressForAllCharacters_deletes_every_character_progress_file()
+    {
+        var (defs, progress, view, active) = BuildServices();
+
+        active.SetActiveCharacter("Arthur", "Kwatoxi");
+        defs.Add(new GandalfTimerDef { Name = "Shared", Duration = TimeSpan.FromHours(1) });
+        var id = defs.Definitions[0].Id;
+        progress.Start(id);
+
+        active.SetActiveCharacter("Bilbo", "Kwatoxi");
+        progress.Start(id);
+
+        var arthurPath = Path.Combine(_charactersDir, "Arthur_Kwatoxi", "gandalf.json");
+        var bilboPath = Path.Combine(_charactersDir, "Bilbo_Kwatoxi", "gandalf.json");
+        File.Exists(arthurPath).Should().BeTrue();
+        File.Exists(bilboPath).Should().BeTrue();
+
+        progress.ClearAllProgressForAllCharacters();
+
+        File.Exists(arthurPath).Should().BeFalse();
+        File.Exists(bilboPath).Should().BeFalse();
+        // Definitions are untouched by ClearAllProgress; the settings VM pairs it with ClearAll for the full nuke.
+        defs.Definitions.Should().HaveCount(1);
 
         defs.Dispose();
         progress.Dispose();

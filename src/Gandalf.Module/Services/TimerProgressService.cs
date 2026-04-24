@@ -1,6 +1,7 @@
 using System.IO;
 using Gandalf.Domain;
 using Gorgon.Shared.Character;
+using Gorgon.Shared.Diagnostics;
 
 namespace Gandalf.Services;
 
@@ -30,6 +31,8 @@ public sealed class TimerProgressService : IDisposable
 {
     private readonly PerCharacterView<GandalfProgress> _view;
     private readonly TimerDefinitionsService _defs;
+    private readonly PerCharacterStoreOptions _storeOptions;
+    private readonly IDiagnosticsSink? _diag;
     private readonly System.Timers.Timer _debounce;
     private readonly Lock _flushLock = new();
     private readonly HashSet<string> _expiredNotified = new(StringComparer.Ordinal);
@@ -37,10 +40,14 @@ public sealed class TimerProgressService : IDisposable
 
     public TimerProgressService(
         PerCharacterView<GandalfProgress> view,
-        TimerDefinitionsService defs)
+        TimerDefinitionsService defs,
+        PerCharacterStoreOptions storeOptions,
+        IDiagnosticsSink? diag = null)
     {
         _view = view;
         _defs = defs;
+        _storeOptions = storeOptions;
+        _diag = diag;
         _view.CurrentChanged += OnCurrentChanged;
         _debounce = new System.Timers.Timer(500) { AutoReset = false };
         _debounce.Elapsed += (_, _) => Flush();
@@ -107,6 +114,42 @@ public sealed class TimerProgressService : IDisposable
         progress.CompletedAt = null;
         _expiredNotified.Remove(id);
         MarkDirty();
+        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Delete every character's progress file. Invalidates the view first so a racy
+    /// <see cref="MarkDirty"/> can't resurrect a just-deleted file. Used by the settings-level
+    /// "Delete All Timers" action alongside <see cref="TimerDefinitionsService.ClearAll"/>.
+    /// </summary>
+    public void ClearAllProgressForAllCharacters()
+    {
+        lock (_flushLock)
+        {
+            _dirty = false;
+            _debounce.Stop();
+            _view.Invalidate();
+
+            var root = _storeOptions.CharactersRootDir;
+            if (!Directory.Exists(root))
+            {
+                ProgressChanged?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            foreach (var charDir in Directory.EnumerateDirectories(root))
+            {
+                var path = Path.Combine(charDir, "gandalf.json");
+                if (!File.Exists(path)) continue;
+                try { File.Delete(path); }
+                catch (Exception ex)
+                {
+                    _diag?.Warn("Gandalf.Progress", $"Failed to delete {path}: {ex.Message}");
+                }
+            }
+
+            _expiredNotified.Clear();
+        }
         ProgressChanged?.Invoke(this, EventArgs.Empty);
     }
 

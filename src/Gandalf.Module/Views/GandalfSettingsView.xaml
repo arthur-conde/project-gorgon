@@ -14,26 +14,26 @@
 
             <!-- Alarm settings -->
             <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
-            <CheckBox Content="Enabled" IsChecked="{Binding AlarmEnabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+            <CheckBox Content="Enabled" IsChecked="{Binding Settings.AlarmEnabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <CheckBox Content="Allow concurrent alarm sounds"
                       IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-            <CheckBox Content="Flash the Gorgon window when a timer completes" IsChecked="{Binding FlashWindow}"
+            <CheckBox Content="Flash the Gorgon window when a timer completes" IsChecked="{Binding Settings.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
 
             <DockPanel Margin="0,8,0,0" LastChildFill="True">
                 <TextBlock Text="Volume" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
                 <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="50"
-                           Text="{Binding AlarmVolume, StringFormat={}{0:P0}}"/>
+                           Text="{Binding Settings.AlarmVolume, StringFormat={}{0:P0}}"/>
                 <Slider Minimum="0" Maximum="2" SmallChange="0.05" LargeChange="0.1" TickFrequency="0.1"
                         IsSnapToTickEnabled="False" VerticalAlignment="Center" Margin="8,0"
-                        Value="{Binding AlarmVolume}"/>
+                        Value="{Binding Settings.AlarmVolume}"/>
             </DockPanel>
 
             <DockPanel Margin="0,8,0,0" LastChildFill="False">
                 <TextBlock Text="Snooze duration" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
                 <TextBox Width="70" Margin="8,0" Padding="6,4"
-                         Text="{Binding SnoozeMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
+                         Text="{Binding Settings.SnoozeMinutes, UpdateSourceTrigger=LostFocus, StringFormat=F1}"/>
                 <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="#88FFFFFF"/>
             </DockPanel>
 
@@ -46,11 +46,28 @@
                         Click="TestSound_Click"/>
                 <Button DockPanel.Dock="Right" Content="Clear" Padding="8,4" Margin="6,0,0,0"
                         Click="ClearSound_Click" ToolTip="Reset to system default"/>
-                <TextBox Text="{Binding SoundFilePath, UpdateSourceTrigger=LostFocus}" Padding="6,4"/>
+                <TextBox Text="{Binding Settings.SoundFilePath, UpdateSourceTrigger=LostFocus}" Padding="6,4"/>
             </DockPanel>
+
+            <!-- Danger zone -->
+            <Border Margin="0,24,0,0" Padding="0,12,0,0" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0">
+                <StackPanel>
+                    <TextBlock Text="Danger zone" Foreground="#FFCC6666" Margin="0,0,0,6" FontWeight="SemiBold"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8">
+                        Deletes every timer definition (shared across all characters) and clears every
+                        character's progress. There's no undo.
+                    </TextBlock>
+                    <Button HorizontalAlignment="Left" Padding="12,5" Command="{Binding DeleteAllCommand}"
+                            Background="#FF3B1F1F" Foreground="#FFE8E8E8" BorderBrush="#FF8B3A3A">
+                        <TextBlock Text="Delete All Timers"/>
+                    </Button>
+                </StackPanel>
+            </Border>
 
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
                 Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Gandalf\settings.json.
+                Timer definitions persist to %LOCALAPPDATA%\Gorgon\Gandalf\definitions.json; per-character
+                progress lives under %LOCALAPPDATA%\Gorgon\characters\{character}_{server}\gandalf.json.
             </TextBlock>
         </StackPanel>
     </ScrollViewer>

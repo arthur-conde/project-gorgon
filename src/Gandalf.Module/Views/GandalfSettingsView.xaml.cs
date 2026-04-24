@@ -1,5 +1,6 @@
 using System.Windows;
 using Gandalf.Domain;
+using Gandalf.ViewModels;
 using Gorgon.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
@@ -14,9 +15,12 @@ public partial class GandalfSettingsView : System.Windows.Controls.UserControl
 
     public AudioSettings? Audio { get; set; }
 
+    private GandalfSettings? CurrentSettings => (DataContext as GandalfSettingsViewModel)?.Settings;
+
     private void BrowseSound_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not GandalfSettings settings) return;
+        var settings = CurrentSettings;
+        if (settings is null) return;
         var dlg = new OpenFileDialog
         {
             Title = "Choose an alarm sound",
@@ -27,15 +31,15 @@ public partial class GandalfSettingsView : System.Windows.Controls.UserControl
 
     private void TestSound_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is GandalfSettings s)
-        {
-            _testHandle?.Stop();
-            _testHandle = AlarmSoundPlayer.Play(s.SoundFilePath, (float)s.AlarmVolume, "gandalf");
-        }
+        var s = CurrentSettings;
+        if (s is null) return;
+        _testHandle?.Stop();
+        _testHandle = AlarmSoundPlayer.Play(s.SoundFilePath, (float)s.AlarmVolume, "gandalf");
     }
 
     private void ClearSound_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is GandalfSettings s) s.SoundFilePath = null;
+        var s = CurrentSettings;
+        if (s is not null) s.SoundFilePath = null;
     }
 }
