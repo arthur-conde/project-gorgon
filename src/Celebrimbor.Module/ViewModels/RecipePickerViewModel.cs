@@ -134,6 +134,28 @@ public sealed partial class RecipePickerViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void CopyShareLink()
+    {
+        var list = _settings.CraftList.Where(e => e.Quantity > 0).ToList();
+        if (list.Count == 0)
+        {
+            StatusMessage = "No recipes to share.";
+            return;
+        }
+        try
+        {
+            var payload = CraftListFormat.EncodeShareLink(list);
+            var url = $"gorgon://list/{payload}";
+            Clipboard.SetText(url);
+            StatusMessage = $"Copied share link ({list.Count} recipes, {url.Length} chars).";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Share link failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     private void PasteList()
     {
         string text;
@@ -147,20 +169,29 @@ public sealed partial class RecipePickerViewModel : ObservableObject
         }
 
         var result = CraftListFormat.Parse(text, _refData);
+        PromptAndApply(result, "Paste list");
+    }
+
+    /// <summary>
+    /// Shared entry point for both the Paste button and the <c>gorgon://list</c> deep link.
+    /// Runs the Append/Replace/Cancel dialog and applies the selected mode to the craft list.
+    /// </summary>
+    public void PromptAndApply(ParseResult result, string dialogTitleSuffix)
+    {
         if (result.Entries.Count == 0)
         {
             StatusMessage = result.Warnings.Count == 0
-                ? "No recipes found in clipboard text."
+                ? "No recipes found."
                 : $"No recipes parsed. {result.Warnings.Count} warnings.";
             return;
         }
 
         var choice = MessageBox.Show(
-            $"Paste {result.Entries.Count} recipes into your craft list?\n\n" +
+            $"Import {result.Entries.Count} recipes into your craft list?\n\n" +
             "Yes — Append (sum quantities for duplicates)\n" +
             "No — Replace the current list\n" +
             "Cancel — Do nothing",
-            "Celebrimbor · Paste list",
+            $"Celebrimbor · {dialogTitleSuffix}",
             MessageBoxButton.YesNoCancel,
             MessageBoxImage.Question);
 

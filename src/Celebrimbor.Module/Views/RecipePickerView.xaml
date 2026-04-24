@@ -23,8 +23,11 @@
         <!-- Toolbar -->
         <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyListCommand}" ToolTip="Copy craft list to clipboard">
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyListCommand}" ToolTip="Copy craft list to clipboard as text">
                     <icon:PackIconLucide Kind="Copy" Width="14" Height="14"/>
+                </Button>
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyShareLinkCommand}" ToolTip="Copy a gorgon:// share link to the clipboard — opens straight into Celebrimbor when someone clicks it">
+                    <icon:PackIconLucide Kind="Link" Width="14" Height="14"/>
                 </Button>
                 <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding PasteListCommand}" ToolTip="Paste craft list from clipboard">
                     <icon:PackIconLucide Kind="ClipboardPaste" Width="14" Height="14"/>

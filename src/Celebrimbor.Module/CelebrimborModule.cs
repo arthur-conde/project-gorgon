@@ -35,6 +35,7 @@ public sealed class CelebrimborModule : IGorgonModule
         services.AddSingleton<RecipeAggregator>();
         services.AddSingleton<RecipeSearchIndex>();
         services.AddSingleton<OnHandInventoryQuery>();
+        services.AddSingleton<ICraftListImportTarget, CraftListImportTarget>();
 
         services.AddSingleton<RecipePickerViewModel>();
         services.AddSingleton<ShoppingListViewModel>();

@@ -97,4 +97,66 @@ public class CraftListFormatTests
 
         merged.Should().HaveCount(2);
     }
+
+    // ---- Share link encoding ------------------------------------------------
+
+    [Fact]
+    public void ShareLink_round_trip_preserves_entries()
+    {
+        var original = new List<CraftListEntry>
+        {
+            new() { RecipeInternalName = "Butter", Quantity = 7 },
+        };
+
+        var payload = CraftListFormat.EncodeShareLink(original);
+        var parsed = CraftListFormat.DecodeShareLink(payload, Data);
+
+        parsed.Warnings.Should().BeEmpty();
+        parsed.Entries.Should().ContainSingle(e => e.RecipeInternalName == "Butter" && e.Quantity == 7);
+    }
+
+    [Fact]
+    public void ShareLink_payload_uses_only_base64url_chars()
+    {
+        var entries = new List<CraftListEntry>
+        {
+            new() { RecipeInternalName = "Butter", Quantity = 2 },
+        };
+
+        var payload = CraftListFormat.EncodeShareLink(entries);
+
+        payload.Should().MatchRegex("^[A-Za-z0-9_-]+$");
+    }
+
+    [Fact]
+    public void ShareLink_empty_payload_returns_warning()
+    {
+        var parsed = CraftListFormat.DecodeShareLink("", Data);
+
+        parsed.Entries.Should().BeEmpty();
+        parsed.Warnings.Should().ContainSingle(w => w.Contains("empty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ShareLink_bad_base64_returns_warning_not_throws()
+    {
+        // '!' is not a base64url character.
+        var parsed = CraftListFormat.DecodeShareLink("not!valid", Data);
+
+        parsed.Entries.Should().BeEmpty();
+        parsed.Warnings.Should().ContainSingle(w => w.Contains("base64url", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ShareLink_wrong_version_byte_returns_warning()
+    {
+        // Hand-craft a payload with version byte 0x02 (unsupported) + two arbitrary bytes.
+        var bytes = new byte[] { 0x02, 0xAB, 0xCD };
+        var payload = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        var parsed = CraftListFormat.DecodeShareLink(payload, Data);
+
+        parsed.Entries.Should().BeEmpty();
+        parsed.Warnings.Should().ContainSingle(w => w.Contains("version", StringComparison.OrdinalIgnoreCase));
+    }
 }

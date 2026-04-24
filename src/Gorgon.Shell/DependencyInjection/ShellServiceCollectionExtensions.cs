@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using Gorgon.Shared.Diagnostics;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Wpf;
 using Gorgon.Shell.Updates;
@@ -61,7 +62,14 @@ public static class ShellServiceCollectionExtensions
     public static IServiceCollection AddGorgonItemDetail(this IServiceCollection services) =>
         services
             .AddSingleton<IItemDetailPresenter, ItemDetailPresenter>()
-            .AddSingleton<IDeepLinkRouter, DeepLinkRouter>();
+            .AddSingleton<IModuleActivator, ShellModuleActivator>()
+            // Factory form so ICraftListImportTarget and IDiagnosticsSink stay optional —
+            // modules register them at their discretion, and the router degrades gracefully
+            // (deep links to absent handlers are logged + dropped, never thrown).
+            .AddSingleton<IDeepLinkRouter>(sp => new DeepLinkRouter(
+                sp.GetRequiredService<IItemDetailPresenter>(),
+                sp.GetService<ICraftListImportTarget>(),
+                sp.GetService<IDiagnosticsSink>()));
 
     public static IServiceCollection AddGorgonShellViews(this IServiceCollection services) =>
         services
