@@ -28,7 +28,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         _alarmService = alarmService;
         _dialogService = dialogService;
 
-        _stateService.TimerChanged += (_, _) => SyncFromState();
+        _stateService.TimerChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
 
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
@@ -41,6 +41,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         _refreshTimer.Start();
 
         SyncFromState();
+        RefreshAutocomplete();
     }
 
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
@@ -52,7 +53,6 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void AddTimer()
     {
-        RefreshAutocomplete();
         var vm = new TimerDialogViewModel(null, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 
@@ -73,7 +73,6 @@ public sealed partial class TimerListViewModel : ObservableObject
     {
         if (item is null) return;
 
-        RefreshAutocomplete();
         var vm = new TimerDialogViewModel(item.Timer, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 

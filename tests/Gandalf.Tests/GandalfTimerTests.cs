@@ -217,4 +217,47 @@ public class GandalfTimerTests
         // State is computed, not from JSON — this timer started long ago so it's Done
         timer.State.Should().Be(TimerState.Done);
     }
+
+    [Fact]
+    public void Timers_swap_and_TimerChanged_fires_on_character_switch()
+    {
+        // Covers the source-of-truth for TimerListViewModel.KnownRegions/KnownMaps
+        // autocomplete: the VM listens to TimerChanged and rebuilds the region/map
+        // lists from svc.Timers. If Timers and the event both react correctly to a
+        // character switch, the VM's autocomplete refresh is trivially correct.
+        var dir = Path.Combine(Path.GetTempPath(), $"gandalf-auto-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var active = new FakeActiveCharacterService();
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+            var store = new PerCharacterStore<GandalfState>(dir, "gandalf.json",
+                GandalfStateJsonContext.Default.GandalfState);
+            using var view = new PerCharacterView<GandalfState>(active, store);
+            var svc = new TimerStateService(view);
+
+            svc.Add(new GandalfTimer { Name = "T1", Duration = TimeSpan.FromHours(1), Region = "Serbule", Map = "Serbule Hills" });
+
+            active.SetActiveCharacter("Bilbo", "Kwatoxi");
+            svc.Add(new GandalfTimer { Name = "T2", Duration = TimeSpan.FromHours(1), Region = "Kur Tower", Map = "Kur" });
+
+            svc.Timers.Select(t => t.Region).Should().BeEquivalentTo("Kur Tower");
+            svc.Timers.Select(t => t.Map).Should().BeEquivalentTo("Kur");
+
+            var timerChangedFired = 0;
+            svc.TimerChanged += (_, _) => timerChangedFired++;
+
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+            timerChangedFired.Should().BeGreaterThan(0, "VM relies on this event to refresh autocomplete");
+            svc.Timers.Select(t => t.Region).Should().BeEquivalentTo("Serbule");
+            svc.Timers.Select(t => t.Map).Should().BeEquivalentTo("Serbule Hills");
+
+            svc.Dispose();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
