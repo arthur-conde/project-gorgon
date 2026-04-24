@@ -156,7 +156,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                     .Where(c => c is not null).Select(c => c!)
                     .ToList();
             }
-            if (results.Count == 0)
+            var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _refData);
+            if (results.Count == 0 && craftedOutputs.Count == 0)
                 results = [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
             making.Add(new CraftListItemViewModel(
                 recipe.InternalName,
@@ -166,7 +167,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 recipe.Skill,
                 recipe.SkillLevelReq,
                 ingredients,
-                results));
+                results,
+                craftedOutputs));
         }
         MakingItems = making;
 

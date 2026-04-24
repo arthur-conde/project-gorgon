@@ -295,6 +295,19 @@
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
+                                                        <TextBlock Text="Crafted gear" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                                   FontWeight="SemiBold" Margin="0,8,0,4"
+                                                                   Visibility="{Binding CraftedOutputs.Count, Converter={x:Static vm:CountToVisConverter.Instance}}"/>
+                                                        <ItemsControl ItemsSource="{Binding CraftedOutputs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                        <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                                        <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                     </StackPanel>
                                                 </Border>
                                             </DataTemplate>

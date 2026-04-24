@@ -16,7 +16,9 @@
 
     <!-- Shared rich recipe card template.
          Consumers bind to anything exposing Name, IconId, Skill, SkillLevelReq,
-         Ingredients, and Results (both RecipeRowViewModel and CraftListItemViewModel). -->
+         Ingredients, Results, and CraftedOutputs (both RecipeRowViewModel and
+         CraftListItemViewModel). CraftedOutputs renders an optional "Crafted gear"
+         section for TSysCraftedEquipment recipes; it's hidden when the list is empty. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
                 CornerRadius="4" Padding="10" MaxWidth="380">
@@ -64,7 +66,8 @@
                 </ItemsControl>
 
                 <TextBlock Text="Yields" Foreground="#88FFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding Results.Count, Converter={StaticResource CountToVisibility}}"/>
                 <ItemsControl ItemsSource="{Binding Results}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -74,6 +77,20 @@
                                     <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
                                 </TextBlock>
                                 <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="Crafted gear" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding CraftedOutputs.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding CraftedOutputs}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
                             </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

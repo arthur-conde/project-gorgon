@@ -14,10 +14,12 @@ public sealed partial class RecipeRowViewModel : ObservableObject
                 : null)
             .Where(c => c is not null).Select(c => c!)
             .ToList();
-        Results = ProjectResults(recipe, refData);
+        CraftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, refData);
+        Results = ProjectResults(recipe, refData, CraftedOutputs.Count);
     }
 
-    private static IReadOnlyList<IngredientChip> ProjectResults(RecipeEntry recipe, IReferenceDataService refData)
+    private static IReadOnlyList<IngredientChip> ProjectResults(
+        RecipeEntry recipe, IReferenceDataService refData, int craftedOutputCount)
     {
         var primary = recipe.ResultItems
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
@@ -36,6 +38,9 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             .ToList();
         if (proto.Count > 0) return proto;
 
+        // Crafted-gear effects render their own section; skip the placeholder to avoid double-rendering.
+        if (craftedOutputCount > 0) return [];
+
         // Last-resort: the recipe's own name/icon so the Yields section never renders blank.
         return [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
     }
@@ -43,6 +48,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     public RecipeEntry Recipe { get; }
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
+    public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
 
     public string Name => Recipe.Name;
     public string InternalName => Recipe.InternalName;

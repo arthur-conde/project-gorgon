@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Gorgon.Shared.Reference;
 
 namespace Celebrimbor.ViewModels;
 
@@ -17,7 +18,8 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         string skill,
         int skillLevelReq,
         IReadOnlyList<IngredientChip> ingredients,
-        IReadOnlyList<IngredientChip> results)
+        IReadOnlyList<IngredientChip> results,
+        IReadOnlyList<CraftedGearPreview> craftedOutputs)
     {
         RecipeInternalName = recipeInternalName;
         DisplayName = displayName;
@@ -27,6 +29,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         SkillLevelReq = skillLevelReq;
         Ingredients = ingredients;
         Results = results;
+        CraftedOutputs = craftedOutputs;
     }
 
     public string RecipeInternalName { get; }
@@ -38,6 +41,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     public int SkillLevelReq { get; }
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
+    public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
 
     [ObservableProperty]
     private int _quantity;

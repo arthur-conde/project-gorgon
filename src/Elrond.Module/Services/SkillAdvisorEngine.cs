@@ -94,6 +94,8 @@ public sealed class SkillAdvisorEngine
                     : new RecipeIngredientDisplay($"Item #{i.ItemCode}", 0, i.StackSize, i.ChanceToConsume))
                 .ToList();
 
+            var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _ref);
+
             recipeAnalyses.Add(new RecipeAnalysis(
                 recipe.Key,
                 recipe.Name,
@@ -107,7 +109,8 @@ public sealed class SkillAdvisorEngine
                 firstTimeBonusAvailable,
                 effectiveXp,
                 completionsToLevel,
-                ingredients));
+                ingredients,
+                craftedOutputs));
         }
 
         // Sort: level required ascending, then effective XP descending

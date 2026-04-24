@@ -52,7 +52,8 @@ internal sealed class FakeReferenceData : IReferenceDataService
         string skill,
         int skillLevelReq,
         IReadOnlyList<RecipeItemRef> ingredients,
-        IReadOnlyList<RecipeItemRef> results)
+        IReadOnlyList<RecipeItemRef> results,
+        IReadOnlyList<string>? resultEffects = null)
         => new(
             Key: "recipe_" + name.ToLowerInvariant(),
             Name: name,
@@ -67,5 +68,6 @@ internal sealed class FakeReferenceData : IReferenceDataService
             RewardSkillXpDropOffPct: null,
             RewardSkillXpDropOffRate: null,
             Ingredients: ingredients,
-            ResultItems: results);
+            ResultItems: results,
+            ResultEffects: resultEffects);
 }

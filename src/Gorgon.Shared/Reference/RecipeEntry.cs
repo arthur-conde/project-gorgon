@@ -20,4 +20,5 @@ public sealed record RecipeEntry(
     IReadOnlyList<RecipeItemRef> Ingredients,
     IReadOnlyList<RecipeItemRef> ResultItems,
     string? PrereqRecipe = null,
-    IReadOnlyList<RecipeItemRef>? ProtoResultItems = null);
+    IReadOnlyList<RecipeItemRef>? ProtoResultItems = null,
+    IReadOnlyList<string>? ResultEffects = null);

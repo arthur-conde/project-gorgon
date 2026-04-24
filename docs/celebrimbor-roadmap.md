@@ -80,6 +80,15 @@ Celebrimbor is the crafting planner. Users pick recipes and per-recipe quantitie
 - Render a mini-chain in the picker's row detail pane on hover/select.
 - Flag "you cannot learn this yet" when an upstream prereq is missing from `CharacterSnapshot.RecipeCompletions`.
 
+### 3a. Remaining `ResultEffects` prefixes
+
+**Why deferred:** The crafted-gear preview that shipped in the `ResultEffects` iteration parses only `TSysCraftedEquipment` — ~63% of all `ResultEffects` usage across `recipes.json`. The remaining 14 prefixes (`BestowRecipeIfNotKnown`, `AddItemTSysPower`, `CraftWaxItem`, calligraphy effects, etc.) cumulatively cover the rest, but each one needs its own UI treatment and the cost/value stays low until users request specific ones.
+
+**Likely approach when revisited:**
+- `BestowRecipeIfNotKnown(recipeInternalName)` → "Unlocks: <recipe name>". Pairs naturally with §3 (Recipe prereq chain visualization); bundle there.
+- `AddItemTSysPower(template, tier)` → "Augments with <template> · Tier N". Similar render to crafted gear.
+- Calligraphy effects and zero-arg prefixes → skip or summarize in a collapsed details area.
+
 ### 4. Shareable URL / token formats for craft lists
 
 **Why deferred:** The plain-text paste format already covers the "share this list on Discord" use case; clipboard round-trips losslessly. Any URL-flavored format is a second serialization contract to maintain.

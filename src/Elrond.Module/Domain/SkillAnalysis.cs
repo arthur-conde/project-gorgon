@@ -1,3 +1,5 @@
+using Gorgon.Shared.Reference;
+
 namespace Elrond.Domain;
 
 /// <summary>
@@ -32,7 +34,8 @@ public sealed record RecipeAnalysis(
     bool FirstTimeBonusAvailable,
     int EffectiveXp,
     int? CompletionsToLevel,
-    IReadOnlyList<RecipeIngredientDisplay> Ingredients);
+    IReadOnlyList<RecipeIngredientDisplay> Ingredients,
+    IReadOnlyList<CraftedGearPreview> CraftedOutputs);
 
 /// <summary>Display-ready ingredient for a recipe tooltip.</summary>
 public sealed record RecipeIngredientDisplay(string Name, int IconId, int StackSize, float? ChanceToConsume);

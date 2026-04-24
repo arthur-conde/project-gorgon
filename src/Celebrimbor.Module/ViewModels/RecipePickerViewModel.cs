@@ -264,7 +264,8 @@ public sealed partial class RecipePickerViewModel : ObservableObject
                 row.Skill,
                 row.SkillLevelReq,
                 row.Ingredients,
-                row.Results);
+                row.Results,
+                row.CraftedOutputs);
             item.PropertyChanged += OnCraftListItemPropertyChanged;
             CraftListItems.Add(item);
         }

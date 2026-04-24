@@ -330,6 +330,8 @@ public sealed class ReferenceDataService : IReferenceDataService
                 .ToList()
                 ?? (IReadOnlyList<RecipeItemRef>)[];
 
+            var resultEffects = (IReadOnlyList<string>)(v.ResultEffects ?? []);
+
             var entry = new RecipeEntry(
                 key,
                 v.Name ?? "",
@@ -346,7 +348,8 @@ public sealed class ReferenceDataService : IReferenceDataService
                 ingredients,
                 results,
                 v.PrereqRecipe,
-                protoResults);
+                protoResults,
+                resultEffects);
             byKey[key] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }

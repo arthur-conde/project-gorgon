@@ -43,6 +43,12 @@ public sealed class RawRecipe
     /// <summary>Fallback output list used by crafted-equipment recipes that leave <see cref="ResultItems"/> empty.</summary>
     public List<RawRecipeItem>? ProtoResultItems { get; set; }
     public string? PrereqRecipe { get; set; }
+    /// <summary>
+    /// Procedural effect strings describing the finished item (e.g.
+    /// <c>TSysCraftedEquipment(CraftedWerewolfChest6,0,Werewolf)</c>). Crafted-equipment
+    /// recipes encode tier/subtype here rather than in <see cref="ResultItems"/>.
+    /// </summary>
+    public List<string>? ResultEffects { get; set; }
 }
 
 /// <summary>Raw ingredient/result item entry within a recipe.</summary>
