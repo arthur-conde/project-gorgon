@@ -122,6 +122,15 @@
             <TextBlock Margin="0,16,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Text="Gorgon checks GitHub for new commits on main while running. If your build is behind, run 'git pull' in your clone and rebuild."/>
+
+            <TextBlock Text="Deep linking" Foreground="#88FFFFFF" Margin="0,28,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                       Text="Register a gorgon:// URL handler so other apps can open Gorgon directly at a specific item. Example: gorgon://item/CraftedLeatherBoots5. Stored in your user registry (HKCU); no admin rights required."/>
+            <TextBlock Text="{Binding LinkSchemeStatus}" Foreground="#CCFFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"/>
+            <Button Padding="12,6" HorizontalAlignment="Left"
+                    Content="{Binding LinkSchemeButtonText}"
+                    Command="{Binding ToggleLinkSchemeCommand}"/>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

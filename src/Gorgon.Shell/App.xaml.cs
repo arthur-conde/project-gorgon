@@ -1,4 +1,6 @@
+using System.IO;
 using System.Windows;
+using Gorgon.Shared.Modules;
 
 namespace Gorgon.Shell;
 
@@ -12,6 +14,10 @@ public partial class App : System.Windows.Application
         _activateEvent = activateEvent;
         _activateCts = activateCts;
     }
+
+    /// <summary>Set by <see cref="Program"/> after the host is built, so the activation-event
+    /// loop can dispatch <c>gorgon://</c> URIs forwarded from a second instance.</summary>
+    public IDeepLinkRouter? DeepLinkRouter { get; set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -47,6 +53,11 @@ public partial class App : System.Windows.Application
         {
             var signaled = await Task.Run(() => ev.WaitOne(TimeSpan.FromSeconds(1))).ConfigureAwait(false);
             if (!signaled) continue;
+
+            // The second instance may have dropped off a gorgon:// URI before signalling us.
+            // Read-and-delete in one shot; missing / unreadable file is a no-op.
+            var activationUri = TryConsumeActivationUri();
+
             await Dispatcher.InvokeAsync(() =>
             {
                 if (MainWindow is null) return;
@@ -55,7 +66,25 @@ public partial class App : System.Windows.Application
                 MainWindow.Activate();
                 MainWindow.Topmost = true;
                 MainWindow.Topmost = false;
+
+                if (activationUri is not null) DeepLinkRouter?.Handle(activationUri);
             });
+        }
+    }
+
+    private static string? TryConsumeActivationUri()
+    {
+        try
+        {
+            var path = Program.ActivationUriPath;
+            if (!File.Exists(path)) return null;
+            var uri = File.ReadAllText(path).Trim();
+            try { File.Delete(path); } catch { /* best-effort */ }
+            return string.IsNullOrEmpty(uri) ? null : uri;
+        }
+        catch
+        {
+            return null;
         }
     }
 }

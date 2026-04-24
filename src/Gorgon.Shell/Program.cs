@@ -28,6 +28,14 @@ public static class Program
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Gorgon", "Shell", "boot.log");
 
+    /// <summary>
+    /// Drop-off file the second instance uses to hand an activation URI (e.g. <c>gorgon://item/X</c>)
+    /// to the first instance. Read and deleted by <see cref="App"/> on each activate-event signal.
+    /// </summary>
+    public static readonly string ActivationUriPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Gorgon", "Shell", "activation.uri");
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -40,12 +48,23 @@ public static class Program
         {
             Boot("=== startup ===");
 
+            // Extract an activation URI from argv if present. The OS passes it as the first
+            // argument when launching via the registered custom scheme (gorgon://…).
+            var activationUri = ExtractActivationUri(args);
+
             // Single-instance guard
             mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
             if (!createdNew)
             {
                 try
                 {
+                    // Hand the URI to the first instance before signalling, so its WatchActivateEvent
+                    // loop has a file to read. Overwrite any previous drop-off.
+                    if (activationUri is not null)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(ActivationUriPath)!);
+                        File.WriteAllText(ActivationUriPath, activationUri);
+                    }
                     using var ev = EventWaitHandle.OpenExisting(ActivateEventName);
                     ev.Set();
                 }
@@ -146,6 +165,7 @@ public static class Program
             Boot("creating App");
             var app = new App();
             app.Init(activateEvent, activateCts);
+            app.DeepLinkRouter = host.Services.GetRequiredService<IDeepLinkRouter>();
             app.InitializeComponent();
 
             _ = new UiFontApplier(app, shellSettings);
@@ -189,6 +209,14 @@ public static class Program
             };
 
             Boot("=== startup done ===");
+
+            // Cold-start deep-link: the user launched us via a gorgon:// URI and we are the
+            // first instance. Dispatch once the shell is live. The warm-activation path is
+            // handled inside App.WatchActivateEvent via the activation.uri drop-off.
+            if (activationUri is not null)
+            {
+                app.Dispatcher.BeginInvoke(() => app.DeepLinkRouter?.Handle(activationUri));
+            }
 
             app.Run(); // blocks until WPF shuts down
 
@@ -243,5 +271,16 @@ public static class Program
             File.AppendAllText(BootLogPath, $"{DateTime.Now:HH:mm:ss.fff} {step}\n");
         }
         catch { }
+    }
+
+    private static string? ExtractActivationUri(string[] args)
+    {
+        foreach (var a in args)
+        {
+            if (!string.IsNullOrEmpty(a) &&
+                a.StartsWith(GorgonUriSchemeRegistrar.Scheme + ":", StringComparison.OrdinalIgnoreCase))
+                return a;
+        }
+        return null;
     }
 }

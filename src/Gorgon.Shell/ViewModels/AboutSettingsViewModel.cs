@@ -88,6 +88,52 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
     [RelayCommand]
     private void OpenRepo() => OpenUrl(RepoUrl);
 
+    // ═══════════════ Deep-link scheme registration (gorgon://) ═══════════════
+
+    /// <summary>True when HKCU\Software\Classes\gorgon exists (regardless of which install it points at).</summary>
+    public bool IsLinkSchemeRegistered => GorgonUriSchemeRegistrar.IsRegistered();
+
+    public string LinkSchemeStatus
+    {
+        get
+        {
+            if (!IsLinkSchemeRegistered) return "Not registered";
+            var command = GorgonUriSchemeRegistrar.CurrentRegisteredCommand();
+            var expected = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(command) && !string.IsNullOrEmpty(expected) &&
+                !command.Contains(expected, StringComparison.OrdinalIgnoreCase))
+                return $"Registered, but pointing at a different install: {command}";
+            return "Registered for this install";
+        }
+    }
+
+    public string LinkSchemeButtonText => IsLinkSchemeRegistered
+        ? "Unregister gorgon:// links"
+        : "Register gorgon:// links";
+
+    [RelayCommand]
+    private void ToggleLinkScheme()
+    {
+        try
+        {
+            if (IsLinkSchemeRegistered)
+            {
+                GorgonUriSchemeRegistrar.Unregister();
+            }
+            else
+            {
+                var exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath)) return;
+                GorgonUriSchemeRegistrar.Register(exePath);
+            }
+        }
+        catch { /* best-effort; user can retry */ }
+
+        OnPropertyChanged(nameof(IsLinkSchemeRegistered));
+        OnPropertyChanged(nameof(LinkSchemeStatus));
+        OnPropertyChanged(nameof(LinkSchemeButtonText));
+    }
+
     private static void OpenUrl(string url)
     {
         try

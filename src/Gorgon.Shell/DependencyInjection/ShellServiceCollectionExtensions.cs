@@ -59,7 +59,9 @@ public static class ShellServiceCollectionExtensions
             .AddHostedService<UpdateCheckHostedService>();
 
     public static IServiceCollection AddGorgonItemDetail(this IServiceCollection services) =>
-        services.AddSingleton<IItemDetailPresenter, ItemDetailPresenter>();
+        services
+            .AddSingleton<IItemDetailPresenter, ItemDetailPresenter>()
+            .AddSingleton<IDeepLinkRouter, DeepLinkRouter>();
 
     public static IServiceCollection AddGorgonShellViews(this IServiceCollection services) =>
         services
