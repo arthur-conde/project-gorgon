@@ -25,6 +25,7 @@ public sealed class RecipeAggregator
         IReadOnlyDictionary<string, int>? overridesByInternalName = null)
     {
         var demand = new Dictionary<string, double>(StringComparer.Ordinal);
+        var seeds = new List<string>();
 
         foreach (var entry in entries)
         {
@@ -39,12 +40,25 @@ public sealed class RecipeAggregator
             demand[output.InternalName] = demand.TryGetValue(output.InternalName, out var existing)
                 ? existing + entry.Quantity
                 : entry.Quantity;
+            seeds.Add(output.InternalName);
         }
 
         var producers = BuildProducerLookup(refData);
 
+        // Chain pass: everything the plan touches at this depth, shortfall-agnostic.
+        // Keeps the shopping list visible as a stable skeleton when the demand pass
+        // collapses rows to zero (e.g. user overrides a target to match its needed count).
+        var chainItems = BuildChainItems(seeds, expansionDepth, refData, producers);
+
         if (expansionDepth > 0)
             Expand(demand, expansionDepth, refData, producers, onHandByInternalName, overridesByInternalName);
+
+        // Backfill chain items the demand pass dropped or never reached, so projection
+        // emits them as 0/0 rows (IsCraftReady=true) rather than hiding the step.
+        foreach (var chainItem in chainItems)
+        {
+            if (!demand.ContainsKey(chainItem)) demand[chainItem] = 0;
+        }
 
         var depthCache = new Dictionary<string, int>(StringComparer.Ordinal);
 
@@ -81,6 +95,40 @@ public sealed class RecipeAggregator
             .ThenBy(r => r.PrimaryTag, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Walk the producer graph from <paramref name="seeds"/> down <paramref name="expansionDepth"/>
+    /// levels, collecting every item a full expansion would touch. No shortfall filter — this is
+    /// the stable plan skeleton that survives the demand pass clamping counts to zero. Cycle-safe
+    /// because the chain set prevents re-enqueuing items we've already walked.
+    /// </summary>
+    private static ISet<string> BuildChainItems(
+        IReadOnlyList<string> seeds,
+        int expansionDepth,
+        IReferenceDataService refData,
+        IReadOnlyDictionary<string, RecipeEntry> producers)
+    {
+        var chain = new HashSet<string>(seeds, StringComparer.Ordinal);
+        var frontier = new HashSet<string>(seeds, StringComparer.Ordinal);
+
+        for (var level = 0; level < expansionDepth; level++)
+        {
+            var next = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in frontier)
+            {
+                if (!producers.TryGetValue(item, out var recipe)) continue;
+                foreach (var ingredient in recipe.Ingredients)
+                {
+                    if (!refData.Items.TryGetValue(ingredient.ItemCode, out var ing)) continue;
+                    if (chain.Add(ing.InternalName)) next.Add(ing.InternalName);
+                }
+            }
+            if (next.Count == 0) break;
+            frontier = next;
+        }
+
+        return chain;
     }
 
     /// <summary>

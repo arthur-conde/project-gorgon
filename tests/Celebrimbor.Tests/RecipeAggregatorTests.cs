@@ -293,6 +293,51 @@ public class RecipeAggregatorTests
     }
 
     [Fact]
+    public void TargetFullyOverridden_KeepsChainVisible()
+    {
+        var data = MakeStandardData();
+        var sut = new RecipeAggregator();
+
+        // User wants 2 bread and tells us they already have 2 on hand. Shortfall collapses to zero,
+        // but the ingredient chain should still be visible as 0/0 complete rows — the plan shouldn't
+        // evaporate, it should visibly complete.
+        var overrides = new Dictionary<string, int>(StringComparer.Ordinal) { ["Bread"] = 2 };
+        var entries = new[] { new CraftListEntry { RecipeInternalName = "Bread", Quantity = 2 } };
+        var result = sut.Aggregate(entries, expansionDepth: 2, data, null, null, overrides);
+
+        var bread = result.Single(r => r.ItemInternalName == "Bread");
+        bread.TotalNeeded.Should().Be(2);
+        bread.OnHandOverride.Should().Be(2);
+        bread.IsCraftReady.Should().BeTrue();
+
+        foreach (var name in new[] { "Butter", "Milk", "Salt" })
+        {
+            var row = result.Single(r => r.ItemInternalName == name);
+            row.TotalNeeded.Should().Be(0);
+            row.EffectiveOnHand.Should().Be(0);
+            row.IsCraftReady.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public void PartiallySatisfiedTarget_ReducesRawIngredients_ButKeepsChain()
+    {
+        var data = MakeStandardData();
+        var sut = new RecipeAggregator();
+
+        // 2 bread, override bread=1 → only 1 bread needs crafting. Ingredients scale to that 1 batch:
+        // 1 butter + 1 salt from bread; butter expansion adds 2 milk + 1 salt. Total: 1 butter, 2 milk, 2 salt.
+        var overrides = new Dictionary<string, int>(StringComparer.Ordinal) { ["Bread"] = 1 };
+        var entries = new[] { new CraftListEntry { RecipeInternalName = "Bread", Quantity = 2 } };
+        var result = sut.Aggregate(entries, expansionDepth: 2, data, null, null, overrides);
+
+        result.Single(r => r.ItemInternalName == "Bread").TotalNeeded.Should().Be(2);
+        result.Single(r => r.ItemInternalName == "Butter").TotalNeeded.Should().Be(1);
+        result.Single(r => r.ItemInternalName == "Milk").TotalNeeded.Should().Be(2);
+        result.Single(r => r.ItemInternalName == "Salt").TotalNeeded.Should().Be(2);
+    }
+
+    [Fact]
     public void OnHand_and_overrides_propagate_to_rows()
     {
         var data = MakeStandardData();
