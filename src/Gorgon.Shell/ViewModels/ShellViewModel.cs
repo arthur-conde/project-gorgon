@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Reflection;
 using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -39,6 +38,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly ShellSettings _settings;
     private readonly IActiveCharacterService _activeChar;
     private readonly IUpdateStatusService _updateStatus;
+    private readonly IUpdateApplier _updateApplier;
 
     private readonly ModuleGates _gates;
 
@@ -48,13 +48,15 @@ public sealed partial class ShellViewModel : ObservableObject
         ShellSettings settings,
         ModuleGates gates,
         IActiveCharacterService activeChar,
-        IUpdateStatusService updateStatus)
+        IUpdateStatusService updateStatus,
+        IUpdateApplier updateApplier)
     {
         _services = services;
         _settings = settings;
         _gates = gates;
         _activeChar = activeChar;
         _updateStatus = updateStatus;
+        _updateApplier = updateApplier;
         foreach (var m in modules.OrderBy(m => m.SortOrder))
             Modules.Add(new ModuleEntry { Module = m });
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -83,18 +85,20 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private bool _isUpdateAvailable;
     [ObservableProperty] private string _updateBannerText = "";
-    [ObservableProperty] private string? _updateCompareUrl;
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();
 
     [RelayCommand]
-    private void ViewUpdateDiff()
+    private async Task ApplyUpdateAsync()
     {
-        var url = _updateStatus.CompareUrl
-                  ?? "https://github.com/arthur-conde/project-gorgon/commits/main";
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { /* best-effort */ }
+        if (!_updateStatus.IsOutdated) return;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            await _updateApplier.DownloadAndApplyAsync(cts.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) { /* timeout — surface again next check */ }
     }
 
     private void RefreshUpdateStatus()
@@ -107,11 +111,10 @@ public sealed partial class ShellViewModel : ObservableObject
     private void ApplyUpdateStatus()
     {
         IsUpdateAvailable = _updateStatus.IsOutdated;
-        UpdateCompareUrl = _updateStatus.CompareUrl;
-        var n = _updateStatus.BehindByCount;
-        UpdateBannerText = n == 1
-            ? "1 new commit on main — run git pull to update."
-            : $"{n} new commits on main — run git pull to update.";
+        var v = _updateStatus.RemoteVersion;
+        UpdateBannerText = string.IsNullOrEmpty(v)
+            ? "An update is available — click Install to download and restart."
+            : $"Gorgon v{v} is available — click Install to download and restart.";
     }
 
     [RelayCommand]

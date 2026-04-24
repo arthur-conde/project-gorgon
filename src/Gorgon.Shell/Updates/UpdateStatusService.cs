@@ -5,19 +5,20 @@ public sealed class UpdateStatusService : IUpdateStatusService
     private readonly ShellSettings _settings;
     private readonly object _gate = new();
 
-    public UpdateStatusService(ShellSettings settings)
+    public UpdateStatusService(ShellSettings settings, UpdateChannelInfo channel)
     {
         _settings = settings;
         Local = AssemblyVersionInfo.FromEntryAssembly();
+        Channel = channel;
     }
 
     public AssemblyVersionInfo Local { get; }
+    public UpdateChannelInfo Channel { get; }
 
-    public string? RemoteSha { get; private set; }
-    public DateTimeOffset? RemoteCommittedAt { get; private set; }
+    public string? RemoteVersion { get; private set; }
+    public DateTimeOffset? RemotePublishedAt { get; private set; }
+    public string? ReleaseNotesUrl { get; private set; }
     public UpdateComparisonStatus Status { get; private set; } = UpdateComparisonStatus.Unknown;
-    public int BehindByCount { get; private set; }
-    public string? CompareUrl { get; private set; }
 
     public bool IsChecking { get; private set; }
     public DateTimeOffset? LastCheckedAt { get; private set; }
@@ -25,8 +26,8 @@ public sealed class UpdateStatusService : IUpdateStatusService
 
     public bool IsOutdated =>
         Status == UpdateComparisonStatus.Behind &&
-        !string.IsNullOrEmpty(RemoteSha) &&
-        !string.Equals(RemoteSha, _settings.LastDismissedUpdateSha, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrEmpty(RemoteVersion) &&
+        !string.Equals(RemoteVersion, _settings.LastDismissedUpdateVersion, StringComparison.OrdinalIgnoreCase);
 
     public event EventHandler? StateChanged;
 
@@ -34,8 +35,8 @@ public sealed class UpdateStatusService : IUpdateStatusService
     {
         lock (_gate)
         {
-            if (string.IsNullOrEmpty(RemoteSha)) return;
-            _settings.LastDismissedUpdateSha = RemoteSha;
+            if (string.IsNullOrEmpty(RemoteVersion)) return;
+            _settings.LastDismissedUpdateVersion = RemoteVersion;
         }
         RaiseChanged();
     }
@@ -50,15 +51,14 @@ public sealed class UpdateStatusService : IUpdateStatusService
         RaiseChanged();
     }
 
-    public void ReportResult(string remoteSha, DateTimeOffset? remoteCommittedAt, UpdateComparisonStatus status, int behindBy, string? compareUrl)
+    public void ReportResult(string? remoteVersion, DateTimeOffset? remotePublishedAt, UpdateComparisonStatus status, string? releaseNotesUrl)
     {
         lock (_gate)
         {
-            RemoteSha = remoteSha;
-            RemoteCommittedAt = remoteCommittedAt;
+            RemoteVersion = remoteVersion;
+            RemotePublishedAt = remotePublishedAt;
+            ReleaseNotesUrl = releaseNotesUrl;
             Status = status;
-            BehindByCount = behindBy;
-            CompareUrl = compareUrl;
             IsChecking = false;
             LastCheckedAt = DateTimeOffset.UtcNow;
             LastError = null;

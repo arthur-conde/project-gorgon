@@ -150,8 +150,13 @@
                                      Foreground="#FFE8B04A"/>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
                     <Button Padding="10,3" Margin="0,0,6,0"
-                            Command="{Binding ViewUpdateDiffCommand}">
-                        <TextBlock Text="View diff"/>
+                            Background="#FFD4A847" Foreground="#FF1A1A1A"
+                            Command="{Binding ApplyUpdateCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <icon:PackIconLucide Kind="Download" Width="12" Height="12"
+                                                 VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="Install and restart" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </Button>
                     <Button Padding="10,3"
                             Command="{Binding DismissUpdateCommand}">

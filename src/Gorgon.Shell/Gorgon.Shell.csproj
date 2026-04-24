@@ -11,13 +11,30 @@
     <AssemblyName>Gorgon</AssemblyName>
     <EnableDefaultApplicationEntryPoint>false</EnableDefaultApplicationEntryPoint>
     <StartupObject>Gorgon.Shell.Program</StartupObject>
+
+    <!-- Reflection-based module loader requires DLLs on disk under modules/. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <!-- Modules use Activator.CreateInstance; trimming would remove their types. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>true</PublishReadyToRun>
+
+    <!-- Set by CI per SKU (-p:GorgonUpdateChannel=fxdep|selfcontained). 'dev' is the
+         local-dev sentinel: VelopackUpdateChecker short-circuits so F5 builds never poll. -->
+    <GorgonUpdateChannel Condition="'$(GorgonUpdateChannel)' == ''">dev</GorgonUpdateChannel>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>GorgonUpdateChannel</_Parameter1>
+      <_Parameter2>$(GorgonUpdateChannel)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" />
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\gorgon.ico" />
@@ -48,4 +65,21 @@
     <ProjectReference Include="..\Bilbo.Module\Bilbo.Module.csproj" />
     <ProjectReference Include="..\Pippin.Module\Pippin.Module.csproj" />
   </ItemGroup>
+
+  <!--
+    Stage every sibling *.Module/bin/$(Configuration)/$(TargetFramework)/*.Module.dll into
+    $(PublishDir)modules/ so the reflection loader finds them. This globs against the build
+    output, so a solution-wide `dotnet build` must precede `dotnet publish src/Gorgon.Shell`
+    for the modules that are not <ProjectReference>'d here (Arwen, Saruman, Smaug, Celebrimbor)
+    to land in the publish folder.
+  -->
+  <Target Name="StageGorgonModulesForPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_GorgonModuleDlls Include="$(MSBuildThisFileDirectory)..\*.Module\bin\$(Configuration)\$(TargetFramework)\*.Module.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PublishDir)modules" />
+    <Copy SourceFiles="@(_GorgonModuleDlls)"
+          DestinationFolder="$(PublishDir)modules"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

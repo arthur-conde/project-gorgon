@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only one release per tag at a time. If somebody re-pushes a tag (or a queued run is
+# still going), let the in-flight one finish and skip the redundant build.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Nerdbank.GitVersioning needs full history to compute height/SemVer.
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      - name: Resolve version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $v = $tag.TrimStart('v')
+          if ($v -notmatch '^\d+(\.\d+){1,3}(-[A-Za-z0-9.-]+)?$') {
+            Write-Error "Tag '$tag' does not look like a SemVer release tag (expected v1.2.3 or v1.2.3.4)."
+            exit 1
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Building Gorgon v$v from $tag"
+
+      - name: Restore
+        run: dotnet restore Gorgon.slnx
+
+      # Build the whole solution first so every module's bin/Release/net10.0-windows/*.Module.dll
+      # exists. The Shell csproj's StageGorgonModulesForPublish target globs from those paths,
+      # so the four modules that aren't <ProjectReference>'d (Arwen/Saruman/Smaug/Celebrimbor)
+      # only land in publish/ if they were already built.
+      - name: Build solution
+        run: dotnet build Gorgon.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Run tests
+        run: dotnet test Gorgon.slnx -c Release --no-build --no-restore
+
+      # ─────────────────────────────────────────────────────────────────
+      # Self-contained SKU: bundles .NET 10 desktop runtime (~150 MB).
+      # ─────────────────────────────────────────────────────────────────
+      - name: Publish (selfcontained)
+        run: >
+          dotnet publish src/Gorgon.Shell/Gorgon.Shell.csproj
+          -c Release -r win-x64 --self-contained true --no-restore
+          -p:PublishReadyToRun=true
+          -p:GorgonUpdateChannel=selfcontained
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish/selfcontained
+
+      - name: Velopack pack (selfcontained)
+        run: >
+          vpk pack
+          --packId GorgonShell
+          --packTitle "Project Gorgon"
+          --packAuthors "Arthur Conde"
+          --packVersion ${{ steps.ver.outputs.version }}
+          --packDir publish/selfcontained
+          --mainExe Gorgon.exe
+          --channel selfcontained
+          --icon src/Gorgon.Shell/Resources/gorgon.ico
+          --outputDir releases
+
+      # ─────────────────────────────────────────────────────────────────
+      # Framework-dependent SKU: requires .NET 10 Desktop Runtime on host (~30 MB).
+      # ─────────────────────────────────────────────────────────────────
+      - name: Publish (fxdep)
+        run: >
+          dotnet publish src/Gorgon.Shell/Gorgon.Shell.csproj
+          -c Release -r win-x64 --self-contained false --no-restore
+          -p:PublishReadyToRun=true
+          -p:GorgonUpdateChannel=fxdep
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish/fxdep
+
+      - name: Velopack pack (fxdep)
+        run: >
+          vpk pack
+          --packId GorgonShell
+          --packTitle "Project Gorgon"
+          --packAuthors "Arthur Conde"
+          --packVersion ${{ steps.ver.outputs.version }}
+          --packDir publish/fxdep
+          --mainExe Gorgon.exe
+          --channel fxdep
+          --icon src/Gorgon.Shell/Resources/gorgon.ico
+          --outputDir releases
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Gorgon ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          # Velopack writes Setup.exe, Portable.zip, *-full.nupkg, *-delta.nupkg, and
+          # releases.{channel}.json per channel. The GithubSource client downloads
+          # releases.{channel}.json to discover assets, so all of these must be attached.
+          files: |
+            releases/*.exe
+            releases/*.zip
+            releases/*.nupkg
+            releases/releases*.json

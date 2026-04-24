@@ -12,12 +12,18 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
 
     private readonly IUpdateStatusService _status;
     private readonly IUpdateChecker _checker;
+    private readonly IUpdateApplier _applier;
     private CancellationTokenSource? _manualCheckCts;
 
-    public AboutSettingsViewModel(IUpdateStatusService status, IUpdateChecker checker, ShellSettings settings)
+    public AboutSettingsViewModel(
+        IUpdateStatusService status,
+        IUpdateChecker checker,
+        IUpdateApplier applier,
+        ShellSettings settings)
     {
         _status = status;
         _checker = checker;
+        _applier = applier;
         Settings = settings;
         _status.StateChanged += OnStateChanged;
     }
@@ -25,32 +31,39 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
     public ShellSettings Settings { get; }
 
     public AssemblyVersionInfo Local => _status.Local;
+    public UpdateChannelInfo Channel => _status.Channel;
 
     public string SemanticVersion => string.IsNullOrEmpty(Local.SemanticVersion) ? "(unknown)" : Local.SemanticVersion;
     public string CommitDisplay => Local.HasCommitSha ? Local.ShortCommitSha : "(no git metadata)";
     public bool HasCommitSha => Local.HasCommitSha;
+    public string ChannelDisplay => Channel.DisplayName;
     public string BuildTimestampDisplay =>
         Local.BuildTimestampUtc is { } b ? b.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "(unknown)";
 
     public bool IsChecking => _status.IsChecking;
     public bool NotChecking => !_status.IsChecking;
-    public bool HasRemote => !string.IsNullOrEmpty(_status.RemoteSha);
-    public string RemoteDisplay => _status.RemoteSha is { Length: > 0 } s ? s[..Math.Min(10, s.Length)] : "";
-    public string RemoteCommittedDisplay =>
-        _status.RemoteCommittedAt is { } r ? r.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "";
+    public bool HasRemote => !string.IsNullOrEmpty(_status.RemoteVersion);
+    public string RemoteDisplay => _status.RemoteVersion ?? "";
+    public string RemotePublishedDisplay =>
+        _status.RemotePublishedAt is { } r ? r.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "";
     public string LastCheckedDisplay =>
         _status.LastCheckedAt is { } t ? FormatRelative(t) : "never";
     public string? LastError => _status.LastError;
     public bool HasLastError => !string.IsNullOrEmpty(_status.LastError);
 
+    public bool IsUpdateAvailable => _status.IsOutdated && !_applier.IsApplying;
+    public bool IsApplying => _applier.IsApplying;
+
     public string StatusDisplay => _status.Status switch
     {
-        UpdateComparisonStatus.Identical => "Up to date",
-        UpdateComparisonStatus.Behind    => $"{_status.BehindByCount} new commit(s) on main",
-        UpdateComparisonStatus.Ahead     => "Your build is ahead of main (local commits)",
-        UpdateComparisonStatus.Diverged  => "Your build has diverged from main",
-        UpdateComparisonStatus.NotApplicable => "Not a git build (no commit SHA embedded)",
-        UpdateComparisonStatus.Unknown   => _status.LastCheckedAt is null ? "Not checked yet" : "Unknown",
+        UpdateComparisonStatus.Identical     => "Up to date",
+        UpdateComparisonStatus.Behind        => string.IsNullOrEmpty(_status.RemoteVersion)
+                                                  ? "Update available"
+                                                  : $"Update available — v{_status.RemoteVersion}",
+        UpdateComparisonStatus.NotApplicable => Channel.IsDevelopment
+                                                  ? "Development build (no updates)"
+                                                  : "Updates not applicable",
+        UpdateComparisonStatus.Unknown       => _status.LastCheckedAt is null ? "Not checked yet" : "Unknown",
         _ => "Unknown",
     };
 
@@ -58,8 +71,6 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
     {
         UpdateComparisonStatus.Identical => Brushes.UpToDate,
         UpdateComparisonStatus.Behind    => Brushes.Outdated,
-        UpdateComparisonStatus.Ahead     => Brushes.Informational,
-        UpdateComparisonStatus.Diverged  => Brushes.Informational,
         _ => Brushes.Muted,
     };
 
@@ -86,7 +97,33 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
     }
 
     [RelayCommand]
+    private async Task ApplyUpdateAsync()
+    {
+        if (!_status.IsOutdated || _applier.IsApplying) return;
+        OnPropertyChanged(nameof(IsApplying));
+        OnPropertyChanged(nameof(IsUpdateAvailable));
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            await _applier.DownloadAndApplyAsync(cts.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) { /* timeout — user can retry */ }
+        finally
+        {
+            OnPropertyChanged(nameof(IsApplying));
+            OnPropertyChanged(nameof(IsUpdateAvailable));
+        }
+    }
+
+    [RelayCommand]
     private void OpenRepo() => OpenUrl(RepoUrl);
+
+    [RelayCommand]
+    private void OpenReleaseNotes()
+    {
+        var url = _status.ReleaseNotesUrl ?? $"{RepoUrl}/releases/latest";
+        OpenUrl(url);
+    }
 
     // ═══════════════ Deep-link scheme registration (gorgon://) ═══════════════
 
@@ -160,13 +197,15 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(NotChecking));
         OnPropertyChanged(nameof(HasRemote));
         OnPropertyChanged(nameof(RemoteDisplay));
-        OnPropertyChanged(nameof(RemoteCommittedDisplay));
+        OnPropertyChanged(nameof(RemotePublishedDisplay));
         OnPropertyChanged(nameof(LastCheckedDisplay));
         OnPropertyChanged(nameof(LastError));
         OnPropertyChanged(nameof(HasLastError));
         OnPropertyChanged(nameof(StatusDisplay));
         OnPropertyChanged(nameof(StatusBrush));
+        OnPropertyChanged(nameof(IsUpdateAvailable));
         CheckNowCommand.NotifyCanExecuteChanged();
+        ApplyUpdateCommand.NotifyCanExecuteChanged();
     }
 
     public void Dispose()

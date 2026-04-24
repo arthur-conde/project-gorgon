@@ -32,17 +32,21 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Version" Foreground="#88FFFFFF" Margin="0,2"/>
                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SemanticVersion}" Foreground="#FFE8E8E8" Margin="0,2"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Commit" Foreground="#88FFFFFF" Margin="0,2"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CommitDisplay}" Foreground="#FFE8E8E8"
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Channel" Foreground="#88FFFFFF" Margin="0,2"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ChannelDisplay}" Foreground="#FFE8E8E8" Margin="0,2"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Commit" Foreground="#88FFFFFF" Margin="0,2"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding CommitDisplay}" Foreground="#FFE8E8E8"
                            FontFamily="Consolas" Margin="0,2"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Built" Foreground="#88FFFFFF" Margin="0,2"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding BuildTimestampDisplay}"
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Built" Foreground="#88FFFFFF" Margin="0,2"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding BuildTimestampDisplay}"
                            Foreground="#FFE8E8E8" Margin="0,2"/>
             </Grid>
 
@@ -67,12 +71,12 @@
                 <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StatusDisplay}"
                            Foreground="{Binding StatusBrush}" FontWeight="SemiBold" Margin="0,2"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Remote (main)" Foreground="#88FFFFFF" Margin="0,2"/>
-                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,2">
-                    <TextBlock Text="{Binding RemoteDisplay}" Foreground="#FFE8E8E8" FontFamily="Consolas"/>
-                    <TextBlock Text=" — " Foreground="#66FFFFFF"
-                               Visibility="{Binding HasRemote, Converter={StaticResource BoolToVis}}"/>
-                    <TextBlock Text="{Binding RemoteCommittedDisplay}" Foreground="#88FFFFFF"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Latest release" Foreground="#88FFFFFF" Margin="0,2"
+                           Visibility="{Binding HasRemote, Converter={StaticResource BoolToVis}}"/>
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,2"
+                            Visibility="{Binding HasRemote, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="v" Foreground="#FFE8E8E8"/>
+                    <TextBlock Text="{Binding RemoteDisplay}" Foreground="#FFE8E8E8"/>
                 </StackPanel>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Last checked" Foreground="#88FFFFFF" Margin="0,2"/>
@@ -88,12 +92,30 @@
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <Button Padding="12,6" Margin="0,0,8,0"
+                        Background="#FF4A3820" Foreground="#FFF3E1B8"
+                        Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding ApplyUpdateCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="Download" Width="14" Height="14"
+                                             VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Install update and restart" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="12,6" Margin="0,0,8,0"
                         Command="{Binding CheckNowCommand}"
                         IsEnabled="{Binding NotChecking}">
                     <StackPanel Orientation="Horizontal">
                         <icon:PackIconLucide Kind="RefreshCw" Width="14" Height="14"
                                              VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock Text="Check now" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Padding="12,6" Margin="0,0,8,0"
+                        Command="{Binding OpenReleaseNotesCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="FileText" Width="14" Height="14"
+                                             VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Release notes" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button Padding="12,6" Command="{Binding OpenRepoCommand}">
@@ -107,7 +129,7 @@
 
             <TextBlock Text="Check interval" Foreground="#88FFFFFF" Margin="0,20,0,4" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
-                       Text="How often Gorgon checks GitHub while running. Minimum 0.25 h (15 min)."/>
+                       Text="How often Gorgon polls GitHub Releases for a newer build while running. Minimum 0.25 h (15 min)."/>
             <DockPanel Width="420" HorizontalAlignment="Left" Margin="0,0,0,8">
                 <TextBlock DockPanel.Dock="Right" Width="72" TextAlignment="Right"
                            Text="{Binding Settings.UpdateCheckIntervalHours, StringFormat={}{0:F2} h}"
@@ -121,7 +143,7 @@
 
             <TextBlock Margin="0,16,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
-                       Text="Gorgon checks GitHub for new commits on main while running. If your build is behind, run 'git pull' in your clone and rebuild."/>
+                       Text="Gorgon polls GitHub Releases for a newer build in this channel. When one is available, click 'Install update and restart' to download and apply it. Development builds (run from source) skip the check entirely."/>
 
             <TextBlock Text="Deep linking" Foreground="#88FFFFFF" Margin="0,28,0,4" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"

@@ -5,6 +5,8 @@ obj/
 *.suo
 TestResults/
 artifacts/
+publish/
+releases/
 
 # Temp files for Claude
 src/temp

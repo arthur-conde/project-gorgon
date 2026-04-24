@@ -55,8 +55,11 @@ public static class ShellServiceCollectionExtensions
 
     public static IServiceCollection AddGorgonShellUpdates(this IServiceCollection services) =>
         services
+            .AddSingleton<UpdateChannelInfo>(_ => UpdateChannelInfo.FromEmbedded())
+            .AddSingleton<GorgonUpdateManager>()
             .AddSingleton<IUpdateStatusService, UpdateStatusService>()
-            .AddSingleton<IUpdateChecker, GitHubUpdateChecker>()
+            .AddSingleton<IUpdateChecker, VelopackUpdateChecker>()
+            .AddSingleton<IUpdateApplier, VelopackUpdateApplier>()
             .AddHostedService<UpdateCheckHostedService>();
 
     public static IServiceCollection AddGorgonItemDetail(this IServiceCollection services) =>

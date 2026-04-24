@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using Gorgon.Shared.Character;
@@ -11,11 +13,13 @@ using Gorgon.Shared.Reference;
 using Gorgon.Shared.Settings;
 using Gorgon.Shared.Wpf;
 using Gorgon.Shell.DependencyInjection;
+using Gorgon.Shell.Updates;
 using Gorgon.Shell.ViewModels;
 using Gorgon.Shell.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Samwise.Alarms;
+using Velopack;
 
 namespace Gorgon.Shell;
 
@@ -39,6 +43,24 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Velopack hooks must run before ANY side-effecting code (mutex, file I/O, WPF init):
+        // --veloapp-install / --veloapp-uninstall / --veloapp-updated / --veloapp-firstrun
+        // are stripped from argv here, and install/uninstall variants call Environment.Exit
+        // after handling. Anything that ran first would leave settings folders, boot logs,
+        // or single-instance handles behind during a quiet install.
+        VelopackApp.Build().Run();
+
+        // Channel marker is embedded by MSBuild via -p:GorgonUpdateChannel=…; 'dev' for F5.
+        // Probe once we're past the Velopack hooks but before we build the host, so a
+        // missing .NET 10 runtime on framework-dependent installs surfaces as a friendly
+        // dialog instead of a CLR-load crash.
+        var channel = UpdateChannelInfo.FromEmbedded();
+        if (channel.IsFrameworkDependent && !DesktopRuntimeIsAvailable())
+        {
+            ShowMissingRuntimeDialog();
+            return;
+        }
+
         Mutex? mutex = null;
         EventWaitHandle? activateEvent = null;
         CancellationTokenSource? activateCts = null;
@@ -282,5 +304,65 @@ public static class Program
                 return a;
         }
         return null;
+    }
+
+    // The framework-dependent SKU expects Microsoft.WindowsDesktop.App 10.* on the host.
+    // Without it the CoreCLR error message is incomprehensible; do a cheap probe of
+    // C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App and surface a download link.
+    private const string DotnetDownloadUrl = "https://dotnet.microsoft.com/download/dotnet/10.0";
+    private const int RequiredMajorVersion = 10;
+
+    private static bool DesktopRuntimeIsAvailable()
+    {
+        try
+        {
+            var roots = new[]
+            {
+                Environment.GetEnvironmentVariable("DOTNET_ROOT"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "dotnet"),
+            }.Where(p => !string.IsNullOrEmpty(p) && Directory.Exists(p));
+
+            foreach (var root in roots)
+            {
+                var dir = Path.Combine(root!, "shared", "Microsoft.WindowsDesktop.App");
+                if (!Directory.Exists(dir)) continue;
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    var name = Path.GetFileName(sub);
+                    var dot = name.IndexOf('.');
+                    if (dot <= 0) continue;
+                    if (int.TryParse(name[..dot], out var major) && major >= RequiredMajorVersion)
+                        return true;
+                }
+            }
+            // Fallback: if the framework description says we are already loaded on
+            // a >= net10 runtime, trust it. (This path won't normally hit because the
+            // probe runs before host startup, but it covers self-contained-style hosts.)
+            var fx = RuntimeInformation.FrameworkDescription;
+            return fx.Contains(".NET 10", StringComparison.OrdinalIgnoreCase) ||
+                   fx.Contains(".NET 11", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // If we can't probe, don't block launch — the user will see the CLR error and
+            // we've at least tried to be helpful.
+            return true;
+        }
+    }
+
+    private static void ShowMissingRuntimeDialog()
+    {
+        var result = System.Windows.MessageBox.Show(
+            "Gorgon needs the .NET 10 Desktop Runtime, which doesn't appear to be installed on this machine.\n\n" +
+            "Click OK to open the download page (look for \".NET Desktop Runtime 10.x\", x64).",
+            "Missing .NET 10 Desktop Runtime",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (result == MessageBoxResult.OK)
+        {
+            try { Process.Start(new ProcessStartInfo(DotnetDownloadUrl) { UseShellExecute = true }); }
+            catch { /* best-effort */ }
+        }
     }
 }
