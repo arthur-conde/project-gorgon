@@ -72,7 +72,6 @@
                             BorderBrush="#33FFFFFF"
                             GridLinesVisibility="Horizontal"
                             HorizontalGridLinesBrush="#22FFFFFF"
-                            RowHeight="32"
                             AutoGenerateColumns="False"
                             CanUserAddRows="False"
                             CanUserDeleteRows="False"
@@ -160,7 +159,8 @@
                                                 </ItemsControl>
 
                                                 <TextBlock Text="Yields" Foreground="#88FFFFFF"
-                                                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                                                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                                                           Visibility="{Binding Results.Count, Converter={StaticResource CountToVisibility}}"/>
                                                 <ItemsControl ItemsSource="{Binding Results}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
@@ -170,6 +170,20 @@
                                                                     <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
                                                                 </TextBlock>
                                                                 <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock Text="Crafted gear" Foreground="#88FFFFFF"
+                                                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                                                           Visibility="{Binding CraftedOutputs.Count, Converter={StaticResource CountToVisibility}}"/>
+                                                <ItemsControl ItemsSource="{Binding CraftedOutputs}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
                                                             </StackPanel>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -215,6 +229,44 @@
                                            FontSize="11" FontWeight="SemiBold"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" Padding="6,0"/>
                             </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Yields" Width="Auto" CanUserSort="False" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <!-- Horizontal icon-only inspect buttons. Tooltip on each gives the item name;
+                                 chrome is stripped so it reads as a row of icons rather than buttons. -->
+                            <ItemsControl ItemsSource="{Binding InspectableItems}" VerticalAlignment="Center">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Command="{Binding DataContext.OpenItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding InternalName}"
+                                                ToolTip="{Binding Name}"
+                                                Cursor="Hand" Padding="0" Margin="0,0,3,0"
+                                                Background="Transparent" BorderThickness="0">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Bd" Background="Transparent" Padding="1" CornerRadius="2">
+                                                        <ContentPresenter/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Bd" Property="Background" Value="#22FFFFFF"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <wpf:IconImage IconId="{Binding IconId}" Width="18" Height="18"/>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>

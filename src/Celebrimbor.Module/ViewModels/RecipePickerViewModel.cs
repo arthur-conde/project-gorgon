@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Character;
 using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf;
 
 namespace Celebrimbor.ViewModels;
 
@@ -16,6 +17,7 @@ public sealed partial class RecipePickerViewModel : ObservableObject
     private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _refData;
     private readonly RecipeSearchIndex _search;
+    private readonly IItemDetailPresenter _itemDetail;
     private Dictionary<string, RecipeRowViewModel> _rowByName = new(StringComparer.Ordinal);
     private bool _syncing;
 
@@ -26,12 +28,14 @@ public sealed partial class RecipePickerViewModel : ObservableObject
         CelebrimborSettings settings,
         IActiveCharacterService activeChar,
         IReferenceDataService refData,
-        RecipeSearchIndex search)
+        RecipeSearchIndex search,
+        IItemDetailPresenter itemDetail)
     {
         _settings = settings;
         _activeChar = activeChar;
         _refData = refData;
         _search = search;
+        _itemDetail = itemDetail;
 
         BuildRows();
         ApplyInitialQuantities();
@@ -214,7 +218,7 @@ public sealed partial class RecipePickerViewModel : ObservableObject
         var dict = new Dictionary<string, RecipeRowViewModel>(StringComparer.Ordinal);
         foreach (var recipe in _search.AllRecipes)
         {
-            var row = new RecipeRowViewModel(recipe, _refData);
+            var row = new RecipeRowViewModel(recipe, _refData, _itemDetail);
             row.PropertyChanged += OnRowPropertyChanged;
             AllRows.Add(row);
             dict[recipe.InternalName] = row;
@@ -265,7 +269,8 @@ public sealed partial class RecipePickerViewModel : ObservableObject
                 row.SkillLevelReq,
                 row.Ingredients,
                 row.Results,
-                row.CraftedOutputs);
+                row.CraftedOutputs,
+                _itemDetail);
             item.PropertyChanged += OnCraftListItemPropertyChanged;
             CraftListItems.Add(item);
         }

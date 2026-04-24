@@ -28,6 +28,8 @@ public sealed class RawItem
     /// tokens via <see cref="AttributeEntry"/> (attributes.json).
     /// </summary>
     public List<string>? EffectDescs { get; set; }
+    /// <summary>Prose description / flavor text. Present on every item in items.json.</summary>
+    public string? Description { get; set; }
 }
 
 /// <summary>Raw attributes.json shape — resolves placeholder tokens to human-readable labels and formatting hints.</summary>

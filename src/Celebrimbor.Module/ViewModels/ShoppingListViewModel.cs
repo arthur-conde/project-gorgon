@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Character;
 using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf;
 
 namespace Celebrimbor.ViewModels;
 
@@ -16,6 +17,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
     private readonly OnHandInventoryQuery _onHand;
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IItemDetailPresenter _itemDetail;
 
     public event EventHandler? BackRequested;
 
@@ -24,13 +26,15 @@ public sealed partial class ShoppingListViewModel : ObservableObject
         RecipeAggregator aggregator,
         OnHandInventoryQuery onHand,
         IReferenceDataService refData,
-        IActiveCharacterService activeChar)
+        IActiveCharacterService activeChar,
+        IItemDetailPresenter itemDetail)
     {
         _settings = settings;
         _aggregator = aggregator;
         _onHand = onHand;
         _refData = refData;
         _activeChar = activeChar;
+        _itemDetail = itemDetail;
 
         _settings.PropertyChanged += OnSettingsChanged;
         _activeChar.StorageReportsChanged += (_, _) => DispatchOnUi(Rebuild);
@@ -137,13 +141,13 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             if (!_refData.RecipesByInternalName.TryGetValue(entry.RecipeInternalName, out var recipe)) continue;
             var ingredients = recipe.Ingredients
                 .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
-                    ? new IngredientChip(item.Name, item.IconId, r.StackSize, r.ChanceToConsume)
+                    ? new IngredientChip(item.Name, item.IconId, r.StackSize, r.ChanceToConsume, item.InternalName)
                     : null)
                 .Where(c => c is not null).Select(c => c!)
                 .ToList();
             var results = recipe.ResultItems
                 .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
-                    ? new IngredientChip(item.Name, item.IconId, r.StackSize, null)
+                    ? new IngredientChip(item.Name, item.IconId, r.StackSize, null, item.InternalName)
                     : null)
                 .Where(c => c is not null).Select(c => c!)
                 .ToList();
@@ -151,7 +155,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             {
                 results = (recipe.ProtoResultItems ?? [])
                     .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
-                        ? new IngredientChip(item.Name, item.IconId, r.StackSize, null)
+                        ? new IngredientChip(item.Name, item.IconId, r.StackSize, null, item.InternalName)
                         : null)
                     .Where(c => c is not null).Select(c => c!)
                     .ToList();
@@ -168,7 +172,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 recipe.SkillLevelReq,
                 ingredients,
                 results,
-                craftedOutputs));
+                craftedOutputs,
+                _itemDetail));
         }
         MakingItems = making;
 

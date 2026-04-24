@@ -66,20 +66,57 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Background="#FF1F1F1F" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                        CornerRadius="4" Padding="6,4" Margin="0,0,6,6"
-                                        ToolTipService.InitialShowDelay="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        ToolTipService.BetweenShowDelay="0">
-                                    <Border.ToolTip>
-                                        <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
-                                                 Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
-                                                 ContentTemplate="{StaticResource RecipeCardTemplate}"/>
-                                    </Border.ToolTip>
-                                    <StackPanel Orientation="Horizontal">
-                                        <wpf:IconImage IconId="{Binding IconId}" Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                        <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8" VerticalAlignment="Center" MaxWidth="180" TextTrimming="CharacterEllipsis"/>
-                                        <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="3" Background="#FFD4A847" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Quantity}" Foreground="#FF1A1A1A" FontWeight="SemiBold" FontSize="11"/>
-                                        </Border>
+                                        CornerRadius="4" Padding="6,4" Margin="0,0,6,6">
+                                    <StackPanel Orientation="Vertical">
+                                        <!-- Recipe card tooltip is scoped to just the icon/name/quantity row,
+                                             so it doesn't compete with the per-item inspect tooltips below. -->
+                                        <StackPanel Orientation="Horizontal"
+                                                    ToolTipService.InitialShowDelay="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    ToolTipService.BetweenShowDelay="0">
+                                            <StackPanel.ToolTip>
+                                                <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                                         Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                         ContentTemplate="{StaticResource RecipeCardTemplate}"/>
+                                            </StackPanel.ToolTip>
+                                            <wpf:IconImage IconId="{Binding IconId}" Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8" VerticalAlignment="Center" MaxWidth="180" TextTrimming="CharacterEllipsis"/>
+                                            <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="3" Background="#FFD4A847" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Quantity}" Foreground="#FF1A1A1A" FontWeight="SemiBold" FontSize="11"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <ItemsControl Margin="0,4,0,0"
+                                                      ItemsSource="{Binding InspectableItems}"
+                                                      Visibility="{Binding HasInspectableItem, Converter={StaticResource BoolToVis}}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Command="{Binding DataContext.OpenItemCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding InternalName}"
+                                                            ToolTip="{Binding Name}"
+                                                            Cursor="Hand" Padding="0" Margin="0,0,3,0"
+                                                            Background="Transparent" BorderThickness="0">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="Bd" Background="Transparent"
+                                                                        Padding="1" CornerRadius="2">
+                                                                    <ContentPresenter/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="Bd" Property="Background" Value="#22FFFFFF"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <wpf:IconImage IconId="{Binding IconId}" Width="18" Height="18"/>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>

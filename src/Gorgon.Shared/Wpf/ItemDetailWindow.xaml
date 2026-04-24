@@ -49,6 +49,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -67,8 +68,26 @@
                         </StackPanel>
                     </DockPanel>
 
+                    <!-- Description + optional food effect (wrapped, capped at MaxWidth so a long
+                         description doesn't expand the auto-sized window) -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                        <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF"
+                                   FontStyle="Italic" FontSize="{DynamicResource AppFontSize}"
+                                   TextWrapping="Wrap" MaxWidth="460"
+                                   HorizontalAlignment="Left"
+                                   Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextWrapping="Wrap" MaxWidth="460" Margin="0,4,0,0"
+                                   HorizontalAlignment="Left"
+                                   Visibility="{Binding FoodDesc, Converter={StaticResource NullOrEmptyToVis}}">
+                            <Run Text="Food effect: " FontWeight="SemiBold"/>
+                            <Run Text="{Binding FoodDesc, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+
                     <!-- Skill requirements (hidden when empty) -->
-                    <StackPanel Grid.Row="1" Margin="0,0,0,10"
+                    <StackPanel Grid.Row="2" Margin="0,0,0,10"
                                 Visibility="{Binding SkillReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
                         <TextBlock Text="Skill requirements" FontWeight="SemiBold"
                                    Foreground="#88FFFFFF"
@@ -93,7 +112,7 @@
                     </StackPanel>
 
                     <!-- Effects -->
-                    <StackPanel Grid.Row="2">
+                    <StackPanel Grid.Row="3">
                         <TextBlock Text="Effects" FontWeight="SemiBold"
                                    Foreground="#88FFFFFF"
                                    FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"
@@ -120,7 +139,7 @@
                     </StackPanel>
 
                     <!-- Internal name footer -->
-                    <TextBlock Grid.Row="3" Text="{Binding InternalName}"
+                    <TextBlock Grid.Row="4" Text="{Binding InternalName}"
                                Foreground="#88FFFFFF"
                                FontFamily="{DynamicResource AppMonoFontFamily}"
                                FontSize="{DynamicResource AppFontSizeSmall}"

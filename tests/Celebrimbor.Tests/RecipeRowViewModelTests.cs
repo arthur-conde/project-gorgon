@@ -1,6 +1,7 @@
 using Celebrimbor.ViewModels;
 using FluentAssertions;
 using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf;
 using Xunit;
 
 namespace Celebrimbor.Tests;
@@ -21,7 +22,7 @@ public class RecipeRowViewModelTests
             resultEffects: ["TSysCraftedEquipment(CraftedWerewolfChest6,0,Werewolf)"]);
         var refData = new FakeReferenceData([chestTemplate, batch], [recipe]);
 
-        var row = new RecipeRowViewModel(recipe, refData);
+        var row = new RecipeRowViewModel(recipe, refData, new NullItemDetailPresenter());
 
         row.Results.Should().ContainSingle().Which.Name.Should().Be("WerewolfBardingBatch");
         row.CraftedOutputs.Should().ContainSingle().Which.DisplayLine
@@ -44,7 +45,7 @@ public class RecipeRowViewModelTests
             resultEffects: ["TSysCraftedEquipment(CraftedLongsword3,3)"]);
         var refData = new FakeReferenceData([template], [recipe]);
 
-        var row = new RecipeRowViewModel(recipe, refData);
+        var row = new RecipeRowViewModel(recipe, refData, new NullItemDetailPresenter());
 
         row.Results.Should().BeEmpty();
         row.CraftedOutputs.Should().ContainSingle().Which.DisplayLine
@@ -62,9 +63,40 @@ public class RecipeRowViewModelTests
             results: []);
         var refData = new FakeReferenceData([], [recipe]);
 
-        var row = new RecipeRowViewModel(recipe, refData);
+        var row = new RecipeRowViewModel(recipe, refData, new NullItemDetailPresenter());
 
         row.Results.Should().ContainSingle().Which.Name.Should().Be("MysteryRecipe");
         row.CraftedOutputs.Should().BeEmpty();
     }
+
+    [Fact]
+    public void OpenItemCommand_InvokesPresenterWithInternalName()
+    {
+        var template = FakeReferenceData.Item(1, "CraftedLongsword3");
+        var recipe = FakeReferenceData.Recipe(
+            "CraftQualityLongsword3",
+            skill: "Blacksmithing",
+            skillLevelReq: 40,
+            ingredients: [],
+            results: [],
+            resultEffects: ["TSysCraftedEquipment(CraftedLongsword3,3)"]);
+        var refData = new FakeReferenceData([template], [recipe]);
+        var presenter = new RecordingItemDetailPresenter();
+
+        var row = new RecipeRowViewModel(recipe, refData, presenter);
+        row.OpenItemCommand.Execute("CraftedLongsword3");
+
+        presenter.LastInternalName.Should().Be("CraftedLongsword3");
+    }
+}
+
+internal sealed class NullItemDetailPresenter : IItemDetailPresenter
+{
+    public void Show(string internalName) { }
+}
+
+internal sealed class RecordingItemDetailPresenter : IItemDetailPresenter
+{
+    public string? LastInternalName { get; private set; }
+    public void Show(string internalName) => LastInternalName = internalName;
 }

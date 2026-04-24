@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Reference;
+using Gorgon.Shared.Wpf;
 
 namespace Celebrimbor.ViewModels;
 
@@ -10,6 +12,8 @@ namespace Celebrimbor.ViewModels;
 /// </summary>
 public sealed partial class CraftListItemViewModel : ObservableObject
 {
+    private readonly IItemDetailPresenter _itemDetail;
+
     public CraftListItemViewModel(
         string recipeInternalName,
         string displayName,
@@ -19,8 +23,10 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         int skillLevelReq,
         IReadOnlyList<IngredientChip> ingredients,
         IReadOnlyList<IngredientChip> results,
-        IReadOnlyList<CraftedGearPreview> craftedOutputs)
+        IReadOnlyList<CraftedGearPreview> craftedOutputs,
+        IItemDetailPresenter itemDetail)
     {
+        _itemDetail = itemDetail;
         RecipeInternalName = recipeInternalName;
         DisplayName = displayName;
         IconId = iconId;
@@ -30,6 +36,31 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         Ingredients = ingredients;
         Results = results;
         CraftedOutputs = craftedOutputs;
+
+        // Yields first, crafted-gear previews that weren't already in Yields next — dedupes
+        // the common case where a recipe has both a ResultItems entry and a TSysCraftedEquipment
+        // effect pointing at the same template.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<IngredientChip>(craftedOutputs.Count + results.Count);
+        foreach (var r in results)
+        {
+            if (string.IsNullOrEmpty(r.InternalName)) continue;
+            if (seen.Add(r.InternalName)) list.Add(r);
+        }
+        foreach (var cg in craftedOutputs)
+        {
+            if (string.IsNullOrEmpty(cg.InternalName)) continue;
+            if (seen.Add(cg.InternalName))
+                list.Add(new IngredientChip(cg.DisplayName, cg.IconId, 1, null, cg.InternalName));
+        }
+        InspectableItems = list;
+    }
+
+    [RelayCommand]
+    private void OpenItem(string? internalName)
+    {
+        if (!string.IsNullOrEmpty(internalName))
+            _itemDetail.Show(internalName);
     }
 
     public string RecipeInternalName { get; }
@@ -42,6 +73,10 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
+    public IReadOnlyList<IngredientChip> InspectableItems { get; }
+
+    public bool HasInspectableItem => InspectableItems.Count > 0;
+    public bool HasMultipleInspectableItems => InspectableItems.Count > 1;
 
     [ObservableProperty]
     private int _quantity;

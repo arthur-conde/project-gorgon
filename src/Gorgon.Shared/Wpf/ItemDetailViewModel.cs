@@ -26,6 +26,8 @@ public sealed class ItemDetailViewModel
     public string InternalName => Item.InternalName;
     public int IconId => Item.IconId;
     public string? EquipSlot => Item.EquipSlot;
+    public string? Description => Item.Description;
+    public string? FoodDesc => Item.FoodDesc;
     public IReadOnlyList<string> SkillReqChips { get; }
     public IReadOnlyList<EffectLine> EffectLines { get; }
 }

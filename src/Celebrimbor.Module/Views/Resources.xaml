@@ -13,6 +13,7 @@
     <views:ViewModeToAccentBrushConverter x:Key="ShoppingAccent" Target="Shopping"/>
     <views:CountToVisibilityConverter x:Key="CountToVisibility"/>
     <views:CountToVisibilityConverter x:Key="CountToVisibilityInverted" Invert="True"/>
+    <wpf:BoolToVisibilityConverter x:Key="BoolToVis"/>
 
     <!-- Shared rich recipe card template.
          Consumers bind to anything exposing Name, IconId, Skill, SkillLevelReq,

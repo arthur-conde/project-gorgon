@@ -249,7 +249,7 @@ public sealed class ReferenceDataService : IReferenceDataService
             var keywords = ParseKeywords(v.Keywords, v.EquipSlot, skillPrereqs, v.Value);
             var effectDescs = (IReadOnlyList<string>?)v.EffectDescs;
             var entry = new ItemEntry(id, v.Name ?? "", v.InternalName ?? "", v.MaxStackSize ?? 1, v.IconId ?? 0,
-                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs);
+                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs, v.Description);
             byId[id] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }
