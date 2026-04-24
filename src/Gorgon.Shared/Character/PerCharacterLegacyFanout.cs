@@ -17,7 +17,10 @@ public static class PerCharacterLegacyFanout
     /// <summary>
     /// Writes a per-character file for each name in <paramref name="names"/> whose server
     /// can be resolved, by calling <paramref name="extractFor"/> for that name and
-    /// <see cref="PerCharacterStore{T}.Save"/>ing the result.
+    /// <see cref="PerCharacterStore{T}.Save"/>ing the result. If <paramref name="view"/> is
+    /// supplied and at least one write succeeded, invalidates its cache so a previously
+    /// loaded empty/stale <typeparamref name="TPerChar"/> can't be flushed over the
+    /// fresh on-disk data on the next character switch, and subscribers re-read.
     /// </summary>
     /// <returns>Names whose server could not be resolved (skipped — try again next startup).</returns>
     public static IReadOnlyList<string> FanOut<TPerChar>(
@@ -25,6 +28,7 @@ public static class PerCharacterLegacyFanout
         PerCharacterStore<TPerChar> store,
         IActiveCharacterService active,
         Func<string, TPerChar> extractFor,
+        PerCharacterView<TPerChar>? view = null,
         IDiagnosticsSink? diag = null)
         where TPerChar : class, IVersionedState<TPerChar>, new()
     {
@@ -37,6 +41,7 @@ public static class PerCharacterLegacyFanout
             knownServers[active.ActiveCharacterName] = active.ActiveServer;
 
         var unresolved = new List<string>();
+        var wroteAny = false;
         foreach (var name in names)
         {
             if (string.IsNullOrEmpty(name)) continue;
@@ -60,6 +65,7 @@ public static class PerCharacterLegacyFanout
             {
                 var perChar = extractFor(name);
                 store.Save(name, server, perChar);
+                wroteAny = true;
                 diag?.Info("LegacyFanout", $"Wrote {path}");
             }
             catch (Exception ex)
@@ -68,6 +74,8 @@ public static class PerCharacterLegacyFanout
                 unresolved.Add(name);
             }
         }
+
+        if (wroteAny) view?.Invalidate();
         return unresolved;
     }
 }

@@ -82,6 +82,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
             {
                 Favor = new Dictionary<string, NpcFavorSnapshot>(legacy.FavorStates[name], StringComparer.Ordinal),
             },
+            view: _view,
             diag: _diag);
 
         if (unresolved.Count == 0)
@@ -97,11 +98,6 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
             {
                 _diag?.Warn("Arwen.Fanout", $"Settings rewrite failed: {ex.Message}");
             }
-
-            // Drop any stale cache that FavorStateService.Rebuild populated earlier during
-            // DI build — before the fanout wrote the per-char files. Without this, a later
-            // character switch would flush the stale empty cache over the fresh on-disk data.
-            _view.Invalidate();
         }
         else
         {
