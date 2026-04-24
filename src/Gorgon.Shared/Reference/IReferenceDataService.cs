@@ -37,6 +37,13 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; }
 
+    /// <summary>
+    /// Placeholder token (e.g. <c>"MAX_ARMOR"</c>) → <see cref="AttributeEntry"/> with the
+    /// human-readable label and formatting hints used to render <see cref="ItemEntry.EffectDescs"/>.
+    /// Pulled from <c>attributes.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, AttributeEntry> Attributes { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

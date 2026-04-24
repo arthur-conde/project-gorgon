@@ -22,4 +22,5 @@ public sealed record ItemEntry(
     IReadOnlyList<string>? SkillPrereqs = null,
     decimal Value = 0,
     string? FoodDesc = null,
-    IReadOnlyDictionary<string, int>? SkillReqs = null);
+    IReadOnlyDictionary<string, int>? SkillReqs = null,
+    IReadOnlyList<string>? EffectDescs = null);

@@ -22,6 +22,22 @@ public sealed class RawItem
     public Dictionary<string, int>? SkillReqs { get; set; }
     public decimal? Value { get; set; }
     public string? FoodDesc { get; set; }
+    /// <summary>
+    /// Procedural effect description strings, e.g. <c>"{MAX_ARMOR}{49}"</c>, <c>"{BOOST_SKILL_WEREWOLF}{12}"</c>.
+    /// Human-readable prose entries ("Equipping this armor teaches you…") are mixed in. Resolve placeholder
+    /// tokens via <see cref="AttributeEntry"/> (attributes.json).
+    /// </summary>
+    public List<string>? EffectDescs { get; set; }
+}
+
+/// <summary>Raw attributes.json shape — resolves placeholder tokens to human-readable labels and formatting hints.</summary>
+public sealed class RawAttribute
+{
+    public string? Label { get; set; }
+    public string? DisplayType { get; set; }
+    public string? DisplayRule { get; set; }
+    public double? DefaultValue { get; set; }
+    public List<int>? IconIds { get; set; }
 }
 
 /// <summary>Raw recipes.json shape — the fields we project into <see cref="RecipeEntry"/>.</summary>
@@ -139,4 +155,5 @@ public sealed class RawItemSource
 [JsonSerializable(typeof(Dictionary<string, RawXpTable>))]
 [JsonSerializable(typeof(Dictionary<string, RawNpc>))]
 [JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
+[JsonSerializable(typeof(Dictionary<string, RawAttribute>))]
 public partial class ReferenceJsonContext : JsonSerializerContext { }

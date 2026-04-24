@@ -44,6 +44,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<ItemSource>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _itemSourcesSnapshot;
 
+    // Attributes (attributes.json) — resolves EffectDescs placeholder tokens.
+    private IReadOnlyDictionary<string, AttributeEntry> _attributes =
+        new Dictionary<string, AttributeEntry>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _attributesSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -57,6 +62,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _xpTablesSnapshot = new ReferenceFileSnapshot("xptables", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -64,9 +70,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadXpTables();
         LoadNpcs();
         LoadItemSources();
+        LoadAttributes();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -76,6 +83,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
+    public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -85,6 +93,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "xptables" => _xpTablesSnapshot,
         "npcs" => _npcsSnapshot,
         "sources_items" => _itemSourcesSnapshot,
+        "attributes" => _attributesSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -98,6 +107,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "xptables" => RefreshFileAsync("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables, ct),
         "npcs" => RefreshFileAsync("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
+        "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -109,6 +119,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("xptables", ct);
         await RefreshAsync("npcs", ct);
         await RefreshAsync("sources_items", ct);
+        await RefreshAsync("attributes", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -221,6 +232,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadXpTables() => LoadFile("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables);
     private void LoadNpcs() => LoadFile("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
+    private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -235,8 +247,9 @@ public sealed class ReferenceDataService : IReferenceDataService
             if (!long.TryParse(key.AsSpan(underscore + 1), out var id)) continue;
             var skillPrereqs = v.SkillReqs?.Keys.ToList();
             var keywords = ParseKeywords(v.Keywords, v.EquipSlot, skillPrereqs, v.Value);
+            var effectDescs = (IReadOnlyList<string>?)v.EffectDescs;
             var entry = new ItemEntry(id, v.Name ?? "", v.InternalName ?? "", v.MaxStackSize ?? 1, v.IconId ?? 0,
-                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs);
+                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs);
             byId[id] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }
@@ -463,6 +476,25 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _itemSources = byInternalName;
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+    }
+
+    private void ParseAndSwapAttributes(Dictionary<string, RawAttribute> raw, ReferenceFileMetadata meta)
+    {
+        var byToken = new Dictionary<string, AttributeEntry>(raw.Count, StringComparer.Ordinal);
+        foreach (var (token, v) in raw)
+        {
+            if (string.IsNullOrEmpty(token)) continue;
+            var entry = new AttributeEntry(
+                Token: token,
+                Label: v.Label ?? token,
+                DisplayType: v.DisplayType ?? "",
+                DisplayRule: v.DisplayRule ?? "Always",
+                DefaultValue: v.DefaultValue,
+                IconIds: v.IconIds ?? (IReadOnlyList<int>)[]);
+            byToken[token] = entry;
+        }
+        _attributes = byToken;
+        _attributesSnapshot = new ReferenceFileSnapshot("attributes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byToken.Count);
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────

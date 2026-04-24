@@ -8,6 +8,20 @@
     <c:StringToColorConverter x:Key="StringToColor"/>
     <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
     <c:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
+    <c:PositiveIntToVisibilityConverter x:Key="PositiveIntToVis"/>
+
+    <!-- Shared row template for an EffectLine (icon + rendered text).
+         Bind any IEnumerable<EffectLine> to an ItemsControl and set
+         ItemTemplate="{StaticResource EffectLineTemplate}". Icon is hidden
+         when IconId == 0 (prose rows and icon-less attributes). -->
+    <DataTemplate x:Key="EffectLineTemplate">
+        <StackPanel Orientation="Horizontal" Margin="0,1">
+            <c:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"
+                         Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
+            <TextBlock Text="{Binding Text}" Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
+        </StackPanel>
+    </DataTemplate>
 
     <!-- Font resources — overridden at runtime from ShellSettings (UiFontFamily, UiFontSize).
          Defaults here match the original hand-authored look so XAML designers render sensibly
