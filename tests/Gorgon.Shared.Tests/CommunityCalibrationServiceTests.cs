@@ -14,8 +14,7 @@ public sealed class CommunityCalibrationServiceTests : IDisposable
 
     public CommunityCalibrationServiceTests()
     {
-        _cacheDir = Path.Combine(Path.GetTempPath(), "gorgon-cc-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_cacheDir);
+        _cacheDir = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cc-tests");
     }
 
     public void Dispose()

@@ -13,8 +13,7 @@ public sealed class PerCharacterViewTests : IDisposable
 
     public PerCharacterViewTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-per-char-view-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_root);
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-per-char-view");
         _active = new FakeActiveCharacterService();
         _store = new PerCharacterStore<TestState>(_root, "test.json", TestStateJsonContext.Default.TestState);
     }

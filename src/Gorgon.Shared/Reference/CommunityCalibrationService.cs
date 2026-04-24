@@ -210,9 +210,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         var cachePath = Path.Combine(_cacheDir, $"{key}.json");
         var metaPath = Path.Combine(_cacheDir, $"{key}.meta.json");
 
-        var tmp = cachePath + ".tmp";
-        await File.WriteAllBytesAsync(tmp, body, ct);
-        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(tmp, cachePath, ct);
+        await Settings.AtomicFile.WriteAllBytesAtomicAsync(cachePath, body, ct);
 
         var meta = new ReferenceFileMetadata
         {
@@ -220,12 +218,8 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             FetchedAtUtc = DateTimeOffset.UtcNow,
             Source = ReferenceFileSource.Cdn,
         };
-        var metaTmp = metaPath + ".tmp";
-        await using (var ms = File.Create(metaTmp))
-        {
-            await JsonSerializer.SerializeAsync(ms, meta, ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
-        }
-        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(metaTmp, metaPath, ct);
+        await Settings.AtomicFile.WriteJsonAtomicAsync(metaPath, meta,
+            ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
 
         swap(payload);
         _diag?.Info("CommunityCalibration", $"{key}.json refreshed.");

@@ -17,8 +17,7 @@ public class TimerServicesTests : IDisposable
 
     public TimerServicesTests()
     {
-        _dir = Path.Combine(Path.GetTempPath(), $"gandalf_svc_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dir);
+        _dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gandalf_svc");
         _defsPath = Path.Combine(_dir, "definitions.json");
         _charactersDir = Path.Combine(_dir, "characters");
         Directory.CreateDirectory(_charactersDir);

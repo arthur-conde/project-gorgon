@@ -17,8 +17,7 @@ public class GandalfSplitMigrationTests : IDisposable
 
     public GandalfSplitMigrationTests()
     {
-        _dir = Path.Combine(Path.GetTempPath(), $"gandalf_split_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dir);
+        _dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gandalf_split");
         _charactersDir = Path.Combine(_dir, "characters");
         Directory.CreateDirectory(_charactersDir);
         _defsPath = Path.Combine(_dir, "definitions.json");

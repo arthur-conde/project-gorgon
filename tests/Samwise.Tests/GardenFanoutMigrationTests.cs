@@ -16,7 +16,7 @@ public sealed class GardenFanoutMigrationTests : IDisposable
 
     public GardenFanoutMigrationTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-samwise-fanout-{Guid.NewGuid():N}");
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-samwise-fanout");
         _samwiseDir = Path.Combine(_root, "Samwise");
         _charactersRoot = Path.Combine(_root, "characters");
         Directory.CreateDirectory(_samwiseDir);

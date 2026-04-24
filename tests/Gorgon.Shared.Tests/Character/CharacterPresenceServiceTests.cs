@@ -14,8 +14,7 @@ public sealed class CharacterPresenceServiceTests : IDisposable
 
     public CharacterPresenceServiceTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-presence-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_root);
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-presence");
         _active = new FakeActiveCharacterService();
         _store = new PerCharacterStore<CharacterPresence>(_root, "character.json",
             CharacterPresenceJsonContext.Default.CharacterPresence);

@@ -16,7 +16,7 @@ public sealed class GourmandStateServiceMigrationTests : IDisposable
 
     public GourmandStateServiceMigrationTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-pippin-mig-{Guid.NewGuid():N}");
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-pippin-mig");
         _legacyDir = Path.Combine(_root, "Gorgon", "Pippin");
         _charactersRoot = Path.Combine(_root, "Gorgon", "characters");
         Directory.CreateDirectory(_legacyDir);

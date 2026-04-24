@@ -1,0 +1,14 @@
+<Project>
+  <!-- MSBuild stops walking up once it finds a Directory.Build.props, so explicitly
+       chain to the repo-root one. -->
+  <Import Project="..\Directory.Build.props" />
+
+  <!-- Shared test helpers compiled into every test project. Keeps test-temp paths
+       under a workspace-relative tests/.tmp/ tree instead of %TEMP%, sidestepping
+       Windows Defender's aggressive scanning of freshly closed files in the system
+       temp dir. See TestPaths.cs for the rationale. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport\TestPaths.cs"
+             Link="TestSupport\TestPaths.cs" />
+  </ItemGroup>
+</Project>

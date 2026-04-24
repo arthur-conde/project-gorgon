@@ -218,16 +218,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         Directory.CreateDirectory(_cacheDir);
         var cachePath = Path.Combine(_cacheDir, $"{fileName}.json");
         var metaPath = Path.Combine(_cacheDir, $"{fileName}.meta.json");
-        var tmp = cachePath + ".tmp";
-        await File.WriteAllBytesAsync(tmp, body, ct);
-        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(tmp, cachePath, ct);
-
-        var metaTmp = metaPath + ".tmp";
-        await using (var ms = File.Create(metaTmp))
-        {
-            await JsonSerializer.SerializeAsync(ms, meta, ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
-        }
-        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(metaTmp, metaPath, ct);
+        await Settings.AtomicFile.WriteAllBytesAtomicAsync(cachePath, body, ct);
+        await Settings.AtomicFile.WriteJsonAtomicAsync(metaPath, meta,
+            ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
 
         var raw = JsonSerializer.Deserialize(body, typeInfo) ?? new Dictionary<string, TRaw>();
         swapper(raw, meta);

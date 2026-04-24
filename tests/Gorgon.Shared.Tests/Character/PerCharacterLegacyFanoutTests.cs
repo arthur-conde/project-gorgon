@@ -13,8 +13,7 @@ public sealed class PerCharacterLegacyFanoutTests : IDisposable
 
     public PerCharacterLegacyFanoutTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-fanout-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_root);
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-fanout");
         _active = new FakeActiveCharacterService
         {
             Characters =

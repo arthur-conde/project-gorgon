@@ -81,7 +81,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void DetectsGiftAndRecordsFullKeywords()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -115,7 +115,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void RecordsAllMatchingPreferences_SignatureCoversMultiplePrefs()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -142,7 +142,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void EstimateFavor_PrefersItemRate()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, index) = BuildService(dir);
@@ -168,7 +168,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void EstimateFavor_FallsBackThroughHierarchy()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, index) = BuildService(dir);
@@ -201,7 +201,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void EstimateFavor_ReturnsNullWhenNoCalibration()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, index) = BuildService(dir);
@@ -217,7 +217,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void DetectsGift_DeltaBeforeDelete()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -240,7 +240,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void IgnoresDeleteWithoutActiveNpc()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -260,7 +260,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void IgnoresNegativeDelta()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -281,7 +281,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void SkipsObservation_WhenEffectivePrefNonPositive()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -303,8 +303,8 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void ExportImport_Roundtrips()
     {
-        var dir1 = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
-        var dir2 = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir1 = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        var dir2 = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc1, _) = BuildService(dir1);
@@ -331,7 +331,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void Import_DeduplicatesObservations()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -354,7 +354,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void MultipleObservations_AverageRate()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -385,7 +385,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void ExportCommunityJson_ContainsNoRawObservations()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _) = BuildService(dir);
@@ -420,7 +420,7 @@ public sealed class CalibrationServiceTests
     [Fact]
     public void MigratesV1CalibrationFile_PopulatesKeywordsAndPreferences()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"arwen_test_{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             Directory.CreateDirectory(dir);

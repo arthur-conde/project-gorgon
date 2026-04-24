@@ -13,8 +13,7 @@ public sealed class WordOfPowerChatParserTests
 {
     private static WordOfPowerChatParser NewParser(params string[] trackedCodes)
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"saruman-chat-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(dir);
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("saruman-chat");
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
         var store = new PerCharacterStore<SarumanState>(dir, "saruman.json", SarumanJsonContext.Default.SarumanState);

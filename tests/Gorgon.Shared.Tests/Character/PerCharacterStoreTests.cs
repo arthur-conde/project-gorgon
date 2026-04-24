@@ -12,8 +12,7 @@ public sealed class PerCharacterStoreTests : IDisposable
 
     public PerCharacterStoreTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-per-char-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_root);
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-per-char");
     }
 
     public void Dispose()

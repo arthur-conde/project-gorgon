@@ -14,8 +14,7 @@ public sealed class ActiveCharacterServiceTests : IDisposable
 
     public ActiveCharacterServiceTests()
     {
-        _dir = Path.Combine(Path.GetTempPath(), $"gorgon-active-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dir);
+        _dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-active");
         _gameConfig = new GameConfig { GameRoot = Path.GetDirectoryName(_dir)! };
         Directory.CreateDirectory(_gameConfig.ReportsDirectory);
         _persistence = new FakePersistence();

@@ -15,8 +15,7 @@ public sealed class SarumanCodebookServiceTests : IDisposable
 
     public SarumanCodebookServiceTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"saruman-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_root);
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("saruman");
         _active = new FakeActiveCharacterService();
         _active.SetActiveCharacter("Arthur", "Kwatoxi");
     }

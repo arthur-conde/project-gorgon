@@ -22,7 +22,7 @@ public class GrowthCalibrationServiceTests
         var ac = new FakeActiveCharacterService();
         var sm = new GardenStateMachine(cfg, time, activeChar: ac);
         _sutActiveChars[sm] = ac;
-        var dir = dataDir ?? Path.Combine(Path.GetTempPath(), $"gorgon-cal-{Guid.NewGuid():N}");
+        var dir = dataDir ?? Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
         var cal = new GrowthCalibrationService(sm, cfg, dir);
         return (sm, cal, time);
     }
@@ -216,7 +216,7 @@ public class GrowthCalibrationServiceTests
     [Fact]
     public void Persistence_Roundtrip_PreservesData()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"gorgon-cal-{Guid.NewGuid():N}");
+        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
         try
         {
             var (sm, cal, time) = BuildSut(dir);
@@ -248,8 +248,8 @@ public class GrowthCalibrationServiceTests
     [Fact]
     public void ExportImport_DeduplicatesObservations()
     {
-        var dir1 = Path.Combine(Path.GetTempPath(), $"gorgon-cal-{Guid.NewGuid():N}");
-        var dir2 = Path.Combine(Path.GetTempPath(), $"gorgon-cal-{Guid.NewGuid():N}");
+        var dir1 = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
+        var dir2 = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
         try
         {
             var (sm1, cal1, time1) = BuildSut(dir1);

@@ -15,7 +15,7 @@ public class ReferenceDataServiceTests : IDisposable
 
     public ReferenceDataServiceTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "gorgon-ref-tests-" + Guid.NewGuid().ToString("N"));
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-ref-tests");
         _cacheDir = Path.Combine(_root, "cache");
         _bundledDir = Path.Combine(_root, "bundled");
         Directory.CreateDirectory(_cacheDir);

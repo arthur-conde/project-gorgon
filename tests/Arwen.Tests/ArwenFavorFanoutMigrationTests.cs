@@ -18,7 +18,7 @@ public sealed class ArwenFavorFanoutMigrationTests : IDisposable
 
     public ArwenFavorFanoutMigrationTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), $"gorgon-arwen-fanout-{Guid.NewGuid():N}");
+        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-arwen-fanout");
         _arwenDir = Path.Combine(_root, "Arwen");
         _charactersRoot = Path.Combine(_root, "characters");
         Directory.CreateDirectory(_arwenDir);
