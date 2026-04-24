@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 
 namespace Gorgon.Shared.Wpf;
 
@@ -9,4 +10,8 @@ public partial class ItemDetailWindow : Window
         InitializeComponent();
         DataContext = vm;
     }
+
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 }

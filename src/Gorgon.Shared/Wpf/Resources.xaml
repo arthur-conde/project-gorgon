@@ -18,7 +18,7 @@
         <StackPanel Orientation="Horizontal" Margin="0,1">
             <c:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"
                          Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
-            <TextBlock Text="{Binding Text}" Foreground="{StaticResource TextSecondaryBrush}"
+            <TextBlock Text="{Binding Text}" Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
         </StackPanel>
     </DataTemplate>
