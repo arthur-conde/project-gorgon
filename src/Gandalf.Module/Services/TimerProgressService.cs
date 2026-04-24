@@ -111,6 +111,46 @@ public sealed class TimerProgressService : IDisposable
     }
 
     /// <summary>
+    /// Reset progress on every Done timer for the active character. Definitions untouched;
+    /// orphan progress entries (no matching def) are also dropped in passing. Used by the
+    /// list view's "Clear done" action — "done" meaning the timer finished, not that the
+    /// definition should be deleted.
+    /// </summary>
+    public void ClearAllDoneOnActive()
+    {
+        var current = _view.Current;
+        if (current is null) return;
+
+        var defsById = _defs.Definitions.ToDictionary(d => d.Id, StringComparer.Ordinal);
+        var changed = false;
+
+        foreach (var id in current.ByTimerId.Keys.ToArray())
+        {
+            var progress = current.ByTimerId[id];
+            if (!defsById.TryGetValue(id, out var def))
+            {
+                // Orphan — strip it.
+                current.ByTimerId.Remove(id);
+                _expiredNotified.Remove(id);
+                changed = true;
+                continue;
+            }
+
+            var state = new TimerView(def, progress).State;
+            if (state != TimerState.Done) continue;
+
+            progress.StartedAt = null;
+            progress.CompletedAt = null;
+            _expiredNotified.Remove(id);
+            changed = true;
+        }
+
+        if (!changed) return;
+        MarkDirty();
+        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// Scan the active character's progress; stamp <c>CompletedAt</c> and fire
     /// <see cref="TimerExpired"/> for any running-but-past-due timers. Idempotent within
     /// the same lifecycle — each id fires at most once per run cycle.

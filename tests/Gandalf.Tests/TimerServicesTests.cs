@@ -143,6 +143,55 @@ public class TimerServicesTests : IDisposable
     }
 
     [Fact]
+    public void ClearAllDoneOnActive_resets_done_progress_and_keeps_idle_and_running()
+    {
+        var (defs, progress, view, active) = BuildServices();
+        active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+        defs.Add(new GandalfTimerDef { Name = "Idle", Duration = TimeSpan.FromHours(1) });
+        defs.Add(new GandalfTimerDef { Name = "Running", Duration = TimeSpan.FromHours(1) });
+        defs.Add(new GandalfTimerDef { Name = "Done", Duration = TimeSpan.FromMinutes(5) });
+        var idleId = defs.Definitions[0].Id;
+        var runningId = defs.Definitions[1].Id;
+        var doneId = defs.Definitions[2].Id;
+
+        // Running: started a second ago. Done: started long enough ago that duration elapsed.
+        view.Current!.ByTimerId[runningId] = new TimerProgress { StartedAt = DateTimeOffset.UtcNow - TimeSpan.FromSeconds(1) };
+        view.Current!.ByTimerId[doneId] = new TimerProgress { StartedAt = DateTimeOffset.UtcNow - TimeSpan.FromHours(1) };
+
+        progress.ClearAllDoneOnActive();
+
+        defs.Definitions.Should().HaveCount(3, "definitions untouched");
+        var idleAfter = progress.GetProgress(idleId);
+        (idleAfter is null || idleAfter.StartedAt is null).Should().BeTrue();
+        progress.GetProgress(runningId)!.StartedAt.Should().NotBeNull("running timer stays running");
+        var doneAfter = progress.GetProgress(doneId);
+        (doneAfter is null || (doneAfter.StartedAt is null && doneAfter.CompletedAt is null))
+            .Should().BeTrue("done timer's progress reset");
+
+        defs.Dispose();
+        progress.Dispose();
+        view.Dispose();
+    }
+
+    [Fact]
+    public void ClearAllDoneOnActive_drops_orphan_entries()
+    {
+        var (defs, progress, view, active) = BuildServices();
+        active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+        // Seed a progress entry whose id has no matching definition.
+        view.Current!.ByTimerId["orphan-id"] = new TimerProgress { StartedAt = DateTimeOffset.UtcNow - TimeSpan.FromHours(2) };
+
+        progress.ClearAllDoneOnActive();
+        view.Current!.ByTimerId.Should().NotContainKey("orphan-id");
+
+        defs.Dispose();
+        progress.Dispose();
+        view.Dispose();
+    }
+
+    [Fact]
     public void CheckExpirations_fires_TimerExpired_once_and_stamps_CompletedAt()
     {
         var (defs, progress, view, active) = BuildServices();

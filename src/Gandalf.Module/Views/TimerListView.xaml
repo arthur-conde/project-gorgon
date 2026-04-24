@@ -15,7 +15,8 @@
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Clear done" Padding="10,4" Margin="4,0"
-                        Command="{Binding ClearDoneCommand}"/>
+                        Command="{Binding ClearDoneCommand}"
+                        ToolTip="Reset progress on every finished timer (definitions untouched)"/>
                 <Button Content="Paste" Padding="10,4" Margin="4,0"
                         Command="{Binding PasteTimersCommand}"
                         ToolTip="Paste timers from clipboard (JSON)"/>

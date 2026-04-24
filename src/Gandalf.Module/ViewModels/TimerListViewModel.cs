@@ -118,6 +118,9 @@ public sealed partial class TimerListViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearDone() => _progress.ClearAllDoneOnActive();
+
+    [RelayCommand]
     private void CopyTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
