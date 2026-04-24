@@ -49,6 +49,7 @@ public sealed class ArwenModule : IGorgonModule
         services.AddHostedService(sp => new ArwenFavorFanoutMigration(
             arwenDir,
             sp.GetRequiredService<PerCharacterStore<ArwenFavorState>>(),
+            sp.GetRequiredService<PerCharacterView<ArwenFavorState>>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<ISettingsStore<ArwenSettings>>(),
             sp.GetRequiredService<ArwenSettings>(),

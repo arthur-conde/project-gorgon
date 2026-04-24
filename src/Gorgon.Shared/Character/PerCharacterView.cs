@@ -87,6 +87,22 @@ public sealed class PerCharacterView<T> : IDisposable
     /// <summary>Underlying store — exposed for cross-character access and tests.</summary>
     public PerCharacterStore<T> Store => _store;
 
+    /// <summary>
+    /// Drop the in-memory cache without flushing, then fire <see cref="CurrentChanged"/>.
+    /// Use this after an out-of-band write to the store (e.g. a legacy fanout migration)
+    /// so a stale cached object can't be flushed over the fresh on-disk data on the next
+    /// character switch, and subscribers re-read from disk.
+    /// </summary>
+    public void Invalidate()
+    {
+        lock (_gate)
+        {
+            _cached = null;
+            _cachedKey = null;
+        }
+        CurrentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>Fires when the active character changes. Subscribers should re-read <see cref="Current"/>.</summary>
     public event EventHandler? CurrentChanged;
 

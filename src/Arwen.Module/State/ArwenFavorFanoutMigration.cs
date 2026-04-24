@@ -24,6 +24,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
 {
     private readonly string _legacyPath;
     private readonly PerCharacterStore<ArwenFavorState> _store;
+    private readonly PerCharacterView<ArwenFavorState> _view;
     private readonly IActiveCharacterService _active;
     private readonly ISettingsStore<ArwenSettings> _settingsStore;
     private readonly ArwenSettings _settings;
@@ -32,6 +33,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
     public ArwenFavorFanoutMigration(
         string legacyDir,
         PerCharacterStore<ArwenFavorState> store,
+        PerCharacterView<ArwenFavorState> view,
         IActiveCharacterService active,
         ISettingsStore<ArwenSettings> settingsStore,
         ArwenSettings settings,
@@ -39,6 +41,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
     {
         _legacyPath = Path.Combine(legacyDir, "settings.json");
         _store = store;
+        _view = view;
         _active = active;
         _settingsStore = settingsStore;
         _settings = settings;
@@ -94,6 +97,11 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
             {
                 _diag?.Warn("Arwen.Fanout", $"Settings rewrite failed: {ex.Message}");
             }
+
+            // Drop any stale cache that FavorStateService.Rebuild populated earlier during
+            // DI build — before the fanout wrote the per-char files. Without this, a later
+            // character switch would flush the stale empty cache over the fresh on-disk data.
+            _view.Invalidate();
         }
         else
         {
