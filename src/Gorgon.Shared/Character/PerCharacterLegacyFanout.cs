@@ -46,7 +46,16 @@ public static class PerCharacterLegacyFanout
                 continue;
             }
             var path = store.GetFilePath(name, server);
-            if (File.Exists(path)) continue; // don't clobber an existing per-char file
+            if (File.Exists(path))
+            {
+                // Target already exists: we do NOT clobber it. This protects a real per-char
+                // file from being overwritten by a later re-run of a legacy blob that still
+                // happens to list the same character. Log so the silent skip is greppable —
+                // a surprising drop would otherwise be invisible.
+                diag?.Warn("LegacyFanout",
+                    $"Per-char file {path} already exists; legacy slice for {name} dropped.");
+                continue;
+            }
             try
             {
                 var perChar = extractFor(name);
