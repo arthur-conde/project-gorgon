@@ -61,17 +61,6 @@ public sealed partial class StorageViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "No storage export loaded.";
 
-    public string? ActiveCharacterLabel
-    {
-        get
-        {
-            var name = _activeChar.ActiveCharacterName;
-            if (string.IsNullOrEmpty(name)) return null;
-            var server = _activeChar.ActiveServer;
-            return string.IsNullOrEmpty(server) ? name : $"{name} · {server}";
-        }
-    }
-
     [ObservableProperty]
     private IReadOnlyList<CraftableRecipeRow> _craftableRecipes = [];
 
@@ -112,8 +101,6 @@ public sealed partial class StorageViewModel : ObservableObject
 
     private void Reload()
     {
-        OnPropertyChanged(nameof(ActiveCharacterLabel));
-
         var report = _activeChar.ActiveStorageContents;
         if (report is null)
         {

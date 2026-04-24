@@ -81,12 +81,6 @@ public sealed partial class GiftScannerViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "Select an NPC to scan the active character's storage.";
 
-    public string? ActiveCharacterLabel => _activeChar.ActiveCharacterName is null
-        ? null
-        : string.IsNullOrEmpty(_activeChar.ActiveServer)
-            ? _activeChar.ActiveCharacterName
-            : $"{_activeChar.ActiveCharacterName} · {_activeChar.ActiveServer}";
-
     // ── Change handlers ─────────────────────────────────────────────────
 
     partial void OnSelectedNpcChanged(NpcFavorEntry? value) => Scan();
@@ -122,7 +116,6 @@ public sealed partial class GiftScannerViewModel : ObservableObject
 
     private void Scan()
     {
-        OnPropertyChanged(nameof(ActiveCharacterLabel));
         var report = _activeChar.ActiveStorageContents;
         if (SelectedNpc is null || report is null)
         {

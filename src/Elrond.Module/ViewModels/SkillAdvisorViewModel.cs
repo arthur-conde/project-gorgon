@@ -76,16 +76,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     public DataGridState GridState => _settings.RecipeGrid;
 
-    public string? ActiveCharacterLabel
-    {
-        get
-        {
-            var c = _activeChar.ActiveCharacter;
-            if (c is null) return null;
-            return string.IsNullOrEmpty(c.Server) ? c.Name : $"{c.Name} · {c.Server}";
-        }
-    }
-
     // ── Property change handlers ─────────────────────────────────────────
 
     partial void OnSelectedSkillChanged(string? value)
@@ -241,7 +231,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     private void OnActiveCharacterChanged(object? sender, EventArgs e)
     {
-        OnPropertyChanged(nameof(ActiveCharacterLabel));
         ReloadSkills();
         Reanalyze();
     }

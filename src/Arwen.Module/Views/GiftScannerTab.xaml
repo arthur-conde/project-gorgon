@@ -13,19 +13,12 @@
         <!-- Header controls -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
-                <StackPanel Margin="0,0,16,0">
+                <StackPanel>
                     <TextBlock Text="NPC" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <ComboBox ItemsSource="{Binding NpcList}" SelectedItem="{Binding SelectedNpc}"
                               DisplayMemberPath="Name" IsEditable="True" IsTextSearchEnabled="True"
                               Width="220" FontSize="{DynamicResource AppFontSizeMedium}"
                               Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
-                </StackPanel>
-                <StackPanel VerticalAlignment="Bottom">
-                    <TextBlock Text="Storage" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding ActiveCharacterLabel, TargetNullValue='(no active character)'}"
-                               Foreground="#FFE8E8E8" FontSize="{DynamicResource AppFontSizeMedium}"
-                               VerticalAlignment="Center"
-                               ToolTip="Switch the active character from the shell header."/>
                 </StackPanel>
             </StackPanel>
             <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,8,0,0"/>

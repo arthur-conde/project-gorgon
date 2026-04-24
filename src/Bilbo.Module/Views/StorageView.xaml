@@ -38,11 +38,6 @@
             </Button>
 
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Character:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBlock Text="{Binding ActiveCharacterLabel, TargetNullValue='(none)'}"
-                           Foreground="#FFE8E8E8" VerticalAlignment="Center" Margin="0,0,16,0"
-                           ToolTip="Switch the active character from the shell header."/>
-
                 <TextBlock Text="Location:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox Width="180" Margin="0,0,16,0"
                           ItemsSource="{Binding AvailableLocations}"
