@@ -25,6 +25,20 @@ jobs:
           # Nerdbank.GitVersioning needs full history to compute height/SemVer.
           fetch-depth: 0
 
+      # The windows-2025 runner ships with Microsoft Defender enabled, and its post-write
+      # scan-and-quarantine of fresh JSON files in the workspace deletes test artifacts
+      # between WriteAllText and the subsequent read (see commit b1d0a9c for diagnostics).
+      # Excluding the workspace and %TEMP% from real-time scanning is the standard fix —
+      # the runner is ephemeral and discarded after the job, so there's no security cost.
+      - name: Exclude workspace from Defender scanning
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+          Add-MpPreference -ExclusionPath "$env:TEMP"
+          Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP"
+          Write-Host "Defender exclusions added; current list:"
+          (Get-MpPreference).ExclusionPath
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
