@@ -4,6 +4,13 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:vm="clr-namespace:Gandalf.ViewModels"
              Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gandalf.Module;component/Views/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <DockPanel Margin="12">
         <!-- Header -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
