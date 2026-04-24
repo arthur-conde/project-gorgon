@@ -7,6 +7,8 @@ public sealed partial class TimerItemViewModel : ObservableObject
 {
     private TimerView _view;
 
+    [ObservableProperty] private bool _elapsedWhileAway;
+
     public TimerItemViewModel(TimerView view) => _view = view;
 
     public TimerView View => _view;

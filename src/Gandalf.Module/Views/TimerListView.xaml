@@ -80,6 +80,15 @@
                             <Border Width="200" Margin="6" Padding="10" CornerRadius="6"
                                     Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1">
                                 <StackPanel>
+                                    <!-- Elapsed-while-away badge (silent, precedes the header row) -->
+                                    <Border Background="#3F66BB6A" BorderBrush="#7F66BB6A" BorderThickness="1"
+                                            CornerRadius="3" Padding="6,2" Margin="0,0,0,6"
+                                            HorizontalAlignment="Left"
+                                            ToolTip="This timer finished while you were playing another character."
+                                            Visibility="{Binding ElapsedWhileAway, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="done while away" Foreground="#FFE8E8E8"
+                                                   FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                    </Border>
                                     <!-- Header: name, duration, action buttons -->
                                     <Grid>
                                         <Grid.ColumnDefinitions>

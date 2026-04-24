@@ -3,6 +3,7 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.DependencyInjection;
 using Gorgon.Shared.Modules;
 using Gorgon.Shared.Wpf.Dialogs;
@@ -60,7 +61,9 @@ public sealed class GandalfModule : IGorgonModule
             sp.GetRequiredService<TimerDefinitionsService>(),
             sp.GetRequiredService<TimerProgressService>(),
             sp.GetRequiredService<TimerAlarmService>(),
-            sp.GetRequiredService<IDialogService>()));
+            sp.GetRequiredService<IDialogService>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetRequiredService<ICharacterPresenceService>()));
 
         services.AddSingleton<TimerListView>(sp => new TimerListView
         {

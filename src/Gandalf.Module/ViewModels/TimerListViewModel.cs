@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.Views;
+using Gorgon.Shared.Character;
 using Gorgon.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
@@ -18,18 +19,24 @@ public sealed partial class TimerListViewModel : ObservableObject
     private readonly TimerProgressService _progress;
     private readonly TimerAlarmService _alarmService;
     private readonly IDialogService _dialogService;
+    private readonly IActiveCharacterService _active;
+    private readonly ICharacterPresenceService _presence;
     private readonly DispatcherTimer _refreshTimer;
 
     public TimerListViewModel(
         TimerDefinitionsService defs,
         TimerProgressService progress,
         TimerAlarmService alarmService,
-        IDialogService dialogService)
+        IDialogService dialogService,
+        IActiveCharacterService active,
+        ICharacterPresenceService presence)
     {
         _defs = defs;
         _progress = progress;
         _alarmService = alarmService;
         _dialogService = dialogService;
+        _active = active;
+        _presence = presence;
 
         _defs.DefinitionsChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
         _progress.ProgressChanged += (_, _) => SyncFromState();
@@ -100,6 +107,7 @@ public sealed partial class TimerListViewModel : ObservableObject
     private void StartTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
+        vm.ElapsedWhileAway = false;
         _progress.Start(vm.Id);
     }
 
@@ -107,6 +115,7 @@ public sealed partial class TimerListViewModel : ObservableObject
     private void RestartTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
+        vm.ElapsedWhileAway = false;
         _progress.Restart(vm.Id);
     }
 
@@ -114,6 +123,7 @@ public sealed partial class TimerListViewModel : ObservableObject
     private void DeleteTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
+        vm.ElapsedWhileAway = false;
         _defs.Remove(vm.Id);
     }
 
@@ -159,7 +169,36 @@ public sealed partial class TimerListViewModel : ObservableObject
             var progress = _progress.GetProgress(def.Id) ?? new TimerProgress();
             Timers.Add(new TimerItemViewModel(new TimerView(def, progress)));
         }
+
+        ApplyElapsedWhileAwayBadges();
         TimersView.Refresh();
+    }
+
+    /// <summary>
+    /// Mark timers whose theoretical completion (StartedAt + Duration) fell between the
+    /// character's last-active stamp and now — these finished while the user was on another
+    /// character. Uses theoretical completion (not CompletedAt) so the decision is
+    /// independent of whether CheckExpirations has ticked on the newly-active character yet.
+    /// Skipped when LastActiveAt is null (first-ever session on this character).
+    /// </summary>
+    private void ApplyElapsedWhileAwayBadges()
+    {
+        var name = _active.ActiveCharacterName;
+        var server = _active.ActiveServer;
+        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(server)) return;
+
+        var lastActive = _presence.GetLastActiveAt(name, server);
+        if (lastActive is null) return;
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var vm in Timers)
+        {
+            if (ElapsedWhileAwayClassifier.IsElapsedWhileAway(
+                vm.View.Progress, vm.View.Def.Duration, lastActive, now))
+            {
+                vm.ElapsedWhileAway = true;
+            }
+        }
     }
 
     private void RefreshAutocomplete()
