@@ -6,7 +6,9 @@
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:cdn.projectgorgon.com)",
       "WebFetch(domain:wiki.projectgorgon.com)",
-      "WebFetch(domain:pgemissary.com)"
+      "WebFetch(domain:pgemissary.com)",
+      "Read(//tmp/**)",
+      "Read(//i/tmp/**)"
     ]
   }
 }

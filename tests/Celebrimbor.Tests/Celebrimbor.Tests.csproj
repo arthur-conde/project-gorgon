@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Celebrimbor.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Celebrimbor.Module\Celebrimbor.Module.csproj" />
+  </ItemGroup>
+</Project>

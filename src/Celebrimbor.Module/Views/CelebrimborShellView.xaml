@@ -1,0 +1,39 @@
+<UserControl x:Class="Celebrimbor.Views.CelebrimborShellView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="clr-namespace:Celebrimbor.Views"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- Shell header with module title + wizard indicator -->
+        <Border DockPanel.Dock="Top" Padding="12,10" Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Image Source="pack://application:,,,/Celebrimbor.Module;component/Resources/celebrimbor.ico"
+                           Width="24" Height="24" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBlock Text="Celebrimbor · Crafting"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="SemiBold"
+                               Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                </StackPanel>
+                <views:WizardStepIndicator HorizontalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="ShellRoot">
+            <views:RecipePickerView DataContext="{Binding Picker}"
+                                    Visibility="{Binding DataContext.CurrentView, ElementName=ShellRoot, Converter={StaticResource PickerVisibility}}"/>
+            <views:ShoppingListView DataContext="{Binding Shopping}"
+                                    Visibility="{Binding DataContext.CurrentView, ElementName=ShellRoot, Converter={StaticResource ShoppingVisibility}}"/>
+        </Grid>
+    </DockPanel>
+</UserControl>

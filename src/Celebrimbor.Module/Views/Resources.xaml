@@ -1,0 +1,84 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:views="clr-namespace:Celebrimbor.Views"
+                    xmlns:vm="clr-namespace:Celebrimbor.ViewModels"
+                    xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared">
+    <views:BoolToCraftReadyBrushConverter x:Key="CraftReadyBrush"/>
+    <views:LocationsToStringConverter x:Key="LocationsToString"/>
+    <views:ZeroToGhostBrushConverter x:Key="ZeroToGhost"/>
+    <views:ViewModeToVisibilityConverter x:Key="PickerVisibility" Target="Picker"/>
+    <views:ViewModeToVisibilityConverter x:Key="ShoppingVisibility" Target="Shopping"/>
+    <views:ViewModeToAccentBrushConverter x:Key="PickerAccent" Target="Picker"/>
+    <views:ViewModeToAccentBrushConverter x:Key="ShoppingAccent" Target="Shopping"/>
+    <views:CountToVisibilityConverter x:Key="CountToVisibility"/>
+    <views:CountToVisibilityConverter x:Key="CountToVisibilityInverted" Invert="True"/>
+
+    <!-- Shared rich recipe card template.
+         Consumers bind to anything exposing Name, IconId, Skill, SkillLevelReq,
+         Ingredients, and Results (both RecipeRowViewModel and CraftListItemViewModel). -->
+    <DataTemplate x:Key="RecipeCardTemplate">
+        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                CornerRadius="4" Padding="10" MaxWidth="380">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                   Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                        <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0">
+                            <Run Text="{Binding Skill, Mode=OneWay}"/>
+                            <Run Text=" Lv "/>
+                            <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock Text="Ingredients" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,2,0,4"/>
+                <ItemsControl ItemsSource="{Binding Ingredients}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                    <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
+                                </TextBlock>
+                                <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                <TextBlock Text="{Binding ChanceToConsume, Mode=OneWay, StringFormat=' ({0:P0} chance to consume)'}"
+                                           Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ChanceToConsume}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="Yields" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                <ItemsControl ItemsSource="{Binding Results}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                    <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
+                                </TextBlock>
+                                <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </DataTemplate>
+</ResourceDictionary>

@@ -40,6 +40,8 @@ public sealed class RawRecipe
     public int? RewardSkillXpDropOffRate { get; set; }
     public List<RawRecipeItem>? Ingredients { get; set; }
     public List<RawRecipeItem>? ResultItems { get; set; }
+    /// <summary>Fallback output list used by crafted-equipment recipes that leave <see cref="ResultItems"/> empty.</summary>
+    public List<RawRecipeItem>? ProtoResultItems { get; set; }
     public string? PrereqRecipe { get; set; }
 }
 

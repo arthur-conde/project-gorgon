@@ -1,0 +1,240 @@
+<UserControl x:Class="Celebrimbor.Views.RecipePickerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="clr-namespace:Celebrimbor.Views"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12,0,12,12">
+        <!-- Drawer (bottom) -->
+        <views:CraftListDrawerView DockPanel.Dock="Bottom"/>
+
+        <!-- Toolbar -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyListCommand}" ToolTip="Copy craft list to clipboard">
+                    <icon:PackIconLucide Kind="Copy" Width="14" Height="14"/>
+                </Button>
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding PasteListCommand}" ToolTip="Paste craft list from clipboard">
+                    <icon:PackIconLucide Kind="ClipboardPaste" Width="14" Height="14"/>
+                </Button>
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding ClearCommand}" ToolTip="Clear the entire craft list">
+                    <icon:PackIconLucide Kind="Eraser" Width="14" Height="14"/>
+                </Button>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal">
+                <CheckBox Content="Known only" Margin="0,0,10,0" VerticalAlignment="Center"
+                          Foreground="#CCFFFFFF"
+                          IsChecked="{Binding KnownRecipesOnly}"
+                          IsEnabled="{Binding HasActiveCharacter}"
+                          ToolTip="Only show recipes the active character has completed at least once"/>
+                <CheckBox Content="Meets skill level" Margin="0,0,10,0" VerticalAlignment="Center"
+                          Foreground="#CCFFFFFF"
+                          IsChecked="{Binding EnforceSkillLevel}"
+                          IsEnabled="{Binding HasActiveCharacter}"
+                          ToolTip="Only show recipes the active character meets the skill requirement for"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Query box -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,8">
+            <wpf:GorgonQueryBox Grid="{Binding ElementName=RecipesGrid}"
+                                QueryText="{Binding QueryText, Mode=TwoWay}"
+                                Watermark="Search or query:   Cheese    ·    Skill = &quot;Cooking&quot;    ·    IsKnown AND SkillLevelReq &lt; 30"/>
+        </Border>
+
+        <!-- Status -->
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" Foreground="#88FFFFFF"
+                   FontSize="{DynamicResource AppFontSizeHint}"
+                   Text="{Binding StatusMessage}"/>
+
+        <!-- Recipe grid -->
+        <wpf:GorgonDataGrid x:Name="RecipesGrid"
+                            ItemsSource="{Binding AllRows}"
+                            QueryText="{Binding QueryText, Mode=TwoWay}"
+                            Mode="ReadOnly"
+                            IsHitTestVisible="True"
+                            Background="#FF1F1F1F" Foreground="#FFE8E8E8"
+                            RowBackground="#FF1F1F1F"
+                            AlternatingRowBackground="#FF242424"
+                            BorderBrush="#33FFFFFF"
+                            GridLinesVisibility="Horizontal"
+                            HorizontalGridLinesBrush="#22FFFFFF"
+                            RowHeight="32"
+                            AutoGenerateColumns="False"
+                            CanUserAddRows="False"
+                            CanUserDeleteRows="False"
+                            HeadersVisibility="Column">
+            <wpf:GorgonDataGrid.CellStyle>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="IsTabStop" Value="False"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                </Style>
+            </wpf:GorgonDataGrid.CellStyle>
+            <wpf:GorgonDataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="ToolTipService.InitialShowDelay"
+                            Value="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <Setter Property="ToolTipService.BetweenShowDelay" Value="0"/>
+                    <Setter Property="ToolTip">
+                        <Setter.Value>
+                            <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                     Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <ToolTip.ContentTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                CornerRadius="4" Padding="10" MaxWidth="380">
+                                            <StackPanel>
+                                                <DockPanel Margin="0,0,0,6">
+                                                    <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                   Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                                                        <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0">
+                                                            <Run Text="{Binding Skill, Mode=OneWay}"/>
+                                                            <Run Text=" Lv "/>
+                                                            <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                            <Border Background="#44D4A847" CornerRadius="3" Padding="4,1" Margin="0,0,4,0"
+                                                                    Visibility="{Binding IsKnown, Converter={StaticResource CountToVisibility}}">
+                                                                <TextBlock Text="Known" Foreground="#FFD4A847" FontSize="10" FontWeight="SemiBold"/>
+                                                            </Border>
+                                                            <Border Background="#44D4A847" CornerRadius="3" Padding="4,1" Margin="0,0,4,0"
+                                                                    Visibility="{Binding IsKnown, Converter={StaticResource CountToVisibilityInverted}}">
+                                                                <TextBlock Text="Unknown" Foreground="#88FFFFFF" FontSize="10"/>
+                                                            </Border>
+                                                            <Border Background="#447FB069" CornerRadius="3" Padding="4,1"
+                                                                    Visibility="{Binding MeetsSkill, Converter={StaticResource CountToVisibility}}">
+                                                                <TextBlock Text="Skill met" Foreground="#FF7FB069" FontSize="10" FontWeight="SemiBold"/>
+                                                            </Border>
+                                                            <Border Background="#44B84747" CornerRadius="3" Padding="4,1"
+                                                                    Visibility="{Binding MeetsSkill, Converter={StaticResource CountToVisibilityInverted}}">
+                                                                <TextBlock Text="Under-skilled" Foreground="#FFC27A7A" FontSize="10"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DockPanel>
+
+                                                <TextBlock Text="Ingredients" Foreground="#88FFFFFF"
+                                                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,2,0,4"/>
+                                                <ItemsControl ItemsSource="{Binding Ingredients}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                                <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                                                    <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
+                                                                </TextBlock>
+                                                                <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                                <TextBlock Text="{Binding ChanceToConsume, Mode=OneWay, StringFormat=' ({0:P0} chance to consume)'}"
+                                                                           Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding ChanceToConsume}" Value="{x:Null}">
+                                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock Text="Yields" Foreground="#88FFFFFF"
+                                                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                                                <ItemsControl ItemsSource="{Binding Results}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                                <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                                                    <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
+                                                                </TextBlock>
+                                                                <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ToolTip.ContentTemplate>
+                            </ToolTip>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsInList}" Value="True">
+                            <Setter Property="Background" Value="#22D4A847"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </wpf:GorgonDataGrid.RowStyle>
+            <wpf:GorgonDataGrid.Columns>
+                <DataGridTemplateColumn Header="" Width="40" CanUserSort="False" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Command="{Binding DataContext.AddRowCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                    CommandParameter="{Binding}"
+                                    Background="#FF2A2A2A" Foreground="#FFD4A847" BorderBrush="#55D4A847"
+                                    Padding="6,2" Margin="3"
+                                    ToolTip="Add this recipe to the craft list (click again to increment quantity)">
+                                <icon:PackIconLucide Kind="Plus" Width="12" Height="12"/>
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="In list" Width="56" CanUserSort="True" SortMemberPath="Quantity" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Margin="2" CornerRadius="3"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    MinWidth="26" Height="20"
+                                    Background="#FFD4A847"
+                                    Visibility="{Binding IsInList, Converter={StaticResource CountToVisibility}}"
+                                    ToolTip="Quantity currently in the craft list">
+                                <TextBlock Text="{Binding Quantity}" Foreground="#FF1A1A1A"
+                                           FontSize="11" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Padding="6,0"/>
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="220" SortMemberPath="Name" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Skill" Binding="{Binding Skill}" SortMemberPath="Skill" Width="160" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Req" Binding="{Binding SkillLevelReq}" SortMemberPath="SkillLevelReq" Width="55" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                            <Setter Property="Padding" Value="0,0,8,0"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </wpf:GorgonDataGrid.Columns>
+        </wpf:GorgonDataGrid>
+    </DockPanel>
+</UserControl>

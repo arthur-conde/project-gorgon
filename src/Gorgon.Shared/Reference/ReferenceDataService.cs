@@ -324,6 +324,12 @@ public sealed class ReferenceDataService : IReferenceDataService
                 .ToList()
                 ?? (IReadOnlyList<RecipeItemRef>)[];
 
+            var protoResults = v.ProtoResultItems?
+                .Where(i => i.ItemCode.HasValue)
+                .Select(i => new RecipeItemRef(i.ItemCode!.Value, i.StackSize ?? 1, null))
+                .ToList()
+                ?? (IReadOnlyList<RecipeItemRef>)[];
+
             var entry = new RecipeEntry(
                 key,
                 v.Name ?? "",
@@ -339,7 +345,8 @@ public sealed class ReferenceDataService : IReferenceDataService
                 v.RewardSkillXpDropOffRate,
                 ingredients,
                 results,
-                v.PrereqRecipe);
+                v.PrereqRecipe,
+                protoResults);
             byKey[key] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }

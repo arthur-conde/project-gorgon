@@ -48,6 +48,10 @@ Subject: an open grimoire held upright, pages fanned, with glowing runes lifting
 
 Subject: a dragon's clawed forefoot resting possessively atop a heaped pile of gold coins, gems, and a single ornate goblet tipped on its side. One serpentine eye glints from the upper field, half-lidded and watchful over the hoard. A scattering of coins tumbles forward from the pile into the lower frame. Faint pattern of stacked coins and scale-texture in the background.
 
+## Celebrimbor · Crafting (recipe planner & ingredient shopping list)
+
+Subject: a smith's anvil centered in the lower half of the frame, its horn pointing left, with a cross-peen hammer resting head-down across the anvil's face. Above the anvil, three small crafting-ingredient glyphs hover in a gentle upward arc — a sheaf of wheat on the left, a cut gemstone in the middle, and a corked phial of liquid on the right — each trailing a faint spark descending toward the anvil as if being assembled into a single work. Fine elvish filigree traces the anvil's base and the hammer's grip, a nod to the Forger of Rings. Faint background texture of interlocking Celtic/elvish knotwork and a ring of tiny forge-sparks orbiting the central emblem.
+
 ## Shell settings (non-module sections)
 
 These are the three shell-owned entries at the top of the Settings sidebar. They share the same gold-on-charcoal style but skip the LOTR-character framing — the subjects are generic "tool" emblems.

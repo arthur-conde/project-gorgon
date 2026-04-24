@@ -1,0 +1,81 @@
+<UserControl x:Class="Celebrimbor.Views.CraftListDrawerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Background="#FF242424" BorderBrush="#55D4A847" BorderThickness="0,2,0,0"
+            Visibility="{Binding HasCraftList, Converter={StaticResource CountToVisibility}}">
+        <DockPanel Margin="12,10">
+            <!-- Footer with totals + finalize -->
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <Button DockPanel.Dock="Right" Padding="16,6" Command="{Binding CommitCommand}"
+                        Background="#FF3A5A3A" Foreground="#FFE8E8E8" BorderBrush="#FF7FB069">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Finalize" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <icon:PackIconLucide Kind="ArrowRight" Width="12" Height="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <TextBlock VerticalAlignment="Center" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                    <Run Text="{Binding CraftListCount, Mode=OneWay}"/>
+                    <Run Text=" recipes · "/>
+                    <Run Text="{Binding CraftListTotalQuantity, Mode=OneWay}"/>
+                    <Run Text=" batches"/>
+                </TextBlock>
+            </DockPanel>
+
+            <!-- Header -->
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                <icon:PackIconLucide Kind="ListChecks" Width="14" Height="14" Foreground="#FFD4A847" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Current craft list" Foreground="#FFD4A847" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Chip list -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxHeight="110">
+                <ItemsControl ItemsSource="{Binding CraftListItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#FF2A2A2A" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                    CornerRadius="4" Padding="6,4" Margin="0,0,6,6"
+                                    ToolTipService.InitialShowDelay="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    ToolTipService.BetweenShowDelay="0">
+                                <Border.ToolTip>
+                                    <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                             Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                             ContentTemplate="{StaticResource RecipeCardTemplate}"/>
+                                </Border.ToolTip>
+                                <StackPanel Orientation="Horizontal">
+                                    <wpf:IconImage IconId="{Binding IconId}" Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8" VerticalAlignment="Center" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text=" × " Foreground="#55FFFFFF" VerticalAlignment="Center" Margin="4,0,2,0"/>
+                                    <TextBox Text="{Binding Quantity, UpdateSourceTrigger=LostFocus}"
+                                             Width="44" Padding="4,1" TextAlignment="Right"
+                                             Background="#FF1F1F1F" Foreground="#FFE8E8E8"
+                                             BorderBrush="#33FFFFFF" VerticalContentAlignment="Center"/>
+                                    <Button Margin="4,0,0,0" Padding="4,1" ToolTip="Remove from list"
+                                            Command="{Binding DataContext.RemoveFromListCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"
+                                            Background="Transparent" BorderBrush="#33FFFFFF">
+                                        <icon:PackIconLucide Kind="X" Width="10" Height="10" Foreground="#BBFFFFFF"/>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</UserControl>
