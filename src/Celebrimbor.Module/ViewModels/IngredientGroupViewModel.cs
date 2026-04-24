@@ -49,6 +49,15 @@ public sealed partial class IngredientGroupViewModel : ObservableObject
     [ObservableProperty]
     private bool _isHeaderVisible = true;
 
+    /// <summary>
+    /// Rows are visible when the header is shown and the user has it expanded, OR when the header
+    /// is hidden (there's no click target to toggle collapse, so we can't let auto-collapse strand the rows).
+    /// </summary>
+    public bool AreRowsVisible => !IsHeaderVisible || IsExpanded;
+
+    partial void OnIsExpandedChanged(bool value) => OnPropertyChanged(nameof(AreRowsVisible));
+    partial void OnIsHeaderVisibleChanged(bool value) => OnPropertyChanged(nameof(AreRowsVisible));
+
     [RelayCommand]
     private void ToggleExpanded()
     {
