@@ -20,7 +20,8 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             .Where(c => c is not null).Select(c => c!)
             .ToList();
         CraftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, refData);
-        Results = ProjectResults(recipe, refData, CraftedOutputs.Count);
+        Augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, refData);
+        Results = ProjectResults(recipe, refData, CraftedOutputs.Count, Augments.Count);
         InspectableItems = BuildInspectable(CraftedOutputs, Results);
     }
 
@@ -55,7 +56,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     }
 
     private static IReadOnlyList<IngredientChip> ProjectResults(
-        RecipeEntry recipe, IReferenceDataService refData, int craftedOutputCount)
+        RecipeEntry recipe, IReferenceDataService refData, int craftedOutputCount, int augmentCount)
     {
         var primary = recipe.ResultItems
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
@@ -74,8 +75,8 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             .ToList();
         if (proto.Count > 0) return proto;
 
-        // Crafted-gear effects render their own section; skip the placeholder to avoid double-rendering.
-        if (craftedOutputCount > 0) return [];
+        // Crafted-gear / augment effects render their own sections; skip the placeholder to avoid double-rendering.
+        if (craftedOutputCount > 0 || augmentCount > 0) return [];
 
         // Last-resort: the recipe's own name/icon so the Yields section never renders blank.
         return [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
@@ -85,6 +86,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
+    public IReadOnlyList<AugmentPreview> Augments { get; }
 
     /// <summary>
     /// Every item a user might want to open in the detail window — crafted-gear previews first,

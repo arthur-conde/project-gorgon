@@ -129,6 +129,28 @@ public sealed class RawItemSourceEnvelope
 }
 
 /// <summary>
+/// Raw tsysclientinfo.json shape. Each top-level entry is keyed <c>power_NNNN</c> and
+/// describes one power that can augment an item. <see cref="Suffix"/> is optional —
+/// drop/loot powers carry a display suffix like "of Archery"; deterministic infusion
+/// powers (referenced by <c>AddItemTSysPower</c> recipes) typically omit it.
+/// </summary>
+public sealed class RawPower
+{
+    public string? InternalName { get; set; }
+    public string? Skill { get; set; }
+    public List<string>? Slots { get; set; }
+    public string? Suffix { get; set; }
+    public Dictionary<string, RawPowerTier>? Tiers { get; set; }
+}
+
+/// <summary>One tier (<c>id_N</c>) within a <see cref="RawPower"/>.</summary>
+public sealed class RawPowerTier
+{
+    public List<string>? EffectDescs { get; set; }
+    public int? MaxLevel { get; set; }
+}
+
+/// <summary>
 /// One entry inside <see cref="RawItemSourceEnvelope.Entries"/>. Vendor entries have
 /// <c>type: "Vendor"</c> and an <c>npc</c> field; other source types (Recipe, HangOut,
 /// NpcGift, Quest, Barter, Monster, Angling, …) use different fields which we surface
@@ -158,4 +180,5 @@ public sealed class RawItemSource
 [JsonSerializable(typeof(Dictionary<string, RawNpc>))]
 [JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
 [JsonSerializable(typeof(Dictionary<string, RawAttribute>))]
+[JsonSerializable(typeof(Dictionary<string, RawPower>))]
 public partial class ReferenceJsonContext : JsonSerializerContext { }

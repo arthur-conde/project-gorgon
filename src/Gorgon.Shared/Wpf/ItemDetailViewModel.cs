@@ -10,6 +10,11 @@ namespace Gorgon.Shared.Wpf;
 public sealed class ItemDetailViewModel
 {
     public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData)
+        : this(item, refData, augments: null)
+    {
+    }
+
+    public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData, IReadOnlyList<AugmentPreview>? augments)
     {
         Item = item;
         EffectLines = EffectDescsRenderer.Render(item.EffectDescs, refData.Attributes);
@@ -19,6 +24,7 @@ public sealed class ItemDetailViewModel
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal)
                 .Select(kv => $"{kv.Key} {kv.Value}")
                 .ToList();
+        Augments = augments ?? [];
     }
 
     public ItemEntry Item { get; }
@@ -30,4 +36,5 @@ public sealed class ItemDetailViewModel
     public string? FoodDesc => Item.FoodDesc;
     public IReadOnlyList<string> SkillReqChips { get; }
     public IReadOnlyList<EffectLine> EffectLines { get; }
+    public IReadOnlyList<AugmentPreview> Augments { get; }
 }

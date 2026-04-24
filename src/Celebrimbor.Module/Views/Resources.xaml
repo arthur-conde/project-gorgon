@@ -96,6 +96,34 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Augmentation (AddItemTSysPower recipes). Hidden when the list is empty.
+                     Effect rows rendered inline (not via the shared EffectLineTemplate) so this
+                     template doesn't depend on Gorgon.Shared's Resources.xaml being merged here. -->
+                <TextBlock Text="Augmentation" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding Augments.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding Augments}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,4">
+                                <TextBlock Text="{Binding DisplayLine}" Foreground="#FFD4A847"
+                                           FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"
+                                           Margin="0,0,0,2"/>
+                                <ItemsControl ItemsSource="{Binding EffectLines}" Margin="10,0,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </Border>
     </DataTemplate>

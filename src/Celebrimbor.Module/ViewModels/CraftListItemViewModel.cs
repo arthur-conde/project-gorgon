@@ -24,6 +24,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         IReadOnlyList<IngredientChip> ingredients,
         IReadOnlyList<IngredientChip> results,
         IReadOnlyList<CraftedGearPreview> craftedOutputs,
+        IReadOnlyList<AugmentPreview> augments,
         IItemDetailPresenter itemDetail)
     {
         _itemDetail = itemDetail;
@@ -36,6 +37,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         Ingredients = ingredients;
         Results = results;
         CraftedOutputs = craftedOutputs;
+        Augments = augments;
 
         // Yields first, crafted-gear previews that weren't already in Yields next — dedupes
         // the common case where a recipe has both a ResultItems entry and a TSysCraftedEquipment
@@ -73,6 +75,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
+    public IReadOnlyList<AugmentPreview> Augments { get; }
     public IReadOnlyList<IngredientChip> InspectableItems { get; }
 
     public bool HasInspectableItem => InspectableItems.Count > 0;

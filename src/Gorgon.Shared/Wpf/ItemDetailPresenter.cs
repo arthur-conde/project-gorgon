@@ -15,7 +15,12 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
         _diag = diag;
     }
 
-    public void Show(string internalName)
+    public void Show(string internalName) => ShowCore(internalName, augments: null);
+
+    public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) =>
+        ShowCore(internalName, augments);
+
+    private void ShowCore(string internalName, IReadOnlyList<AugmentPreview>? augments)
     {
         if (string.IsNullOrWhiteSpace(internalName))
         {
@@ -34,14 +39,14 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
         // callers from worker threads get marshalled for free.
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
-            Open(item);
+            Open(item, augments);
         else
-            dispatcher.InvokeAsync(() => Open(item));
+            dispatcher.InvokeAsync(() => Open(item, augments));
     }
 
-    private void Open(ItemEntry item)
+    private void Open(ItemEntry item, IReadOnlyList<AugmentPreview>? augments)
     {
-        var vm = new ItemDetailViewModel(item, _refData);
+        var vm = new ItemDetailViewModel(item, _refData, augments);
         var window = new ItemDetailWindow(vm)
         {
             Owner = Application.Current?.MainWindow,

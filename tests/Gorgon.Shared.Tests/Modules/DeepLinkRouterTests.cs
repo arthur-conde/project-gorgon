@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Gorgon.Shared.Modules;
+using Gorgon.Shared.Reference;
 using Gorgon.Shared.Wpf;
 using Xunit;
 
@@ -125,6 +126,7 @@ public class DeepLinkRouterTests
     {
         public string? LastShown { get; private set; }
         public void Show(string internalName) => LastShown = internalName;
+        public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) => LastShown = internalName;
     }
 
     private sealed class RecordingListTarget : ICraftListImportTarget

@@ -44,6 +44,13 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, AttributeEntry> Attributes { get; }
 
+    /// <summary>
+    /// Power InternalName (e.g. <c>"ShamanicHeadArmor"</c>, <c>"ArcheryBoost"</c>) →
+    /// <see cref="PowerEntry"/> describing the per-tier <see cref="EffectDescs"/> used by
+    /// <c>AddItemTSysPower</c> augmentation recipes. Pulled from <c>tsysclientinfo.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, PowerEntry> Powers { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

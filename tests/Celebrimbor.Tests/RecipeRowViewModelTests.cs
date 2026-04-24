@@ -93,10 +93,12 @@ public class RecipeRowViewModelTests
 internal sealed class NullItemDetailPresenter : IItemDetailPresenter
 {
     public void Show(string internalName) { }
+    public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) { }
 }
 
 internal sealed class RecordingItemDetailPresenter : IItemDetailPresenter
 {
     public string? LastInternalName { get; private set; }
     public void Show(string internalName) => LastInternalName = internalName;
+    public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) => LastInternalName = internalName;
 }

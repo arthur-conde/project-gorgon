@@ -161,7 +161,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                     .ToList();
             }
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _refData);
-            if (results.Count == 0 && craftedOutputs.Count == 0)
+            var augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, _refData);
+            if (results.Count == 0 && craftedOutputs.Count == 0 && augments.Count == 0)
                 results = [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
             making.Add(new CraftListItemViewModel(
                 recipe.InternalName,
@@ -173,6 +174,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 ingredients,
                 results,
                 craftedOutputs,
+                augments,
                 _itemDetail));
         }
         MakingItems = making;

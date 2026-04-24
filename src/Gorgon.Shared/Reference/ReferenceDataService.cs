@@ -49,6 +49,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, AttributeEntry>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _attributesSnapshot;
 
+    // Powers (tsysclientinfo.json) — resolves AddItemTSysPower recipe augments.
+    private IReadOnlyDictionary<string, PowerEntry> _powers =
+        new Dictionary<string, PowerEntry>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _powersSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -63,6 +68,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -71,9 +77,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadNpcs();
         LoadItemSources();
         LoadAttributes();
+        LoadPowers();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes", "tsysclientinfo"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -84,6 +91,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
+    public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -94,6 +102,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "npcs" => _npcsSnapshot,
         "sources_items" => _itemSourcesSnapshot,
         "attributes" => _attributesSnapshot,
+        "tsysclientinfo" => _powersSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -108,6 +117,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "npcs" => RefreshFileAsync("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
         "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
+        "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -120,6 +130,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("npcs", ct);
         await RefreshAsync("sources_items", ct);
         await RefreshAsync("attributes", ct);
+        await RefreshAsync("tsysclientinfo", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -233,6 +244,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadNpcs() => LoadFile("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
     private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
+    private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -495,6 +507,42 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _attributes = byToken;
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byToken.Count);
+    }
+
+    private void ParseAndSwapPowers(Dictionary<string, RawPower> raw, ReferenceFileMetadata meta)
+    {
+        // Key the output by PowerEntry.InternalName so recipe effects
+        // (AddItemTSysPower(<InternalName>, <tier>)) resolve directly.
+        var byInternalName = new Dictionary<string, PowerEntry>(raw.Count, StringComparer.Ordinal);
+        foreach (var (_, v) in raw)
+        {
+            if (string.IsNullOrEmpty(v.InternalName)) continue;
+
+            var tiers = new Dictionary<int, PowerTier>();
+            if (v.Tiers is not null)
+            {
+                foreach (var (tierKey, rawTier) in v.Tiers)
+                {
+                    // Keys are "id_N". Parse the numeric suffix; skip malformed entries.
+                    var underscore = tierKey.IndexOf('_');
+                    if (underscore < 0) continue;
+                    if (!int.TryParse(tierKey.AsSpan(underscore + 1), out var tierNum)) continue;
+
+                    var descs = (IReadOnlyList<string>)(rawTier.EffectDescs ?? []);
+                    tiers[tierNum] = new PowerTier(tierNum, descs, rawTier.MaxLevel ?? 0);
+                }
+            }
+
+            var entry = new PowerEntry(
+                InternalName: v.InternalName,
+                Skill: v.Skill ?? "",
+                Slots: (IReadOnlyList<string>)(v.Slots ?? []),
+                Suffix: string.IsNullOrEmpty(v.Suffix) ? null : v.Suffix,
+                Tiers: tiers);
+            byInternalName[entry.InternalName] = entry;
+        }
+        _powers = byInternalName;
+        _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────
