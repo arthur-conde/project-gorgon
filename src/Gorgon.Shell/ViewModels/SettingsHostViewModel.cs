@@ -68,6 +68,14 @@ public sealed partial class SettingsHostViewModel : ObservableObject
             });
         }
 
+        Sections.Add(new SettingsSection
+        {
+            Title = "About",
+            Icon = PackIconLucideKind.Info,
+            ViewType = typeof(Views.AboutSettingsView),
+            IconUri = "pack://application:,,,/Gorgon;component/Resources/about.ico",
+        });
+
         SelectedSection = Sections.FirstOrDefault();
     }
 

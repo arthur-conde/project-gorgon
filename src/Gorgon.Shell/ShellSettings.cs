@@ -38,6 +38,12 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     public Dictionary<string, HotkeyBinding> HotkeyBindings { get; set; } = new();
     public Dictionary<string, bool> ModuleEagerOverrides { get; set; } = new();
 
+    private string? _lastDismissedUpdateSha;
+    public string? LastDismissedUpdateSha { get => _lastDismissedUpdateSha; set => Set(ref _lastDismissedUpdateSha, value); }
+
+    private double _updateCheckIntervalHours = 4.0;
+    public double UpdateCheckIntervalHours { get => _updateCheckIntervalHours; set => Set(ref _updateCheckIntervalHours, value); }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
     {

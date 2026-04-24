@@ -68,6 +68,10 @@ Subject: an ornamented gilt picture frame centered in the composition, its corne
 
 Subject: a large ornate serif capital "A" centered in the frame, rendered as an illuminated-manuscript initial with fine filigree flourishes curling off its crossbar and apex. A slim calligraphy quill rests diagonally behind the letter, nib pointing toward the lower-left, with a single ink droplet suspended mid-fall near the tip. Conveys "typography / font styling." Faint background texture of a justified column of tiny indecipherable manuscript lines.
 
+### About / Version
+
+Subject: an ornate eight-point compass rose centered in the frame, its outer ring reformed into a circular refresh-arrow with a single arrowhead curling clockwise at the top. Two small cabochon gems are set into the rose's crossbar — a clear one at the north point and a darker one at the south — standing in for "up to date" vs "update available." A slim etched banner curves beneath the compass with a stylized version tick-mark (a dot flanked by two shorter dots) standing in for "v1.2.3", no readable numerals. Conveys "current build / check for updates." Faint background texture of concentric version-ring grooves like tree rings.
+
 ## Shell sidebar footer buttons
 
 These are the three small utility buttons pinned to the bottom of the main sidebar (Diagnostics, Hotkeys, Settings). They render at ~16px so the subjects should be noticeably simpler than the module emblems — bold silhouette, minimal interior detail, no text or fine linework.

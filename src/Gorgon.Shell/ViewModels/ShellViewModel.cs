@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gorgon.Shared.Character;
 using Gorgon.Shared.Modules;
+using Gorgon.Shell.Updates;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +38,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IServiceProvider _services;
     private readonly ShellSettings _settings;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IUpdateStatusService _updateStatus;
 
     private readonly ModuleGates _gates;
 
@@ -44,12 +47,14 @@ public sealed partial class ShellViewModel : ObservableObject
         IEnumerable<IGorgonModule> modules,
         ShellSettings settings,
         ModuleGates gates,
-        IActiveCharacterService activeChar)
+        IActiveCharacterService activeChar,
+        IUpdateStatusService updateStatus)
     {
         _services = services;
         _settings = settings;
         _gates = gates;
         _activeChar = activeChar;
+        _updateStatus = updateStatus;
         foreach (var m in modules.OrderBy(m => m.SortOrder))
             Modules.Add(new ModuleEntry { Module = m });
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -58,7 +63,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
         _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshCharacter();
         _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
+        _updateStatus.StateChanged += (_, _) => RefreshUpdateStatus();
         RefreshCharacter();
+        RefreshUpdateStatus();
     }
 
     public ObservableCollection<ModuleEntry> Modules { get; } = new();
@@ -73,6 +80,39 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty] private string _activeServer = "";
     [ObservableProperty] private bool _hasActiveCharacter;
     [ObservableProperty] private bool _hasNoCharacters;
+
+    [ObservableProperty] private bool _isUpdateAvailable;
+    [ObservableProperty] private string _updateBannerText = "";
+    [ObservableProperty] private string? _updateCompareUrl;
+
+    [RelayCommand]
+    private void DismissUpdate() => _updateStatus.Dismiss();
+
+    [RelayCommand]
+    private void ViewUpdateDiff()
+    {
+        var url = _updateStatus.CompareUrl
+                  ?? "https://github.com/arthur-conde/project-gorgon/commits/main";
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* best-effort */ }
+    }
+
+    private void RefreshUpdateStatus()
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) ApplyUpdateStatus();
+        else d.InvokeAsync(ApplyUpdateStatus);
+    }
+
+    private void ApplyUpdateStatus()
+    {
+        IsUpdateAvailable = _updateStatus.IsOutdated;
+        UpdateCompareUrl = _updateStatus.CompareUrl;
+        var n = _updateStatus.BehindByCount;
+        UpdateBannerText = n == 1
+            ? "1 new commit on main — run git pull to update."
+            : $"{n} new commits on main — run git pull to update.";
+    }
 
     [RelayCommand]
     private void SelectCharacter(CharacterChip? chip)

@@ -103,6 +103,7 @@ public static class Program
                 .AddGorgonDialogs()
                 .AddGorgonModuleGates()
                 .AddGorgonModules()
+                .AddGorgonShellUpdates()
                 .AddGorgonShellViews();
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IGorgonModule))}");

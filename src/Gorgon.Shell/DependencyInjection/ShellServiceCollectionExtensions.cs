@@ -1,9 +1,11 @@
 using System.IO;
 using System.Reflection;
 using Gorgon.Shared.Modules;
+using Gorgon.Shell.Updates;
 using Gorgon.Shell.ViewModels;
 using Gorgon.Shell.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Gorgon.Shell.DependencyInjection;
 
@@ -49,6 +51,12 @@ public static class ShellServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddGorgonShellUpdates(this IServiceCollection services) =>
+        services
+            .AddSingleton<IUpdateStatusService, UpdateStatusService>()
+            .AddSingleton<IUpdateChecker, GitHubUpdateChecker>()
+            .AddHostedService<UpdateCheckHostedService>();
+
     public static IServiceCollection AddGorgonShellViews(this IServiceCollection services) =>
         services
             // ViewModels
@@ -59,6 +67,7 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<DiagnosticsViewModel>()
             .AddSingleton<ReferenceDataViewModel>()
             .AddSingleton<AppearanceSettingsViewModel>()
+            .AddSingleton<AboutSettingsViewModel>()
             .AddSingleton<SettingsHostViewModel>()
             // Views
             .AddSingleton<ShellWindow>()
@@ -85,6 +94,10 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<AppearanceSettingsView>(sp => new AppearanceSettingsView
             {
                 DataContext = sp.GetRequiredService<AppearanceSettingsViewModel>(),
+            })
+            .AddSingleton<AboutSettingsView>(sp => new AboutSettingsView
+            {
+                DataContext = sp.GetRequiredService<AboutSettingsViewModel>(),
             })
             .AddSingleton<SettingsHostView>(sp => new SettingsHostView
             {
