@@ -24,7 +24,14 @@ public class GandalfSplitMigrationTests : IDisposable
         _defsPath = Path.Combine(_dir, "definitions.json");
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose()
+    {
+        // Defender / Search indexer occasionally hold a transient handle on freshly closed
+        // files in %TEMP%, which makes recursive delete throw IOException or
+        // DirectoryNotFoundException under parallel-test load. Cleanup is best-effort —
+        // the OS reclaims the temp dir on its own schedule, and a leak here doesn't fail the test.
+        try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
+    }
 
     private string SeedV1Blob(string character, string server, string json)
     {

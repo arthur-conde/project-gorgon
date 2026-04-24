@@ -220,14 +220,14 @@ public sealed class ReferenceDataService : IReferenceDataService
         var metaPath = Path.Combine(_cacheDir, $"{fileName}.meta.json");
         var tmp = cachePath + ".tmp";
         await File.WriteAllBytesAsync(tmp, body, ct);
-        File.Move(tmp, cachePath, overwrite: true);
+        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(tmp, cachePath, ct);
 
         var metaTmp = metaPath + ".tmp";
         await using (var ms = File.Create(metaTmp))
         {
             await JsonSerializer.SerializeAsync(ms, meta, ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
         }
-        File.Move(metaTmp, metaPath, overwrite: true);
+        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(metaTmp, metaPath, ct);
 
         var raw = JsonSerializer.Deserialize(body, typeInfo) ?? new Dictionary<string, TRaw>();
         swapper(raw, meta);

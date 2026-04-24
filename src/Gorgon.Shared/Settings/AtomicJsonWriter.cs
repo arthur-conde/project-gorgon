@@ -15,7 +15,7 @@ internal static class AtomicJsonWriter
         {
             JsonSerializer.Serialize(stream, value, typeInfo);
         }
-        File.Move(tmp, filePath, overwrite: true);
+        AtomicFile.MoveOverwriteWithRetry(tmp, filePath);
     }
 
     public static async Task WriteAsync<T>(string filePath, T value, JsonTypeInfo<T> typeInfo, CancellationToken ct = default)
@@ -26,7 +26,7 @@ internal static class AtomicJsonWriter
         {
             await JsonSerializer.SerializeAsync(stream, value, typeInfo, ct).ConfigureAwait(false);
         }
-        File.Move(tmp, filePath, overwrite: true);
+        await AtomicFile.MoveOverwriteWithRetryAsync(tmp, filePath, ct).ConfigureAwait(false);
     }
 
     private static void EnsureDirectory(string filePath)

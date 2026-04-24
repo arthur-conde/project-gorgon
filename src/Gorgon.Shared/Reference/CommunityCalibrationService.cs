@@ -212,7 +212,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
 
         var tmp = cachePath + ".tmp";
         await File.WriteAllBytesAsync(tmp, body, ct);
-        File.Move(tmp, cachePath, overwrite: true);
+        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(tmp, cachePath, ct);
 
         var meta = new ReferenceFileMetadata
         {
@@ -225,7 +225,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         {
             await JsonSerializer.SerializeAsync(ms, meta, ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
         }
-        File.Move(metaTmp, metaPath, overwrite: true);
+        await Settings.AtomicFile.MoveOverwriteWithRetryAsync(metaTmp, metaPath, ct);
 
         swap(payload);
         _diag?.Info("CommunityCalibration", $"{key}.json refreshed.");

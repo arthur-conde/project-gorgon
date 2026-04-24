@@ -24,7 +24,11 @@ public class TimerServicesTests : IDisposable
         Directory.CreateDirectory(_charactersDir);
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose()
+    {
+        // Best-effort cleanup; see GandalfSplitMigrationTests.Dispose for rationale.
+        try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
+    }
 
     private (TimerDefinitionsService defs, TimerProgressService progress, PerCharacterView<GandalfProgress> view, FakeActiveCharacterService active)
         BuildServices()

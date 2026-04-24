@@ -68,6 +68,16 @@ public sealed class CalibrationServiceTests
         return (svc, index);
     }
 
+    /// <summary>Best-effort recursive delete. Defender / Search indexer occasionally
+    /// hold a transient handle on freshly closed files in %TEMP% under parallel-test
+    /// load, so cleanup may throw IOException or DirectoryNotFoundException — neither
+    /// of which should fail an otherwise-passing test.</summary>
+    private static void SafeDeleteDir(string dir)
+    {
+        if (!Directory.Exists(dir)) return;
+        try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
+    }
+
     [Fact]
     public void DetectsGiftAndRecordsFullKeywords()
     {
@@ -98,7 +108,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -125,7 +135,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -151,7 +161,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -184,7 +194,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -200,7 +210,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -223,7 +233,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -243,7 +253,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -264,7 +274,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -286,7 +296,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -313,8 +323,8 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir1)) Directory.Delete(dir1, true);
-            if (Directory.Exists(dir2)) Directory.Delete(dir2, true);
+            SafeDeleteDir(dir1);
+            SafeDeleteDir(dir2);
         }
     }
 
@@ -337,7 +347,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -368,7 +378,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -403,7 +413,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
@@ -465,7 +475,7 @@ public sealed class CalibrationServiceTests
         }
         finally
         {
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            SafeDeleteDir(dir);
         }
     }
 
