@@ -88,7 +88,8 @@
             <TabItem Header="Inventory">
                 <wpf:GorgonDataGrid x:Name="ItemsGrid"
                                     ItemsSource="{Binding FilteredItems}"
-                                    Mode="ReadOnly">
+                                    Mode="ReadOnly"
+                                    MouseDoubleClick="ItemsGrid_OnMouseDoubleClick">
                     <wpf:GorgonDataGrid.Columns>
                         <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
                             <DataGridTemplateColumn.CellTemplate>

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using Gorgon.Shared.Modules;
+using Gorgon.Shared.Wpf;
 using Gorgon.Shell.Updates;
 using Gorgon.Shell.ViewModels;
 using Gorgon.Shell.Views;
@@ -56,6 +57,9 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<IUpdateStatusService, UpdateStatusService>()
             .AddSingleton<IUpdateChecker, GitHubUpdateChecker>()
             .AddHostedService<UpdateCheckHostedService>();
+
+    public static IServiceCollection AddGorgonItemDetail(this IServiceCollection services) =>
+        services.AddSingleton<IItemDetailPresenter, ItemDetailPresenter>();
 
     public static IServiceCollection AddGorgonShellViews(this IServiceCollection services) =>
         services

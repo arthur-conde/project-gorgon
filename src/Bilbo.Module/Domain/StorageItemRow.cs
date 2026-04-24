@@ -16,4 +16,5 @@ public sealed record StorageItemRow(
     string? AttunedTo,
     bool IsCrafted,
     int TypeID,
-    int IconId);
+    int IconId,
+    string InternalName);

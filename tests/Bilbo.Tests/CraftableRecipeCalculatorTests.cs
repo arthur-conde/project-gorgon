@@ -9,7 +9,7 @@ namespace Bilbo.Tests;
 public class CraftableRecipeCalculatorTests
 {
     private static StorageItemRow Row(int typeId, int stack, string name = "item", string location = "Inventory") =>
-        new(name, location, stack, 0, 0, null, null, null, 0, null, false, typeId, 0);
+        new(name, location, stack, 0, 0, null, null, null, 0, null, false, typeId, 0, name);
 
     private static ItemEntry Item(long id, string name) => new(id, name, name, 100, 0, []);
 

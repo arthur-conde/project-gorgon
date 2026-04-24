@@ -104,7 +104,8 @@ public static class Program
                 .AddGorgonModuleGates()
                 .AddGorgonModules()
                 .AddGorgonShellUpdates()
-                .AddGorgonShellViews();
+                .AddGorgonShellViews()
+                .AddGorgonItemDetail();
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IGorgonModule))}");
             host = builder.Build();

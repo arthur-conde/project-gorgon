@@ -3,6 +3,7 @@ using Bilbo.Domain;
 using Bilbo.ViewModels;
 using Bilbo.Views;
 using Gorgon.Shared.Modules;
+using Gorgon.Shared.Wpf;
 using MahApps.Metro.IconPacks;
 using Gorgon.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,8 @@ public sealed class BilboModule : IGorgonModule
         services.AddSingleton<StorageViewModel>();
         services.AddSingleton<StorageView>(sp => new StorageView(
             sp.GetRequiredService<BilboSettings>(),
-            sp.GetRequiredService<SettingsAutoSaver<BilboSettings>>())
+            sp.GetRequiredService<SettingsAutoSaver<BilboSettings>>(),
+            sp.GetRequiredService<IItemDetailPresenter>())
         {
             DataContext = sp.GetRequiredService<StorageViewModel>(),
         });

@@ -14,7 +14,9 @@ public static class StorageRowMapper
         foreach (var item in report.Items)
         {
             var location = StorageReportLoader.NormalizeLocation(item.StorageVault, item.IsInInventory);
-            var iconId = refData.Items.TryGetValue(item.TypeID, out var entry) ? entry.IconId : 0;
+            var hasRef = refData.Items.TryGetValue(item.TypeID, out var entry);
+            var iconId = hasRef ? entry!.IconId : 0;
+            var internalName = hasRef ? entry!.InternalName : "";
             rows.Add(new StorageItemRow(
                 item.Name,
                 location,
@@ -28,7 +30,8 @@ public static class StorageRowMapper
                 item.AttunedTo,
                 item.IsCrafted,
                 item.TypeID,
-                iconId));
+                iconId,
+                internalName));
         }
         return rows;
     }
