@@ -71,10 +71,10 @@ public sealed class FavorStateService : IFavorLookupService
         _favorView = favorView;
 
         _refData.FileUpdated += (_, key) => { if (key == "npcs") Rebuild(); };
-        _charData.ActiveCharacterChanged += (_, _) => Rebuild();
         _charData.CharacterExportsChanged += (_, _) => Rebuild();
-        // Fires on character switch (same signal as ActiveCharacterChanged) and after the
-        // fanout migration invalidates the cache — the latter is the reason for this hookup.
+        // CurrentChanged covers two triggers: character switch (fires from ActiveCharacterChanged
+        // inside PerCharacterView) and post-fanout invalidate. One subscription is enough — no
+        // separate ActiveCharacterChanged hookup needed.
         _favorView.CurrentChanged += (_, _) => Rebuild();
         Rebuild();
     }
