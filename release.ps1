@@ -45,8 +45,11 @@ if (-not (Test-Path $versionJsonPath)) { throw "version.json not found at repo r
 
 $v = (Get-Content $versionJsonPath -Raw | ConvertFrom-Json).version
 if (-not $v) { throw "version.json has no `version` field." }
-if ($v -notmatch '^\d+(\.\d+){1,3}(-[A-Za-z0-9.-]+)?$') {
-    throw "version.json `version` ('$v') is not a SemVer-shaped string."
+if ($v -notmatch '^\d+(\.\d+){2,3}(-[A-Za-z0-9.-]+)?$') {
+    throw "version.json 'version' is '$v', which is not a 3- or 4-part SemVer string. " +
+          "Velopack rejects 2-part versions (--packVersion needs 3 parts) and NBGV would " +
+          "fill the missing patch with commit-height, producing a build that disagrees with " +
+          "the tag. Use e.g. '2.0.0' instead of '2.0'."
 }
 
 $tag = "v$v"
