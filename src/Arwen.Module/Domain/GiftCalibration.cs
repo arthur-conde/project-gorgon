@@ -75,6 +75,17 @@ public sealed class CategoryRate
 
 /// <summary>
 /// Persisted calibration data: raw observations plus aggregates at four specificity tiers.
+///
+/// <para>
+/// <b>Hand-editing <c>calibration.json</c>:</b> safe, with caveats. The <c>ItemRates</c> /
+/// <c>SignatureRates</c> / <c>NpcRates</c> / <c>KeywordRates</c> blocks are write-only
+/// outputs — <see cref="CalibrationService"/> always rebuilds them from
+/// <see cref="Observations"/> on load (see <c>RecomputeRates</c>), so editing or
+/// deleting fields inside an observation will be reflected in the rates after the next
+/// app start. Edit while the app is closed; saves are tmp+rename and there's no file
+/// watcher, so a new gift landing mid-edit will persist over your changes. Don't lower
+/// <see cref="Version"/> — v2→v3 migration drops every stackable-item observation.
+/// </para>
 /// </summary>
 public sealed class CalibrationData
 {

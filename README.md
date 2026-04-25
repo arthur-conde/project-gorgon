@@ -13,7 +13,7 @@ Each feature lives in its own class library, loaded dynamically at startup. Modu
 | Samwise | samwise  | Garden / crop tracking, ripeness alarms                      | Eager      |
 | Pippin  | pippin   | Food consumption and recipe tracking                         | Lazy       |
 | Legolas | legolas  | Surveying, route optimization, map overlay                   | Lazy       |
-| Arwen   | arwen    | NPC favor and gift tracking                                  | Lazy       |
+| Arwen   | arwen    | NPC favor and gift tracking ([guide](docs/user-guide/arwen.md)) | Lazy     |
 | Elrond  | elrond   | Skill leveling advisor                                       | Lazy       |
 | Gandalf | gandalf  | User-created timers with alarms                              | Eager      |
 | Bilbo   | bilbo    | Storage / inventory management                               | Lazy       |
