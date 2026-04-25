@@ -49,6 +49,7 @@ public sealed partial class ItemDetailViewModel
         ProducedItems = context.ProducedItems ?? [];
         EquipBonuses = context.EquipBonuses ?? [];
         CraftingEnhancements = context.CraftingEnhancements ?? [];
+        RecipeCooldowns = context.RecipeCooldowns ?? [];
         _poolPresenter = poolPresenter;
     }
 
@@ -74,6 +75,7 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<ItemProducingPreview> ProducedItems { get; }
     public IReadOnlyList<EquipBonusPreview> EquipBonuses { get; }
     public IReadOnlyList<CraftingEnhancePreview> CraftingEnhancements { get; }
+    public IReadOnlyList<RecipeCooldownPreview> RecipeCooldowns { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

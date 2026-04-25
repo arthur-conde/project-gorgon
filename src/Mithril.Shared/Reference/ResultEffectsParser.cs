@@ -50,6 +50,9 @@ public static class ResultEffectsParser
     private const string DiscoverWordOfPowerPrefix = "DiscoverWordOfPower";
     private const string LearnAbilityPrefix = "LearnAbility";
 
+    // Recipe-system prefixes.
+    private const string AdjustRecipeReuseTimePrefix = "AdjustRecipeReuseTime";
+
     // Equipment-property prefixes.
     private const string BoostEquipAdvancementPrefix = "BoostItemEquipAdvancementTable";
     private const string CraftingEnhanceItemPrefix = "CraftingEnhanceItem";
@@ -405,6 +408,26 @@ public static class ResultEffectsParser
         return previews;
     }
 
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="RecipeCooldownPreview"/>
+    /// per well-formed <c>AdjustRecipeReuseTime(deltaSeconds, condition)</c> entry. The
+    /// delta is rendered as a humanised duration (s/m/h/d) and the condition (e.g.
+    /// <c>QuarterMoon</c>) is humanised when present.
+    /// </summary>
+    public static IReadOnlyList<RecipeCooldownPreview> ParseRecipeCooldowns(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<RecipeCooldownPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseRecipeCooldown(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static bool TryParseCraftedGear(string? effect, IReferenceDataService refData, out CraftedGearPreview preview)
@@ -688,6 +711,12 @@ public static class ResultEffectsParser
     /// </summary>
     private static readonly (string Prefix, string Format)[] SuffixedTierFamilies =
     {
+        ("TeleportToBoundMushroomCircle", "Teleports to bound mushroom circle {0}"),
+        ("TeleportToBoundTeleportCircle", "Teleports to bound teleport circle {0}"),
+        ("BindToMushroomCircle", "Binds to mushroom circle {0}"),
+        ("BindToTeleportCircle", "Binds to teleport circle {0}"),
+        ("SpawnPlayerPortal", "Spawns player portal {0}"),
+        ("StoragePortal", "Storage portal {0}"),
         ("MeditationVulnElectricity", "Meditation: Electricity Vulnerability Tier {0}"),
         ("MeditationVulnDarkness", "Meditation: Darkness Vulnerability Tier {0}"),
         ("MeditationBuffIndirectCold", "Meditation: Indirect Cold Buff Tier {0}"),
@@ -729,6 +758,43 @@ public static class ResultEffectsParser
         ["RemoveAddedTSysPowerFromItem"] = "Removes augment from item",
         ["SexualEnergy"] = "Sexual Energy",
         ["SleepResistance"] = "Sleep Resistance",
+
+        // Mushroom / teleport / portal — zero-arg fixed forms.
+        ["SaveCurrentMushroomCircle"] = "Saves current mushroom circle",
+        ["TeleportToLastUsedMushroomCircle"] = "Teleports to last-used mushroom circle",
+        ["TeleportToNearbyMushroomCircle"] = "Teleports to nearby mushroom circle",
+        ["SaveCurrentTeleportCircle"] = "Saves current teleport circle",
+        ["TeleportToLastUsedTeleportSpot"] = "Teleports to last-used teleport spot",
+        ["TeleportToSpontaneousSpot"] = "Teleports to a spontaneous spot",
+        ["TeleportToMostCommonSpot"] = "Teleports to most-common spot",
+        ["TeleportToGuildHall"] = "Teleports to guild hall",
+        ["TeleportToEntrypoint"] = "Teleports to entry point",
+
+        // Cosmetic / fairy / drink behavioural tags.
+        ["CraftingDyeItem"] = "Dyes the item",
+        ["HairCleaner"] = "Cleans hair colour",
+        ["DispelFairyLight"] = "Dispels fairy light",
+        ["SummonFairyLight"] = "Summons fairy light",
+        ["DrinkNectar"] = "Drinks nectar",
+        ["DeployBeerBarrel"] = "Deploys beer barrel",
+
+        // Survey / divination / metadata.
+        ["MoonPhaseCheck"] = "Checks moon phase",
+        ["WeatherReport"] = "Reports current weather",
+        ["ShowWardenEvents"] = "Shows warden events",
+
+        // Fishing / utility.
+        ["CheckForBonusFishScales"] = "Checks for bonus fish scales",
+        ["CheckForBonusPerfectCotton"] = "Checks for bonus perfect cotton",
+        ["SendItemToSaddlebag"] = "Sends item to saddlebag",
+        ["ApplyRacingRibbonToReins"] = "Applies racing ribbon to reins",
+        ["SummonStatehelm"] = "Summons statehelm",
+        ["SummonPovusPaleomonster"] = "Summons Povus paleomonster",
+        ["HoplologyStudy"] = "Hoplology study",
+
+        // Cosmetic permanent-form polymorphs.
+        ["PolymorphRabbitPermanentBlue"] = "Polymorphs to a permanent blue rabbit",
+        ["PolymorphRabbitPermanentPurple"] = "Polymorphs to a permanent purple rabbit",
     };
 
     private static bool TryParseEffectTag(string? effect, out EffectTagPreview preview)
@@ -876,7 +942,189 @@ public static class ResultEffectsParser
             }
         }
 
+        // Non-augment decompose variants — Decompose{Source}Into{Substance}.
+        // Distinct from the augment-slot handler above because the suffix names a
+        // substance (Phlogiston / CrystalIce / FairyDust / Essence) instead of
+        // "AugmentResources". Shape examples:
+        //   DecomposeItemIntoPhlogiston, DecomposeItemIntoCrystalIce,
+        //   DecomposeItemIntoFairyDust, DecomposeDemonOreIntoEssence,
+        //   DecomposeFoodIntoCrystalIce_Wine.
+        if (trimmed.StartsWith(DecomposePrefix, StringComparison.Ordinal))
+        {
+            var rest = trimmed[DecomposePrefix.Length..];
+            var intoIndex = rest.IndexOf("Into", StringComparison.Ordinal);
+            if (intoIndex > 0)
+            {
+                var source = rest[..intoIndex];
+                var substance = rest[(intoIndex + "Into".Length)..];
+                if (source.Length > 0 && substance.Length > 0
+                    && !substance.Equals("AugmentResources", StringComparison.Ordinal))
+                {
+                    preview = new EffectTagPreview(
+                        $"Decomposes {Humanize(source).ToLowerInvariant()} into {Humanize(substance).ToLowerInvariant()}");
+                    return true;
+                }
+            }
+        }
+
+        // HelpMsg_{topic} — strip prefix + humanise.
+        if (trimmed.StartsWith("HelpMsg_", StringComparison.Ordinal)
+            && trimmed.Length > "HelpMsg_".Length)
+        {
+            var topic = trimmed["HelpMsg_".Length..];
+            preview = new EffectTagPreview($"Help: {Humanize(topic)}");
+            return true;
+        }
+
+        // StorageCrateDruid{N}Items — special suffix shape.
+        if (trimmed.StartsWith("StorageCrateDruid", StringComparison.Ordinal)
+            && trimmed.EndsWith("Items", StringComparison.Ordinal))
+        {
+            var middle = trimmed["StorageCrateDruid".Length..^"Items".Length];
+            if (middle.Length > 0
+                && int.TryParse(middle, NumberStyles.Integer, CultureInfo.InvariantCulture, out var crateSize))
+            {
+                preview = new EffectTagPreview($"Druid storage crate ({crateSize} items)");
+                return true;
+            }
+        }
+
+        // Parametrised: Teleport(area, name).
+        if (trimmed.StartsWith("Teleport(", StringComparison.Ordinal)
+            && TryParsePrefixCall(trimmed, out var tpPrefix, out var tpArgs)
+            && tpPrefix.Equals("Teleport", StringComparison.Ordinal)
+            && tpArgs.Length >= 2)
+        {
+            var area = tpArgs[0].Trim();
+            var spot = tpArgs[1].Trim();
+            if (area.Length > 0 && spot.Length > 0)
+            {
+                // Strip "Area" prefix from area for cleaner display ("AreaSerbule" → "Serbule").
+                if (area.StartsWith("Area", StringComparison.Ordinal) && area.Length > 4)
+                    area = area[4..];
+                preview = new EffectTagPreview($"Teleports to {Humanize(spot)} in {Humanize(area)}");
+                return true;
+            }
+        }
+
+        // Parametrised: DeltaCurFairyEnergy(N) — signed integer delta.
+        if (trimmed.StartsWith("DeltaCurFairyEnergy", StringComparison.Ordinal)
+            && TryParsePrefixCall(trimmed, out var feePrefix, out var feeArgs)
+            && feePrefix.Equals("DeltaCurFairyEnergy", StringComparison.Ordinal)
+            && feeArgs.Length >= 1
+            && int.TryParse(feeArgs[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var feeDelta))
+        {
+            var verb = feeDelta < 0 ? "Reduces" : "Adds";
+            preview = new EffectTagPreview($"{verb} fairy energy by {Math.Abs(feeDelta)}");
+            return true;
+        }
+
+        // Parametrised: ConsumeItemUses(template, N).
+        if (trimmed.StartsWith("ConsumeItemUses", StringComparison.Ordinal)
+            && TryParsePrefixCall(trimmed, out var ciuPrefix, out var ciuArgs)
+            && ciuPrefix.Equals("ConsumeItemUses", StringComparison.Ordinal)
+            && ciuArgs.Length >= 2
+            && int.TryParse(ciuArgs[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var uses))
+        {
+            var template = ciuArgs[0].Trim();
+            preview = new EffectTagPreview($"Consumes {uses} use(s) of {Humanize(template)}");
+            return true;
+        }
+
+        // Particle_{kind} — silent allow-list. The game uses these as display markers
+        // for effect particles; they never carry player-meaningful semantics, so we
+        // recognise the shape and intentionally emit no preview rather than letting
+        // the generic fallback below humanise them.
+        if (trimmed.StartsWith("Particle_", StringComparison.Ordinal))
+            return false;
+
+        // Generic fallback — emit a humanised preview for any unrecognised prefix
+        // that looks like a clean identifier (optionally with parens). Belt-and-
+        // suspenders coverage so a new game patch's unfamiliar prefix renders
+        // *something* instead of dropping silently. Named handlers above remain
+        // the source of truth for player-meaningful text.
+        if (TryHumanizeAsFallback(trimmed, out var fallback))
+        {
+            preview = new EffectTagPreview(fallback);
+            return true;
+        }
+
         return false;
+    }
+
+    /// <summary>
+    /// Prefixes that have dedicated typed parsers (<see cref="ParseCraftedGear"/>,
+    /// <see cref="ParseAugments"/>, etc.). The generic fallback in
+    /// <see cref="TryParseEffectTag"/> intentionally skips these so calling
+    /// <see cref="ParseEffectTags"/> on the same input as a typed parser doesn't
+    /// produce a duplicate humanised line on top of the structured chip.
+    /// </summary>
+    private static readonly HashSet<string> ExcludedFallbackPrefixes = new(StringComparer.Ordinal)
+    {
+        // Crafted gear / augment / wax / pool families.
+        "TSysCraftedEquipment", "GiveTSysItem", "CraftSimpleTSysItem",
+        "AddItemTSysPower", "AddItemTSysPowerWax",
+        "BestowRecipeIfNotKnown", "CraftWaxItem", "ExtractTSysPower",
+        // Item-producing.
+        "BrewItem", "SummonPlant", "CreateNecroFuel", "GiveNonMagicalLootProfile",
+        // Equipment-property + recipe-system.
+        "BoostItemEquipAdvancementTable", "RepairItemDurability",
+        "CraftingResetItem", "TransmogItemAppearance",
+        "AdjustRecipeReuseTime",
+        // Knowledge / progression.
+        "DiscoverWordOfPower", "LearnAbility",
+    };
+
+    /// <summary>
+    /// Last-resort humanizer for unrecognised effect strings. Accepts inputs of
+    /// the shape <c>Identifier</c> or <c>Identifier(args)</c> where Identifier
+    /// is PascalCase / snake_case / digit-suffixed — i.e. anything that looks
+    /// like a game-engine effect token rather than free-text. Rejects strings
+    /// starting with whitespace, lowercase, or punctuation so we don't surface
+    /// noise that slipped through some other pathway. Also rejects prefixes
+    /// claimed by a typed parser (see <see cref="ExcludedFallbackPrefixes"/>) and
+    /// the prefix-match families (<c>Research</c>, <c>Give*Xp</c>,
+    /// <c>CreateMiningSurvey*</c>, <c>CreateGeologySurvey*</c>,
+    /// <c>Create*TreasureMap*</c>, <c>CraftingEnhanceItem*</c>).
+    /// </summary>
+    private static bool TryHumanizeAsFallback(string trimmed, out string display)
+    {
+        display = "";
+        if (trimmed.Length == 0) return false;
+        if (!char.IsUpper(trimmed[0])) return false;
+
+        // Lift the prefix-call structure if present, but don't require it.
+        var prefix = trimmed;
+        var openParen = trimmed.IndexOf('(');
+        if (openParen > 0)
+        {
+            if (!TryParsePrefixCall(trimmed, out var p, out _)) return false;
+            prefix = p;
+        }
+
+        // Identifier-shape check: PascalCase / underscores / digits only.
+        foreach (var ch in prefix)
+        {
+            if (!char.IsLetterOrDigit(ch) && ch != '_') return false;
+        }
+
+        // Skip prefixes already claimed by a typed parser.
+        if (ExcludedFallbackPrefixes.Contains(prefix)) return false;
+        if (prefix.StartsWith(ResearchPrefix, StringComparison.Ordinal)
+            && prefix.Length > ResearchPrefix.Length
+            && char.IsUpper(prefix[ResearchPrefix.Length])) return false;
+        if (prefix.StartsWith(GivePrefix, StringComparison.Ordinal)
+            && prefix.EndsWith(XpSuffix, StringComparison.Ordinal)
+            && prefix.Length > GivePrefix.Length + XpSuffix.Length) return false;
+        if (prefix.StartsWith(CreateMiningSurveyPrefix, StringComparison.Ordinal)) return false;
+        if (prefix.StartsWith(CreateGeologySurveyPrefix, StringComparison.Ordinal)) return false;
+        if (prefix.StartsWith(CraftingEnhanceItemPrefix, StringComparison.Ordinal)) return false;
+        // Treasure maps (zero-arg, Create{Region}TreasureMap{Quality}).
+        if (prefix.StartsWith(CreateTreasureMapPrefix, StringComparison.Ordinal)
+            && prefix.Contains(TreasureMapInfix, StringComparison.Ordinal)) return false;
+
+        display = Humanize(prefix);
+        return true;
     }
 
     /// <summary>
@@ -1228,6 +1476,53 @@ public static class ResultEffectsParser
         var detail = level < 0 ? "any level" : $"items at level {level}";
         preview = new CraftingEnhancePreview("Repairs item durability", detail);
         return true;
+    }
+
+    private static bool TryParseRecipeCooldown(string? effect, out RecipeCooldownPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(AdjustRecipeReuseTimePrefix, StringComparison.Ordinal)) return false;
+        if (args.Length == 0) return false;
+        if (!int.TryParse(args[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var delta))
+            return false;
+
+        string? condition = null;
+        if (args.Length >= 2)
+        {
+            var rawCondition = args[1].Trim();
+            if (rawCondition.Length > 0) condition = Humanize(rawCondition);
+        }
+
+        var verb = delta < 0 ? "Reduces" : "Adds";
+        var magnitude = HumanizeDuration(Math.Abs(delta));
+        var displayText = condition is null
+            ? $"{verb} cooldown by {magnitude}"
+            : $"{verb} cooldown by {magnitude} on {condition}";
+
+        preview = new RecipeCooldownPreview(delta, condition, displayText);
+        return true;
+    }
+
+    /// <summary>Renders an absolute second count as <c>"1d"</c> / <c>"2h 30m"</c> / <c>"45s"</c>-style text.</summary>
+    private static string HumanizeDuration(int seconds)
+    {
+        if (seconds <= 0) return "0s";
+
+        const int Day = 86400;
+        const int Hour = 3600;
+        const int Minute = 60;
+
+        var days = seconds / Day; seconds %= Day;
+        var hours = seconds / Hour; seconds %= Hour;
+        var minutes = seconds / Minute; seconds %= Minute;
+
+        var parts = new List<string>(4);
+        if (days > 0) parts.Add($"{days}d");
+        if (hours > 0) parts.Add($"{hours}h");
+        if (minutes > 0) parts.Add($"{minutes}m");
+        if (seconds > 0) parts.Add($"{seconds}s");
+        return string.Join(' ', parts);
     }
 
     /// <summary>Inserts spaces before capital letters: <c>UnarmedMeditationCombo1</c> → <c>"Unarmed Meditation Combo 1"</c>.</summary>
