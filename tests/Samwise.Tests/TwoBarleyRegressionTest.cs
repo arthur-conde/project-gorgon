@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Samwise.Config;
@@ -15,6 +16,27 @@ namespace Samwise.Tests;
 /// </summary>
 public class TwoBarleyRegressionTest
 {
+    private static readonly Regex AddItemRx = new(@"ProcessAddItem\((\w+)\((\d+)\)", RegexOptions.CultureInvariant);
+    private static readonly Regex DeleteItemRx = new(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Mirror of <c>GardenIngestionService</c>'s log handling: parser-emitted
+    /// events go straight in; ProcessAddItem/ProcessDeleteItem are sourced via
+    /// IInventoryService in production, so we simulate that synthesis here so
+    /// the test exercises the same state-machine inputs end-to-end.
+    /// </summary>
+    private static void Feed(GardenStateMachine sm, GardenLogParser parser, string line, DateTime ts)
+    {
+        var evt = parser.TryParse(line, ts);
+        if (evt is GardenEvent ge) { sm.Apply(ge); return; }
+
+        var add = AddItemRx.Match(line);
+        if (add.Success) { sm.Apply(new AddItem(ts, add.Groups[2].Value, add.Groups[1].Value)); return; }
+
+        var del = DeleteItemRx.Match(line);
+        if (del.Success) sm.Apply(new DeleteItem(ts, del.Groups[1].Value));
+    }
+
     [Fact]
     public void LastSquashSeed_FiresDeleteItem_ResolvesPlant()
     {
@@ -39,10 +61,7 @@ public class TwoBarleyRegressionTest
         };
 
         foreach (var (line, ts) in logLines)
-        {
-            var evt = parser.TryParse(line, ts);
-            if (evt is GardenEvent ge) sm.Apply(ge);
-        }
+            Feed(sm, parser, line, ts);
 
         sm.Snapshot()["Emraell"]["803506"].CropType.Should().Be("Squash");
     }
@@ -74,10 +93,7 @@ public class TwoBarleyRegressionTest
         };
 
         foreach (var (line, ts) in logLines)
-        {
-            var evt = parser.TryParse(line, ts);
-            if (evt is GardenEvent ge) sm.Apply(ge);
-        }
+            Feed(sm, parser, line, ts);
 
         var plots = sm.Snapshot()["Hits"];
         plots.Should().ContainKey("590342");

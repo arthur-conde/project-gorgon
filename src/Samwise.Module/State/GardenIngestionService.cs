@@ -1,5 +1,6 @@
 using System.Windows;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
@@ -13,6 +14,7 @@ namespace Samwise.State;
 public sealed class GardenIngestionService : BackgroundService
 {
     private readonly IPlayerLogStream _stream;
+    private readonly IInventoryService _inventory;
     private readonly GardenLogParser _parser;
     private readonly GardenStateMachine _state;
     private readonly GardenStateService _stateService;
@@ -24,6 +26,7 @@ public sealed class GardenIngestionService : BackgroundService
     // is sufficient to keep them alive for the app lifetime.
     public GardenIngestionService(
         IPlayerLogStream stream,
+        IInventoryService inventory,
         GardenLogParser parser,
         GardenStateMachine state,
         GardenStateService stateService,
@@ -34,6 +37,7 @@ public sealed class GardenIngestionService : BackgroundService
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
+        _inventory = inventory;
         _parser = parser;
         _state = state;
         _stateService = stateService;
@@ -71,14 +75,41 @@ public sealed class GardenIngestionService : BackgroundService
         }
         catch (Exception ex) { _diag?.Warn("Samwise", $"Failed to load state: {ex.Message}"); }
 
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
+        // Inventory add/delete events are sourced from the shared IInventoryService
+        // so Samwise picks up the same canonical map as Arwen, regardless of how
+        // late this gate opens. The events arrive on InventoryService's loop
+        // thread; dispatch onto the UI thread to share the state machine.
+        EventHandler<InventoryItem> onAdd = (_, item) =>
         {
-            var evt = _parser.TryParse(raw.Line, raw.Timestamp);
-            if (evt is GardenEvent ge)
+            var ge = new AddItem(item.Timestamp, item.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture), item.InternalName);
+            _diag?.Trace("Samwise.Parse", Describe(ge));
+            Dispatch(() => _state.Apply(ge));
+        };
+        EventHandler<InventoryItem> onDelete = (_, item) =>
+        {
+            var ge = new DeleteItem(item.Timestamp, item.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _diag?.Trace("Samwise.Parse", Describe(ge));
+            Dispatch(() => _state.Apply(ge));
+        };
+        _inventory.ItemAdded += onAdd;
+        _inventory.ItemDeleted += onDelete;
+
+        try
+        {
+            await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
             {
-                _diag?.Trace("Samwise.Parse", Describe(ge));
-                Dispatch(() => _state.Apply(ge));
+                var evt = _parser.TryParse(raw.Line, raw.Timestamp);
+                if (evt is GardenEvent ge)
+                {
+                    _diag?.Trace("Samwise.Parse", Describe(ge));
+                    Dispatch(() => _state.Apply(ge));
+                }
             }
+        }
+        finally
+        {
+            _inventory.ItemAdded -= onAdd;
+            _inventory.ItemDeleted -= onDelete;
         }
     }
 

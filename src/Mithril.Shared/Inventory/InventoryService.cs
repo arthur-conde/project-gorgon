@@ -59,7 +59,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 var name = add.Groups[1].Value;
                 _map[addId] = name;
                 _diag?.Trace("Inventory", $"Add    id={addId} name={name} (total={_map.Count})");
-                try { ItemAdded?.Invoke(this, new InventoryItem(addId, name)); }
+                try { ItemAdded?.Invoke(this, new InventoryItem(addId, name, raw.Timestamp)); }
                 catch (Exception ex) { _diag?.Warn("Inventory", $"ItemAdded handler threw: {ex.Message}"); }
                 continue;
             }
@@ -76,7 +76,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 // Arwen's FavorIngestionService) call TryResolve on their own pace;
                 // removing here would race with their log-stream read order.
                 _diag?.Trace("Inventory", $"Delete id={delId} name={name} (retained)");
-                try { ItemDeleted?.Invoke(this, new InventoryItem(delId, name)); }
+                try { ItemDeleted?.Invoke(this, new InventoryItem(delId, name, raw.Timestamp)); }
                 catch (Exception ex) { _diag?.Warn("Inventory", $"ItemDeleted handler threw: {ex.Message}"); }
             }
         }

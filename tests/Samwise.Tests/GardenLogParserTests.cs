@@ -65,14 +65,20 @@ public class GardenLogParserTests
     }
 
     [Fact]
-    public void Parses_AddItem_RealLogFormat()
+    public void Ignores_ProcessAddItem()
     {
-        // Real Player.log shape: ProcessAddItem(BarleySeeds(86940428), -1, False)
+        // ProcessAddItem is now sourced from IInventoryService.ItemAdded; the garden
+        // parser must ignore the raw line so it isn't double-processed.
         var line = @"[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)";
-        var evt = _p.TryParse(line, T);
-        var ai = evt.Should().BeOfType<AddItem>().Subject;
-        ai.ItemId.Should().Be("86940428");
-        ai.ItemName.Should().Be("BarleySeeds");
+        _p.TryParse(line, T).Should().BeNull();
+    }
+
+    [Fact]
+    public void Ignores_ProcessDeleteItem()
+    {
+        // Same as ProcessAddItem — sourced from IInventoryService.ItemDeleted.
+        var line = @"[20:48:31] LocalPlayer: ProcessDeleteItem(86940428)";
+        _p.TryParse(line, T).Should().BeNull();
     }
 
     [Fact]

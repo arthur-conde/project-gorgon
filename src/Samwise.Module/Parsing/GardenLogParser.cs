@@ -22,17 +22,11 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessStartInteraction\((\d+),\s*\d+,\s*[\d.-]+,\s*\w+,\s*""(Summoned\w+)""\)", RegexOptions.CultureInvariant)]
     private static partial Regex StartInteractRx();
 
-    // Real log shape: ProcessAddItem(BarleySeeds(86940428), -1, False)
-    // Captures: itemName, itemId
-    [GeneratedRegex(@"ProcessAddItem\((\w+)\((\d+)\)", RegexOptions.CultureInvariant)]
-    private static partial Regex AddItemRx();
-
+    // ProcessAddItem and ProcessDeleteItem are sourced from IInventoryService events
+    // (the canonical instanceId → InternalName map). UpdateItemCode is unique to
+    // Samwise's plant-resolve path (stack count > 0 update) and stays here.
     [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateItemCodeRx();
-
-    // Fires instead of UpdateItemCode when a stack goes to zero (last seed used).
-    [GeneratedRegex(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant)]
-    private static partial Regex DeleteItemRx();
 
     [GeneratedRegex(@"ProcessUpdateSkill.*type=Gardening", RegexOptions.CultureInvariant)]
     private static partial Regex GardeningXpRx();
@@ -69,14 +63,8 @@ public sealed partial class GardenLogParser : ILogParser
         m = StartInteractRx().Match(line);
         if (m.Success) return new StartInteraction(timestamp, m.Groups[1].Value, m.Groups[2].Value);
 
-        m = AddItemRx().Match(line);
-        if (m.Success) return new AddItem(timestamp, m.Groups[2].Value, m.Groups[1].Value);
-
         m = UpdateItemCodeRx().Match(line);
         if (m.Success) return new UpdateItemCode(timestamp, m.Groups[1].Value);
-
-        m = DeleteItemRx().Match(line);
-        if (m.Success) return new DeleteItem(timestamp, m.Groups[1].Value);
 
         if (GardeningXpRx().IsMatch(line)) return new GardeningXp(timestamp);
 

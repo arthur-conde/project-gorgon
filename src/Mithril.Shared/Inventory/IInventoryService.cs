@@ -1,12 +1,15 @@
 namespace Mithril.Shared.Inventory;
 
 /// <summary>
-/// An item instance that was added to the local player's inventory.
-/// <paramref name="InstanceId"/> is the per-item unique id emitted by
-/// <c>ProcessAddItem</c>; <paramref name="InternalName"/> maps to
+/// An item instance that was added to or removed from the local player's
+/// inventory. <paramref name="InstanceId"/> is the per-item unique id emitted
+/// by <c>ProcessAddItem</c>; <paramref name="InternalName"/> maps to
 /// <c>Mithril.Shared.Reference.ItemEntry.InternalName</c>.
+/// <paramref name="Timestamp"/> is the source log line's timestamp (UTC), not
+/// wall-clock — consumers with time-window logic (e.g. Samwise's plant-resolve
+/// window) need the in-game timeline.
 /// </summary>
-public readonly record struct InventoryItem(long InstanceId, string InternalName);
+public readonly record struct InventoryItem(long InstanceId, string InternalName, DateTime Timestamp);
 
 /// <summary>
 /// Canonical <c>instanceId → InternalName</c> lookup maintained by tailing
