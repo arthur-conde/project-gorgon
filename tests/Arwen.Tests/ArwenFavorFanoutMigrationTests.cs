@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Arwen.Tests;
 
+[Trait("Category", "FileIO")]
 public sealed class ArwenFavorFanoutMigrationTests : IDisposable
 {
     private readonly string _root;

@@ -75,8 +75,28 @@ jobs:
       - name: Build solution
         run: dotnet build Gorgon.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
 
-      - name: Run tests
-        run: dotnet test Gorgon.slnx -c Release --no-build --no-restore
+      # Two-phase test execution. Tests marked [Trait("Category", "FileIO")] hit the
+      # filesystem heavily and flake under cross-assembly parallelism on the runner —
+      # the cause is environmental, not Defender (we ruled that out by disabling it
+      # entirely at v0.0.1-test5 and seeing identical failures). Non-IO tests run in
+      # full parallel mode for speed; IO tests run one assembly at a time.
+      - name: Run non-IO tests (parallel)
+        run: dotnet test Gorgon.slnx -c Release --no-build --no-restore --filter "Category!=FileIO"
+
+      - name: Run IO tests (sequential per assembly)
+        shell: pwsh
+        run: |
+          $failed = @()
+          Get-ChildItem -Path tests -Filter "*.csproj" -Recurse | ForEach-Object {
+            Write-Host "::group::$($_.BaseName) (FileIO category)"
+            dotnet test $_.FullName -c Release --no-build --no-restore --filter "Category=FileIO"
+            if ($LASTEXITCODE -ne 0) { $failed += $_.BaseName }
+            Write-Host "::endgroup::"
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Failed test projects: $($failed -join ', ')"
+            exit 1
+          }
 
       # ─────────────────────────────────────────────────────────────────
       # Self-contained SKU: bundles .NET 10 desktop runtime (~150 MB).

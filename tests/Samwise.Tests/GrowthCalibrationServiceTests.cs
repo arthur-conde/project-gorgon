@@ -9,6 +9,7 @@ using Xunit;
 
 namespace Samwise.Tests;
 
+[Trait("Category", "FileIO")]
 public class GrowthCalibrationServiceTests
 {
     private static readonly DateTime Base = new(2026, 4, 20, 12, 0, 0, DateTimeKind.Utc);

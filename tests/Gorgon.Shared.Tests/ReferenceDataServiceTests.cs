@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Gorgon.Shared.Tests;
 
+[Trait("Category", "FileIO")]
 public class ReferenceDataServiceTests : IDisposable
 {
     private readonly string _root;

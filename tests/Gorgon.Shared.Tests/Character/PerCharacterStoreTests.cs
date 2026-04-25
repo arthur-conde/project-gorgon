@@ -6,6 +6,7 @@ using Xunit;
 
 namespace Gorgon.Shared.Tests.Character;
 
+[Trait("Category", "FileIO")]
 public sealed class PerCharacterStoreTests : IDisposable
 {
     private readonly string _root;
