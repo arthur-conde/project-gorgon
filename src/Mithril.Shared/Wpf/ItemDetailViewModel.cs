@@ -46,6 +46,7 @@ public sealed partial class ItemDetailViewModel
         XpGrants = context.XpGrants ?? [];
         WordsOfPower = context.WordsOfPower ?? [];
         LearnedAbilities = context.LearnedAbilities ?? [];
+        ProducedItems = context.ProducedItems ?? [];
         _poolPresenter = poolPresenter;
     }
 
@@ -68,6 +69,7 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<XpGrantPreview> XpGrants { get; }
     public IReadOnlyList<WordOfPowerPreview> WordsOfPower { get; }
     public IReadOnlyList<LearnedAbilityPreview> LearnedAbilities { get; }
+    public IReadOnlyList<ItemProducingPreview> ProducedItems { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

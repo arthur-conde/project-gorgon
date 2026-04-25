@@ -18,7 +18,8 @@ public sealed record ItemDetailContext(
     IReadOnlyList<ResearchProgressPreview>? ResearchProgress = null,
     IReadOnlyList<XpGrantPreview>? XpGrants = null,
     IReadOnlyList<WordOfPowerPreview>? WordsOfPower = null,
-    IReadOnlyList<LearnedAbilityPreview>? LearnedAbilities = null)
+    IReadOnlyList<LearnedAbilityPreview>? LearnedAbilities = null,
+    IReadOnlyList<ItemProducingPreview>? ProducedItems = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }

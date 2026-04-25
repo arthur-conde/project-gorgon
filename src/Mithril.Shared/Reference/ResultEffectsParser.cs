@@ -50,6 +50,16 @@ public static class ResultEffectsParser
     private const string DiscoverWordOfPowerPrefix = "DiscoverWordOfPower";
     private const string LearnAbilityPrefix = "LearnAbility";
 
+    // Item-producing prefixes.
+    private const string BrewItemPrefix = "BrewItem";
+    private const string SummonPlantPrefix = "SummonPlant";
+    private const string CreateMiningSurveyPrefix = "CreateMiningSurvey";
+    private const string CreateGeologySurveyPrefix = "CreateGeologySurvey";
+    private const string CreateTreasureMapPrefix = "Create";
+    private const string TreasureMapInfix = "TreasureMap";
+    private const string CreateNecroFuelTag = "CreateNecroFuel";
+    private const string GiveNonMagicalLootProfilePrefix = "GiveNonMagicalLootProfile";
+
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="CraftedGearPreview"/> per
     /// well-formed <c>TSysCraftedEquipment</c> / <c>GiveTSysItem</c> / <c>CraftSimpleTSysItem</c>
@@ -297,6 +307,42 @@ public static class ResultEffectsParser
         foreach (var effect in effects)
         {
             if (TryParseLearnedAbility(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="ItemProducingPreview"/>
+    /// per recognised item-producing prefix. Six families flow through this method:
+    /// <list type="bullet">
+    ///   <item><c>BrewItem(tier,skillLvl,recipeArgs)</c> — generic "brewed item" chip
+    ///   with the tier as qualifier (the produced item is the recipe's own output;
+    ///   the args here describe ingredients + effects, not a target item).</item>
+    ///   <item><c>SummonPlant(type,_,itemName~scalars)</c> — resolves <c>itemName</c>
+    ///   in <see cref="IReferenceDataService.ItemsByInternalName"/>.</item>
+    ///   <item><c>CreateMiningSurvey{N}[X|Y](itemName)</c> — survey items, with the
+    ///   tier+modifier suffix preserved as the qualifier.</item>
+    ///   <item><c>CreateGeologySurvey{Color}(itemName)</c> — colour-keyed surveys.</item>
+    ///   <item><c>Create{Region}TreasureMap{Quality}</c> — zero-arg; we attempt to
+    ///   resolve the item via the <c>TreasureMap{Region}{Quality}</c> reordering and
+    ///   fall back to a humanised label.</item>
+    ///   <item><c>CreateNecroFuel</c> (zero-arg) and
+    ///   <c>GiveNonMagicalLootProfile(profile)</c> (1-arg).</item>
+    /// </list>
+    /// Each preview falls back to a humanised display name when the args don't
+    /// resolve to a known <see cref="ItemEntry"/>; the icon is only populated on
+    /// successful resolution.
+    /// </summary>
+    public static IReadOnlyList<ItemProducingPreview> ParseItemProducing(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<ItemProducingPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseItemProducing(effect, refData, out var preview))
                 previews.Add(preview);
         }
         return previews;
@@ -867,6 +913,167 @@ public static class ResultEffectsParser
         if (internalName.Length == 0) return false;
 
         preview = new LearnedAbilityPreview(internalName, Humanize(internalName));
+        return true;
+    }
+
+    private static bool TryParseItemProducing(
+        string? effect, IReferenceDataService refData, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+
+        // Zero-arg cases first (no parentheses).
+        if (trimmed.Equals(CreateNecroFuelTag, StringComparison.Ordinal))
+        {
+            preview = new ItemProducingPreview("Necromancy Fuel", IconId: null, Qualifier: null,
+                ResolvedItemInternalName: null);
+            return true;
+        }
+
+        // Treasure maps: Create{Region}TreasureMap{Quality} — zero-arg, no parens.
+        // Try this before the parenthesised handlers since it has no '(' at all.
+        if (trimmed.StartsWith(CreateTreasureMapPrefix, StringComparison.Ordinal)
+            && !trimmed.Contains('(')
+            && trimmed.Contains(TreasureMapInfix, StringComparison.Ordinal))
+        {
+            return TryBuildTreasureMap(trimmed, refData, out preview);
+        }
+
+        // Parenthesised forms.
+        if (!TryParsePrefixCall(trimmed, out var prefix, out var args)) return false;
+
+        if (prefix.Equals(BrewItemPrefix, StringComparison.Ordinal))
+            return TryBuildBrewItem(args, out preview);
+        if (prefix.Equals(SummonPlantPrefix, StringComparison.Ordinal))
+            return TryBuildSummonPlant(args, refData, out preview);
+        if (prefix.Equals(GiveNonMagicalLootProfilePrefix, StringComparison.Ordinal))
+            return TryBuildLootProfile(args, out preview);
+        if (prefix.StartsWith(CreateMiningSurveyPrefix, StringComparison.Ordinal))
+            return TryBuildMiningSurvey(prefix, args, refData, out preview);
+        if (prefix.StartsWith(CreateGeologySurveyPrefix, StringComparison.Ordinal))
+            return TryBuildGeologySurvey(prefix, args, refData, out preview);
+
+        return false;
+    }
+
+    private static bool TryBuildBrewItem(string[] args, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        // Args: (tier, skillLvl, ingredients=effects). Lift just the tier — the ingredient
+        // list is a recipe-internal expression, not a renderable item handle.
+        if (args.Length < 1) return false;
+        if (!int.TryParse(args[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var tier))
+            return false;
+
+        preview = new ItemProducingPreview(
+            DisplayName: "Brewed item",
+            IconId: null,
+            Qualifier: $"Tier {tier}",
+            ResolvedItemInternalName: null);
+        return true;
+    }
+
+    private static bool TryBuildSummonPlant(string[] args, IReferenceDataService refData, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        // Args: (plantType, _, itemName~scalar~scalar~...). The third arg's leading
+        // ~-token is the produced item's internal name.
+        if (args.Length < 3) return false;
+        var third = args[2].Trim();
+        if (third.Length == 0) return false;
+
+        var tildeIndex = third.IndexOf('~');
+        var itemName = tildeIndex < 0 ? third : third[..tildeIndex];
+        if (itemName.Length == 0) return false;
+
+        if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
+        {
+            preview = new ItemProducingPreview(item.Name, item.IconId, Qualifier: null, item.InternalName);
+        }
+        else
+        {
+            preview = new ItemProducingPreview(Humanize(itemName), IconId: null, Qualifier: null, itemName);
+        }
+        return true;
+    }
+
+    private static bool TryBuildMiningSurvey(string prefix, string[] args, IReferenceDataService refData, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        if (args.Length == 0) return false;
+        var itemName = args[0].Trim();
+        if (itemName.Length == 0) return false;
+
+        // Suffix after "CreateMiningSurvey" carries the tier — e.g. "1X", "5", "7Y".
+        var qualifierSuffix = prefix[CreateMiningSurveyPrefix.Length..];
+        var qualifier = qualifierSuffix.Length > 0
+            ? $"Mining Survey {qualifierSuffix}"
+            : "Mining Survey";
+
+        if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
+            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+        else
+            preview = new ItemProducingPreview(Humanize(itemName), IconId: null, qualifier, itemName);
+        return true;
+    }
+
+    private static bool TryBuildGeologySurvey(string prefix, string[] args, IReferenceDataService refData, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        if (args.Length == 0) return false;
+        var itemName = args[0].Trim();
+        if (itemName.Length == 0) return false;
+
+        var colour = prefix[CreateGeologySurveyPrefix.Length..];
+        var qualifier = colour.Length > 0
+            ? $"Geology Survey · {Humanize(colour)}"
+            : "Geology Survey";
+
+        if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
+            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+        else
+            preview = new ItemProducingPreview(Humanize(itemName), IconId: null, qualifier, itemName);
+        return true;
+    }
+
+    private static bool TryBuildTreasureMap(string trimmed, IReferenceDataService refData, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        // Shape: Create{Region}TreasureMap{Quality}, zero-arg. Region is free-form
+        // (Eltibule / Ilmari / SunVale), Quality is one of Poor / Good / Great / Amazing.
+        var infixIndex = trimmed.IndexOf(TreasureMapInfix, CreateTreasureMapPrefix.Length, StringComparison.Ordinal);
+        if (infixIndex <= CreateTreasureMapPrefix.Length) return false;
+
+        var region = trimmed[CreateTreasureMapPrefix.Length..infixIndex];
+        var quality = trimmed[(infixIndex + TreasureMapInfix.Length)..];
+        if (region.Length == 0 || quality.Length == 0) return false;
+
+        // Item lookup: the engine names map items as TreasureMap{Region}{Quality}, so
+        // reorder the components from the effect string when resolving.
+        var itemInternalName = $"{TreasureMapInfix}{region}{quality}";
+        var displayName = $"{Humanize(region)} Treasure Map";
+        var qualifier = Humanize(quality);
+
+        if (refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item))
+            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+        else
+            preview = new ItemProducingPreview(displayName, IconId: null, qualifier, itemInternalName);
+        return true;
+    }
+
+    private static bool TryBuildLootProfile(string[] args, out ItemProducingPreview preview)
+    {
+        preview = null!;
+        if (args.Length == 0) return false;
+        var profile = args[0].Trim();
+        if (profile.Length == 0) return false;
+
+        preview = new ItemProducingPreview(
+            DisplayName: $"Loot from {Humanize(profile)}",
+            IconId: null,
+            Qualifier: null,
+            ResolvedItemInternalName: null);
         return true;
     }
 
