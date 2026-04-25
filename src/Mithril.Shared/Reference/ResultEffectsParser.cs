@@ -15,8 +15,11 @@ namespace Mithril.Shared.Reference;
 ///   <item><c>CraftWaxItem(wax,power,tier,durability)</c> — wax/tuneup-kit crafts (<see cref="ParseWaxItems"/>).</item>
 ///   <item><c>AddItemTSysPowerWax(power,tier,durability)</c> — finite-use augmentations
 ///   (<see cref="ParseAddItemTSysPowerWaxes"/>).</item>
-///   <item><c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the enchantment
-///   form of <c>TSysCraftedEquipment</c> — pool-based rolls (<see cref="ParseAugmentPools"/>).</item>
+///   <item><c>TSysCraftedEquipment</c> enchantment-source form — static pool-based
+///   rolls (<see cref="ParseAugmentPools"/>).</item>
+///   <item><c>ExtractTSysPower(cubeItem,craftingSkill,minTier,maxTier)</c> — extraction
+///   recipes whose rolled power is determined by the player-provided cube at craft
+///   time, not by recipe metadata (<see cref="ParseUnpreviewableExtractions"/>).</item>
 ///   <item>Calligraphy / meditation / TSys-augment behavioural tags
 ///   (<see cref="ParseEffectTags"/>) — <c>ApplyAugmentOil</c>,
 ///   <c>RemoveAddedTSysPowerFromItem</c>, <c>ApplyAddItemTSysPowerWaxFromSourceItem</c>,
@@ -180,10 +183,12 @@ public static class ResultEffectsParser
 
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="AugmentPoolPreview"/> per
-    /// pool-based prefix: <c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the
-    /// enchantment-source form of <c>TSysCraftedEquipment</c>. Each preview is a lightweight
-    /// navigation token; the full per-power option list is materialized lazily by the pool
-    /// viewer when the user clicks "Browse pool".
+    /// pool-based prefix. Today only the enchantment-source form of
+    /// <c>TSysCraftedEquipment</c> participates: it carries a static profile pointer on the
+    /// template item so the per-power roll list is fully derivable from the recipe args.
+    /// <c>ExtractTSysPower</c> is intentionally excluded — its rolled power is determined by
+    /// the player-provided cube at craft time, not by recipe metadata, and flows through
+    /// <see cref="ParseUnpreviewableExtractions"/> instead.
     /// </summary>
     /// <remarks>
     /// Note: this method emits a pool token alongside any <see cref="CraftedGearPreview"/>
@@ -428,6 +433,32 @@ public static class ResultEffectsParser
         return previews;
     }
 
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one
+    /// <see cref="UnpreviewableExtractionPreview"/> per well-formed
+    /// <c>ExtractTSysPower(cubeItem, craftingSkill, minTier, maxTier)</c> entry.
+    /// <para>
+    /// Distinct from <see cref="ParseAugmentPools"/> because the rolled power is
+    /// determined by the player-provided cube at craft time — there's no static
+    /// pool to query. This method always emits a preview when the prefix shape
+    /// is valid; the chip's job is to tell the user "this recipe exists but its
+    /// outcome is data-unknowable" rather than show nothing.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<UnpreviewableExtractionPreview> ParseUnpreviewableExtractions(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<UnpreviewableExtractionPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseUnpreviewableExtraction(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static bool TryParseCraftedGear(string? effect, IReferenceDataService refData, out CraftedGearPreview preview)
@@ -558,45 +589,38 @@ public static class ResultEffectsParser
         preview = null!;
         if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
 
-        if (prefix.Equals(ExtractTSysPowerPrefix, StringComparison.Ordinal))
-            return TryBuildExtractPool(args, refData, out preview);
-
         if (prefix.Equals(CraftedEquipmentPrefix, StringComparison.Ordinal))
             return TryBuildCraftedEquipmentPool(args, refData, out preview);
 
         return false;
     }
 
-    private static bool TryBuildExtractPool(string[] args, IReferenceDataService refData, out AugmentPoolPreview preview)
+    private static bool TryParseUnpreviewableExtraction(
+        string? effect, IReferenceDataService refData, out UnpreviewableExtractionPreview preview)
     {
         preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(ExtractTSysPowerPrefix, StringComparison.Ordinal)) return false;
         if (args.Length < 4) return false;
 
-        var augmentItemName = args[0].Trim();
-        var minTierToken = args[2].Trim();
-        var maxTierToken = args[3].Trim();
-        if (augmentItemName.Length == 0) return false;
-        if (!int.TryParse(minTierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minTier)) return false;
-        if (!int.TryParse(maxTierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxTier)) return false;
+        var cubeItemName = args[0].Trim();
+        if (cubeItemName.Length == 0) return false;
+        if (!int.TryParse(args[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var minTier)) return false;
+        if (!int.TryParse(args[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxTier)) return false;
 
-        if (!refData.ItemsByInternalName.TryGetValue(augmentItemName, out var augmentItem)) return false;
-        var profileName = augmentItem.TSysProfile;
-        if (string.IsNullOrEmpty(profileName)) return false;
-        if (!refData.Profiles.TryGetValue(profileName, out var poolPowers)) return false;
-
-        var optionCount = CountEligiblePowers(poolPowers, refData, minTier, maxTier);
-        if (optionCount == 0) return false;
-
-        // Extract recipes don't encode a power-skill gate in their args (arg2 is the
-        // *crafting* skill, not the rolled-power skill). The roll is unconstrained
-        // within the profile, so leave RecommendedSkill null. Slot filtering is also
-        // intentionally skipped: an extraction recipe doesn't bind a target item, so
-        // PowerEntry.Slots can't be applied here — the slot gate would have to fire
-        // at "apply augment to item X" time, which isn't a UI affordance today.
-        var sourceLabel = $"Extractions from {augmentItem.Name} (Level {minTier}-{maxTier})";
-        preview = new AugmentPoolPreview(sourceLabel, profileName, minTier, maxTier, optionCount,
-            RecommendedSkill: null,
-            CraftingTargetLevel: augmentItem.CraftingTargetLevel);
+        // Resolve the cube item for display (icon + human-readable name). When the
+        // item lookup fails we fall back to a humanised form of the internal name
+        // so the chip still renders meaningfully.
+        if (refData.ItemsByInternalName.TryGetValue(cubeItemName, out var cubeItem))
+        {
+            preview = new UnpreviewableExtractionPreview(
+                cubeItemName, cubeItem.Name, cubeItem.IconId, minTier, maxTier);
+        }
+        else
+        {
+            preview = new UnpreviewableExtractionPreview(
+                cubeItemName, Humanize(cubeItemName), IconId: null, minTier, maxTier);
+        }
         return true;
     }
 
@@ -672,30 +696,6 @@ public static class ResultEffectsParser
             foreach (var s in power.Slots)
             {
                 if (string.Equals(s, slot, StringComparison.Ordinal))
-                {
-                    count++;
-                    break;
-                }
-            }
-        }
-        return count;
-    }
-
-    /// <summary>
-    /// Counts distinct powers in the profile that have at least one tier in
-    /// <c>[minTier, maxTier]</c> (inclusive). Each power is a single roll outcome —
-    /// the game picks one power per extraction; the tier reflects the source augment.
-    /// </summary>
-    private static int CountEligiblePowers(
-        IReadOnlyList<string> powerNames, IReferenceDataService refData, int minTier, int maxTier)
-    {
-        var count = 0;
-        foreach (var powerName in powerNames)
-        {
-            if (!refData.Powers.TryGetValue(powerName, out var power)) continue;
-            foreach (var (tierNum, _) in power.Tiers)
-            {
-                if (tierNum >= minTier && tierNum <= maxTier)
                 {
                     count++;
                     break;

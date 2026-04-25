@@ -7,37 +7,23 @@ namespace Mithril.Shared.Tests.Reference;
 public class AugmentPoolParserTests
 {
     [Fact]
-    public void ExtractTSysPower_EmitsPoolWithTierBracketAndCount()
+    public void ExtractTSysPower_DoesNotEmitPool()
     {
+        // ExtractTSysPower no longer flows through ParseAugmentPools — its rolled
+        // power is determined by the player-provided cube at craft time, so there's
+        // no static pool to render. Coverage now lives in
+        // ParseUnpreviewableExtractions; see UnpreviewableExtractionParserTests.
         var refData = Phase7Fixture.Build(
             items: [Phase7Fixture.Item(1, "MainHandAugment", "Main-Hand Augment", tsysProfile: "TestWeapon")],
-            powers: [
-                // Two tiers in [0,30] → contributes 2 to flattened count.
-                Phase7Fixture.Power("FakePower1", "Sword", suffix: null,
-                    Phase7Fixture.Tier(10), Phase7Fixture.Tier(20), Phase7Fixture.Tier(35)),
-                // One tier in bracket → 1.
-                Phase7Fixture.Power("FakePower2", "Bow", suffix: null,
-                    Phase7Fixture.Tier(20)),
-                // Out-of-bracket — 0.
-                Phase7Fixture.Power("FakePower3", "Hammer", suffix: null,
-                    Phase7Fixture.Tier(60))],
             profiles: new Dictionary<string, IReadOnlyList<string>>
             {
-                ["TestWeapon"] = ["FakePower1", "FakePower2", "FakePower3"],
+                ["TestWeapon"] = ["AnyPower"],
             });
 
         var pools = ResultEffectsParser.ParseAugmentPools(
             ["ExtractTSysPower(MainHandAugment,WeaponAugmentBrewing,0,30)"], refData);
 
-        pools.Should().ContainSingle();
-        var pool = pools[0];
-        pool.ProfileName.Should().Be("TestWeapon");
-        pool.MinTier.Should().Be(0);
-        pool.MaxTier.Should().Be(30);
-        // Distinct powers eligible (each is one roll outcome): FakePower1 has tiers in
-        // bracket, FakePower2 has tiers in bracket, FakePower3 does not. Count = 2.
-        pool.OptionCount.Should().Be(2);
-        pool.SourceLabel.Should().Be("Extractions from Main-Hand Augment (Level 0-30)");
+        pools.Should().BeEmpty();
     }
 
     [Fact]
@@ -148,20 +134,4 @@ public class AugmentPoolParserTests
         pools.Should().BeEmpty();
     }
 
-    [Fact]
-    public void AllPowersTierFilteredOut_IsSkipped()
-    {
-        var refData = Phase7Fixture.Build(
-            items: [Phase7Fixture.Item(1, "MainHandAugment", "Main-Hand Augment", tsysProfile: "TestWeapon")],
-            powers: [Phase7Fixture.Power("HighTier", "Sword", suffix: null, Phase7Fixture.Tier(80))],
-            profiles: new Dictionary<string, IReadOnlyList<string>>
-            {
-                ["TestWeapon"] = ["HighTier"],
-            });
-
-        var pools = ResultEffectsParser.ParseAugmentPools(
-            ["ExtractTSysPower(MainHandAugment,WeaponAugmentBrewing,0,30)"], refData);
-
-        pools.Should().BeEmpty();
-    }
 }

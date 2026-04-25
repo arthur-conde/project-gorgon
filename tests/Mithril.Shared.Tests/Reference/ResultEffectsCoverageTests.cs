@@ -68,15 +68,12 @@ public class ResultEffectsCoverageTests : IDisposable
 
                 if (IsCovered(effect, refData)) continue;
 
-                // Augment-pool prefixes (TSysCraftedEquipment / ExtractTSysPower)
-                // legitimately silent-skip when the source item has no TSysProfile
-                // or the profile isn't found — see AugmentPoolParserTests'
-                // four "skipped" cases. The parser recognises the prefix shape
-                // even when the args don't resolve to a queryable pool, so for
-                // coverage-gate purposes treat those as covered. The user-visible
-                // gap (no chip rendered for unresolvable extractions) is a
-                // separate parser-design concern, not a coverage regression.
-                if (IsAugmentPoolPrefix(effect))
+                // TSysCraftedEquipment legitimately silent-skips when its template
+                // has no TSysProfile or the profile isn't in tsysprofiles.json —
+                // see AugmentPoolParserTests' three "skipped" cases. The parser
+                // recognises the prefix shape even when the args don't resolve to
+                // a queryable pool, so treat those as covered for gate purposes.
+                if (effect.StartsWith("TSysCraftedEquipment(", System.StringComparison.Ordinal))
                 {
                     allowSilent.Add(effect);
                     continue;
@@ -100,6 +97,7 @@ public class ResultEffectsCoverageTests : IDisposable
         if (ResultEffectsParser.ParseWaxItems(single, refData).Count > 0) return true;
         if (ResultEffectsParser.ParseAddItemTSysPowerWaxes(single, refData).Count > 0) return true;
         if (ResultEffectsParser.ParseAugmentPools(single, refData).Count > 0) return true;
+        if (ResultEffectsParser.ParseUnpreviewableExtractions(single, refData).Count > 0) return true;
         if (ResultEffectsParser.ParseResearchProgress(single, refData).Count > 0) return true;
         if (ResultEffectsParser.ParseXpGrants(single, refData).Count > 0) return true;
         if (ResultEffectsParser.ParseWordsOfPower(single, refData).Count > 0) return true;
@@ -111,10 +109,6 @@ public class ResultEffectsCoverageTests : IDisposable
         if (ResultEffectsParser.ParseEffectTags(single, refData).Count > 0) return true;
         return false;
     }
-
-    private static bool IsAugmentPoolPrefix(string effect)
-        => effect.StartsWith("TSysCraftedEquipment(", System.StringComparison.Ordinal)
-        || effect.StartsWith("ExtractTSysPower(", System.StringComparison.Ordinal);
 
     private sealed class ThrowingHandler(string message) : HttpMessageHandler
     {

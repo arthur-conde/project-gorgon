@@ -22,7 +22,8 @@ public sealed record ItemDetailContext(
     IReadOnlyList<ItemProducingPreview>? ProducedItems = null,
     IReadOnlyList<EquipBonusPreview>? EquipBonuses = null,
     IReadOnlyList<CraftingEnhancePreview>? CraftingEnhancements = null,
-    IReadOnlyList<RecipeCooldownPreview>? RecipeCooldowns = null)
+    IReadOnlyList<RecipeCooldownPreview>? RecipeCooldowns = null,
+    IReadOnlyList<UnpreviewableExtractionPreview>? UnpreviewableExtractions = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }
