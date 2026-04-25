@@ -169,3 +169,5 @@ App settings persist under `%LocalAppData%\Mithril\` — each module gets its ow
 ## Acknowledgements
 
 The Samwise garden module began as a direct C# port of [Goozify/GorgonHelper](https://github.com/Goozify/GorgonHelper), a browser-based garden helper for *Project Gorgon*, and has since evolved on top of that foundation. Thanks to its author for the original log-tailing and garden-state logic that this project is built on.
+
+The Legolas surveying module is inspired by [kaeus/GorgonSurveyTracker](https://github.com/kaeus/GorgonSurveyTracker). Thanks to its author for the original survey-tracking work.
