@@ -69,8 +69,14 @@ if (& git tag --list $tag) {
     throw "Tag $tag already exists locally. Delete it first (git tag -d $tag) or pick a new version."
 }
 
-# Remote tag collision — fetch first so we see the truth.
-& git fetch --tags $Remote 2>$null | Out-Null
+# Sync with the remote before doing anything else: --prune drops local tracking
+# branches whose remote was deleted, --prune-tags drops local tags that were
+# deleted upstream (e.g. v0.0.1-test* tags after manual cleanup of the Releases
+# page). Keeps `git tag --list` honest and avoids confusing NBGV's view of the
+# tag set on the next dry-run.
+& git fetch --prune --prune-tags $Remote 2>$null | Out-Null
+
+# Remote tag collision — ls-remote is the canonical source even after prune.
 $remoteTag = & git ls-remote --tags $Remote "refs/tags/$tag"
 if ($remoteTag) {
     throw "Tag $tag already exists on $Remote. Pick a new version in version.json."
