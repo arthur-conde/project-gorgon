@@ -554,21 +554,75 @@ public sealed class CalibrationServiceTests
     }
 
     [Fact]
-    public void RecordObservation_SkipsStackableItems_PendingLiveQuantityTracker()
+    public void RecordObservation_StackableItem_KnownSize_RecordsWithCorrectQuantity()
     {
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
             var (svc, _, inv) = BuildService(dir);
 
-            // Phlogiston1 has MaxStackSize=10 — gate should refuse to record.
-            inv.Add(9999, "Phlogiston1");
+            // Phlogiston1 has MaxStackSize=10. Tracker knows the gifted stack was 5 units.
+            inv.Add(9999, "Phlogiston1", stackSize: 5);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            svc.Data.Observations.Should().HaveCount(1);
+            var obs = svc.Data.Observations[0];
+            obs.Quantity.Should().Be(5);
+            obs.FavorDelta.Should().Be(13.2);
+            // DerivedRate = 13.2 / (5 [value] * 1.5 [pref] * 5 [quantity]) = 0.352
+            obs.DerivedRate.Should().BeApproximately(0.352, 0.001);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void RecordObservation_StackableItem_UnknownSize_Skipped()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            // Tracker resolves the InternalName but reports stack size = 0 (unknown),
+            // simulating a carryover stack that's never seen an event this session.
+            inv.Add(9999, "Phlogiston1", stackSize: 0);
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(9999);
             svc.OnDeltaFavor("NPC_Sanja", 13.2);
 
             svc.Data.Observations.Should().BeEmpty(
-                because: "stackable items can't be calibrated until quantity is derivable from a live tracker");
+                because: "stackable gift with no tracker data — skip rather than under-credit");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void RecordObservation_NonStackableItem_RecordsRegardlessOfTracker()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            // Non-stackable item (MaxStackSize == 1): tracker isn't consulted at all
+            // because PG always gifts exactly 1 unit. Set stackSize=0 to prove it's
+            // ignored for non-stackables.
+            inv.Add(12345, "Moonstone", stackSize: 0);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(12345);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5);
+
+            svc.Data.Observations.Should().HaveCount(1);
+            var obs = svc.Data.Observations[0];
+            obs.Quantity.Should().Be(1);
         }
         finally
         {
@@ -630,17 +684,28 @@ public sealed class CalibrationServiceTests
     }
 
     // ── Fake IInventoryService ──────────────────────────────────────
-    // Tests seed the map via Add(instanceId, internalName) to mirror
-    // what the real InventoryService would learn from ProcessAddItem.
+    // Tests seed the map via Add(instanceId, internalName, stackSize?) to mirror
+    // what the real InventoryService would learn from ProcessAddItem and the
+    // chat-correlation / UpdateItemCode paths.
 
     internal sealed class FakeInventory : IInventoryService
     {
-        private readonly Dictionary<long, string> _map = new();
-        public void Add(long id, string name) => _map[id] = name;
+        private readonly Dictionary<long, (string Name, int StackSize)> _map = new();
+        public void Add(long id, string name, int stackSize = 1) => _map[id] = (name, stackSize);
         public bool TryResolve(long instanceId, out string internalName)
         {
-            if (_map.TryGetValue(instanceId, out var n)) { internalName = n; return true; }
+            if (_map.TryGetValue(instanceId, out var entry)) { internalName = entry.Name; return true; }
             internalName = "";
+            return false;
+        }
+        public bool TryGetStackSize(long instanceId, out int stackSize)
+        {
+            if (_map.TryGetValue(instanceId, out var entry) && entry.StackSize > 0)
+            {
+                stackSize = entry.StackSize;
+                return true;
+            }
+            stackSize = 0;
             return false;
         }
         public IDisposable Subscribe(Action<InventoryEvent> handler) => NoopSubscription.Instance;

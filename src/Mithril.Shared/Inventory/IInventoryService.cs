@@ -23,13 +23,17 @@ public enum InventoryEventKind
 
 /// <summary>
 /// Canonical <c>instanceId → InternalName</c> lookup maintained by tailing
-/// <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c> on <c>IPlayerLogStream</c>.
+/// <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c> / <c>ProcessUpdateItemCode</c>
+/// / <c>ProcessRemoveFromStorageVault</c> on <c>IPlayerLogStream</c>, plus the
+/// chat <c>[Status]</c> channel via <c>IChatLogStream</c> for stack-size
+/// correlation on fresh additions.
 ///
 /// Owning this centrally (rather than having each module rebuild its own map
 /// from the stream) avoids the late-subscribe race: modules either query the
-/// live map at use-time via <see cref="TryResolve"/>, or subscribe via
-/// <see cref="Subscribe"/> which atomically replays the current map state to
-/// the new handler before delivering live events.
+/// live map at use-time via <see cref="TryResolve"/> or
+/// <see cref="TryGetStackSize"/>, or subscribe via <see cref="Subscribe"/> which
+/// atomically replays the current map state to the new handler before delivering
+/// live events.
 /// </summary>
 public interface IInventoryService
 {
@@ -39,6 +43,16 @@ public interface IInventoryService
     /// late lookups (e.g. Arwen's gift-attribution path) still succeed.
     /// </summary>
     bool TryResolve(long instanceId, out string internalName);
+
+    /// <summary>
+    /// Resolve an instance id to its current stack size, if known. Like
+    /// <see cref="TryResolve"/>, returns the last-known size for entries that
+    /// have been deleted in this session — Arwen's gift-attribution path needs
+    /// the pre-delete size. Returns false for instances the service has never
+    /// observed an event for (e.g. items carried over from a prior PG game
+    /// session that haven't been touched).
+    /// </summary>
+    bool TryGetStackSize(long instanceId, out int stackSize);
 
     /// <summary>
     /// Attach a handler that receives every live (non-deleted) item currently
@@ -51,6 +65,10 @@ public interface IInventoryService
     /// replay (on the subscribing thread) and during live dispatch (on the
     /// ingestion-loop thread). Subscribers that do non-trivial work should
     /// dispatch off-thread immediately to avoid blocking ingestion.
+    ///
+    /// Stack-size mutations (split, merge, plant-consume, vault transfer) are
+    /// not surfaced as events on this subscription — consumers that need
+    /// up-to-date sizes should poll <see cref="TryGetStackSize"/>.
     ///
     /// Dispose the returned subscription to stop receiving further events.
     /// </summary>

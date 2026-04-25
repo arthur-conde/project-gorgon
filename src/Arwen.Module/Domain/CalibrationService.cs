@@ -119,7 +119,7 @@ public sealed class CalibrationService
         if (_pendingDelta is var (npcKey, delta))
         {
             _pendingDelta = null;
-            RecordObservation(npcKey, internalName, delta);
+            RecordObservation(npcKey, instanceId, internalName, delta);
             return;
         }
 
@@ -131,18 +131,18 @@ public sealed class CalibrationService
         if (delta <= 0) return;
         if (_activeNpcKey != npcKey) return;
 
-        if (_pendingDeletedItem is var (_, internalName))
+        if (_pendingDeletedItem is var (instanceId, internalName))
         {
             _pendingDeletedItem = null;
             _pendingDelta = null;
-            RecordObservation(npcKey, internalName, delta);
+            RecordObservation(npcKey, instanceId, internalName, delta);
             return;
         }
 
         _pendingDelta = (npcKey, delta);
     }
 
-    private void RecordObservation(string npcKey, string internalName, double delta)
+    private void RecordObservation(string npcKey, long instanceId, string internalName, double delta)
     {
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
@@ -156,15 +156,24 @@ public sealed class CalibrationService
             return;
         }
 
-        // Stackable-item gate: PG emits one ProcessDeleteItem for an entire gifted
-        // stack, so the true gift quantity is unknowable from the existing event
-        // stream. Recording an observation under quantity=1 would over-credit the
-        // rate by the (unknown) stack size — see schema v3 migration. Skip until
-        // a live inventory tracker can supply the real quantity.
-        if (item.MaxStackSize > 1)
+        // Stack-aware quantity. Non-stackable items always gift exactly one unit (PG
+        // emits one ProcessDeleteItem per InstanceId, and the InstanceId can't carry
+        // more). Stackable items consult the InventoryService's per-instance stack
+        // size; if it's unknown — typically a carryover stack from a prior PG game
+        // session — we can't trust the rate math, so we skip rather than under-credit.
+        int quantity;
+        if (item.MaxStackSize <= 1)
+        {
+            quantity = 1;
+        }
+        else if (_inventory.TryGetStackSize(instanceId, out var trackedSize) && trackedSize > 0)
+        {
+            quantity = trackedSize;
+        }
+        else
         {
             _diag?.Trace("Arwen.Calibration",
-                $"Skipping observation: '{internalName}' has MaxStackSize={item.MaxStackSize}, gift quantity is not yet trackable");
+                $"Skipping observation: '{internalName}' has MaxStackSize={item.MaxStackSize} but stack size for instance {instanceId} is unknown to the tracker (carryover from prior session?)");
             return;
         }
 
@@ -190,7 +199,7 @@ public sealed class CalibrationService
             MatchedPreferences = [.. matchedPrefs],
             ItemValue = (double)item.Value,
             FavorDelta = delta,
-            Quantity = 1, // gate above guarantees MaxStackSize == 1
+            Quantity = quantity,
             Timestamp = DateTimeOffset.UtcNow,
         };
 
