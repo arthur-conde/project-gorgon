@@ -54,10 +54,15 @@
   <Target Name="LintXamlStaticResources"
           AfterTargets="Build"
           Condition="'$(RunsXamlResourceLint)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(BuildingForLiveUnitTesting)' != 'true'">
-    <PropertyGroup>
-      <_XamlResourceLintExe>$(MSBuildThisFileDirectory)tools\XamlResourceLint\bin\$(Configuration)\net10.0\XamlResourceLint.dll</_XamlResourceLintExe>
-    </PropertyGroup>
-    <Exec Command="dotnet &quot;$(_XamlResourceLintExe)&quot; &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot;"
+    <!-- Ask the lint project for its actual TargetPath instead of guessing the
+         bin/{Config}/{TFM} path. Robust to Configuration drift (e.g. solution
+         builds where -c Release doesn't propagate to non-slnx ProjectReferences). -->
+    <MSBuild Projects="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_XamlResourceLintTargetPath" />
+    </MSBuild>
+    <Exec Command="dotnet &quot;@(_XamlResourceLintTargetPath)&quot; &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot;"
           ConsoleToMSBuild="true" />
   </Target>
 </Project>

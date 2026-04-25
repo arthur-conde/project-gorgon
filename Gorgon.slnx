@@ -13,6 +13,9 @@
     <Project Path="src/Smaug.Module/Smaug.Module.csproj" />
     <Project Path="src/Celebrimbor.Module/Celebrimbor.Module.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Gorgon.Shared.Tests/Gorgon.Shared.Tests.csproj" />
     <Project Path="tests/Pippin.Tests/Pippin.Tests.csproj" />
