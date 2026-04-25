@@ -46,6 +46,7 @@ internal static class AtomicFile
             {
                 File.WriteAllBytes(tmp, payload);
                 File.Move(tmp, destination, overwrite: true);
+                VerifyLanded(destination);
                 return;
             }
             catch (Exception ex) when (IsTransient(ex) && attempt < BackoffMs.Length - 1)
@@ -72,6 +73,7 @@ internal static class AtomicFile
             {
                 await File.WriteAllBytesAsync(tmp, payload, ct).ConfigureAwait(false);
                 File.Move(tmp, destination, overwrite: true);
+                VerifyLanded(destination);
                 return;
             }
             catch (Exception ex) when (IsTransient(ex) && attempt < BackoffMs.Length - 1)
@@ -109,6 +111,17 @@ internal static class AtomicFile
         ex is UnauthorizedAccessException
         || ex is FileNotFoundException
         || ex is IOException;
+
+    // On Windows, Defender / Search indexer can quarantine or delete the destination
+    // *after* File.Move returns success. Without this check the loss is silent —
+    // callers only discover it later when they try to read the file back, and the
+    // exception surfaces far from the actual write site. Throwing here surfaces the
+    // eviction at the point it happened, and lets the retry loop re-write the file.
+    private static void VerifyLanded(string destination)
+    {
+        if (!File.Exists(destination))
+            throw new IOException($"{destination} vanished immediately after successful rename (likely AV quarantine).");
+    }
 
     private static void EnsureDirectory(string filePath)
     {

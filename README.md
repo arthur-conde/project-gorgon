@@ -48,6 +48,17 @@ dotnet test tests/Samwise.Tests --filter "FullyQualifiedName~GardenStateMachineT
 
 Module DLLs are copied into `src/Mithril.Shell/{Configuration}/modules/` automatically via [Directory.Build.targets](Directory.Build.targets) — there's no manual copy step. Drop-in third-party modules work the same way: place the assembly in the `modules/` folder and it will be discovered at startup.
 
+### Running tests on a fresh clone
+
+`[Trait("Category", "FileIO")]` tests write small JSON files to `tests/.tmp/` through `AtomicFile`'s write-tmp-then-rename sequence. That sequence is behaviourally identical to ransomware encryption passes, so Windows Defender's real-time scan will occasionally lock or quarantine the freshly-written file — the test then sees `items.meta.json` on disk but `items.json` missing. CI sidesteps this by disabling Defender real-time for the runner (see [.github/workflows/release.yml](.github/workflows/release.yml)); local dev environments need a path exclusion instead:
+
+```powershell
+# Run once from an elevated PowerShell. Adjust the path to your clone.
+Add-MpPreference -ExclusionPath "C:\path\to\project-gorgon"
+```
+
+Without the exclusion, expect the FileIO-category tests under `Mithril.Shared.Tests` to flake. The non-FileIO suite (the default `dotnet test` pass minus `--filter Category=FileIO`) is unaffected.
+
 ## Repository layout
 
 ```
