@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Inventory;
 using Mithril.Shared.Reference;
 
 namespace Arwen.Domain;
@@ -10,11 +11,11 @@ namespace Arwen.Domain;
 public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 
 /// <summary>
-/// Tracks item instance IDs, detects gift events from the log event sequence,
-/// records observations, and computes per-NPC / per-item / per-signature category rates.
+/// Detects gift events from the log event sequence, records observations,
+/// and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
-/// 1. ProcessAddItem(InternalName(instanceId)) → build instanceId → InternalName map
+/// 1. <see cref="IInventoryService"/> maintains the canonical instanceId → InternalName map
 /// 2. ProcessStartInteraction(NPC_Key) → set active NPC context
 /// 3. ProcessDeleteItem(instanceId) → item removed while talking to NPC → pending gift
 /// 4. ProcessDeltaFavor(NPC_Key, delta) → favor gained → correlate with pending gift
@@ -25,6 +26,7 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
+    private readonly IInventoryService _inventory;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
@@ -42,7 +44,6 @@ public sealed class CalibrationService
     //   Order A: DeleteItem → DeltaFavor  (item removed first)
     //   Order B: DeltaFavor → DeleteItem  (favor delta first)
     // We handle both by tracking a pending item OR a pending delta.
-    private readonly Dictionary<long, string> _instanceMap = new(); // instanceId → InternalName
     private string? _activeNpcKey;
     private (long InstanceId, string InternalName)? _pendingDeletedItem;
     private (string NpcKey, double Delta)? _pendingDelta;
@@ -62,6 +63,7 @@ public sealed class CalibrationService
     public CalibrationService(
         IReferenceDataService refData,
         GiftIndex giftIndex,
+        IInventoryService inventory,
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
@@ -69,6 +71,7 @@ public sealed class CalibrationService
     {
         _refData = refData;
         _giftIndex = giftIndex;
+        _inventory = inventory;
         _community = community;
         _calibrationSettings = calibrationSettings;
         _diag = diag;
@@ -97,16 +100,6 @@ public sealed class CalibrationService
 
     // ── Log event handlers (called by FavorIngestionService) ─────────
 
-    public void OnItemAdded(string internalName, long instanceId)
-    {
-        _instanceMap[instanceId] = internalName;
-        if (_instanceMap.Count > 10_000)
-        {
-            var oldest = _instanceMap.Keys.Take(5000).ToList();
-            foreach (var k in oldest) _instanceMap.Remove(k);
-        }
-    }
-
     public void OnStartInteraction(string npcKey)
     {
         _activeNpcKey = npcKey;
@@ -117,8 +110,11 @@ public sealed class CalibrationService
     public void OnItemDeleted(long instanceId)
     {
         if (_activeNpcKey is null) return;
-        if (!_instanceMap.TryGetValue(instanceId, out var internalName)) return;
-        _instanceMap.Remove(instanceId);
+        if (!_inventory.TryResolve(instanceId, out var internalName))
+        {
+            _diag?.Trace("Arwen.Calibration", $"Delete id={instanceId} unresolved while talking to {_activeNpcKey}");
+            return;
+        }
 
         if (_pendingDelta is var (npcKey, delta))
         {

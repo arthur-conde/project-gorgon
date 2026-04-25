@@ -69,10 +69,6 @@ public sealed class FavorIngestionService : BackgroundService
                     });
                     break;
 
-                case ItemAdded added:
-                    _calibration.OnItemAdded(added.InternalName, added.InstanceId);
-                    break;
-
                 case ItemDeleted deleted:
                     _calibration.OnItemDeleted(deleted.InstanceId);
                     break;

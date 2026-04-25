@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
 using FluentAssertions;
+using Mithril.Shared.Inventory;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -61,13 +62,14 @@ public sealed class CalibrationServiceTests
         return new FakeRefData(items, npcs);
     }
 
-    private static (CalibrationService svc, GiftIndex index) BuildService(string dataDir)
+    private static (CalibrationService svc, GiftIndex index, FakeInventory inv) BuildService(string dataDir)
     {
         var refData = BuildRefData();
         var index = new GiftIndex();
         index.Build(refData.Items, refData.Npcs);
-        var svc = new CalibrationService(refData, index, dataDir);
-        return (svc, index);
+        var inv = new FakeInventory();
+        var svc = new CalibrationService(refData, index, inv, dataDir);
+        return (svc, index, inv);
     }
 
     /// <summary>Best-effort recursive delete. Defender / Search indexer occasionally
@@ -86,9 +88,9 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 12345);
+            inv.Add(12345, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(12345);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
@@ -120,10 +122,10 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
             // StafflordsRing matches both Makara prefs: "MinRarity:Rare" (pref=2) and "Ring" (pref=1)
-            svc.OnItemAdded("StafflordsRing", 1001);
+            inv.Add(1001, "StafflordsRing");
             svc.OnStartInteraction("NPC_Makara");
             svc.OnItemDeleted(1001);
             svc.OnDeltaFavor("NPC_Makara", 48.7557);
@@ -147,9 +149,9 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, index) = BuildService(dir);
+            var (svc, index, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 100);
+            inv.Add(100, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
@@ -173,11 +175,11 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, index) = BuildService(dir);
+            var (svc, index, inv) = BuildService(dir);
 
             // Record a gift of StafflordsRing — populates ItemRate for (Makara, StafflordsRing)
             // plus SignatureRate for (Makara, "Rare or Better Magic Gear,Rings") and NPC baseline.
-            svc.OnItemAdded("StafflordsRing", 1001);
+            inv.Add(1001, "StafflordsRing");
             svc.OnStartInteraction("NPC_Makara");
             svc.OnItemDeleted(1001);
             svc.OnDeltaFavor("NPC_Makara", 48.7557);
@@ -206,7 +208,7 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, index) = BuildService(dir);
+            var (svc, index, inv) = BuildService(dir);
             var match = index.MatchItemToNpc(1, "NPC_Sanja");
             svc.EstimateFavor(match!, "NPC_Sanja").Should().BeNull();
         }
@@ -222,9 +224,9 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 12345);
+            inv.Add(12345, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
             svc.OnItemDeleted(12345);
@@ -245,9 +247,9 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 100);
+            inv.Add(100, "Moonstone");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
 
@@ -265,9 +267,9 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 100);
+            inv.Add(100, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", -10);
@@ -286,10 +288,10 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
             // TestDislikedNecklace matches Yetta's Amulet (pref=2) and TestDislike (pref=-5) → net -3
-            svc.OnItemAdded("TestDislikedNecklace", 7777);
+            inv.Add(7777, "TestDislikedNecklace");
             svc.OnStartInteraction("NPC_Yetta");
             svc.OnItemDeleted(7777);
             svc.OnDeltaFavor("NPC_Yetta", 10); // would be positive but pref math is negative
@@ -309,15 +311,15 @@ public sealed class CalibrationServiceTests
         var dir2 = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc1, _) = BuildService(dir1);
-            svc1.OnItemAdded("Moonstone", 100);
+            var (svc1, _, inv1) = BuildService(dir1);
+            inv1.Add(100, "Moonstone");
             svc1.OnStartInteraction("NPC_Sanja");
             svc1.OnItemDeleted(100);
             svc1.OnDeltaFavor("NPC_Sanja", 22.5);
 
             var json = svc1.ExportJson("test contributor");
 
-            var (svc2, _) = BuildService(dir2);
+            var (svc2, _, inv2) = BuildService(dir2);
             var imported = svc2.ImportJson(json);
             imported.Should().Be(1);
             svc2.Data.Observations.Should().HaveCount(1);
@@ -336,8 +338,8 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
-            svc.OnItemAdded("Moonstone", 100);
+            var (svc, _, inv) = BuildService(dir);
+            inv.Add(100, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
@@ -359,14 +361,14 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
+            var (svc, _, inv) = BuildService(dir);
 
-            svc.OnItemAdded("Moonstone", 100);
+            inv.Add(100, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5); // rate = 0.15
 
-            svc.OnItemAdded("Moonstone", 101);
+            inv.Add(101, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(101);
             svc.OnDeltaFavor("NPC_Sanja", 24.0); // rate = 0.16
@@ -390,8 +392,8 @@ public sealed class CalibrationServiceTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
         {
-            var (svc, _) = BuildService(dir);
-            svc.OnItemAdded("Moonstone", 100);
+            var (svc, _, inv) = BuildService(dir);
+            inv.Add(100, "Moonstone");
             svc.OnStartInteraction("NPC_Sanja");
             svc.OnItemDeleted(100);
             svc.OnDeltaFavor("NPC_Sanja", 22.5);
@@ -460,7 +462,7 @@ public sealed class CalibrationServiceTests
             var refData = BuildRefData();
             var index = new GiftIndex();
             index.Build(refData.Items, refData.Npcs);
-            var svc = new CalibrationService(refData, index, dir);
+            var svc = new CalibrationService(refData, index, new FakeInventory(), dir);
 
             svc.Data.Version.Should().Be(CalibrationService.CurrentSchemaVersion);
             svc.Data.Observations.Should().HaveCount(1); // unknown item dropped
@@ -512,5 +514,23 @@ public sealed class CalibrationServiceTests
         public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
         public void BeginBackgroundRefresh() { }
         public event EventHandler<string>? FileUpdated { add { } remove { } }
+    }
+
+    // ── Fake IInventoryService ──────────────────────────────────────
+    // Tests seed the map via Add(instanceId, internalName) to mirror
+    // what the real InventoryService would learn from ProcessAddItem.
+
+    internal sealed class FakeInventory : IInventoryService
+    {
+        private readonly Dictionary<long, string> _map = new();
+        public void Add(long id, string name) => _map[id] = name;
+        public bool TryResolve(long instanceId, out string internalName)
+        {
+            if (_map.TryGetValue(instanceId, out var n)) { internalName = n; return true; }
+            internalName = "";
+            return false;
+        }
+        public event EventHandler<InventoryItem>? ItemAdded { add { } remove { } }
+        public event EventHandler<InventoryItem>? ItemDeleted { add { } remove { } }
     }
 }

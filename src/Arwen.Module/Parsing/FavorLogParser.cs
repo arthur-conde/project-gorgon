@@ -10,9 +10,6 @@ public sealed record FavorUpdate(DateTime Timestamp, string NpcKey, double Absol
 /// <summary>Favor delta after a gift, quest, or hang-out.</summary>
 public sealed record FavorDelta(DateTime Timestamp, string NpcKey, double Delta) : FavorEvent(Timestamp);
 
-/// <summary>An item was added to inventory — tracks instanceId → InternalName.</summary>
-public sealed record ItemAdded(DateTime Timestamp, string InternalName, long InstanceId) : FavorEvent(Timestamp);
-
 /// <summary>An item was removed from inventory (potential gift).</summary>
 public sealed record ItemDeleted(DateTime Timestamp, long InstanceId) : FavorEvent(Timestamp);
 
@@ -31,11 +28,7 @@ public sealed partial class FavorLogParser
     [GeneratedRegex(@"ProcessDeltaFavor\(\d+,\s*""(NPC_\w+)"",\s*([\d.-]+),\s*\w+\)", RegexOptions.CultureInvariant)]
     private static partial Regex DeltaFavorRx();
 
-    // ProcessAddItem(InternalName(instanceId), slot, bool)
-    [GeneratedRegex(@"ProcessAddItem\((\w+)\((\d+)\),", RegexOptions.CultureInvariant)]
-    private static partial Regex AddItemRx();
-
-    // ProcessDeleteItem(instanceId)
+    // ProcessDeleteItem(instanceId) — InstanceId → InternalName resolution lives in IInventoryService.
     [GeneratedRegex(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant)]
     private static partial Regex DeleteItemRx();
 
@@ -48,10 +41,6 @@ public sealed partial class FavorLogParser
         m = DeltaFavorRx().Match(line);
         if (m.Success && double.TryParse(m.Groups[2].ValueSpan, out var delta))
             return new FavorDelta(timestamp, m.Groups[1].Value, delta);
-
-        m = AddItemRx().Match(line);
-        if (m.Success && long.TryParse(m.Groups[2].ValueSpan, out var addId))
-            return new ItemAdded(timestamp, m.Groups[1].Value, addId);
 
         m = DeleteItemRx().Match(line);
         if (m.Success && long.TryParse(m.Groups[1].ValueSpan, out var delId))

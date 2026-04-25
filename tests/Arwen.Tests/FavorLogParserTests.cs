@@ -45,18 +45,6 @@ public sealed class FavorLogParserTests
     }
 
     [Fact]
-    public void ParsesAddItem()
-    {
-        var line = "[18:17:57] LocalPlayer: ProcessAddItem(AppleJuice(98931165), -1, True)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
-
-        evt.Should().BeOfType<ItemAdded>();
-        var added = (ItemAdded)evt!;
-        added.InternalName.Should().Be("AppleJuice");
-        added.InstanceId.Should().Be(98931165);
-    }
-
-    [Fact]
     public void ParsesDeleteItem()
     {
         var line = "[18:17:59] LocalPlayer: ProcessDeleteItem(98931165)";
