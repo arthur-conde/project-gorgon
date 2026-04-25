@@ -289,6 +289,38 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
+    public async Task StrandedPendingAdd_IsEvictedByPiggybackDrain()
+    {
+        // Pin: a ProcessAddItem that never finds a matching chat status used to
+        // sit in _pendingAdd[InternalName] forever, because the queue's TTL was
+        // only consulted on the matching path. Now every Handle* method calls
+        // DrainPendingStale at entry, so the next unrelated event evicts it.
+        var time = new ManualTimeProvider(new DateTime(2026, 4, 25, 14, 0, 0, DateTimeKind.Utc));
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, time: time);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        // 1) Drive an AddItem with no chat correlation → enqueues _pendingAdd["Moonstone"].
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.PendingCounts().Add.Should().Be(1, "Moonstone AddItem with no chat must enqueue pending-add");
+
+        // 2) Advance past the 5-second TTL.
+        time.Advance(TimeSpan.FromSeconds(10));
+
+        // 3) Drive an unrelated event — its DrainPendingStale must evict the stranded entry.
+        stream.Push("[00:00:11] LocalPlayer: ProcessAddItem(Guava(99), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        // 4) Moonstone's stranded pending-add is gone; Guava's is the only one left.
+        svc.PendingCounts().Add.Should().Be(1, "stranded Moonstone evicted; Guava's still fresh");
+        svc.PendingCounts().Chat.Should().Be(0);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
     public async Task SubscriberException_DoesNotBreakOtherSubscribers()
     {
         var stream = new ScriptedStream(
@@ -312,6 +344,18 @@ public sealed class InventoryServiceTests
         await cts.CancelAsync();
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
         _ = runTask;
+    }
+
+    /// <summary>
+    /// Test-only TimeProvider whose clock advances only when the test calls
+    /// <see cref="Advance"/>. Lets TTL-eviction tests run deterministically.
+    /// </summary>
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now;
+        public ManualTimeProvider(DateTime utcStart) => _now = new DateTimeOffset(utcStart, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
 
     private sealed class ScriptedStream : IPlayerLogStream

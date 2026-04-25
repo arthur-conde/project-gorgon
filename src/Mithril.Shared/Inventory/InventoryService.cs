@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
@@ -62,6 +63,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private readonly IChatLogStream? _chatStream;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
+    private readonly TimeProvider _time;
 
     // _subLock guards _map, _handlers, _pendingChat, and _pendingAdd. Both ingestion
     // loops (player log and chat) take it while mutating shared state.
@@ -74,23 +76,27 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     //   - chat first  → enqueue to _pendingChat[InternalName]; AddItem dequeues.
     //   - AddItem first → enqueue to _pendingAdd[InternalName] with the InstanceId;
     //                     chat dequeues and back-fills _map[InstanceId].StackSize.
-    private readonly Dictionary<string, Queue<PendingChat>> _pendingChat = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Queue<PendingAdd>> _pendingAdd = new(StringComparer.Ordinal);
+    // Each TtlList owns its own enqueue timestamps and lazy-evicts on access; the
+    // piggyback drain in DrainPendingStale closes the leak where an entry that
+    // never matched its counterpart would sit forever (under the prior queue
+    // design, only the matching path consulted the TTL).
+    private readonly Dictionary<string, TtlList<int>> _pendingChat = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TtlList<long>> _pendingAdd = new(StringComparer.Ordinal);
 
     private readonly record struct MapEntry(string InternalName, DateTime Timestamp, bool Deleted, int StackSize);
-    private readonly record struct PendingChat(int Count, DateTime EnqueuedAt);
-    private readonly record struct PendingAdd(long InstanceId, DateTime EnqueuedAt);
 
     public InventoryService(
         IPlayerLogStream stream,
         IDiagnosticsSink? diag = null,
         IChatLogStream? chatStream = null,
-        IReferenceDataService? refData = null)
+        IReferenceDataService? refData = null,
+        TimeProvider? time = null)
     {
         _stream = stream;
         _diag = diag;
         _chatStream = chatStream;
         _refData = refData;
+        _time = time ?? TimeProvider.System;
     }
 
     public bool TryResolve(long instanceId, out string internalName)
@@ -212,9 +218,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         lock (_subLock)
         {
+            DrainPendingStale();
+
             // Try the pending-chat queue first — chat may have arrived ahead of us.
             int size = 1;
-            if (TryDequeuePendingChat(internalName, timestamp, out var pendingCount))
+            if (TryDequeuePendingChat(internalName, out var pendingCount))
             {
                 size = pendingCount;
             }
@@ -222,7 +230,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             {
                 // No chat yet; remember this InstanceId so a later chat status can
                 // back-fill the size.
-                EnqueuePendingAdd(internalName, instanceId, timestamp);
+                EnqueuePendingAdd(internalName, instanceId);
             }
 
             _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size);
@@ -235,6 +243,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         lock (_subLock)
         {
+            DrainPendingStale();
             if (!_map.TryGetValue(instanceId, out var entry))
             {
                 _diag?.Trace("Inventory", $"Delete id={instanceId} — not in map, ignored");
@@ -263,6 +272,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
         lock (_subLock)
         {
+            DrainPendingStale();
             if (!_map.TryGetValue(instanceId, out var entry))
             {
                 // Update for an InstanceId we've never seen — game can emit these for
@@ -282,6 +292,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         if (stackSize <= 0) return;
         lock (_subLock)
         {
+            DrainPendingStale();
             // RemoveFromStorageVault pairs with the AddItem of a vault withdrawal landing
             // in an empty bag (the bag-side InstanceId), AND with merge-into-existing-stack
             // cases (the vault-side InstanceId, which we don't track). Only update if we
@@ -303,8 +314,9 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
         lock (_subLock)
         {
+            DrainPendingStale();
             // Try to back-fill a recent AddItem that defaulted to size = 1.
-            if (TryDequeuePendingAdd(internalName, timestamp, out var instanceId))
+            if (TryDequeuePendingAdd(internalName, out var instanceId))
             {
                 if (_map.TryGetValue(instanceId, out var entry) && entry.StackSize != count)
                 {
@@ -317,69 +329,73 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
             // No matching pending AddItem; remember this count for the next AddItem of the
             // same InternalName.
-            EnqueuePendingChat(internalName, count, timestamp);
+            EnqueuePendingChat(internalName, count);
         }
     }
 
     /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private void EnqueuePendingChat(string internalName, int count, DateTime timestamp)
+    private void EnqueuePendingChat(string internalName, int count)
     {
-        if (!_pendingChat.TryGetValue(internalName, out var queue))
+        if (!_pendingChat.TryGetValue(internalName, out var list))
         {
-            queue = new Queue<PendingChat>();
-            _pendingChat[internalName] = queue;
+            list = new TtlList<int>(PendingChatTtl, _time);
+            _pendingChat[internalName] = list;
         }
-        queue.Enqueue(new PendingChat(count, timestamp));
+        list.Add(count);
     }
 
     /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private bool TryDequeuePendingChat(string internalName, DateTime now, out int count)
+    private bool TryDequeuePendingChat(string internalName, out int count)
     {
-        if (_pendingChat.TryGetValue(internalName, out var queue))
-        {
-            // Drop stale entries first; they're chat lines whose AddItem we missed.
-            while (queue.Count > 0 && now - queue.Peek().EnqueuedAt > PendingChatTtl)
-                queue.Dequeue();
-
-            if (queue.Count > 0)
-            {
-                count = queue.Dequeue().Count;
-                return true;
-            }
-        }
+        if (_pendingChat.TryGetValue(internalName, out var list) && list.TryRemoveOldest(out count))
+            return true;
         count = 0;
         return false;
     }
 
     /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private void EnqueuePendingAdd(string internalName, long instanceId, DateTime timestamp)
+    private void EnqueuePendingAdd(string internalName, long instanceId)
     {
-        if (!_pendingAdd.TryGetValue(internalName, out var queue))
+        if (!_pendingAdd.TryGetValue(internalName, out var list))
         {
-            queue = new Queue<PendingAdd>();
-            _pendingAdd[internalName] = queue;
+            list = new TtlList<long>(PendingChatTtl, _time);
+            _pendingAdd[internalName] = list;
         }
-        queue.Enqueue(new PendingAdd(instanceId, timestamp));
+        list.Add(instanceId);
     }
 
     /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private bool TryDequeuePendingAdd(string internalName, DateTime now, out long instanceId)
+    private bool TryDequeuePendingAdd(string internalName, out long instanceId)
     {
-        if (_pendingAdd.TryGetValue(internalName, out var queue))
-        {
-            // Drop stale entries first; chat with no matching AddItem in the window
-            // means we missed the AddItem (rare, e.g. cross-character noise).
-            while (queue.Count > 0 && now - queue.Peek().EnqueuedAt > PendingChatTtl)
-                queue.Dequeue();
-
-            if (queue.Count > 0)
-            {
-                instanceId = queue.Dequeue().InstanceId;
-                return true;
-            }
-        }
+        if (_pendingAdd.TryGetValue(internalName, out var list) && list.TryRemoveOldest(out instanceId))
+            return true;
         instanceId = 0;
         return false;
+    }
+
+    /// <summary>
+    /// Lazy piggyback drain — call from every event handler under <see cref="_subLock"/>.
+    /// Walks both pending dictionaries, evicts each <see cref="TtlList{T}"/>'s stale
+    /// entries, and removes empty list buckets. Cost is O(distinct InternalNames in
+    /// pending), trivial in practice (rarely more than a handful at a time).
+    /// </summary>
+    private void DrainPendingStale()
+    {
+        DrainOne(_pendingChat);
+        DrainOne(_pendingAdd);
+
+        static void DrainOne<T>(Dictionary<string, TtlList<T>> bucket)
+        {
+            if (bucket.Count == 0) return;
+            List<string>? empties = null;
+            foreach (var (key, list) in bucket)
+            {
+                list.DropStale();
+                if (list.Count == 0) (empties ??= new()).Add(key);
+            }
+            if (empties is not null)
+                foreach (var k in empties) bucket.Remove(k);
+        }
     }
 
     /// <summary>
@@ -418,6 +434,23 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         try { handler(evt); }
         catch (Exception ex) { _diag?.Warn("Inventory", $"Subscriber threw: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Test hook — returns the live entry counts of the two pending dictionaries
+    /// (post-piggyback-drain if the caller has just driven an event). Used by
+    /// <c>InventoryServiceTests</c> to pin the leak fix; not for production use.
+    /// </summary>
+    internal (int Chat, int Add) PendingCounts()
+    {
+        lock (_subLock)
+        {
+            int chatTotal = 0;
+            foreach (var list in _pendingChat.Values) chatTotal += list.Count;
+            int addTotal = 0;
+            foreach (var list in _pendingAdd.Values) addTotal += list.Count;
+            return (chatTotal, addTotal);
+        }
     }
 
     private sealed class Subscription : IDisposable
