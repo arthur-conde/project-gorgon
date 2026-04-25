@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Mithril.Shared.Reference;
 
@@ -36,10 +37,17 @@ public static class EffectDescsRenderer
         line = null!;
         if (string.IsNullOrWhiteSpace(raw)) return false;
 
-        // Prose rows ("Equipping this armor teaches you…") pass through unchanged.
+        // Prose rows ("Equipping this armor teaches you…") pass through, with embedded
+        // <icon=N> markers (used by some power EffectDescs) lifted out: the first becomes
+        // the row's IconId, all are stripped from the visible text.
         if (raw.IndexOf('{') < 0)
         {
-            line = new EffectLine(0, raw);
+            int iconId = 0;
+            var firstIcon = IconMarkup.Match(raw);
+            if (firstIcon.Success && int.TryParse(firstIcon.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedIcon))
+                iconId = parsedIcon;
+            var cleaned = IconMarkup.Replace(raw, "").Trim();
+            line = new EffectLine(iconId, cleaned);
             return true;
         }
 
@@ -66,6 +74,8 @@ public static class EffectDescsRenderer
         line = new EffectLine(icon, text);
         return true;
     }
+
+    private static readonly Regex IconMarkup = new(@"<icon=(\d+)>", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static bool ShouldRender(AttributeEntry attr, double value) => attr.DisplayRule switch
     {

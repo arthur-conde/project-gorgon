@@ -5,6 +5,7 @@ using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
+using Mithril.Shared.Wpf;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +37,7 @@ public sealed class CelebrimborModule : IMithrilModule
         services.AddSingleton<RecipeSearchIndex>();
         services.AddSingleton<OnHandInventoryQuery>();
         services.AddSingleton<ICraftListImportTarget, CraftListImportTarget>();
+        services.AddSingleton<IAugmentPoolPresenter, CelebrimborAugmentPoolPresenter>();
 
         services.AddSingleton<RecipePickerViewModel>();
         services.AddSingleton<ShoppingListViewModel>();

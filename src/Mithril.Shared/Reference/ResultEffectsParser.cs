@@ -4,27 +4,42 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Projects the raw strings in <see cref="RecipeEntry.ResultEffects"/> into typed previews
-/// that UI code can render. Currently models two prefixes:
+/// that UI code can render. Models the prefixes documented under <c>BundledData/INDEX.md</c>:
 /// <list type="bullet">
-///   <item><c>TSysCraftedEquipment(template[,tier[,subtype]])</c> — ~63% of effects, the
-///   deterministic crafted-gear case (see <see cref="ParseCraftedGear"/>).</item>
-///   <item><c>AddItemTSysPower(power,tier)</c> — ~4% of effects, augmentation recipes that
-///   attach a specific tier of a tsysclientinfo power to the input item (see
-///   <see cref="ParseAugments"/>).</item>
+///   <item><c>TSysCraftedEquipment(template[,tier[,subtype]])</c>, <c>GiveTSysItem(template)</c>,
+///   <c>CraftSimpleTSysItem(template)</c> — the deterministic crafted-gear case
+///   (<see cref="ParseCraftedGear"/>).</item>
+///   <item><c>AddItemTSysPower(power,tier)</c> — augmentation recipes that attach a specific
+///   tier of a <c>tsysclientinfo</c> power to the input item (<see cref="ParseAugments"/>).</item>
+///   <item><c>BestowRecipeIfNotKnown(recipe)</c> — recipe-teaching crafts (<see cref="ParseTaughtRecipes"/>).</item>
+///   <item><c>CraftWaxItem(wax,power,tier,durability)</c> — wax/tuneup-kit crafts (<see cref="ParseWaxItems"/>).</item>
+///   <item><c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the enchantment
+///   form of <c>TSysCraftedEquipment</c> — pool-based rolls (<see cref="ParseAugmentPools"/>).</item>
+///   <item>Calligraphy and meditation tags (<see cref="ParseEffectTags"/>).</item>
 /// </list>
-/// Other prefixes (<c>BestowRecipeIfNotKnown</c>, calligraphy, <c>ExtractTSysPower</c> pools)
-/// are ignored; callers treat an empty return list as "nothing to preview".
+/// All methods skip malformed/unresolvable entries silently; callers treat an empty list as
+/// "nothing to preview".
 /// </summary>
 public static class ResultEffectsParser
 {
+    // Crafted gear (single 1-arg template-name shape, plus the multi-arg TSysCraftedEquipment variant).
     private const string CraftedEquipmentPrefix = "TSysCraftedEquipment";
+    private const string GiveTSysItemPrefix = "GiveTSysItem";
+    private const string CraftSimpleTSysItemPrefix = "CraftSimpleTSysItem";
+
+    // Augmentation prefixes.
     private const string AddPowerPrefix = "AddItemTSysPower";
+
+    // Phase 7 prefixes.
+    private const string BestowRecipePrefix = "BestowRecipeIfNotKnown";
+    private const string CraftWaxItemPrefix = "CraftWaxItem";
+    private const string ExtractTSysPowerPrefix = "ExtractTSysPower";
 
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="CraftedGearPreview"/> per
-    /// well-formed <c>TSysCraftedEquipment</c> entry whose template resolves in
-    /// <see cref="IReferenceDataService.ItemsByInternalName"/>. Malformed entries and
-    /// unresolvable templates are skipped silently.
+    /// well-formed <c>TSysCraftedEquipment</c> / <c>GiveTSysItem</c> / <c>CraftSimpleTSysItem</c>
+    /// entry whose template resolves in <see cref="IReferenceDataService.ItemsByInternalName"/>.
+    /// Malformed entries and unresolvable templates are skipped silently.
     /// </summary>
     public static IReadOnlyList<CraftedGearPreview> ParseCraftedGear(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
@@ -44,16 +59,8 @@ public static class ResultEffectsParser
     /// Parse <paramref name="effects"/> and return one <see cref="AugmentPreview"/> per
     /// well-formed <c>AddItemTSysPower(power,tier)</c> entry whose power resolves in
     /// <see cref="IReferenceDataService.Powers"/> and whose tier exists on that power.
-    /// Effect descriptions are pre-rendered through <see cref="EffectDescsRenderer"/> so
-    /// callers can bind directly. Malformed entries are skipped silently.
+    /// Effect descriptions are pre-rendered through <see cref="EffectDescsRenderer"/>.
     /// </summary>
-    /// <remarks>
-    /// Pool-based prefixes (<c>ExtractTSysPower(slot, poolKey, minTier, maxTier)</c> and
-    /// Enchanted <c>TSysCraftedEquipment</c> variants) need a different preview shape
-    /// (a <em>set</em> of possible rolls with filter context) and are deliberately
-    /// deferred to a future phase — extend this parser with a sibling <c>ParseAugmentPools</c>
-    /// when those land.
-    /// </remarks>
     public static IReadOnlyList<AugmentPreview> ParseAugments(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
     {
@@ -68,26 +75,116 @@ public static class ResultEffectsParser
         return previews;
     }
 
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="TaughtRecipePreview"/> per
+    /// well-formed <c>BestowRecipeIfNotKnown(recipe)</c> entry whose recipe resolves in
+    /// <see cref="IReferenceDataService.RecipesByInternalName"/>.
+    /// </summary>
+    public static IReadOnlyList<TaughtRecipePreview> ParseTaughtRecipes(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<TaughtRecipePreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseTaughtRecipe(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="WaxItemPreview"/> per
+    /// well-formed <c>CraftWaxItem(waxItem,power,tier,durability)</c> entry whose power
+    /// resolves and whose tier exists. Effect descriptions are pre-rendered via
+    /// <see cref="EffectDescsRenderer"/>.
+    /// </summary>
+    public static IReadOnlyList<WaxItemPreview> ParseWaxItems(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<WaxItemPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseWaxItem(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="AugmentPoolPreview"/> per
+    /// pool-based prefix: <c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the
+    /// enchantment-source form of <c>TSysCraftedEquipment</c>. Each preview is a lightweight
+    /// navigation token; the full per-power option list is materialized lazily by the pool
+    /// viewer when the user clicks "Browse pool".
+    /// </summary>
+    /// <remarks>
+    /// Note: this method emits a pool token alongside any <see cref="CraftedGearPreview"/>
+    /// already produced by <see cref="ParseCraftedGear"/> for the same
+    /// <c>TSysCraftedEquipment</c> entry. The chip preview and the pool preview are
+    /// independent; both are surfaced when the underlying template has a non-empty
+    /// <see cref="ItemEntry.TSysProfile"/>.
+    /// </remarks>
+    public static IReadOnlyList<AugmentPoolPreview> ParseAugmentPools(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<AugmentPoolPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseAugmentPool(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="EffectTagPreview"/> per
+    /// recognized zero/one-arg tag prefix: <c>DispelCalligraphyA/B/C</c>,
+    /// <c>CalligraphyComboNN</c>, and <c>MeditationWithDaily[(combo)]</c>. Unknown
+    /// prefixes are deliberately not emitted.
+    /// </summary>
+    public static IReadOnlyList<EffectTagPreview> ParseEffectTags(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<EffectTagPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseEffectTag(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
     private static bool TryParseCraftedGear(string? effect, IReferenceDataService refData, out CraftedGearPreview preview)
     {
         preview = null!;
-        if (string.IsNullOrWhiteSpace(effect)) return false;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
 
-        var openParen = effect.IndexOf('(');
-        var closeParen = effect.LastIndexOf(')');
-        if (openParen < 0 || closeParen <= openParen) return false;
+        var isCraftedEquipment = prefix.Equals(CraftedEquipmentPrefix, StringComparison.Ordinal);
+        var isGiveOrSimple = prefix.Equals(GiveTSysItemPrefix, StringComparison.Ordinal)
+                          || prefix.Equals(CraftSimpleTSysItemPrefix, StringComparison.Ordinal);
+        if (!isCraftedEquipment && !isGiveOrSimple) return false;
 
-        var prefix = effect[..openParen];
-        if (!prefix.Equals(CraftedEquipmentPrefix, StringComparison.Ordinal)) return false;
-
-        var argsSpan = effect.AsSpan(openParen + 1, closeParen - openParen - 1);
-        if (argsSpan.IsEmpty) return false;
-
-        var args = argsSpan.ToString().Split(',');
+        if (args.Length == 0) return false;
         var internalName = args[0].Trim();
         if (internalName.Length == 0) return false;
-
         if (!refData.ItemsByInternalName.TryGetValue(internalName, out var item)) return false;
+
+        // GiveTSysItem / CraftSimpleTSysItem only carry the template name; tier/subtype stay null.
+        if (isGiveOrSimple)
+        {
+            preview = new CraftedGearPreview(internalName, item.Name, item.IconId, null, null);
+            return true;
+        }
 
         int? tier = null;
         if (args.Length >= 2)
@@ -111,19 +208,8 @@ public static class ResultEffectsParser
     private static bool TryParseAugment(string? effect, IReferenceDataService refData, out AugmentPreview preview)
     {
         preview = null!;
-        if (string.IsNullOrWhiteSpace(effect)) return false;
-
-        var openParen = effect.IndexOf('(');
-        var closeParen = effect.LastIndexOf(')');
-        if (openParen < 0 || closeParen <= openParen) return false;
-
-        var prefix = effect[..openParen];
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
         if (!prefix.Equals(AddPowerPrefix, StringComparison.Ordinal)) return false;
-
-        var argsSpan = effect.AsSpan(openParen + 1, closeParen - openParen - 1);
-        if (argsSpan.IsEmpty) return false;
-
-        var args = argsSpan.ToString().Split(',');
         if (args.Length < 2) return false;
 
         var powerName = args[0].Trim();
@@ -138,5 +224,263 @@ public static class ResultEffectsParser
         var lines = EffectDescsRenderer.Render(tierEntry.EffectDescs, refData.Attributes);
         preview = new AugmentPreview(power.InternalName, power.Suffix, tier, lines);
         return true;
+    }
+
+    private static bool TryParseTaughtRecipe(string? effect, IReferenceDataService refData, out TaughtRecipePreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(BestowRecipePrefix, StringComparison.Ordinal)) return false;
+        if (args.Length == 0) return false;
+
+        var recipeInternalName = args[0].Trim();
+        if (recipeInternalName.Length == 0) return false;
+        if (!refData.RecipesByInternalName.TryGetValue(recipeInternalName, out var recipe)) return false;
+
+        var displayName = string.IsNullOrEmpty(recipe.Name) ? recipeInternalName : recipe.Name;
+        preview = new TaughtRecipePreview(recipeInternalName, displayName, recipe.Skill, recipe.SkillLevelReq);
+        return true;
+    }
+
+    private static bool TryParseWaxItem(string? effect, IReferenceDataService refData, out WaxItemPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(CraftWaxItemPrefix, StringComparison.Ordinal)) return false;
+        if (args.Length < 4) return false;
+
+        var waxItem = args[0].Trim();
+        var powerName = args[1].Trim();
+        var tierToken = args[2].Trim();
+        var durabilityToken = args[3].Trim();
+        if (waxItem.Length == 0 || powerName.Length == 0) return false;
+        if (!int.TryParse(tierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tier)) return false;
+        if (!int.TryParse(durabilityToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var durability)) return false;
+
+        if (!refData.Powers.TryGetValue(powerName, out var power)) return false;
+        if (!power.Tiers.TryGetValue(tier, out var tierEntry)) return false;
+
+        var lines = EffectDescsRenderer.Render(tierEntry.EffectDescs, refData.Attributes);
+        preview = new WaxItemPreview(waxItem, power.InternalName, power.Suffix, tier, durability, lines);
+        return true;
+    }
+
+    private static bool TryParseAugmentPool(string? effect, IReferenceDataService refData, out AugmentPoolPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+
+        if (prefix.Equals(ExtractTSysPowerPrefix, StringComparison.Ordinal))
+            return TryBuildExtractPool(args, refData, out preview);
+
+        if (prefix.Equals(CraftedEquipmentPrefix, StringComparison.Ordinal))
+            return TryBuildCraftedEquipmentPool(args, refData, out preview);
+
+        return false;
+    }
+
+    private static bool TryBuildExtractPool(string[] args, IReferenceDataService refData, out AugmentPoolPreview preview)
+    {
+        preview = null!;
+        if (args.Length < 4) return false;
+
+        var augmentItemName = args[0].Trim();
+        var minTierToken = args[2].Trim();
+        var maxTierToken = args[3].Trim();
+        if (augmentItemName.Length == 0) return false;
+        if (!int.TryParse(minTierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minTier)) return false;
+        if (!int.TryParse(maxTierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var maxTier)) return false;
+
+        if (!refData.ItemsByInternalName.TryGetValue(augmentItemName, out var augmentItem)) return false;
+        var profileName = augmentItem.TSysProfile;
+        if (string.IsNullOrEmpty(profileName)) return false;
+        if (!refData.Profiles.TryGetValue(profileName, out var poolPowers)) return false;
+
+        var optionCount = CountEligiblePowers(poolPowers, refData, minTier, maxTier);
+        if (optionCount == 0) return false;
+
+        // Extract recipes don't encode a power-skill gate in their args (arg2 is the
+        // *crafting* skill, not the rolled-power skill). The roll is unconstrained
+        // within the profile, so leave RecommendedSkill null.
+        var sourceLabel = $"Extractions from {augmentItem.Name} (Level {minTier}-{maxTier})";
+        preview = new AugmentPoolPreview(sourceLabel, profileName, minTier, maxTier, optionCount,
+            RecommendedSkill: null,
+            CraftingTargetLevel: augmentItem.CraftingTargetLevel);
+        return true;
+    }
+
+    private static bool TryBuildCraftedEquipmentPool(string[] args, IReferenceDataService refData, out AugmentPoolPreview preview)
+    {
+        preview = null!;
+        if (args.Length == 0) return false;
+
+        var templateName = args[0].Trim();
+        if (templateName.Length == 0) return false;
+        if (!refData.ItemsByInternalName.TryGetValue(templateName, out var template)) return false;
+
+        var profileName = template.TSysProfile;
+        if (string.IsNullOrEmpty(profileName)) return false;
+        if (!refData.Profiles.TryGetValue(profileName, out var poolPowers)) return false;
+        if (poolPowers.Count == 0) return false;
+
+        // arg3 is the form/skill gate the treasure system applies to the roll
+        // ("Werewolf", "Cow", "Deer", etc.). Its absence means the roll is
+        // unconstrained within the profile — don't fabricate a constraint from
+        // the wearer's SkillReqs, since those describe equip eligibility, not
+        // the roll-time gate.
+        string? recommendedSkill = null;
+        if (args.Length >= 3)
+        {
+            var subtype = args[2].Trim();
+            if (subtype.Length > 0) recommendedSkill = subtype;
+        }
+
+        // arg2 is the rarity-floor bump: a base enchant rolls at Uncommon (rank 1);
+        // Max-Enchanting (arg2=1) rolls at Rare (rank 2). Common is reserved for
+        // non-enchanted base crafts and never appears in tsysclientinfo's MinRarity
+        // gates. Rank 0 means "no rarity constraint surfaced".
+        int? rolledRarityRank = null;
+        if (args.Length >= 2 && int.TryParse(args[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var rarityBump))
+            rolledRarityRank = 1 + rarityBump; // 0 → Uncommon (1), 1 → Rare (2)
+        else
+            rolledRarityRank = 1; // Implicit base enchant = Uncommon floor.
+
+        // Count distinct powers eligible to roll, not (power × tier) pairs. A real
+        // enchant picks ONE power from the pool; the tier is set by the craft, not
+        // rolled separately — so this is the player-meaningful "outcomes per craft"
+        // number. The pool viewer flattens tiers for inspection; that's a separate
+        // axis labeled distinctly in the UI.
+        var sourceLabel = $"Possible rolls for {template.Name}";
+        preview = new AugmentPoolPreview(sourceLabel, profileName, null, null, poolPowers.Count,
+            RecommendedSkill: recommendedSkill,
+            CraftingTargetLevel: template.CraftingTargetLevel,
+            RolledRarityRank: rolledRarityRank);
+        return true;
+    }
+
+    /// <summary>
+    /// Counts distinct powers in the profile that have at least one tier in
+    /// <c>[minTier, maxTier]</c> (inclusive). Each power is a single roll outcome —
+    /// the game picks one power per extraction; the tier reflects the source augment.
+    /// </summary>
+    private static int CountEligiblePowers(
+        IReadOnlyList<string> powerNames, IReferenceDataService refData, int minTier, int maxTier)
+    {
+        var count = 0;
+        foreach (var powerName in powerNames)
+        {
+            if (!refData.Powers.TryGetValue(powerName, out var power)) continue;
+            foreach (var (tierNum, _) in power.Tiers)
+            {
+                if (tierNum >= minTier && tierNum <= maxTier)
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static bool TryParseEffectTag(string? effect, out EffectTagPreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+
+        // Zero-arg form: DispelCalligraphyA / DispelCalligraphyB / DispelCalligraphyC.
+        if (trimmed.StartsWith("DispelCalligraphy", StringComparison.Ordinal) && trimmed.Length == "DispelCalligraphy".Length + 1)
+        {
+            var slot = trimmed[^1];
+            if (slot is 'A' or 'B' or 'C')
+            {
+                preview = new EffectTagPreview($"Calligraphy Slot {slot}");
+                return true;
+            }
+            return false;
+        }
+
+        // Zero-arg form: CalligraphyComboNN (two-digit suffix).
+        if (trimmed.StartsWith("CalligraphyCombo", StringComparison.Ordinal))
+        {
+            var suffix = trimmed["CalligraphyCombo".Length..];
+            if (suffix.Length > 0 && int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+            {
+                preview = new EffectTagPreview($"Combo: Calligraphy Combo {n}");
+                return true;
+            }
+            return false;
+        }
+
+        // Optional-arg form: MeditationWithDaily or MeditationWithDaily(combo).
+        if (trimmed.StartsWith("MeditationWithDaily", StringComparison.Ordinal))
+        {
+            if (trimmed.Length == "MeditationWithDaily".Length)
+            {
+                preview = new EffectTagPreview("Grants: Daily Meditation Combo");
+                return true;
+            }
+
+            if (TryParsePrefixCall(trimmed, out var prefix, out var args)
+                && prefix.Equals("MeditationWithDaily", StringComparison.Ordinal)
+                && args.Length >= 1)
+            {
+                var combo = args[0].Trim();
+                if (combo.Length > 0)
+                {
+                    preview = new EffectTagPreview($"Grants: Daily Meditation Combo — {Humanize(combo)}");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Splits a <c>Prefix(arg1,arg2,…)</c> string into the prefix and trimmed arg array.
+    /// Returns <see langword="false"/> for malformed input (no parens, empty body, mismatched).
+    /// </summary>
+    private static bool TryParsePrefixCall(string? effect, out string prefix, out string[] args)
+    {
+        prefix = "";
+        args = Array.Empty<string>();
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+
+        var openParen = effect.IndexOf('(');
+        var closeParen = effect.LastIndexOf(')');
+        if (openParen < 0 || closeParen <= openParen) return false;
+
+        prefix = effect[..openParen];
+        var argsBody = effect.AsSpan(openParen + 1, closeParen - openParen - 1);
+        if (argsBody.IsEmpty)
+        {
+            args = Array.Empty<string>();
+            return true;
+        }
+
+        args = argsBody.ToString().Split(',');
+        return true;
+    }
+
+    /// <summary>Inserts spaces before capital letters: <c>UnarmedMeditationCombo1</c> → <c>"Unarmed Meditation Combo 1"</c>.</summary>
+    private static string Humanize(string token)
+    {
+        if (string.IsNullOrEmpty(token)) return token;
+        var sb = new System.Text.StringBuilder(token.Length + 8);
+        for (int i = 0; i < token.Length; i++)
+        {
+            var ch = token[i];
+            if (i > 0)
+            {
+                var prev = token[i - 1];
+                var insertSpace = (char.IsUpper(ch) && !char.IsUpper(prev) && prev != ' ')
+                               || (char.IsDigit(ch) && !char.IsDigit(prev) && prev != ' ');
+                if (insertSpace) sb.Append(' ');
+            }
+            sb.Append(ch);
+        }
+        return sb.ToString();
     }
 }

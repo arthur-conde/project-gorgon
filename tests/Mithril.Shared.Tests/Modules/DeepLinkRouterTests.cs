@@ -127,6 +127,7 @@ public class DeepLinkRouterTests
         public string? LastShown { get; private set; }
         public void Show(string internalName) => LastShown = internalName;
         public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) => LastShown = internalName;
+        public void Show(string internalName, ItemDetailContext context) => LastShown = internalName;
     }
 
     private sealed class RecordingListTarget : ICraftListImportTarget

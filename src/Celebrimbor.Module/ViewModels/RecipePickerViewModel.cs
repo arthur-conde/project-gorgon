@@ -302,6 +302,10 @@ public sealed partial class RecipePickerViewModel : ObservableObject
                 row.Results,
                 row.CraftedOutputs,
                 row.Augments,
+                row.WaxItems,
+                row.AugmentPools,
+                row.TaughtRecipes,
+                row.EffectTags,
                 _itemDetail);
             item.PropertyChanged += OnCraftListItemPropertyChanged;
             CraftListItems.Add(item);

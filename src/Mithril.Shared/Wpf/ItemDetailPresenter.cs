@@ -7,20 +7,25 @@ namespace Mithril.Shared.Wpf;
 public sealed class ItemDetailPresenter : IItemDetailPresenter
 {
     private readonly IReferenceDataService _refData;
+    private readonly IAugmentPoolPresenter? _poolPresenter;
     private readonly IDiagnosticsSink? _diag;
 
-    public ItemDetailPresenter(IReferenceDataService refData, IDiagnosticsSink? diag = null)
+    public ItemDetailPresenter(IReferenceDataService refData, IAugmentPoolPresenter? poolPresenter = null, IDiagnosticsSink? diag = null)
     {
         _refData = refData;
+        _poolPresenter = poolPresenter;
         _diag = diag;
     }
 
-    public void Show(string internalName) => ShowCore(internalName, augments: null);
+    public void Show(string internalName) => ShowCore(internalName, ItemDetailContext.Empty);
 
     public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) =>
-        ShowCore(internalName, augments);
+        ShowCore(internalName, new ItemDetailContext(Augments: augments));
 
-    private void ShowCore(string internalName, IReadOnlyList<AugmentPreview>? augments)
+    public void Show(string internalName, ItemDetailContext context) =>
+        ShowCore(internalName, context);
+
+    private void ShowCore(string internalName, ItemDetailContext context)
     {
         if (string.IsNullOrWhiteSpace(internalName))
         {
@@ -39,14 +44,14 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
         // callers from worker threads get marshalled for free.
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
-            Open(item, augments);
+            Open(item, context);
         else
-            dispatcher.InvokeAsync(() => Open(item, augments));
+            dispatcher.InvokeAsync(() => Open(item, context));
     }
 
-    private void Open(ItemEntry item, IReadOnlyList<AugmentPreview>? augments)
+    private void Open(ItemEntry item, ItemDetailContext context)
     {
-        var vm = new ItemDetailViewModel(item, _refData, augments);
+        var vm = new ItemDetailViewModel(item, _refData, context, _poolPresenter);
         var window = new ItemDetailWindow(vm)
         {
             Owner = Application.Current?.MainWindow,

@@ -1,0 +1,108 @@
+<Window x:Class="Celebrimbor.Views.AugmentPoolView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+        Title="{Binding SourceLabel}"
+        Width="780" Height="720"
+        MinWidth="520" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource AppFontFamily}"
+        FontSize="{DynamicResource AppFontSize}"
+        Background="#FF1A1A1A">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <wpf:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <wpf:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Border BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6">
+        <DockPanel>
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="#FF202020" Padding="14,10" CornerRadius="6,6,0,0">
+                <StackPanel>
+                    <TextBlock Text="{Binding SourceLabel}" FontWeight="Bold"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeXLarge}" Foreground="#FFD4A847"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Subtitle}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Query bar (shared MithrilQueryBox; auto-completes against grid columns) -->
+            <Border DockPanel.Dock="Top" Padding="14,8" Background="#FF252525">
+                <wpf:MithrilQueryBox Grid="{Binding ElementName=PoolGrid}"
+                                     QueryText="{Binding QueryText, Mode=TwoWay}"
+                                     Watermark="bare text, or e.g. Tier &gt;= 5 AND Skill = 'Archery'"/>
+            </Border>
+
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" Padding="14,8" Background="#FF202020" CornerRadius="0,0,6,6">
+                <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
+                        Padding="10,3" Content="Close" Click="CloseButton_Click"/>
+            </Border>
+
+            <!-- Loading overlay -->
+            <Border Padding="14,12"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Expanding pool…" Foreground="#88FFFFFF"
+                           FontStyle="Italic"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <!-- Pool grid -->
+            <wpf:MithrilDataGrid x:Name="PoolGrid"
+                                 ItemsSource="{Binding Options}"
+                                 QueryText="{Binding QueryText, Mode=TwoWay}"
+                                 Mode="ReadOnly"
+                                 Visibility="{Binding IsLoading, Converter={StaticResource InverseBoolToVis}}"
+                                 AutoGenerateColumns="False">
+                <wpf:MithrilDataGrid.Columns>
+                    <DataGridTextColumn Header="Suffix" Binding="{Binding Suffix}" SortMemberPath="Suffix" Width="160"/>
+                    <DataGridTextColumn Header="Power" Binding="{Binding PowerInternalName}" SortMemberPath="PowerInternalName" Width="160"/>
+                    <DataGridTextColumn Header="Skill" Binding="{Binding Skill}" SortMemberPath="Skill" Width="110"/>
+                    <DataGridTextColumn Header="Tier" Binding="{Binding Tier}" SortMemberPath="Tier" Width="50">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Lvl Min" Binding="{Binding MinLevel}" SortMemberPath="MinLevel" Width="60">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTextColumn Header="Lvl Max" Binding="{Binding MaxLevel}" SortMemberPath="MaxLevel" Width="60">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridTemplateColumn Header="Effects" Width="*" MinWidth="220" SortMemberPath="DisplayLine">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ItemsControl ItemsSource="{Binding EffectLines}"
+                                              ItemTemplate="{StaticResource EffectLineTemplate}"
+                                              Margin="0,2"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </wpf:MithrilDataGrid.Columns>
+                <wpf:MithrilDataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}"/>
+                </wpf:MithrilDataGrid.RowStyle>
+            </wpf:MithrilDataGrid>
+        </DockPanel>
+    </Border>
+</Window>

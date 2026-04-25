@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Wpf;
@@ -7,14 +8,25 @@ namespace Mithril.Shared.Wpf;
 /// Item data is immutable within a window instance — open a new window to inspect a
 /// different item rather than mutating this view-model.
 /// </summary>
-public sealed class ItemDetailViewModel
+public sealed partial class ItemDetailViewModel
 {
+    private readonly IAugmentPoolPresenter? _poolPresenter;
+
     public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData)
-        : this(item, refData, augments: null)
+        : this(item, refData, ItemDetailContext.Empty, poolPresenter: null)
     {
     }
 
     public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData, IReadOnlyList<AugmentPreview>? augments)
+        : this(item, refData, new ItemDetailContext(Augments: augments), poolPresenter: null)
+    {
+    }
+
+    public ItemDetailViewModel(
+        ItemEntry item,
+        IReferenceDataService refData,
+        ItemDetailContext context,
+        IAugmentPoolPresenter? poolPresenter = null)
     {
         Item = item;
         EffectLines = EffectDescsRenderer.Render(item.EffectDescs, refData.Attributes);
@@ -24,7 +36,12 @@ public sealed class ItemDetailViewModel
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal)
                 .Select(kv => $"{kv.Key} {kv.Value}")
                 .ToList();
-        Augments = augments ?? [];
+        Augments = context.Augments ?? [];
+        WaxItems = context.WaxItems ?? [];
+        AugmentPools = context.AugmentPools ?? [];
+        TaughtRecipes = context.TaughtRecipes ?? [];
+        EffectTags = context.EffectTags ?? [];
+        _poolPresenter = poolPresenter;
     }
 
     public ItemEntry Item { get; }
@@ -37,4 +54,22 @@ public sealed class ItemDetailViewModel
     public IReadOnlyList<string> SkillReqChips { get; }
     public IReadOnlyList<EffectLine> EffectLines { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
+    public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
+    public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
+    public IReadOnlyList<EffectTagPreview> EffectTags { get; }
+
+    /// <summary>
+    /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor
+    /// module is loaded and registered the implementation. Drives the "Browse pool" button
+    /// visibility on the AugmentPools section.
+    /// </summary>
+    public bool HasPoolPresenter => _poolPresenter is not null;
+
+    [RelayCommand(CanExecute = nameof(HasPoolPresenter))]
+    private void BrowsePool(AugmentPoolPreview? pool)
+    {
+        if (pool is null || _poolPresenter is null) return;
+        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank);
+    }
 }

@@ -108,6 +108,41 @@ public class ResultEffectsParserTests
     }
 
     [Fact]
+    public void GiveTSysItem_FoldsIntoCraftedGearWithNullTier()
+    {
+        var refData = Fake(Item(99, "Horseshoes", "Horseshoes", icon: 555));
+
+        var previews = ResultEffectsParser.ParseCraftedGear(
+            ["GiveTSysItem(Horseshoes)"], refData);
+
+        previews.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new CraftedGearPreview("Horseshoes", "Horseshoes", 555, null, null));
+    }
+
+    [Fact]
+    public void CraftSimpleTSysItem_FoldsIntoCraftedGearWithNullTier()
+    {
+        var refData = Fake(Item(42, "ArachnidHarness", "Arachnid Harness", icon: 600));
+
+        var previews = ResultEffectsParser.ParseCraftedGear(
+            ["CraftSimpleTSysItem(ArachnidHarness)"], refData);
+
+        previews.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new CraftedGearPreview("ArachnidHarness", "Arachnid Harness", 600, null, null));
+    }
+
+    [Fact]
+    public void GiveTSysItem_UnknownTemplate_IsSkippedSilently()
+    {
+        var refData = Fake(Item(1, "Horseshoes", "Horseshoes"));
+
+        var previews = ResultEffectsParser.ParseCraftedGear(
+            ["GiveTSysItem(NotInItems)", "CraftSimpleTSysItem(AlsoMissing)"], refData);
+
+        previews.Should().BeEmpty();
+    }
+
+    [Fact]
     public void NullOrEmptyInput_ReturnsEmpty()
     {
         var refData = Fake();
@@ -159,6 +194,7 @@ public class ResultEffectsParserTests
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

@@ -9,13 +9,26 @@ internal sealed class FakeReferenceData : IReferenceDataService
     private readonly Dictionary<string, ItemEntry> _itemsByName;
     private readonly Dictionary<string, RecipeEntry> _recipes;
     private readonly Dictionary<string, RecipeEntry> _recipesByName;
+    private readonly Dictionary<string, PowerEntry> _powers;
+    private readonly Dictionary<string, AttributeEntry> _attributes;
+    private readonly Dictionary<string, IReadOnlyList<string>> _profiles;
 
-    public FakeReferenceData(IEnumerable<ItemEntry> items, IEnumerable<RecipeEntry> recipes)
+    public FakeReferenceData(
+        IEnumerable<ItemEntry> items,
+        IEnumerable<RecipeEntry> recipes,
+        IEnumerable<PowerEntry>? powers = null,
+        IEnumerable<AttributeEntry>? attributes = null,
+        IDictionary<string, IReadOnlyList<string>>? profiles = null)
     {
         _items = items.ToDictionary(i => i.Id);
         _itemsByName = _items.Values.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
         _recipes = recipes.ToDictionary(r => r.Key, StringComparer.Ordinal);
         _recipesByName = _recipes.Values.ToDictionary(r => r.InternalName, StringComparer.Ordinal);
+        _powers = (powers ?? []).ToDictionary(p => p.InternalName, StringComparer.Ordinal);
+        _attributes = (attributes ?? []).ToDictionary(a => a.Token, StringComparer.Ordinal);
+        _profiles = profiles is null
+            ? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            : new Dictionary<string, IReadOnlyList<string>>(profiles, StringComparer.Ordinal);
     }
 
     public IReadOnlyList<string> Keys => [];
@@ -27,8 +40,9 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
     public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
-    public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
-    public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+    public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
+    public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "", null, 0);
     public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
@@ -48,6 +62,31 @@ internal sealed class FakeReferenceData : IReferenceDataService
             MaxStackSize: 50,
             IconId: (int)id,
             Keywords: keywords.Select(k => new ItemKeyword(k, 0)).ToList());
+
+    public static ItemEntry ItemWithProfile(long id, string name, string tsysProfile)
+        => new(
+            Id: id,
+            Name: name,
+            InternalName: name,
+            MaxStackSize: 50,
+            IconId: (int)id,
+            Keywords: [],
+            TSysProfile: tsysProfile);
+
+    public static PowerEntry Power(string internalName, string skill, string? suffix = null, params PowerTier[] tiers)
+        => new(internalName, skill, Slots: [], Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
+
+    public static PowerTier Tier(int tier, params string[] effectDescs) => new(tier, effectDescs, 0);
+
+    /// <summary>Tier with an explicit gear-level bracket — for tests that exercise level-eligibility filters.</summary>
+    public static PowerTier TierAt(int tier, int minLevel, int maxLevel, params string[] effectDescs)
+        => new(tier, effectDescs, MaxLevel: maxLevel, MinLevel: minLevel);
+
+    public static AttributeEntry Attribute(string token, string label, int iconId = 0)
+        => new(token, label, "AsInt", "Always", null, iconId == 0 ? [] : [iconId]);
+
+    public static KeyValuePair<string, IReadOnlyList<string>> Profile(string name, params string[] powers)
+        => new(name, powers);
 
     public static RecipeEntry Recipe(
         string name,

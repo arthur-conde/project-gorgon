@@ -54,6 +54,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, PowerEntry>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _powersSnapshot;
 
+    // Profiles (tsysprofiles.json) — random-roll pools for ExtractTSysPower / TSysCraftedEquipment.
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> _profiles =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _profilesSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -69,6 +74,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -78,9 +84,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadItemSources();
         LoadAttributes();
         LoadPowers();
+        LoadProfiles();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes", "tsysclientinfo"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -92,6 +99,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -103,6 +111,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "sources_items" => _itemSourcesSnapshot,
         "attributes" => _attributesSnapshot,
         "tsysclientinfo" => _powersSnapshot,
+        "tsysprofiles" => _profilesSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -118,6 +127,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
         "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers, ct),
+        "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -131,6 +141,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("sources_items", ct);
         await RefreshAsync("attributes", ct);
         await RefreshAsync("tsysclientinfo", ct);
+        await RefreshAsync("tsysprofiles", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -238,6 +249,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
     private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers);
+    private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -254,7 +266,9 @@ public sealed class ReferenceDataService : IReferenceDataService
             var keywords = ParseKeywords(v.Keywords, v.EquipSlot, skillPrereqs, v.Value);
             var effectDescs = (IReadOnlyList<string>?)v.EffectDescs;
             var entry = new ItemEntry(id, v.Name ?? "", v.InternalName ?? "", v.MaxStackSize ?? 1, v.IconId ?? 0,
-                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs, v.Description);
+                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs, v.Description,
+                string.IsNullOrEmpty(v.TSysProfile) ? null : v.TSysProfile,
+                v.CraftingTargetLevel);
             byId[id] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }
@@ -522,7 +536,13 @@ public sealed class ReferenceDataService : IReferenceDataService
                     if (!int.TryParse(tierKey.AsSpan(underscore + 1), out var tierNum)) continue;
 
                     var descs = (IReadOnlyList<string>)(rawTier.EffectDescs ?? []);
-                    tiers[tierNum] = new PowerTier(tierNum, descs, rawTier.MaxLevel ?? 0);
+                    tiers[tierNum] = new PowerTier(
+                        tierNum,
+                        descs,
+                        rawTier.MaxLevel ?? 0,
+                        MinLevel: rawTier.MinLevel,
+                        MinRarity: string.IsNullOrEmpty(rawTier.MinRarity) ? null : rawTier.MinRarity,
+                        SkillLevelPrereq: rawTier.SkillLevelPrereq);
                 }
             }
 
@@ -536,6 +556,18 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _powers = byInternalName;
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+    }
+
+    private void ParseAndSwapProfiles(Dictionary<string, List<string>> raw, ReferenceFileMetadata meta)
+    {
+        var byProfile = new Dictionary<string, IReadOnlyList<string>>(raw.Count, StringComparer.Ordinal);
+        foreach (var (profileName, powers) in raw)
+        {
+            if (string.IsNullOrEmpty(profileName) || powers is null) continue;
+            byProfile[profileName] = powers;
+        }
+        _profiles = byProfile;
+        _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byProfile.Count);
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────

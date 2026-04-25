@@ -24,4 +24,12 @@ public interface IItemDetailPresenter
     /// Passing an empty list behaves like <see cref="Show(string)"/>.
     /// </summary>
     void Show(string internalName, IReadOnlyList<AugmentPreview> augments);
+
+    /// <summary>
+    /// Opens the detail window with a full <see cref="ItemDetailContext"/> bundle of
+    /// pre-rendered previews. Used by Celebrimbor recipe rows that need to surface
+    /// multiple Phase 7 sections (Infusions, Possible augments, Teaches, Additional
+    /// effects) alongside the base augmentation chip.
+    /// </summary>
+    void Show(string internalName, ItemDetailContext context);
 }

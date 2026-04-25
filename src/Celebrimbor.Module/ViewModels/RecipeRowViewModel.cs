@@ -21,7 +21,12 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             .ToList();
         CraftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, refData);
         Augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, refData);
-        Results = ProjectResults(recipe, refData, CraftedOutputs.Count, Augments.Count);
+        WaxItems = ResultEffectsParser.ParseWaxItems(recipe.ResultEffects, refData);
+        AugmentPools = ResultEffectsParser.ParseAugmentPools(recipe.ResultEffects, refData);
+        TaughtRecipes = ResultEffectsParser.ParseTaughtRecipes(recipe.ResultEffects, refData);
+        EffectTags = ResultEffectsParser.ParseEffectTags(recipe.ResultEffects, refData);
+        Results = ProjectResults(recipe, refData,
+            CraftedOutputs.Count + Augments.Count + WaxItems.Count + AugmentPools.Count + TaughtRecipes.Count + EffectTags.Count);
         InspectableItems = BuildInspectable(CraftedOutputs, Results);
     }
 
@@ -51,12 +56,16 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     [RelayCommand]
     private void OpenItem(string? internalName)
     {
-        if (!string.IsNullOrEmpty(internalName))
-            _itemDetail.Show(internalName);
+        if (string.IsNullOrEmpty(internalName)) return;
+        _itemDetail.Show(internalName, BuildItemDetailContext());
     }
 
+    internal ItemDetailContext BuildItemDetailContext() =>
+        new(Augments: Augments, WaxItems: WaxItems, AugmentPools: AugmentPools,
+            TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
+
     private static IReadOnlyList<IngredientChip> ProjectResults(
-        RecipeEntry recipe, IReferenceDataService refData, int craftedOutputCount, int augmentCount)
+        RecipeEntry recipe, IReferenceDataService refData, int previewCount)
     {
         var primary = recipe.ResultItems
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
@@ -75,8 +84,8 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             .ToList();
         if (proto.Count > 0) return proto;
 
-        // Crafted-gear / augment effects render their own sections; skip the placeholder to avoid double-rendering.
-        if (craftedOutputCount > 0 || augmentCount > 0) return [];
+        // Crafted-gear / augment / Phase-7 effects render their own sections; skip the placeholder to avoid double-rendering.
+        if (previewCount > 0) return [];
 
         // Last-resort: the recipe's own name/icon so the Yields section never renders blank.
         return [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
@@ -87,6 +96,10 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
+    public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
+    public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
+    public IReadOnlyList<EffectTagPreview> EffectTags { get; }
 
     /// <summary>
     /// Every item a user might want to open in the detail window — crafted-gear previews first,

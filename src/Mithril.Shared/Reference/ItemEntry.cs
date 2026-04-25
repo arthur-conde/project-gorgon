@@ -24,4 +24,6 @@ public sealed record ItemEntry(
     string? FoodDesc = null,
     IReadOnlyDictionary<string, int>? SkillReqs = null,
     IReadOnlyList<string>? EffectDescs = null,
-    string? Description = null);
+    string? Description = null,
+    string? TSysProfile = null,
+    int? CraftingTargetLevel = null);

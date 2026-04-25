@@ -94,11 +94,14 @@ internal sealed class NullItemDetailPresenter : IItemDetailPresenter
 {
     public void Show(string internalName) { }
     public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) { }
+    public void Show(string internalName, ItemDetailContext context) { }
 }
 
 internal sealed class RecordingItemDetailPresenter : IItemDetailPresenter
 {
     public string? LastInternalName { get; private set; }
-    public void Show(string internalName) => LastInternalName = internalName;
-    public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) => LastInternalName = internalName;
+    public ItemDetailContext? LastContext { get; private set; }
+    public void Show(string internalName) { LastInternalName = internalName; LastContext = ItemDetailContext.Empty; }
+    public void Show(string internalName, IReadOnlyList<AugmentPreview> augments) { LastInternalName = internalName; LastContext = new ItemDetailContext(Augments: augments); }
+    public void Show(string internalName, ItemDetailContext context) { LastInternalName = internalName; LastContext = context; }
 }

@@ -51,6 +51,14 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, PowerEntry> Powers { get; }
 
+    /// <summary>
+    /// Random-roll profile name (e.g. <c>"All"</c>, <c>"Sword"</c>, <c>"MainHandAugment"</c>) →
+    /// list of power InternalNames eligible to roll on items carrying that <see cref="ItemEntry.TSysProfile"/>.
+    /// Pulled from <c>tsysprofiles.json</c>; consumed by <c>ExtractTSysPower</c> and
+    /// <c>TSysCraftedEquipment</c> "Possible augments" previews.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

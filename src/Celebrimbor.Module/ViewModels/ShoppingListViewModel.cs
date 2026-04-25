@@ -162,7 +162,13 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             }
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _refData);
             var augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, _refData);
-            if (results.Count == 0 && craftedOutputs.Count == 0 && augments.Count == 0)
+            var waxItems = ResultEffectsParser.ParseWaxItems(recipe.ResultEffects, _refData);
+            var augmentPools = ResultEffectsParser.ParseAugmentPools(recipe.ResultEffects, _refData);
+            var taughtRecipes = ResultEffectsParser.ParseTaughtRecipes(recipe.ResultEffects, _refData);
+            var effectTags = ResultEffectsParser.ParseEffectTags(recipe.ResultEffects, _refData);
+            var totalPreviewCount = craftedOutputs.Count + augments.Count + waxItems.Count
+                                  + augmentPools.Count + taughtRecipes.Count + effectTags.Count;
+            if (results.Count == 0 && totalPreviewCount == 0)
                 results = [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
             making.Add(new CraftListItemViewModel(
                 recipe.InternalName,
@@ -175,6 +181,10 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 results,
                 craftedOutputs,
                 augments,
+                waxItems,
+                augmentPools,
+                taughtRecipes,
+                effectTags,
                 _itemDetail));
         }
         MakingItems = making;

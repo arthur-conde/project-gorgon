@@ -25,6 +25,10 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         IReadOnlyList<IngredientChip> results,
         IReadOnlyList<CraftedGearPreview> craftedOutputs,
         IReadOnlyList<AugmentPreview> augments,
+        IReadOnlyList<WaxItemPreview> waxItems,
+        IReadOnlyList<AugmentPoolPreview> augmentPools,
+        IReadOnlyList<TaughtRecipePreview> taughtRecipes,
+        IReadOnlyList<EffectTagPreview> effectTags,
         IItemDetailPresenter itemDetail)
     {
         _itemDetail = itemDetail;
@@ -38,6 +42,10 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         Results = results;
         CraftedOutputs = craftedOutputs;
         Augments = augments;
+        WaxItems = waxItems;
+        AugmentPools = augmentPools;
+        TaughtRecipes = taughtRecipes;
+        EffectTags = effectTags;
 
         // Yields first, crafted-gear previews that weren't already in Yields next — dedupes
         // the common case where a recipe has both a ResultItems entry and a TSysCraftedEquipment
@@ -61,9 +69,13 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     [RelayCommand]
     private void OpenItem(string? internalName)
     {
-        if (!string.IsNullOrEmpty(internalName))
-            _itemDetail.Show(internalName);
+        if (string.IsNullOrEmpty(internalName)) return;
+        _itemDetail.Show(internalName, BuildItemDetailContext());
     }
+
+    internal ItemDetailContext BuildItemDetailContext() =>
+        new(Augments: Augments, WaxItems: WaxItems, AugmentPools: AugmentPools,
+            TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
 
     public string RecipeInternalName { get; }
     public string DisplayName { get; }
@@ -76,6 +88,10 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
+    public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
+    public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
+    public IReadOnlyList<EffectTagPreview> EffectTags { get; }
     public IReadOnlyList<IngredientChip> InspectableItems { get; }
 
     public bool HasInspectableItem => InspectableItems.Count > 0;

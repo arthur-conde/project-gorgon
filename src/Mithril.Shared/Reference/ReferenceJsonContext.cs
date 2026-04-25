@@ -30,6 +30,16 @@ public sealed class RawItem
     public List<string>? EffectDescs { get; set; }
     /// <summary>Prose description / flavor text. Present on every item in items.json.</summary>
     public string? Description { get; set; }
+    /// <summary>
+    /// Random-roll pool key into <c>tsysprofiles.json</c> (e.g. <c>"All"</c>, <c>"Sword"</c>, <c>"MainHandAugment"</c>).
+    /// Drives the "Possible augments" preview for both enchanted-template and augment-extractor recipes.
+    /// </summary>
+    public string? TSysProfile { get; set; }
+    /// <summary>
+    /// Gear level used to bracket which power tiers are eligible to roll on this template:
+    /// a tier rolls when its <c>MinLevel ≤ CraftingTargetLevel ≤ MaxLevel</c>.
+    /// </summary>
+    public int? CraftingTargetLevel { get; set; }
 }
 
 /// <summary>Raw attributes.json shape — resolves placeholder tokens to human-readable labels and formatting hints.</summary>
@@ -147,7 +157,13 @@ public sealed class RawPower
 public sealed class RawPowerTier
 {
     public List<string>? EffectDescs { get; set; }
+    /// <summary>Gear level bracket: a tier rolls when <c>MinLevel ≤ CraftingTargetLevel ≤ MaxLevel</c>.</summary>
+    public int? MinLevel { get; set; }
     public int? MaxLevel { get; set; }
+    /// <summary>Gear rarity gate (e.g. "Uncommon", "Rare", "Epic"); null = any.</summary>
+    public string? MinRarity { get; set; }
+    /// <summary>Wearer skill level required for the buff to apply (post-roll).</summary>
+    public int? SkillLevelPrereq { get; set; }
 }
 
 /// <summary>
@@ -181,4 +197,5 @@ public sealed class RawItemSource
 [JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
 [JsonSerializable(typeof(Dictionary<string, RawAttribute>))]
 [JsonSerializable(typeof(Dictionary<string, RawPower>))]
+[JsonSerializable(typeof(Dictionary<string, List<string>>))]
 public partial class ReferenceJsonContext : JsonSerializerContext { }

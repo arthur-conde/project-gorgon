@@ -124,6 +124,93 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Infusions (CraftWaxItem). Hidden when empty. -->
+                <TextBlock Text="Infusions" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding WaxItems.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding WaxItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,4">
+                                <TextBlock Text="{Binding DisplayLine}" Foreground="#FFD4A847"
+                                           FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"
+                                           Margin="0,0,0,2"/>
+                                <ItemsControl ItemsSource="{Binding EffectLines}" Margin="10,0,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
+                                                <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Possible augments (ExtractTSysPower / TSysCraftedEquipment pool). Lightweight summary only. -->
+                <TextBlock Text="Possible augments" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding AugmentPools.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding AugmentPools}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,4">
+                                <TextBlock Text="{Binding SourceLabel}" Foreground="#FFD4A847"
+                                           FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                           Margin="10,1,0,0" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ProfileHint}" Foreground="#88FFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeSmall}"
+                                           Margin="10,1,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Teaches recipe (BestowRecipeIfNotKnown). -->
+                <TextBlock Text="Teaches recipe" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding TaughtRecipes.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding TaughtRecipes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,4">
+                                <TextBlock FontWeight="SemiBold" Foreground="#FFD4A847"
+                                           FontSize="{DynamicResource AppFontSizeHint}">
+                                    <Run Text="Teaches: "/>
+                                    <Run Text="{Binding DisplayName, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Foreground="#88FFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                           Margin="10,1,0,0">
+                                    <Run Text="{Binding Skill, Mode=OneWay}"/>
+                                    <Run Text=" "/>
+                                    <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Additional effects (calligraphy / meditation tags). -->
+                <TextBlock Text="Additional effects" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
+                           Visibility="{Binding EffectTags.Count, Converter={StaticResource CountToVisibility}}"/>
+                <ItemsControl ItemsSource="{Binding EffectTags}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayText}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </Border>
     </DataTemplate>
