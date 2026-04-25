@@ -6,6 +6,13 @@
              xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
              xmlns:vm="clr-namespace:Gorgon.Shell.ViewModels"
              Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Top">
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">

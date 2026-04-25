@@ -21,6 +21,11 @@
     <!-- Set by CI per SKU (-p:GorgonUpdateChannel=fxdep|selfcontained). 'dev' is the
          local-dev sentinel: VelopackUpdateChecker short-circuits so F5 builds never poll. -->
     <GorgonUpdateChannel Condition="'$(GorgonUpdateChannel)' == ''">dev</GorgonUpdateChannel>
+
+    <!-- Opts this project into the XAML StaticResource lint (see Directory.Build.targets).
+         Only the Shell needs it — modules are validated as a side-effect since the linter
+         scans the whole repo. -->
+    <RunsXamlResourceLint>true</RunsXamlResourceLint>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">

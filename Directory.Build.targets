@@ -36,4 +36,28 @@
           DestinationFolder="$(GorgonModulesDir)"
           SkipUnchangedFiles="true" />
   </Target>
+
+  <!--
+    XAML StaticResource lint. Projects opt in by setting <RunsXamlResourceLint>true</RunsXamlResourceLint>.
+    The lint tool scans the whole repo, so a single anchor project (Gorgon.Shell) is sufficient — adding
+    the prop to multiple projects just runs the same scan multiple times.
+
+    The ProjectReference forces XamlResourceLint to build before the consumer; ReferenceOutputAssembly=false
+    keeps the lint exe out of the consumer's bin.
+  -->
+  <ItemGroup Condition="'$(RunsXamlResourceLint)' == 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false" />
+  </ItemGroup>
+
+  <Target Name="LintXamlStaticResources"
+          AfterTargets="Build"
+          Condition="'$(RunsXamlResourceLint)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(BuildingForLiveUnitTesting)' != 'true'">
+    <PropertyGroup>
+      <_XamlResourceLintExe>$(MSBuildThisFileDirectory)tools\XamlResourceLint\bin\$(Configuration)\net10.0\XamlResourceLint.dll</_XamlResourceLintExe>
+    </PropertyGroup>
+    <Exec Command="dotnet &quot;$(_XamlResourceLintExe)&quot; &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot;"
+          ConsoleToMSBuild="true" />
+  </Target>
 </Project>

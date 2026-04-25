@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Gorgon.Tools.XamlResourceLint</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- Tool runs against the repo, not the runtime app — opt out of analyzers
+         that the rest of the solution relies on (VS-extension threading rules). -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+</Project>
