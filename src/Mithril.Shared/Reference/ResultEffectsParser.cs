@@ -50,6 +50,14 @@ public static class ResultEffectsParser
     private const string DiscoverWordOfPowerPrefix = "DiscoverWordOfPower";
     private const string LearnAbilityPrefix = "LearnAbility";
 
+    // Equipment-property prefixes.
+    private const string BoostEquipAdvancementPrefix = "BoostItemEquipAdvancementTable";
+    private const string CraftingEnhanceItemPrefix = "CraftingEnhanceItem";
+    private const string CraftingEnhanceModSuffix = "Mod";
+    private const string RepairItemDurabilityPrefix = "RepairItemDurability";
+    private const string CraftingResetItemTag = "CraftingResetItem";
+    private const string TransmogItemAppearanceTag = "TransmogItemAppearance";
+
     // Item-producing prefixes.
     private const string BrewItemPrefix = "BrewItem";
     private const string SummonPlantPrefix = "SummonPlant";
@@ -343,6 +351,55 @@ public static class ResultEffectsParser
         foreach (var effect in effects)
         {
             if (TryParseItemProducing(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="EquipBonusPreview"/>
+    /// per well-formed <c>BoostItemEquipAdvancementTable(table)</c> entry. The
+    /// <c>table</c> token (e.g. <c>ForetoldHammerDamage</c>) is humanised for display;
+    /// the raw token stays on the preview for future deep-linking.
+    /// </summary>
+    public static IReadOnlyList<EquipBonusPreview> ParseEquipBonuses(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<EquipBonusPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseEquipBonus(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="CraftingEnhancePreview"/>
+    /// per recognised crafting-enhancement entry. Six schema variants flow through:
+    /// <list type="bullet">
+    ///   <item><c>CraftingEnhanceItem{Element}Mod(scalar,M)</c> — element damage mod
+    ///   (Fire/Cold/Electricity/Psychic/Nature/Darkness); scalar &lt; 1 renders as a
+    ///   percentage (<c>+2%</c>) and M is the stack cap.</item>
+    ///   <item><c>CraftingEnhanceItemArmor(N,M)</c> and
+    ///   <c>CraftingEnhanceItemPockets(N,M)</c> — flat <c>+N</c> bonus, M stack cap.</item>
+    ///   <item><c>RepairItemDurability(min,max,itemLevel,minDmg,maxDmg)</c> — surfaces
+    ///   the level cap so the player can see what tier of gear the recipe targets.</item>
+    ///   <item><c>CraftingResetItem</c> and <c>TransmogItemAppearance</c> — zero-arg
+    ///   tags that emit a fixed line.</item>
+    /// </list>
+    /// </summary>
+    public static IReadOnlyList<CraftingEnhancePreview> ParseCraftingEnhancements(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<CraftingEnhancePreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseCraftingEnhancement(effect, out var preview))
                 previews.Add(preview);
         }
         return previews;
@@ -1074,6 +1131,102 @@ public static class ResultEffectsParser
             IconId: null,
             Qualifier: null,
             ResolvedItemInternalName: null);
+        return true;
+    }
+
+    private static bool TryParseEquipBonus(string? effect, out EquipBonusPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(BoostEquipAdvancementPrefix, StringComparison.Ordinal)) return false;
+        if (args.Length == 0) return false;
+
+        var table = args[0].Trim();
+        if (table.Length == 0) return false;
+
+        preview = new EquipBonusPreview(table, Humanize(table));
+        return true;
+    }
+
+    private static bool TryParseCraftingEnhancement(string? effect, out CraftingEnhancePreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+
+        // Zero-arg cases first (no parentheses).
+        if (trimmed.Equals(CraftingResetItemTag, StringComparison.Ordinal))
+        {
+            preview = new CraftingEnhancePreview("Resets item to stock shape", null);
+            return true;
+        }
+        if (trimmed.Equals(TransmogItemAppearanceTag, StringComparison.Ordinal))
+        {
+            preview = new CraftingEnhancePreview("Applies glamour to item", null);
+            return true;
+        }
+
+        // Parenthesised forms.
+        if (!TryParsePrefixCall(trimmed, out var prefix, out var args)) return false;
+
+        if (prefix.Equals(RepairItemDurabilityPrefix, StringComparison.Ordinal))
+            return TryBuildRepairDurability(args, out preview);
+
+        if (prefix.StartsWith(CraftingEnhanceItemPrefix, StringComparison.Ordinal))
+            return TryBuildCraftingEnhanceItem(prefix, args, out preview);
+
+        return false;
+    }
+
+    private static bool TryBuildCraftingEnhanceItem(string prefix, string[] args, out CraftingEnhancePreview preview)
+    {
+        preview = null!;
+        // Suffix after "CraftingEnhanceItem" is either an element + "Mod"
+        // (FireMod / ColdMod / etc.) or a flat property (Armor / Pockets).
+        var suffix = prefix[CraftingEnhanceItemPrefix.Length..];
+        if (suffix.Length == 0) return false;
+
+        var isElementMod = suffix.EndsWith(CraftingEnhanceModSuffix, StringComparison.Ordinal);
+        if (isElementMod)
+        {
+            if (args.Length < 2) return false;
+            var element = suffix[..^CraftingEnhanceModSuffix.Length];
+            if (element.Length == 0) return false;
+            if (!decimal.TryParse(args[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var scalar)) return false;
+            if (!int.TryParse(args[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var magnitude)) return false;
+
+            var scalarText = scalar < 1m
+                ? $"+{(scalar * 100m):0.##}%"
+                : $"+{scalar.ToString("0.##", CultureInfo.InvariantCulture)}";
+            preview = new CraftingEnhancePreview(
+                $"{Humanize(element)} damage",
+                $"{scalarText} (max {magnitude})");
+            return true;
+        }
+
+        // Flat-bonus shape — e.g. CraftingEnhanceItemArmor(3,5), CraftingEnhanceItemPockets(2,12).
+        if (args.Length < 2) return false;
+        if (!int.TryParse(args[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) return false;
+        if (!int.TryParse(args[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var stackCap)) return false;
+
+        preview = new CraftingEnhancePreview(
+            Humanize(suffix),
+            $"+{n} (stack to {stackCap})");
+        return true;
+    }
+
+    private static bool TryBuildRepairDurability(string[] args, out CraftingEnhancePreview preview)
+    {
+        preview = null!;
+        // Args: (minDur, maxDur, itemLevel, minDmgRange, maxDmgRange). The level
+        // is the most player-meaningful field — surface it; -1 sentinel means
+        // "any level" (Mastercrafted-style recipes).
+        if (args.Length < 3) return false;
+        if (!int.TryParse(args[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
+            return false;
+
+        var detail = level < 0 ? "any level" : $"items at level {level}";
+        preview = new CraftingEnhancePreview("Repairs item durability", detail);
         return true;
     }
 

@@ -47,6 +47,8 @@ public sealed partial class ItemDetailViewModel
         WordsOfPower = context.WordsOfPower ?? [];
         LearnedAbilities = context.LearnedAbilities ?? [];
         ProducedItems = context.ProducedItems ?? [];
+        EquipBonuses = context.EquipBonuses ?? [];
+        CraftingEnhancements = context.CraftingEnhancements ?? [];
         _poolPresenter = poolPresenter;
     }
 
@@ -70,6 +72,8 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<WordOfPowerPreview> WordsOfPower { get; }
     public IReadOnlyList<LearnedAbilityPreview> LearnedAbilities { get; }
     public IReadOnlyList<ItemProducingPreview> ProducedItems { get; }
+    public IReadOnlyList<EquipBonusPreview> EquipBonuses { get; }
+    public IReadOnlyList<CraftingEnhancePreview> CraftingEnhancements { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

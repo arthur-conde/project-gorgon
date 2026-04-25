@@ -19,7 +19,9 @@ public sealed record ItemDetailContext(
     IReadOnlyList<XpGrantPreview>? XpGrants = null,
     IReadOnlyList<WordOfPowerPreview>? WordsOfPower = null,
     IReadOnlyList<LearnedAbilityPreview>? LearnedAbilities = null,
-    IReadOnlyList<ItemProducingPreview>? ProducedItems = null)
+    IReadOnlyList<ItemProducingPreview>? ProducedItems = null,
+    IReadOnlyList<EquipBonusPreview>? EquipBonuses = null,
+    IReadOnlyList<CraftingEnhancePreview>? CraftingEnhancements = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }
