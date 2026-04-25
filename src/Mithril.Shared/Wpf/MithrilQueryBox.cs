@@ -43,6 +43,14 @@ public class MithrilQueryBox : Control
         nameof(Watermark), typeof(string), typeof(MithrilQueryBox),
         new FrameworkPropertyMetadata("Query…"));
 
+    public static readonly DependencyProperty SchemaProperty = DependencyProperty.Register(
+        nameof(Schema), typeof(IReadOnlyList<ColumnSchema>), typeof(MithrilQueryBox),
+        new FrameworkPropertyMetadata(null, OnSchemaChanged));
+
+    public static readonly DependencyProperty DistinctValueSamplerProperty = DependencyProperty.Register(
+        nameof(DistinctValueSampler), typeof(Func<string, IReadOnlyList<string>>), typeof(MithrilQueryBox),
+        new FrameworkPropertyMetadata((Func<string, IReadOnlyList<string>>?)null));
+
     public string QueryText
     {
         get => (string)GetValue(QueryTextProperty);
@@ -60,6 +68,38 @@ public class MithrilQueryBox : Control
         get => (string)GetValue(WatermarkProperty);
         set => SetValue(WatermarkProperty, value);
     }
+
+    /// <summary>
+    /// Direct schema source for views that filter a CLR collection without a backing
+    /// <see cref="MithrilDataGrid"/>. When set, takes precedence over <see cref="Grid"/>
+    /// for completion and highlighting.
+    /// </summary>
+    public IReadOnlyList<ColumnSchema>? Schema
+    {
+        get => (IReadOnlyList<ColumnSchema>?)GetValue(SchemaProperty);
+        set => SetValue(SchemaProperty, value);
+    }
+
+    /// <summary>
+    /// Optional callback that returns up to ~50 distinct values for a column name,
+    /// used to suggest values after <c>=</c> / <c>IN</c>. Paired with <see cref="Schema"/>.
+    /// </summary>
+    public Func<string, IReadOnlyList<string>>? DistinctValueSampler
+    {
+        get => (Func<string, IReadOnlyList<string>>?)GetValue(DistinctValueSamplerProperty);
+        set => SetValue(DistinctValueSamplerProperty, value);
+    }
+
+    private IReadOnlyList<ColumnSchema> EffectiveSchema()
+        => Schema ?? Grid?.GetColumnSchema() ?? Array.Empty<ColumnSchema>();
+
+    private IReadOnlyList<string> EffectiveDistinct(string col)
+    {
+        if (DistinctValueSampler is { } sampler) return sampler(col);
+        return Grid?.GetDistinctValues(col) ?? Array.Empty<string>();
+    }
+
+    private bool HasSchemaSource => Schema is not null || Grid is not null;
 
     private TextBox? _editor;
     private TextBlock? _overlay;
@@ -131,6 +171,11 @@ public class MithrilQueryBox : Control
             newGrid.SchemaChanged += box.OnGridSchemaChanged;
         }
         box.UpdateHighlighting();
+    }
+
+    private static void OnSchemaChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is MithrilQueryBox box) box.UpdateHighlighting();
     }
 
     private void OnGridSchemaChanged(object? sender, EventArgs e) => UpdateHighlighting();
@@ -236,15 +281,15 @@ public class MithrilQueryBox : Control
 
     private void RefreshCompletion()
     {
-        if (_editor is null || _popup is null || _list is null || Grid is null || _popupDismissedByUser)
+        if (_editor is null || _popup is null || _list is null || !HasSchemaSource || _popupDismissedByUser)
         {
             if (_popup is not null) ClosePopup();
             return;
         }
         var text = _editor.Text ?? string.Empty;
         int caret = _editor.CaretIndex;
-        var schema = Grid.GetColumnSchema();
-        IReadOnlyList<string> Sampler(string col) => Grid.GetDistinctValues(col);
+        var schema = EffectiveSchema();
+        IReadOnlyList<string> Sampler(string col) => EffectiveDistinct(col);
         IReadOnlyList<CompletionItem> items = QueryCompletionProvider.Suggest(text, caret, schema, Sampler);
 
         // Bare-text mode: only offer column names, so the popup doesn't push
@@ -321,9 +366,8 @@ public class MithrilQueryBox : Control
     {
         if (_overlay is null) return;
         var text = _editor?.Text ?? QueryText ?? string.Empty;
-        var knownColumns = Grid is null
-            ? (IReadOnlySet<string>)new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(Grid.GetColumnSchema().Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+        var knownColumns = (IReadOnlySet<string>)new HashSet<string>(
+            EffectiveSchema().Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
         var spans = QueryHighlighter.Highlight(text, knownColumns);
 
         _overlay.Inlines.Clear();

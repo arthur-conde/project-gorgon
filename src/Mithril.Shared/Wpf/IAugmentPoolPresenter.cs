@@ -34,5 +34,10 @@ public interface IAugmentPoolPresenter
     /// is at-most this value. For an enchant recipe this comes from arg2 of
     /// <c>TSysCraftedEquipment</c> (0 → Uncommon, 1 → Rare via Max-Enchanting).
     /// </param>
-    void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null);
+    /// <param name="itemName">
+    /// Optional source-item display name (e.g. "Quality Werewolf Hindguard"). When
+    /// provided alongside a power suffix, the card header renders the natural in-game
+    /// name "{itemName} {suffix}" instead of "{InternalName} ({Suffix})".
+    /// </param>
+    void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null, string? itemName = null);
 }

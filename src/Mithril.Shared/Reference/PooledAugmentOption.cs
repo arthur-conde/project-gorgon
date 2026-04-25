@@ -28,6 +28,25 @@ public sealed record PooledAugmentOption(
         ? $"{Suffix} · Tier {Tier}"
         : $"{PowerInternalName} · Tier {Tier}";
 
+    /// <summary>"Tier 5" — for per-tier rows in the expanded augment-pool card.</summary>
+    public string TierLabel => $"Tier {Tier}";
+
+    /// <summary>
+    /// "Lvl 35-50" / "Lvl 35" / "Lvl 35+" / "Lvl ≤50" / null when neither bound is set.
+    /// Used by the augment-pool card's per-tier row.
+    /// </summary>
+    public string? LevelLabel
+    {
+        get
+        {
+            if (MinLevel is null && MaxLevel is null) return null;
+            if (MinLevel is not null && MaxLevel is not null)
+                return MinLevel == MaxLevel ? $"Lvl {MinLevel}" : $"Lvl {MinLevel}-{MaxLevel}";
+            if (MinLevel is not null) return $"Lvl {MinLevel}+";
+            return $"Lvl ≤{MaxLevel}";
+        }
+    }
+
     /// <summary>
     /// Ordinal rank of <see cref="MinRarity"/> for query-language comparisons:
     /// Uncommon=1, Rare=2, Exceptional=3, Epic=4. Common is unused in

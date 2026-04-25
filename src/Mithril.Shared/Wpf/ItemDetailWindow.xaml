@@ -189,12 +189,26 @@
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Possible augments (ExtractTSysPower / TSysCraftedEquipment pool; hidden when empty) -->
+                    <!-- Treasure effects (ExtractTSysPower / TSysCraftedEquipment pool; hidden when empty) -->
                     <StackPanel Grid.Row="6" Margin="0,10,0,0"
                                 Visibility="{Binding AugmentPools.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Text="Possible augments" FontWeight="SemiBold"
-                                   Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="Treasure Effects" FontWeight="SemiBold"
+                                       Foreground="#88FFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       VerticalAlignment="Center"/>
+                            <Border Background="Transparent" Cursor="Help"
+                                    VerticalAlignment="Center" Margin="5,0,0,0">
+                                <Border.ToolTip>
+                                    <ToolTip MaxWidth="320">
+                                        <TextBlock TextWrapping="Wrap"
+                                                   Text="Project Gorgon rolls a treasure effect from a named pool when you craft this item. The pool's level rules and skill prereqs determine which effects can appear. Click &quot;Browse pool&quot; to see every option."/>
+                                    </ToolTip>
+                                </Border.ToolTip>
+                                <icon:PackIconLucide Kind="CircleQuestionMark" Width="12" Height="12"
+                                                     Foreground="#88FFFFFF"/>
+                            </Border>
+                        </StackPanel>
                         <ItemsControl ItemsSource="{Binding AugmentPools}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -212,18 +226,10 @@
                                                     Visibility="{Binding DataContext.HasPoolPresenter,
                                                                  RelativeSource={RelativeSource AncestorType=Window},
                                                                  Converter={StaticResource BoolToVis}}"/>
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding SourceLabel}" FontWeight="SemiBold"
-                                                           Foreground="#FFD4A847"
-                                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                                           TextWrapping="Wrap"/>
-                                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                                           Margin="0,2,0,0" TextWrapping="Wrap"/>
-                                                <TextBlock Text="{Binding ProfileHint}" Foreground="#88FFFFFF"
-                                                           FontSize="{DynamicResource AppFontSizeSmall}"
-                                                           Margin="0,1,0,0" TextWrapping="Wrap"/>
-                                            </StackPanel>
+                                            <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       VerticalAlignment="Center"
+                                                       TextWrapping="Wrap"/>
                                         </DockPanel>
                                     </Border>
                                 </DataTemplate>

@@ -18,7 +18,7 @@ public sealed class CelebrimborAugmentPoolPresenter : IAugmentPoolPresenter
         _diag = diag;
     }
 
-    public void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null)
+    public void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null, string? itemName = null)
     {
         if (string.IsNullOrWhiteSpace(profileName))
         {
@@ -28,14 +28,14 @@ public sealed class CelebrimborAugmentPoolPresenter : IAugmentPoolPresenter
 
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
-            Open(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank);
+            Open(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, itemName);
         else
-            dispatcher.InvokeAsync(() => Open(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank));
+            dispatcher.InvokeAsync(() => Open(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, itemName));
     }
 
-    private void Open(string sourceLabel, string profileName, int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, int? rolledRarityRank)
+    private void Open(string sourceLabel, string profileName, int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, int? rolledRarityRank, string? itemName)
     {
-        var vm = new AugmentPoolViewModel(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, _refData);
+        var vm = new AugmentPoolViewModel(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, _refData, itemName);
         var window = new AugmentPoolView(vm)
         {
             Owner = Application.Current?.MainWindow,

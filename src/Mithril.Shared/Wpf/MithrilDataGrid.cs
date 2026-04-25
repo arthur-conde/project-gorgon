@@ -91,16 +91,7 @@ public class MithrilDataGrid : DataGrid
     /// Consumers (like <c>MithrilQueryBox</c>) pull this to drive completion.
     /// </summary>
     public IReadOnlyList<Query.ColumnSchema> GetColumnSchema()
-    {
-        var list = new List<Query.ColumnSchema>();
-        foreach (var binding in _columns.Values)
-        {
-            var underlying = Nullable.GetUnderlyingType(binding.ValueType);
-            var isNullable = underlying is not null || !binding.ValueType.IsValueType;
-            list.Add(new Query.ColumnSchema(binding.Name, binding.ValueType, isNullable));
-        }
-        return list;
-    }
+        => ColumnBindingHelper.ToSchema(_columns);
 
     /// <summary>
     /// Up to 50 distinct values currently present in <paramref name="columnName"/>,
@@ -280,18 +271,8 @@ public class MithrilDataGrid : DataGrid
 
     private Dictionary<string, ColumnBinding> BuildColumnBindings(Type itemType)
     {
-        var map = new Dictionary<string, ColumnBinding>(StringComparer.OrdinalIgnoreCase);
-
         // Start with every public property on the item type — users can query any bound data.
-        foreach (var prop in itemType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (prop.GetIndexParameters().Length > 0)
-            {
-                continue;
-            }
-            var getter = BuildGetter(prop);
-            map[prop.Name] = new ColumnBinding(prop.Name, prop.PropertyType, getter);
-        }
+        var map = ColumnBindingHelper.BuildFromProperties(itemType);
 
         // Overlay explicit QueryName attached-property mappings from columns.
         foreach (var col in Columns)

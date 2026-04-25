@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Query;
 
 namespace Celebrimbor.ViewModels;
 
@@ -10,15 +11,23 @@ namespace Celebrimbor.ViewModels;
 /// paints immediately with a "Loading…" placeholder, then swaps in the option list
 /// when expansion completes.
 ///
-/// Filtering is delegated to the shared <c>MithrilDataGrid</c> + <c>MithrilQueryBox</c>
-/// query system. When the recipe carries a level/tier bracket (the
-/// <c>ExtractTSysPower</c> shape), <see cref="QueryText"/> is pre-populated with the
-/// equivalent grammar so the default view matches the recipe's mechanic — and the
-/// user can edit/clear/widen it to explore the full pool.
+/// Filter parsing uses the shared <see cref="QueryCompiler"/> directly. Per-tier
+/// rows go through the predicate first; surviving rows are then grouped by
+/// (power, suffix, skill) into one card per power.
 /// </summary>
 public sealed partial class AugmentPoolViewModel : ObservableObject
 {
+    private static readonly Dictionary<string, ColumnBinding> RowSchema =
+        ColumnBindingHelper.BuildFromProperties(typeof(PooledAugmentOption));
+
+    /// <summary>Schema snapshot for <c>MithrilQueryBox</c> to drive completion + highlighting.</summary>
+    public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
+        ColumnBindingHelper.ToSchema(RowSchema);
+
     private readonly IReferenceDataService _refData;
+    private List<PooledAugmentOption> _allOptions = [];
+    private int _totalPowerCount;
+    private bool _loaded;
 
     public AugmentPoolViewModel(
         string sourceLabel,
@@ -28,7 +37,8 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
         string? recommendedSkill,
         int? craftingTargetLevel,
         int? rolledRarityRank,
-        IReferenceDataService refData)
+        IReferenceDataService refData,
+        string? itemName = null)
     {
         SourceLabel = sourceLabel;
         ProfileName = profileName;
@@ -37,6 +47,7 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
         RecommendedSkill = recommendedSkill;
         CraftingTargetLevel = craftingTargetLevel;
         RolledRarityRank = rolledRarityRank;
+        ItemName = itemName;
         _refData = refData;
         QueryText = BuildInitialQuery(minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank);
 
@@ -68,6 +79,7 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
     public string? RecommendedSkill { get; }
     public int? CraftingTargetLevel { get; }
     public int? RolledRarityRank { get; }
+    public string? ItemName { get; }
 
     /// <summary>Awaitable handle for tests; the constructor kicks off expansion eagerly.</summary>
     public Task LoadingTask { get; }
@@ -78,16 +90,24 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading = true;
 
-    [ObservableProperty]
-    private ObservableCollection<PooledAugmentOption> _options = new();
+    /// <summary>Bound to the card list. One entry per power (post-filter), tiers sorted ascending.</summary>
+    public ObservableCollection<GroupedAugmentOption> Groups { get; } = new();
 
     /// <summary>
-    /// Two-way bound to <c>MithrilQueryBox.QueryText</c> and <c>MithrilDataGrid.QueryText</c>.
-    /// Pre-populated with a tier bracket when the recipe is an extraction; left empty for
-    /// enchantments (no recipe-derived constraint to express).
+    /// Two-way bound to <c>MithrilQueryBox.QueryText</c>. Pre-populated with a tier bracket
+    /// when the recipe is an extraction; left empty for enchantments. Changes trigger a re-filter.
     /// </summary>
     [ObservableProperty]
     private string _queryText = "";
+
+    /// <summary>Last filter compile error, surfaced as muted text under the query box.</summary>
+    [ObservableProperty]
+    private string? _queryError;
+
+    partial void OnQueryTextChanged(string value)
+    {
+        if (_loaded) RecomputeGroups();
+    }
 
     /// <summary>
     /// Builds an initial query combining: the recipe's tier bracket (Extract recipes only),
@@ -129,13 +149,10 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
 
         void Apply()
         {
-            Options = new ObservableCollection<PooledAugmentOption>(allOptions);
-            var powerCount = allOptions.Select(o => o.PowerInternalName).Distinct(StringComparer.Ordinal).Count();
-            Subtitle = (MinTier, MaxTier) switch
-            {
-                (null, null) => $"profile '{ProfileName}' · {powerCount} powers · {allOptions.Count} tier rows",
-                _ => $"profile '{ProfileName}' · level {MinTier}-{MaxTier} · {powerCount} powers · {allOptions.Count} tier rows",
-            };
+            _allOptions = allOptions;
+            _totalPowerCount = allOptions.Select(o => o.PowerInternalName).Distinct(StringComparer.Ordinal).Count();
+            _loaded = true;
+            RecomputeGroups();
             IsLoading = false;
         }
 
@@ -147,8 +164,70 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Applies the current <see cref="QueryText"/> as a per-tier predicate, then groups
+    /// surviving tiers by (power, suffix, skill) into one card per power.
+    /// </summary>
+    private void RecomputeGroups()
+    {
+        var predicate = CompilePredicate(QueryText);
+        var filtered = predicate is null ? _allOptions : _allOptions.Where(o => predicate(o)).ToList();
+
+        var grouped = filtered
+            .GroupBy(o => new GroupKey(o.PowerInternalName, o.Suffix, o.Skill))
+            .Select(g => new GroupedAugmentOption(
+                g.Key.Power,
+                g.Key.Suffix,
+                g.Key.Skill,
+                g.OrderBy(t => t.Tier).ToList(),
+                ItemName))
+            .OrderBy(g => g.Skill, StringComparer.Ordinal)
+            .ThenBy(g => g.Suffix ?? g.PowerInternalName, StringComparer.Ordinal)
+            .ToList();
+
+        Groups.Clear();
+        foreach (var g in grouped) Groups.Add(g);
+
+        UpdateSubtitle(filteredTiers: filtered.Count, filteredPowers: grouped.Count);
+    }
+
+    private Func<PooledAugmentOption, bool>? CompilePredicate(string queryText)
+    {
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            QueryError = null;
+            return null;
+        }
+        try
+        {
+            var compiled = QueryCompiler.Compile(queryText, RowSchema, caseSensitive: false);
+            QueryError = null;
+            return compiled is null ? null : item => compiled(item!);
+        }
+        catch (QueryException qex)
+        {
+            QueryError = qex.Message;
+            // Show everything when the query is malformed — the user sees the error in the highlighted box.
+            return null;
+        }
+    }
+
+    private void UpdateSubtitle(int filteredTiers, int filteredPowers)
+    {
+        var totalTiers = _allOptions.Count;
+        var totalPowers = _totalPowerCount;
+        var counts = (filteredTiers == totalTiers && filteredPowers == totalPowers)
+            ? $"{totalPowers} powers · {totalTiers} tier rows"
+            : $"{filteredPowers} of {totalPowers} powers · {filteredTiers} of {totalTiers} tier rows";
+        Subtitle = (MinTier, MaxTier) switch
+        {
+            (null, null) => $"profile '{ProfileName}' · {counts}",
+            _ => $"profile '{ProfileName}' · level {MinTier}-{MaxTier} · {counts}",
+        };
+    }
+
+    /// <summary>
     /// Expands a profile to one option per (power, tier). Tier filtering is intentionally
-    /// not applied here: the grid's query system filters on top, so a user can clear the
+    /// not applied here: the query system filters on top, so a user can clear the
     /// pre-populated bracket to inspect tiers outside the recipe's range.
     /// </summary>
     private static List<PooledAugmentOption> ExpandProfile(string profileName, IReferenceDataService refData)
@@ -181,4 +260,6 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
         });
         return options;
     }
+
+    private readonly record struct GroupKey(string Power, string? Suffix, string Skill);
 }

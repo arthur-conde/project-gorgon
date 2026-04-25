@@ -8,7 +8,7 @@ namespace Celebrimbor.Tests;
 public class AugmentPoolViewModelTests
 {
     [Fact]
-    public async Task ExpandsProfile_RendersOneOptionPerTier()
+    public async Task ExpandsProfile_GroupsTiersByPower()
     {
         var refData = BuildFixture(
             powers:
@@ -26,10 +26,15 @@ public class AugmentPoolViewModelTests
         var vm = new AugmentPoolViewModel("Source", "Weapon", minTier: null, maxTier: null, refData);
         await vm.LoadingTask;
 
-        vm.Options.Should().HaveCount(2);
-        vm.Options[0].Tier.Should().Be(1);
-        vm.Options[1].Tier.Should().Be(2);
-        vm.Options.Select(o => o.EffectLines).Should().AllSatisfy(lines =>
+        // One card per power; both tiers live inside it, sorted ascending.
+        vm.Groups.Should().ContainSingle();
+        var group = vm.Groups[0];
+        group.PowerInternalName.Should().Be("ArcheryBoost");
+        group.Suffix.Should().Be("of Archery");
+        group.Tiers.Should().HaveCount(2);
+        group.Tiers[0].Tier.Should().Be(1);
+        group.Tiers[1].Tier.Should().Be(2);
+        group.Tiers.Select(t => t.EffectLines).Should().AllSatisfy(lines =>
             lines.Should().ContainSingle().Which.Text.Should().StartWith("Archery Damage"));
     }
 
@@ -47,10 +52,10 @@ public class AugmentPoolViewModelTests
         var vm = new AugmentPoolViewModel("Source", "Pool", minTier: 10, maxTier: 30, recommendedSkill: null, craftingTargetLevel: null, refData);
         await vm.LoadingTask;
 
-        // Query is pre-populated; the grid applies it on top of the materialized list.
+        // Query is pre-populated; only the tier inside the bracket survives the per-tier filter.
         vm.QueryText.Should().Be("Tier >= 10 AND Tier <= 30");
-        // All tiers materialize so the user can clear/widen the query and explore.
-        vm.Options.Should().HaveCount(3);
+        vm.Groups.Should().ContainSingle();
+        vm.Groups[0].Tiers.Should().ContainSingle().Which.Tier.Should().Be(20);
     }
 
     [Fact]
@@ -107,18 +112,115 @@ public class AugmentPoolViewModelTests
         await vm.LoadingTask;
 
         vm.QueryText.Should().Be("MinLevel <= 50 AND MaxLevel >= 50 AND Skill = \"Werewolf\"");
-        // All 3 tiers materialize; the grid query restricts the view to the eligible one.
-        vm.Options.Should().HaveCount(3);
-        vm.Options.Should().ContainSingle(o => o.MinLevel == 40 && o.MaxLevel == 60);
+        // Only tier 2 (level 40-60) brackets level 50; the group keeps just that tier.
+        vm.Groups.Should().ContainSingle();
+        vm.Groups[0].Tiers.Should().ContainSingle().Which.Should()
+            .Match<PooledAugmentOption>(t => t.MinLevel == 40 && t.MaxLevel == 60);
     }
 
     [Fact]
-    public async Task UnknownProfile_LeavesOptionsEmpty()
+    public async Task UnknownProfile_LeavesGroupsEmpty()
     {
         var refData = BuildFixture();
         var vm = new AugmentPoolViewModel("Source", "DoesNotExist", null, null, refData);
         await vm.LoadingTask;
-        vm.Options.Should().BeEmpty();
+        vm.Groups.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FloorEffectLines_AreFromLowestVisibleTier()
+    {
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("BiteHeal", "Werewolf", suffix: "Quality",
+                    FakeReferenceData.Tier(7, "{BOOST_SKILL_ARCHERY}{14}"),
+                    FakeReferenceData.Tier(8, "{BOOST_SKILL_ARCHERY}{15}"),
+                    FakeReferenceData.Tier(9, "{BOOST_SKILL_ARCHERY}{17}"),
+                    FakeReferenceData.Tier(10, "{BOOST_SKILL_ARCHERY}{18}")),
+            ],
+            attributes:
+            [
+                FakeReferenceData.Attribute("BOOST_SKILL_ARCHERY", "Health", iconId: 108),
+            ],
+            profiles: [("Pool", new[] { "BiteHeal" })]);
+
+        // No filter — floor is the lowest absolute tier (7).
+        var vm = new AugmentPoolViewModel("Source", "Pool", minTier: null, maxTier: null, refData);
+        await vm.LoadingTask;
+        vm.Groups[0].FloorEffectLines.Single().Text.Should().Contain("14");
+
+        // Filter to tiers 9-10 — floor is now tier 9, not 7.
+        vm.QueryText = "Tier >= 9";
+        vm.Groups[0].MinTier.Should().Be(9);
+        vm.Groups[0].FloorEffectLines.Single().Text.Should().Contain("17");
+    }
+
+    [Fact]
+    public async Task GroupHeader_ReflectsFilteredTierAndLevelRanges()
+    {
+        var refData = BuildFixture(
+            powers: [FakeReferenceData.Power("BiteHeal", "Werewolf", suffix: "Quality",
+                FakeReferenceData.TierAt(7, 35, 50),
+                FakeReferenceData.TierAt(8, 40, 55),
+                FakeReferenceData.TierAt(9, 45, 60),
+                FakeReferenceData.TierAt(10, 50, 65))],
+            profiles: [("Pool", new[] { "BiteHeal" })]);
+
+        var vm = new AugmentPoolViewModel("Source", "Pool", minTier: null, maxTier: null, refData);
+        await vm.LoadingTask;
+
+        // Unfiltered: full range.
+        vm.Groups[0].TierRange.Should().Be("Tier 7-10");
+        vm.Groups[0].LevelRange.Should().Be("Lvl 35-65");
+        vm.Groups[0].RangesLine.Should().Be("Tier 7-10 · Lvl 35-65");
+
+        // Narrow to a single tier — header collapses.
+        vm.QueryText = "Tier = 9";
+        vm.Groups[0].TierRange.Should().Be("Tier 9");
+        vm.Groups[0].LevelRange.Should().Be("Lvl 45-60");
+    }
+
+    [Fact]
+    public async Task Filter_HidesGroupEntirely_WhenAllTiersExcluded()
+    {
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("WerewolfPower", "Werewolf", suffix: null, FakeReferenceData.Tier(1)),
+                FakeReferenceData.Power("SwordPower", "Sword", suffix: null, FakeReferenceData.Tier(1)),
+            ],
+            profiles: [("Pool", new[] { "WerewolfPower", "SwordPower" })]);
+
+        var vm = new AugmentPoolViewModel("Source", "Pool", minTier: null, maxTier: null, refData);
+        await vm.LoadingTask;
+        vm.Groups.Should().HaveCount(2);
+
+        vm.QueryText = "Skill = \"Werewolf\"";
+        vm.Groups.Should().ContainSingle().Which.PowerInternalName.Should().Be("WerewolfPower");
+    }
+
+    [Fact]
+    public async Task Subtitle_ShowsFilteredAndTotalCounts()
+    {
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("A", "Werewolf", suffix: null, FakeReferenceData.Tier(1), FakeReferenceData.Tier(2)),
+                FakeReferenceData.Power("B", "Sword", suffix: null, FakeReferenceData.Tier(1)),
+            ],
+            profiles: [("Pool", new[] { "A", "B" })]);
+
+        var vm = new AugmentPoolViewModel("Source", "Pool", minTier: null, maxTier: null, refData);
+        await vm.LoadingTask;
+
+        // Unfiltered — collapsed format.
+        vm.Subtitle.Should().Contain("2 powers · 3 tier rows");
+        vm.Subtitle.Should().NotContain(" of ");
+
+        // Filtered — "X of Y" format surfaces what the query hid.
+        vm.QueryText = "Skill = \"Werewolf\"";
+        vm.Subtitle.Should().Contain("1 of 2 powers · 2 of 3 tier rows");
     }
 
     private static FakeReferenceData BuildFixture(

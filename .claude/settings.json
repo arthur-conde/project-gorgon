@@ -4,20 +4,18 @@
       "Bash(*)",
       "WebSearch",
       "Read(//tmp/**)",
-
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:cdn.projectgorgon.com)",
       "WebFetch(domain:wiki.projectgorgon.com)",
       "WebFetch(domain:pgemissary.com)",
-
       "WebFetch(domain:api.nuget.org)",
       "WebFetch(domain:community.chocolatey.org)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:signpath.org)",
       "WebFetch(domain:about.signpath.io)",
-
       "PowerShell(gh --version)",
-      "PowerShell(gh auth status 2>&1)"
+      "PowerShell(gh auth status 2>&1)",
+      "PowerShell($asm = [System.Reflection.Assembly]::LoadFile\\('C:/Users/arthu/.nuget/packages/mahapps.metro.iconpacks.lucide/6.0.0/lib/net8.0-windows7.0/MahApps.Metro.IconPacks.Lucide.dll'\\); $enumType = $asm.GetTypes\\(\\) | Where-Object { $_.Name -eq 'PackIconLucideKind' }; [Enum]::GetNames\\($enumType\\) | Where-Object { $_ -match 'Help|Info|Question' } | Sort-Object)"
     ]
   }
 }

@@ -13,14 +13,17 @@
     <!-- Shared row template for an EffectLine (icon + rendered text).
          Bind any IEnumerable<EffectLine> to an ItemsControl and set
          ItemTemplate="{StaticResource EffectLineTemplate}". Icon is hidden
-         when IconId == 0 (prose rows and icon-less attributes). -->
+         when IconId == 0 (prose rows and icon-less attributes).
+         Layout: DockPanel (not StackPanel.Horizontal) so the TextBlock has a
+         constrained width and TextWrapping="Wrap" actually wraps long descs. -->
     <DataTemplate x:Key="EffectLineTemplate">
-        <StackPanel Orientation="Horizontal" Margin="0,1">
-            <c:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"
+        <DockPanel Margin="0,1" LastChildFill="True">
+            <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"
+                         VerticalAlignment="Top"
                          Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
             <TextBlock Text="{Binding Text}" Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
-        </StackPanel>
+        </DockPanel>
     </DataTemplate>
 
     <!-- Font resources — overridden at runtime from ShellSettings (UiFontFamily, UiFontSize).

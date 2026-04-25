@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Lightweight navigation token emitted by <c>ExtractTSysPower</c> and the enchantment-source
-/// form of <c>TSysCraftedEquipment</c>. Carries enough metadata for the "Possible augments"
+/// form of <c>TSysCraftedEquipment</c>. Carries enough metadata for the "Treasure Effects"
 /// summary on <c>ItemDetailWindow</c>; the pool viewer expands the full option list lazily
 /// when the user clicks "Browse pool" so a 2000-entry profile (<c>"All"</c>) doesn't render
 /// eagerly on every detail-window open.
@@ -19,8 +19,8 @@ public sealed record AugmentPoolPreview(
 {
     /// <summary>
     /// True when the recipe carries an explicit level/tier range — the
-    /// <c>ExtractTSysPower</c> shape. The other shape (<c>TSysCraftedEquipment</c>
-    /// enchantment) leaves tier to the craft skill rather than rolling it.
+    /// <c>ExtractTSysPower</c> shape. The <c>TSysCraftedEquipment</c> shape leaves
+    /// the range implicit (it derives from the template's <c>CraftingTargetLevel</c>).
     /// </summary>
     public bool IsExtraction => MinTier.HasValue || MaxTier.HasValue;
 
@@ -34,14 +34,12 @@ public sealed record AugmentPoolPreview(
     };
 
     /// <summary>
-    /// Short headline matched to the recipe's mechanic — distinguishes "tier comes
-    /// from the craft" (enchantment) from "tier is bounded by the level range"
-    /// (extraction), since the same OptionCount means different things.
+    /// Short headline. Extractions surface their level bracket (real, actionable data
+    /// the player chooses inputs to control); crafts just show the count, since "tier
+    /// follows your craft skill" is common-sense in-game and slightly imprecise (tier
+    /// keys off the template's <c>CraftingTargetLevel</c>, not raw skill).
     /// </summary>
     public string DisplayLine => IsExtraction
         ? $"{OptionCount} possible powers · {TierBracket}"
-        : $"{OptionCount} possible powers · tier follows your craft skill";
-
-    /// <summary>Pool-name hint for the curious; rendered as a smaller secondary line.</summary>
-    public string ProfileHint => $"Profile: {ProfileName}";
+        : $"{OptionCount} possible powers";
 }

@@ -70,6 +70,6 @@ public sealed partial class ItemDetailViewModel
     private void BrowsePool(AugmentPoolPreview? pool)
     {
         if (pool is null || _poolPresenter is null) return;
-        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank);
+        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank, Item.Name);
     }
 }
