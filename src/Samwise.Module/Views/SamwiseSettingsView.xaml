@@ -4,11 +4,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">

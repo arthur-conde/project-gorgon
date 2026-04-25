@@ -7,11 +7,7 @@
              xmlns:vm="clr-namespace:Mithril.Shell.ViewModels"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
     </UserControl.Resources>
     <DockPanel Margin="16">
         <StackPanel DockPanel.Dock="Top">

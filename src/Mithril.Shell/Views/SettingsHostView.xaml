@@ -4,11 +4,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
     </UserControl.Resources>
     <DockPanel>
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,12,16,12">

@@ -3,10 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="#FF1A1A1A">
-    <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-            <icon:PackIconLucide Kind="Settings" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-            <TextBlock Text="Game Configuration" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
+    <StackPanel Margin="24,16" MaxWidth="640" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+            <Image Source="pack://application:,,,/Mithril;component/Resources/game-folder.ico"
+                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBlock Text="Game Configuration"
+                       FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                       Foreground="#FFD4A847" VerticalAlignment="Center"/>
         </StackPanel>
 
         <TextBlock Text="Project Gorgon root folder" Foreground="#88FFFFFF" Margin="0,0,0,4"/>

@@ -3,18 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
                 <Image Source="pack://application:,,,/Smaug.Module;component/Resources/smaug.ico"
-                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"
-                       Visibility="{Binding RelativeSource={RelativeSource Self}, Path=Source, Converter={StaticResource NullOrEmptyToVis}, FallbackValue=Collapsed}"/>
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Smaug · Vendor Prices Settings"
                            FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>

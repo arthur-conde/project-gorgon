@@ -35,16 +35,20 @@ if (!Directory.Exists(srcRoot))
     return 2;
 }
 
-// 1. Walk every Resources.xaml under src/ and record key → defining pack URI.
-//    These are the canonical merge sources; views must merge one of these to
-//    legally reference its keys via {StaticResource}.
+// 1. Walk every resource-dictionary XAML under src/ and record key → defining
+//    pack URI. A "resource dictionary file" is any *.xaml whose root element is
+//    <ResourceDictionary> (Resources.xaml, Converters.xaml, etc.). Views must
+//    merge one of these to legally reference its keys via {StaticResource}.
+//    Keys reached via <ResourceDictionary.MergedDictionaries> are propagated to
+//    the outer file's pack URI: a view that merges Resources.xaml gets all keys
+//    that Resources.xaml exposes through its own merges.
 var keyDefs = new Dictionary<string, List<(string PackUri, string File)>>(StringComparer.Ordinal);
 foreach (var resFile in EnumerateXaml(srcRoot))
 {
     if (!IsResourceDictionaryFile(resFile)) continue;
     var pack = ToPackUri(resFile, srcRoot);
     if (pack is null) continue;
-    foreach (var key in ExtractDefinedKeys(resFile))
+    foreach (var key in CollectExposedKeys(resFile, srcRoot, visited: new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
     {
         if (!keyDefs.TryGetValue(key, out var list))
             keyDefs[key] = list = new();
@@ -111,8 +115,51 @@ static IEnumerable<string> EnumerateXaml(string root) =>
         .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                  && !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
 
-static bool IsResourceDictionaryFile(string path) =>
-    string.Equals(Path.GetFileName(path), "Resources.xaml", StringComparison.OrdinalIgnoreCase);
+static bool IsResourceDictionaryFile(string path)
+{
+    try
+    {
+        var doc = XDocument.Load(path);
+        return doc.Root is { } r && r.Name.LocalName == "ResourceDictionary";
+    }
+    catch (XmlException) { return false; }
+}
+
+// Collect every key reachable from a resource-dictionary file: keys defined
+// directly + keys defined in any <ResourceDictionary.MergedDictionaries> child
+// (recursively). `visited` guards against cycles between dictionaries.
+static IEnumerable<string> CollectExposedKeys(string resFile, string srcRoot, HashSet<string> visited)
+{
+    var canonical = Path.GetFullPath(resFile);
+    if (!visited.Add(canonical)) yield break;
+
+    foreach (var k in ExtractDefinedKeys(resFile)) yield return k;
+
+    foreach (var src in ExtractMergedDictionaryPacks(resFile))
+    {
+        var pack = NormalizeSourceToPackUri(src, resFile, srcRoot);
+        if (pack is null) continue;
+        var mergedFile = PackUriToFile(pack, srcRoot);
+        if (mergedFile is null || !File.Exists(mergedFile)) continue;
+        foreach (var k in CollectExposedKeys(mergedFile, srcRoot, visited)) yield return k;
+    }
+}
+
+static string? PackUriToFile(string packUri, string srcRoot)
+{
+    // pack://application:,,,/Assembly;component/Path/To.xaml → src/Assembly/Path/To.xaml
+    const string prefix = "pack://application:,,,/";
+    if (!packUri.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+    var rest = packUri[prefix.Length..];
+    var semi = rest.IndexOf(';');
+    if (semi < 0) return null;
+    var asm = rest[..semi];
+    var marker = ";component/";
+    var idx = rest.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+    if (idx < 0) return null;
+    var inside = rest[(idx + marker.Length)..];
+    return Path.Combine(srcRoot, asm, inside.Replace('/', Path.DirectorySeparatorChar));
+}
 
 static HashSet<string> ExtractDefinedKeys(string xamlPath)
 {

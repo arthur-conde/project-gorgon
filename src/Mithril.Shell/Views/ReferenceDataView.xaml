@@ -8,10 +8,13 @@
         <wpf:InverseBoolConverter x:Key="InverseBool"/>
         <wpf:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyVisibility"/>
     </UserControl.Resources>
-    <StackPanel Margin="24" MaxWidth="720" HorizontalAlignment="Left">
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-            <icon:PackIconLucide Kind="Package" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-            <TextBlock Text="Reference Data" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
+    <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+            <Image Source="pack://application:,,,/Mithril;component/Resources/reference-data.ico"
+                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBlock Text="Reference Data"
+                       FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                       Foreground="#FFD4A847" VerticalAlignment="Center"/>
         </StackPanel>
         <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,16"
                    Text="Game data published by the developer at cdn.projectgorgon.com. Refreshed in the background on app start. Use Refresh to pull the latest version on demand."/>

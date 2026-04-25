@@ -2,13 +2,9 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime"
                     xmlns:c="clr-namespace:Mithril.Shared.Wpf">
-    <!-- Converters -->
-    <c:BoolToVisibilityConverter x:Key="BoolToVis"/>
-    <c:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
-    <c:StringToColorConverter x:Key="StringToColor"/>
-    <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
-    <c:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
-    <c:PositiveIntToVisibilityConverter x:Key="PositiveIntToVis"/>
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
 
     <!-- Shared row template for an EffectLine (icon + rendered text).
          Bind any IEnumerable<EffectLine> to an ItemsControl and set
