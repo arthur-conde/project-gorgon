@@ -4,8 +4,10 @@ namespace Arwen.Domain;
 
 /// <summary>
 /// A single observed gift event: player gave item X to NPC Y and gained Z favor.
-/// The rate is derived as <c>favorDelta / (effectivePref × itemValue)</c>, where
-/// <see cref="EffectivePref"/> is the sum of all matching preferences' Pref values.
+/// The rate is derived as <c>favorDelta / (effectivePref × itemValue × quantity)</c>,
+/// where <see cref="EffectivePref"/> is the sum of all matching preferences' Pref values
+/// and <see cref="Quantity"/> is the size of the gifted stack (introduced in schema v3 —
+/// see <see cref="CalibrationData.Version"/>).
 /// </summary>
 public sealed class GiftObservation
 {
@@ -20,6 +22,16 @@ public sealed class GiftObservation
 
     public double ItemValue { get; set; }
     public double FavorDelta { get; set; }
+
+    /// <summary>
+    /// Stack size at the moment the gift was given. Defaults to 1 — appropriate for
+    /// non-stackable items and for legacy (pre-v3) observations migrated forward.
+    /// Only stackable items (<c>MaxStackSize &gt; 1</c>) ever carry a value &gt; 1, and
+    /// today only when a future inventory tracker is wired up to derive the count;
+    /// see Arwen plans on Mithril repo for the live-tracker design.
+    /// </summary>
+    public int Quantity { get; set; } = 1;
+
     public DateTimeOffset Timestamp { get; set; }
 
     [JsonIgnore]
@@ -27,7 +39,9 @@ public sealed class GiftObservation
 
     [JsonIgnore]
     public double DerivedRate =>
-        EffectivePref == 0 || ItemValue == 0 ? 0 : FavorDelta / (ItemValue * EffectivePref);
+        EffectivePref == 0 || ItemValue == 0 || Quantity == 0
+            ? 0
+            : FavorDelta / (ItemValue * EffectivePref * Quantity);
 
     /// <summary>Stable identifier for the preference set this item matches (sorted preference names, comma-joined).</summary>
     [JsonIgnore]
@@ -64,7 +78,7 @@ public sealed class CategoryRate
 /// </summary>
 public sealed class CalibrationData
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public string? ContributorNote { get; set; }
     public DateTimeOffset ExportedAt { get; set; }
     public List<GiftObservation> Observations { get; set; } = [];

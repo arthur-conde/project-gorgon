@@ -22,7 +22,7 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// </summary>
 public sealed class CalibrationService
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
@@ -156,6 +156,18 @@ public sealed class CalibrationService
             return;
         }
 
+        // Stackable-item gate: PG emits one ProcessDeleteItem for an entire gifted
+        // stack, so the true gift quantity is unknowable from the existing event
+        // stream. Recording an observation under quantity=1 would over-credit the
+        // rate by the (unknown) stack size — see schema v3 migration. Skip until
+        // a live inventory tracker can supply the real quantity.
+        if (item.MaxStackSize > 1)
+        {
+            _diag?.Trace("Arwen.Calibration",
+                $"Skipping observation: '{internalName}' has MaxStackSize={item.MaxStackSize}, gift quantity is not yet trackable");
+            return;
+        }
+
         var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, npcKey);
         if (matchedPrefs.Count == 0)
         {
@@ -178,6 +190,7 @@ public sealed class CalibrationService
             MatchedPreferences = [.. matchedPrefs],
             ItemValue = (double)item.Value,
             FavorDelta = delta,
+            Quantity = 1, // gate above guarantees MaxStackSize == 1
             Timestamp = DateTimeOffset.UtcNow,
         };
 
@@ -333,11 +346,28 @@ public sealed class CalibrationService
 
             if (_data.Version < CurrentSchemaVersion)
             {
-                var (kept, dropped) = MigrateObservationsToV2(_data.Observations);
-                _diag?.Info("Arwen.Calibration",
-                    $"Migrating calibration v{_data.Version} → v{CurrentSchemaVersion}: kept {kept.Count}, dropped {dropped}");
-                _data.Observations = kept;
-                _data.Version = CurrentSchemaVersion;
+                // Snapshot the pre-migration file once before we rewrite it. Recovery path
+                // if a future migration drops the wrong observations.
+                BackupBeforeMigration(_data.Version);
+
+                if (_data.Version < 2)
+                {
+                    var (kept, dropped) = MigrateObservationsToV2(_data.Observations);
+                    _diag?.Info("Arwen.Calibration",
+                        $"Migrating calibration v{_data.Version} → v2: kept {kept.Count}, dropped {dropped}");
+                    _data.Observations = kept;
+                    _data.Version = 2;
+                }
+
+                if (_data.Version < 3)
+                {
+                    var (kept, dropped) = MigrateObservationsToV3(_data.Observations);
+                    _diag?.Info("Arwen.Calibration",
+                        $"Migrating calibration v{_data.Version} → v3: kept {kept.Count}, dropped {dropped} (stackable items)");
+                    _data.Observations = kept;
+                    _data.Version = 3;
+                }
+
                 RecomputeRates();
                 Save();
             }
@@ -355,6 +385,26 @@ public sealed class CalibrationService
         {
             _diag?.Warn("Arwen.Calibration", $"Failed to load calibration: {ex.Message}");
             _data = new();
+        }
+    }
+
+    /// <summary>
+    /// Snapshot the on-disk calibration file before a migration rewrites it. Names the
+    /// backup <c>calibration.v{N}.bak</c> where N is the pre-migration version. Skipped
+    /// if a backup at that path already exists (don't clobber an older snapshot).
+    /// </summary>
+    private void BackupBeforeMigration(int preMigrationVersion)
+    {
+        try
+        {
+            var backupPath = $"{_dataPath}.v{preMigrationVersion}.bak";
+            if (File.Exists(backupPath)) return;
+            File.Copy(_dataPath, backupPath);
+            _diag?.Info("Arwen.Calibration", $"Wrote pre-migration backup: {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to write pre-migration backup: {ex.Message}");
         }
     }
 
@@ -394,6 +444,40 @@ public sealed class CalibrationService
             obs.ItemKeywords = [.. item.Keywords.Select(k => k.Tag)];
             obs.MatchedPreferences = [.. matchedPrefs];
             // ItemValue / FavorDelta / Timestamp already present from v1.
+            kept.Add(obs);
+        }
+        return (kept, dropped);
+    }
+
+    /// <summary>
+    /// Drop observations whose item is stackable (<c>MaxStackSize &gt; 1</c>). The pre-v3
+    /// schema had no <see cref="GiftObservation.Quantity"/> field and recorded every gift
+    /// as quantity 1, but PG emits a single <c>ProcessDeleteItem</c> for an entire gifted
+    /// stack — so any stackable-item observation has unknown true quantity and an
+    /// over-credited <see cref="GiftObservation.DerivedRate"/>. Surviving observations
+    /// (non-stackable items only) get an explicit <c>Quantity = 1</c>.
+    /// Items not in reference data are also dropped, mirroring v1→v2 behaviour.
+    /// </summary>
+    private (List<GiftObservation> Kept, int Dropped) MigrateObservationsToV3(List<GiftObservation> v2)
+    {
+        var kept = new List<GiftObservation>(v2.Count);
+        var dropped = 0;
+        foreach (var obs in v2)
+        {
+            if (!_refData.ItemsByInternalName.TryGetValue(obs.ItemInternalName, out var item))
+            {
+                _diag?.Trace("Arwen.Calibration", $"v3 migration: dropping '{obs.ItemInternalName}' (not in reference data)");
+                dropped++;
+                continue;
+            }
+            if (item.MaxStackSize > 1)
+            {
+                _diag?.Trace("Arwen.Calibration",
+                    $"v3 migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (MaxStackSize={item.MaxStackSize}, true gift quantity unrecoverable)");
+                dropped++;
+                continue;
+            }
+            obs.Quantity = 1;
             kept.Add(obs);
         }
         return (kept, dropped);
@@ -473,13 +557,22 @@ public sealed class CalibrationService
         var imported = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData);
         if (imported is null) return 0;
 
-        if (imported.Version < CurrentSchemaVersion)
+        if (imported.Version < 2)
         {
             var (kept, dropped) = MigrateObservationsToV2(imported.Observations);
             _diag?.Info("Arwen.Calibration",
-                $"Importing v{imported.Version} payload: migrated {kept.Count}, dropped {dropped}");
+                $"Importing v{imported.Version} payload → v2: migrated {kept.Count}, dropped {dropped}");
             imported.Observations = kept;
-            imported.Version = CurrentSchemaVersion;
+            imported.Version = 2;
+        }
+
+        if (imported.Version < 3)
+        {
+            var (kept, dropped) = MigrateObservationsToV3(imported.Observations);
+            _diag?.Info("Arwen.Calibration",
+                $"Importing v{imported.Version} payload → v3: migrated {kept.Count}, dropped {dropped} (stackable items)");
+            imported.Observations = kept;
+            imported.Version = 3;
         }
 
         return MergeData(imported, replaceExisting);

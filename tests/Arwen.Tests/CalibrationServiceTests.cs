@@ -37,6 +37,11 @@ public sealed class CalibrationServiceTests
             [6] = new(6, "TestDislikedNecklace", "TestDislikedNecklace", 1, 0,
                 [new ItemKeyword("Amulet", 0), new ItemKeyword("TestDislike", 0)],
                 Value: 100m),
+            // Stackable test item — exercises the v3 stackable-skip guard and migration partition.
+            // Sanja loves Phlogiston (re-uses the same Crystal/Moonstone love tier for test simplicity).
+            [7] = new(7, "Phlogiston1", "Phlogiston1", MaxStackSize: 10, IconId: 0,
+                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)],
+                Value: 5m),
         };
         var npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal)
         {
@@ -407,7 +412,7 @@ public sealed class CalibrationServiceTests
             json.Should().NotContain("matchedPreferences", because: "matched preference lists are observation-scoped");
             json.Should().NotContain("derivedRate", because: "observation-scoped derived fields don't belong in aggregates");
 
-            json.Should().Contain("\"schemaVersion\": 2");
+            json.Should().Contain("\"schemaVersion\": 3");
             json.Should().Contain("\"module\": \"arwen\"");
             json.Should().Contain("\"itemRates\"");
             json.Should().Contain("\"signatureRates\"");
@@ -481,6 +486,113 @@ public sealed class CalibrationServiceTests
         {
             SafeDeleteDir(dir);
         }
+    }
+
+    [Fact]
+    public void V3Migration_DropsStackableObservations_SetsQuantity1OnSurvivors_WritesBackup()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            // Synthesize a v2-shape file with one stackable (Phlogiston1) and one
+            // non-stackable (Moonstone) observation. v2 had no Quantity field.
+            var v2Path = Path.Combine(dir, "calibration.json");
+            var v2Json = """
+                {
+                  "version": 2,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 100,
+                      "favorDelta": 22.5,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    },
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Phlogiston1",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 5,
+                      "favorDelta": 13.2,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """;
+            File.WriteAllText(v2Path, v2Json);
+
+            var refData = BuildRefData();
+            var index = new GiftIndex();
+            index.Build(refData.Items, refData.Npcs);
+            var svc = new CalibrationService(refData, index, new FakeInventory(), dir);
+
+            // Stackable observation dropped; non-stackable Moonstone survives with explicit Quantity=1.
+            svc.Data.Observations.Should().HaveCount(1);
+            var survivor = svc.Data.Observations[0];
+            survivor.ItemInternalName.Should().Be("Moonstone");
+            survivor.Quantity.Should().Be(1);
+
+            // File rewritten at v3.
+            svc.Data.Version.Should().Be(3);
+            using var doc = JsonDocument.Parse(File.ReadAllBytes(v2Path));
+            doc.RootElement.GetProperty("version").GetInt32().Should().Be(3);
+
+            // Pre-migration backup exists.
+            File.Exists(v2Path + ".v2.bak").Should().BeTrue();
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void RecordObservation_SkipsStackableItems_PendingLiveQuantityTracker()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            // Phlogiston1 has MaxStackSize=10 — gate should refuse to record.
+            inv.Add(9999, "Phlogiston1");
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            svc.Data.Observations.Should().BeEmpty(
+                because: "stackable items can't be calibrated until quantity is derivable from a live tracker");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void DerivedRate_DividesByQuantity()
+    {
+        var obs = new GiftObservation
+        {
+            FavorDelta = 10,
+            ItemValue = 5,
+            Quantity = 2,
+            MatchedPreferences = [new MatchedPreference { Name = "Test", Pref = 1, Keywords = ["x"] }],
+        };
+
+        // 10 / (5 * 1 * 2) = 1.0
+        obs.DerivedRate.Should().Be(1.0);
+
+        // Sanity: same observation with Quantity=1 doubles the rate.
+        obs.Quantity = 1;
+        obs.DerivedRate.Should().Be(2.0);
     }
 
     // ── Fake IReferenceDataService ──────────────────────────────────
