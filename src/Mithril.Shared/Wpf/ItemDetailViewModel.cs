@@ -42,6 +42,10 @@ public sealed partial class ItemDetailViewModel
         AugmentPools = context.AugmentPools ?? [];
         TaughtRecipes = context.TaughtRecipes ?? [];
         EffectTags = context.EffectTags ?? [];
+        ResearchProgress = context.ResearchProgress ?? [];
+        XpGrants = context.XpGrants ?? [];
+        WordsOfPower = context.WordsOfPower ?? [];
+        LearnedAbilities = context.LearnedAbilities ?? [];
         _poolPresenter = poolPresenter;
     }
 
@@ -60,6 +64,10 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
     public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
     public IReadOnlyList<EffectTagPreview> EffectTags { get; }
+    public IReadOnlyList<ResearchProgressPreview> ResearchProgress { get; }
+    public IReadOnlyList<XpGrantPreview> XpGrants { get; }
+    public IReadOnlyList<WordOfPowerPreview> WordsOfPower { get; }
+    public IReadOnlyList<LearnedAbilityPreview> LearnedAbilities { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

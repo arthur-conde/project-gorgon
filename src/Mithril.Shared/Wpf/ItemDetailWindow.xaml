@@ -58,6 +58,10 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Header: icon + equip slot -->
@@ -306,8 +310,76 @@
                         </ItemsControl>
                     </StackPanel>
 
+                    <!-- Research progress (Research{Topic}{Level}; hidden when empty) -->
+                    <StackPanel Grid.Row="10" Margin="0,10,0,0"
+                                Visibility="{Binding ResearchProgress.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Progresses research" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding ResearchProgress}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- XP grants (Give{Skill}Xp; hidden when empty) -->
+                    <StackPanel Grid.Row="11" Margin="0,10,0,0"
+                                Visibility="{Binding XpGrants.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Grants XP" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding XpGrants}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Words of Power (DiscoverWordOfPower{N}; hidden when empty) -->
+                    <StackPanel Grid.Row="12" Margin="0,10,0,0"
+                                Visibility="{Binding WordsOfPower.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Reveals words of power" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding WordsOfPower}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Learned abilities (LearnAbility(internalName); hidden when empty) -->
+                    <StackPanel Grid.Row="13" Margin="0,10,0,0"
+                                Visibility="{Binding LearnedAbilities.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Teaches ability" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding LearnedAbilities}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <!-- Internal name footer -->
-                    <TextBlock Grid.Row="10" Text="{Binding InternalName}"
+                    <TextBlock Grid.Row="14" Text="{Binding InternalName}"
                                Foreground="#88FFFFFF"
                                FontFamily="{DynamicResource AppMonoFontFamily}"
                                FontSize="{DynamicResource AppFontSizeSmall}"

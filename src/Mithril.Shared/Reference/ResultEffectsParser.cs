@@ -43,6 +43,13 @@ public static class ResultEffectsParser
     // TSys-augment family — finite-use application sibling of AddItemTSysPower.
     private const string AddItemTSysPowerWaxPrefix = "AddItemTSysPowerWax";
 
+    // Knowledge / progression prefixes.
+    private const string ResearchPrefix = "Research";
+    private const string GivePrefix = "Give";
+    private const string XpSuffix = "Xp";
+    private const string DiscoverWordOfPowerPrefix = "DiscoverWordOfPower";
+    private const string LearnAbilityPrefix = "LearnAbility";
+
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="CraftedGearPreview"/> per
     /// well-formed <c>TSysCraftedEquipment</c> / <c>GiveTSysItem</c> / <c>CraftSimpleTSysItem</c>
@@ -211,6 +218,85 @@ public static class ResultEffectsParser
         foreach (var effect in effects)
         {
             if (TryParseEffectTag(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="ResearchProgressPreview"/>
+    /// per well-formed <c>Research{Topic}{Level}</c> entry. The trailing integer is
+    /// stripped greedily; the remainder becomes the topic. Topics observed in shipped
+    /// recipes.json: <c>WeatherWitching</c>, <c>FireMagic</c>, <c>IceMagic</c>,
+    /// <c>ExoticFireWalls</c>.
+    /// </summary>
+    public static IReadOnlyList<ResearchProgressPreview> ParseResearchProgress(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<ResearchProgressPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseResearchProgress(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="XpGrantPreview"/> per
+    /// well-formed <c>Give{Skill}Xp</c> entry. Today only <c>GiveTeleportationXp</c>
+    /// ships, but the typed shape lets future <c>Give*Xp</c> prefixes flow through
+    /// without parser churn.
+    /// </summary>
+    public static IReadOnlyList<XpGrantPreview> ParseXpGrants(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<XpGrantPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseXpGrant(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="WordOfPowerPreview"/>
+    /// per well-formed <c>DiscoverWordOfPower{N}</c> entry.
+    /// </summary>
+    public static IReadOnlyList<WordOfPowerPreview> ParseWordsOfPower(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<WordOfPowerPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseWordOfPower(effect, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="LearnedAbilityPreview"/>
+    /// per well-formed <c>LearnAbility(internalName)</c> entry. No abilities lookup
+    /// table exists today, so <see cref="LearnedAbilityPreview.DisplayName"/> falls
+    /// back to a humanised form of the internal name.
+    /// </summary>
+    public static IReadOnlyList<LearnedAbilityPreview> ParseLearnedAbilities(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<LearnedAbilityPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseLearnedAbility(effect, out var preview))
                 previews.Add(preview);
         }
         return previews;
@@ -713,6 +799,74 @@ public static class ResultEffectsParser
         }
 
         args = argsBody.ToString().Split(',');
+        return true;
+    }
+
+    private static bool TryParseResearchProgress(string? effect, out ResearchProgressPreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+        if (!trimmed.StartsWith(ResearchPrefix, StringComparison.Ordinal)) return false;
+        if (trimmed.Length <= ResearchPrefix.Length) return false;
+
+        // Strip trailing digits greedily — the topic is everything after "Research"
+        // up to but not including the last digit run.
+        var splitIndex = trimmed.Length;
+        while (splitIndex > 0 && char.IsDigit(trimmed[splitIndex - 1])) splitIndex--;
+        if (splitIndex == trimmed.Length) return false;
+        if (splitIndex == ResearchPrefix.Length) return false;
+
+        var topic = trimmed[ResearchPrefix.Length..splitIndex];
+        var levelToken = trimmed[splitIndex..];
+        if (!int.TryParse(levelToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var level)) return false;
+
+        preview = new ResearchProgressPreview(topic, level, $"Research {Humanize(topic)}");
+        return true;
+    }
+
+    private static bool TryParseXpGrant(string? effect, out XpGrantPreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+        if (!trimmed.StartsWith(GivePrefix, StringComparison.Ordinal)) return false;
+        if (!trimmed.EndsWith(XpSuffix, StringComparison.Ordinal)) return false;
+        if (trimmed.Length <= GivePrefix.Length + XpSuffix.Length) return false;
+
+        var skill = trimmed[GivePrefix.Length..^XpSuffix.Length];
+        if (skill.Length == 0) return false;
+
+        preview = new XpGrantPreview(Humanize(skill));
+        return true;
+    }
+
+    private static bool TryParseWordOfPower(string? effect, out WordOfPowerPreview preview)
+    {
+        preview = null!;
+        if (string.IsNullOrWhiteSpace(effect)) return false;
+        var trimmed = effect.Trim();
+        if (!trimmed.StartsWith(DiscoverWordOfPowerPrefix, StringComparison.Ordinal)) return false;
+
+        var suffix = trimmed[DiscoverWordOfPowerPrefix.Length..];
+        if (suffix.Length == 0) return false;
+        if (!int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) return false;
+
+        preview = new WordOfPowerPreview(n);
+        return true;
+    }
+
+    private static bool TryParseLearnedAbility(string? effect, out LearnedAbilityPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(LearnAbilityPrefix, StringComparison.Ordinal)) return false;
+        if (args.Length == 0) return false;
+
+        var internalName = args[0].Trim();
+        if (internalName.Length == 0) return false;
+
+        preview = new LearnedAbilityPreview(internalName, Humanize(internalName));
         return true;
     }
 
