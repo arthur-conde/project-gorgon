@@ -530,7 +530,12 @@ public sealed class CalibrationServiceTests
             internalName = "";
             return false;
         }
-        public event EventHandler<InventoryItem>? ItemAdded { add { } remove { } }
-        public event EventHandler<InventoryItem>? ItemDeleted { add { } remove { } }
+        public IDisposable Subscribe(Action<InventoryEvent> handler) => NoopSubscription.Instance;
+
+        private sealed class NoopSubscription : IDisposable
+        {
+            public static readonly NoopSubscription Instance = new();
+            public void Dispose() { }
+        }
     }
 }

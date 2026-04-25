@@ -77,22 +77,14 @@ public sealed class GardenIngestionService : BackgroundService
 
         // Inventory add/delete events are sourced from the shared IInventoryService
         // so Samwise picks up the same canonical map as Arwen, regardless of how
-        // late this gate opens. The events arrive on InventoryService's loop
-        // thread; dispatch onto the UI thread to share the state machine.
-        EventHandler<InventoryItem> onAdd = (_, item) =>
-        {
-            var ge = new AddItem(item.Timestamp, item.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture), item.InternalName);
-            _diag?.Trace("Samwise.Parse", Describe(ge));
-            Dispatch(() => _state.Apply(ge));
-        };
-        EventHandler<InventoryItem> onDelete = (_, item) =>
-        {
-            var ge = new DeleteItem(item.Timestamp, item.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            _diag?.Trace("Samwise.Parse", Describe(ge));
-            Dispatch(() => _state.Apply(ge));
-        };
-        _inventory.ItemAdded += onAdd;
-        _inventory.ItemDeleted += onDelete;
+        // late this gate opens. Subscribe replays the current map contents
+        // synchronously on this thread before going live, closing the race
+        // where session-replay AddItem events fired before this gate opened
+        // (and a plain += handler would have permanently missed them).
+        // Replay + live events arrive on the InventoryService loop thread or
+        // the subscribing thread, both held under the inventory's lock —
+        // dispatch onto the UI thread immediately so we don't block ingestion.
+        var subscription = _inventory.Subscribe(OnInventoryEvent);
 
         try
         {
@@ -108,9 +100,21 @@ public sealed class GardenIngestionService : BackgroundService
         }
         finally
         {
-            _inventory.ItemAdded -= onAdd;
-            _inventory.ItemDeleted -= onDelete;
+            subscription.Dispose();
         }
+    }
+
+    private void OnInventoryEvent(InventoryEvent evt)
+    {
+        var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        GardenEvent ge = evt.Kind switch
+        {
+            InventoryEventKind.Added => new AddItem(evt.Timestamp, idStr, evt.InternalName),
+            InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
+            _ => throw new InvalidOperationException($"Unknown InventoryEventKind: {evt.Kind}"),
+        };
+        _diag?.Trace("Samwise.Parse", Describe(ge));
+        Dispatch(() => _state.Apply(ge));
     }
 
     private static string Describe(GardenEvent e) => e switch
@@ -120,6 +124,7 @@ public sealed class GardenIngestionService : BackgroundService
         UpdateDescription ud => $"UpdateDesc   plot={ud.PlotId}  title={ud.Title}  action={ud.Action}  scale={ud.Scale:0.###}",
         StartInteraction si => $"StartInter   plot={si.PlotId}  target={si.Target}",
         AddItem ai => $"AddItem      id={ai.ItemId}  name={ai.ItemName}",
+        DeleteItem di => $"DeleteItem   id={di.ItemId}",
         UpdateItemCode uic => $"UpdateItem   id={uic.ItemId}",
         GardeningXp => "GardeningXp",
         ScreenTextError => "ScreenError",

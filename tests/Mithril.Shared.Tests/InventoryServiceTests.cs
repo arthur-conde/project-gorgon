@@ -42,20 +42,24 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
-    public async Task FiresItemDeletedEvent_WithResolvedName()
+    public async Task LiveSubscriber_ReceivesAddAndDeleteInOrder()
     {
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
         var svc = new InventoryService(stream);
-        var deleted = new List<InventoryItem>();
-        svc.ItemDeleted += (_, item) => deleted.Add(item);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
 
         await RunUntilDrainedAsync(svc, stream);
 
-        deleted.Should().ContainSingle();
-        deleted[0].InstanceId.Should().Be(42);
-        deleted[0].InternalName.Should().Be("Moonstone");
+        events.Should().HaveCount(2);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].InstanceId.Should().Be(42);
+        events[0].InternalName.Should().Be("Moonstone");
+        events[1].Kind.Should().Be(InventoryEventKind.Deleted);
+        events[1].InstanceId.Should().Be(42);
+        events[1].InternalName.Should().Be("Moonstone");
     }
 
     [Fact]
@@ -64,13 +68,122 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessDeleteItem(999)");
         var svc = new InventoryService(stream);
-        var deleted = new List<InventoryItem>();
-        svc.ItemDeleted += (_, item) => deleted.Add(item);
+        var deleted = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(e => { if (e.Kind == InventoryEventKind.Deleted) deleted.Add(e); });
 
         await RunUntilDrainedAsync(svc, stream);
 
         deleted.Should().BeEmpty();
         svc.TryResolve(999, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SubscribeAfterAdd_ReplaysCurrentMapAsAddedEvents()
+    {
+        // The late-subscribe race that caused issue #7: the seed AddItem fires
+        // during PlayerLogStream's session-replay flush, before the gated module
+        // attaches its handler. Subscribe must replay the live map so the new
+        // subscriber sees the same history as one that was attached upfront.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)");
+        var svc = new InventoryService(stream);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Should().HaveCount(2);
+        replayed.Should().AllSatisfy(e => e.Kind.Should().Be(InventoryEventKind.Added));
+        replayed.Select(e => (e.InstanceId, e.InternalName)).Should().BeEquivalentTo(new[]
+        {
+            (42L, "Moonstone"),
+            (7L, "BarleySeeds"),
+        });
+    }
+
+    [Fact]
+    public async Task SubscribeAfterDelete_DoesNotReplayDeletedEntry()
+    {
+        // Deleted entries are retained for TryResolve, but a brand-new subscriber
+        // shouldn't be told an item exists that's already gone. Otherwise Samwise
+        // would treat a stale id as a candidate seed for the next plant.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
+        var svc = new InventoryService(stream);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Should().BeEmpty();
+        // TryResolve still returns the name (Arwen's gift-attribution path).
+        svc.TryResolve(42, out var name).Should().BeTrue();
+        name.Should().Be("Moonstone");
+    }
+
+    [Fact]
+    public async Task SubscribeReplay_PreservesOriginalTimestamps()
+    {
+        // Samwise's plant-resolve window is 500 ms off SetPetOwner — replay
+        // events with synthetic "now" timestamps would pass the window even
+        // for items added an hour ago, breaking the correlation.
+        var ts1 = new DateTime(2026, 4, 25, 10, 0, 0, DateTimeKind.Utc);
+        var ts2 = new DateTime(2026, 4, 25, 10, 0, 1, DateTimeKind.Utc);
+        var stream = new ScriptedStream(
+            new RawLogLine(ts1, "[10:00:00] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)"),
+            new RawLogLine(ts2, "[10:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)"));
+        var svc = new InventoryService(stream);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Should().HaveCount(2);
+        replayed.Single(e => e.InstanceId == 42).Timestamp.Should().Be(ts1);
+        replayed.Single(e => e.InstanceId == 7).Timestamp.Should().Be(ts2);
+    }
+
+    [Fact]
+    public async Task DisposeSubscription_StopsFurtherEvents()
+    {
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().HaveCount(1);
+
+        sub.Dispose();
+        sub.Dispose(); // idempotent
+
+        stream.Push("[00:00:02] LocalPlayer: ProcessAddItem(AppleJuice(99), -1, False)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().HaveCount(1, "the disposed subscription must not receive further events");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task SubscriberException_DoesNotBreakOtherSubscribers()
+    {
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)");
+        var svc = new InventoryService(stream);
+
+        var goodEvents = new List<InventoryEvent>();
+        using var bad = svc.Subscribe(_ => throw new InvalidOperationException("boom"));
+        using var good = svc.Subscribe(goodEvents.Add);
+
+        await RunUntilDrainedAsync(svc, stream);
+
+        goodEvents.Should().ContainSingle(e => e.InstanceId == 42 && e.Kind == InventoryEventKind.Added);
     }
 
     private static async Task RunUntilDrainedAsync(InventoryService svc, ScriptedStream stream)
@@ -86,16 +199,34 @@ public sealed class InventoryServiceTests
     private sealed class ScriptedStream : IPlayerLogStream
     {
         private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private int _pending;
+        private long _pending;
+        private TaskCompletionSource _drained = NewDrainTcs();
 
-        public ScriptedStream(params string[] lines)
+        public ScriptedStream(params string[] lines) : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
+
+        public ScriptedStream(params RawLogLine[] lines)
         {
-            _pending = lines.Length;
-            foreach (var line in lines) _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
+            if (lines.Length == 0)
+            {
+                // No initial lines — leave _drained signalled so callers can use Push.
+                _drained.TrySetResult();
+                return;
+            }
+            Interlocked.Add(ref _pending, lines.Length);
+            foreach (var line in lines) _channel.Writer.TryWrite(line);
+        }
+
+        public void Push(string line)
+        {
+            // Reset drain latch for the next batch so callers can wait on the
+            // newly pushed line(s) without a stale completion firing.
+            Interlocked.Increment(ref _pending);
+            Interlocked.Exchange(ref _drained, NewDrainTcs());
+            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
         }
 
         public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
 
         public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
@@ -110,5 +241,8 @@ public sealed class InventoryServiceTests
                 }
             }
         }
+
+        private static TaskCompletionSource NewDrainTcs() =>
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

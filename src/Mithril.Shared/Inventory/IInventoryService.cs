@@ -1,40 +1,58 @@
 namespace Mithril.Shared.Inventory;
 
 /// <summary>
-/// An item instance that was added to or removed from the local player's
-/// inventory. <paramref name="InstanceId"/> is the per-item unique id emitted
-/// by <c>ProcessAddItem</c>; <paramref name="InternalName"/> maps to
-/// <c>Mithril.Shared.Reference.ItemEntry.InternalName</c>.
+/// A live inventory transition. <paramref name="InstanceId"/> is the per-item
+/// unique id emitted by <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c>.
+/// <paramref name="InternalName"/> maps to
+/// <see cref="Mithril.Shared.Reference.ItemEntry.InternalName"/>.
 /// <paramref name="Timestamp"/> is the source log line's timestamp (UTC), not
 /// wall-clock — consumers with time-window logic (e.g. Samwise's plant-resolve
 /// window) need the in-game timeline.
 /// </summary>
-public readonly record struct InventoryItem(long InstanceId, string InternalName, DateTime Timestamp);
+public readonly record struct InventoryEvent(
+    InventoryEventKind Kind,
+    long InstanceId,
+    string InternalName,
+    DateTime Timestamp);
+
+public enum InventoryEventKind
+{
+    Added,
+    Deleted,
+}
 
 /// <summary>
 /// Canonical <c>instanceId → InternalName</c> lookup maintained by tailing
 /// <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c> on <c>IPlayerLogStream</c>.
 ///
-/// Owning this centrally (rather than having each module rebuild its own
-/// map from the stream) avoids the late-subscribe race: modules query the
-/// live map at use-time instead of relying on event replay they may have
-/// missed while waiting on a gate.
+/// Owning this centrally (rather than having each module rebuild its own map
+/// from the stream) avoids the late-subscribe race: modules either query the
+/// live map at use-time via <see cref="TryResolve"/>, or subscribe via
+/// <see cref="Subscribe"/> which atomically replays the current map state to
+/// the new handler before delivering live events.
 /// </summary>
 public interface IInventoryService
 {
-    /// <summary>Resolve an instance id to its internal item name, if known.</summary>
+    /// <summary>
+    /// Resolve an instance id to its internal item name, if known. Returns
+    /// true even for ids that have been deleted — the entry is retained so
+    /// late lookups (e.g. Arwen's gift-attribution path) still succeed.
+    /// </summary>
     bool TryResolve(long instanceId, out string internalName);
 
     /// <summary>
-    /// Fired after an item instance is added to the map. Runs on the log-ingestion
-    /// thread; handlers should be fast or dispatch.
+    /// Attach a handler that receives every live (non-deleted) item currently
+    /// in the map (as synthesized <see cref="InventoryEventKind.Added"/>
+    /// events) followed by every live add/delete. Replay and live-attach are
+    /// atomic — no event is lost, duplicated, or reordered relative to the
+    /// canonical map.
+    ///
+    /// The handler is invoked synchronously under an internal lock both during
+    /// replay (on the subscribing thread) and during live dispatch (on the
+    /// ingestion-loop thread). Subscribers that do non-trivial work should
+    /// dispatch off-thread immediately to avoid blocking ingestion.
+    ///
+    /// Dispose the returned subscription to stop receiving further events.
     /// </summary>
-    event EventHandler<InventoryItem>? ItemAdded;
-
-    /// <summary>
-    /// Fired after an item instance is removed from the map. The event carries the
-    /// resolved <see cref="InventoryItem"/> so handlers can react without a prior
-    /// <see cref="TryResolve"/> (which would already have missed).
-    /// </summary>
-    event EventHandler<InventoryItem>? ItemDeleted;
+    IDisposable Subscribe(Action<InventoryEvent> handler);
 }

@@ -20,15 +20,24 @@ public sealed class SerilogDiagnosticsSink : IDiagnosticsSink, IDisposable
     {
         _inner = inner;
         Directory.CreateDirectory(logDirectory);
+        // Desktop-app rolling policy: roll daily AND on size cap so a single
+        // long session can't silently exceed the cap and stop logging (the
+        // pre-rollOnFileSizeLimit default behaviour). 50 MB per file × 30
+        // retained ≈ 1.5 GB worst-case on disk, which is fine for a user
+        // app log directory and gives ~3-5 sessions of ProcessAddItem-heavy
+        // verbose history before pruning.
         _logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .WriteTo.File(
                 formatter: new CompactJsonFormatter(),
                 path: Path.Combine(logDirectory, "mithril-.json"),
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 14,
+                rollOnFileSizeLimit: true,
+                fileSizeLimitBytes: 50L * 1024 * 1024,
+                retainedFileCountLimit: 30,
                 shared: false,
-                buffered: false)
+                buffered: false,
+                flushToDiskInterval: TimeSpan.FromSeconds(2))
             .CreateLogger();
     }
 

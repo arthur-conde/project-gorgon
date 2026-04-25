@@ -1,5 +1,8 @@
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using FluentAssertions;
+using Mithril.Shared.Inventory;
+using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
@@ -100,6 +103,92 @@ public class TwoBarleyRegressionTest
         plots.Should().ContainKey("590364");
         plots["590342"].CropType.Should().Be("Barley", "first plant must identify as Barley (was Squash under the bug)");
         plots["590364"].CropType.Should().Be("Barley", "second plant must identify as Barley");
+    }
+
+    [Fact]
+    public async Task SubscribeAfterSeedAdd_StillResolvesPlant()
+    {
+        // Direct repro for issue #7: the seed AddItem fires during PlayerLogStream's
+        // session-replay flush, BEFORE the gated GardenIngestionService attaches its
+        // handler. Under the old `event ItemAdded` design, that AddItem was lost and
+        // the plant later landed with CropType=null → "Unknown" in the UI.
+        // Under the new Subscribe(replay-on-attach) contract, the AddItem is replayed
+        // synchronously when GardenIngestionService subscribes, so the plant resolves.
+        var parser = new GardenLogParser();
+        var cfg = new InMemoryCropConfigStore();
+        var ac = new FakeActiveCharacterService();
+        ac.SetActiveCharacter("Hits", "");
+        var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData(), activeChar: ac);
+
+        // Drive the real InventoryService against a scripted log stream.
+        var stream = new ScriptedStream();
+        var inv = new InventoryService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var runTask = inv.StartAsync(cts.Token);
+
+        // Push the seed AddItem BEFORE Samwise subscribes — simulating the gate
+        // race where InventoryService is up but GardenIngestionService is still
+        // doing LoadAllAsync.
+        stream.Push(new RawLogLine(new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
+            "[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)"));
+        await stream.WaitForDrainAsync(cts.Token);
+
+        // Now subscribe — replay must deliver the seed AddItem retroactively.
+        using var sub = inv.Subscribe(evt =>
+        {
+            var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            sm.Apply(evt.Kind switch
+            {
+                InventoryEventKind.Added => (GardenEvent)new AddItem(evt.Timestamp, idStr, evt.InternalName),
+                InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
+                _ => throw new InvalidOperationException(),
+            });
+        });
+
+        // Now plant: SetPetOwner + ProcessUpdateItemCode (parser-driven path).
+        Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
+            new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
+        Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)",
+            new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
+
+        sm.Snapshot()["Hits"]["590342"].CropType
+            .Should().Be("Barley", "Subscribe replay must deliver the seed AddItem so plant-resolve can map id→Barley");
+
+        await cts.CancelAsync();
+        try { await inv.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+        _ = runTask;
+    }
+
+    private sealed class ScriptedStream : IPlayerLogStream
+    {
+        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
+        private long _pending;
+        private TaskCompletionSource _drained = NewDrainTcs();
+
+        public void Push(RawLogLine line)
+        {
+            Interlocked.Increment(ref _pending);
+            Interlocked.Exchange(ref _drained, NewDrainTcs());
+            _channel.Writer.TryWrite(line);
+        }
+
+        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
+
+        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (_channel.Reader.TryRead(out var line))
+                {
+                    yield return line;
+                    if (Interlocked.Decrement(ref _pending) == 0) _drained.TrySetResult();
+                }
+            }
+        }
+
+        private static TaskCompletionSource NewDrainTcs() =>
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private sealed class BarleyOnlyReferenceData : IReferenceDataService
