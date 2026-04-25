@@ -10,18 +10,23 @@
              d:DataContext="{d:DesignInstance vm:SarumanViewModel}"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <Style x:Key="CodeCellText" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSpent}" Value="True">
-                    <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
-                    <Setter Property="TextDecorations" Value="Strikethrough"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="CodeCellText" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSpent}" Value="True">
+                        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                        <Setter Property="TextDecorations" Value="Strikethrough"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <DockPanel Margin="16">

@@ -10,6 +10,14 @@
              d:DataContext="{d:DesignInstance vm:GourmandViewModel}"
              Background="#FF1A1A1A">
 
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
     <DockPanel Margin="16">
         <!-- ── Header / Stats ── -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">

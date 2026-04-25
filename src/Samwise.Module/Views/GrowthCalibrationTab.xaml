@@ -9,6 +9,14 @@
              d:DataContext="{d:DesignInstance vm:GrowthCalibrationViewModel}"
              Background="#FF1A1A1A">
 
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
     <DockPanel Margin="12">
         <!-- Header -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
