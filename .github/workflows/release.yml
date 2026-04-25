@@ -25,19 +25,24 @@ jobs:
           # Nerdbank.GitVersioning needs full history to compute height/SemVer.
           fetch-depth: 0
 
-      # The windows-2025 runner ships with Microsoft Defender enabled, and its post-write
-      # scan-and-quarantine of fresh JSON files in the workspace deletes test artifacts
-      # between WriteAllText and the subsequent read (see commit b1d0a9c for diagnostics).
-      # Excluding the workspace and %TEMP% from real-time scanning is the standard fix —
-      # the runner is ephemeral and discarded after the job, so there's no security cost.
-      - name: Exclude workspace from Defender scanning
+      # The windows-2025 runner ships with Microsoft Defender real-time scanning enabled.
+      # Path-based exclusions weren't enough on their own (see prior CI runs at v0.0.1-test3
+      # and v0.0.1-test4 — even with workspace + temp + runner-temp excluded, plus the
+      # drive-level exclusions the image ships with, GandalfSplitMigrationTests still saw
+      # files vanishing between write and read). dotnet/runtime, dotnet/sdk, and
+      # dotnet/aspnetcore all disable real-time monitoring outright on their CI runners
+      # for the same reason — and for build-perf, since Defender's inline scan slows
+      # File I/O 2–5×. The runner VM is ephemeral and destroyed after the job, so there
+      # is no persistent security weakening from this.
+      - name: Disable Defender real-time monitoring
         shell: pwsh
         run: |
-          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-          Add-MpPreference -ExclusionPath "$env:TEMP"
-          Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP"
-          Write-Host "Defender exclusions added; current list:"
-          (Get-MpPreference).ExclusionPath
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Write-Host "Defender realtime monitoring disabled. Current state:"
+          $p = Get-MpPreference
+          "DisableRealtimeMonitoring = $($p.DisableRealtimeMonitoring)"
+          "DisableBehaviorMonitoring = $($p.DisableBehaviorMonitoring)"
+          "DisableScriptScanning     = $($p.DisableScriptScanning)"
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
