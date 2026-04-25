@@ -134,7 +134,7 @@ jobs:
         run: >
           vpk pack
           --packId MithrilShell
-          --packTitle "Mithril for Project: Gorgon"
+          --packTitle "Mithril for Project Gorgon"
           --packAuthors "Arthur Conde"
           --packVersion ${{ steps.ver.outputs.version }}
           --packDir publish/selfcontained
@@ -158,7 +158,7 @@ jobs:
         run: >
           vpk pack
           --packId MithrilShell
-          --packTitle "Mithril for Project: Gorgon"
+          --packTitle "Mithril for Project Gorgon"
           --packAuthors "Arthur Conde"
           --packVersion ${{ steps.ver.outputs.version }}
           --packDir publish/fxdep
