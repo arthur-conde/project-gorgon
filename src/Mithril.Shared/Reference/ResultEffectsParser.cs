@@ -180,12 +180,27 @@ public static class ResultEffectsParser
 
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="EffectTagPreview"/> per
-    /// recognized zero/one-arg tag prefix: <c>DispelCalligraphyA/B/C</c>,
-    /// <c>CalligraphyComboNN</c>, <c>MeditationWithDaily[(combo)]</c>, the TSys-augment
-    /// behavioural tags (<c>ApplyAugmentOil</c>, <c>RemoveAddedTSysPowerFromItem</c>,
-    /// <c>ApplyAddItemTSysPowerWaxFromSourceItem</c>), and the per-slot
-    /// <c>Decompose*ItemIntoAugmentResources</c> variants. Unknown prefixes are
-    /// deliberately not emitted.
+    /// recognized zero/one-arg tag prefix. Coverage today:
+    /// <list type="bullet">
+    ///   <item>Calligraphy: <c>DispelCalligraphyA/B/C</c>, <c>CalligraphyComboNN[L]</c>
+    ///   (optional letter-suffix variant), <c>Calligraphy{N}{Slot}</c>, and the
+    ///   typed sub-families <c>CalligraphySlash/Rage/FirstAid/ArmorRepair/Piercing/SlashingFlat{N}</c>.</item>
+    ///   <item>Meditation: <c>MeditationWithDaily[(combo)]</c>, <c>MeditationNoDaily</c>,
+    ///   and the suffixed-tier families <c>MeditationHealth/Power/Breath/CritDmg/Indirect/
+    ///   BodyHeat/Metabolism/DeathAvoidance/BuffIndirectCold/VulnPsi/VulnFire/VulnCold/
+    ///   VulnDarkness/VulnNature/VulnElectricity{N}</c>.</item>
+    ///   <item>Whittling: <c>Whittling{N}</c>, <c>WhittlingKnifeBuff{N}</c>.</item>
+    ///   <item>Augury: <c>Augury{N}</c>.</item>
+    ///   <item>Premonition: <c>SpawnPremonition_{kind}</c>, <c>DispelSpawnPremonitionsOnDeath</c>.</item>
+    ///   <item>Status: <c>Infertility</c>, <c>SleepResistance</c>, <c>SexualEnergy</c>,
+    ///   <c>ArgumentResistance</c>.</item>
+    ///   <item>TempestEnergy: <c>PermanentlyRaiseMaxTempestEnergy(N)</c> — parametrised.</item>
+    ///   <item>TSys-augment behavioural tags: <c>ApplyAugmentOil</c>,
+    ///   <c>RemoveAddedTSysPowerFromItem</c>, <c>ApplyAddItemTSysPowerWaxFromSourceItem</c>.</item>
+    ///   <item>Per-slot <c>Decompose*ItemIntoAugmentResources</c> variants.</item>
+    /// </list>
+    /// Unknown prefixes are deliberately not emitted; the generic-fallback
+    /// future-proofing path lives in a later parser phase.
     /// </summary>
     public static IReadOnlyList<EffectTagPreview> ParseEffectTags(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
@@ -478,11 +493,67 @@ public static class ResultEffectsParser
         return count;
     }
 
+    /// <summary>
+    /// Suffixed-tier tag families: prefix + integer suffix → <c>"{format} Tier {N}"</c>-style line.
+    /// Listed prefix-longest-first so <c>MeditationVulnPsi</c> wins over a hypothetical <c>Meditation</c>.
+    /// </summary>
+    private static readonly (string Prefix, string Format)[] SuffixedTierFamilies =
+    {
+        ("MeditationVulnElectricity", "Meditation: Electricity Vulnerability Tier {0}"),
+        ("MeditationVulnDarkness", "Meditation: Darkness Vulnerability Tier {0}"),
+        ("MeditationBuffIndirectCold", "Meditation: Indirect Cold Buff Tier {0}"),
+        ("MeditationDeathAvoidance", "Meditation: Death Avoidance Tier {0}"),
+        ("MeditationVulnNature", "Meditation: Nature Vulnerability Tier {0}"),
+        ("MeditationMetabolism", "Meditation: Metabolism Tier {0}"),
+        ("MeditationVulnCold", "Meditation: Cold Vulnerability Tier {0}"),
+        ("MeditationVulnFire", "Meditation: Fire Vulnerability Tier {0}"),
+        ("MeditationVulnPsi", "Meditation: Psychic Vulnerability Tier {0}"),
+        ("MeditationCritDmg", "Meditation: Crit Damage Tier {0}"),
+        ("MeditationIndirect", "Meditation: Indirect Damage Tier {0}"),
+        ("MeditationBodyHeat", "Meditation: Body Heat Tier {0}"),
+        ("MeditationHealth", "Meditation: Health Tier {0}"),
+        ("MeditationBreath", "Meditation: Breath Tier {0}"),
+        ("MeditationPower", "Meditation: Power Tier {0}"),
+        ("CalligraphyArmorRepair", "Calligraphy: Armor Repair Tier {0}"),
+        ("CalligraphySlashingFlat", "Calligraphy: Slashing Flat Tier {0}"),
+        ("CalligraphyFirstAid", "Calligraphy: First Aid Tier {0}"),
+        ("CalligraphyPiercing", "Calligraphy: Piercing Tier {0}"),
+        ("CalligraphySlash", "Calligraphy: Slashing Tier {0}"),
+        ("CalligraphyRage", "Calligraphy: Rage Tier {0}"),
+        ("WhittlingKnifeBuff", "Whittling Knife Buff Tier {0}"),
+        ("Whittling", "Whittling Tier {0}"),
+        ("Augury", "Augury Tier {0}"),
+    };
+
+    /// <summary>
+    /// Zero-arg tags that map to a single fixed display line. Order doesn't matter
+    /// (exact match), kept alphabetical for readability.
+    /// </summary>
+    private static readonly Dictionary<string, string> ExactTagLines = new(StringComparer.Ordinal)
+    {
+        ["ApplyAddItemTSysPowerWaxFromSourceItem"] = "Applies augment wax from source item",
+        ["ApplyAugmentOil"] = "Applies augment oil",
+        ["ArgumentResistance"] = "Argument Resistance",
+        ["DispelSpawnPremonitionsOnDeath"] = "Dispels premonitions on death",
+        ["Infertility"] = "Infertility",
+        ["MeditationNoDaily"] = "Meditation: No Daily",
+        ["RemoveAddedTSysPowerFromItem"] = "Removes augment from item",
+        ["SexualEnergy"] = "Sexual Energy",
+        ["SleepResistance"] = "Sleep Resistance",
+    };
+
     private static bool TryParseEffectTag(string? effect, out EffectTagPreview preview)
     {
         preview = null!;
         if (string.IsNullOrWhiteSpace(effect)) return false;
         var trimmed = effect.Trim();
+
+        // Exact-match zero-arg tags.
+        if (ExactTagLines.TryGetValue(trimmed, out var line))
+        {
+            preview = new EffectTagPreview(line);
+            return true;
+        }
 
         // Zero-arg form: DispelCalligraphyA / DispelCalligraphyB / DispelCalligraphyC.
         if (trimmed.StartsWith("DispelCalligraphy", StringComparison.Ordinal) && trimmed.Length == "DispelCalligraphy".Length + 1)
@@ -496,13 +567,24 @@ public static class ResultEffectsParser
             return false;
         }
 
-        // Zero-arg form: CalligraphyComboNN (two-digit suffix).
+        // Zero-arg form: CalligraphyComboNN (digit suffix), with optional trailing
+        // letter (CalligraphyCombo1C..CalligraphyCombo7C). The letter denotes which
+        // calligraphy slot the combo belongs to; surfacing it keeps the chip
+        // unambiguous when multiple slots share the same number.
         if (trimmed.StartsWith("CalligraphyCombo", StringComparison.Ordinal))
         {
             var suffix = trimmed["CalligraphyCombo".Length..];
+            char? letter = null;
+            if (suffix.Length > 0 && char.IsLetter(suffix[^1]))
+            {
+                letter = suffix[^1];
+                suffix = suffix[..^1];
+            }
             if (suffix.Length > 0 && int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
             {
-                preview = new EffectTagPreview($"Combo: Calligraphy Combo {n}");
+                preview = new EffectTagPreview(letter is null
+                    ? $"Combo: Calligraphy Combo {n}"
+                    : $"Combo: Calligraphy Combo {n} (Slot {letter})");
                 return true;
             }
             return false;
@@ -531,24 +613,60 @@ public static class ResultEffectsParser
             return false;
         }
 
-        // Zero-arg TSys-augment family tags. Each one corresponds to a real recipe
-        // outcome (apply oil, undo augment, apply wax from another item) that the
-        // earlier "drop unparsed prefixes" stance silently swallowed.
-        if (trimmed.Equals("ApplyAugmentOil", StringComparison.Ordinal))
+        // Calligraphy{N}{Slot} — e.g. Calligraphy1B, Calligraphy15B, Calligraphy5D.
+        // Distinct from the CalligraphySlash/Rage/etc. families above (which start
+        // with a letter token, not a digit), so we test for it after the families.
+        // Match this BEFORE the generic suffixed-tier loop because "Calligraphy"
+        // isn't in that table — but a future addition there shouldn't shadow it.
+        if (trimmed.StartsWith("Calligraphy", StringComparison.Ordinal)
+            && trimmed.Length > "Calligraphy".Length
+            && char.IsDigit(trimmed["Calligraphy".Length]))
         {
-            preview = new EffectTagPreview("Applies augment oil");
+            var rest = trimmed["Calligraphy".Length..];
+            char? slot = null;
+            if (rest.Length > 0 && char.IsLetter(rest[^1]))
+            {
+                slot = rest[^1];
+                rest = rest[..^1];
+            }
+            if (rest.Length > 0 && int.TryParse(rest, NumberStyles.Integer, CultureInfo.InvariantCulture, out var num))
+            {
+                preview = new EffectTagPreview(slot is null
+                    ? $"Calligraphy {num}"
+                    : $"Calligraphy {num} Slot {slot}");
+                return true;
+            }
+            return false;
+        }
+
+        // Suffixed-tier families — strip prefix, parse trailing integer.
+        foreach (var (prefix, format) in SuffixedTierFamilies)
+        {
+            if (!trimmed.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var suffix = trimmed[prefix.Length..];
+            if (suffix.Length == 0) continue;
+            if (!int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tier)) continue;
+            preview = new EffectTagPreview(string.Format(CultureInfo.InvariantCulture, format, tier));
             return true;
         }
 
-        if (trimmed.Equals("RemoveAddedTSysPowerFromItem", StringComparison.Ordinal))
+        // SpawnPremonition_{kind} — humanise the kind suffix.
+        if (trimmed.StartsWith("SpawnPremonition_", StringComparison.Ordinal)
+            && trimmed.Length > "SpawnPremonition_".Length)
         {
-            preview = new EffectTagPreview("Removes augment from item");
+            var kind = trimmed["SpawnPremonition_".Length..];
+            preview = new EffectTagPreview($"Premonition: {Humanize(kind)}");
             return true;
         }
 
-        if (trimmed.Equals("ApplyAddItemTSysPowerWaxFromSourceItem", StringComparison.Ordinal))
+        // Parametrised: PermanentlyRaiseMaxTempestEnergy(N).
+        if (trimmed.StartsWith("PermanentlyRaiseMaxTempestEnergy", StringComparison.Ordinal)
+            && TryParsePrefixCall(trimmed, out var tePrefix, out var teArgs)
+            && tePrefix.Equals("PermanentlyRaiseMaxTempestEnergy", StringComparison.Ordinal)
+            && teArgs.Length >= 1
+            && int.TryParse(teArgs[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var teDelta))
         {
-            preview = new EffectTagPreview("Applies augment wax from source item");
+            preview = new EffectTagPreview($"Permanently raises max Tempest Energy by {teDelta}");
             return true;
         }
 

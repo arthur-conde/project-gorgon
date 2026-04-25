@@ -131,4 +131,152 @@ public class EffectTagParserTests
 
         previews.Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData("CalligraphyCombo1C", "Combo: Calligraphy Combo 1 (Slot C)")]
+    [InlineData("CalligraphyCombo7C", "Combo: Calligraphy Combo 7 (Slot C)")]
+    public void CalligraphyComboNN_LetterSuffix_IsEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("MeditationHealth5", "Meditation: Health Tier 5")]
+    [InlineData("MeditationPower3", "Meditation: Power Tier 3")]
+    [InlineData("MeditationBreath4", "Meditation: Breath Tier 4")]
+    [InlineData("MeditationVulnPsi5", "Meditation: Psychic Vulnerability Tier 5")]
+    [InlineData("MeditationVulnCold2", "Meditation: Cold Vulnerability Tier 2")]
+    [InlineData("MeditationVulnFire1", "Meditation: Fire Vulnerability Tier 1")]
+    [InlineData("MeditationVulnDarkness7", "Meditation: Darkness Vulnerability Tier 7")]
+    [InlineData("MeditationVulnNature3", "Meditation: Nature Vulnerability Tier 3")]
+    [InlineData("MeditationVulnElectricity6", "Meditation: Electricity Vulnerability Tier 6")]
+    [InlineData("MeditationCritDmg4", "Meditation: Crit Damage Tier 4")]
+    [InlineData("MeditationIndirect2", "Meditation: Indirect Damage Tier 2")]
+    [InlineData("MeditationBuffIndirectCold3", "Meditation: Indirect Cold Buff Tier 3")]
+    [InlineData("MeditationDeathAvoidance5", "Meditation: Death Avoidance Tier 5")]
+    [InlineData("MeditationBodyHeat1", "Meditation: Body Heat Tier 1")]
+    [InlineData("MeditationMetabolism2", "Meditation: Metabolism Tier 2")]
+    public void MeditationTierFamilies_AreEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void MeditationNoDaily_IsEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(["MeditationNoDaily"], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be("Meditation: No Daily");
+    }
+
+    [Theory]
+    [InlineData("CalligraphySlash3", "Calligraphy: Slashing Tier 3")]
+    [InlineData("CalligraphyFirstAid2", "Calligraphy: First Aid Tier 2")]
+    [InlineData("CalligraphyRage5", "Calligraphy: Rage Tier 5")]
+    [InlineData("CalligraphyArmorRepair1", "Calligraphy: Armor Repair Tier 1")]
+    [InlineData("CalligraphyPiercing4", "Calligraphy: Piercing Tier 4")]
+    [InlineData("CalligraphySlashingFlat2", "Calligraphy: Slashing Flat Tier 2")]
+    public void CalligraphyTypedSubFamilies_AreEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Calligraphy1", "Calligraphy 1")]
+    [InlineData("Calligraphy15", "Calligraphy 15")]
+    [InlineData("Calligraphy1B", "Calligraphy 1 Slot B")]
+    [InlineData("Calligraphy5D", "Calligraphy 5 Slot D")]
+    [InlineData("Calligraphy10D", "Calligraphy 10 Slot D")]
+    public void CalligraphyNumberSlot_IsEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Whittling3", "Whittling Tier 3")]
+    [InlineData("WhittlingKnifeBuff5", "Whittling Knife Buff Tier 5")]
+    public void WhittlingTierFamilies_AreEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Augury_IsEmittedAsTier()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(["Augury2"], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be("Augury Tier 2");
+    }
+
+    [Theory]
+    [InlineData("SpawnPremonition_FireBolt", "Premonition: Fire Bolt")]
+    [InlineData("SpawnPremonition_ColdShield", "Premonition: Cold Shield")]
+    public void SpawnPremonition_IsHumanized(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void DispelSpawnPremonitionsOnDeath_IsEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(["DispelSpawnPremonitionsOnDeath"], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be("Dispels premonitions on death");
+    }
+
+    [Theory]
+    [InlineData("Infertility", "Infertility")]
+    [InlineData("SleepResistance", "Sleep Resistance")]
+    [InlineData("SexualEnergy", "Sexual Energy")]
+    [InlineData("ArgumentResistance", "Argument Resistance")]
+    public void ZeroArgStatusTags_AreEmitted(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("PermanentlyRaiseMaxTempestEnergy(1)", "Permanently raises max Tempest Energy by 1")]
+    [InlineData("PermanentlyRaiseMaxTempestEnergy(5)", "Permanently raises max Tempest Energy by 5")]
+    public void PermanentlyRaiseMaxTempestEnergy_LiftsArg(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle().Which.DisplayText.Should().Be(expected);
+    }
 }
