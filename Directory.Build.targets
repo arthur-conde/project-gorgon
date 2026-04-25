@@ -38,6 +38,17 @@
   </Target>
 
   <!--
+    The built-in Clean target only removes known build outputs; it leaves bin/ and obj/
+    on disk along with anything the SDK didn't track (stale per-config folders, leftover
+    publish output, NuGet restore artifacts). Wipe both directories so `dotnet clean`
+    actually returns the project to a pristine state. A subsequent build will need to
+    restore again, which is the expected cost of a deep clean.
+  -->
+  <Target Name="CleanBinObj" AfterTargets="Clean">
+    <RemoveDir Directories="$(BaseOutputPath);$(BaseIntermediateOutputPath)" />
+  </Target>
+
+  <!--
     XAML StaticResource lint. Projects opt in by setting <RunsXamlResourceLint>true</RunsXamlResourceLint>.
     The lint tool scans the whole repo, so a single anchor project (Mithril.Shell) is sufficient — adding
     the prop to multiple projects just runs the same scan multiple times.
