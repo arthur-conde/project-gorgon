@@ -1,6 +1,6 @@
 using System.Windows;
-using Gorgon.Shared.Logging;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Modules;
 using Legolas.Domain;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;

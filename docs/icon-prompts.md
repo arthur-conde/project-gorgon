@@ -8,6 +8,16 @@ Prepend to each prompt:
 
 > Square 1024×1024 app icon. Near-black charcoal background (#1A1A1A) with a faint thematic texture. Warm amber-gold monochrome subject (#D4A74A to #E9B75A) with subtle grunge/paper grain. Thin gold circular border with a soft outer glow, centered composition, generous negative space. Flat semi-iconographic emblem, readable as a silhouette at 32px. No text, no lettering, no signatures. Consistent set style — companion icon to a pair already showing a plant cradled in hands and an archer's compass rose.
 
+## Mithril · Shell (the app itself)
+
+The app icon. The shell sits one tier above the modules and shifts the subject palette accordingly — paste the shared style header above, then this block as the subject (the palette override line replaces the header's "Warm amber-gold monochrome subject" sentence):
+
+```
+Override: subject palette is cool mithril-silver (#C4D2E0 to #8FA0B8) instead of amber-gold. Charcoal background, gold circular border, and grunge texture as in the header.
+
+Subject: a single large polished mithril coin centered in the frame, struck with a six-pointed elven star at its face, the coin rendered in cool silver-white with subtle blue undertones and slightly luminescent. Fine engraved runic filigree traces the perimeter just inside the star — a nod to the dwarven smithwork mithril is most associated with. Faint concentric ripples radiate outward from the coin's rim as if it has just been set down on a still surface, and a small scattering of star-glints sits in the upper field picking up the coin's light. Faint background texture of interlocking mithril chain-mail rings, heavily muted so the coin remains the clear focal point.
+```
+
 ## Samwise · Garden (gardening, crops, ripeness alarms)
 
 Already shipped — included here as a style anchor and for regeneration.

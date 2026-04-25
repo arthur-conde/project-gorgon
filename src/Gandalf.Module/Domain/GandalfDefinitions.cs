@@ -4,7 +4,7 @@ namespace Gandalf.Domain;
 
 /// <summary>
 /// Global set of timer definitions shared across every character. Persisted flat at
-/// <c>%LocalAppData%/Gorgon/Gandalf/definitions.json</c> via <see cref="Gorgon.Shared.Settings.ISettingsStore{T}"/>.
+/// <c>%LocalAppData%/Mithril/Gandalf/definitions.json</c> via <see cref="Mithril.Shared.Settings.ISettingsStore{T}"/>.
 /// Per-character progress lives separately in <see cref="GandalfProgress"/>.
 /// </summary>
 public sealed class GandalfDefinitions

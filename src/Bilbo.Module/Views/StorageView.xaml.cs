@@ -2,8 +2,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Bilbo.Domain;
 using Bilbo.ViewModels;
-using Gorgon.Shared.Settings;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Settings;
+using Mithril.Shared.Wpf;
 
 namespace Bilbo.Views;
 

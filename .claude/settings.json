@@ -8,7 +8,30 @@
       "WebFetch(domain:wiki.projectgorgon.com)",
       "WebFetch(domain:pgemissary.com)",
       "Read(//tmp/**)",
-      "Read(//i/tmp/**)"
+      "Read(//i/tmp/**)",
+      "PowerShell($asm = [System.Reflection.Assembly]::LoadFile\\(\"i:\\\\src\\\\project gorgon\\\\src\\\\Mithril.Shared\\\\bin\\\\Debug\\\\net10.0-windows\\\\Mithril.Shared.dll\"\\); $stream = $asm.GetManifestResourceStream\\(\"Mithril.Shared.g.resources\"\\); $reader = New-Object System.Resources.ResourceReader\\($stream\\); foreach \\($entry in $reader\\) { Write-Output $entry.Key })",
+      "PowerShell(dotnet test tests/Mithril.Shared.Tests --nologo -v q 2>&1)",
+      "PowerShell(dotnet test tests/Mithril.Shared.Tests --nologo 2>&1 | Out-File -FilePath i:\\\\src\\\\project` gorgon\\\\test-output.txt -Encoding utf8; Write-Output \"exit=$LASTEXITCODE\")",
+      "PowerShell($asm = [System.Reflection.Assembly]::LoadFile\\(\"i:\\\\src\\\\project gorgon\\\\src\\\\Mithril.Shell\\\\bin\\\\Debug\\\\net10.0-windows\\\\Mithril.Shared.dll\"\\); $stream = $asm.GetManifestResourceStream\\(\"Mithril.Shared.g.resources\"\\); $reader = New-Object System.Resources.ResourceReader\\($stream\\); foreach \\($entry in $reader\\) { Write-Output $entry.Key })",
+      "PowerShell($asm = [System.Reflection.Assembly]::LoadFile\\(\"i:\\\\src\\\\project gorgon\\\\src\\\\Mithril.Shell\\\\bin\\\\Debug\\\\net10.0-windows\\\\Mithril.Shared.dll\"\\); Write-Output $asm.GetName\\(\\))",
+      "Read(//i//**)",
+      "Read(//c/temp/**)",
+      "WebFetch(domain:signpath.org)",
+      "WebFetch(domain:about.signpath.io)",
+      "WebFetch(domain:api.nuget.org)",
+      "WebFetch(domain:community.chocolatey.org)",
+      "WebFetch(domain:www.npmjs.com)",
+      "PowerShell(Move-Item -Path 'Mithril.slnx' -Destination 'Mithril.slnx' -ErrorAction Stop)",
+      "PowerShell(Move-Item -Path 'src/Mithril.Shell/Mithril.Shell.csproj' -Destination 'src/Mithril.Shell/Mithril.Shell.csproj' -ErrorAction Stop)",
+      "PowerShell(Move-Item -Path 'src/Mithril.Shared/Mithril.Shared.csproj' -Destination 'src/Mithril.Shared/Mithril.Shared.csproj' -ErrorAction Stop)",
+      "PowerShell(Move-Item -Path 'tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj' -Destination 'tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj' -ErrorAction Stop)",
+      "PowerShell(\"csproj/slnx renames done\")",
+      "PowerShell($test = Get-Content -LiteralPath 'src/Mithril.Shell/Program.cs' -Raw -Encoding UTF8 ; \"first 200 chars match check:\" ; $test.Substring\\(900, 200\\) ; \"---\" ; \"contains lowercase mithril:\" ; $test.Contains\\('\"mithril\"'\\) ; \"regex match count:\" ; \\([regex]::Matches\\($test, '\"mithril\"'\\)\\).Count)",
+      "PowerShell($f = 'src/Mithril.Shell/Program.cs' ; $orig = Get-Content -LiteralPath $f -Raw -Encoding UTF8 ; $new = $orig -creplace '\"mithril\"', '\"Mithril\"' ; \"orig length: $\\($orig.Length\\), new length: $\\($new.Length\\), differs: $\\($new -cne $orig\\)\")",
+      "PowerShell($renames = @\\( @\\('src/Mithril.Shared/Modules/IGorgonModule.cs','src/Mithril.Shared/Modules/IMithrilModule.cs'\\), @\\('src/Mithril.Shared/Wpf/GorgonDataGrid.cs','src/Mithril.Shared/Wpf/MithrilDataGrid.cs'\\), @\\('src/Mithril.Shared/Wpf/GorgonQueryBox.cs','src/Mithril.Shared/Wpf/MithrilQueryBox.cs'\\), @\\('src/Mithril.Shared/Wpf/GorgonVirtualizingWrapPanel.cs','src/Mithril.Shared/Wpf/MithrilVirtualizingWrapPanel.cs'\\), @\\('src/Mithril.Shell/GorgonUriSchemeRegistrar.cs','src/Mithril.Shell/MithrilUriSchemeRegistrar.cs'\\), @\\('src/Mithril.Shell/Updates/GorgonUpdateManager.cs','src/Mithril.Shell/Updates/MithrilUpdateManager.cs'\\) \\) ; foreach \\($r in $renames\\) { Move-Item -LiteralPath $r[0] -Destination $r[1] -ErrorAction Stop ; \"$\\($r[0]\\) -> $\\($r[1]\\)\" })"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\arthu\\.claude\\plans"
     ]
   }
 }

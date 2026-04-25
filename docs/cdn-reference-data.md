@@ -61,10 +61,10 @@ Treat these as second-class: they exist but aren't officially documented by the 
 
 ## Schemas we already know from app code
 
-For the six files the app consumes, the projected C# shape is authoritative — see [ReferenceJsonContext.cs](../src/Gorgon.Shared/Reference/ReferenceJsonContext.cs).
+For the six files the app consumes, the projected C# shape is authoritative — see [ReferenceJsonContext.cs](../src/Mithril.Shared/Reference/ReferenceJsonContext.cs).
 
-- **`items.json`** → `RawItem` → [ItemEntry](../src/Gorgon.Shared/Reference/ItemEntry.cs). Projected fields: `Name`, `InternalName`, `MaxStackSize`, `IconId`, `Keywords`, `EquipSlot`, `SkillReqs`, `Value`, `FoodDesc`. Known present-but-dropped fields: `EffectDescs`, `IsCrafted`, `CraftingTargetLevel`, `CraftPoints`, `RequiredAppearance`.
-- **`recipes.json`** → `RawRecipe` → [RecipeEntry](../src/Gorgon.Shared/Reference/RecipeEntry.cs). Projects `ResultItems`, `ProtoResultItems`, `ResultEffects`, `Ingredients`, and the XP-reward shape. Only `TSysCraftedEquipment(...)` effects are parsed today (see [ResultEffectsParser](../src/Gorgon.Shared/Reference/ResultEffectsParser.cs)).
+- **`items.json`** → `RawItem` → [ItemEntry](../src/Mithril.Shared/Reference/ItemEntry.cs). Projected fields: `Name`, `InternalName`, `MaxStackSize`, `IconId`, `Keywords`, `EquipSlot`, `SkillReqs`, `Value`, `FoodDesc`. Known present-but-dropped fields: `EffectDescs`, `IsCrafted`, `CraftingTargetLevel`, `CraftPoints`, `RequiredAppearance`.
+- **`recipes.json`** → `RawRecipe` → [RecipeEntry](../src/Mithril.Shared/Reference/RecipeEntry.cs). Projects `ResultItems`, `ProtoResultItems`, `ResultEffects`, `Ingredients`, and the XP-reward shape. Only `TSysCraftedEquipment(...)` effects are parsed today (see [ResultEffectsParser](../src/Mithril.Shared/Reference/ResultEffectsParser.cs)).
 - **`skills.json`** → `RawSkill` → `SkillEntry`. XP-table pointer + combat flag.
 - **`xptables.json`** → `RawXpTable` → `XpTableEntry`.
 - **`npcs.json`** → `RawNpc` → `NpcEntry`. Gifts, preferences, services.
@@ -103,9 +103,9 @@ Fields:
 
 ## Adding a new file to the app
 
-1. Add a `Raw*` type in [ReferenceJsonContext.cs](../src/Gorgon.Shared/Reference/ReferenceJsonContext.cs) covering the fields we need.
+1. Add a `Raw*` type in [ReferenceJsonContext.cs](../src/Mithril.Shared/Reference/ReferenceJsonContext.cs) covering the fields we need.
 2. Register it in the file-key switches in `ReferenceDataService.cs` (`RefreshAsync`, `LoadFile`, `GetSnapshot`, and `Keys`).
-3. Add a `ParseAndSwap*` method that projects into a typed record under `Gorgon.Shared/Reference/`.
-4. Bundle a fallback copy under `src/Gorgon.Shared/Reference/BundledData/` (and its sidecar `.meta.json`) so the app works offline.
+3. Add a `ParseAndSwap*` method that projects into a typed record under `Mithril.Shared/Reference/`.
+4. Bundle a fallback copy under `src/Mithril.Shared/Reference/BundledData/` (and its sidecar `.meta.json`) so the app works offline.
 5. Expose on `IReferenceDataService`.
 6. Update this doc when sampling reveals new schema.

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Saruman.ViewModels"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="CodeCellText" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
@@ -82,11 +82,11 @@
             </StackPanel>
 
             <!-- Codebook grid -->
-            <wpf:GorgonDataGrid ItemsSource="{Binding WordsView}"
+            <wpf:MithrilDataGrid ItemsSource="{Binding WordsView}"
                                 Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
                                 Mode="ReadOnly"
                                 CanUserSortColumns="False">
-            <wpf:GorgonDataGrid.GroupStyle>
+            <wpf:MithrilDataGrid.GroupStyle>
                 <GroupStyle>
                     <GroupStyle.ContainerStyle>
                         <Style TargetType="GroupItem">
@@ -118,9 +118,9 @@
                         </Style>
                     </GroupStyle.ContainerStyle>
                 </GroupStyle>
-            </wpf:GorgonDataGrid.GroupStyle>
-            <wpf:GorgonDataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+            </wpf:MithrilDataGrid.GroupStyle>
+            <wpf:MithrilDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                     <Setter Property="ContextMenu">
                         <Setter.Value>
                             <ContextMenu>
@@ -146,8 +146,8 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </wpf:GorgonDataGrid.RowStyle>
-            <wpf:GorgonDataGrid.Columns>
+            </wpf:MithrilDataGrid.RowStyle>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTemplateColumn Header="Code" Width="180">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -180,8 +180,8 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
                 <DataGridTextColumn Header="Discovered" Binding="{Binding FirstDiscoveredAt, StringFormat=g}" Width="130"/>
-            </wpf:GorgonDataGrid.Columns>
-            </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+            </wpf:MithrilDataGrid>
         </Grid>
     </DockPanel>
 </UserControl>

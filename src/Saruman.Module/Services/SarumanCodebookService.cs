@@ -1,4 +1,4 @@
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Saruman.Domain;
 using Saruman.Settings;
 

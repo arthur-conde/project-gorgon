@@ -1,0 +1,175 @@
+<Window x:Class="Mithril.Shared.Wpf.ItemDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mithril.Shared.Wpf"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        mc:Ignorable="d"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        Title="{Binding DisplayName}"
+        SizeToContent="WidthAndHeight"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource AppFontFamily}"
+        FontSize="{DynamicResource AppFontSize}">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6"
+            MinWidth="320" MaxWidth="520">
+        <DockPanel>
+            <!-- Title bar (drag + close) -->
+            <Border DockPanel.Dock="Top" Background="#FF202020" CornerRadius="6,6,0,0"
+                    Padding="14,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Width="24" Height="24" Padding="0"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            ToolTip="Close" Click="CloseButton_Click">
+                        <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
+                    </Button>
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeXLarge}"
+                               Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Content -->
+            <Border Padding="14,12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header: icon + equip slot -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                     Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
+                                       Foreground="#FFD4A847"
+                                       FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding EquipSlot}" Foreground="#88FFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"
+                                       Visibility="{Binding EquipSlot, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- Description + optional food effect (wrapped, capped at MaxWidth so a long
+                         description doesn't expand the auto-sized window) -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                        <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF"
+                                   FontStyle="Italic" FontSize="{DynamicResource AppFontSize}"
+                                   TextWrapping="Wrap" MaxWidth="460"
+                                   HorizontalAlignment="Left"
+                                   Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextWrapping="Wrap" MaxWidth="460" Margin="0,4,0,0"
+                                   HorizontalAlignment="Left"
+                                   Visibility="{Binding FoodDesc, Converter={StaticResource NullOrEmptyToVis}}">
+                            <Run Text="Food effect: " FontWeight="SemiBold"/>
+                            <Run Text="{Binding FoodDesc, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Skill requirements (hidden when empty) -->
+                    <StackPanel Grid.Row="2" Margin="0,0,0,10"
+                                Visibility="{Binding SkillReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Skill requirements" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding SkillReqChips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF"
+                                            BorderThickness="1" CornerRadius="3"
+                                            Padding="6,2" Margin="0,0,4,4">
+                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Effects -->
+                    <StackPanel Grid.Row="3">
+                        <TextBlock Text="Effects" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"
+                                   Visibility="{Binding EffectLines.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      MaxHeight="480">
+                            <ItemsControl ItemsSource="{Binding EffectLines}"
+                                          ItemTemplate="{StaticResource EffectLineTemplate}"/>
+                        </ScrollViewer>
+                        <TextBlock Text="No effects on this item." Foreground="#88FFFFFF"
+                                   FontStyle="Italic" FontSize="{DynamicResource AppFontSizeHint}"
+                                   Margin="0,4,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding EffectLines.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Augmentation (from AddItemTSysPower recipe effects; hidden when empty) -->
+                    <StackPanel Grid.Row="4" Margin="0,10,0,0"
+                                Visibility="{Binding Augments.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Augmentation" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding Augments}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding DisplayLine}" FontWeight="SemiBold"
+                                                   Foreground="#FFD4A847"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <ItemsControl ItemsSource="{Binding EffectLines}"
+                                                      ItemTemplate="{StaticResource EffectLineTemplate}"
+                                                      Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Internal name footer -->
+                    <TextBlock Grid.Row="5" Text="{Binding InternalName}"
+                               Foreground="#88FFFFFF"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Margin="0,8,0,0" HorizontalAlignment="Right"/>
+                </Grid>
+            </Border>
+        </DockPanel>
+    </Border>
+</Window>

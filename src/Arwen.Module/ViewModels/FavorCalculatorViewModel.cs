@@ -3,7 +3,7 @@ using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 
 namespace Arwen.ViewModels;
 

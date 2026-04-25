@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 using Pippin.Domain;
 using Xunit;
 

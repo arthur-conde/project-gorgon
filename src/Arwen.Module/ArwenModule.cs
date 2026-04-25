@@ -4,19 +4,19 @@ using Arwen.Parsing;
 using Arwen.State;
 using Arwen.ViewModels;
 using Arwen.Views;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.DependencyInjection;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Arwen;
 
-public sealed class ArwenModule : IGorgonModule
+public sealed class ArwenModule : IMithrilModule
 {
     public string Id => "arwen";
     public string DisplayName => "Arwen \u00b7 Favor";
@@ -32,7 +32,7 @@ public sealed class ArwenModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var arwenDir = Path.Combine(localApp, "Gorgon", "Arwen");
+        var arwenDir = Path.Combine(localApp, "Mithril", "Arwen");
         var settingsPath = Path.Combine(arwenDir, "settings.json");
 
         // Global preferences (just Calibration now that FavorStates has split into per-char arwen.json).
@@ -69,7 +69,7 @@ public sealed class ArwenModule : IGorgonModule
         services.AddSingleton<CalibrationService>(sp => new CalibrationService(
             sp.GetRequiredService<IReferenceDataService>(),
             sp.GetRequiredService<GiftIndex>(),
-            Path.Combine(localApp, "Gorgon", "Arwen"),
+            Path.Combine(localApp, "Mithril", "Arwen"),
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<ArwenSettings>().Calibration,
             sp.GetService<IDiagnosticsSink>()));

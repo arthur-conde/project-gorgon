@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Smaug.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:CalibrationViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TextCol" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="#FFE8E8E8"/>
@@ -47,9 +47,9 @@
                    Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                    FontWeight="SemiBold" Margin="0,4,0,6"/>
 
-        <wpf:GorgonDataGrid ItemsSource="{Binding Observations}"
+        <wpf:MithrilDataGrid ItemsSource="{Binding Observations}"
                             Mode="ReadOnly" CanUserResizeRows="False">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=yyyy-MM-dd HH:mm}" Width="130"
                                     ElementStyle="{StaticResource SubtleCol}"/>
                 <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="140"
@@ -71,7 +71,7 @@
                                     ElementStyle="{StaticResource NumCol}"/>
                 <DataGridTextColumn Header="Ratio" Binding="{Binding Ratio, StringFormat=F2}" Width="70"
                                     ElementStyle="{StaticResource NumCol}"/>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

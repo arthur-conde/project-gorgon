@@ -1,6 +1,6 @@
 using System.IO;
 using FluentAssertions;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Saruman.Domain;
 using Saruman.Services;
 using Saruman.Settings;
@@ -16,7 +16,7 @@ public sealed class SarumanCodebookServiceTests : IDisposable
 
     public SarumanCodebookServiceTests()
     {
-        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("saruman");
+        _root = Mithril.TestSupport.TestPaths.CreateTempDir("saruman");
         _active = new FakeActiveCharacterService();
         _active.SetActiveCharacter("Arthur", "Kwatoxi");
     }

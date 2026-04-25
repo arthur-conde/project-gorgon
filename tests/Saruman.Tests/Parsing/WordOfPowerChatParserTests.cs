@@ -1,6 +1,6 @@
 using System.IO;
 using FluentAssertions;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Saruman.Domain;
 using Saruman.Parsing;
 using Saruman.Services;
@@ -14,7 +14,7 @@ public sealed class WordOfPowerChatParserTests
 {
     private static WordOfPowerChatParser NewParser(params string[] trackedCodes)
     {
-        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("saruman-chat");
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("saruman-chat");
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
         var store = new PerCharacterStore<SarumanState>(dir, "saruman.json", SarumanJsonContext.Default.SarumanState);

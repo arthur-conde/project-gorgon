@@ -2,15 +2,15 @@ using System.IO;
 using Bilbo.Domain;
 using Bilbo.ViewModels;
 using Bilbo.Views;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Wpf;
 using MahApps.Metro.IconPacks;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Bilbo;
 
-public sealed class BilboModule : IGorgonModule
+public sealed class BilboModule : IMithrilModule
 {
     public string Id => "bilbo";
     public string DisplayName => "Bilbo \u00b7 Storage";
@@ -24,7 +24,7 @@ public sealed class BilboModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var settingsPath = Path.Combine(localApp, "Gorgon", "Bilbo", "settings.json");
+        var settingsPath = Path.Combine(localApp, "Mithril", "Bilbo", "settings.json");
 
         services.AddSingleton<ISettingsStore<BilboSettings>>(_ =>
             new JsonSettingsStore<BilboSettings>(settingsPath, BilboSettingsJsonContext.Default.BilboSettings));

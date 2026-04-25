@@ -3,9 +3,9 @@ using System.Text.Json;
 using Arwen.Domain;
 using Arwen.State;
 using FluentAssertions;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Settings;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Character;
+using Mithril.Shared.Settings;
+using Mithril.Shared.Storage;
 using Xunit;
 
 namespace Arwen.Tests;
@@ -19,7 +19,7 @@ public sealed class ArwenFavorFanoutMigrationTests : IDisposable
 
     public ArwenFavorFanoutMigrationTests()
     {
-        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-arwen-fanout");
+        _root = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-arwen-fanout");
         _arwenDir = Path.Combine(_root, "Arwen");
         _charactersRoot = Path.Combine(_root, "characters");
         Directory.CreateDirectory(_arwenDir);

@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 using Smaug.Domain;
 
 namespace Smaug.ViewModels;

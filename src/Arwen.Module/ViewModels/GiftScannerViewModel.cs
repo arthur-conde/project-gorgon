@@ -2,9 +2,9 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Game;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Character;
+using Mithril.Shared.Game;
+using Mithril.Shared.Storage;
 
 namespace Arwen.ViewModels;
 

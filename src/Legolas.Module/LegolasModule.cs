@@ -1,9 +1,9 @@
 using System.IO;
-using Gorgon.Shared.Hotkeys;
-using Gorgon.Shared.Logging;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Hotkeys;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Legolas.Domain;
 using Legolas.Hotkeys;
 using Legolas.Services;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Legolas;
 
-public sealed class LegolasModule : IGorgonModule
+public sealed class LegolasModule : IMithrilModule
 {
     public string Id => "legolas";
     public string DisplayName => "Legolas · Survey";
@@ -28,7 +28,7 @@ public sealed class LegolasModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(localApp, "Gorgon", "Legolas");
+        var dir = Path.Combine(localApp, "Mithril", "Legolas");
         var settingsPath = Path.Combine(dir, "settings.json");
 
         services.AddSingleton<ISettingsStore<LegolasSettings>>(_ =>

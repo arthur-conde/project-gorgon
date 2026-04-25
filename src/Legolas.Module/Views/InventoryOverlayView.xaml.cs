@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.Domain;
 

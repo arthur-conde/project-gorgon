@@ -1,4 +1,4 @@
-using Gorgon.Shared.Logging;
+using Mithril.Shared.Logging;
 
 namespace Saruman.Domain;
 

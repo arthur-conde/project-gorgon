@@ -1,14 +1,14 @@
 using System.IO;
 using System.Text.Json;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Samwise.State;
 
 /// <summary>
 /// One-shot startup migration that splits the pre-per-character
-/// <c>%LocalAppData%/Gorgon/Samwise/garden-state.json</c> blob (whose root is a
+/// <c>%LocalAppData%/Mithril/Samwise/garden-state.json</c> blob (whose root is a
 /// <c>Dictionary&lt;CharacterName, plotsDict&gt;</c>) into per-character
 /// <c>characters/{slug}/samwise.json</c> files.
 ///

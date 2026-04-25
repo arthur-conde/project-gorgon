@@ -1,16 +1,16 @@
 using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
 namespace Arwen.State;
 
 /// <summary>
 /// One-shot startup migration that splits the pre-per-character <c>FavorStates</c> dictionary
-/// (nested inside <c>%LocalAppData%/Gorgon/Arwen/settings.json</c>) into per-character
+/// (nested inside <c>%LocalAppData%/Mithril/Arwen/settings.json</c>) into per-character
 /// <c>arwen.json</c> files, then rewrites the settings file without that field.
 ///
 /// Runs during <see cref="IHostedService.StartAsync"/>, which the host awaits before any

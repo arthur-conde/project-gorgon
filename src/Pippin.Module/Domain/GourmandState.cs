@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 
 namespace Pippin.Domain;
 

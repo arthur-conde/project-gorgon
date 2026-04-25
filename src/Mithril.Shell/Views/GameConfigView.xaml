@@ -1,0 +1,28 @@
+<UserControl x:Class="Mithril.Shell.Views.GameConfigView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="#FF1A1A1A">
+    <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+            <icon:PackIconLucide Kind="Settings" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+            <TextBlock Text="Game Configuration" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
+        </StackPanel>
+
+        <TextBlock Text="Project Gorgon root folder" Foreground="#88FFFFFF" Margin="0,0,0,4"/>
+        <DockPanel LastChildFill="True">
+            <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseCommand}"/>
+            <Button DockPanel.Dock="Right" Content="Auto-detect" Padding="10,4" Margin="6,0,0,0" Command="{Binding AutoDetectCommand}"/>
+            <TextBox Text="{Binding GameRoot, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"/>
+        </DockPanel>
+
+        <TextBlock Text="Resolved Player.log" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
+        <TextBlock Text="{Binding PlayerLogPath}" FontFamily="{DynamicResource AppMonoFontFamily}" Foreground="#FFE8E8E8"/>
+
+        <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
+        <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
+
+        <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                   Text="Modules subscribe to this folder. Changes apply immediately — the log tail restarts when the path changes."/>
+    </StackPanel>
+</UserControl>

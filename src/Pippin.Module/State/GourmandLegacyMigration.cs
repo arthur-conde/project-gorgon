@@ -1,15 +1,15 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Pippin.Domain;
 
 namespace Pippin.State;
 
 /// <summary>
 /// One-shot migration from the pre-per-character flat layout
-/// (<c>%LocalAppData%/Gorgon/Pippin/gourmand-state.json</c>) to the per-character layout
-/// (<c>%LocalAppData%/Gorgon/characters/{slug}/pippin.json</c>).
+/// (<c>%LocalAppData%/Mithril/Pippin/gourmand-state.json</c>) to the per-character layout
+/// (<c>%LocalAppData%/Mithril/characters/{slug}/pippin.json</c>).
 ///
 /// Only fires for a single character — whichever one is first resolved as active. That's
 /// the only defensible assumption: the legacy file was written without any character

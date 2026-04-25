@@ -1,7 +1,7 @@
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Storage;
 using Smaug.Domain;
 
 namespace Smaug.State;

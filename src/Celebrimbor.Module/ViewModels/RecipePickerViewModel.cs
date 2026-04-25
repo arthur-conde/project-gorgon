@@ -5,9 +5,9 @@ using Celebrimbor.Domain;
 using Celebrimbor.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Character;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 
 namespace Celebrimbor.ViewModels;
 
@@ -145,7 +145,7 @@ public sealed partial class RecipePickerViewModel : ObservableObject
         try
         {
             var payload = CraftListFormat.EncodeShareLink(list);
-            var url = $"gorgon://list/{payload}";
+            var url = $"mithril://list/{payload}";
             Clipboard.SetText(url);
             StatusMessage = $"Copied share link ({list.Count} recipes, {url.Length} chars).";
         }
@@ -173,7 +173,7 @@ public sealed partial class RecipePickerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Shared entry point for both the Paste button and the <c>gorgon://list</c> deep link.
+    /// Shared entry point for both the Paste button and the <c>mithril://list</c> deep link.
     /// Runs the Append/Replace/Cancel dialog and applies the selected mode to the craft list.
     /// </summary>
     public void PromptAndApply(ParseResult result, string dialogTitleSuffix)

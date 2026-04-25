@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:FavorDashboardViewModel}"
              Background="#FF1A1A1A">
@@ -37,11 +37,11 @@
         </StackPanel>
 
         <!-- NPC List -->
-        <wpf:GorgonDataGrid ItemsSource="{Binding FilteredNpcs}"
+        <wpf:MithrilDataGrid ItemsSource="{Binding FilteredNpcs}"
                             Mode="ReadOnly" CanUserResizeRows="False"
                             CanUserReorderColumns="False">
 
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="NPC" Binding="{Binding Name}" Width="180">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -105,7 +105,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

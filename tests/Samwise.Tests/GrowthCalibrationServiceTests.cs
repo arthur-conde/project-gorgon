@@ -1,6 +1,6 @@
 using System.IO;
 using FluentAssertions;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 using Samwise.Calibration;
 using Samwise.Config;
 using Samwise.Parsing;
@@ -23,7 +23,7 @@ public class GrowthCalibrationServiceTests
         var ac = new FakeActiveCharacterService();
         var sm = new GardenStateMachine(cfg, time, activeChar: ac);
         _sutActiveChars[sm] = ac;
-        var dir = dataDir ?? Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
+        var dir = dataDir ?? Mithril.TestSupport.TestPaths.CreateTempDir("mithril-cal");
         var cal = new GrowthCalibrationService(sm, cfg, dir);
         return (sm, cal, time);
     }
@@ -217,7 +217,7 @@ public class GrowthCalibrationServiceTests
     [Fact]
     public void Persistence_Roundtrip_PreservesData()
     {
-        var dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-cal");
         try
         {
             var (sm, cal, time) = BuildSut(dir);
@@ -249,8 +249,8 @@ public class GrowthCalibrationServiceTests
     [Fact]
     public void ExportImport_DeduplicatesObservations()
     {
-        var dir1 = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
-        var dir2 = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-cal");
+        var dir1 = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-cal");
+        var dir2 = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-cal");
         try
         {
             var (sm1, cal1, time1) = BuildSut(dir1);

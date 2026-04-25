@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Samwise.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:GrowthCalibrationViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -45,11 +45,11 @@
         <!-- Crop Growth Rates -->
         <TextBlock DockPanel.Dock="Top" Text="Crop Growth Rates" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                    FontWeight="SemiBold" Margin="0,4,0,4"/>
-        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}"
+        <wpf:MithrilDataGrid DockPanel.Dock="Top" ItemsSource="{Binding Rates}"
                             Mode="ReadOnly"
                             CanUserResizeRows="False"
                             MaxHeight="260" Margin="0,0,0,12">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130" SortMemberPath="CropType">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -112,18 +112,18 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
 
         <!-- Phase Transitions: per-step growth timing. Growing→Ripe, Planted→Thirsty etc.
              Player-reaction transitions (Thirsty→Growing) are filtered out of rates. -->
         <TextBlock DockPanel.Dock="Top" Text="Phase Transitions" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                    FontWeight="SemiBold" Margin="0,4,0,4"/>
-        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding PhaseRates}"
+        <wpf:MithrilDataGrid DockPanel.Dock="Top" ItemsSource="{Binding PhaseRates}"
                             Mode="ReadOnly"
                             CanUserResizeRows="False"
                             MaxHeight="200" Margin="0,0,0,12">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130" SortMemberPath="CropType">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -177,18 +177,18 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
 
         <!-- Slot Family Caps: crowdsourced max plot count per family, derived from
              ProcessErrorMessage(ItemUnusable) events in Player.log. -->
         <TextBlock DockPanel.Dock="Top" Text="Slot Family Caps" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeMedium}"
                    FontWeight="SemiBold" Margin="0,4,0,4"/>
-        <wpf:GorgonDataGrid DockPanel.Dock="Top" ItemsSource="{Binding SlotCaps}"
+        <wpf:MithrilDataGrid DockPanel.Dock="Top" ItemsSource="{Binding SlotCaps}"
                             Mode="ReadOnly"
                             CanUserResizeRows="False"
                             MaxHeight="140" Margin="0,0,0,12">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Family" Binding="{Binding Family}" Width="140" SortMemberPath="Family">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -233,8 +233,8 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
 
         <!-- Observations: single filter box — plain text does a cross-column substring
              match on string columns; grammar (detected via uppercase keywords or operator
@@ -250,7 +250,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <wpf:GorgonQueryBox Grid.Column="1"
+                <wpf:MithrilQueryBox Grid.Column="1"
                                     Grid="{Binding ElementName=ObservationsGrid}"
                                     QueryText="{Binding ElementName=ObservationsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     Watermark="type text to search string columns, or grammar like CropType LIKE '%aster%'"
@@ -263,11 +263,11 @@
         </StackPanel>
 
         <!-- Raw observations -->
-        <wpf:GorgonDataGrid x:Name="ObservationsGrid"
+        <wpf:MithrilDataGrid x:Name="ObservationsGrid"
                             ItemsSource="{Binding Observations}"
                             Mode="ReadOnly"
                             CanUserResizeRows="False">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Crop" Binding="{Binding CropType}" Width="130" SortMemberPath="CropType">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -310,7 +310,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 
 namespace Celebrimbor.ViewModels;
 

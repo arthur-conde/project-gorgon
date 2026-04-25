@@ -1,8 +1,8 @@
 using System.Windows.Controls;
 using Elrond.Domain;
 using Elrond.ViewModels;
-using Gorgon.Shared.Settings;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Settings;
+using Mithril.Shared.Wpf;
 
 namespace Elrond.Views;
 

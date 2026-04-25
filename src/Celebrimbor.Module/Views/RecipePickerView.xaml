@@ -5,7 +5,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="clr-namespace:Celebrimbor.Views"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>
@@ -26,7 +26,7 @@
                 <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyListCommand}" ToolTip="Copy craft list to clipboard as text">
                     <icon:PackIconLucide Kind="Copy" Width="14" Height="14"/>
                 </Button>
-                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyShareLinkCommand}" ToolTip="Copy a gorgon:// share link to the clipboard — opens straight into Celebrimbor when someone clicks it">
+                <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding CopyShareLinkCommand}" ToolTip="Copy a mithril:// share link to the clipboard — opens straight into Celebrimbor when someone clicks it">
                     <icon:PackIconLucide Kind="Link" Width="14" Height="14"/>
                 </Button>
                 <Button Padding="8,4" Margin="4,0,0,0" Command="{Binding PasteListCommand}" ToolTip="Paste craft list from clipboard">
@@ -53,7 +53,7 @@
 
         <!-- Query box -->
         <Border DockPanel.Dock="Top" Margin="0,0,0,8">
-            <wpf:GorgonQueryBox Grid="{Binding ElementName=RecipesGrid}"
+            <wpf:MithrilQueryBox Grid="{Binding ElementName=RecipesGrid}"
                                 QueryText="{Binding QueryText, Mode=TwoWay}"
                                 Watermark="Search or query:   Cheese    ·    Skill = &quot;Cooking&quot;    ·    IsKnown AND SkillLevelReq &lt; 30"/>
         </Border>
@@ -64,7 +64,7 @@
                    Text="{Binding StatusMessage}"/>
 
         <!-- Recipe grid -->
-        <wpf:GorgonDataGrid x:Name="RecipesGrid"
+        <wpf:MithrilDataGrid x:Name="RecipesGrid"
                             ItemsSource="{Binding AllRows}"
                             QueryText="{Binding QueryText, Mode=TwoWay}"
                             Mode="ReadOnly"
@@ -79,15 +79,15 @@
                             CanUserAddRows="False"
                             CanUserDeleteRows="False"
                             HeadersVisibility="Column">
-            <wpf:GorgonDataGrid.CellStyle>
+            <wpf:MithrilDataGrid.CellStyle>
                 <Style TargetType="DataGridCell">
                     <Setter Property="Focusable" Value="False"/>
                     <Setter Property="IsTabStop" Value="False"/>
                     <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Background" Value="Transparent"/>
                 </Style>
-            </wpf:GorgonDataGrid.CellStyle>
-            <wpf:GorgonDataGrid.RowStyle>
+            </wpf:MithrilDataGrid.CellStyle>
+            <wpf:MithrilDataGrid.RowStyle>
                 <Style TargetType="DataGridRow">
                     <Setter Property="ToolTipService.InitialShowDelay"
                             Value="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
@@ -229,8 +229,8 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </wpf:GorgonDataGrid.RowStyle>
-            <wpf:GorgonDataGrid.Columns>
+            </wpf:MithrilDataGrid.RowStyle>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTemplateColumn Header="" Width="40" CanUserSort="False" IsReadOnly="True">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -314,7 +314,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

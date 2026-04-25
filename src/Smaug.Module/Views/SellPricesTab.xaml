@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Smaug.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SellPricesViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TextCol" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="#FFE8E8E8"/>
@@ -51,7 +51,7 @@
             <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <wpf:GorgonQueryBox Grid.Column="1"
+            <wpf:MithrilQueryBox Grid.Column="1"
                                 Grid="{Binding ElementName=PricesGrid}"
                                 QueryText="{Binding ElementName=PricesGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 Watermark="type text, or grammar like FavorTier = 'Friends'"/>
@@ -62,9 +62,9 @@
                    Visibility="{Binding ElementName=PricesGrid, Path=QueryError,
                        Converter={StaticResource NullOrEmptyToVis}}"/>
 
-        <wpf:GorgonDataGrid x:Name="PricesGrid" ItemsSource="{Binding Rows}"
+        <wpf:MithrilDataGrid x:Name="PricesGrid" ItemsSource="{Binding Rows}"
                             Mode="ReadOnly" CanUserResizeRows="False">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="160"
                                     ElementStyle="{StaticResource TextCol}"/>
                 <DataGridTemplateColumn Header="Item" Width="220" SortMemberPath="Item">
@@ -90,7 +90,7 @@
                                     ElementStyle="{StaticResource SampleCol}"/>
                 <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="80"
                                     ElementStyle="{StaticResource SubtleCol}"/>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

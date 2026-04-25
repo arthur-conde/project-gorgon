@@ -5,13 +5,13 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
                 <ResourceDictionary Source="Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
@@ -191,10 +191,10 @@
                 </Border>
 
                 <!-- Recipe table -->
-                <wpf:GorgonDataGrid x:Name="RecipeGrid"
+                <wpf:MithrilDataGrid x:Name="RecipeGrid"
                                     ItemsSource="{Binding FilteredRecipes}"
                                     Mode="ReadOnly">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="120" SortMemberPath="RecipeName">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -251,9 +251,9 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                    </wpf:GorgonDataGrid.Columns>
-                    <wpf:GorgonDataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+                    </wpf:MithrilDataGrid.Columns>
+                    <wpf:MithrilDataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                             <Setter Property="ToolTip">
                                 <Setter.Value>
                                     <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -317,8 +317,8 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </wpf:GorgonDataGrid.RowStyle>
-                </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.RowStyle>
+                </wpf:MithrilDataGrid>
             </DockPanel>
         </Grid>
     </DockPanel>

@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Gorgon.Shared.Logging;
+using Mithril.Shared.Logging;
 using Legolas.Domain;
 
 namespace Legolas.Services;

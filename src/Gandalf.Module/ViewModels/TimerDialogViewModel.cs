@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
-using Gorgon.Shared.Wpf.Dialogs;
+using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
 

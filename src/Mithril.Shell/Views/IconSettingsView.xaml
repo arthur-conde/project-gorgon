@@ -1,0 +1,58 @@
+<UserControl x:Class="Mithril.Shell.Views.IconSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" MaxWidth="640" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <icon:PackIconLucide Kind="Image" Width="20" Height="20" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
+                <TextBlock Text="Item Icons" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeTitle}" Foreground="#FFD4A847"/>
+            </StackPanel>
+
+            <CheckBox Content="Show item icons in grids" Margin="0,0,0,16"
+                      IsChecked="{Binding Settings.Enabled}" Foreground="#FFE8E8E8"/>
+
+            <TextBlock Text="Icon URL pattern" Foreground="#88FFFFFF" Margin="0,0,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                       Text="Use {version} for CDN version and {iconId} for the icon identifier."/>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Reset" Padding="10,4" Margin="6,0,0,0"
+                        Command="{Binding ResetUrlPatternCommand}"/>
+                <TextBox Text="{Binding Settings.UrlPattern, UpdateSourceTrigger=PropertyChanged}"
+                         Padding="6,4" FontFamily="{DynamicResource AppMonoFontFamily}" FontSize="{DynamicResource AppFontSizeHint}"/>
+            </DockPanel>
+
+            <TextBlock Text="Cache" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding CacheStats}" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="Download all icons" Padding="10,4" Margin="0,0,6,0"
+                        Command="{Binding DownloadAllCommand}"
+                        ToolTip="Pre-download every known item and recipe icon to the local cache"/>
+                <Button Content="Cancel" Padding="10,4" Margin="0,0,6,0"
+                        Command="{Binding DownloadAllCancelCommand}"
+                        Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}"/>
+                <Button Content="Clear cache" Padding="10,4"
+                        Command="{Binding ClearCacheCommand}"/>
+            </StackPanel>
+
+            <!-- Download progress -->
+            <StackPanel Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8">
+                <ProgressBar Height="8" Minimum="0" Maximum="1" Value="{Binding DownloadFraction, Mode=OneWay}"
+                             Foreground="#FFD4A847" Background="#FF333333" Margin="0,0,0,4"/>
+                <TextBlock Text="{Binding DownloadProgress}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+            </StackPanel>
+
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                       Text="Icons are downloaded from the CDN on first use and cached to disk. Use 'Download all icons' to pre-fetch everything at once. Toggle the setting above to hide all icons without clearing the cache."/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

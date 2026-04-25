@@ -1,8 +1,8 @@
 using System.Windows;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Logging;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 using Pippin.Domain;
 using Pippin.Parsing;

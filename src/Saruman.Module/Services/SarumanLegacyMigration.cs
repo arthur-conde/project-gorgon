@@ -1,14 +1,14 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Saruman.Settings;
 
 namespace Saruman.Services;
 
 /// <summary>
 /// One-shot migration from the pre-per-character flat file
-/// (<c>%LocalAppData%/Gorgon/Saruman/settings.json</c>) into
+/// (<c>%LocalAppData%/Mithril/Saruman/settings.json</c>) into
 /// <c>characters/{slug}/saruman.json</c>. Attributes the whole legacy codebook to
 /// whichever character resolves as active first.
 /// </summary>

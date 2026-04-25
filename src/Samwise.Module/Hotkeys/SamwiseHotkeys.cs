@@ -1,4 +1,4 @@
-using Gorgon.Shared.Hotkeys;
+using Mithril.Shared.Hotkeys;
 using Samwise.Alarms;
 using Samwise.State;
 

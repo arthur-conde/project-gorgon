@@ -160,7 +160,7 @@ conflict-detector enforces uniqueness across all modules).
 
 ## 7. Persistence
 
-All settings live in `%LocalAppData%/Gorgon/Legolas/settings.json`: window
+All settings live in `%LocalAppData%/Mithril/Legolas/settings.json`: window
 positions/sizes, opacities, click-through state, dedup/pin radii, the Inventory
 Grid layout, and Auto-Reset. Session contents (surveys, calibration) are **not**
 persisted — they're per-game-session by design.

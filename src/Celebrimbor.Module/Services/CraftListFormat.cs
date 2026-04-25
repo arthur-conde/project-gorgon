@@ -4,7 +4,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using Celebrimbor.Domain;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Services;
 
@@ -87,7 +87,7 @@ public static partial class CraftListFormat
 
     // ---- Share-link encoding ------------------------------------------------
     //
-    // gorgon://list/<base64url> deep links embed a compressed copy of the plain-text share
+    // mithril://list/<base64url> deep links embed a compressed copy of the plain-text share
     // format. Format is: one version byte, then gzip(UTF-8 plain-text). v1 is the only version
     // today; the prefix reserves room to swap the compression or switch formats later without
     // invalidating existing pastes. Base64url keeps the URL free of the '+' and '/' characters
@@ -100,7 +100,7 @@ public static partial class CraftListFormat
     private const int MaxDecompressedBytes = 256 * 1024; // 256 KB of plain text is absurdly large
 
     /// <summary>
-    /// Encodes a craft list into the base64url payload for a <c>gorgon://list/…</c> deep link.
+    /// Encodes a craft list into the base64url payload for a <c>mithril://list/…</c> deep link.
     /// Returns just the payload — callers prepend the scheme/host.
     /// </summary>
     public static string EncodeShareLink(IReadOnlyList<CraftListEntry> entries, DateTimeOffset? stampedAt = null)

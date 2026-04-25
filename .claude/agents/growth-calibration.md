@@ -23,7 +23,7 @@ All three streams persist to a single JSON file with export/import so data can b
 
 **UI** — [src/Samwise.Module/Views/](src/Samwise.Module/Views/)
 - [SamwiseView.xaml](src/Samwise.Module/Views/SamwiseView.xaml) — tabbed container (Garden + Growth Calibration)
-- [GrowthCalibrationTab.xaml](src/Samwise.Module/Views/GrowthCalibrationTab.xaml) — four `GorgonDataGrid`s: Crop Growth Rates, Phase Transitions, Slot Family Caps, Observations (filtered via `GorgonQueryBox`)
+- [GrowthCalibrationTab.xaml](src/Samwise.Module/Views/GrowthCalibrationTab.xaml) — four `MithrilDataGrid`s: Crop Growth Rates, Phase Transitions, Slot Family Caps, Observations (filtered via `MithrilQueryBox`)
 - [GrowthCalibrationViewModel.cs](src/Samwise.Module/ViewModels/GrowthCalibrationViewModel.cs)
 
 **Parser** — [src/Samwise.Module/Parsing/](src/Samwise.Module/Parsing/)
@@ -40,7 +40,7 @@ All three streams persist to a single JSON file with export/import so data can b
 
 **Tests** — [tests/Samwise.Tests/GrowthCalibrationServiceTests.cs](tests/Samwise.Tests/GrowthCalibrationServiceTests.cs) — covers cycles, pauses, aggregation, persistence, export/import, hydration skip, phase transitions on partial cycles, player-reaction filtering, slot cap observations, slot cap dedup within 2s window
 
-**Persistence** — `%LocalAppData%/Gorgon/Samwise/growth-calibration.json`
+**Persistence** — `%LocalAppData%/Mithril/Samwise/growth-calibration.json`
 
 ## Reference pattern
 
@@ -112,7 +112,7 @@ Not all crops have both water and fertilize phases — some go straight Planted 
 ## Build & test
 
 ```bash
-dotnet build Gorgon.slnx
+dotnet build Mithril.slnx
 dotnet test tests/Samwise.Tests
 dotnet test tests/Samwise.Tests --filter "FullyQualifiedName~GrowthCalibration"
 ```
@@ -123,4 +123,4 @@ dotnet test tests/Samwise.Tests --filter "FullyQualifiedName~GrowthCalibration"
 - CommunityToolkit.Mvvm (`[ObservableProperty]`, `[RelayCommand]`)
 - `System.Text.Json` source generation — no reflection-based serialization
 - Follow the Arwen pattern when adding anything new; don't invent a parallel style
-- MahApps Lucide icons, `GorgonDataGrid` / `GorgonQueryBox` for grids
+- MahApps Lucide icons, `MithrilDataGrid` / `MithrilQueryBox` for grids

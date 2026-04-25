@@ -13,6 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Smaug.Module\Smaug.Module.csproj" />
-    <ProjectReference Include="..\..\src\Gorgon.Shared\Gorgon.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
 </Project>

@@ -1,8 +1,8 @@
 using System.IO;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Smaug.Domain;
@@ -13,7 +13,7 @@ using Smaug.Views;
 
 namespace Smaug;
 
-public sealed class SmaugModule : IGorgonModule
+public sealed class SmaugModule : IMithrilModule
 {
     public string Id => "smaug";
     public string DisplayName => "Smaug · Vendor Prices";
@@ -27,7 +27,7 @@ public sealed class SmaugModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var settingsPath = Path.Combine(localApp, "Gorgon", "Smaug", "settings.json");
+        var settingsPath = Path.Combine(localApp, "Mithril", "Smaug", "settings.json");
 
         services.AddSingleton<ISettingsStore<SmaugSettings>>(_ =>
             new JsonSettingsStore<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings));
@@ -42,7 +42,7 @@ public sealed class SmaugModule : IGorgonModule
         services.AddSingleton<SellPlannerService>();
         services.AddSingleton<PriceCalibrationService>(sp => new PriceCalibrationService(
             sp.GetRequiredService<IReferenceDataService>(),
-            Path.Combine(localApp, "Gorgon", "Smaug"),
+            Path.Combine(localApp, "Mithril", "Smaug"),
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<SmaugSettings>().Calibration,
             sp.GetService<IDiagnosticsSink>()));

@@ -11,7 +11,7 @@
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Gorgon.Shared\Gorgon.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\saruman.ico" />

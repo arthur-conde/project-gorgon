@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Gorgon.Shared.Logging;
+using Mithril.Shared.Logging;
 using Saruman.Domain;
 using Saruman.Services;
 

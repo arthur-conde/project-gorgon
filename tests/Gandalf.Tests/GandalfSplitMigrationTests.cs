@@ -3,8 +3,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.Settings;
 using Xunit;
 
 namespace Gandalf.Tests;
@@ -18,7 +18,7 @@ public class GandalfSplitMigrationTests : IDisposable
 
     public GandalfSplitMigrationTests()
     {
-        _dir = Gorgon.TestSupport.TestPaths.CreateTempDir("gandalf_split");
+        _dir = Mithril.TestSupport.TestPaths.CreateTempDir("gandalf_split");
         _charactersDir = Path.Combine(_dir, "characters");
         Directory.CreateDirectory(_charactersDir);
         _defsPath = Path.Combine(_dir, "definitions.json");

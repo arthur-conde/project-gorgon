@@ -3,7 +3,7 @@
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime"
                     xmlns:views="clr-namespace:Celebrimbor.Views"
                     xmlns:vm="clr-namespace:Celebrimbor.ViewModels"
-                    xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared">
+                    xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared">
     <views:BoolToCraftReadyBrushConverter x:Key="CraftReadyBrush"/>
     <views:LocationsToStringConverter x:Key="LocationsToString"/>
     <views:ZeroToGhostBrushConverter x:Key="ZeroToGhost"/>
@@ -99,7 +99,7 @@
 
                 <!-- Augmentation (AddItemTSysPower recipes). Hidden when the list is empty.
                      Effect rows rendered inline (not via the shared EffectLineTemplate) so this
-                     template doesn't depend on Gorgon.Shared's Resources.xaml being merged here. -->
+                     template doesn't depend on Mithril.Shared's Resources.xaml being merged here. -->
                 <TextBlock Text="Augmentation" Foreground="#88FFFFFF"
                            FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="0,8,0,4"
                            Visibility="{Binding Augments.Count, Converter={StaticResource CountToVisibility}}"/>

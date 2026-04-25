@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Gorgon.TestSupport;
+namespace Mithril.TestSupport;
 
 /// <summary>
 /// Workspace-relative scratch directories for tests. Defender / Search indexer
@@ -13,7 +13,7 @@ namespace Gorgon.TestSupport;
 /// </summary>
 /// <remarks>
 /// The root is resolved by walking up from the test assembly's bin/ directory
-/// looking for <c>Gorgon.slnx</c> (the repo marker). If that walk fails (e.g.
+/// looking for <c>Mithril.slnx</c> (the repo marker). If that walk fails (e.g.
 /// tests run from an unexpected location), the helper falls back to
 /// <see cref="Path.GetTempPath"/> so the suite still works — just with the
 /// %TEMP%-on-Windows flake risk it had before.
@@ -38,7 +38,7 @@ internal static class TestPaths
         var probe = new DirectoryInfo(AppContext.BaseDirectory);
         while (probe is not null)
         {
-            if (File.Exists(Path.Combine(probe.FullName, "Gorgon.slnx")))
+            if (File.Exists(Path.Combine(probe.FullName, "Mithril.slnx")))
             {
                 var root = Path.Combine(probe.FullName, "tests", ".tmp");
                 Directory.CreateDirectory(root);
@@ -47,7 +47,7 @@ internal static class TestPaths
             probe = probe.Parent;
         }
         // Fallback if invoked from an unexpected working tree.
-        var fallback = Path.Combine(Path.GetTempPath(), "gorgon-tests-fallback");
+        var fallback = Path.Combine(Path.GetTempPath(), "mithril-tests-fallback");
         Directory.CreateDirectory(fallback);
         return fallback;
     }

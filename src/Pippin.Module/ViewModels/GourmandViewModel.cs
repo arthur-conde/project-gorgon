@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Pippin.Domain;
 using Pippin.State;
 

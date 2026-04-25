@@ -1,5 +1,5 @@
-using Gorgon.Shared.Logging;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 using Saruman.Domain;
 using Saruman.Parsing;

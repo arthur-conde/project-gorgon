@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using FluentAssertions;
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Pippin.Domain;
 using Pippin.State;
 using Xunit;
@@ -17,9 +17,9 @@ public sealed class GourmandStateServiceMigrationTests : IDisposable
 
     public GourmandStateServiceMigrationTests()
     {
-        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-pippin-mig");
-        _legacyDir = Path.Combine(_root, "Gorgon", "Pippin");
-        _charactersRoot = Path.Combine(_root, "Gorgon", "characters");
+        _root = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-pippin-mig");
+        _legacyDir = Path.Combine(_root, "Mithril", "Pippin");
+        _charactersRoot = Path.Combine(_root, "Mithril", "characters");
         Directory.CreateDirectory(_legacyDir);
         Directory.CreateDirectory(_charactersRoot);
     }

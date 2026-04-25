@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Smaug.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:VendorCatalogViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TextCol" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="#FFE8E8E8"/>
@@ -54,7 +54,7 @@
             <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <wpf:GorgonQueryBox Grid.Column="1"
+            <wpf:MithrilQueryBox Grid.Column="1"
                                 Grid="{Binding ElementName=CatalogGrid}"
                                 QueryText="{Binding ElementName=CatalogGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 Watermark="type text, or grammar like Area = 'Serbule Hills'"/>
@@ -65,10 +65,10 @@
                    Visibility="{Binding ElementName=CatalogGrid, Path=QueryError,
                        Converter={StaticResource NullOrEmptyToVis}}"/>
 
-        <wpf:GorgonDataGrid x:Name="CatalogGrid" ItemsSource="{Binding Rows}"
+        <wpf:MithrilDataGrid x:Name="CatalogGrid" ItemsSource="{Binding Rows}"
                             Mode="ReadOnly" CanUserResizeRows="False"
                             RowStyle="{StaticResource CatalogRowStyle}">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTemplateColumn Header="Item" Width="220" SortMemberPath="ItemName">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -86,7 +86,7 @@
                                     ElementStyle="{StaticResource SubtleCol}"/>
                 <DataGridTextColumn Header="Accepts" Binding="{Binding Acceptance}" Width="130"
                                     ElementStyle="{StaticResource SubtleCol}"/>
-            </wpf:GorgonDataGrid.Columns>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

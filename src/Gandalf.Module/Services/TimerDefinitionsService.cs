@@ -1,5 +1,5 @@
 using Gandalf.Domain;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 
 namespace Gandalf.Services;
 

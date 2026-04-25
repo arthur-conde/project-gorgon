@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Wpf;
 
 namespace Bilbo.Domain;
 

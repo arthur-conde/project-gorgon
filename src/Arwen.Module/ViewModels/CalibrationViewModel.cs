@@ -2,8 +2,8 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Wpf.Dialogs;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 
 namespace Arwen.ViewModels;
 

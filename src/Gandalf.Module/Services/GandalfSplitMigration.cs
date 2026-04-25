@@ -3,9 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Gandalf.Domain;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
 namespace Gandalf.Services;

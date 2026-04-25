@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 using Arwen.Domain;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 
 namespace Arwen.State;
 

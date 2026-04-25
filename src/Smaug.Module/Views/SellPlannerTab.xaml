@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Smaug.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SellPlannerViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TextCol" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="#FFE8E8E8"/>
@@ -147,7 +147,7 @@
                     <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}"
                                VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <wpf:GorgonQueryBox Grid.Column="1"
+                    <wpf:MithrilQueryBox Grid.Column="1"
                                         Grid="{Binding ElementName=VendorsGrid}"
                                         QueryText="{Binding ElementName=VendorsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                         Watermark="type text, or grammar like Area CONTAINS 'Serbule'"/>
@@ -158,10 +158,10 @@
                            Visibility="{Binding ElementName=VendorsGrid, Path=QueryError,
                                Converter={StaticResource NullOrEmptyToVis}}"/>
 
-                <wpf:GorgonDataGrid x:Name="VendorsGrid" ItemsSource="{Binding Vendors}"
+                <wpf:MithrilDataGrid x:Name="VendorsGrid" ItemsSource="{Binding Vendors}"
                                     Mode="ReadOnly" CanUserResizeRows="False"
                                     RowStyle="{StaticResource VendorRowStyle}">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTextColumn Header="Vendor" Binding="{Binding NpcName}" Width="*"
                                             ElementStyle="{StaticResource TextCol}"/>
                         <DataGridTextColumn Header="Area" Binding="{Binding Area}" Width="160"
@@ -174,8 +174,8 @@
                                             ElementStyle="{StaticResource SubtleCol}"/>
                         <DataGridTextColumn Header="You" Binding="{Binding PlayerFavorTier}" Width="100"
                                             ElementStyle="{StaticResource SubtleCol}"/>
-                    </wpf:GorgonDataGrid.Columns>
-                </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.Columns>
+                </wpf:MithrilDataGrid>
             </DockPanel>
         </Grid>
     </DockPanel>

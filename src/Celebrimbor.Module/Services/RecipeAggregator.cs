@@ -1,5 +1,5 @@
 using Celebrimbor.Domain;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Services;
 

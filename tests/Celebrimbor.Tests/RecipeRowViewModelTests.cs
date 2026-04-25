@@ -1,7 +1,7 @@
 using Celebrimbor.ViewModels;
 using FluentAssertions;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Xunit;
 
 namespace Celebrimbor.Tests;

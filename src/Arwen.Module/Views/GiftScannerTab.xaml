@@ -4,14 +4,14 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:GiftScannerViewModel}"
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -40,7 +40,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <wpf:GorgonQueryBox Grid.Column="1"
+                <wpf:MithrilQueryBox Grid.Column="1"
                                     Grid="{Binding ElementName=ResultsGrid}"
                                     QueryText="{Binding ElementName=ResultsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     Watermark="type text, or grammar like Desire = 'Love' AND Score > 0"/>
@@ -52,10 +52,10 @@
         </StackPanel>
 
         <!-- Results grid -->
-        <wpf:GorgonDataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}"
+        <wpf:MithrilDataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}"
                             Mode="ReadOnly" CanUserResizeRows="False"
                             Margin="0,4,0,0">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridTemplateColumn Header="Item" Width="*" SortMemberPath="ItemName">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -220,9 +220,9 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-            </wpf:GorgonDataGrid.Columns>
-            <wpf:GorgonDataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+            </wpf:MithrilDataGrid.Columns>
+            <wpf:MithrilDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                     <Setter Property="ToolTip">
                         <Setter.Value>
                             <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -245,7 +245,7 @@
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </wpf:GorgonDataGrid.RowStyle>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.RowStyle>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

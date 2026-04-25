@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Wpf.Dialogs;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 using Samwise.Calibration;
 using Samwise.State;
 

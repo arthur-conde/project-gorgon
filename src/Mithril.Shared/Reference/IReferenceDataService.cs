@@ -1,0 +1,64 @@
+namespace Mithril.Shared.Reference;
+
+/// <summary>
+/// Manages dev-published JSON reference data from cdn.projectgorgon.com.
+/// Loaded eagerly at construction from disk cache (or bundled fallback) so
+/// consumers see a populated dictionary synchronously. CDN refresh runs in
+/// the background and raises <see cref="FileUpdated"/> when new data lands.
+/// </summary>
+public interface IReferenceDataService
+{
+    IReadOnlyList<string> Keys { get; }
+
+    IReadOnlyDictionary<long, ItemEntry> Items { get; }
+
+    /// <summary>InternalName → ItemEntry lookup. Useful when the log gives an InternalName but no item id.</summary>
+    IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+
+    /// <summary>recipe key (e.g. "recipe_1234") → RecipeEntry.</summary>
+    IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
+
+    /// <summary>InternalName → RecipeEntry lookup. Matches RecipeCompletions keys from character exports.</summary>
+    IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
+
+    /// <summary>Skill name (e.g. "Meditation") → SkillEntry.</summary>
+    IReadOnlyDictionary<string, SkillEntry> Skills { get; }
+
+    /// <summary>XP table InternalName (e.g. "TypicalNoncombatSkill") → XpTableEntry.</summary>
+    IReadOnlyDictionary<string, XpTableEntry> XpTables { get; }
+
+    /// <summary>NPC key (e.g. "NPC_Marna") → NpcEntry with gift preferences.</summary>
+    IReadOnlyDictionary<string, NpcEntry> Npcs { get; }
+
+    /// <summary>
+    /// Item InternalName → sources describing how the item can be obtained
+    /// (Vendor / Recipe / Quest / Monster / HangOut / NpcGift / Barter / Angling / …).
+    /// Pulled from <c>sources_items.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; }
+
+    /// <summary>
+    /// Placeholder token (e.g. <c>"MAX_ARMOR"</c>) → <see cref="AttributeEntry"/> with the
+    /// human-readable label and formatting hints used to render <see cref="ItemEntry.EffectDescs"/>.
+    /// Pulled from <c>attributes.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, AttributeEntry> Attributes { get; }
+
+    /// <summary>
+    /// Power InternalName (e.g. <c>"ShamanicHeadArmor"</c>, <c>"ArcheryBoost"</c>) →
+    /// <see cref="PowerEntry"/> describing the per-tier <see cref="EffectDescs"/> used by
+    /// <c>AddItemTSysPower</c> augmentation recipes. Pulled from <c>tsysclientinfo.json</c>.
+    /// </summary>
+    IReadOnlyDictionary<string, PowerEntry> Powers { get; }
+
+    ReferenceFileSnapshot GetSnapshot(string key);
+
+    Task RefreshAsync(string key, CancellationToken ct = default);
+
+    Task RefreshAllAsync(CancellationToken ct = default);
+
+    /// <summary>Fire-and-forget refresh of every known file. Intended for app start.</summary>
+    void BeginBackgroundRefresh();
+
+    event EventHandler<string>? FileUpdated;
+}

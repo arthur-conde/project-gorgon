@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:CalibrationViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         <Style x:Key="RateTextCol" TargetType="TextBlock">
             <Setter Property="Foreground" Value="#FFE8E8E8"/>
@@ -72,10 +72,10 @@
                 <Expander.Header>
                     <TextBlock Text="Per-item rates (most specific)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
                 </Expander.Header>
-                <wpf:GorgonDataGrid ItemsSource="{Binding ItemRates}"
+                <wpf:MithrilDataGrid ItemsSource="{Binding ItemRates}"
                                     Mode="ReadOnly" CanUserResizeRows="False"
                                     MaxHeight="220" Margin="0,4,0,0">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
                                             ElementStyle="{StaticResource RateTextCol}"/>
                         <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="220"
@@ -88,8 +88,8 @@
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
                         <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
-                    </wpf:GorgonDataGrid.Columns>
-                </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.Columns>
+                </wpf:MithrilDataGrid>
             </Expander>
 
             <!-- Signature rates -->
@@ -97,10 +97,10 @@
                 <Expander.Header>
                     <TextBlock Text="Signature rates (preference-set)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
                 </Expander.Header>
-                <wpf:GorgonDataGrid ItemsSource="{Binding SignatureRates}"
+                <wpf:MithrilDataGrid ItemsSource="{Binding SignatureRates}"
                                     Mode="ReadOnly" CanUserResizeRows="False"
                                     MaxHeight="200" Margin="0,4,0,0">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
                                             ElementStyle="{StaticResource RateTextCol}"/>
                         <DataGridTextColumn Header="Signature" Binding="{Binding Signature}" Width="260"
@@ -113,8 +113,8 @@
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
                         <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
-                    </wpf:GorgonDataGrid.Columns>
-                </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.Columns>
+                </wpf:MithrilDataGrid>
             </Expander>
 
             <!-- NPC baselines -->
@@ -122,10 +122,10 @@
                 <Expander.Header>
                     <TextBlock Text="NPC baselines (least specific)" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
                 </Expander.Header>
-                <wpf:GorgonDataGrid ItemsSource="{Binding NpcBaselines}"
+                <wpf:MithrilDataGrid ItemsSource="{Binding NpcBaselines}"
                                     Mode="ReadOnly" CanUserResizeRows="False"
                                     MaxHeight="200" Margin="0,4,0,0">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="160"
                                             ElementStyle="{StaticResource RateTextCol}"/>
                         <DataGridTextColumn Header="Rate" Binding="{Binding Rate, StringFormat=F4}" Width="90"
@@ -136,8 +136,8 @@
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
                         <DataGridTextColumn Header="Max" Binding="{Binding MaxRate, StringFormat=F4}" Width="90"
                                             ElementStyle="{StaticResource RateMinMaxCol}"/>
-                    </wpf:GorgonDataGrid.Columns>
-                </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.Columns>
+                </wpf:MithrilDataGrid>
             </Expander>
 
             <!-- Observations -->
@@ -150,7 +150,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Filter" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <wpf:GorgonQueryBox Grid.Column="1"
+                <wpf:MithrilQueryBox Grid.Column="1"
                                     Grid="{Binding ElementName=ObservationsGrid}"
                                     QueryText="{Binding ElementName=ObservationsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     Watermark="type text, or grammar like Signature CONTAINS 'Ring'"/>
@@ -159,10 +159,10 @@
                        Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
                        Visibility="{Binding ElementName=ObservationsGrid, Path=QueryError,
                            Converter={StaticResource NullOrEmptyToVis}}"/>
-            <wpf:GorgonDataGrid x:Name="ObservationsGrid" ItemsSource="{Binding Observations}"
+            <wpf:MithrilDataGrid x:Name="ObservationsGrid" ItemsSource="{Binding Observations}"
                                 Mode="ReadOnly" CanUserResizeRows="False"
                                 MaxHeight="320" Margin="0,4,0,0">
-                <wpf:GorgonDataGrid.Columns>
+                <wpf:MithrilDataGrid.Columns>
                     <DataGridTextColumn Header="NPC" Binding="{Binding NpcName}" Width="140"
                                         ElementStyle="{StaticResource RateTextCol}"/>
                     <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="160"
@@ -185,8 +185,8 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                </wpf:GorgonDataGrid.Columns>
-            </wpf:GorgonDataGrid>
+                </wpf:MithrilDataGrid.Columns>
+            </wpf:MithrilDataGrid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

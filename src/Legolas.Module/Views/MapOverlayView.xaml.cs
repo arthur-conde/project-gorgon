@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.ViewModels;
 using Legolas.Domain;

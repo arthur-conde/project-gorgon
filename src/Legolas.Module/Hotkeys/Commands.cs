@@ -1,4 +1,4 @@
-using Gorgon.Shared.Hotkeys;
+using Mithril.Shared.Hotkeys;
 using Legolas.Domain;
 using Legolas.ViewModels;
 

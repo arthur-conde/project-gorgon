@@ -1,0 +1,58 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:hk="clr-namespace:Mithril.Shared.Hotkeys.Controls">
+
+    <Style TargetType="{x:Type hk:HotkeyChipControl}">
+        <Setter Property="MinWidth" Value="120"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Background" Value="#22FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#55FFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="#FFE8E8E8"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type hk:HotkeyChipControl}">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <TextBlock x:Name="Txt"
+                                   Text="{TemplateBinding DisplayText}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   FontFamily="{TemplateBinding FontFamily}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="State" Value="Capturing">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
+                            <Setter TargetName="Bd" Property="Background"  Value="#33D4A847"/>
+                            <Setter TargetName="Txt" Property="Foreground" Value="#FFD4A847"/>
+                        </Trigger>
+                        <Trigger Property="State" Value="Conflict">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#FFE0A030"/>
+                        </Trigger>
+                        <Trigger Property="State" Value="Error">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD04040"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="Binding" Value="{x:Null}">
+                            <Setter TargetName="Txt" Property="Foreground" Value="#88FFFFFF"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

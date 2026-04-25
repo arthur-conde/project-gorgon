@@ -5,7 +5,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -22,7 +22,7 @@
 
             <TextBlock Text="Community calibration" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,8">
-                Merge your local vendor-price observations with community-aggregated rates from the gorgon-calibration repo.
+                Merge your local vendor-price observations with community-aggregated rates from the mithril-calibration repo.
                 Local data is always preserved — this only affects which rate the estimator <Run FontStyle="Italic">looks up</Run>.
             </TextBlock>
             <RadioButton GroupName="SmaugCalibrationSource" Content="Prefer local (recommended)"
@@ -39,7 +39,7 @@
                       Foreground="#FFE8E8E8" Margin="0,8,0,0"/>
 
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
-                Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Smaug\settings.json.
+                Settings are saved automatically to %LOCALAPPDATA%\Mithril\Smaug\settings.json.
             </TextBlock>
         </StackPanel>
     </ScrollViewer>

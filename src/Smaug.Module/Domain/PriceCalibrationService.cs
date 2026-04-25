@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Reference;
 
 namespace Smaug.Domain;
 

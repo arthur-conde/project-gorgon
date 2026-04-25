@@ -10,17 +10,17 @@ Celebrimbor is the crafting planner. Users pick recipes and per-recipe quantitie
 
 ### Module scaffolding
 - `CelebrimborModule` entry point — lazy activation, custom `celebrimbor.ico` wired via `IconUri`, Lucide `Hammer` fallback, `SortOrder 450`, settings pane registered.
-- Persistence via `JsonSettingsStore<CelebrimborSettings>` + `SettingsAutoSaver<CelebrimborSettings>` at `%LOCALAPPDATA%\Gorgon\Celebrimbor\settings.json`. Settings surface: filter toggles, expansion depth, tooltip delay, craft list, manual on-hand overrides.
+- Persistence via `JsonSettingsStore<CelebrimborSettings>` + `SettingsAutoSaver<CelebrimborSettings>` at `%LOCALAPPDATA%\Mithril\Celebrimbor\settings.json`. Settings surface: filter toggles, expansion depth, tooltip delay, craft list, manual on-hand overrides.
 
 ### Pure domain / services
 - `RecipeAggregator` — target-centric aggregation: the craft-list entries seed the demand dict with each recipe's *output* item (`ResultItems` first, `ProtoResultItems` fallback), so targets, intermediates, and raw materials all flow through a single code path. Expansion depth now reads intuitively (`0` = targets only, `1` = targets + direct ingredients, `N` = full chain to raw). Cycle-safe via a visited-set; shortfall-only expansion respects both detected on-hand and manual overrides; `ChanceToConsume < 1` handled as expected-value math ceiled at display. Computes per-item dependency **depth** (memoised DFS over a producer lookup) for step grouping.
 - `OnHandInventoryQuery` — reads `IActiveCharacterService.ActiveStorageContents` and projects to per-item counts + location chips via `StorageReportLoader.NormalizeLocation`.
 - `CraftListFormat` — plain-text share format (`RecipeInternalName x Qty`, `#` comments, both `x` and `×` separators). Lenient parse: unknown recipes and invalid quantities produce warnings, never throw. Merge-append sums duplicates.
 - `RecipeSearchIndex` — case-insensitive substring over name / internal name / skill, rebuilds on `IReferenceDataService.FileUpdated`.
-- Extended `Gorgon.Shared.Reference.RecipeEntry` with `ProtoResultItems` (optional tail param, back-compat with Elrond tests). Reference deserialiser populates it. Celebrimbor uses it as the fallback output source for crafted-equipment recipes.
+- Extended `Mithril.Shared.Reference.RecipeEntry` with `ProtoResultItems` (optional tail param, back-compat with Elrond tests). Reference deserialiser populates it. Celebrimbor uses it as the fallback output source for crafted-equipment recipes.
 
 ### Picker (Step 1)
-- `GorgonDataGrid` with `GorgonQueryBox` — bare substring search *or* expression queries (`IsKnown AND SkillLevelReq < 30`, `Skill = "Cooking"`).
+- `MithrilDataGrid` with `MithrilQueryBox` — bare substring search *or* expression queries (`IsKnown AND SkillLevelReq < 30`, `Skill = "Cooking"`).
 - Per-row **+** button adds a recipe to the craft list; clicking again increments the quantity. One-click-one-add — no selection model, no multi-select toolbar. Cells are `Focusable=False` + a `SelectionChanged → UnselectAll` hook so the system-highlight never paints.
 - Rows flagged gold when already in the craft list; a pill in the "In list" column shows the current quantity.
 - Two filter toggles (Known only, Meets skill level); degrade gracefully when no active character.
@@ -57,7 +57,7 @@ Celebrimbor is the crafting planner. Users pick recipes and per-recipe quantitie
 **Why deferred:** Keeps v1 focused on the shortest useful loop. `IActiveCharacterService.ActiveStorageContents` is already parsed and cached; scope grew cleanly from "active character only." Multi-character wants to iterate every export, parse each on a background thread, prefix locations with the character name, and cache by `(path, lastModifiedUtc)`. That's a modest but non-trivial feature with its own reliability surface (file-lock handling, stale-cache invalidation, memory ceiling).
 
 **Likely approach for v2:**
-- Extract `IInventoryQueryService` into `Gorgon.Shared` — the shared abstraction both Celebrimbor and Bilbo would consume. The service iterates `IActiveCharacterService.StorageReports`, parses each via `StorageReportLoader.Load`, and exposes `QueryByInternalName(string) → IReadOnlyList<(Character, Location, Quantity)>`.
+- Extract `IInventoryQueryService` into `Mithril.Shared` — the shared abstraction both Celebrimbor and Bilbo would consume. The service iterates `IActiveCharacterService.StorageReports`, parses each via `StorageReportLoader.Load`, and exposes `QueryByInternalName(string) → IReadOnlyList<(Character, Location, Quantity)>`.
 - Gate the background parsing behind `IModuleGate` so it doesn't run before the shell is ready.
 - Location chips become `"{Character} · {Normalized Location}"`.
 - Bilbo migrates to consume the same service; its `StorageRowMapper` stays where it is but starts pulling from the shared parse cache.

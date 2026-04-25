@@ -14,32 +14,32 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Projects whose folder name ends with .Module are Gorgon modules by convention. -->
-    <IsGorgonModule Condition="'$(IsGorgonModule)' == '' and $(MSBuildProjectName.EndsWith('.Module'))">true</IsGorgonModule>
-    <IsGorgonModule Condition="'$(IsGorgonModule)' == ''">false</IsGorgonModule>
+    <!-- Projects whose folder name ends with .Module are Mithril modules by convention. -->
+    <IsMithrilModule Condition="'$(IsMithrilModule)' == '' and $(MSBuildProjectName.EndsWith('.Module'))">true</IsMithrilModule>
+    <IsMithrilModule Condition="'$(IsMithrilModule)' == ''">false</IsMithrilModule>
   </PropertyGroup>
 
   <!--
     After a module builds, copy its primary output into the Shell's modules/ folder.
-    GorgonShellOutputPath must be passed by the Shell project (or resolved here by
+    MithrilShellOutputPath must be passed by the Shell project (or resolved here by
     convention from the solution layout).
   -->
-  <PropertyGroup Condition="'$(IsGorgonModule)' == 'true'">
-    <GorgonModulesDir>$(MSBuildThisFileDirectory)src\Gorgon.Shell\$(OutputPath)modules\</GorgonModulesDir>
+  <PropertyGroup Condition="'$(IsMithrilModule)' == 'true'">
+    <MithrilModulesDir>$(MSBuildThisFileDirectory)src\Mithril.Shell\$(OutputPath)modules\</MithrilModulesDir>
   </PropertyGroup>
 
   <Target Name="CopyModuleToShell"
           AfterTargets="Build"
-          Condition="'$(IsGorgonModule)' == 'true'">
-    <MakeDir Directories="$(GorgonModulesDir)" />
+          Condition="'$(IsMithrilModule)' == 'true'">
+    <MakeDir Directories="$(MithrilModulesDir)" />
     <Copy SourceFiles="$(TargetPath)"
-          DestinationFolder="$(GorgonModulesDir)"
+          DestinationFolder="$(MithrilModulesDir)"
           SkipUnchangedFiles="true" />
   </Target>
 
   <!--
     XAML StaticResource lint. Projects opt in by setting <RunsXamlResourceLint>true</RunsXamlResourceLint>.
-    The lint tool scans the whole repo, so a single anchor project (Gorgon.Shell) is sufficient — adding
+    The lint tool scans the whole repo, so a single anchor project (Mithril.Shell) is sufficient — adding
     the prop to multiple projects just runs the same scan multiple times.
 
     The lint is intentionally NOT a <ProjectReference>: doing so pulls a non-self-contained Exe into a

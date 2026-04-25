@@ -8,8 +8,8 @@ using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.Views;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Wpf.Dialogs;
+using Mithril.Shared.Character;
+using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
 

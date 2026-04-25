@@ -1,7 +1,7 @@
 using Bilbo.Domain;
 using FluentAssertions;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Character;
+using Mithril.Shared.Reference;
 using Xunit;
 
 namespace Bilbo.Tests;

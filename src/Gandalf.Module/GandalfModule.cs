@@ -3,18 +3,18 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.DependencyInjection;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Wpf.Dialogs;
+using Mithril.Shared.Character;
+using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Gandalf;
 
-public sealed class GandalfModule : IGorgonModule
+public sealed class GandalfModule : IMithrilModule
 {
     public string Id => "gandalf";
     public string DisplayName => "Gandalf · Timers";
@@ -28,7 +28,7 @@ public sealed class GandalfModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var gandalfDir = Path.Combine(localApp, "Gorgon", "Gandalf");
+        var gandalfDir = Path.Combine(localApp, "Mithril", "Gandalf");
         Directory.CreateDirectory(gandalfDir);
         var settingsPath = Path.Combine(gandalfDir, "settings.json");
         var defsPath = Path.Combine(gandalfDir, "definitions.json");

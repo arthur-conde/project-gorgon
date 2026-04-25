@@ -1,7 +1,7 @@
 using System.Windows;
 using Gandalf.Domain;
 using Gandalf.ViewModels;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
 

@@ -1,5 +1,5 @@
 using System.Windows;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
 

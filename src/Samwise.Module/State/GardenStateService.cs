@@ -1,4 +1,4 @@
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 
 namespace Samwise.State;
 

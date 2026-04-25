@@ -65,7 +65,7 @@ jobs:
             exit 1
           }
           "version=$v" >> $env:GITHUB_OUTPUT
-          Write-Host "Building Gorgon v$v from $tag"
+          Write-Host "Building Mithril v$v from $tag"
 
       # Sync version.json's `version` field to the tag so Nerdbank.GitVersioning
       # produces matching AssemblyVersion / FileVersion / InformationalVersion.
@@ -78,15 +78,15 @@ jobs:
         run: nbgv set-version ${{ steps.ver.outputs.version }}
 
       - name: Restore
-        run: dotnet restore Gorgon.slnx
+        run: dotnet restore Mithril.slnx
 
       # Build the whole solution first so every module's bin/Release/net10.0-windows/*.Module.dll
-      # exists. The Shell csproj's StageGorgonModulesForPublish target globs from those paths,
+      # exists. The Shell csproj's StageMithrilModulesForPublish target globs from those paths,
       # so the four modules that aren't <ProjectReference>'d (Arwen/Saruman/Smaug/Celebrimbor)
       # only land in publish/ if they were already built. NBGV (driven by the synced
       # version.json above) sets all version attributes — no -p:Version override needed.
       - name: Build solution
-        run: dotnet build Gorgon.slnx -c Release --no-restore
+        run: dotnet build Mithril.slnx -c Release --no-restore
 
       # Two-phase test execution. Tests marked [Trait("Category", "FileIO")] hit the
       # filesystem heavily and flake under cross-assembly parallelism on the runner —
@@ -94,7 +94,7 @@ jobs:
       # entirely at v0.0.1-test5 and seeing identical failures). Non-IO tests run in
       # full parallel mode for speed; IO tests run one assembly at a time.
       - name: Run non-IO tests (parallel)
-        run: dotnet test Gorgon.slnx -c Release --no-build --no-restore --filter "Category!=FileIO"
+        run: dotnet test Mithril.slnx -c Release --no-build --no-restore --filter "Category!=FileIO"
 
       # FileIO tests are advisory on CI. ETW trace from v0.0.1-test10 (see GH issue #2)
       # pinned the cause to xUnit's in-assembly parallelism racing fixture Dispose
@@ -122,23 +122,23 @@ jobs:
       # ─────────────────────────────────────────────────────────────────
       - name: Publish (selfcontained)
         run: >
-          dotnet publish src/Gorgon.Shell/Gorgon.Shell.csproj
+          dotnet publish src/Mithril.Shell/Mithril.Shell.csproj
           -c Release -r win-x64 --self-contained true --no-restore
           -p:PublishReadyToRun=true
-          -p:GorgonUpdateChannel=selfcontained
+          -p:MithrilUpdateChannel=selfcontained
           -o publish/selfcontained
 
       - name: Velopack pack (selfcontained)
         run: >
           vpk pack
-          --packId GorgonShell
-          --packTitle "Project Gorgon"
+          --packId MithrilShell
+          --packTitle "Mithril for Project: Gorgon"
           --packAuthors "Arthur Conde"
           --packVersion ${{ steps.ver.outputs.version }}
           --packDir publish/selfcontained
-          --mainExe Gorgon.exe
+          --mainExe Mithril.exe
           --channel selfcontained
-          --icon src/Gorgon.Shell/Resources/gorgon.ico
+          --icon src/Mithril.Shell/Resources/mithril.ico
           --outputDir releases
 
       # ─────────────────────────────────────────────────────────────────
@@ -146,30 +146,30 @@ jobs:
       # ─────────────────────────────────────────────────────────────────
       - name: Publish (fxdep)
         run: >
-          dotnet publish src/Gorgon.Shell/Gorgon.Shell.csproj
+          dotnet publish src/Mithril.Shell/Mithril.Shell.csproj
           -c Release -r win-x64 --self-contained false --no-restore
           -p:PublishReadyToRun=true
-          -p:GorgonUpdateChannel=fxdep
+          -p:MithrilUpdateChannel=fxdep
           -o publish/fxdep
 
       - name: Velopack pack (fxdep)
         run: >
           vpk pack
-          --packId GorgonShell
-          --packTitle "Project Gorgon"
+          --packId MithrilShell
+          --packTitle "Mithril for Project: Gorgon"
           --packAuthors "Arthur Conde"
           --packVersion ${{ steps.ver.outputs.version }}
           --packDir publish/fxdep
-          --mainExe Gorgon.exe
+          --mainExe Mithril.exe
           --channel fxdep
-          --icon src/Gorgon.Shell/Resources/gorgon.ico
+          --icon src/Mithril.Shell/Resources/mithril.ico
           --outputDir releases
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Gorgon ${{ steps.ver.outputs.version }}
+          name: Mithril for Project: Gorgon ${{ steps.ver.outputs.version }}
           generate_release_notes: true
           # Velopack writes Setup.exe, Portable.zip, *-full.nupkg, *-delta.nupkg, and
           # releases.{channel}.json per channel. The GithubSource client downloads

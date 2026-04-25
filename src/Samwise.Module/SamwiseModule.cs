@@ -1,9 +1,9 @@
 using System.IO;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.DependencyInjection;
-using Gorgon.Shared.Hotkeys;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Hotkeys;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -18,7 +18,7 @@ using Samwise.Views;
 
 namespace Samwise;
 
-public sealed class SamwiseModule : IGorgonModule
+public sealed class SamwiseModule : IMithrilModule
 {
     public string Id => "samwise";
     public string DisplayName => "Samwise · Garden";
@@ -32,7 +32,7 @@ public sealed class SamwiseModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var samwiseDir = Path.Combine(localApp, "Gorgon", "Samwise");
+        var samwiseDir = Path.Combine(localApp, "Mithril", "Samwise");
         var bundledCrops = Path.Combine(AppContext.BaseDirectory, "Config", "crops.json");
         var userCrops = Path.Combine(samwiseDir, "crops.json");
         var settingsPath = Path.Combine(samwiseDir, "settings.json");
@@ -42,10 +42,10 @@ public sealed class SamwiseModule : IGorgonModule
         services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
             sp.GetRequiredService<ICropConfigStore>(),
             time: null,
-            diag: sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>(),
+            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
             settings: sp.GetRequiredService<SamwiseSettings>(),
-            referenceData: sp.GetService<Gorgon.Shared.Reference.IReferenceDataService>(),
-            activeChar: sp.GetService<Gorgon.Shared.Character.IActiveCharacterService>()));
+            referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
+            activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>()));
         services.AddSingleton<AlarmService>();
 
         // Global preferences stay app-wide.
@@ -68,15 +68,15 @@ public sealed class SamwiseModule : IGorgonModule
             samwiseDir,
             sp.GetRequiredService<PerCharacterStore<GardenCharacterState>>(),
             sp.GetRequiredService<IActiveCharacterService>(),
-            sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
 
         services.AddSingleton<GrowthCalibrationService>(sp => new GrowthCalibrationService(
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<ICropConfigStore>(),
             samwiseDir,
-            sp.GetService<Gorgon.Shared.Reference.ICommunityCalibrationService>(),
+            sp.GetService<Mithril.Shared.Reference.ICommunityCalibrationService>(),
             sp.GetRequiredService<SamwiseSettings>().Calibration,
-            sp.GetService<Gorgon.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
 
         services.AddSingleton<GardenViewModel>();
         services.AddSingleton<GrowthCalibrationViewModel>();

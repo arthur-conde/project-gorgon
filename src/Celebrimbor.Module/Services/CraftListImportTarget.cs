@@ -1,14 +1,14 @@
 using System.Windows;
 using Celebrimbor.ViewModels;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Services;
 
 /// <summary>
 /// Celebrimbor's implementation of <see cref="ICraftListImportTarget"/>. Handles incoming
-/// <c>gorgon://list/…</c> deep links by: bringing the Celebrimbor tab to the foreground,
+/// <c>mithril://list/…</c> deep links by: bringing the Celebrimbor tab to the foreground,
 /// decoding the base64url payload into a <see cref="ParseResult"/>, then running the shared
 /// Append/Replace/Cancel dialog on the UI thread via <see cref="RecipePickerViewModel"/>.
 /// </summary>

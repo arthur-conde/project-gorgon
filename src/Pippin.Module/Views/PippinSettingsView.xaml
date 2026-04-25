@@ -20,7 +20,7 @@
                        Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,0,0,16"/>
 
             <TextBlock Text="Data is stored at:" Foreground="#88FFFFFF" Margin="0,0,0,4"/>
-            <TextBlock Text="%LOCALAPPDATA%\Gorgon\Pippin\gourmand-state.json"
+            <TextBlock Text="%LOCALAPPDATA%\Mithril\Pippin\gourmand-state.json"
                        Foreground="#55FFFFFF" FontFamily="{DynamicResource AppMonoFontFamily}" FontSize="{DynamicResource AppFontSizeHint}"/>
         </StackPanel>
     </ScrollViewer>

@@ -1,4 +1,4 @@
-using Gorgon.Shared.Character;
+using Mithril.Shared.Character;
 using Pippin.Domain;
 
 namespace Pippin.State;

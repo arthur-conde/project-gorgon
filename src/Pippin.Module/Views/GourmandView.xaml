@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Pippin.ViewModels"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -13,7 +13,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -58,7 +58,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <wpf:GorgonQueryBox Grid.Column="0"
+                <wpf:MithrilQueryBox Grid.Column="0"
                                     Grid="{Binding ElementName=FoodsGrid}"
                                     QueryText="{Binding ElementName=FoodsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     Watermark="type text, or grammar like FoodLevel &gt;= 40 AND IsEaten = FALSE"
@@ -94,7 +94,7 @@
         </StackPanel>
 
         <!-- ── Food grid ── -->
-        <wpf:GorgonDataGrid x:Name="FoodsGrid"
+        <wpf:MithrilDataGrid x:Name="FoodsGrid"
                             ItemsSource="{Binding Foods}"
                             Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
                             Mode="ReadOnly"
@@ -105,12 +105,12 @@
                             VirtualizingPanel.VirtualizationMode="Recycling"
                             VirtualizingPanel.ScrollUnit="Pixel"
                             ScrollViewer.CanContentScroll="True">
-            <wpf:GorgonDataGrid.Columns>
+            <wpf:MithrilDataGrid.Columns>
                 <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
                                         Width="32" IsReadOnly="True"
-                                        wpf:GorgonDataGrid.QueryName="IsEaten"/>
+                                        wpf:MithrilDataGrid.QueryName="IsEaten"/>
                 <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending"
-                                        wpf:GorgonDataGrid.QueryName="Name">
+                                        wpf:MithrilDataGrid.QueryName="Name">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
@@ -122,9 +122,9 @@
                 <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
                 <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
                 <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
-            </wpf:GorgonDataGrid.Columns>
-            <wpf:GorgonDataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+            </wpf:MithrilDataGrid.Columns>
+            <wpf:MithrilDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                     <Setter Property="ToolTip">
                         <Setter.Value>
                             <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -155,7 +155,7 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </wpf:GorgonDataGrid.RowStyle>
-        </wpf:GorgonDataGrid>
+            </wpf:MithrilDataGrid.RowStyle>
+        </wpf:MithrilDataGrid>
     </DockPanel>
 </UserControl>

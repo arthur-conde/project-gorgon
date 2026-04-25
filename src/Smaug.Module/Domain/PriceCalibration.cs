@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Smaug.Domain;
 
 /// <summary>
-/// On-disk shape persisted to <c>%LocalAppData%/Gorgon/Smaug/calibration.json</c>.
+/// On-disk shape persisted to <c>%LocalAppData%/Mithril/Smaug/calibration.json</c>.
 /// Contains the raw observation list plus the two aggregated rate dictionaries.
 /// </summary>
 public sealed class PriceCalibrationData

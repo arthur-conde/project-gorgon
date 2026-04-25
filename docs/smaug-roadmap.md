@@ -18,8 +18,8 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 - Ingestion service attributes each sell to (NpcKey, FavorTier, CivicPrideLevel) and records observations.
 - Two rate tables: absolute price (fixed-Value items) keyed by `NpcKey|InternalName|FavorTier|CivicPrideBucket`, Value-ratio (variable-Value items like augments/gear) keyed by `NpcKey|KeywordBucket|FavorTier|CivicPrideBucket`.
 - Three tabs: **Vendor Catalog** (sources_items.json × npcs.json), **Sell Prices** (learned rates), **Calibration** (recent observations).
-- Community pipeline: `VendorRatesPayload` schema v1, merger with PreferLocal / Blend / PreferCommunity modes, fetch from `gorgon-calibration` GitHub repo.
-- Settings pane with calibration source toggle, persisted to `%LocalAppData%/Gorgon/Smaug/settings.json`.
+- Community pipeline: `VendorRatesPayload` schema v1, merger with PreferLocal / Blend / PreferCommunity modes, fetch from `mithril-calibration` GitHub repo.
+- Settings pane with calibration source toggle, persisted to `%LocalAppData%/Mithril/Smaug/settings.json`.
 - 15 unit tests covering parser, rate aggregation, Civic Pride bucketing, tier ordering, and community merger.
 
 ---
@@ -33,7 +33,7 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 **Likely approach for v2:**
 - Manual entry UI: when a user knows a buy price, let them input it against (vendor, item). Persist as a separate dictionary (`buyPriceObservations`) with its own schema-versioned community payload.
 - Empirical gold-delta crawl: track player-owned gold across `ProcessAddItem` events that follow a `ProcessVendorScreen` but no corresponding `ProcessVendorAddItem`. Requires finding the "current gold" log signal — we haven't surveyed for one yet. If it exists (e.g., inside `ProcessUpdateAttributes` under `Currency`), automated buy tracking becomes feasible.
-- Community-authoritative fallback: let users with verified prices submit `BuyPriceEntry { vendor, item, price, verifiedAt }` contributions to the gorgon-calibration repo; aggregation picks the mode.
+- Community-authoritative fallback: let users with verified prices submit `BuyPriceEntry { vendor, item, price, verifiedAt }` contributions to the mithril-calibration repo; aggregation picks the mode.
 
 ### 2. Vendor gold-pool tracking
 
@@ -55,7 +55,7 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 
 ### 5. Bundled sources_items.json
 
-**Why deferred:** The CDN refresh pulls it on first launch, so v1 ships functional-but-empty until the first successful refresh. For a fully-offline first-run experience, bundle a copy under `src/Gorgon.Shared/Reference/BundledData/sources_items.json` (~2-3 MB).
+**Why deferred:** The CDN refresh pulls it on first launch, so v1 ships functional-but-empty until the first successful refresh. For a fully-offline first-run experience, bundle a copy under `src/Mithril.Shared/Reference/BundledData/sources_items.json` (~2-3 MB).
 
 **Action:** Download once from `https://cdn.projectgorgon.com/v{version}/data/sources_items.json`, save to the bundled dir, commit. The existing load path picks it up.
 
@@ -86,6 +86,6 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 3. **Sell Planner tab** — highest-utility UI feature still on the table; ~80% of the "min-max" pitch lands here. (scope: 1 view + viewmodel + estimator consumer)
 4. **Cap-aware acceptance indicator in Catalog** — visible win, builds on data we already parse. (scope: viewmodel projection)
 5. **Vendor gold-pool tracking** — useful for bulk sellers, needs persisted per-character state. (scope: new service + column)
-6. **Buy-price crowdsourcing** — manual-entry first, then survey the log for a currency-update signal. (scope: new schema, new UI, extension to gorgon-calibration repo)
+6. **Buy-price crowdsourcing** — manual-entry first, then survey the log for a currency-update signal. (scope: new schema, new UI, extension to mithril-calibration repo)
 
 Items 1–2 are small and should probably ship together as a v1.1. Items 3–4 form a meaningful v1.2. Items 5–6 are full v2 features.

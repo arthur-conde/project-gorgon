@@ -1,7 +1,7 @@
-global using Gorgon.Shared.Storage;
+global using Mithril.Shared.Storage;
 
 using Bilbo.Domain;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 
 namespace Bilbo.Services;
 

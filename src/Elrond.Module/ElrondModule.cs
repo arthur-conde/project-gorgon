@@ -3,14 +3,14 @@ using Elrond.Domain;
 using Elrond.Services;
 using Elrond.ViewModels;
 using Elrond.Views;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elrond;
 
-public sealed class ElrondModule : IGorgonModule
+public sealed class ElrondModule : IMithrilModule
 {
     public string Id => "elrond";
     public string DisplayName => "Elrond · Skills";
@@ -24,7 +24,7 @@ public sealed class ElrondModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var elrondDir = Path.Combine(localApp, "Gorgon", "Elrond");
+        var elrondDir = Path.Combine(localApp, "Mithril", "Elrond");
         var settingsPath = Path.Combine(elrondDir, "settings.json");
 
         services.AddSingleton<ISettingsStore<ElrondSettings>>(_ =>

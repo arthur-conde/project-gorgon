@@ -5,11 +5,11 @@ using Bilbo.Domain;
 using Bilbo.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Game;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Storage;
-using Gorgon.Shared.Wpf;
+using Mithril.Shared.Character;
+using Mithril.Shared.Game;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Storage;
+using Mithril.Shared.Wpf;
 
 namespace Bilbo.ViewModels;
 

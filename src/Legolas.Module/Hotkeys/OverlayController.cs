@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Modules;
 using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;

@@ -18,7 +18,7 @@
             <CheckBox Content="Allow concurrent alarm sounds"
                       IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-            <CheckBox Content="Flash the Gorgon window when a timer completes" IsChecked="{Binding Settings.FlashWindow}"
+            <CheckBox Content="Flash the Mithril window when a timer completes" IsChecked="{Binding Settings.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
 
             <DockPanel Margin="0,8,0,0" LastChildFill="True">
@@ -65,9 +65,9 @@
             </Border>
 
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
-                Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Gandalf\settings.json.
-                Timer definitions persist to %LOCALAPPDATA%\Gorgon\Gandalf\definitions.json; per-character
-                progress lives under %LOCALAPPDATA%\Gorgon\characters\{character}_{server}\gandalf.json.
+                Settings are saved automatically to %LOCALAPPDATA%\Mithril\Gandalf\settings.json.
+                Timer definitions persist to %LOCALAPPDATA%\Mithril\Gandalf\definitions.json; per-character
+                progress lives under %LOCALAPPDATA%\Mithril\characters\{character}_{server}\gandalf.json.
             </TextBlock>
         </StackPanel>
     </ScrollViewer>

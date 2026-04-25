@@ -2,8 +2,8 @@ using System.IO;
 using System.Text.Json;
 using Bilbo.Domain;
 using Bilbo.Services;
-using Gorgon.Shared.Reference;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Storage;
 using FluentAssertions;
 using Xunit;
 

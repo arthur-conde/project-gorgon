@@ -4,13 +4,13 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
                 <ResourceDictionary Source="Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
@@ -79,16 +79,16 @@
                         <ComboBox Width="180" Margin="0,0,16,0"
                                   ItemsSource="{Binding AvailableLocations}"
                                   SelectedItem="{Binding SelectedLocation}"/>
-                        <wpf:GorgonQueryBox Grid="{Binding ElementName=ItemsGrid}"
+                        <wpf:MithrilQueryBox Grid="{Binding ElementName=ItemsGrid}"
                                             QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
                                             Watermark="bare text, or e.g. Rarity = 'Epic' AND Level &gt;= 50"/>
                     </DockPanel>
-                    <wpf:GorgonDataGrid x:Name="ItemsGrid"
+                    <wpf:MithrilDataGrid x:Name="ItemsGrid"
                                         ItemsSource="{Binding FilteredItems}"
                                         QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
                                         Mode="ReadOnly"
                                         MouseDoubleClick="ItemsGrid_OnMouseDoubleClick">
-                    <wpf:GorgonDataGrid.Columns>
+                    <wpf:MithrilDataGrid.Columns>
                         <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -140,9 +140,9 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                    </wpf:GorgonDataGrid.Columns>
-                    <wpf:GorgonDataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+                    </wpf:MithrilDataGrid.Columns>
+                    <wpf:MithrilDataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                             <Setter Property="ToolTip">
                                 <Setter.Value>
                                     <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -165,8 +165,8 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </wpf:GorgonDataGrid.RowStyle>
-                    </wpf:GorgonDataGrid>
+                    </wpf:MithrilDataGrid.RowStyle>
+                    </wpf:MithrilDataGrid>
                 </DockPanel>
             </TabItem>
             <TabItem Header="Craftable Recipes">
@@ -178,15 +178,15 @@
                                   DisplayMemberPath="Label"
                                   SelectedValuePath="Value"
                                   SelectedValue="{Binding Confidence}"/>
-                        <wpf:GorgonQueryBox Grid="{Binding ElementName=RecipesGrid}"
+                        <wpf:MithrilQueryBox Grid="{Binding ElementName=RecipesGrid}"
                                             QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
                                             Watermark="e.g. MaxCraftable &gt; 0 AND IsKnown AND SkillLevelMet"/>
                     </DockPanel>
-                    <wpf:GorgonDataGrid x:Name="RecipesGrid"
+                    <wpf:MithrilDataGrid x:Name="RecipesGrid"
                                         ItemsSource="{Binding CraftableRecipes}"
                                         QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
                                         Mode="ReadOnly">
-                        <wpf:GorgonDataGrid.Columns>
+                        <wpf:MithrilDataGrid.Columns>
                             <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="200" SortMemberPath="Name">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -227,9 +227,9 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Result" Binding="{Binding ResultItem}" SortMemberPath="ResultItem" Width="*" MinWidth="160"/>
-                        </wpf:GorgonDataGrid.Columns>
-                        <wpf:GorgonDataGrid.RowStyle>
-                            <Style TargetType="DataGridRow" BasedOn="{StaticResource GorgonDataGridRowStyle}">
+                        </wpf:MithrilDataGrid.Columns>
+                        <wpf:MithrilDataGrid.RowStyle>
+                            <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
                                 <Setter Property="ToolTip">
                                     <Setter.Value>
                                         <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
@@ -264,8 +264,8 @@
                                     </Setter.Value>
                                 </Setter>
                             </Style>
-                        </wpf:GorgonDataGrid.RowStyle>
-                    </wpf:GorgonDataGrid>
+                        </wpf:MithrilDataGrid.RowStyle>
+                    </wpf:MithrilDataGrid>
                 </DockPanel>
             </TabItem>
         </TabControl>

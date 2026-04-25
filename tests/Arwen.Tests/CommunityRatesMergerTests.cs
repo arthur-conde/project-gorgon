@@ -1,6 +1,6 @@
 using Arwen.Domain;
 using FluentAssertions;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Reference;
 using Xunit;
 
 namespace Arwen.Tests;

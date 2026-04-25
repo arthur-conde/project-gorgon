@@ -1,7 +1,7 @@
 using System.IO;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.DependencyInjection;
-using Gorgon.Shared.Modules;
+using Mithril.Shared.Character;
+using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Saruman.Parsing;
@@ -12,7 +12,7 @@ using Saruman.Views;
 
 namespace Saruman;
 
-public sealed class SarumanModule : IGorgonModule
+public sealed class SarumanModule : IMithrilModule
 {
     public string Id => "saruman";
     public string DisplayName => "Saruman · Words of Power";
@@ -26,7 +26,7 @@ public sealed class SarumanModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var legacySarumanDir = Path.Combine(localApp, "Gorgon", "Saruman");
+        var legacySarumanDir = Path.Combine(localApp, "Mithril", "Saruman");
 
         // Codebook is per-character — each character discovers words independently.
         services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>

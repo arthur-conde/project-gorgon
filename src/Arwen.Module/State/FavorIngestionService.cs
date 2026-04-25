@@ -1,11 +1,11 @@
 using System.Windows;
 using Arwen.Domain;
 using Arwen.Parsing;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Logging;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
 namespace Arwen.State;

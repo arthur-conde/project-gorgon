@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using FluentAssertions;
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Character;
+using Mithril.Shared.Storage;
 using Samwise.State;
 using Xunit;
 
@@ -17,7 +17,7 @@ public sealed class GardenFanoutMigrationTests : IDisposable
 
     public GardenFanoutMigrationTests()
     {
-        _root = Gorgon.TestSupport.TestPaths.CreateTempDir("gorgon-samwise-fanout");
+        _root = Mithril.TestSupport.TestPaths.CreateTempDir("mithril-samwise-fanout");
         _samwiseDir = Path.Combine(_root, "Samwise");
         _charactersRoot = Path.Combine(_root, "characters");
         Directory.CreateDirectory(_samwiseDir);

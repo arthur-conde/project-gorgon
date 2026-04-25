@@ -1,6 +1,6 @@
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Diagnostics;
-using Gorgon.Shared.Reference;
+using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
 

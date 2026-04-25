@@ -3,14 +3,14 @@ using Celebrimbor.Domain;
 using Celebrimbor.Services;
 using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
-using Gorgon.Shared.Modules;
-using Gorgon.Shared.Settings;
+using Mithril.Shared.Modules;
+using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Celebrimbor;
 
-public sealed class CelebrimborModule : IGorgonModule
+public sealed class CelebrimborModule : IMithrilModule
 {
     public string Id => "celebrimbor";
     public string DisplayName => "Celebrimbor · Crafting";
@@ -24,7 +24,7 @@ public sealed class CelebrimborModule : IGorgonModule
     public void Register(IServiceCollection services)
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var settingsPath = Path.Combine(localApp, "Gorgon", "Celebrimbor", "settings.json");
+        var settingsPath = Path.Combine(localApp, "Mithril", "Celebrimbor", "settings.json");
 
         services.AddSingleton<ISettingsStore<CelebrimborSettings>>(_ =>
             new JsonSettingsStore<CelebrimborSettings>(settingsPath, CelebrimborSettingsJsonContext.Default.CelebrimborSettings));

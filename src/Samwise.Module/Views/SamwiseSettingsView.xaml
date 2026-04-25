@@ -6,7 +6,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Gorgon.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -39,7 +39,7 @@
             <CheckBox Content="Allow concurrent alarm sounds"
                       IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-            <CheckBox Content="Flash the Gorgon window when firing" IsChecked="{Binding Alarms.FlashWindow}"
+            <CheckBox Content="Flash the Mithril window when firing" IsChecked="{Binding Alarms.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <DockPanel Margin="0,8,0,0" LastChildFill="True">
                 <TextBlock Text="Volume" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
@@ -98,7 +98,7 @@
             <!-- Community calibration -->
             <TextBlock Text="Community calibration" Foreground="#88FFFFFF" Margin="0,24,0,6" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,8">
-                Merge your local growth observations with community-aggregated rates from the gorgon-calibration repo.
+                Merge your local growth observations with community-aggregated rates from the mithril-calibration repo.
             </TextBlock>
             <RadioButton GroupName="SamwiseCalibrationSource" Content="Prefer local (recommended)"
                          IsChecked="{Binding Calibration.Source, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=PreferLocal}"
@@ -114,7 +114,7 @@
                       Foreground="#FFE8E8E8" Margin="0,8,0,0"/>
 
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
-                Settings are saved automatically to %LOCALAPPDATA%\Gorgon\Samwise\settings.json.
+                Settings are saved automatically to %LOCALAPPDATA%\Mithril\Samwise\settings.json.
             </TextBlock>
         </StackPanel>
     </ScrollViewer>

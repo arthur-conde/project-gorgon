@@ -5,7 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:domain="clr-namespace:Arwen.Domain"
              xmlns:vm="clr-namespace:Arwen.ViewModels"
-             xmlns:wpf="clr-namespace:Gorgon.Shared.Wpf;assembly=Gorgon.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:FavorCalculatorViewModel}"
              Background="#FF1A1A1A">
@@ -89,9 +89,9 @@
                      FontSize="{DynamicResource AppFontSizeMedium}" Padding="6,4" Margin="0,0,0,8"
                      Background="#FF2A2A2A" Foreground="#FFE8E8E8" BorderBrush="#FF444444"/>
 
-            <wpf:GorgonDataGrid ItemsSource="{Binding MatchingItems}" SelectedItem="{Binding SelectedItem}"
+            <wpf:MithrilDataGrid ItemsSource="{Binding MatchingItems}" SelectedItem="{Binding SelectedItem}"
                                 Mode="ReadOnly" CanUserResizeRows="False">
-                <wpf:GorgonDataGrid.Columns>
+                <wpf:MithrilDataGrid.Columns>
                     <DataGridTemplateColumn Header="Item" Width="*" SortMemberPath="ItemName">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -133,8 +133,8 @@
                             </Style>
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
-                </wpf:GorgonDataGrid.Columns>
-            </wpf:GorgonDataGrid>
+                </wpf:MithrilDataGrid.Columns>
+            </wpf:MithrilDataGrid>
         </DockPanel>
     </Grid>
 </UserControl>

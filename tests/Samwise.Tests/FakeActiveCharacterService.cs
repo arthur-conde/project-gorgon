@@ -1,5 +1,5 @@
-using Gorgon.Shared.Character;
-using Gorgon.Shared.Storage;
+using Mithril.Shared.Character;
+using Mithril.Shared.Storage;
 
 namespace Samwise.Tests;
 

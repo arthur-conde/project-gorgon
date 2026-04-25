@@ -1,4 +1,4 @@
-# Releasing Gorgon
+# Releasing Mithril
 
 How to cut a new compiled release. The pipeline is tag-driven: pushing a `v*` tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds two Velopack-packaged SKUs and attaches them to a new GitHub Release.
 
@@ -11,7 +11,7 @@ Every tag produces both runtime SKUs in parallel, each with a `Setup.exe`, a `Po
 | `selfcontained` | `win-x64` | Yes — .NET 10 Desktop Runtime included | ~270 MB Setup.exe | No prerequisites on user's machine |
 | `fxdep` | `win-x64` | No — relies on host's .NET 10 Desktop Runtime | ~40 MB Setup.exe | Friendly dialog points users to the .NET download page if missing |
 
-Both flavors install to `%LocalAppData%\GorgonShell\` (separate from user data at `%LocalAppData%\Gorgon\`) and update through Velopack against this repo's GitHub Releases.
+Both flavors install to `%LocalAppData%\MithrilShell\` (separate from user data at `%LocalAppData%\Mithril\`) and update through Velopack against this repo's GitHub Releases.
 
 ## Cutting a release
 
@@ -28,11 +28,11 @@ Look at [previous tags](https://github.com/arthur-conde/project-gorgon/tags) and
 ### 2. Make sure `main` is green
 
 ```bash
-dotnet build Gorgon.slnx -c Release
-dotnet test Gorgon.slnx -c Release
+dotnet build Mithril.slnx -c Release
+dotnet test Mithril.slnx -c Release
 ```
 
-Three filesystem-flake tests in `Gandalf.Tests` and `Gorgon.Shared.Tests.CommunityCalibrationServiceTests.RefreshAsync_FetchesAndCaches` are known flaky on `%TEMP%`. Re-run them individually if they fail; the CI workflow does not currently retry, so a flake will fail the release run and require re-tagging.
+Three filesystem-flake tests in `Gandalf.Tests` and `Mithril.Shared.Tests.CommunityCalibrationServiceTests.RefreshAsync_FetchesAndCaches` are known flaky on `%TEMP%`. Re-run them individually if they fail; the CI workflow does not currently retry, so a flake will fail the release run and require re-tagging.
 
 ### 3. Tag the commit
 
@@ -53,7 +53,7 @@ Open [Actions → Release](https://github.com/arthur-conde/project-gorgon/action
 2. Run the test suite.
 3. `dotnet publish` for `selfcontained`, then `vpk pack --channel selfcontained`.
 4. `dotnet publish` for `fxdep`, then `vpk pack --channel fxdep`.
-5. Upload `releases/*` to a new GitHub Release named `Gorgon X.Y.Z` with auto-generated release notes.
+5. Upload `releases/*` to a new GitHub Release named `Mithril X.Y.Z` with auto-generated release notes.
 
 The two `--channel` flags are critical: `releases.selfcontained.json` and `releases.fxdep.json` are independent manifests, so a self-contained user never accidentally pulls a framework-dependent update or vice versa.
 
@@ -62,8 +62,8 @@ The two `--channel` flags are critical: `releases.selfcontained.json` and `relea
 After the workflow finishes:
 
 1. Open the [Releases page](https://github.com/arthur-conde/project-gorgon/releases/latest) and confirm both SKUs' `Setup.exe`, `Portable.zip`, `*-full.nupkg`, and `releases.*.json` files are attached.
-2. Download `Gorgon-X.Y.Z-fxdep-Setup.exe` on a test machine and run it. Velopack installs to `%LocalAppData%\GorgonShell\`, creates a Start Menu shortcut, and launches Gorgon.
-3. In Gorgon, open **Settings → About**. Verify:
+2. Download `mithril-X.Y.Z-fxdep-Setup.exe` on a test machine and run it. Velopack installs to `%LocalAppData%\MithrilShell\`, creates a Start Menu shortcut, and launches Mithril.
+3. In Mithril, open **Settings → About**. Verify:
    - "Channel" reads "Framework-dependent"
    - "Version" matches the tag
    - Status reads "Up to date" (because we just installed the latest)
@@ -91,22 +91,22 @@ Two safe approaches:
 
 ```pwsh
 # Build version A
-dotnet publish src/Gorgon.Shell -c Release -r win-x64 --self-contained false `
-  -p:GorgonUpdateChannel=fxdep -p:Version=0.0.1 -o publish/0.0.1
-vpk pack --packId GorgonShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
-  --packVersion 0.0.1 --packDir publish/0.0.1 --mainExe Gorgon.exe `
+dotnet publish src/Mithril.Shell -c Release -r win-x64 --self-contained false `
+  -p:MithrilUpdateChannel=fxdep -p:Version=0.0.1 -o publish/0.0.1
+vpk pack --packId MithrilShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
+  --packVersion 0.0.1 --packDir publish/0.0.1 --mainExe Mithril.exe `
   --channel fxdep --outputDir C:\velo-test\releases
 
 # Install it from the Setup.exe in C:\velo-test\releases\
 # Build version B
-dotnet publish src/Gorgon.Shell -c Release -r win-x64 --self-contained false `
-  -p:GorgonUpdateChannel=fxdep -p:Version=0.0.2 -o publish/0.0.2
-vpk pack --packId GorgonShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
-  --packVersion 0.0.2 --packDir publish/0.0.2 --mainExe Gorgon.exe `
+dotnet publish src/Mithril.Shell -c Release -r win-x64 --self-contained false `
+  -p:MithrilUpdateChannel=fxdep -p:Version=0.0.2 -o publish/0.0.2
+vpk pack --packId MithrilShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
+  --packVersion 0.0.2 --packDir publish/0.0.2 --mainExe Mithril.exe `
   --channel fxdep --outputDir C:\velo-test\releases
 ```
 
-Then point a debug build at the local source by temporarily swapping `GithubSource` for `SimpleFileSource` in [`GorgonUpdateManager.cs`](../src/Gorgon.Shell/Updates/GorgonUpdateManager.cs). Don't commit the swap.
+Then point a debug build at the local source by temporarily swapping `GithubSource` for `SimpleFileSource` in [`MithrilUpdateManager.cs`](../src/Mithril.Shell/Updates/MithrilUpdateManager.cs). Don't commit the swap.
 
 ## Local manual publish (no CI)
 
@@ -118,23 +118,23 @@ dotnet tool install -g vpk
 
 $ver = "1.2.3"
 
-dotnet build Gorgon.slnx -c Release -p:Version=$ver
+dotnet build Mithril.slnx -c Release -p:Version=$ver
 
 # Self-contained
-dotnet publish src/Gorgon.Shell -c Release -r win-x64 --self-contained true `
-  -p:PublishReadyToRun=true -p:GorgonUpdateChannel=selfcontained -p:Version=$ver `
+dotnet publish src/Mithril.Shell -c Release -r win-x64 --self-contained true `
+  -p:PublishReadyToRun=true -p:MithrilUpdateChannel=selfcontained -p:Version=$ver `
   -o publish/selfcontained
-vpk pack --packId GorgonShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
-  --packVersion $ver --packDir publish/selfcontained --mainExe Gorgon.exe `
-  --channel selfcontained --icon src/Gorgon.Shell/Resources/gorgon.ico --outputDir releases
+vpk pack --packId MithrilShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
+  --packVersion $ver --packDir publish/selfcontained --mainExe Mithril.exe `
+  --channel selfcontained --icon src/Mithril.Shell/Resources/mithril.ico --outputDir releases
 
 # Framework-dependent
-dotnet publish src/Gorgon.Shell -c Release -r win-x64 --self-contained false `
-  -p:PublishReadyToRun=true -p:GorgonUpdateChannel=fxdep -p:Version=$ver `
+dotnet publish src/Mithril.Shell -c Release -r win-x64 --self-contained false `
+  -p:PublishReadyToRun=true -p:MithrilUpdateChannel=fxdep -p:Version=$ver `
   -o publish/fxdep
-vpk pack --packId GorgonShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
-  --packVersion $ver --packDir publish/fxdep --mainExe Gorgon.exe `
-  --channel fxdep --icon src/Gorgon.Shell/Resources/gorgon.ico --outputDir releases
+vpk pack --packId MithrilShell --packTitle "Project Gorgon" --packAuthors "Arthur Conde" `
+  --packVersion $ver --packDir publish/fxdep --mainExe Mithril.exe `
+  --channel fxdep --icon src/Mithril.Shell/Resources/mithril.ico --outputDir releases
 ```
 
 The `releases/` folder is gitignored. Both `publish/` and `releases/` regenerate cleanly; you can delete them between runs.
@@ -153,5 +153,5 @@ The `releases/` folder is gitignored. Both `publish/` and `releases/` regenerate
 | [`.github/workflows/release.yml`](../.github/workflows/release.yml) | The pipeline triggered by `v*` tag pushes |
 | [`version.json`](../version.json) | `Nerdbank.GitVersioning` config; `publicReleaseRefSpec` includes the tag pattern |
 | [`Directory.Packages.props`](../Directory.Packages.props) | Velopack version pin |
-| [`src/Gorgon.Shell/Gorgon.Shell.csproj`](../src/Gorgon.Shell/Gorgon.Shell.csproj) | `GorgonUpdateChannel` MSBuild property + post-publish module-staging target |
-| [`src/Gorgon.Shell/Updates/`](../src/Gorgon.Shell/Updates/) | Velopack checker, applier, channel-marker reader |
+| [`src/Mithril.Shell/Mithril.Shell.csproj`](../src/Mithril.Shell/Mithril.Shell.csproj) | `MithrilUpdateChannel` MSBuild property + post-publish module-staging target |
+| [`src/Mithril.Shell/Updates/`](../src/Mithril.Shell/Updates/) | Velopack checker, applier, channel-marker reader |
