@@ -49,8 +49,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+      - name: Install Velopack and NBGV CLIs
+        run: |
+          dotnet tool install -g vpk
+          dotnet tool install -g nbgv
 
       - name: Resolve version from tag
         id: ver
@@ -65,15 +67,26 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
           Write-Host "Building Gorgon v$v from $tag"
 
+      # Sync version.json's `version` field to the tag so Nerdbank.GitVersioning
+      # produces matching AssemblyVersion / FileVersion / InformationalVersion.
+      # The rewrite happens in the runner's working tree only — the tag commit
+      # is a detached HEAD checkout, so this never lands in git history. Without
+      # this step NBGV computes height-based versions from version.json's static
+      # value (e.g. "1.1.9") and the About panel disagrees with the Velopack
+      # release label.
+      - name: Sync version.json to tag
+        run: nbgv set-version ${{ steps.ver.outputs.version }}
+
       - name: Restore
         run: dotnet restore Gorgon.slnx
 
       # Build the whole solution first so every module's bin/Release/net10.0-windows/*.Module.dll
       # exists. The Shell csproj's StageGorgonModulesForPublish target globs from those paths,
       # so the four modules that aren't <ProjectReference>'d (Arwen/Saruman/Smaug/Celebrimbor)
-      # only land in publish/ if they were already built.
+      # only land in publish/ if they were already built. NBGV (driven by the synced
+      # version.json above) sets all version attributes — no -p:Version override needed.
       - name: Build solution
-        run: dotnet build Gorgon.slnx -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
+        run: dotnet build Gorgon.slnx -c Release --no-restore
 
       # Two-phase test execution. Tests marked [Trait("Category", "FileIO")] hit the
       # filesystem heavily and flake under cross-assembly parallelism on the runner —
@@ -113,7 +126,6 @@ jobs:
           -c Release -r win-x64 --self-contained true --no-restore
           -p:PublishReadyToRun=true
           -p:GorgonUpdateChannel=selfcontained
-          -p:Version=${{ steps.ver.outputs.version }}
           -o publish/selfcontained
 
       - name: Velopack pack (selfcontained)
@@ -138,7 +150,6 @@ jobs:
           -c Release -r win-x64 --self-contained false --no-restore
           -p:PublishReadyToRun=true
           -p:GorgonUpdateChannel=fxdep
-          -p:Version=${{ steps.ver.outputs.version }}
           -o publish/fxdep
 
       - name: Velopack pack (fxdep)
