@@ -169,7 +169,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Mithril for Project: Gorgon ${{ steps.ver.outputs.version }}
+          # Quoted because the value has a literal `: ` (colon-space), which is the YAML
+          # mapping indicator and would otherwise be misparsed as a nested mapping.
+          name: "Mithril for Project: Gorgon ${{ steps.ver.outputs.version }}"
           generate_release_notes: true
           # Velopack writes Setup.exe, Portable.zip, *-full.nupkg, *-delta.nupkg, and
           # releases.{channel}.json per channel. The GithubSource client downloads
