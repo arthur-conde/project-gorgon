@@ -44,61 +44,6 @@ jobs:
           "DisableBehaviorMonitoring = $($p.DisableBehaviorMonitoring)"
           "DisableScriptScanning     = $($p.DisableScriptScanning)"
 
-      # Snapshot what's actually attached to the filesystem on this runner image.
-      # Server 2025 reportedly ships additional EDR/ASR layers beyond Defender's
-      # documented surface (see GH issue #2 — File-IO tests flake intermittently).
-      # This step never fails; its output is for diagnostics only. Run AFTER the
-      # Defender disable so we see post-disable state, which is what the tests see.
-      - name: Diagnostic snapshot — minifilters / AV / EDR
-        shell: pwsh
-        if: always()
-        continue-on-error: true
-        run: |
-          Write-Host "::group::OS / image"
-          Get-ComputerInfo | Select-Object OsName, OsVersion, OsBuildNumber, WindowsProductName | Format-List
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Loaded filesystem minifilter drivers"
-          fltmc filters
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Minifilter instances per volume"
-          fltmc instances
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Defender configuration"
-          Get-MpPreference | Format-List `
-            DisableRealtimeMonitoring, DisableBehaviorMonitoring, DisableScriptScanning, `
-            DisableIOAVProtection, DisableArchiveScanning, MAPSReporting, `
-            ExclusionPath, ExclusionExtension, ExclusionProcess, `
-            AttackSurfaceReductionRules_Ids, AttackSurfaceReductionRules_Actions, `
-            ControlledFolderAccessProtectedFolders, EnableControlledFolderAccess
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Defender engine status"
-          Get-MpComputerStatus | Format-List `
-            AMServiceEnabled, AntispywareEnabled, AntivirusEnabled, BehaviorMonitorEnabled, `
-            IoavProtectionEnabled, OnAccessProtectionEnabled, RealTimeProtectionEnabled, `
-            AMRunningMode, AMEngineVersion, IsTamperProtected, AntivirusSignatureVersion
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Running security-related services"
-          Get-Service | Where-Object {
-            $_.Status -eq 'Running' -and (
-              $_.Name -match 'Sense|MsMp|WdNis|wscsvc|SecurityHealth|Defender|Smartscreen|MDE'
-            )
-          } | Format-Table Name, DisplayName, Status -AutoSize
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Disk volumes & filesystem"
-          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystem, FileSystemLabel, HealthStatus, SizeRemaining, Size -AutoSize
-          Get-PSDrive -PSProvider FileSystem | Format-Table Name, Root, Used, Free -AutoSize
-          Write-Host "::endgroup::"
-
-          Write-Host "::group::Workspace ACLs (top of repo)"
-          Get-Acl . | Format-List Owner, Access
-          Write-Host "::endgroup::"
-
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
@@ -138,32 +83,16 @@ jobs:
       - name: Run non-IO tests (parallel)
         run: dotnet test Gorgon.slnx -c Release --no-build --no-restore --filter "Category!=FileIO"
 
-      # FileIO tests are advisory on CI — they surface in the run log but do
-      # not gate the release. The Server 2025 runner image has a documented
-      # Directory.CreateDirectory / File.Move flake (see GH issue #2) that we
-      # can't reproduce locally and can't mitigate from inside the test code.
-      # Non-IO tests above (~430 tests) are the gating signal; the IO subset
-      # is run for visibility only until the runner image regression clears.
+      # FileIO tests are advisory on CI. ETW trace from v0.0.1-test10 (see GH issue #2)
+      # pinned the cause to xUnit's in-assembly parallelism racing fixture Dispose
+      # against sibling tests — STATUS_FILE_DELETED / OBJECT_PATH_NOT_FOUND on the
+      # shared tests/.tmp/ tree. The fix (per-collection [Collection("FileIO")] +
+      # DisableParallelization=true) is queued; until it lands, non-IO tests (~430)
+      # are the gating signal and the IO subset runs for visibility only.
       - name: Run IO tests (sequential per assembly, advisory)
-        id: io_tests
         shell: pwsh
         continue-on-error: true
         run: |
-          # Start a kernel-file ETW trace around the IO-test phase. This logs
-          # every CreateFile / NtCreateFile result with NTSTATUS, so the
-          # eventual diagnostic upload can pin the moment Directory.CreateDirectory
-          # returns STATUS_OBJECT_PATH_NOT_FOUND to a specific minifilter callout
-          # vs the FS driver itself. logman start may fail on locked-down images;
-          # don't let that abort the test run.
-          $traceDir = Join-Path $env:RUNNER_TEMP "io-trace"
-          New-Item -ItemType Directory -Force -Path $traceDir | Out-Null
-          $etl = Join-Path $traceDir "io-tests.etl"
-          $traceStarted = $false
-          try {
-            logman start gorgon-io -p "Microsoft-Windows-Kernel-File" 0xffffffffffffffff 0xff -ets -o $etl -nb 16 64 -bs 1024 -mode Circular -max 256
-            if ($LASTEXITCODE -eq 0) { $traceStarted = $true }
-          } catch { Write-Warning "Could not start kernel-file ETW trace: $_" }
-
           $failed = @()
           Get-ChildItem -Path tests -Filter "*.csproj" -Recurse | ForEach-Object {
             Write-Host "::group::$($_.BaseName) (FileIO category — advisory)"
@@ -171,33 +100,9 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failed += $_.BaseName }
             Write-Host "::endgroup::"
           }
-
-          if ($traceStarted) {
-            try {
-              logman stop gorgon-io -ets | Out-Null
-              if (Test-Path $etl) {
-                $csv = Join-Path $traceDir "io-tests.csv"
-                tracerpt $etl -of CSV -o $csv -y | Out-Null
-                Write-Host "ETW trace captured: $etl"
-                if (Test-Path $csv) { Write-Host "ETW trace decoded: $csv" }
-              }
-            } catch { Write-Warning "Could not stop/convert ETW trace: $_" }
-          }
-
-          "trace_dir=$traceDir" >> $env:GITHUB_OUTPUT
           if ($failed.Count -gt 0) {
             Write-Warning "Advisory: FileIO tests failed in: $($failed -join ', ')"
           }
-
-      - name: Upload IO-test diagnostics
-        if: always() && steps.io_tests.outputs.trace_dir != ''
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: io-test-diagnostics-${{ github.ref_name }}
-          path: ${{ steps.io_tests.outputs.trace_dir }}
-          if-no-files-found: ignore
-          retention-days: 14
 
       # ─────────────────────────────────────────────────────────────────
       # Self-contained SKU: bundles .NET 10 desktop runtime (~150 MB).
