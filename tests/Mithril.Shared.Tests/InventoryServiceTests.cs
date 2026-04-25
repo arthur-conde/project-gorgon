@@ -1,7 +1,10 @@
+using System.IO;
 using System.Threading.Channels;
 using FluentAssertions;
+using Mithril.Shared.Game;
 using Mithril.Shared.Inventory;
 using Mithril.Shared.Logging;
+using Mithril.Shared.Reference;
 using Xunit;
 
 namespace Mithril.Shared.Tests;
@@ -321,6 +324,122 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
+    public async Task ExportSeed_StackableSingleStack_AddItemUsesSeededSize()
+    {
+        // Pin: when Mithril restarts mid-PG-session, _map is empty and a session-replay
+        // AddItem would otherwise default to size = 1. The newest *_items_*.json export
+        // carries the authoritative size; HandleAddItem consults _seededStackSizes
+        // before falling back to the default.
+        using var fixture = new SeedFixture();
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().ContainSingle();
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].InstanceId.Should().Be(42);
+        events[0].StackSize.Should().Be(23, "the seed from the export must beat the size = 1 default");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task ExportSeed_ConsumedOnFirstHit_SecondAddDefaultsToOne()
+    {
+        // The seed represents "the export said there's exactly one stack of N." Once
+        // consumed, a second AddItem of the same InternalName must NOT inherit it —
+        // otherwise we'd over-claim sizes for items the player picked up in-session.
+        using var fixture = new SeedFixture();
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push("[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(99), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().HaveCount(2);
+        events[0].StackSize.Should().Be(23, "first add consumes the seed");
+        events[1].StackSize.Should().Be(1, "second add must fall through to the default — seed already consumed");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task ExportSeed_AmbiguousMultipleStacks_NotSeeded()
+    {
+        // If the export shows multiple bag-stacks of the same InternalName, we have
+        // no way to know which AddItem corresponds to which stack — so we drop the
+        // entry entirely and let the default-1 path apply. This protects against
+        // wildly wrong sizes for items the player is actively splitting/merging.
+        using var fixture = new SeedFixture();
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false },
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 7,  "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().ContainSingle();
+        events[0].StackSize.Should().Be(1, "ambiguous multi-stack export must not seed any single InternalName");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
     public async Task SubscriberException_DoesNotBreakOtherSubscribers()
     {
         var stream = new ScriptedStream(
@@ -344,6 +463,67 @@ public sealed class InventoryServiceTests
         await cts.CancelAsync();
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
         _ = runTask;
+    }
+
+    /// <summary>
+    /// Stands up a temp <c>GameRoot/Reports/</c> directory and a stub
+    /// <see cref="IReferenceDataService"/> that knows about Barley Seeds
+    /// (TypeID 10251, MaxStackSize 100). Cleans up on dispose.
+    /// </summary>
+    private sealed class SeedFixture : IDisposable
+    {
+        public string GameRoot { get; }
+        public string ReportsDir { get; }
+        public GameConfig GameConfig { get; }
+        public IReferenceDataService RefData { get; }
+
+        public SeedFixture()
+        {
+            GameRoot = Path.Combine(Path.GetTempPath(), "MithrilSeedTests-" + Guid.NewGuid().ToString("N"));
+            ReportsDir = Path.Combine(GameRoot, "Reports");
+            Directory.CreateDirectory(ReportsDir);
+            GameConfig = new GameConfig { GameRoot = GameRoot };
+            RefData = new BarleyOnlyRefData();
+        }
+
+        public void WriteExport(string json)
+        {
+            // File name must match StorageReportLoader's filename regex: {Char}_{Server}_items_*
+            var path = Path.Combine(ReportsDir, "Hits_Pluto_items_2026-04-25.json");
+            File.WriteAllText(path, json);
+        }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(GameRoot, recursive: true); } catch { /* best-effort cleanup */ }
+        }
+    }
+
+    private sealed class BarleyOnlyRefData : IReferenceDataService
+    {
+        public IReadOnlyList<string> Keys { get; } = ["items"];
+        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>
+        {
+            [10251L] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
+        };
+        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>(StringComparer.Ordinal)
+        {
+            ["BarleySeeds"] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
+        };
+        public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
+        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public ReferenceFileSnapshot GetSnapshot(string key) => new("items", ReferenceFileSource.Bundled, "test", null, 1);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated { add { } remove { } }
     }
 
     /// <summary>
