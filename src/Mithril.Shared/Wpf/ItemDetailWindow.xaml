@@ -57,6 +57,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Header: icon + equip slot -->
@@ -166,8 +167,31 @@
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Infusions (CraftWaxItem; hidden when empty) -->
+                    <!-- Applied augment waxes (AddItemTSysPowerWax; hidden when empty) -->
                     <StackPanel Grid.Row="5" Margin="0,10,0,0"
+                                Visibility="{Binding WaxAugments.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Applied augment waxes" FontWeight="SemiBold"
+                                   Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                        <ItemsControl ItemsSource="{Binding WaxAugments}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding DisplayLine}" FontWeight="SemiBold"
+                                                   Foreground="#FFD4A847"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <ItemsControl ItemsSource="{Binding EffectLines}"
+                                                      ItemTemplate="{StaticResource EffectLineTemplate}"
+                                                      Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Infusions (CraftWaxItem; hidden when empty) -->
+                    <StackPanel Grid.Row="6" Margin="0,10,0,0"
                                 Visibility="{Binding WaxItems.Count, Converter={StaticResource PositiveIntToVis}}">
                         <TextBlock Text="Infusions" FontWeight="SemiBold"
                                    Foreground="#88FFFFFF"
@@ -190,7 +214,7 @@
                     </StackPanel>
 
                     <!-- Treasure effects (ExtractTSysPower / TSysCraftedEquipment pool; hidden when empty) -->
-                    <StackPanel Grid.Row="6" Margin="0,10,0,0"
+                    <StackPanel Grid.Row="7" Margin="0,10,0,0"
                                 Visibility="{Binding AugmentPools.Count, Converter={StaticResource PositiveIntToVis}}">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                             <TextBlock Text="Treasure Effects" FontWeight="SemiBold"
@@ -238,7 +262,7 @@
                     </StackPanel>
 
                     <!-- Teaches recipe (BestowRecipeIfNotKnown; hidden when empty) -->
-                    <StackPanel Grid.Row="7" Margin="0,10,0,0"
+                    <StackPanel Grid.Row="8" Margin="0,10,0,0"
                                 Visibility="{Binding TaughtRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
                         <TextBlock Text="Teaches recipe" FontWeight="SemiBold"
                                    Foreground="#88FFFFFF"
@@ -266,7 +290,7 @@
                     </StackPanel>
 
                     <!-- Additional effects (calligraphy / meditation tags; hidden when empty) -->
-                    <StackPanel Grid.Row="8" Margin="0,10,0,0"
+                    <StackPanel Grid.Row="9" Margin="0,10,0,0"
                                 Visibility="{Binding EffectTags.Count, Converter={StaticResource PositiveIntToVis}}">
                         <TextBlock Text="Additional effects" FontWeight="SemiBold"
                                    Foreground="#88FFFFFF"
@@ -283,7 +307,7 @@
                     </StackPanel>
 
                     <!-- Internal name footer -->
-                    <TextBlock Grid.Row="9" Text="{Binding InternalName}"
+                    <TextBlock Grid.Row="10" Text="{Binding InternalName}"
                                Foreground="#88FFFFFF"
                                FontFamily="{DynamicResource AppMonoFontFamily}"
                                FontSize="{DynamicResource AppFontSizeSmall}"

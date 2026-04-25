@@ -15,7 +15,8 @@ public sealed record AugmentPoolPreview(
     int OptionCount,
     string? RecommendedSkill = null,
     int? CraftingTargetLevel = null,
-    int? RolledRarityRank = null)
+    int? RolledRarityRank = null,
+    string? SourceEquipSlot = null)
 {
     /// <summary>
     /// True when the recipe carries an explicit level/tier range — the

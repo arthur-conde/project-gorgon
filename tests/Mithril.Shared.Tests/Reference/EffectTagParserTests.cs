@@ -65,4 +65,70 @@ public class EffectTagParserTests
 
         previews.Should().BeEmpty();
     }
+
+    [Fact]
+    public void ApplyAugmentOil_IsEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(["ApplyAugmentOil"], refData);
+
+        previews.Should().ContainSingle()
+            .Which.DisplayText.Should().Be("Applies augment oil");
+    }
+
+    [Fact]
+    public void RemoveAddedTSysPowerFromItem_IsEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(["RemoveAddedTSysPowerFromItem"], refData);
+
+        previews.Should().ContainSingle()
+            .Which.DisplayText.Should().Be("Removes augment from item");
+    }
+
+    [Fact]
+    public void ApplyAddItemTSysPowerWaxFromSourceItem_IsEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags(
+            ["ApplyAddItemTSysPowerWaxFromSourceItem"], refData);
+
+        previews.Should().ContainSingle()
+            .Which.DisplayText.Should().Be("Applies augment wax from source item");
+    }
+
+    [Theory]
+    [InlineData("DecomposeMainHandItemIntoAugmentResources", "Decomposes equipped main hand into augment resources")]
+    [InlineData("DecomposeOffHandItemIntoAugmentResources", "Decomposes equipped off hand into augment resources")]
+    [InlineData("DecomposeHandsItemIntoAugmentResources", "Decomposes equipped hands into augment resources")]
+    [InlineData("DecomposeChestItemIntoAugmentResources", "Decomposes equipped chest into augment resources")]
+    [InlineData("DecomposeLegItemIntoAugmentResources", "Decomposes equipped leg into augment resources")]
+    [InlineData("DecomposeHelmItemIntoAugmentResources", "Decomposes equipped helm into augment resources")]
+    [InlineData("DecomposeFeetItemIntoAugmentResources", "Decomposes equipped feet into augment resources")]
+    [InlineData("DecomposeRingItemIntoAugmentResources", "Decomposes equipped ring into augment resources")]
+    [InlineData("DecomposeNecklaceItemIntoAugmentResources", "Decomposes equipped necklace into augment resources")]
+    public void DecomposeSlotIntoAugmentResources_IsEmittedWithHumanizedSlot(string raw, string expected)
+    {
+        var refData = Phase7Fixture.Build();
+
+        var previews = ResultEffectsParser.ParseEffectTags([raw], refData);
+
+        previews.Should().ContainSingle()
+            .Which.DisplayText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void DecomposeWithEmptySlot_IsNotEmitted()
+    {
+        var refData = Phase7Fixture.Build();
+
+        // Prefix + suffix with nothing in between — defensive; not seen in real data.
+        var previews = ResultEffectsParser.ParseEffectTags(
+            ["DecomposeItemIntoAugmentResources"], refData);
+
+        previews.Should().BeEmpty();
+    }
 }

@@ -59,14 +59,20 @@ internal sealed class Phase7Fixture : IReferenceDataService
         string displayName,
         string? tsysProfile = null,
         IReadOnlyDictionary<string, int>? skillReqs = null,
-        int? craftingTargetLevel = null)
+        int? craftingTargetLevel = null,
+        string? equipSlot = null)
         => new(Id: id, Name: displayName, InternalName: internalName, MaxStackSize: 50, IconId: 0, Keywords: [],
                SkillReqs: skillReqs,
                TSysProfile: tsysProfile,
-               CraftingTargetLevel: craftingTargetLevel);
+               CraftingTargetLevel: craftingTargetLevel,
+               EquipSlot: equipSlot);
 
     public static PowerEntry Power(string internalName, string skill, string? suffix = null, params PowerTier[] tiers)
         => new(internalName, skill, Slots: [], Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
+
+    /// <summary>Power helper that lets a test specify <see cref="PowerEntry.Slots"/> — for the issue #8 slot-gate tests.</summary>
+    public static PowerEntry Power(string internalName, string skill, string? suffix, IReadOnlyList<string> slots, params PowerTier[] tiers)
+        => new(internalName, skill, Slots: slots, Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
 
     public static PowerTier Tier(int tier, params string[] effectDescs) => new(tier, effectDescs, 0);
 

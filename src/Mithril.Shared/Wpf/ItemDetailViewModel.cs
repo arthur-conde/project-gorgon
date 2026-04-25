@@ -38,6 +38,7 @@ public sealed partial class ItemDetailViewModel
                 .ToList();
         Augments = context.Augments ?? [];
         WaxItems = context.WaxItems ?? [];
+        WaxAugments = context.WaxAugments ?? [];
         AugmentPools = context.AugmentPools ?? [];
         TaughtRecipes = context.TaughtRecipes ?? [];
         EffectTags = context.EffectTags ?? [];
@@ -55,6 +56,7 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<EffectLine> EffectLines { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
     public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<WaxAugmentPreview> WaxAugments { get; }
     public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
     public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
     public IReadOnlyList<EffectTagPreview> EffectTags { get; }
@@ -70,6 +72,6 @@ public sealed partial class ItemDetailViewModel
     private void BrowsePool(AugmentPoolPreview? pool)
     {
         if (pool is null || _poolPresenter is null) return;
-        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank, Item.Name);
+        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank, pool.SourceEquipSlot, Item.Name);
     }
 }

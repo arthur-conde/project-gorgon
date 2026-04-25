@@ -37,6 +37,7 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
         string? recommendedSkill,
         int? craftingTargetLevel,
         int? rolledRarityRank,
+        string? sourceEquipSlot,
         IReferenceDataService refData,
         string? itemName = null)
     {
@@ -47,9 +48,10 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
         RecommendedSkill = recommendedSkill;
         CraftingTargetLevel = craftingTargetLevel;
         RolledRarityRank = rolledRarityRank;
+        SourceEquipSlot = sourceEquipSlot;
         ItemName = itemName;
         _refData = refData;
-        QueryText = BuildInitialQuery(minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank);
+        QueryText = BuildInitialQuery(minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, sourceEquipSlot);
 
         Subtitle = (minTier, maxTier) switch
         {
@@ -62,15 +64,19 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
 
     /// <summary>Test/back-compat overload that omits the contextual hints.</summary>
     public AugmentPoolViewModel(string sourceLabel, string profileName, int? minTier, int? maxTier, IReferenceDataService refData)
-        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill: null, craftingTargetLevel: null, rolledRarityRank: null, refData) { }
+        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill: null, craftingTargetLevel: null, rolledRarityRank: null, sourceEquipSlot: null, refData) { }
 
     /// <summary>Test/back-compat overload that omits the gear-level context.</summary>
     public AugmentPoolViewModel(string sourceLabel, string profileName, int? minTier, int? maxTier, string? recommendedSkill, IReferenceDataService refData)
-        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel: null, rolledRarityRank: null, refData) { }
+        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel: null, rolledRarityRank: null, sourceEquipSlot: null, refData) { }
 
     /// <summary>Test/back-compat overload that omits the rarity context.</summary>
     public AugmentPoolViewModel(string sourceLabel, string profileName, int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, IReferenceDataService refData)
-        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank: null, refData) { }
+        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank: null, sourceEquipSlot: null, refData) { }
+
+    /// <summary>Test/back-compat overload that omits the equip-slot context.</summary>
+    public AugmentPoolViewModel(string sourceLabel, string profileName, int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, int? rolledRarityRank, IReferenceDataService refData)
+        : this(sourceLabel, profileName, minTier, maxTier, recommendedSkill, craftingTargetLevel, rolledRarityRank, sourceEquipSlot: null, refData) { }
 
     public string SourceLabel { get; }
     public string ProfileName { get; }
@@ -79,6 +85,7 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
     public string? RecommendedSkill { get; }
     public int? CraftingTargetLevel { get; }
     public int? RolledRarityRank { get; }
+    public string? SourceEquipSlot { get; }
     public string? ItemName { get; }
 
     /// <summary>Awaitable handle for tests; the constructor kicks off expansion eagerly.</summary>
@@ -112,13 +119,14 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
     /// <summary>
     /// Builds an initial query combining: the recipe's tier bracket (Extract recipes only),
     /// the source item's gear level (matched against per-tier MinLevel/MaxLevel windows),
-    /// the source item's dominant skill (form gate from the recipe's arg3), and the rolled
-    /// rarity floor (Uncommon for base enchant, Rare for Max-Enchanting). Each clause is
-    /// independently optional; the user can edit/clear freely.
+    /// the source item's dominant skill (form gate from the recipe's arg3), the rolled
+    /// rarity floor (Uncommon for base enchant, Rare for Max-Enchanting), and the source
+    /// item's equip slot (PowerEntry.Slots gate — issue #8). Each clause is independently
+    /// optional; the user can edit/clear freely.
     /// </summary>
-    private static string BuildInitialQuery(int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, int? rolledRarityRank)
+    private static string BuildInitialQuery(int? minTier, int? maxTier, string? recommendedSkill, int? craftingTargetLevel, int? rolledRarityRank, string? sourceEquipSlot)
     {
-        var parts = new List<string>(6);
+        var parts = new List<string>(7);
         if (minTier.HasValue) parts.Add($"Tier >= {minTier.Value}");
         if (maxTier.HasValue) parts.Add($"Tier <= {maxTier.Value}");
         if (craftingTargetLevel.HasValue)
@@ -134,6 +142,7 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
             parts.Add($"MinRarityRank <= {rolledRarityRank.Value}");
         }
         if (!string.IsNullOrEmpty(recommendedSkill)) parts.Add($"Skill = \"{recommendedSkill}\"");
+        if (!string.IsNullOrEmpty(sourceEquipSlot)) parts.Add($"Slots contains \"{sourceEquipSlot}\"");
         return parts.Count == 0 ? "" : string.Join(" AND ", parts);
     }
 
@@ -246,7 +255,8 @@ public sealed partial class AugmentPoolViewModel : ObservableObject
                     MinLevel: tierEntry.MinLevel,
                     MaxLevel: tierEntry.MaxLevel == 0 ? null : tierEntry.MaxLevel,
                     MinRarity: tierEntry.MinRarity,
-                    SkillLevelPrereq: tierEntry.SkillLevelPrereq));
+                    SkillLevelPrereq: tierEntry.SkillLevelPrereq,
+                    Slots: power.Slots));
             }
         }
         // Sort: skill, then suffix/internal name, then tier ascending. Stable layout for the user.

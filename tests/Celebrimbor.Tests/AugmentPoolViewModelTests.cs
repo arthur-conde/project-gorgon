@@ -223,6 +223,89 @@ public class AugmentPoolViewModelTests
         vm.Subtitle.Should().Contain("1 of 2 powers · 2 of 3 tier rows");
     }
 
+    [Fact]
+    public async Task SourceEquipSlot_PreFillsSlotsContainsClause()
+    {
+        // Issue #8: opening a pool for a Necklace template seeds Slots contains "Necklace"
+        // and filters out powers whose Slots list excludes Necklace.
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("ParryRiposteBoostTrauma", "Sword", suffix: null,
+                    slots: ["MainHand", "Ring"],
+                    FakeReferenceData.Tier(1, "{MAX_ARMOR}{1}")),
+                FakeReferenceData.Power("NecklaceArmor", "General", suffix: null,
+                    slots: ["Necklace"],
+                    FakeReferenceData.Tier(1, "{MAX_ARMOR}{5}")),
+            ],
+            profiles: [("MyPool", new[] { "ParryRiposteBoostTrauma", "NecklaceArmor" })]);
+
+        var vm = new AugmentPoolViewModel(
+            "Source", "MyPool",
+            minTier: null, maxTier: null,
+            recommendedSkill: null, craftingTargetLevel: null, rolledRarityRank: null,
+            sourceEquipSlot: "Necklace",
+            refData);
+        await vm.LoadingTask;
+
+        vm.QueryText.Should().Be("Slots contains \"Necklace\"");
+        vm.Groups.Should().ContainSingle()
+            .Which.PowerInternalName.Should().Be("NecklaceArmor");
+    }
+
+    [Fact]
+    public async Task SourceEquipSlot_ClearingClauseRestoresUnfilteredPool()
+    {
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("Power_MainHand", "Sword", suffix: null,
+                    slots: ["MainHand"],
+                    FakeReferenceData.Tier(1, "{MAX_ARMOR}{1}")),
+                FakeReferenceData.Power("Power_Necklace", "General", suffix: null,
+                    slots: ["Necklace"],
+                    FakeReferenceData.Tier(1, "{MAX_ARMOR}{5}")),
+            ],
+            profiles: [("MyPool", new[] { "Power_MainHand", "Power_Necklace" })]);
+
+        var vm = new AugmentPoolViewModel(
+            "Source", "MyPool",
+            minTier: null, maxTier: null,
+            recommendedSkill: null, craftingTargetLevel: null, rolledRarityRank: null,
+            sourceEquipSlot: "Necklace",
+            refData);
+        await vm.LoadingTask;
+
+        vm.Groups.Should().ContainSingle();
+        vm.QueryText = "";
+        vm.Groups.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task SourceEquipSlot_CombinesWithRecommendedSkill()
+    {
+        var refData = BuildFixture(
+            powers:
+            [
+                FakeReferenceData.Power("WerewolfNecklace", "Werewolf", suffix: null,
+                    slots: ["Necklace"],
+                    FakeReferenceData.Tier(1, "{MAX_ARMOR}{1}")),
+            ],
+            profiles: [("All", new[] { "WerewolfNecklace" })]);
+
+        var vm = new AugmentPoolViewModel(
+            "Source", "All",
+            minTier: null, maxTier: null,
+            recommendedSkill: "Werewolf",
+            craftingTargetLevel: null,
+            rolledRarityRank: null,
+            sourceEquipSlot: "Necklace",
+            refData);
+        await vm.LoadingTask;
+
+        vm.QueryText.Should().Be("Skill = \"Werewolf\" AND Slots contains \"Necklace\"");
+    }
+
     private static FakeReferenceData BuildFixture(
         IEnumerable<PowerEntry>? powers = null,
         IEnumerable<AttributeEntry>? attributes = null,

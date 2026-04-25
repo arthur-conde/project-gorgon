@@ -129,15 +129,29 @@ Given a `TSysCraftedEquipment(template[, rarityBump[, subtype]])` recipe:
 let gearLevel       = template.CraftingTargetLevel
 let rolledRarityRk  = 1 + rarityBump        // 0 → Uncommon=1, 1 → Rare=2
 let formGate        = subtype                // null when arg3 absent
+let slotGate        = template.EquipSlot     // null on items with no equip slot
 
 powerTier eligible  ⇔
     powerTier.MinLevel  ≤ gearLevel  ≤ powerTier.MaxLevel
   ∧ powerTier.MinRarityRank ≤ rolledRarityRk
   ∧ (formGate is null  ∨  power.Skill = formGate)
+  ∧ (slotGate is null  ∨  slotGate ∈ power.Slots)
 ```
 
 This is the predicate the pool viewer pre-fills its query with when you click
 "Browse pool" from a recipe card.
+
+The `slotGate` clause is needed because `tsysprofiles.json` groups powers by
+broad family (`"All"`, `"MainHandAugment"`, etc.) rather than by gear slot.
+A power like `ParryRiposteBoostTrauma` lives in `"All"` but has
+`Slots: ["MainHand", "Ring"]` in `tsysclientinfo.json` — so the *profile*
+includes it for a chest piece, but the in-game roll rejects it. Filtering
+by `power.Slots ∋ template.EquipSlot` matches the actual eligible-roll set.
+
+Extract recipes (`ExtractTSysPower`) deliberately skip the slot gate: the
+recipe doesn't bind a target item at parse time, so there's no slot to filter
+on. The slot gate would have to apply at "augment X to item Y" time, which
+isn't a UI affordance today.
 
 ## What this gives us at the UI layer
 
@@ -182,12 +196,10 @@ Any rows that disagree call the model into question.
 These TSys-related effects in `recipes.json` are still unparsed at the time
 of writing — see `ResultEffectsParser` for current coverage.
 
-- `AddItemTSysPowerWax(template, tier, durability)` — 19 occurrences. Sibling
-  of `AddItemTSysPower` for finite-use wax items.
-- `ApplyAugmentOil` — 24 occurrences. Tag-style.
-- `RemoveAddedTSysPowerFromItem` — 9 occurrences. Tag-style.
 - `BoostItemEquipAdvancementTable(table)` — 37 occurrences. Equipment-time skill XP grant.
 - Calligraphy / Meditation / Whittling sub-variants beyond
-  `DispelCalligraphyA/B/C`, `CalligraphyComboNN`, and `MeditationWithDaily` —
-  ~150 effects collectively. Same tag shape as the existing entries.
+  `DispelCalligraphyA/B/C`, `CalligraphyComboNN`, `MeditationWithDaily`, the
+  TSys-augment behavioural tags (`ApplyAugmentOil`, `RemoveAddedTSysPowerFromItem`,
+  `ApplyAddItemTSysPowerWaxFromSourceItem`), and the `Decompose<Slot>ItemIntoAugmentResources`
+  family — ~150 effects collectively. Same tag shape as the existing entries.
 - Ingredient `ItemKeys` (keyword-matched ingredients, e.g. `{ "ItemKeys": ["Crystal"] }`) — silently dropped during parsing today. Not a TSys-specific issue but it can hide one of two ingredients in `*EM` recipes.

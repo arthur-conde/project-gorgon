@@ -13,9 +13,14 @@ namespace Mithril.Shared.Reference;
 ///   tier of a <c>tsysclientinfo</c> power to the input item (<see cref="ParseAugments"/>).</item>
 ///   <item><c>BestowRecipeIfNotKnown(recipe)</c> — recipe-teaching crafts (<see cref="ParseTaughtRecipes"/>).</item>
 ///   <item><c>CraftWaxItem(wax,power,tier,durability)</c> — wax/tuneup-kit crafts (<see cref="ParseWaxItems"/>).</item>
+///   <item><c>AddItemTSysPowerWax(power,tier,durability)</c> — finite-use augmentations
+///   (<see cref="ParseAddItemTSysPowerWaxes"/>).</item>
 ///   <item><c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the enchantment
 ///   form of <c>TSysCraftedEquipment</c> — pool-based rolls (<see cref="ParseAugmentPools"/>).</item>
-///   <item>Calligraphy and meditation tags (<see cref="ParseEffectTags"/>).</item>
+///   <item>Calligraphy / meditation / TSys-augment behavioural tags
+///   (<see cref="ParseEffectTags"/>) — <c>ApplyAugmentOil</c>,
+///   <c>RemoveAddedTSysPowerFromItem</c>, <c>ApplyAddItemTSysPowerWaxFromSourceItem</c>,
+///   and the per-slot <c>Decompose*ItemIntoAugmentResources</c> variants.</item>
 /// </list>
 /// All methods skip malformed/unresolvable entries silently; callers treat an empty list as
 /// "nothing to preview".
@@ -34,6 +39,9 @@ public static class ResultEffectsParser
     private const string BestowRecipePrefix = "BestowRecipeIfNotKnown";
     private const string CraftWaxItemPrefix = "CraftWaxItem";
     private const string ExtractTSysPowerPrefix = "ExtractTSysPower";
+
+    // TSys-augment family — finite-use application sibling of AddItemTSysPower.
+    private const string AddItemTSysPowerWaxPrefix = "AddItemTSysPowerWax";
 
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="CraftedGearPreview"/> per
@@ -61,6 +69,13 @@ public static class ResultEffectsParser
     /// <see cref="IReferenceDataService.Powers"/> and whose tier exists on that power.
     /// Effect descriptions are pre-rendered through <see cref="EffectDescsRenderer"/>.
     /// </summary>
+    /// <remarks>
+    /// Slot validation against <c>PowerEntry.Slots</c> is intentionally not performed
+    /// here. <c>AddItemTSysPower</c> recipes don't bind a target item at parse time —
+    /// the target is the recipe's input ingredient at craft time — so we couldn't
+    /// determine the gear slot to validate against. In practice mismatches in shipped
+    /// data are rare; the augment pool viewer is where the real slot gate lives.
+    /// </remarks>
     public static IReadOnlyList<AugmentPreview> ParseAugments(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
     {
@@ -115,6 +130,27 @@ public static class ResultEffectsParser
     }
 
     /// <summary>
+    /// Parse <paramref name="effects"/> and return one <see cref="WaxAugmentPreview"/> per
+    /// well-formed <c>AddItemTSysPowerWax(power,tier,durability)</c> entry whose power
+    /// resolves and whose tier exists. Sibling of <see cref="ParseAugments"/> for
+    /// finite-use applications: the recipe attaches a power tier to a target item that
+    /// wears off after <c>durability</c> uses, instead of producing a wax item template.
+    /// </summary>
+    public static IReadOnlyList<WaxAugmentPreview> ParseAddItemTSysPowerWaxes(
+        IReadOnlyList<string>? effects, IReferenceDataService refData)
+    {
+        if (effects is null || effects.Count == 0) return [];
+
+        var previews = new List<WaxAugmentPreview>();
+        foreach (var effect in effects)
+        {
+            if (TryParseAddItemTSysPowerWax(effect, refData, out var preview))
+                previews.Add(preview);
+        }
+        return previews;
+    }
+
+    /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="AugmentPoolPreview"/> per
     /// pool-based prefix: <c>ExtractTSysPower(augmentItem,skill,minTier,maxTier)</c> and the
     /// enchantment-source form of <c>TSysCraftedEquipment</c>. Each preview is a lightweight
@@ -145,8 +181,11 @@ public static class ResultEffectsParser
     /// <summary>
     /// Parse <paramref name="effects"/> and return one <see cref="EffectTagPreview"/> per
     /// recognized zero/one-arg tag prefix: <c>DispelCalligraphyA/B/C</c>,
-    /// <c>CalligraphyComboNN</c>, and <c>MeditationWithDaily[(combo)]</c>. Unknown
-    /// prefixes are deliberately not emitted.
+    /// <c>CalligraphyComboNN</c>, <c>MeditationWithDaily[(combo)]</c>, the TSys-augment
+    /// behavioural tags (<c>ApplyAugmentOil</c>, <c>RemoveAddedTSysPowerFromItem</c>,
+    /// <c>ApplyAddItemTSysPowerWaxFromSourceItem</c>), and the per-slot
+    /// <c>Decompose*ItemIntoAugmentResources</c> variants. Unknown prefixes are
+    /// deliberately not emitted.
     /// </summary>
     public static IReadOnlyList<EffectTagPreview> ParseEffectTags(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
@@ -265,6 +304,28 @@ public static class ResultEffectsParser
         return true;
     }
 
+    private static bool TryParseAddItemTSysPowerWax(string? effect, IReferenceDataService refData, out WaxAugmentPreview preview)
+    {
+        preview = null!;
+        if (!TryParsePrefixCall(effect, out var prefix, out var args)) return false;
+        if (!prefix.Equals(AddItemTSysPowerWaxPrefix, StringComparison.Ordinal)) return false;
+        if (args.Length < 3) return false;
+
+        var powerName = args[0].Trim();
+        var tierToken = args[1].Trim();
+        var durabilityToken = args[2].Trim();
+        if (powerName.Length == 0) return false;
+        if (!int.TryParse(tierToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tier)) return false;
+        if (!int.TryParse(durabilityToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var durability)) return false;
+
+        if (!refData.Powers.TryGetValue(powerName, out var power)) return false;
+        if (!power.Tiers.TryGetValue(tier, out var tierEntry)) return false;
+
+        var lines = EffectDescsRenderer.Render(tierEntry.EffectDescs, refData.Attributes);
+        preview = new WaxAugmentPreview(power.InternalName, power.Suffix, tier, durability, lines);
+        return true;
+    }
+
     private static bool TryParseAugmentPool(string? effect, IReferenceDataService refData, out AugmentPoolPreview preview)
     {
         preview = null!;
@@ -301,7 +362,10 @@ public static class ResultEffectsParser
 
         // Extract recipes don't encode a power-skill gate in their args (arg2 is the
         // *crafting* skill, not the rolled-power skill). The roll is unconstrained
-        // within the profile, so leave RecommendedSkill null.
+        // within the profile, so leave RecommendedSkill null. Slot filtering is also
+        // intentionally skipped: an extraction recipe doesn't bind a target item, so
+        // PowerEntry.Slots can't be applied here — the slot gate would have to fire
+        // at "apply augment to item X" time, which isn't a UI affordance today.
         var sourceLabel = $"Extractions from {augmentItem.Name} (Level {minTier}-{maxTier})";
         preview = new AugmentPoolPreview(sourceLabel, profileName, minTier, maxTier, optionCount,
             RecommendedSkill: null,
@@ -350,12 +414,44 @@ public static class ResultEffectsParser
         // rolled separately — so this is the player-meaningful "outcomes per craft"
         // number. The pool viewer flattens tiers for inspection; that's a separate
         // axis labeled distinctly in the UI.
+        //
+        // PowerEntry.Slots constrains which gear slots a power can roll on
+        // (e.g. ParryRiposteBoostTrauma is Slots: [MainHand, Ring], so it never
+        // rolls on a chest piece). Filter the pool by template.EquipSlot when set;
+        // verified against tsysclientinfo.json that no power has empty Slots, so
+        // there's no "empty = unrestricted" fallback to handle.
+        var optionCount = poolPowers.Count;
+        if (!string.IsNullOrEmpty(template.EquipSlot))
+        {
+            optionCount = CountPowersWithSlot(poolPowers, refData, template.EquipSlot);
+        }
+
         var sourceLabel = $"Possible rolls for {template.Name}";
-        preview = new AugmentPoolPreview(sourceLabel, profileName, null, null, poolPowers.Count,
+        preview = new AugmentPoolPreview(sourceLabel, profileName, null, null, optionCount,
             RecommendedSkill: recommendedSkill,
             CraftingTargetLevel: template.CraftingTargetLevel,
-            RolledRarityRank: rolledRarityRank);
+            RolledRarityRank: rolledRarityRank,
+            SourceEquipSlot: template.EquipSlot);
         return true;
+    }
+
+    private static int CountPowersWithSlot(
+        IReadOnlyList<string> powerNames, IReferenceDataService refData, string slot)
+    {
+        var count = 0;
+        foreach (var powerName in powerNames)
+        {
+            if (!refData.Powers.TryGetValue(powerName, out var power)) continue;
+            foreach (var s in power.Slots)
+            {
+                if (string.Equals(s, slot, StringComparison.Ordinal))
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
     }
 
     /// <summary>
@@ -433,6 +529,44 @@ public static class ResultEffectsParser
                 }
             }
             return false;
+        }
+
+        // Zero-arg TSys-augment family tags. Each one corresponds to a real recipe
+        // outcome (apply oil, undo augment, apply wax from another item) that the
+        // earlier "drop unparsed prefixes" stance silently swallowed.
+        if (trimmed.Equals("ApplyAugmentOil", StringComparison.Ordinal))
+        {
+            preview = new EffectTagPreview("Applies augment oil");
+            return true;
+        }
+
+        if (trimmed.Equals("RemoveAddedTSysPowerFromItem", StringComparison.Ordinal))
+        {
+            preview = new EffectTagPreview("Removes augment from item");
+            return true;
+        }
+
+        if (trimmed.Equals("ApplyAddItemTSysPowerWaxFromSourceItem", StringComparison.Ordinal))
+        {
+            preview = new EffectTagPreview("Applies augment wax from source item");
+            return true;
+        }
+
+        // Decompose<Slot>ItemIntoAugmentResources — 9 slot variants share one shape.
+        // Slot tokens observed in recipes.json: MainHand, OffHand, Hands, Chest, Leg,
+        // Helm, Feet, Ring, Necklace.
+        const string DecomposePrefix = "Decompose";
+        const string DecomposeSuffix = "ItemIntoAugmentResources";
+        if (trimmed.StartsWith(DecomposePrefix, StringComparison.Ordinal)
+            && trimmed.EndsWith(DecomposeSuffix, StringComparison.Ordinal)
+            && trimmed.Length > DecomposePrefix.Length + DecomposeSuffix.Length)
+        {
+            var slot = trimmed.Substring(DecomposePrefix.Length, trimmed.Length - DecomposePrefix.Length - DecomposeSuffix.Length);
+            if (slot.Length > 0)
+            {
+                preview = new EffectTagPreview($"Decomposes equipped {Humanize(slot).ToLowerInvariant()} into augment resources");
+                return true;
+            }
         }
 
         return false;

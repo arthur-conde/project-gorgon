@@ -82,73 +82,90 @@ Celebrimbor is the crafting planner. Users pick recipes and per-recipe quantitie
 
 ### 3a. Remaining `ResultEffects` prefixes
 
-**Status:** Phase 7 (April 2026) closed the high-volume prefixes — `TSysCraftedEquipment` (1,645 effects), `BestowRecipeIfNotKnown` (215), `CraftWaxItem` (72), `ExtractTSysPower` (36) and the `TSysCraftedEquipment` enchantment-pool sibling, `GiveTSysItem` (58) and `CraftSimpleTSysItem` (37, both folded into `CraftedGearPreview`), `DispelCalligraphyA/B/C` (126), `CalligraphyComboNN` (85), and `MeditationWithDaily` (70). Combined with `AddItemTSysPower` (92, shipped earlier), the parser now covers ~2,436 of the 3,174 effect strings (~77%).
+**Coverage today (April 2026 audit of `recipes.json`): 2,495 / 3,174 effect strings (78.6%).**
 
-**Out-of-scope-for-v1 stance dropped — every effect is in scope.** Per the roadmap as of April 2026, we no longer treat unhandled prefixes as "skip or summarize in a collapsed details area"; each one will eventually parse into either a typed preview (when it produces a meaningful item / augment / unlock) or an `EffectTagPreview` (humanized tag line) so a recipe never silently drops one of its outcomes. The remaining ~738 effects are listed below by family. Source: `recipes.json` audit, April 2026.
+Shipped: `TSysCraftedEquipment` (1,645) and the pool sibling, `BestowRecipeIfNotKnown` (215), `CraftWaxItem` (72), `ExtractTSysPower` (36), `GiveTSysItem` (58), `CraftSimpleTSysItem` (37), `DispelCalligraphyA/B/C` (126), `CalligraphyComboNN` (85, integer suffix only — see bug below), `MeditationWithDaily` (70), `AddItemTSysPower` (92), `AddItemTSysPowerWax` (19), `ApplyAugmentOil` (24), `RemoveAddedTSysPowerFromItem` (9), `ApplyAddItemTSysPowerWaxFromSourceItem` (5), `Decompose<Slot>ItemIntoAugmentResources` (9).
 
-#### TSys-augment family (~52 effects)
-- `AddItemTSysPowerWax(template, tier, durability)` — **19**. Sibling of `AddItemTSysPower` for finite-use wax items. Should render through a new `WaxAugmentPreview` (or extend `WaxItemPreview` with a kind discriminator).
-- `ApplyAugmentOil` — **24**. Zero-arg behavioural tag. Renders as `EffectTagPreview("Applies augment oil")`.
-- `RemoveAddedTSysPowerFromItem` — **9**. Zero-arg tag.
-- `ApplyAddItemTSysPowerWaxFromSourceItem` — **5**. Variant tag.
-- `DecomposeMainHandItemIntoAugmentResources` and slot siblings (Off-hand / Hands / Chest / Leg / Helm / Feet / Ring / Necklace) — **9 total**. Slot-flavoured decomposition tags.
+**To reach full coverage** the remaining 679 effects need to land in one of three buckets: a new typed preview (item/unlock has structured payload), a humanised `EffectTagPreview` (behaviour/location/status with arguments worth surfacing), or the silent allow-list (genuinely cosmetic or display-internal). Listed below by family with verified counts. Each row is one work item.
 
-#### Calligraphy / Meditation / Whittling tag variants (~150 effects)
-Same shape as the prefixes already in `ParseEffectTags` — short prefix + small numeric/letter suffix — and should fold in via a single regex extension rather than one method per family:
-- Calligraphy: `CalligraphyArmorRepair{N}` (3), `CalligraphyRage{N}` (7), `CalligraphySlash{N}` (16), `CalligraphyFirstAid{N}` (10), `CalligraphyPiercing{N}` (2), `CalligraphySlashingFlat{N}` (1), `Calligraphy{tier}{slot}` (17), `CalligraphyFirstAid` (10).
-- Meditation: `MeditationHealth{N}` (6), `MeditationPower{N}` (6), `MeditationVulnPsi{N}` (6), `MeditationBreath{N}` (4), `MeditationVulnCold/Fire/Darkness/Nature/Electricity{N}` (6 total), `MeditationCritDmg{N}` (1), `MeditationIndirect{N}` (1), `MeditationBuffIndirectCold{N}` (1), `MeditationDeathAvoidance{N}` (1), `MeditationBodyHeat{N}` (1), `MeditationMetabolism{N}` (1), `MeditationNoDaily` (1).
-- Whittling: `Whittling{N}` (10), `WhittlingKnifeBuff{N}` (10).
+#### Bug — `CalligraphyComboNN` letter-suffix variant (7 effects)
+`TryParseEffectTag` parses `CalligraphyCombo` + digits only, so `CalligraphyCombo1C` … `CalligraphyCombo7C` (7 occurrences) silently drop. Fix: extend the regex to accept an optional trailing `[A-Z]`. **Counts as already-shipped once fixed; coverage ticks up to 78.8%.**
 
-#### Item-producing effects (~80 effects)
-These genuinely yield items / surveys / maps and deserve typed-preview shapes parallel to `CraftedGearPreview`:
-- `BrewItem(spec)` — **40**. Brewing recipes producing a parameterized brewed item.
-- `CreateMiningSurvey{N}X(name)` — **18**. Mining survey items with parameterized region.
-- `CreateGeologySurvey{Color}{Region?}(name)` — **13** total (Blue/Green/White/Orange/Redwall × Serbule/Povus/Vidaria). Same shape; can collapse into one parser.
-- `CreateXxxTreasureMap{Quality}` — **12** total (Eltibule / Ilmari / SunVale × Poor / Good / Great / Amazing).
-- `SummonPlant(spec)` — **17**.
-- `GiveNonMagicalLootProfile(profile)` — **1**.
-- `CreateNecroFuel` — **2**.
-
-#### Equipment-property effects (~57 effects)
-- `BoostItemEquipAdvancementTable(table)` — **37**. The crafted item, when equipped, grants permanent skill XP toward `table`. Worth a typed preview (`EquipBonusPreview` or similar).
-- `CraftingEnhanceItemArmor(N, M)` — **10**.
-- `CraftingEnhanceItemPockets(N, M)` — **8**.
-- `CraftingEnhanceItem{Element}Mod(scalar, M)` — **12** total (Fire / Cold / Electricity / Psychic / Nature / Darkness).
-- `CraftingResetItem` — **4**.
-- `RepairItemDurability(spec)` — **8**.
-- `TransmogItemAppearance` — **1**.
-
-#### Knowledge / progression effects (~120 effects)
-- `GiveTeleportationXp` — **46**. Tag-style.
-- `Research{Topic}{N}` — **78** total (`ResearchWeatherWitching` 24, `ResearchFireMagic` 24, `ResearchIceMagic` 24, `ResearchExoticFireWalls` 6).
+#### Knowledge / progression — typed previews (131 effects)
+Each produces a structured player-facing unlock; deserves named preview types so the chip can show "Research Fire Magic to level 25" rather than a humanised tag.
+- `Research{Topic}{N}` — **78** (`WeatherWitching` 24, `FireMagic` 24, `IceMagic` 24, `ExoticFireWalls` 6). One parser keyed by topic prefix; `ResearchProgressPreview(topic, level)`.
+- `GiveTeleportationXp` — **46**. Zero-arg; render `EffectTagPreview("Grants Teleportation XP")` is acceptable but a small `XpGrantPreview(skill)` is cleaner if we expand later.
 - `DiscoverWordOfPower{N}` — **6**.
 - `LearnAbility(name)` — **1**.
-- `HoplologyStudy` — **1**.
 
-#### Recipe-system effects (~36 effects)
-- `AdjustRecipeReuseTime(deltaSeconds, condition)` — **36**. Modifies a recipe's cooldown. Should render the delta human-readable ("Reduces cooldown by 24h on Quarter Moon").
+#### Tag families with numeric / letter suffixes (~144 effects)
+Same regex extension shape as `DispelCalligraphy*` / `CalligraphyComboNN` — strip prefix, parse trailing token, humanise. Should land as a single switch table in `TryParseEffectTag` rather than one method per family.
+- Meditation: `MeditationHealth{N}` (6), `MeditationPower{N}` (6), `MeditationVulnPsi{N}` (6), `MeditationBreath{N}` (4), `MeditationVulnCold/Fire/Darkness/Nature/Electricity{N}` (8 total), `MeditationCritDmg{N}` / `MeditationIndirect{N}` / `MeditationBuffIndirectCold{N}` / `MeditationDeathAvoidance{N}` / `MeditationBodyHeat{N}` / `MeditationMetabolism{N}` (1 each), `MeditationNoDaily` (1). **37 total**.
+- Calligraphy non-combo, non-dispel: `Calligraphy{N}{Slot}` (17 — `1B`–`15B`, `5D`, `10D`), `CalligraphySlash{N}` (16), `CalligraphyFirstAid[{N}]` (10), `CalligraphyRage{N}` (7), `CalligraphyArmorRepair{N}` (3), `CalligraphyPiercing{N}` (2), `CalligraphySlashingFlat{N}` (1). **56 total**.
+- Whittling: `Whittling{N}` (10), `WhittlingKnifeBuff{N}` (10). **20 total**.
+- Augury: `Augury{N}` (4).
+- Premonition: `SpawnPremonition_*` (3), `DispelSpawnPremonitionsOnDeath` (3). **6 total**.
+- Status: `Infertility`, `SleepResistance`, `SexualEnergy`, `ArgumentResistance` (1 each). **4 total**.
+- TempestEnergy: `PermanentlyRaiseMaxTempestEnergy(N)` — **13** (parametrised; lift the integer).
+- WordOfPower flavour for items already covered above.
 
-#### Behavioural / location / cosmetic long tail (~240 effects)
-Bucket into a generic "Effect: humanized prefix" fallback in `ParseEffectTags` so we never silently drop a recipe outcome. Notable members:
-- Mushroom-circle suite: `SaveCurrentMushroomCircle` (18), `TeleportToBoundMushroomCircle{N}` (19), `TeleportToLastUsedMushroomCircle` (18), `BindToMushroomCircle{N}` (2), `TeleportToNearbyMushroomCircle` (1).
-- Teleport-circle suite: `SaveCurrentTeleportCircle` (5), `TeleportToBoundTeleportCircle{N}` (4), `BindToTeleportCircle{N}` (2), `TeleportToLastUsedTeleportSpot` (1), `TeleportToSpontaneousSpot` (1), `TeleportToMostCommonSpot` (1), `TeleportToGuildHall` (1), `TeleportToEntrypoint` (3), `Teleport(area, name)` (3), `SpawnPlayerPortal{N}` (2), `StoragePortal{N}` (3).
-- Decomposition: `DecomposeItemIntoPhlogiston` (15), `DecomposeItemIntoCrystalIce` (3), `DecomposeFoodIntoCrystalIce_*` (1), `DecomposeItemIntoFairyDust` (1), `DecomposeDemonOreIntoEssence` (1).
-- Calligraphy-system specials: `Calligraphy{tier}{slot}` (17, see above), `CalligraphySlash{N}` (16, see above), `CalligraphyFirstAid` (10, see above), `Calligraphy*` long tail (`CalligraphyPiercing` 2, `CalligraphySlashingFlat` 1).
-- Fairy-light / Fairy-energy: `DispelFairyLight` (1), `SummonFairyLight` (1), `DeltaCurFairyEnergy(deltaInt)` (12).
-- Tempest: `PermanentlyRaiseMaxTempestEnergy(N)` (13).
+#### Item-producing prefixes — typed previews (88 effects)
+Each yields a real game item / survey / map. Mirror `CraftedGearPreview`: parse the args, resolve the produced item via `ItemsByInternalName` when there's a clean handle, render with icon + name.
+- `BrewItem(spec)` — **40**. Output is a parameterised brewed item; spec encodes ingredients + result keyword.
+- `SummonPlant(spec)` — **17**. Output is a plant entity; spec encodes seed + yield ladder.
+- `CreateMiningSurvey{N}X(name)` — **18**. Survey items, region-parameterised.
+- `CreateGeologySurvey{Color}[{Region}](name)` — **13** (Blue/Green/White/Orange/Redwall × Serbule/Povus/Vidaria).
+- `CreateXxxTreasureMap{Quality}` — **12** (Eltibule / Ilmari / SunVale × Poor/Good/Great/Amazing).
+- `CreateNecroFuel` — **2**.
+- `GiveNonMagicalLootProfile(profile)` — **1**.
+
+One `ItemProducingPreview(displayName, iconId?, qualifier?)` shared across `BrewItem` / `SummonPlant` / surveys / treasure maps would cover all 88 with a small per-prefix arg parser.
+
+#### Equipment-property effects — typed previews (57 effects)
+The crafted item carries a property the recipe is granting. Worth surfacing as a distinct preview because the player wants the *number* in the chip, not just "modifies this item."
+- `BoostItemEquipAdvancementTable(table)` — **37**. Equipped → permanent skill XP toward `table`. `EquipBonusPreview(table)`.
+- `CraftingEnhanceItem{Element}Mod(scalar, M)` — **12** (Fire/Cold/Electricity/Psychic/Nature/Darkness).
+- `CraftingEnhanceItemArmor(N, M)` — **10**.
+- `CraftingEnhanceItemPockets(N, M)` — **8**.
+- `RepairItemDurability(spec)` — **8**.
+- `CraftingResetItem` — **4**.
+- `TransmogItemAppearance` — **1**.
+
+#### Recipe-system effect (36 effects)
+- `AdjustRecipeReuseTime(deltaSeconds, condition)` — **36**. Single parser; render the delta human-readable: `"Reduces cooldown by 24h on Quarter Moon"`. Standalone preview type or a structured `EffectTagPreview` body with formatting helpers.
+
+#### Decomposition — non-augment variants (21 effects)
+Distinct from the shipped `Decompose<Slot>ItemIntoAugmentResources`: these target a substance, not a slot.
+- `DecomposeItemIntoPhlogiston` (15), `DecomposeItemIntoCrystalIce` (3), `DecomposeFoodIntoCrystalIce_{kind}` (1), `DecomposeItemIntoFairyDust` (1), `DecomposeDemonOreIntoEssence` (1). One regex extension on the existing decompose handler.
+
+#### Mushroom + teleport / portal suite (84 effects)
+Pure behavioural tags; one-line humanised text is sufficient. Bundle into a single switch:
+- Mushroom: `SaveCurrentMushroomCircle` (18), `TeleportToBoundMushroomCircle{N}` (19), `TeleportToLastUsedMushroomCircle` (18), `BindToMushroomCircle{N}` (2), `TeleportToNearbyMushroomCircle` (1).
+- Teleport / portal: `SaveCurrentTeleportCircle` (5), `TeleportToBoundTeleportCircle{N}` (4), `BindToTeleportCircle{N}` (2), `TeleportToLastUsedTeleportSpot` (1), `TeleportToSpontaneousSpot` (1), `TeleportToMostCommonSpot` (1), `TeleportToGuildHall` (1), `TeleportToEntrypoint` (3), `Teleport(area, name)` (3), `SpawnPlayerPortal{N}` (2), `StoragePortal{N}` (3).
+- HelpMsg_{topic} (17) — also tag-style.
+
+#### Cosmetic / fairy / misc behavioural (~67 effects)
+- Fairy: `DispelFairyLight` (1), `SummonFairyLight` (1), `DeltaCurFairyEnergy(deltaInt)` (12).
+- Cosmetic: `CraftingDyeItem` (12), `PolymorphRabbitPermanentBlue/Purple` (2), `HairCleaner` (1).
 - Plant / nectar / drink: `DrinkNectar` (1), `DeployBeerBarrel` (1), `ConsumeItemUses(template, N)` (1).
-- Polymorph / cosmetic: `PolymorphRabbitPermanentBlue/Purple` (2), `CraftingDyeItem` (12), `HairCleaner` (1).
-- Survey / divination / metadata: `MoonPhaseCheck` (1), `WeatherReport` (1), `Augury{N}` (4), `ShowWardenEvents` (1), `SpawnPremonition_*` (3), `DispelSpawnPremonitionsOnDeath` (3), `Particle_{kind}` (4), `HelpMsg_{topic}` (17).
-- Misc fishing / utility: `CheckForBonusFishScales` (5), `CheckForBonusPerfectCotton` (4), `SendItemToSaddlebag` (1), `ApplyRacingRibbonToReins` (1), `SummonStatehelm` (1), `SummonPovusPaleomonster` (1), `StorageCrateDruid12Items` (2).
-- Status effects: `Infertility` (1), `SleepResistance` (1), `SexualEnergy` (1), `ArgumentResistance` (1).
+- Survey / divination / metadata: `MoonPhaseCheck` (1), `WeatherReport` (1), `ShowWardenEvents` (1).
+- Fishing / utility: `CheckForBonusFishScales` (5), `CheckForBonusPerfectCotton` (4), `SendItemToSaddlebag` (1), `ApplyRacingRibbonToReins` (1), `SummonStatehelm` (1), `SummonPovusPaleomonster` (1), `StorageCrateDruid12Items` (2), `StorageCrateDruid20Items` (1).
+- `HoplologyStudy` (1).
 
-**Suggested implementation order:**
-1. **TSys-augment family** — `AddItemTSysPowerWax` first (closes the last big augment-shape gap), then the zero-arg tags. Bundle with the §5 typed-preview pipeline.
-2. **Calligraphy / Meditation / Whittling tag variants** — single regex extension to `ParseEffectTags`. High coverage, low risk.
-3. **Equipment-property effects** — `BoostItemEquipAdvancementTable` is the highest-value entry; the rest are crafting-enhance siblings that share a render shape.
-4. **Item-producing effects** — `BrewItem`, surveys, treasure maps. Each gets a small typed preview.
-5. **`AdjustRecipeReuseTime`** — single-prefix parser, render as a humanized delta.
-6. **Generic fallback** — extend `ParseEffectTags` with a "humanize unknown prefix" path so the long tail produces *some* preview rather than silently dropping. Filter out a small allow-list of intentionally-silent prefixes (e.g. `Particle_*` is internal display-only) at the same time.
+#### Silent allow-list (4 effects)
+Internal display markers — `Particle_{kind}` (4). Parser should recognise and intentionally **not** emit a preview, so the generic fallback doesn't surface them.
+
+**Suggested implementation order to close the remaining 679:**
+1. **`CalligraphyCombo` letter-suffix bug fix** (7) — one-line regex tweak.
+2. **Tag-suffix families** (~144) — single switch in `TryParseEffectTag`. Closes Meditation, the rest of Calligraphy, Whittling, Augury, Premonition, Status, TempestEnergy in one PR.
+3. **Knowledge / progression typed previews** (131) — `ResearchProgressPreview` + small siblings for `LearnAbility` / `DiscoverWordOfPower` / `GiveTeleportationXp`.
+4. **Item-producing typed preview** (88) — one shared `ItemProducingPreview` covering brews / plants / surveys / maps / loot profiles.
+5. **Equipment-property typed previews** (57) — `EquipBonusPreview` plus the crafting-enhance siblings.
+6. **`AdjustRecipeReuseTime`** (36) — humanised-delta parser.
+7. **Decomposition non-augment** (21) — extend the existing decompose handler.
+8. **Behavioural-tag long tail** (~151) — mushroom / teleport / fairy / cosmetic / fishing / misc, all going through `EffectTagPreview` via a final switch + a small generic "humanise unknown prefix" fallback. Allow-list `Particle_*` (4) at the same time.
+
+After step 8 the parser hits 100% coverage of `recipes.json` ResultEffects with no silent drops; future-proofing against new prefixes lives in the generic fallback path.
 
 ### 3b. Ingredient `ItemKeys` (keyword-matched ingredients)
 
@@ -174,7 +191,7 @@ Bucket into a generic "Effect: humanized prefix" fallback in `ParseEffectTags` s
 
 **Status: shipped.** Phase 6 (April 2026) introduced the strongly-typed preview pipeline (`AugmentPreview` for `AddItemTSysPower` plus the `EffectDescsRenderer` that resolves `{TOKEN}{value}` placeholders against `attributes.json`). Phase 7 extended it with `CraftedGearPreview` (the `TSysCraftedEquipment` / `GiveTSysItem` / `CraftSimpleTSysItem` chip), `TaughtRecipePreview` (`BestowRecipeIfNotKnown`), `WaxItemPreview` (`CraftWaxItem`), `AugmentPoolPreview` + the dedicated `AugmentPoolView` (the `TSysCraftedEquipment` enchantment-pool sibling and `ExtractTSysPower`), and `EffectTagPreview` for the calligraphy / meditation tag families. Every typed preview renders inline on the recipe card and tooltip; clicking through opens `ItemDetailWindow` with the full per-effect breakdown.
 
-The eligibility model the pool viewer's pre-fill query uses (gear-level bracket × rolled-rarity floor × form/skill gate) is documented in [treasure-system.md](treasure-system.md). What's still open is purely the long-tail prefix coverage tracked in §3a — the preview pipeline itself is in place and the remaining work is "add another `Parse*` method and a render template."
+The eligibility model the pool viewer's pre-fill query uses (gear-level bracket × rolled-rarity floor × form/skill gate × `power.Slots ∋ template.EquipSlot`) is documented in [treasure-system.md](treasure-system.md). The slot clause closed [issue #8](https://github.com/arthur-conde/project-gorgon/issues/8) — without it the headline `OptionCount` over-counted by however many slot-incompatible powers lived in the profile. What's still open is purely the long-tail prefix coverage tracked in §3a — the preview pipeline itself is in place and the remaining work is "add another `Parse*` method and a render template."
 
 ### 6. Tighter persistence of UI state
 

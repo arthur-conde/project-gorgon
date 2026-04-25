@@ -56,11 +56,12 @@ public sealed record GroupedAugmentOption(
     public IReadOnlyList<EffectLine> FloorEffectLines => FloorTier.EffectLines;
 
     /// <summary>
-    /// Card header. Joins the source-item's display name with the suffix when both are
-    /// known (the player-facing in-game name, e.g. "Quality Werewolf Hindguard of Blood
-    /// Geysers"); falls back to "{InternalName} ({Suffix})" when only the suffix is known
-    /// (e.g. an extraction pool with no contextual item), or just the internal name when
-    /// the power has no suffix at all.
+    /// Card header (row 1). Joins the source-item's display name with the suffix when
+    /// both are known — the player-facing in-game name, e.g. "Quality Werewolf Hindguard
+    /// of Blood Geysers". When no item context is available (an extraction pool open from
+    /// `ItemDetailWindow` for an augment item, say) the suffix alone is the natural
+    /// in-game label; the power's internal name lives on row 2 (<see cref="MetaLine"/>).
+    /// Final fallback is the internal name itself when the power has no suffix at all.
     /// </summary>
     public string DisplayName
     {
@@ -69,7 +70,7 @@ public sealed record GroupedAugmentOption(
             if (ItemName is { Length: > 0 } item && Suffix is { Length: > 0 } suffix)
                 return $"{item} {suffix}";
             if (Suffix is { Length: > 0 } onlySuffix)
-                return $"{PowerInternalName} ({onlySuffix})";
+                return onlySuffix;
             return PowerInternalName;
         }
     }
@@ -94,4 +95,19 @@ public sealed record GroupedAugmentOption(
 
     /// <summary>"Tier 7-10 · Lvl 35-65", or just "Tier 7-10" when no level bounds. One-shot card sub-line.</summary>
     public string RangesLine => LevelRange is { } lvl ? $"{TierRange} · {lvl}" : TierRange;
+
+    /// <summary>
+    /// Card sub-line (row 2). The internal power name plus the tier and level range, so
+    /// the player can cross-reference data dumps without losing the friendlier item-name
+    /// header on row 1. Suppresses the internal name when row 1 already shows it (the
+    /// suffix-less fallback case) so we don't duplicate.
+    /// </summary>
+    public string MetaLine
+    {
+        get
+        {
+            var showInternalName = !string.Equals(DisplayName, PowerInternalName, StringComparison.Ordinal);
+            return showInternalName ? $"{PowerInternalName} · {RangesLine}" : RangesLine;
+        }
+    }
 }

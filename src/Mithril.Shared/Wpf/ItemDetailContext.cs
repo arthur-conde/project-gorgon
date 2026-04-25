@@ -11,6 +11,7 @@ namespace Mithril.Shared.Wpf;
 public sealed record ItemDetailContext(
     IReadOnlyList<AugmentPreview>? Augments = null,
     IReadOnlyList<WaxItemPreview>? WaxItems = null,
+    IReadOnlyList<WaxAugmentPreview>? WaxAugments = null,
     IReadOnlyList<AugmentPoolPreview>? AugmentPools = null,
     IReadOnlyList<TaughtRecipePreview>? TaughtRecipes = null,
     IReadOnlyList<EffectTagPreview>? EffectTags = null)

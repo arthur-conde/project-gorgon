@@ -26,6 +26,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         IReadOnlyList<CraftedGearPreview> craftedOutputs,
         IReadOnlyList<AugmentPreview> augments,
         IReadOnlyList<WaxItemPreview> waxItems,
+        IReadOnlyList<WaxAugmentPreview> waxAugments,
         IReadOnlyList<AugmentPoolPreview> augmentPools,
         IReadOnlyList<TaughtRecipePreview> taughtRecipes,
         IReadOnlyList<EffectTagPreview> effectTags,
@@ -43,6 +44,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
         CraftedOutputs = craftedOutputs;
         Augments = augments;
         WaxItems = waxItems;
+        WaxAugments = waxAugments;
         AugmentPools = augmentPools;
         TaughtRecipes = taughtRecipes;
         EffectTags = effectTags;
@@ -74,8 +76,8 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     }
 
     internal ItemDetailContext BuildItemDetailContext() =>
-        new(Augments: Augments, WaxItems: WaxItems, AugmentPools: AugmentPools,
-            TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
+        new(Augments: Augments, WaxItems: WaxItems, WaxAugments: WaxAugments,
+            AugmentPools: AugmentPools, TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
 
     public string RecipeInternalName { get; }
     public string DisplayName { get; }
@@ -89,6 +91,7 @@ public sealed partial class CraftListItemViewModel : ObservableObject
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
     public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<WaxAugmentPreview> WaxAugments { get; }
     public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
     public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
     public IReadOnlyList<EffectTagPreview> EffectTags { get; }

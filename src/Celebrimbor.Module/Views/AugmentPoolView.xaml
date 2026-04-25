@@ -41,7 +41,7 @@
                                                FontSize="{DynamicResource AppFontSizeLarge}"
                                                TextWrapping="Wrap"/>
                                 </DockPanel>
-                                <TextBlock Text="{Binding RangesLine}"
+                                <TextBlock Text="{Binding MetaLine}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            FontSize="{DynamicResource AppFontSizeHint}"
                                            Margin="0,2,0,0"/>

@@ -22,7 +22,8 @@ public sealed record PooledAugmentOption(
     int? MinLevel = null,
     int? MaxLevel = null,
     string? MinRarity = null,
-    int? SkillLevelPrereq = null)
+    int? SkillLevelPrereq = null,
+    IReadOnlyList<string>? Slots = null)
 {
     public string DisplayLine => Suffix is { Length: > 0 }
         ? $"{Suffix} · Tier {Tier}"

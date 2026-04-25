@@ -303,6 +303,7 @@ public sealed partial class RecipePickerViewModel : ObservableObject
                 row.CraftedOutputs,
                 row.Augments,
                 row.WaxItems,
+                row.WaxAugments,
                 row.AugmentPools,
                 row.TaughtRecipes,
                 row.EffectTags,

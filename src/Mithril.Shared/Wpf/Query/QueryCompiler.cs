@@ -178,13 +178,41 @@ public static class QueryCompiler
     {
         var col = ResolveColumn(node.Column, columns);
         var underlying = Nullable.GetUnderlyingType(col.ValueType) ?? col.ValueType;
+        var cmp = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var needle = node.Text;
+        bool negated = node.Negated;
+
+        // CONTAINS over a string-collection column means "any element equals the
+        // needle". Extends naturally to lists like PowerEntry.Slots without forcing
+        // callers to expose a flattened string. STARTSWITH / ENDSWITH on a list have
+        // no obvious semantic, so they remain string-only.
+        if (node.Kind == StringMatchKind.Contains && IsStringCollection(underlying))
+        {
+            var elementCmp = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+            return item =>
+            {
+                if (col.GetValue(item) is not System.Collections.IEnumerable seq)
+                {
+                    return negated;
+                }
+                bool hit = false;
+                foreach (var element in seq)
+                {
+                    if (element is string s && elementCmp.Equals(s, needle))
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+                return negated ? !hit : hit;
+            };
+        }
+
         if (underlying != typeof(string))
         {
             throw new QueryException(
                 $"{node.Kind.ToString().ToUpperInvariant()} requires a string column; '{node.Column}' is {underlying.Name}.", 0);
         }
-        var cmp = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var needle = node.Text;
         Func<string, bool> matcher = node.Kind switch
         {
             StringMatchKind.Contains => s => s.Contains(needle, cmp),
@@ -192,7 +220,6 @@ public static class QueryCompiler
             StringMatchKind.EndsWith => s => s.EndsWith(needle, cmp),
             _ => _ => false,
         };
-        bool negated = node.Negated;
         return item =>
         {
             if (col.GetValue(item) is not string s)
@@ -202,6 +229,21 @@ public static class QueryCompiler
             bool hit = matcher(s);
             return negated ? !hit : hit;
         };
+    }
+
+    private static bool IsStringCollection(Type t)
+    {
+        if (t == typeof(string)) return false;
+        foreach (var iface in t.GetInterfaces())
+        {
+            if (iface.IsGenericType
+                && iface.GetGenericTypeDefinition() == typeof(IEnumerable<>)
+                && iface.GetGenericArguments()[0] == typeof(string))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Func<object, bool> CompileLike(

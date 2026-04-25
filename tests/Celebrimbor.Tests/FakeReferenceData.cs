@@ -63,7 +63,7 @@ internal sealed class FakeReferenceData : IReferenceDataService
             IconId: (int)id,
             Keywords: keywords.Select(k => new ItemKeyword(k, 0)).ToList());
 
-    public static ItemEntry ItemWithProfile(long id, string name, string tsysProfile)
+    public static ItemEntry ItemWithProfile(long id, string name, string tsysProfile, string? equipSlot = null)
         => new(
             Id: id,
             Name: name,
@@ -71,10 +71,15 @@ internal sealed class FakeReferenceData : IReferenceDataService
             MaxStackSize: 50,
             IconId: (int)id,
             Keywords: [],
-            TSysProfile: tsysProfile);
+            TSysProfile: tsysProfile,
+            EquipSlot: equipSlot);
 
     public static PowerEntry Power(string internalName, string skill, string? suffix = null, params PowerTier[] tiers)
         => new(internalName, skill, Slots: [], Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
+
+    /// <summary>Power helper that lets a test specify <see cref="PowerEntry.Slots"/> — for the issue #8 slot-gate tests.</summary>
+    public static PowerEntry Power(string internalName, string skill, string? suffix, IReadOnlyList<string> slots, params PowerTier[] tiers)
+        => new(internalName, skill, Slots: slots, Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
 
     public static PowerTier Tier(int tier, params string[] effectDescs) => new(tier, effectDescs, 0);
 

@@ -22,11 +22,12 @@ public sealed partial class RecipeRowViewModel : ObservableObject
         CraftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, refData);
         Augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, refData);
         WaxItems = ResultEffectsParser.ParseWaxItems(recipe.ResultEffects, refData);
+        WaxAugments = ResultEffectsParser.ParseAddItemTSysPowerWaxes(recipe.ResultEffects, refData);
         AugmentPools = ResultEffectsParser.ParseAugmentPools(recipe.ResultEffects, refData);
         TaughtRecipes = ResultEffectsParser.ParseTaughtRecipes(recipe.ResultEffects, refData);
         EffectTags = ResultEffectsParser.ParseEffectTags(recipe.ResultEffects, refData);
         Results = ProjectResults(recipe, refData,
-            CraftedOutputs.Count + Augments.Count + WaxItems.Count + AugmentPools.Count + TaughtRecipes.Count + EffectTags.Count);
+            CraftedOutputs.Count + Augments.Count + WaxItems.Count + WaxAugments.Count + AugmentPools.Count + TaughtRecipes.Count + EffectTags.Count);
         InspectableItems = BuildInspectable(CraftedOutputs, Results);
     }
 
@@ -61,8 +62,8 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     }
 
     internal ItemDetailContext BuildItemDetailContext() =>
-        new(Augments: Augments, WaxItems: WaxItems, AugmentPools: AugmentPools,
-            TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
+        new(Augments: Augments, WaxItems: WaxItems, WaxAugments: WaxAugments,
+            AugmentPools: AugmentPools, TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
 
     private static IReadOnlyList<IngredientChip> ProjectResults(
         RecipeEntry recipe, IReferenceDataService refData, int previewCount)
@@ -97,6 +98,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
     public IReadOnlyList<AugmentPreview> Augments { get; }
     public IReadOnlyList<WaxItemPreview> WaxItems { get; }
+    public IReadOnlyList<WaxAugmentPreview> WaxAugments { get; }
     public IReadOnlyList<AugmentPoolPreview> AugmentPools { get; }
     public IReadOnlyList<TaughtRecipePreview> TaughtRecipes { get; }
     public IReadOnlyList<EffectTagPreview> EffectTags { get; }

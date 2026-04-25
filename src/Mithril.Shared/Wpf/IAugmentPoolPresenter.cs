@@ -34,10 +34,17 @@ public interface IAugmentPoolPresenter
     /// is at-most this value. For an enchant recipe this comes from arg2 of
     /// <c>TSysCraftedEquipment</c> (0 → Uncommon, 1 → Rare via Max-Enchanting).
     /// </param>
+    /// <param name="sourceEquipSlot">
+    /// Optional gear slot of the source item (e.g. "Necklace", "MainHand"). When set,
+    /// pre-filters the pool to powers whose <c>Slots</c> list contains this slot —
+    /// the in-game treasure system rejects rolls whose <c>PowerEntry.Slots</c> doesn't
+    /// include the source item's slot, so this matches the actual eligible-roll set
+    /// instead of the unfiltered profile (which over-counts).
+    /// </param>
     /// <param name="itemName">
     /// Optional source-item display name (e.g. "Quality Werewolf Hindguard"). When
     /// provided alongside a power suffix, the card header renders the natural in-game
     /// name "{itemName} {suffix}" instead of "{InternalName} ({Suffix})".
     /// </param>
-    void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null, string? itemName = null);
+    void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null, string? sourceEquipSlot = null, string? itemName = null);
 }

@@ -163,10 +163,11 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _refData);
             var augments = ResultEffectsParser.ParseAugments(recipe.ResultEffects, _refData);
             var waxItems = ResultEffectsParser.ParseWaxItems(recipe.ResultEffects, _refData);
+            var waxAugments = ResultEffectsParser.ParseAddItemTSysPowerWaxes(recipe.ResultEffects, _refData);
             var augmentPools = ResultEffectsParser.ParseAugmentPools(recipe.ResultEffects, _refData);
             var taughtRecipes = ResultEffectsParser.ParseTaughtRecipes(recipe.ResultEffects, _refData);
             var effectTags = ResultEffectsParser.ParseEffectTags(recipe.ResultEffects, _refData);
-            var totalPreviewCount = craftedOutputs.Count + augments.Count + waxItems.Count
+            var totalPreviewCount = craftedOutputs.Count + augments.Count + waxItems.Count + waxAugments.Count
                                   + augmentPools.Count + taughtRecipes.Count + effectTags.Count;
             if (results.Count == 0 && totalPreviewCount == 0)
                 results = [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
@@ -182,6 +183,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 craftedOutputs,
                 augments,
                 waxItems,
+                waxAugments,
                 augmentPools,
                 taughtRecipes,
                 effectTags,

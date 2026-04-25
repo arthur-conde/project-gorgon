@@ -143,6 +143,66 @@ public class AugmentParserTests
         preview.DisplayLine.Should().Be("of Archery · Tier 1");
     }
 
+    [Fact]
+    public void CraftedEquipmentPool_FiltersOutPowersWhoseSlotsExcludeTemplateEquipSlot()
+    {
+        // Issue #8: PowerEntry.Slots gates which slots a power can roll on. A power
+        // with Slots=[MainHand,Ring] should NOT count toward a Necklace template's pool.
+        var refData = Phase7Fixture.Build(
+            items: [Phase7Fixture.Item(1, "CraftedNecklace", "Crafted Necklace",
+                tsysProfile: "MyPool", equipSlot: "Necklace")],
+            powers:
+            [
+                Phase7Fixture.Power("ParryRiposteBoostTrauma", "Sword",
+                    suffix: null, slots: ["MainHand", "Ring"],
+                    Phase7Fixture.Tier(1, "{MAX_ARMOR}{1}")),
+                Phase7Fixture.Power("NecklaceArmor", "General",
+                    suffix: null, slots: ["Necklace"],
+                    Phase7Fixture.Tier(1, "{MAX_ARMOR}{5}")),
+            ],
+            profiles: new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["MyPool"] = new[] { "ParryRiposteBoostTrauma", "NecklaceArmor" },
+            });
+
+        var pools = ResultEffectsParser.ParseAugmentPools(
+            ["TSysCraftedEquipment(CraftedNecklace,0)"], refData);
+
+        pools.Should().ContainSingle();
+        var pool = pools[0];
+        pool.OptionCount.Should().Be(1);
+        pool.SourceEquipSlot.Should().Be("Necklace");
+    }
+
+    [Fact]
+    public void CraftedEquipmentPool_LeavesOptionCountUnchangedWhenTemplateHasNoEquipSlot()
+    {
+        // Defensive: template without an EquipSlot shouldn't trigger slot filtering.
+        var refData = Phase7Fixture.Build(
+            items: [Phase7Fixture.Item(1, "CraftedThing", "Crafted Thing",
+                tsysProfile: "MyPool", equipSlot: null)],
+            powers:
+            [
+                Phase7Fixture.Power("PowerA", "Sword",
+                    suffix: null, slots: ["MainHand"],
+                    Phase7Fixture.Tier(1, "{MAX_ARMOR}{1}")),
+                Phase7Fixture.Power("PowerB", "General",
+                    suffix: null, slots: ["Necklace"],
+                    Phase7Fixture.Tier(1, "{MAX_ARMOR}{5}")),
+            ],
+            profiles: new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["MyPool"] = new[] { "PowerA", "PowerB" },
+            });
+
+        var pools = ResultEffectsParser.ParseAugmentPools(
+            ["TSysCraftedEquipment(CraftedThing,0)"], refData);
+
+        pools.Should().ContainSingle();
+        pools[0].OptionCount.Should().Be(2);
+        pools[0].SourceEquipSlot.Should().BeNull();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static ItemEntry Item(long id, string internalName, string displayName, int icon = 0)
