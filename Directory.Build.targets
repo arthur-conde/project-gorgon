@@ -42,24 +42,27 @@
     The lint tool scans the whole repo, so a single anchor project (Gorgon.Shell) is sufficient — adding
     the prop to multiple projects just runs the same scan multiple times.
 
-    The ProjectReference forces XamlResourceLint to build before the consumer; ReferenceOutputAssembly=false
-    keeps the lint exe out of the consumer's bin.
+    The lint is intentionally NOT a <ProjectReference>: doing so pulls a non-self-contained Exe into a
+    self-contained Exe's graph (NETSDK1150), and the publish step's RID resolution chokes on the lint's
+    plain net10.0 assets (NETSDK1047). Instead, the target invokes the lint via <MSBuild> task, which
+    builds it on demand and asks for its TargetPath — no graph entanglement, no publish weirdness.
   -->
-  <ItemGroup Condition="'$(RunsXamlResourceLint)' == 'true'">
-    <ProjectReference Include="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
-                      ReferenceOutputAssembly="false"
-                      Private="false" />
-  </ItemGroup>
-
   <Target Name="LintXamlStaticResources"
           AfterTargets="Build"
           Condition="'$(RunsXamlResourceLint)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(BuildingForLiveUnitTesting)' != 'true'">
-    <!-- Ask the lint project for its actual TargetPath instead of guessing the
-         bin/{Config}/{TFM} path. Robust to Configuration drift (e.g. solution
-         builds where -c Release doesn't propagate to non-slnx ProjectReferences). -->
+    <!-- Two-step: (1) build the lint, (2) ask it for its TargetPath. Split because Build returns
+         dependency outputs alongside the primary, polluting the path used by Exec.
+
+         Properties explicitly reset RuntimeIdentifier and SelfContained: when this fires under
+         a publish with -r win-x64 self-contained, those propagate into the inner MSBuild call
+         and the plain net10.0 lint csproj fails its assets check (NETSDK1047). The lint runs at
+         build time on the host, so it has no RID concept. -->
+    <MSBuild Projects="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=;SelfContained=false" />
     <MSBuild Projects="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
              Targets="GetTargetPath"
-             Properties="Configuration=$(Configuration)">
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=;SelfContained=false">
       <Output TaskParameter="TargetOutputs" ItemName="_XamlResourceLintTargetPath" />
     </MSBuild>
     <Exec Command="dotnet &quot;@(_XamlResourceLintTargetPath)&quot; &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot;"
