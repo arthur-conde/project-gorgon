@@ -50,14 +50,17 @@ Module DLLs are copied into `src/Mithril.Shell/{Configuration}/modules/` automat
 
 ### Running tests on a fresh clone
 
-`[Trait("Category", "FileIO")]` tests write small JSON files to `tests/.tmp/` through `AtomicFile`'s write-tmp-then-rename sequence. That sequence is behaviourally identical to ransomware encryption passes, so Windows Defender's real-time scan will occasionally lock or quarantine the freshly-written file — the test then sees `items.meta.json` on disk but `items.json` missing. CI sidesteps this by disabling Defender real-time for the runner (see [.github/workflows/release.yml](.github/workflows/release.yml)); local dev environments need a path exclusion instead:
+`[Trait("Category", "FileIO")]` tests write small JSON files to `tests/.tmp/` through `AtomicFile`'s write-tmp-then-rename sequence. That sequence is behaviourally identical to ransomware encryption passes, so Windows Defender's real-time scan will occasionally lock or quarantine the freshly-written file — the test then sees `items.meta.json` on disk but `items.json` missing. The repo already routes test scratch out of `%TEMP%` and into `tests/.tmp/` (see [tests/TestSupport/TestPaths.cs](tests/TestSupport/TestPaths.cs)) to dampen this; the residual flake comes from Defender still scanning that subtree under parallel load. CI sidesteps Defender entirely on the runner (see [.github/workflows/release.yml](.github/workflows/release.yml)); local dev environments use a targeted path exclusion:
 
 ```powershell
-# Run once from an elevated PowerShell. Adjust the path to your clone.
-Add-MpPreference -ExclusionPath "C:\path\to\project-gorgon"
+# Run once. Self-elevates if not already admin.
+.\tools\setup-defender-exclusions.ps1
+
+# To undo:
+.\tools\setup-defender-exclusions.ps1 -Remove
 ```
 
-Without the exclusion, expect the FileIO-category tests under `Mithril.Shared.Tests` to flake. The non-FileIO suite (the default `dotnet test` pass minus `--filter Category=FileIO`) is unaffected.
+The script whitelists exactly two paths — `tests\.tmp\` inside this repo and `%TEMP%\mithril-tests-fallback` (the fallback used when `TestPaths` can't locate the repo). Nothing broader: no repo-wide exclusion, no `dotnet.exe` process exclusion. Without it, expect the FileIO-category tests under `Mithril.Shared.Tests` and a few file-IO heavy tests in `Samwise.Tests` / `Gandalf.Tests` to flake intermittently when run as part of the full suite; in isolation they still pass.
 
 ## Repository layout
 
