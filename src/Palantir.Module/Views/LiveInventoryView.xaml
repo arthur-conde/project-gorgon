@@ -1,0 +1,131 @@
+<UserControl x:Class="Palantir.Views.LiveInventoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <!-- Header -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal">
+                <Image Source="pack://application:,,,/Palantir.Module;component/Resources/palantir.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Palantir · Live Inventory" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Background="#FF252525" CornerRadius="3" Padding="8,3" Margin="0,0,6,0">
+                    <TextBlock Foreground="#FFE8E8E8" FontFamily="{DynamicResource AppMonoFontFamily}">
+                        <Run Text="Live "/><Run Text="{Binding LiveCount, Mode=OneWay}" Foreground="#FFD4A847"/>
+                    </TextBlock>
+                </Border>
+                <Border Background="#FF252525" CornerRadius="3" Padding="8,3">
+                    <TextBlock Foreground="#88FFFFFF" FontFamily="{DynamicResource AppMonoFontFamily}">
+                        <Run Text="Deleted "/><Run Text="{Binding DeletedCount, Mode=OneWay}"/>
+                    </TextBlock>
+                </Border>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Controls bar -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <CheckBox DockPanel.Dock="Right" Content="Show deleted"
+                      Foreground="#CCFFFFFF" VerticalAlignment="Center" Margin="12,0,0,0"
+                      IsChecked="{Binding ShowDeleted, Mode=TwoWay}"/>
+            <wpf:MithrilQueryBox Grid="{Binding ElementName=ItemsGrid}"
+                                QueryText="{Binding QueryText, Mode=TwoWay}"
+                                Watermark="bare text, or e.g. IsDeleted = false AND StackSize &gt;= 5"/>
+        </DockPanel>
+
+        <!-- Status hint -->
+        <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="4">
+            <TextBlock Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                       Text="Mirrors the simulated inventory state (Player.log + chat correlation). Stack sizes update in place; deleted rows are retained for late-lookup parity with Arwen / Samwise."/>
+        </Border>
+
+        <wpf:MithrilDataGrid x:Name="ItemsGrid"
+                            ItemsSource="{Binding View}"
+                            QueryText="{Binding QueryText, Mode=TwoWay}"
+                            Mode="ReadOnly">
+            <wpf:MithrilDataGrid.Columns>
+                <DataGridTemplateColumn Header="Name" Width="*" MinWidth="220" SortMemberPath="Name">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Stack" Binding="{Binding StackSize}" SortMemberPath="StackSize" Width="60">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Internal name" Binding="{Binding InternalName}" SortMemberPath="InternalName" Width="180">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#AAFFFFFF"/>
+                            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Instance ID" Binding="{Binding InstanceId}" SortMemberPath="InstanceId" Width="120">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Header="State" Width="70" SortMemberPath="IsDeleted">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock HorizontalAlignment="Center" Text="Live" Foreground="#FFB7E08C">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDeleted}" Value="True">
+                                                <Setter Property="Text" Value="Deleted"/>
+                                                <Setter Property="Foreground" Value="#FFE09090"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Last updated" Binding="{Binding LastUpdated, StringFormat={}{0:HH:mm:ss}}" SortMemberPath="LastUpdated" Width="100">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </wpf:MithrilDataGrid.Columns>
+            <wpf:MithrilDataGrid.RowStyle>
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsDeleted}" Value="True">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </wpf:MithrilDataGrid.RowStyle>
+        </wpf:MithrilDataGrid>
+    </DockPanel>
+</UserControl>

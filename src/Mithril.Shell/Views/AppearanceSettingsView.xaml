@@ -41,6 +41,13 @@
                         VerticalAlignment="Center"/>
             </DockPanel>
 
+            <TextBlock Text="Developer mode" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                       Text="Show developer/diagnostic modules in the sidebar (e.g. live inventory inspector). Off by default."/>
+            <CheckBox Content="Enable developer mode"
+                      IsChecked="{Binding Settings.DeveloperMode, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8"/>
+
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                        Text="Changes preview live. Settings persist on shutdown."/>
         </StackPanel>

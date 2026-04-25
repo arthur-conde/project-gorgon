@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Palantir</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\palantir.ico" />
+    <Resource Include="Resources\palantir.jpg" />
+  </ItemGroup>
+</Project>

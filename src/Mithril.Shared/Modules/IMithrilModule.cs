@@ -25,5 +25,11 @@ public interface IMithrilModule
     /// Settings host. Null if the module has nothing user-configurable.
     /// </summary>
     Type? SettingsViewType { get; }
+    /// <summary>
+    /// When true, the shell only surfaces the module in the sidebar while
+    /// developer mode is enabled. Diagnostic / inspection modules opt in here
+    /// so player-facing installs aren't cluttered with internals.
+    /// </summary>
+    bool IsDeveloperOnly => false;
     void Register(IServiceCollection services);
 }

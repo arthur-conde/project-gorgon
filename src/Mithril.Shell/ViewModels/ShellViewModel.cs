@@ -39,6 +39,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IActiveCharacterService _activeChar;
     private readonly IUpdateStatusService _updateStatus;
     private readonly IUpdateApplier _updateApplier;
+    private readonly IReadOnlyList<IMithrilModule> _allModules;
 
     private readonly ModuleGates _gates;
 
@@ -57,8 +58,8 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeChar = activeChar;
         _updateStatus = updateStatus;
         _updateApplier = updateApplier;
-        foreach (var m in modules.OrderBy(m => m.SortOrder))
-            Modules.Add(new ModuleEntry { Module = m });
+        _allModules = modules.OrderBy(m => m.SortOrder).ToList();
+        RebuildVisibleModules();
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
                       ?? Modules.FirstOrDefault();
         if (initial is not null) ActivateModule(initial);
@@ -66,8 +67,32 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshCharacter();
         _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
         _updateStatus.StateChanged += (_, _) => RefreshUpdateStatus();
+        _settings.PropertyChanged += OnSettingsChanged;
         RefreshCharacter();
         RefreshUpdateStatus();
+    }
+
+    private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ShellSettings.DeveloperMode)) return;
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RebuildVisibleModules();
+        else d.InvokeAsync(RebuildVisibleModules);
+    }
+
+    private void RebuildVisibleModules()
+    {
+        var keepActiveId = SelectedModule?.Module.Id;
+        Modules.Clear();
+        foreach (var m in _allModules)
+        {
+            if (m.IsDeveloperOnly && !_settings.DeveloperMode) continue;
+            Modules.Add(new ModuleEntry { Module = m });
+        }
+        // If the previously selected module was just hidden, clear the selection
+        // chip so the sidebar doesn't keep highlighting an absent entry.
+        if (keepActiveId is not null && Modules.All(e => e.Module.Id != keepActiveId))
+            SelectedModule = null;
     }
 
     public ObservableCollection<ModuleEntry> Modules { get; } = new();

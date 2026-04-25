@@ -133,7 +133,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             {
                 if (entry.Deleted) continue;
                 Invoke(handler, new InventoryEvent(
-                    InventoryEventKind.Added, id, entry.InternalName, entry.Timestamp));
+                    InventoryEventKind.Added, id, entry.InternalName, entry.Timestamp, entry.StackSize));
             }
             _handlers.Add(handler);
             return new Subscription(this, handler);
@@ -227,7 +227,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
             _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size);
             _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size} (total={_map.Count})");
-            Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp));
+            Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size));
         }
     }
 
@@ -251,7 +251,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // they've already read past.
             _map[instanceId] = entry with { Deleted = true, Timestamp = timestamp };
             _diag?.Trace("Inventory", $"Delete id={instanceId} name={entry.InternalName} size={entry.StackSize} (retained)");
-            Fire(new InventoryEvent(InventoryEventKind.Deleted, instanceId, entry.InternalName, timestamp));
+            Fire(new InventoryEvent(InventoryEventKind.Deleted, instanceId, entry.InternalName, timestamp, entry.StackSize));
         }
     }
 
@@ -270,8 +270,10 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 _diag?.Trace("Inventory", $"UpdateCode id={instanceId} size={newSize} — not in map, ignored");
                 return;
             }
+            if (entry.StackSize == newSize) return;
             _map[instanceId] = entry with { StackSize = newSize, Timestamp = timestamp };
             _diag?.Trace("Inventory", $"UpdateCode id={instanceId} name={entry.InternalName} size={newSize}");
+            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, newSize));
         }
     }
 
@@ -285,9 +287,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // cases (the vault-side InstanceId, which we don't track). Only update if we
             // know this id — that filters cleanly.
             if (!_map.TryGetValue(instanceId, out var entry)) return;
+            if (entry.StackSize == stackSize) return;
 
             _map[instanceId] = entry with { StackSize = stackSize, Timestamp = timestamp };
             _diag?.Trace("Inventory", $"RemoveFromVault id={instanceId} name={entry.InternalName} size={stackSize}");
+            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, stackSize));
         }
     }
 
@@ -302,10 +306,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // Try to back-fill a recent AddItem that defaulted to size = 1.
             if (TryDequeuePendingAdd(internalName, timestamp, out var instanceId))
             {
-                if (_map.TryGetValue(instanceId, out var entry))
+                if (_map.TryGetValue(instanceId, out var entry) && entry.StackSize != count)
                 {
                     _map[instanceId] = entry with { StackSize = count, Timestamp = timestamp };
                     _diag?.Trace("Inventory", $"Chat → Add id={instanceId} name={internalName} size={count}");
+                    Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, internalName, timestamp, count));
                 }
                 return;
             }

@@ -12,6 +12,7 @@
     <Project Path="src/Saruman.Module/Saruman.Module.csproj" />
     <Project Path="src/Smaug.Module/Smaug.Module.csproj" />
     <Project Path="src/Celebrimbor.Module/Celebrimbor.Module.csproj" />
+    <Project Path="src/Palantir.Module/Palantir.Module.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
@@ -28,5 +29,6 @@
     <Project Path="tests/Saruman.Tests/Saruman.Tests.csproj" />
     <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
     <Project Path="tests/Celebrimbor.Tests/Celebrimbor.Tests.csproj" />
+    <Project Path="tests/Palantir.Tests/Palantir.Tests.csproj" />
   </Folder>
 </Solution>

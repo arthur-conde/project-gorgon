@@ -180,6 +180,39 @@ public sealed class InventoryServiceStackSizeTests
     }
 
     [Fact]
+    public async Task ChatBackFill_FiresStackChangedEvent()
+    {
+        // When chat lands after the AddItem and back-fills the size from 1 → N,
+        // event-driven views (Palantir) need the StackChanged signal — TryGetStackSize
+        // alone wouldn't trigger a re-render.
+        var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
+        var playerStream = new ScriptedPlayerStream();
+        var chatStream = new ScriptedPlayerStream();
+        var refData = new FakeRefData(("Phlogiston1", "Shoddy Phlogiston"));
+        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        var run = svc.StartAsync(CancellationToken.None);
+
+        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
+        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
+        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        // Subscribe-on-startup wins: first the Added (size 1), then the StackChanged (size 5).
+        events.Should().HaveCount(2);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].StackSize.Should().Be(1);
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        events[1].InstanceId.Should().Be(100);
+        events[1].InternalName.Should().Be("Phlogiston1");
+        events[1].StackSize.Should().Be(5);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = run;
+    }
+
+    [Fact]
     public async Task NonStatusChatLines_AreIgnored()
     {
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);

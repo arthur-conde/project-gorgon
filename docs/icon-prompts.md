@@ -62,6 +62,10 @@ Subject: a dragon's clawed forefoot resting possessively atop a heaped pile of g
 
 Subject: a smith's anvil centered in the lower half of the frame, its horn pointing left, with a cross-peen hammer resting head-down across the anvil's face. Above the anvil, three small crafting-ingredient glyphs hover in a gentle upward arc — a sheaf of wheat on the left, a cut gemstone in the middle, and a corked phial of liquid on the right — each trailing a faint spark descending toward the anvil as if being assembled into a single work. Fine elvish filigree traces the anvil's base and the hammer's grip, a nod to the Forger of Rings. Faint background texture of interlocking Celtic/elvish knotwork and a ring of tiny forge-sparks orbiting the central emblem.
 
+## Palantir · Live Inventory (developer-only inventory inspector)
+
+Subject: a single polished obsidian seeing-stone (palantír) resting in a low forged-iron cradle in the lower half of the frame, viewed in three-quarter perspective. Inside the orb, a swirling vortex of light is captured mid-motion, with a single sharp eye-glyph faintly visible at its core. A thin crescent highlight curves across the upper-left of the sphere, giving it weight and depth, and a soft halo of light leaks from the orb into the surrounding negative space. Two small star-glints float in the upper field, picking up the inner light. Faint background texture of concentric ripple-rings radiating outward from the cradle, suggesting the stone's far-seeing reach.
+
 ## Shell settings (non-module sections)
 
 These are the three shell-owned entries at the top of the Settings sidebar. They share the same gold-on-charcoal style but skip the LOTR-character framing — the subjects are generic "tool" emblems.

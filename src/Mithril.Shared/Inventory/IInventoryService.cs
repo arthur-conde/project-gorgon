@@ -8,17 +8,31 @@ namespace Mithril.Shared.Inventory;
 /// <paramref name="Timestamp"/> is the source log line's timestamp (UTC), not
 /// wall-clock — consumers with time-window logic (e.g. Samwise's plant-resolve
 /// window) need the in-game timeline.
+/// <paramref name="StackSize"/> is the stack size at the moment of the event:
+/// for <see cref="InventoryEventKind.Added"/> it's the size known when the
+/// item entered the map (1 if no chat correlation has landed yet);
+/// for <see cref="InventoryEventKind.Deleted"/> it's the last-known size
+/// before removal; for <see cref="InventoryEventKind.StackChanged"/> it's
+/// the new size.
 /// </summary>
 public readonly record struct InventoryEvent(
     InventoryEventKind Kind,
     long InstanceId,
     string InternalName,
-    DateTime Timestamp);
+    DateTime Timestamp,
+    int StackSize);
 
 public enum InventoryEventKind
 {
     Added,
     Deleted,
+    /// <summary>
+    /// Fired when the stack size of an existing entry changes in place
+    /// (split, merge, plant-consume, vault transfer, chat back-fill of a
+    /// previously-defaulted size). Not fired on Add or Delete — those carry
+    /// their own size on the event.
+    /// </summary>
+    StackChanged,
 }
 
 /// <summary>
@@ -66,9 +80,12 @@ public interface IInventoryService
     /// ingestion-loop thread). Subscribers that do non-trivial work should
     /// dispatch off-thread immediately to avoid blocking ingestion.
     ///
-    /// Stack-size mutations (split, merge, plant-consume, vault transfer) are
-    /// not surfaced as events on this subscription — consumers that need
-    /// up-to-date sizes should poll <see cref="TryGetStackSize"/>.
+    /// Stack-size mutations (split, merge, plant-consume, vault transfer,
+    /// chat back-fill of a previously-defaulted Add) are surfaced as
+    /// <see cref="InventoryEventKind.StackChanged"/> events. The replayed
+    /// <see cref="InventoryEventKind.Added"/> events carry the current size,
+    /// so a fresh subscriber doesn't need to poll <see cref="TryGetStackSize"/>
+    /// for steady-state rendering.
     ///
     /// Dispose the returned subscription to stop receiving further events.
     /// </summary>

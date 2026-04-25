@@ -171,6 +171,124 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
+    public async Task SubscribeReplay_CarriesCurrentStackSize()
+    {
+        // Once a stack has been mutated by UpdateItemCode, a fresh subscriber must
+        // see the post-mutation size on the synthesized Added event so the view
+        // doesn't render a stale "1" until the next live event.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)"); // size 4
+        var svc = new InventoryService(stream);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Should().ContainSingle();
+        replayed[0].Kind.Should().Be(InventoryEventKind.Added);
+        replayed[0].InstanceId.Should().Be(100);
+        replayed[0].StackSize.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task UpdateItemCode_FiresStackChangedEventWithNewSize()
+    {
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push("[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)"); // size 4
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().HaveCount(2);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].StackSize.Should().Be(1);
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        events[1].InstanceId.Should().Be(100);
+        events[1].InternalName.Should().Be("Guava");
+        events[1].StackSize.Should().Be(4);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task UpdateItemCode_NoOpSizeChange_DoesNotFire()
+    {
+        // A no-op UpdateItemCode (size unchanged) shouldn't push noise to subscribers.
+        // In practice the game doesn't repeat the same code, but defending against it
+        // keeps the event stream tight.
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        // code 0 → size 1; same as the AddItem default.
+        stream.Push("[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 0, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().ContainSingle(e => e.Kind == InventoryEventKind.Added);
+        events.Should().NotContain(e => e.Kind == InventoryEventKind.StackChanged);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task RemoveFromStorageVault_FiresStackChangedWithLiteralSize()
+    {
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), 116, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push("[00:00:01] LocalPlayer: ProcessRemoveFromStorageVault(-131, -1, 100, 46)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Where(e => e.Kind == InventoryEventKind.StackChanged)
+              .Should().ContainSingle()
+              .Which.StackSize.Should().Be(46);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task DeleteEvent_CarriesLastKnownStackSize()
+    {
+        // Arwen's gift-attribution path needs the pre-delete size in the Deleted
+        // event (or via TryGetStackSize after) — surface it on the event so
+        // event-driven views (Palantir) get parity.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(GiantSkull(100), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 3211264, True)", // size 50
+            "[00:00:03] LocalPlayer: ProcessDeleteItem(100)");
+        var svc = new InventoryService(stream);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        await RunUntilDrainedAsync(svc, stream);
+
+        var del = events.Single(e => e.Kind == InventoryEventKind.Deleted);
+        del.InstanceId.Should().Be(100);
+        del.StackSize.Should().Be(50);
+    }
+
+    [Fact]
     public async Task SubscriberException_DoesNotBreakOtherSubscribers()
     {
         var stream = new ScriptedStream(
