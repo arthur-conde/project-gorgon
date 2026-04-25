@@ -48,19 +48,30 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
             SingleWriter = true,
         });
 
+        RawLogLine[] replay;
         lock (_gate)
         {
-            // Replay session-start-to-now under the lock BEFORE the channel joins
-            // _subs, so any concurrent Publish appends after the replayed lines
-            // rather than interleaving ahead of them.
-            if (_sessionReplay is { Count: > 0 } replay)
-                foreach (var line in replay) channel.Writer.TryWrite(line);
+            // Snapshot the replay buffer and register for live lines under the
+            // same lock, so any concurrent Publish is either already represented
+            // in the snapshot or gets written to the channel after we release.
+            replay = _sessionReplay is { Count: > 0 } r ? r.ToArray() : [];
             _subs.Add(channel);
             EnsureRunning();
         }
 
         try
         {
+            // Replay session history directly via yield — bypassing the bounded
+            // channel — so a late joiner can't lose history to DropOldest when
+            // the replay buffer exceeds 1024 lines (common after a mid-session
+            // launch). Live lines continue through the bounded channel and keep
+            // their DropOldest safety net.
+            foreach (var line in replay)
+            {
+                if (ct.IsCancellationRequested) yield break;
+                yield return line;
+            }
+
             await foreach (var line in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 yield return line;
