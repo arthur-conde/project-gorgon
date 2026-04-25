@@ -107,12 +107,17 @@ public sealed class GardenIngestionService : BackgroundService
     private void OnInventoryEvent(InventoryEvent evt)
     {
         var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        GardenEvent ge = evt.Kind switch
+        GardenEvent? ge = evt.Kind switch
         {
             InventoryEventKind.Added => new AddItem(evt.Timestamp, idStr, evt.InternalName),
             InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
-            _ => throw new InvalidOperationException($"Unknown InventoryEventKind: {evt.Kind}"),
+            _ => null,
         };
+        if (ge is null)
+        {
+            _diag?.Trace("Samwise.Parse", $"Skip InventoryEventKind.{evt.Kind} (not a garden-relevant event)");
+            return;
+        }
         _diag?.Trace("Samwise.Parse", Describe(ge));
         Dispatch(() => _state.Apply(ge));
     }

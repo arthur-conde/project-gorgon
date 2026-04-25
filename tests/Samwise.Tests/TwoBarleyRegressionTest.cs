@@ -137,12 +137,13 @@ public class TwoBarleyRegressionTest
         using var sub = inv.Subscribe(evt =>
         {
             var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            sm.Apply(evt.Kind switch
+            GardenEvent? ge = evt.Kind switch
             {
-                InventoryEventKind.Added => (GardenEvent)new AddItem(evt.Timestamp, idStr, evt.InternalName),
+                InventoryEventKind.Added => new AddItem(evt.Timestamp, idStr, evt.InternalName),
                 InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
-                _ => throw new InvalidOperationException(),
-            });
+                _ => null,
+            };
+            if (ge is not null) sm.Apply(ge);
         });
 
         // Now plant: SetPetOwner + ProcessUpdateItemCode (parser-driven path).
