@@ -53,16 +53,21 @@
     <!-- Two-step: (1) build the lint, (2) ask it for its TargetPath. Split because Build returns
          dependency outputs alongside the primary, polluting the path used by Exec.
 
-         Properties explicitly reset RuntimeIdentifier and SelfContained: when this fires under
-         a publish with -r win-x64 self-contained, those propagate into the inner MSBuild call
-         and the plain net10.0 lint csproj fails its assets check (NETSDK1047). The lint runs at
-         build time on the host, so it has no RID concept. -->
+         The Properties list explicitly clears every publish-time property that propagates from
+         the parent invocation. The lint is a host-side build tool with no RID/runtime concept;
+         leaving any of these set causes the inner MSBuild call to fail:
+           RuntimeIdentifier / SelfContained -> NETSDK1047 (no RID-specific assets in restore)
+           PublishReadyToRun                 -> NETSDK1191 (R2R needs a RID)
+           PublishSingleFile / PublishTrimmed -> same family, kept off for safety -->
+    <PropertyGroup>
+      <_LintProps>Configuration=$(Configuration);RuntimeIdentifier=;SelfContained=false;PublishReadyToRun=false;PublishSingleFile=false;PublishTrimmed=false</_LintProps>
+    </PropertyGroup>
     <MSBuild Projects="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
              Targets="Build"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=;SelfContained=false" />
+             Properties="$(_LintProps)" />
     <MSBuild Projects="$(MSBuildThisFileDirectory)tools\XamlResourceLint\XamlResourceLint.csproj"
              Targets="GetTargetPath"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=;SelfContained=false">
+             Properties="$(_LintProps)">
       <Output TaskParameter="TargetOutputs" ItemName="_XamlResourceLintTargetPath" />
     </MSBuild>
     <Exec Command="dotnet &quot;@(_XamlResourceLintTargetPath)&quot; &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot;"
