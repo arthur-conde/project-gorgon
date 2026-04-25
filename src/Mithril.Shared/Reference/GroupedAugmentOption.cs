@@ -58,10 +58,13 @@ public sealed record GroupedAugmentOption(
     /// <summary>
     /// Card header (row 1). Joins the source-item's display name with the suffix when
     /// both are known — the player-facing in-game name, e.g. "Quality Werewolf Hindguard
-    /// of Blood Geysers". When no item context is available (an extraction pool open from
-    /// `ItemDetailWindow` for an augment item, say) the suffix alone is the natural
-    /// in-game label; the power's internal name lives on row 2 (<see cref="MetaLine"/>).
-    /// Final fallback is the internal name itself when the power has no suffix at all.
+    /// of Blood Geysers". Falls back to the bare item name when the power has no suffix.
+    /// When no item context is available (an extraction pool open from
+    /// <c>ItemDetailWindow</c> for an augment item, say) we drop straight to the
+    /// internal power name — the suffix on its own (e.g. just "of Biting") isn't useful
+    /// without an item to attach it to. The internal name then also appears on row 2
+    /// via <see cref="MetaLine"/>, but <see cref="MetaLine"/> deduplicates so it's only
+    /// shown once.
     /// </summary>
     public string DisplayName
     {
@@ -69,8 +72,8 @@ public sealed record GroupedAugmentOption(
         {
             if (ItemName is { Length: > 0 } item && Suffix is { Length: > 0 } suffix)
                 return $"{item} {suffix}";
-            if (Suffix is { Length: > 0 } onlySuffix)
-                return onlySuffix;
+            if (ItemName is { Length: > 0 } itemOnly)
+                return itemOnly;
             return PowerInternalName;
         }
     }
