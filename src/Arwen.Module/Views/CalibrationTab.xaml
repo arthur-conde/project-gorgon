@@ -67,6 +67,70 @@
                 </StackPanel>
             </StackPanel>
 
+            <!-- Pending observations (carryover stacks awaiting user confirmation) -->
+            <Expander IsExpanded="True"
+                      Margin="0,4,0,8" Foreground="#FFD4A847"
+                      Visibility="{Binding PendingCount, Converter={StaticResource PositiveIntToVis}}">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Pending observations · " FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding PendingCount}" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold"/>
+                        <TextBlock Text="  (waiting on stack size)" FontSize="{DynamicResource AppFontSizeHint}"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Expander.Header>
+                <ItemsControl x:Name="PendingList" ItemsSource="{Binding PendingRows}" Margin="0,6,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                    CornerRadius="4" Padding="10" Margin="0,0,0,6">
+                                <DockPanel>
+                                    <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                   Width="32" Height="32" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBox Width="60" Margin="0,0,8,0"
+                                                 Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                 ToolTip="Stack size at the time of the gift">
+                                            <TextBox.Style>
+                                                <Style TargetType="TextBox">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsQuantityValid}" Value="False">
+                                                            <Setter Property="BorderBrush" Value="#FFCC6666"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBox.Style>
+                                        </TextBox>
+                                        <Button Content="Confirm" Margin="0,0,4,0" Padding="10,3"
+                                                Background="#FFD4A847" BorderBrush="#FFD4A847" Foreground="#FF1A1A1A"
+                                                FontWeight="SemiBold"
+                                                IsEnabled="{Binding IsQuantityValid}"
+                                                Command="{Binding DataContext.ConfirmCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Discard" Padding="10,3"
+                                                Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"
+                                                Command="{Binding DataContext.DiscardCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock>
+                                            <Run Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold" Foreground="#FFE8E8E8"/>
+                                            <Run Text=" → " Foreground="#88FFFFFF"/>
+                                            <Run Text="{Binding NpcName, Mode=OneWay}" Foreground="#FFD4A847"/>
+                                        </TextBlock>
+                                        <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                            <Run Text="+"/><Run Text="{Binding FavorDelta, Mode=OneWay, StringFormat={}{0:F1}}"/>
+                                            <Run Text=" favor · max stack "/><Run Text="{Binding MaxStackSize, Mode=OneWay}"/>
+                                            <Run Text=" · expires "/><Run Text="{Binding ExpiresIn, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
+
             <!-- Per-item rates -->
             <Expander IsExpanded="True" Margin="0,4,0,8" Foreground="#FFD4A847">
                 <Expander.Header>
@@ -167,6 +231,8 @@
                                         ElementStyle="{StaticResource RateTextCol}"/>
                     <DataGridTextColumn Header="Item" Binding="{Binding ItemName}" Width="160"
                                         ElementStyle="{StaticResource SubtleCol}"/>
+                    <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="50"
+                                        ElementStyle="{StaticResource RateMinMaxCol}"/>
                     <DataGridTextColumn Header="Signature" Binding="{Binding Signature}" Width="200"
                                         ElementStyle="{StaticResource RateMinMaxCol}"/>
                     <DataGridTextColumn Header="Value" Binding="{Binding ItemValue, StringFormat=N0}" Width="70"

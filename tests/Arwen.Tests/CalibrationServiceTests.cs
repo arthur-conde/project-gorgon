@@ -581,7 +581,7 @@ public sealed class CalibrationServiceTests
     }
 
     [Fact]
-    public void RecordObservation_StackableItem_UnknownSize_Skipped()
+    public void RecordObservation_StackableItem_UnknownSize_GoesToPending_NotPersisted()
     {
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
         try
@@ -596,7 +596,145 @@ public sealed class CalibrationServiceTests
             svc.OnDeltaFavor("NPC_Sanja", 13.2);
 
             svc.Data.Observations.Should().BeEmpty(
-                because: "stackable gift with no tracker data — skip rather than under-credit");
+                because: "stackable gift with no tracker data — park for user confirmation rather than persist with unknown quantity");
+
+            svc.PendingObservations.Should().ContainSingle();
+            var pending = svc.PendingObservations[0];
+            pending.NpcKey.Should().Be("NPC_Sanja");
+            pending.InternalName.Should().Be("Phlogiston1");
+            pending.FavorDelta.Should().Be(13.2);
+            pending.MaxStackSize.Should().Be(10);
+            pending.MatchedPreferences.Should().HaveCount(1);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void ConfirmPending_PromotesToObservationsWithSuppliedQuantity()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            inv.Add(9999, "Phlogiston1", stackSize: 0); // unknown → pending
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            var pending = svc.PendingObservations.Single();
+            var ok = svc.ConfirmPending(pending.Id, 5);
+            ok.Should().BeTrue();
+
+            svc.PendingObservations.Should().BeEmpty();
+            svc.Data.Observations.Should().HaveCount(1);
+            var obs = svc.Data.Observations[0];
+            obs.Quantity.Should().Be(5);
+            // DerivedRate = 13.2 / (5 [value] * 1.5 [pref] * 5 [quantity]) = 0.352
+            obs.DerivedRate.Should().BeApproximately(0.352, 0.001);
+
+            // Rate tables refreshed.
+            svc.Data.ItemRates.Should().ContainKey("NPC_Sanja|Phlogiston1");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void ConfirmPending_QuantityOutOfRange_IsRejected()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            inv.Add(9999, "Phlogiston1", stackSize: 0);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            var pending = svc.PendingObservations.Single();
+
+            svc.ConfirmPending(pending.Id, 0).Should().BeFalse();
+            svc.ConfirmPending(pending.Id, 11).Should().BeFalse(); // MaxStackSize == 10
+
+            svc.PendingObservations.Should().ContainSingle(
+                because: "rejected confirms must leave the pending entry untouched");
+            svc.Data.Observations.Should().BeEmpty();
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void ConfirmPending_UnknownId_ReturnsFalse()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, _) = BuildService(dir);
+            svc.ConfirmPending(Guid.NewGuid(), 5).Should().BeFalse();
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void DiscardPending_RemovesWithoutPersisting()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            inv.Add(9999, "Phlogiston1", stackSize: 0);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            var pending = svc.PendingObservations.Single();
+            svc.DiscardPending(pending.Id).Should().BeTrue();
+
+            svc.PendingObservations.Should().BeEmpty();
+            svc.Data.Observations.Should().BeEmpty();
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void PendingChanged_FiresOnEnqueueAndConfirm()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            var fires = 0;
+            svc.PendingChanged += (_, _) => fires++;
+
+            inv.Add(9999, "Phlogiston1", stackSize: 0);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(9999);
+            svc.OnDeltaFavor("NPC_Sanja", 13.2);
+
+            fires.Should().BeGreaterThanOrEqualTo(1, "enqueue must notify subscribers");
+            var firesAfterEnqueue = fires;
+
+            var pending = svc.PendingObservations.Single();
+            svc.ConfirmPending(pending.Id, 5);
+
+            fires.Should().BeGreaterThan(firesAfterEnqueue, "confirm must notify subscribers via the underlying CollectionChanged");
         }
         finally
         {

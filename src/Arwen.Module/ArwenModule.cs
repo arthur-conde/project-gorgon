@@ -67,14 +67,20 @@ public sealed class ArwenModule : IMithrilModule
             refData.FileUpdated += (_, _) => index.Build(refData.Items, refData.Npcs);
             return index;
         });
-        services.AddSingleton<CalibrationService>(sp => new CalibrationService(
-            sp.GetRequiredService<IReferenceDataService>(),
-            sp.GetRequiredService<GiftIndex>(),
-            sp.GetRequiredService<IInventoryService>(),
-            Path.Combine(localApp, "Mithril", "Arwen"),
-            sp.GetService<ICommunityCalibrationService>(),
-            sp.GetRequiredService<ArwenSettings>().Calibration,
-            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<CalibrationService>(sp =>
+        {
+            var settings = sp.GetRequiredService<ArwenSettings>();
+            return new CalibrationService(
+                sp.GetRequiredService<IReferenceDataService>(),
+                sp.GetRequiredService<GiftIndex>(),
+                sp.GetRequiredService<IInventoryService>(),
+                Path.Combine(localApp, "Mithril", "Arwen"),
+                sp.GetService<ICommunityCalibrationService>(),
+                settings.Calibration,
+                sp.GetService<IDiagnosticsSink>(),
+                pendingTtl: settings.PendingObservationTtl,
+                dispatch: UiDispatch);
+        });
 
         services.AddSingleton<FavorDashboardViewModel>();
         services.AddSingleton<FavorCalculatorViewModel>();
@@ -98,5 +104,18 @@ public sealed class ArwenModule : IMithrilModule
         });
 
         services.AddHostedService<FavorIngestionService>();
+    }
+
+    /// <summary>
+    /// Marshals <see cref="TtlObservableCollection{T}"/> mutations onto the WPF
+    /// dispatcher so binding consumers see <see cref="System.Collections.Specialized.INotifyCollectionChanged"/>
+    /// notifications on the UI thread. Falls back to direct invocation when no
+    /// dispatcher is available (test paths, headless boot).
+    /// </summary>
+    private static void UiDispatch(Action action)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) action();
+        else d.InvokeAsync(action);
     }
 }

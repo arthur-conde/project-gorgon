@@ -26,6 +26,23 @@ public sealed class ArwenSettings : INotifyPropertyChanged
         }
     }
 
+    private TimeSpan _pendingObservationTtl = TimeSpan.FromHours(24);
+    /// <summary>
+    /// How long a gift observation with unknown stack size waits in the
+    /// "Pending observations" list before it's dropped. Read once at
+    /// CalibrationService construction — changes take effect on next launch.
+    /// </summary>
+    public TimeSpan PendingObservationTtl
+    {
+        get => _pendingObservationTtl;
+        set
+        {
+            if (_pendingObservationTtl == value) return;
+            _pendingObservationTtl = value;
+            OnChanged();
+        }
+    }
+
     public ArwenSettings()
     {
         _calibration.PropertyChanged += OnCalibrationChanged;

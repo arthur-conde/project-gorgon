@@ -1,6 +1,8 @@
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
+using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Inventory;
 using Mithril.Shared.Reference;
@@ -31,6 +33,7 @@ public sealed class CalibrationService
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
+    private readonly TtlObservableCollection<PendingGiftObservation> _pending;
 
     // Resolved (local ⊕ community) lookup tables. EstimateFavor reads from these.
     // Rebuilt after RecomputeRates, on community FileUpdated, on settings Source change.
@@ -58,7 +61,21 @@ public sealed class CalibrationService
     public IReadOnlyDictionary<string, CategoryRate> EffectiveNpcRates => _resolvedNpcRates;
     public IReadOnlyDictionary<string, CategoryRate> EffectiveKeywordRates => _resolvedKeywordRates;
 
+    /// <summary>
+    /// Observations that couldn't be persisted because the gifted item is stackable
+    /// and the tracker didn't know the stack size. The user is expected to confirm
+    /// the quantity via <see cref="ConfirmPending"/>; otherwise entries age out per
+    /// the configured TTL. Pure in-memory — restarts drop the list.
+    /// </summary>
+    public IReadOnlyList<PendingGiftObservation> PendingObservations => _pending.View;
+
     public event EventHandler? DataChanged;
+
+    /// <summary>
+    /// Raised on enqueue, confirm, discard, and TTL eviction. Carries no payload —
+    /// consumers re-read <see cref="PendingObservations"/> on each tick.
+    /// </summary>
+    public event EventHandler? PendingChanged;
 
     public CalibrationService(
         IReferenceDataService refData,
@@ -67,7 +84,10 @@ public sealed class CalibrationService
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        TimeSpan? pendingTtl = null,
+        Action<Action>? dispatch = null,
+        TimeProvider? time = null)
     {
         _refData = refData;
         _giftIndex = giftIndex;
@@ -76,6 +96,12 @@ public sealed class CalibrationService
         _calibrationSettings = calibrationSettings;
         _diag = diag;
         _dataPath = Path.Combine(dataDir, "calibration.json");
+
+        var ttl = pendingTtl ?? TimeSpan.FromHours(24);
+        if (ttl <= TimeSpan.Zero) ttl = TimeSpan.FromHours(24);
+        _pending = new TtlObservableCollection<PendingGiftObservation>(ttl, dispatch ?? (a => a()), time: time);
+        _pending.CollectionChanged += OnPendingCollectionChanged;
+
         Load();
 
         if (_community is not null)
@@ -83,6 +109,9 @@ public sealed class CalibrationService
         if (_calibrationSettings is not null)
             _calibrationSettings.PropertyChanged += OnCalibrationSettingsChanged;
     }
+
+    private void OnPendingCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => PendingChanged?.Invoke(this, EventArgs.Empty);
 
     private void OnCommunityFileUpdated(object? sender, string key)
     {
@@ -158,10 +187,11 @@ public sealed class CalibrationService
 
         // Stack-aware quantity. Non-stackable items always gift exactly one unit (PG
         // emits one ProcessDeleteItem per InstanceId, and the InstanceId can't carry
-        // more). Stackable items consult the InventoryService's per-instance stack
-        // size; if it's unknown — typically a carryover stack from a prior PG game
-        // session — we can't trust the rate math, so we skip rather than under-credit.
+        // more). Stackable items with a known size land directly. The unknown-size
+        // case (carryover stack from a prior PG session) goes to the pending bucket
+        // for user confirmation rather than silently dropping the favor signal.
         int quantity;
+        bool isPending = false;
         if (item.MaxStackSize <= 1)
         {
             quantity = 1;
@@ -172,9 +202,8 @@ public sealed class CalibrationService
         }
         else
         {
-            _diag?.Trace("Arwen.Calibration",
-                $"Skipping observation: '{internalName}' has MaxStackSize={item.MaxStackSize} but stack size for instance {instanceId} is unknown to the tracker (carryover from prior session?)");
-            return;
+            quantity = 1;
+            isPending = true;
         }
 
         var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, npcKey);
@@ -191,6 +220,40 @@ public sealed class CalibrationService
             return;
         }
 
+        if (isPending)
+        {
+            var pending = new PendingGiftObservation
+            {
+                Id = Guid.NewGuid(),
+                NpcKey = npcKey,
+                InstanceId = instanceId,
+                InternalName = internalName,
+                DisplayName = string.IsNullOrEmpty(item.Name) ? internalName : item.Name,
+                IconId = item.IconId,
+                FavorDelta = delta,
+                ItemValue = (double)item.Value,
+                MaxStackSize = item.MaxStackSize,
+                MatchedPreferences = [.. matchedPrefs],
+                ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
+                Timestamp = DateTimeOffset.UtcNow,
+            };
+            _pending.Add(pending);
+            _diag?.Info("Arwen.Calibration",
+                $"Pending: '{internalName}' → {npcKey} (+{delta} favor) — quantity unknown, awaiting user confirmation.");
+            return;
+        }
+
+        PersistObservation(npcKey, internalName, item, matchedPrefs, delta, quantity);
+    }
+
+    private void PersistObservation(
+        string npcKey,
+        string internalName,
+        ItemEntry item,
+        IReadOnlyList<MatchedPreference> matchedPrefs,
+        double delta,
+        int quantity)
+    {
         var observation = new GiftObservation
         {
             NpcKey = npcKey,
@@ -211,6 +274,42 @@ public sealed class CalibrationService
             $"Gift observed: {internalName} → {npcKey}, +{delta} favor, rate={observation.DerivedRate:F4} (signature={observation.Signature})");
 
         DataChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Promote a pending observation into <see cref="CalibrationData.Observations"/>
+    /// using the user-supplied <paramref name="quantity"/>. Returns false if the
+    /// id is no longer pending (already confirmed, discarded, or TTL-evicted) or
+    /// if <paramref name="quantity"/> is outside <c>[1, MaxStackSize]</c>.
+    /// </summary>
+    public bool ConfirmPending(Guid id, int quantity)
+    {
+        var entry = _pending.View.FirstOrDefault(p => p.Id == id);
+        if (entry is null) return false;
+        if (quantity < 1 || quantity > entry.MaxStackSize) return false;
+
+        if (!_refData.ItemsByInternalName.TryGetValue(entry.InternalName, out var item))
+        {
+            // Reference data drifted out from under us; refuse rather than persist
+            // an observation we can't validate.
+            _diag?.Warn("Arwen.Calibration",
+                $"ConfirmPending: '{entry.InternalName}' no longer in reference data — discarding instead.");
+            _pending.Remove(p => p.Id == id);
+            return false;
+        }
+
+        _pending.Remove(p => p.Id == id);
+        PersistObservation(entry.NpcKey, entry.InternalName, item, entry.MatchedPreferences, entry.FavorDelta, quantity);
+        return true;
+    }
+
+    /// <summary>
+    /// Drop a pending observation without persisting it. Returns false if the id
+    /// isn't in the pending list.
+    /// </summary>
+    public bool DiscardPending(Guid id)
+    {
+        return _pending.Remove(p => p.Id == id) > 0;
     }
 
     // ── Rate computation ────────────────────────────────────────────

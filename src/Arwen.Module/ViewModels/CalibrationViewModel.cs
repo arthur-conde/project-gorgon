@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows.Threading;
 using Arwen.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -44,6 +45,7 @@ public sealed class ObservationRow
 {
     public required string NpcName { get; init; }
     public required string ItemName { get; init; }
+    public required int Quantity { get; init; }
     public required string Signature { get; init; }
     public required double ItemValue { get; init; }
     public required double EffectivePref { get; init; }
@@ -52,23 +54,89 @@ public sealed class ObservationRow
     public required DateTimeOffset Timestamp { get; init; }
 }
 
+/// <summary>
+/// Row for the "Pending observations" list. Forwards <see cref="Quantity"/>
+/// two-way to the underlying <see cref="PendingGiftObservation"/> so the
+/// user's edit lands on the canonical entry that <c>ConfirmPending</c> reads.
+/// <see cref="ExpiresIn"/> is recomputed by the VM on a 30s tick.
+/// </summary>
+public sealed partial class PendingObservationRow : ObservableObject
+{
+    public required PendingGiftObservation Source { get; init; }
+    public required string NpcName { get; init; }
+    public required TimeSpan Ttl { get; init; }
+
+    public Guid Id => Source.Id;
+    public string DisplayName => Source.DisplayName;
+    public int IconId => Source.IconId;
+    public double FavorDelta => Source.FavorDelta;
+    public int MaxStackSize => Source.MaxStackSize;
+    public DateTimeOffset Timestamp => Source.Timestamp;
+
+    public int Quantity
+    {
+        get => Source.Quantity;
+        set
+        {
+            if (Source.Quantity == value) return;
+            Source.Quantity = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsQuantityValid));
+        }
+    }
+
+    public bool IsQuantityValid => Quantity >= 1 && Quantity <= MaxStackSize;
+
+    [ObservableProperty]
+    private string _expiresIn = "";
+
+    public void RefreshExpiresIn(DateTimeOffset now)
+    {
+        var deadline = Timestamp + Ttl;
+        var remaining = deadline - now;
+        if (remaining <= TimeSpan.Zero) { ExpiresIn = "now"; return; }
+        if (remaining.TotalDays >= 1)
+            ExpiresIn = $"{(int)remaining.TotalDays}d {remaining.Hours}h";
+        else if (remaining.TotalHours >= 1)
+            ExpiresIn = $"{(int)remaining.TotalHours}h {remaining.Minutes}m";
+        else
+            ExpiresIn = $"{Math.Max(1, (int)remaining.TotalMinutes)}m";
+    }
+}
+
 public sealed partial class CalibrationViewModel : ObservableObject
 {
     private readonly CalibrationService _calibration;
     private readonly ICommunityCalibrationService? _community;
     private readonly IDialogService? _dialogService;
+    private readonly TimeSpan _pendingTtl;
+    private readonly DispatcherTimer? _expiryTimer;
 
     public CalibrationViewModel(
         CalibrationService calibration,
         ICommunityCalibrationService? community = null,
-        IDialogService? dialogService = null)
+        IDialogService? dialogService = null,
+        ArwenSettings? settings = null)
     {
         _calibration = calibration;
         _community = community;
         _dialogService = dialogService;
+        _pendingTtl = settings?.PendingObservationTtl ?? TimeSpan.FromHours(24);
         _calibration.DataChanged += (_, _) => Refresh();
+        _calibration.PendingChanged += (_, _) => RefreshPending();
         if (_community is not null) _community.FileUpdated += (_, _) => Refresh();
         Refresh();
+        RefreshPending();
+
+        // Refresh ExpiresIn strings every 30s. WPF DispatcherTimer requires a
+        // Dispatcher; in headless tests Application.Current is null, so skip.
+        if (System.Windows.Application.Current?.Dispatcher is { } d)
+        {
+            _expiryTimer = new DispatcherTimer(
+                TimeSpan.FromSeconds(30), DispatcherPriority.Background,
+                (_, _) => RefreshExpiryStrings(), d);
+            _expiryTimer.Start();
+        }
     }
 
     [ObservableProperty]
@@ -83,11 +151,30 @@ public sealed partial class CalibrationViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<ObservationRow> _observations = [];
 
+    public ObservableCollection<PendingObservationRow> PendingRows { get; } = [];
+
+    [ObservableProperty]
+    private int _pendingCount;
+
     [ObservableProperty]
     private string _statusMessage = "";
 
     [ObservableProperty]
     private string _communitySummary = "";
+
+    [RelayCommand]
+    private void Confirm(PendingObservationRow? row)
+    {
+        if (row is null) return;
+        _calibration.ConfirmPending(row.Id, row.Quantity);
+    }
+
+    [RelayCommand]
+    private void Discard(PendingObservationRow? row)
+    {
+        if (row is null) return;
+        _calibration.DiscardPending(row.Id);
+    }
 
     [RelayCommand]
     private void Share()
@@ -169,6 +256,7 @@ public sealed partial class CalibrationViewModel : ObservableObject
             {
                 NpcName = FormatNpcName(o.NpcKey),
                 ItemName = o.ItemInternalName,
+                Quantity = o.Quantity,
                 Signature = string.IsNullOrEmpty(o.Signature) ? "(none)" : o.Signature,
                 ItemValue = o.ItemValue,
                 EffectivePref = o.EffectivePref,
@@ -184,6 +272,46 @@ public sealed partial class CalibrationViewModel : ObservableObject
             $"{data.NpcRates.Count} NPC baseline(s)";
 
         UpdateCommunitySummary();
+    }
+
+    private void RefreshPending()
+    {
+        var snapshot = _calibration.PendingObservations;
+        var liveIds = new HashSet<Guid>();
+        foreach (var p in snapshot) liveIds.Add(p.Id);
+
+        // Drop rows whose entry is no longer pending (confirmed, discarded, evicted).
+        for (var i = PendingRows.Count - 1; i >= 0; i--)
+        {
+            if (!liveIds.Contains(PendingRows[i].Id))
+                PendingRows.RemoveAt(i);
+        }
+
+        // Append rows for pending entries we don't already have. Existing rows are
+        // left alone so an in-progress Quantity edit isn't clobbered by an
+        // unrelated PendingChanged tick (e.g. another gift entered the queue).
+        var existingIds = PendingRows.Select(r => r.Id).ToHashSet();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var p in snapshot)
+        {
+            if (existingIds.Contains(p.Id)) continue;
+            var row = new PendingObservationRow
+            {
+                Source = p,
+                NpcName = FormatNpcName(p.NpcKey),
+                Ttl = _pendingTtl,
+            };
+            row.RefreshExpiresIn(now);
+            PendingRows.Add(row);
+        }
+
+        PendingCount = PendingRows.Count;
+    }
+
+    private void RefreshExpiryStrings()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var row in PendingRows) row.RefreshExpiresIn(now);
     }
 
     private void UpdateCommunitySummary()
