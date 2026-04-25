@@ -96,25 +96,24 @@ jobs:
       - name: Run non-IO tests (parallel)
         run: dotnet test Mithril.slnx -c Release --no-build --no-restore --filter "Category!=FileIO"
 
-      # FileIO tests are advisory on CI. ETW trace from v0.0.1-test10 (see GH issue #2)
-      # pinned the cause to xUnit's in-assembly parallelism racing fixture Dispose
-      # against sibling tests — STATUS_FILE_DELETED / OBJECT_PATH_NOT_FOUND on the
-      # shared tests/.tmp/ tree. The fix (per-collection [Collection("FileIO")] +
-      # DisableParallelization=true) is queued; until it lands, non-IO tests (~430)
-      # are the gating signal and the IO subset runs for visibility only.
-      - name: Run IO tests (sequential per assembly, advisory)
+      # FileIO tests run one assembly at a time (cross-assembly serialization).
+      # Inside each assembly, [Collection("FileIO")] + DisableParallelization=true
+      # serializes FileIO classes against each other, eliminating the fixture-Dispose
+      # race that caused STATUS_FILE_DELETED / OBJECT_PATH_NOT_FOUND on tests/.tmp/
+      # (see GH issue #2 and ETW trace from v0.0.1-test10).
+      - name: Run IO tests (sequential per assembly)
         shell: pwsh
-        continue-on-error: true
         run: |
           $failed = @()
           Get-ChildItem -Path tests -Filter "*.csproj" -Recurse | ForEach-Object {
-            Write-Host "::group::$($_.BaseName) (FileIO category — advisory)"
+            Write-Host "::group::$($_.BaseName) (FileIO category)"
             dotnet test $_.FullName -c Release --no-build --no-restore --filter "Category=FileIO"
             if ($LASTEXITCODE -ne 0) { $failed += $_.BaseName }
             Write-Host "::endgroup::"
           }
           if ($failed.Count -gt 0) {
-            Write-Warning "Advisory: FileIO tests failed in: $($failed -join ', ')"
+            Write-Error "FileIO tests failed in: $($failed -join ', ')"
+            exit 1
           }
 
       # ─────────────────────────────────────────────────────────────────

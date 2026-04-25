@@ -10,6 +10,7 @@ using Xunit;
 namespace Gandalf.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public class TimerServicesTests : IDisposable
 {
     private readonly string _dir;

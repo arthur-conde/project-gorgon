@@ -8,6 +8,7 @@ using Xunit;
 namespace Mithril.Shared.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public class ReferenceDataServiceTests : IDisposable
 {
     private readonly string _root;

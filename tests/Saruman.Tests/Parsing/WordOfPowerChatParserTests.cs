@@ -10,6 +10,7 @@ using Xunit;
 namespace Saruman.Tests.Parsing;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class WordOfPowerChatParserTests
 {
     private static WordOfPowerChatParser NewParser(params string[] trackedCodes)

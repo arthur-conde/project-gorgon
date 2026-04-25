@@ -6,6 +6,7 @@ using Xunit;
 namespace Mithril.Shared.Tests.Character;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class CharacterPresenceServiceTests : IDisposable
 {
     private readonly string _root;

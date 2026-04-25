@@ -9,6 +9,7 @@ using Xunit;
 namespace Mithril.Shared.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class CommunityCalibrationServiceTests : IDisposable
 {
     private readonly string _cacheDir;

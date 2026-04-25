@@ -7,6 +7,7 @@ using Xunit;
 namespace Mithril.Shared.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class ActiveCharacterServiceTests : IDisposable
 {
     private readonly string _dir;

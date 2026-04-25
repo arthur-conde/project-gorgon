@@ -9,6 +9,7 @@ using Xunit;
 namespace Saruman.Tests.Services;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class SarumanCodebookServiceTests : IDisposable
 {
     private readonly string _root;

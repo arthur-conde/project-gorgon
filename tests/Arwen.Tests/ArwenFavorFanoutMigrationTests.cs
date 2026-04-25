@@ -11,6 +11,7 @@ using Xunit;
 namespace Arwen.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class ArwenFavorFanoutMigrationTests : IDisposable
 {
     private readonly string _root;

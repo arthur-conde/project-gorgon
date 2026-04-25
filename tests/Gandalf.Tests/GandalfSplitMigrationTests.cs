@@ -10,6 +10,7 @@ using Xunit;
 namespace Gandalf.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public class GandalfSplitMigrationTests : IDisposable
 {
     private readonly string _dir;

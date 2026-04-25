@@ -8,6 +8,7 @@ using Xunit;
 namespace Arwen.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class CalibrationServiceTests
 {
     private static IReferenceDataService BuildRefData()

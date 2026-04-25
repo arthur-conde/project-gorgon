@@ -9,6 +9,7 @@ using Xunit;
 namespace Pippin.Tests;
 
 [Trait("Category", "FileIO")]
+[Collection("FileIO")]
 public sealed class GourmandStateServiceMigrationTests : IDisposable
 {
     private readonly string _root;
