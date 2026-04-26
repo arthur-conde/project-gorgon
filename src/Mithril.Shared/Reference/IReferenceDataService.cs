@@ -15,6 +15,13 @@ public interface IReferenceDataService
     /// <summary>InternalName → ItemEntry lookup. Useful when the log gives an InternalName but no item id.</summary>
     IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
 
+    /// <summary>
+    /// Catalog-side keyword → items index. Powers keyword-matched recipe ingredients
+    /// (e.g. the auxiliary-crystal slot on every <c>*E</c> enchanted recipe). Rebuilt
+    /// whenever <c>items.json</c> reloads.
+    /// </summary>
+    ItemKeywordIndex KeywordIndex { get; }
+
     /// <summary>recipe key (e.g. "recipe_1234") → RecipeEntry.</summary>
     IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
 

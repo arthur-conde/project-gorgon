@@ -22,6 +22,7 @@ internal sealed class FakeReferenceData : IReferenceDataService
     {
         _items = items.ToDictionary(i => i.Id);
         _itemsByName = _items.Values.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
+        _keywordIndex = new ItemKeywordIndex(_items);
         _recipes = recipes.ToDictionary(r => r.Key, StringComparer.Ordinal);
         _recipesByName = _recipes.Values.ToDictionary(r => r.InternalName, StringComparer.Ordinal);
         _powers = (powers ?? []).ToDictionary(p => p.InternalName, StringComparer.Ordinal);
@@ -34,6 +35,8 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public IReadOnlyList<string> Keys => [];
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByName;
+    public ItemKeywordIndex KeywordIndex => _keywordIndex;
+    private readonly ItemKeywordIndex _keywordIndex;
     public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
     public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;
     public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
@@ -93,11 +96,17 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public static KeyValuePair<string, IReadOnlyList<string>> Profile(string name, params string[] powers)
         => new(name, powers);
 
+    public static RecipeKeywordIngredient Keyword(int stack, params string[] keys)
+        => new(keys, Desc: null, StackSize: stack, ChanceToConsume: null);
+
+    public static RecipeKeywordIngredient KeywordWithDesc(int stack, string desc, params string[] keys)
+        => new(keys, Desc: desc, StackSize: stack, ChanceToConsume: null);
+
     public static RecipeEntry Recipe(
         string name,
         string skill,
         int skillLevelReq,
-        IReadOnlyList<RecipeItemRef> ingredients,
+        IReadOnlyList<RecipeIngredient> ingredients,
         IReadOnlyList<RecipeItemRef> results,
         IReadOnlyList<string>? resultEffects = null)
         => new(

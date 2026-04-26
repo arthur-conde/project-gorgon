@@ -314,7 +314,22 @@
                                             <ColumnDefinition Width="80"/>
                                             <ColumnDefinition Width="90"/>
                                         </Grid.ColumnDefinitions>
-                                        <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding DisplayName}" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding DisplayName}" VerticalAlignment="Center"/>
+                                            <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                       FontStyle="Italic" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                       Text="{Binding KeywordsLabel, StringFormat=({0})}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding KeywordsLabel}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
                                         <TextBlock Grid.Column="1" Text="{Binding TotalNeeded}" Foreground="#FFE8E8E8" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="0,0,6,0"/>
                                         <TextBlock Grid.Column="2" Text="{Binding OnHandDetected}" Foreground="{Binding OnHandDetected, Converter={StaticResource ZeroToGhost}}" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="0,0,6,0"/>
 

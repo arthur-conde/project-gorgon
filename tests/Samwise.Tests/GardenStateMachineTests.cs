@@ -439,6 +439,7 @@ public class GardenStateMachineTests
         public IReadOnlyList<string> Keys { get; } = ["items"];
         public IReadOnlyDictionary<long, ItemEntry> Items => _items;
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public ItemKeywordIndex KeywordIndex => new(_items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();

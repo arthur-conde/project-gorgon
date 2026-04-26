@@ -16,7 +16,8 @@ public sealed record AggregatedIngredient(
     int? OnHandOverride,
     IReadOnlyList<IngredientLocation> Locations,
     bool IsAlsoRecipe,
-    int Depth = 0)
+    int Depth = 0,
+    string? KeywordsLabel = null)
 {
     public int EffectiveOnHand => OnHandOverride ?? OnHandDetected;
     public int Remaining => Math.Max(0, TotalNeeded - EffectiveOnHand);

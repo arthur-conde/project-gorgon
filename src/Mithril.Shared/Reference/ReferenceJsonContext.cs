@@ -85,6 +85,13 @@ public sealed class RawRecipeItem
     public long? ItemCode { get; set; }
     public int? StackSize { get; set; }
     public float? ChanceToConsume { get; set; }
+    /// <summary>Display label on keyword-matched ingredient slots, e.g. <c>"Auxiliary Crystal"</c>.</summary>
+    public string? Desc { get; set; }
+    /// <summary>
+    /// Keyword set (AND-matched) for ingredient slots that accept any item whose
+    /// <see cref="RawItem.Keywords"/> includes every listed tag. Always null on result entries.
+    /// </summary>
+    public List<string>? ItemKeys { get; set; }
 }
 
 /// <summary>Raw skills.json shape — the fields we project into <see cref="SkillEntry"/>.</summary>

@@ -19,6 +19,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<long, ItemEntry> _items = new Dictionary<long, ItemEntry>();
     private IReadOnlyDictionary<string, ItemEntry> _itemsByInternalName =
         new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
+    private ItemKeywordIndex _keywordIndex = ItemKeywordIndex.Empty;
     private ReferenceFileSnapshot _itemsSnapshot;
 
     // Recipes
@@ -91,6 +92,7 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
+    public ItemKeywordIndex KeywordIndex => _keywordIndex;
     public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
     public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByInternalName;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
@@ -274,6 +276,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _items = byId;
         _itemsByInternalName = byName;
+        _keywordIndex = new ItemKeywordIndex(byId);
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
     }
 
@@ -345,10 +348,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         foreach (var (key, v) in raw)
         {
             var ingredients = v.Ingredients?
-                .Where(i => i.ItemCode.HasValue)
-                .Select(i => new RecipeItemRef(i.ItemCode!.Value, i.StackSize ?? 1, i.ChanceToConsume))
+                .Select(ProjectIngredient)
+                .Where(x => x is not null)
+                .Select(x => x!)
                 .ToList()
-                ?? (IReadOnlyList<RecipeItemRef>)[];
+                ?? (IReadOnlyList<RecipeIngredient>)[];
 
             var results = v.ResultItems?
                 .Where(i => i.ItemCode.HasValue)
@@ -388,6 +392,15 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipes = byKey;
         _recipesByInternalName = byName;
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private static RecipeIngredient? ProjectIngredient(RawRecipeItem i)
+    {
+        if (i.ItemCode.HasValue)
+            return new RecipeItemIngredient(i.ItemCode.Value, i.StackSize ?? 1, i.ChanceToConsume);
+        if (i.ItemKeys is { Count: > 0 } keys)
+            return new RecipeKeywordIngredient(keys, i.Desc, i.StackSize ?? 1, i.ChanceToConsume);
+        return null;
     }
 
     private void ParseAndSwapSkills(Dictionary<string, RawSkill> raw, ReferenceFileMetadata meta)

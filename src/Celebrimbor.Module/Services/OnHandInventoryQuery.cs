@@ -28,6 +28,9 @@ public sealed class OnHandInventoryQuery
 
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         var locations = new Dictionary<string, List<IngredientLocation>>(StringComparer.Ordinal);
+        // Per-keyword set of owned InternalNames so the aggregator can resolve
+        // keyword-matched ingredient slots in O(1) for the common single-key case.
+        var ownedByKeyword = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
         foreach (var item in report.Items)
         {
@@ -48,6 +51,13 @@ public sealed class OnHandInventoryQuery
                 list[existingLoc] = list[existingLoc] with { Quantity = list[existingLoc].Quantity + item.StackSize };
             else
                 list.Add(new IngredientLocation(label, item.StackSize));
+
+            foreach (var kw in itemEntry.Keywords)
+            {
+                if (!ownedByKeyword.TryGetValue(kw.Tag, out var set))
+                    ownedByKeyword[kw.Tag] = set = new HashSet<string>(StringComparer.Ordinal);
+                set.Add(key);
+            }
         }
 
         var frozenLocations = locations.ToDictionary(
@@ -55,15 +65,22 @@ public sealed class OnHandInventoryQuery
             kv => (IReadOnlyList<IngredientLocation>)kv.Value.OrderByDescending(l => l.Quantity).ToList(),
             StringComparer.Ordinal);
 
-        return new OnHandInventory(counts, frozenLocations);
+        var frozenOwnedByKeyword = ownedByKeyword.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<string>)[.. kv.Value],
+            StringComparer.Ordinal);
+
+        return new OnHandInventory(counts, frozenLocations, frozenOwnedByKeyword);
     }
 }
 
 public sealed record OnHandInventory(
     IReadOnlyDictionary<string, int> Counts,
-    IReadOnlyDictionary<string, IReadOnlyList<IngredientLocation>> Locations)
+    IReadOnlyDictionary<string, IReadOnlyList<IngredientLocation>> Locations,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> OwnedInternalNamesByKeyword)
 {
     public static readonly OnHandInventory Empty = new(
         new Dictionary<string, int>(StringComparer.Ordinal),
-        new Dictionary<string, IReadOnlyList<IngredientLocation>>(StringComparer.Ordinal));
+        new Dictionary<string, IReadOnlyList<IngredientLocation>>(StringComparer.Ordinal),
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
 }

@@ -34,15 +34,33 @@ public static class CraftableRecipeCalculator
 
             foreach (var ingredient in recipe.Ingredients)
             {
-                var itemName = refData.Items.TryGetValue(ingredient.ItemCode, out var entry)
-                    ? entry.Name
-                    : $"#{ingredient.ItemCode}";
+                string itemName;
+                long available;
+                switch (ingredient)
+                {
+                    case RecipeItemIngredient byItem:
+                        itemName = refData.Items.TryGetValue(byItem.ItemCode, out var entry)
+                            ? entry.Name
+                            : $"#{byItem.ItemCode}";
+                        have.TryGetValue(byItem.ItemCode, out available);
+                        break;
+                    case RecipeKeywordIngredient kw:
+                        itemName = kw.Desc ?? ItemKeywordIndex.Humanise(kw.ItemKeys);
+                        // Sum across every owned item whose Keywords match the AND-set.
+                        available = 0;
+                        foreach (var match in refData.KeywordIndex.ItemsMatching(kw.ItemKeys))
+                            if (have.TryGetValue(match.Id, out var matchHave))
+                                available += matchHave;
+                        break;
+                    default:
+                        continue;
+                }
+
                 var part = $"{itemName} x{ingredient.StackSize}";
                 if (ingredient.ChanceToConsume is { } chance && chance < 1f)
                     part += $" (p={Math.Round(chance * 100).ToString("0", CultureInfo.InvariantCulture)}%)";
                 ingredientParts.Add(part);
 
-                have.TryGetValue(ingredient.ItemCode, out var available);
                 var perIngredient = ConsumeQuantile.MaxCrafts(available, ingredient.StackSize, ingredient.ChanceToConsume, confidence);
                 if (perIngredient < maxCraftable)
                     maxCraftable = perIngredient;

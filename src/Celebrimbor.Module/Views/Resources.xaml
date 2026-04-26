@@ -49,6 +49,18 @@
                                     <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
                                 </TextBlock>
                                 <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                <TextBlock Text="{Binding KeywordsLabel, Mode=OneWay, StringFormat=' ({0})'}"
+                                           Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding KeywordsLabel}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <TextBlock Text="{Binding ChanceToConsume, Mode=OneWay, StringFormat=' ({0:P0} chance to consume)'}"
                                            Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic">
                                     <TextBlock.Style>

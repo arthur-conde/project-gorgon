@@ -9,4 +9,5 @@ public sealed record IngredientChip(
     int IconId,
     int StackSize,
     float? ChanceToConsume,
-    string? InternalName = null);
+    string? InternalName = null,
+    string? KeywordsLabel = null);

@@ -14,9 +14,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
         _itemDetail = itemDetail;
         Recipe = recipe;
         Ingredients = recipe.Ingredients
-            .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
-                ? new IngredientChip(item.Name, item.IconId, r.StackSize, r.ChanceToConsume, item.InternalName)
-                : null)
+            .Select(r => ProjectIngredientChip(r, refData))
             .Where(c => c is not null).Select(c => c!)
             .ToList();
         CraftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, refData);
@@ -30,6 +28,21 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             CraftedOutputs.Count + Augments.Count + WaxItems.Count + WaxAugments.Count + AugmentPools.Count + TaughtRecipes.Count + EffectTags.Count);
         InspectableItems = BuildInspectable(CraftedOutputs, Results);
     }
+
+    internal static IngredientChip? ProjectIngredientChip(RecipeIngredient ingredient, IReferenceDataService refData) => ingredient switch
+    {
+        RecipeItemIngredient byItem => refData.Items.TryGetValue(byItem.ItemCode, out var item)
+            ? new IngredientChip(item.Name, item.IconId, byItem.StackSize, byItem.ChanceToConsume, item.InternalName)
+            : null,
+        RecipeKeywordIngredient kw => new IngredientChip(
+            Name: kw.Desc ?? ItemKeywordIndex.Humanise(kw.ItemKeys),
+            IconId: 0,
+            StackSize: kw.StackSize,
+            ChanceToConsume: kw.ChanceToConsume,
+            InternalName: null,
+            KeywordsLabel: $"any {ItemKeywordIndex.Humanise(kw.ItemKeys)}"),
+        _ => null,
+    };
 
     private static IReadOnlyList<IngredientChip> BuildInspectable(
         IReadOnlyList<CraftedGearPreview> craftedOutputs, IReadOnlyList<IngredientChip> results)

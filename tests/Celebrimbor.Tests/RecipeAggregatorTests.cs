@@ -11,6 +11,9 @@ public class RecipeAggregatorTests
     private static RecipeItemRef Ref(long id, int stack, float? chance = null)
         => new(id, stack, chance);
 
+    private static RecipeItemIngredient Ing(long id, int stack, float? chance = null)
+        => new(id, stack, chance);
+
     private static FakeReferenceData MakeStandardData()
     {
         var items = new[]
@@ -23,10 +26,10 @@ public class RecipeAggregatorTests
         var recipes = new[]
         {
             FakeReferenceData.Recipe("Butter", "Cheesemaking", 0,
-                ingredients: [Ref(10, 2), Ref(12, 1)],
+                ingredients: [Ing(10, 2), Ing(12, 1)],
                 results: [Ref(11, 1)]),
             FakeReferenceData.Recipe("Bread", "Cooking", 5,
-                ingredients: [Ref(11, 1), Ref(12, 1)],
+                ingredients: [Ing(11, 1), Ing(12, 1)],
                 results: [Ref(13, 1)]),
         };
         return new FakeReferenceData(items, recipes);
@@ -98,7 +101,7 @@ public class RecipeAggregatorTests
         var recipes = new[]
         {
             FakeReferenceData.Recipe("Butter", "Cheesemaking", 0,
-                ingredients: [Ref(10, 2, chance: 0.5f)],
+                ingredients: [Ing(10, 2, chance: 0.5f)],
                 results: [Ref(11, 1)]),
         };
         var data = new FakeReferenceData(items, recipes);
@@ -203,10 +206,10 @@ public class RecipeAggregatorTests
         var recipes = new[]
         {
             FakeReferenceData.Recipe("A", "Test", 0,
-                ingredients: [Ref(21, 1), Ref(22, 1)],
+                ingredients: [Ing(21, 1), Ing(22, 1)],
                 results: [Ref(20, 1)]),
             FakeReferenceData.Recipe("B", "Test", 0,
-                ingredients: [Ref(20, 1), Ref(22, 1)],
+                ingredients: [Ing(20, 1), Ing(22, 1)],
                 results: [Ref(21, 1)]),
         };
         var data = new FakeReferenceData(items, recipes);
@@ -232,7 +235,7 @@ public class RecipeAggregatorTests
         var recipes = new[]
         {
             FakeReferenceData.Recipe("Butter", "Test", 0,
-                ingredients: [Ref(10, 2), Ref(99, 1)],
+                ingredients: [Ing(10, 2), Ing(99, 1)],
                 results: [Ref(11, 1)]),
         };
         var data = new FakeReferenceData(items, recipes);
@@ -252,7 +255,7 @@ public class RecipeAggregatorTests
         var recipes = new[]
         {
             FakeReferenceData.Recipe("UseIt", "Test", 0,
-                ingredients: [Ref(10, 1)],
+                ingredients: [Ing(10, 1)],
                 results: [Ref(10, 1)]),
         };
         var data = new FakeReferenceData(items, recipes);
@@ -359,5 +362,198 @@ public class RecipeAggregatorTests
         salt.OnHandOverride.Should().Be(100);
         salt.Remaining.Should().Be(0);
         salt.IsCraftReady.Should().BeTrue();
+    }
+
+    // ── Keyword-matched ingredient slots (e.g. auxiliary-crystal on enchanted recipes) ─────────
+
+    private static FakeReferenceData MakeCrystalEnchantData()
+    {
+        var items = new[]
+        {
+            FakeReferenceData.Item(100, "Boots", "Equipment"),
+            FakeReferenceData.Item(101, "Leather", "Material"),
+            FakeReferenceData.Item(200, "RoughCrystal", "Crystal", "Material"),
+            FakeReferenceData.Item(201, "PolishedCrystal", "Crystal", "Material"),
+            FakeReferenceData.Item(300, "EnchantedBoots", "Equipment"),
+        };
+        var recipes = new[]
+        {
+            FakeReferenceData.Recipe("EnchantBoots", "Leatherworking", 0,
+                ingredients: [
+                    Ing(100, 1),
+                    Ing(101, 2),
+                    FakeReferenceData.KeywordWithDesc(1, "Auxiliary Crystal", "Crystal"),
+                ],
+                results: [Ref(300, 1)]),
+        };
+        return new FakeReferenceData(items, recipes);
+    }
+
+    [Fact]
+    public void Keyword_ingredient_emits_synthetic_row_with_label()
+    {
+        var data = MakeCrystalEnchantData();
+        var sut = new RecipeAggregator();
+
+        var entries = new[] { new CraftListEntry { RecipeInternalName = "EnchantBoots", Quantity = 1 } };
+        var result = sut.Aggregate(entries, expansionDepth: 1, data);
+
+        var crystalRow = result.Should().ContainSingle(r => r.KeywordsLabel != null).Subject;
+        crystalRow.KeywordsLabel.Should().Be("any Crystal");
+        crystalRow.DisplayName.Should().Be("Auxiliary Crystal");
+        crystalRow.PrimaryTag.Should().Be("Crystal");
+        crystalRow.TotalNeeded.Should().Be(1);
+        crystalRow.Depth.Should().Be(0); // keyword rows are leaves
+        crystalRow.IsAlsoRecipe.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Two_recipes_citing_same_keyword_set_aggregate_to_one_row()
+    {
+        var items = new[]
+        {
+            FakeReferenceData.Item(100, "GearA", "Equipment"),
+            FakeReferenceData.Item(101, "GearB", "Equipment"),
+            FakeReferenceData.Item(200, "Crystal1", "Crystal"),
+        };
+        var recipes = new[]
+        {
+            FakeReferenceData.Recipe("MakeA", "Smithing", 0,
+                ingredients: [FakeReferenceData.Keyword(1, "Crystal")],
+                results: [Ref(100, 1)]),
+            FakeReferenceData.Recipe("MakeB", "Smithing", 0,
+                ingredients: [FakeReferenceData.Keyword(2, "Crystal")],
+                results: [Ref(101, 1)]),
+        };
+        var data = new FakeReferenceData(items, recipes);
+        var sut = new RecipeAggregator();
+
+        var entries = new[]
+        {
+            new CraftListEntry { RecipeInternalName = "MakeA", Quantity = 1 },
+            new CraftListEntry { RecipeInternalName = "MakeB", Quantity = 1 },
+        };
+        var result = sut.Aggregate(entries, expansionDepth: 1, data);
+
+        result.Should().ContainSingle(r => r.KeywordsLabel == "any Crystal")
+            .Which.TotalNeeded.Should().Be(3);
+    }
+
+    [Fact]
+    public void Keyword_row_on_hand_sums_matching_items()
+    {
+        var data = MakeCrystalEnchantData();
+        var sut = new RecipeAggregator();
+
+        // Two distinct items both keyworded Crystal — both should count toward the slot's on-hand.
+        var onHand = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["RoughCrystal"] = 4,
+            ["PolishedCrystal"] = 3,
+        };
+        var ownedByKeyword = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["Crystal"] = ["RoughCrystal", "PolishedCrystal"],
+            ["Material"] = ["RoughCrystal", "PolishedCrystal"],
+        };
+
+        var entries = new[] { new CraftListEntry { RecipeInternalName = "EnchantBoots", Quantity = 1 } };
+        var result = sut.Aggregate(entries, expansionDepth: 1, data,
+            onHandByInternalName: onHand,
+            ownedInternalNamesByKeyword: ownedByKeyword);
+
+        var crystalRow = result.Single(r => r.KeywordsLabel == "any Crystal");
+        crystalRow.OnHandDetected.Should().Be(7);
+        crystalRow.IsCraftReady.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Keyword_row_on_hand_requires_AND_match()
+    {
+        // Two-key set: only items having BOTH tags should count. Hammer has Crystal but not
+        // EquipmentSlot:MainHand; CrystalSword has both — only the latter contributes on-hand.
+        var items = new[]
+        {
+            FakeReferenceData.Item(100, "Hammer", "Crystal"),
+            FakeReferenceData.Item(101, "CrystalSword", "Crystal", "EquipmentSlot:MainHand"),
+            FakeReferenceData.Item(200, "Output", "Equipment"),
+        };
+        var recipes = new[]
+        {
+            FakeReferenceData.Recipe("MakeOutput", "Smithing", 0,
+                ingredients: [FakeReferenceData.Keyword(1, "Crystal", "EquipmentSlot:MainHand")],
+                results: [Ref(200, 1)]),
+        };
+        var data = new FakeReferenceData(items, recipes);
+        var sut = new RecipeAggregator();
+
+        var onHand = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Hammer"] = 5,         // has only "Crystal" — should NOT count
+            ["CrystalSword"] = 2,   // has both — counts
+        };
+        var ownedByKeyword = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["Crystal"] = ["Hammer", "CrystalSword"],
+            ["EquipmentSlot:MainHand"] = ["CrystalSword"],
+        };
+
+        var entries = new[] { new CraftListEntry { RecipeInternalName = "MakeOutput", Quantity = 1 } };
+        var result = sut.Aggregate(entries, expansionDepth: 1, data,
+            onHandByInternalName: onHand,
+            ownedInternalNamesByKeyword: ownedByKeyword);
+
+        var keywordRow = result.Single(r => r.KeywordsLabel != null);
+        keywordRow.OnHandDetected.Should().Be(2); // only CrystalSword
+    }
+
+    [Fact]
+    public void Override_on_keyword_row_reduces_remaining_like_item_row()
+    {
+        var data = MakeCrystalEnchantData();
+        var sut = new RecipeAggregator();
+
+        // Find the synthetic key the aggregator uses so we can override it.
+        var probe = sut.Aggregate(
+            [new CraftListEntry { RecipeInternalName = "EnchantBoots", Quantity = 1 }],
+            expansionDepth: 1, data);
+        var keywordKey = probe.Single(r => r.KeywordsLabel != null).ItemInternalName;
+
+        var overrides = new Dictionary<string, int>(StringComparer.Ordinal) { [keywordKey] = 5 };
+        var result = sut.Aggregate(
+            [new CraftListEntry { RecipeInternalName = "EnchantBoots", Quantity = 1 }],
+            expansionDepth: 1, data,
+            overridesByInternalName: overrides);
+
+        var crystalRow = result.Single(r => r.KeywordsLabel != null);
+        crystalRow.OnHandOverride.Should().Be(5);
+        crystalRow.Remaining.Should().Be(0);
+        crystalRow.IsCraftReady.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Keyword_row_PrimaryTag_is_first_keyword()
+    {
+        var items = new[]
+        {
+            FakeReferenceData.Item(100, "Output", "Equipment"),
+            FakeReferenceData.Item(200, "Eyeball", "Eye"),
+        };
+        var recipes = new[]
+        {
+            FakeReferenceData.Recipe("MakeOutput", "Necromancy", 0,
+                ingredients: [FakeReferenceData.Keyword(1, "Eye", "Fresh")],
+                results: [Ref(100, 1)]),
+        };
+        var data = new FakeReferenceData(items, recipes);
+        var sut = new RecipeAggregator();
+
+        var result = sut.Aggregate(
+            [new CraftListEntry { RecipeInternalName = "MakeOutput", Quantity = 1 }],
+            expansionDepth: 1, data);
+
+        var row = result.Single(r => r.KeywordsLabel != null);
+        row.PrimaryTag.Should().Be("Eye");
+        row.KeywordsLabel.Should().Be("any Eye + Fresh");
     }
 }

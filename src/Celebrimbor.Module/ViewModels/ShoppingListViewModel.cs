@@ -92,7 +92,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             _refData,
             onHand.Counts,
             onHand.Locations,
-            overrides);
+            overrides,
+            onHand.OwnedInternalNamesByKeyword);
 
         var rows = new ObservableCollection<IngredientRowViewModel>();
         foreach (var ingredient in aggregated)
@@ -140,9 +141,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
         {
             if (!_refData.RecipesByInternalName.TryGetValue(entry.RecipeInternalName, out var recipe)) continue;
             var ingredients = recipe.Ingredients
-                .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
-                    ? new IngredientChip(item.Name, item.IconId, r.StackSize, r.ChanceToConsume, item.InternalName)
-                    : null)
+                .Select(r => RecipeRowViewModel.ProjectIngredientChip(r, _refData))
                 .Where(c => c is not null).Select(c => c!)
                 .ToList();
             var results = recipe.ResultItems

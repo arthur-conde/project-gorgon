@@ -28,6 +28,7 @@ public sealed partial class IngredientRowViewModel : ObservableObject
     public int EffectiveOnHand => Override ?? OnHandDetected;
     public IReadOnlyList<IngredientLocation> Locations => Model.Locations;
     public bool IsAlsoRecipe => Model.IsAlsoRecipe;
+    public string? KeywordsLabel => Model.KeywordsLabel;
 
     /// <summary>Null means "use detected on-hand"; non-null overrides it.</summary>
     public int? Override
