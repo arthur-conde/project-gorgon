@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Mithril.Shared.Reference;
@@ -201,6 +202,89 @@ public sealed class RawItemSource
     public long? QuestId { get; set; }
 }
 
+/// <summary>Raw quests.json shape — fields we project into <see cref="QuestEntry"/>.</summary>
+public sealed class RawQuest
+{
+    public string? Name { get; set; }
+    public string? InternalName { get; set; }
+    public string? Description { get; set; }
+    public string? DisplayedLocation { get; set; }
+    public string? FavorNpc { get; set; }
+    public List<string>? Keywords { get; set; }
+    public List<RawQuestObjective>? Objectives { get; set; }
+    /// <summary>
+    /// Polymorphic in the wild: usually an array of requirement rows, but for some quests
+    /// (e.g. <c>quest_13</c>) a bare single-requirement object. Kept as <see cref="JsonElement"/>
+    /// and unfolded in projection.
+    /// </summary>
+    public JsonElement? Requirements { get; set; }
+    /// <summary>Same single-or-array polymorphism as <see cref="Requirements"/>.</summary>
+    public JsonElement? RequirementsToSustain { get; set; }
+    public List<RawQuestReward>? Rewards { get; set; }
+    public List<RawQuestRewardItem>? Rewards_Items { get; set; }
+    public int? Reward_Favor { get; set; }
+    /// <summary>Plural variant of <see cref="Reward_Favor"/> seen on a subset of quests.</summary>
+    public int? Rewards_Favor { get; set; }
+    public List<string>? Rewards_Effects { get; set; }
+    public string? Rewards_NamedLootProfile { get; set; }
+    public int? ReuseTime_Minutes { get; set; }
+    public int? ReuseTime_Hours { get; set; }
+    public int? ReuseTime_Days { get; set; }
+    public string? PrefaceText { get; set; }
+    public string? SuccessText { get; set; }
+}
+
+public sealed class RawQuestObjective
+{
+    public string? Type { get; set; }
+    public string? Description { get; set; }
+    public int? Number { get; set; }
+    /// <summary>
+    /// Polymorphic in the wild: usually a single target name, sometimes an array
+    /// like <c>["Ratkin", "Area:AreaPovus"]</c> (target + filter modifiers). Projection
+    /// joins arrays with <c>" | "</c>.
+    /// </summary>
+    public JsonElement? Target { get; set; }
+    public string? ItemName { get; set; }
+    public int? GroupId { get; set; }
+}
+
+/// <summary>
+/// Polymorphic prerequisite row. The JSON's <c>"T"</c> field discriminates between
+/// <c>QuestCompleted</c>, <c>MinFavorLevel</c>, <c>MinSkillLevel</c>, and
+/// <c>HasEffectKeyword</c>; remaining fields are conditional on that value.
+/// </summary>
+public sealed class RawQuestRequirement
+{
+    /// <summary>Discriminator. Pinned to JSON <c>"T"</c> — camelCase policy would lowercase it to <c>"t"</c>.</summary>
+    [JsonPropertyName("T")]
+    public string? T { get; set; }
+    public string? Quest { get; set; }
+    /// <summary>
+    /// Polymorphic: string for <c>MinFavorLevel</c> ("Friends"), int for <c>MinSkillLevel</c> (1).
+    /// Projection coerces both forms to a string.
+    /// </summary>
+    public JsonElement? Level { get; set; }
+    public string? Npc { get; set; }
+    public string? Skill { get; set; }
+    public string? Keyword { get; set; }
+}
+
+/// <summary>Skill-XP reward row. Today only <c>T="SkillXp"</c> appears.</summary>
+public sealed class RawQuestReward
+{
+    [JsonPropertyName("T")]
+    public string? T { get; set; }
+    public string? Skill { get; set; }
+    public int? Xp { get; set; }
+}
+
+public sealed class RawQuestRewardItem
+{
+    public string? Item { get; set; }
+    public int? StackSize { get; set; }
+}
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,
@@ -216,5 +300,8 @@ public sealed class RawItemSource
 [JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
 [JsonSerializable(typeof(Dictionary<string, RawAttribute>))]
 [JsonSerializable(typeof(Dictionary<string, RawPower>))]
+[JsonSerializable(typeof(Dictionary<string, RawQuest>))]
+[JsonSerializable(typeof(RawQuestRequirement))]
+[JsonSerializable(typeof(List<RawQuestRequirement>))]
 [JsonSerializable(typeof(Dictionary<string, List<string>>))]
 public partial class ReferenceJsonContext : JsonSerializerContext { }

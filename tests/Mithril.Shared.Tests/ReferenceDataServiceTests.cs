@@ -231,6 +231,124 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
+    {
+        // Verifies the [JsonPropertyName("T")] attribute on RawQuestRequirement.T:
+        // the camelCase naming policy would otherwise lowercase "T" to "t" and the
+        // discriminator would silently deserialize to null.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_42": {
+                "Name": "Test Quest",
+                "InternalName": "TestQuest",
+                "Description": "A quest for tests.",
+                "DisplayedLocation": "Serbule",
+                "FavorNpc": "AreaSerbule/NPC_Joe",
+                "Objectives": [
+                  { "Description": "Talk to Joeh", "Number": 1, "Type": "Scripted" }
+                ],
+                "Requirements": [
+                  { "Quest": "PriorQuest", "T": "QuestCompleted" },
+                  { "Level": "Friends", "Npc": "AreaSerbule/NPC_Joe", "T": "MinFavorLevel" }
+                ],
+                "Rewards": [
+                  { "Skill": "Sword", "T": "SkillXp", "Xp": 750 }
+                ],
+                "Rewards_Items": [
+                  { "Item": "Potato", "StackSize": 5 }
+                ],
+                "Reward_Favor": 100
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.Quests.Should().ContainKey("quest_42");
+        svc.QuestsByInternalName.Should().ContainKey("TestQuest");
+        var quest = svc.QuestsByInternalName["TestQuest"];
+        quest.Name.Should().Be("Test Quest");
+        quest.DisplayedLocation.Should().Be("Serbule");
+        quest.FavorNpc.Should().Be("AreaSerbule/NPC_Joe");
+        quest.FavorReward.Should().Be(100);
+
+        quest.Requirements.Should().HaveCount(2);
+        quest.Requirements[0].Type.Should().Be("QuestCompleted");
+        quest.Requirements[0].Quest.Should().Be("PriorQuest");
+        quest.Requirements[1].Type.Should().Be("MinFavorLevel");
+        quest.Requirements[1].Level.Should().Be("Friends");
+        quest.Requirements[1].Npc.Should().Be("AreaSerbule/NPC_Joe");
+
+        quest.SkillRewards.Should().ContainSingle();
+        quest.SkillRewards[0].Skill.Should().Be("Sword");
+        quest.SkillRewards[0].Xp.Should().Be(750);
+
+        quest.ItemRewards.Should().ContainSingle();
+        quest.ItemRewards[0].ItemInternalName.Should().Be("Potato");
+        quest.ItemRewards[0].StackSize.Should().Be(5);
+    }
+
+    [Fact]
+    public void RealBundledQuestsFile_ParsesAndContainsKnownQuests()
+    {
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "quests.json")))
+            return;
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: realBundled);
+
+        svc.Quests.Count.Should().BeGreaterThan(1000);
+        svc.Quests.Should().ContainKey("quest_1");
+        svc.Quests["quest_1"].InternalName.Should().Be("KillSkeletons");
+        svc.QuestsByInternalName.Should().ContainKey("GetCatEyeballsForJoeh");
+        svc.QuestsByInternalName["GetCatEyeballsForJoeh"].DisplayedLocation.Should().Be("Serbule");
+    }
+
+    [Fact]
+    public void Quest_item_source_resolves_questId_to_quest_InternalName()
+    {
+        // sources_items.json carries questId numerically; the parser should look up
+        // the matching QuestEntry and store its InternalName in ItemSource.Context.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_700": { "Name": "Cat Eyeball", "InternalName": "CatEyeball" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_10001": {
+                "Name": "Get Cat Eyeballs for Joeh",
+                "InternalName": "GetCatEyeballsForJoeh",
+                "Description": "Joeh wants eyeballs."
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.json"), """
+            {
+              "item_700": {
+                "entries": [
+                  { "questId": 10001, "type": "Quest" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemSources.Should().ContainKey("CatEyeball");
+        var sources = svc.ItemSources["CatEyeball"];
+        sources.Should().ContainSingle();
+        sources[0].Type.Should().Be("Quest");
+        sources[0].Context.Should().Be("GetCatEyeballsForJoeh"); // InternalName, not the raw id
+    }
+
+    [Fact]
     public void GetSnapshot_UnknownKey_Throws()
     {
         WriteBundled("""{}""", version: "v100");
