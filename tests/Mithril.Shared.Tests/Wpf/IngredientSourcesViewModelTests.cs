@@ -156,6 +156,74 @@ public class IngredientSourcesViewModelTests
     }
 
     [Fact]
+    public void Recipe_source_renders_label_and_skill_gate()
+    {
+        var recipe = new RecipeEntry(
+            Key: "recipe_101",
+            Name: "Tin Bar",
+            InternalName: "TinBar",
+            IconId: 0,
+            Skill: "Smelting",
+            SkillLevelReq: 5,
+            RewardSkill: "Smelting",
+            RewardSkillXp: 10,
+            RewardSkillXpFirstTime: 0,
+            RewardSkillXpDropOffLevel: null,
+            RewardSkillXpDropOffPct: null,
+            RewardSkillXpDropOffRate: null,
+            Ingredients: [],
+            ResultItems: []);
+
+        var refData = new StubRefData(
+            sources: new() { ["TinBar"] = [new ItemSource("Recipe", null, "TinBar")] },
+            recipesByInternalName: new() { ["TinBar"] = recipe });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Tin Bar", null, "TinBar", []), refData);
+
+        var source = vm.Sources.Single();
+        source.Kind.Should().Be("Crafted");
+        source.Label.Should().Be("Tin Bar");
+        source.Requirement.Should().Be("Requires Smelting 5");
+        source.Detail.Should().BeNull();
+    }
+
+    [Fact]
+    public void Recipe_source_with_PrereqRecipe_surfaces_it_as_Detail()
+    {
+        var recipe = new RecipeEntry(
+            "recipe_500", "Advanced Bread", "AdvancedBread", 0,
+            "Cooking", 30, "Cooking", 50, 0, null, null, null,
+            Ingredients: [], ResultItems: [], PrereqRecipe: "BasicBread");
+
+        var refData = new StubRefData(
+            sources: new() { ["AdvancedBread"] = [new ItemSource("Recipe", null, "AdvancedBread")] },
+            recipesByInternalName: new() { ["AdvancedBread"] = recipe });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Advanced Bread", null, "AdvancedBread", []), refData);
+
+        var source = vm.Sources.Single();
+        source.Requirement.Should().Be("Requires Cooking 30");
+        source.Detail.Should().Be("prereq: BasicBread");
+    }
+
+    [Fact]
+    public void Recipe_source_with_unresolved_context_falls_back_gracefully()
+    {
+        var refData = new StubRefData(
+            sources: new() { ["X"] = [new ItemSource("Recipe", null, "UnknownRecipe")] });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("X", null, "X", []), refData);
+
+        var source = vm.Sources.Single();
+        source.Kind.Should().Be("Recipe");
+        source.Label.Should().Be("Crafted");
+        source.Requirement.Should().BeNull();
+    }
+
+    [Fact]
     public void NpcGift_source_does_not_emit_per_npc_favor_Requirement()
     {
         // NpcGift gating lives on per-preference RequiredFavorTier, not per-NPC.
@@ -205,11 +273,13 @@ public class IngredientSourcesViewModelTests
         public StubRefData(
             Dictionary<string, IReadOnlyList<ItemSource>>? sources = null,
             Dictionary<string, NpcEntry>? npcs = null,
-            Dictionary<string, AreaEntry>? areas = null)
+            Dictionary<string, AreaEntry>? areas = null,
+            Dictionary<string, RecipeEntry>? recipesByInternalName = null)
         {
             ItemSources = sources ?? new Dictionary<string, IReadOnlyList<ItemSource>>();
             Npcs = npcs ?? new Dictionary<string, NpcEntry>();
             Areas = areas ?? new Dictionary<string, AreaEntry>();
+            RecipesByInternalName = recipesByInternalName ?? new Dictionary<string, RecipeEntry>();
         }
 
         public IReadOnlyList<string> Keys => [];
@@ -217,7 +287,7 @@ public class IngredientSourcesViewModelTests
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; }

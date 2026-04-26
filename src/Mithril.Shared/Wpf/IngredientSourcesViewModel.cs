@@ -104,7 +104,7 @@ public sealed record IngredientSourcesViewModel(
                     break;
 
                 case "Recipe":
-                    result.Add(new AcquisitionSource("Recipe", "Crafted", AreaFriendlyName: null, Detail: src.Context));
+                    result.Add(BuildRecipeSource(src, refData));
                     break;
 
                 case "Monster":
@@ -147,6 +147,36 @@ public sealed record IngredientSourcesViewModel(
     /// per-preference (<see cref="NpcPreference.RequiredFavorTier"/>) rather than per-NPC,
     /// so we skip the requirement line for that kind.
     /// </summary>
+    /// <summary>
+    /// Render a Recipe source. <see cref="ItemSource.Context"/> carries the recipe's
+    /// InternalName (resolved at parse time from <c>recipeId</c>); look it up to surface
+    /// the recipe's display name + skill gate + prereq-recipe hint.
+    /// </summary>
+    private static AcquisitionSource BuildRecipeSource(ItemSource src, IReferenceDataService refData)
+    {
+        if (string.IsNullOrEmpty(src.Context)
+            || !refData.RecipesByInternalName.TryGetValue(src.Context, out var recipe))
+        {
+            // Fallback: we have a recipe source but couldn't resolve the entry.
+            return new AcquisitionSource("Recipe", "Crafted", AreaFriendlyName: null, Detail: src.Context);
+        }
+
+        var label = string.IsNullOrEmpty(recipe.Name) ? recipe.InternalName : recipe.Name;
+        var requirement = !string.IsNullOrEmpty(recipe.Skill) && recipe.SkillLevelReq > 0
+            ? $"Requires {recipe.Skill} {recipe.SkillLevelReq}"
+            : null;
+        var detail = !string.IsNullOrEmpty(recipe.PrereqRecipe)
+            ? $"prereq: {recipe.PrereqRecipe}"
+            : null;
+
+        return new AcquisitionSource(
+            Kind: "Crafted",
+            Label: label,
+            AreaFriendlyName: null,
+            Detail: detail,
+            Requirement: requirement);
+    }
+
     private static string? ResolveFavorRequirement(string sourceKind, NpcEntry npc)
     {
         var serviceType = sourceKind switch
