@@ -89,9 +89,16 @@ public sealed class SkillAdvisorEngine
             }
 
             var ingredients = recipe.Ingredients
-                .Select(i => _ref.Items.TryGetValue(i.ItemCode, out var item)
-                    ? new RecipeIngredientDisplay(item.Name, item.IconId, i.StackSize, i.ChanceToConsume)
-                    : new RecipeIngredientDisplay($"Item #{i.ItemCode}", 0, i.StackSize, i.ChanceToConsume))
+                .Select(i => i switch
+                {
+                    RecipeItemIngredient byItem => _ref.Items.TryGetValue(byItem.ItemCode, out var item)
+                        ? new RecipeIngredientDisplay(item.Name, item.IconId, byItem.StackSize, byItem.ChanceToConsume)
+                        : new RecipeIngredientDisplay($"Item #{byItem.ItemCode}", 0, byItem.StackSize, byItem.ChanceToConsume),
+                    RecipeKeywordIngredient kw => new RecipeIngredientDisplay(
+                        kw.Desc ?? $"Any {ItemKeywordIndex.Humanise(kw.ItemKeys)}",
+                        IconId: 0, kw.StackSize, kw.ChanceToConsume),
+                    _ => new RecipeIngredientDisplay("(unknown ingredient)", 0, i.StackSize, i.ChanceToConsume),
+                })
                 .ToList();
 
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _ref);

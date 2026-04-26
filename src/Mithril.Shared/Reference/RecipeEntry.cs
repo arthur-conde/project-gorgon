@@ -17,7 +17,7 @@ public sealed record RecipeEntry(
     int? RewardSkillXpDropOffLevel,
     float? RewardSkillXpDropOffPct,
     int? RewardSkillXpDropOffRate,
-    IReadOnlyList<RecipeItemRef> Ingredients,
+    IReadOnlyList<RecipeIngredient> Ingredients,
     IReadOnlyList<RecipeItemRef> ResultItems,
     string? PrereqRecipe = null,
     IReadOnlyList<RecipeItemRef>? ProtoResultItems = null,

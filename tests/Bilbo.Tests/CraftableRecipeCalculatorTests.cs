@@ -12,8 +12,10 @@ public class CraftableRecipeCalculatorTests
         new(name, location, stack, 0, 0, null, null, null, 0, null, false, typeId, 0, name);
 
     private static ItemEntry Item(long id, string name) => new(id, name, name, 100, 0, []);
+    private static ItemEntry KeywordedItem(long id, string name, params string[] keywords)
+        => new(id, name, name, 100, 0, keywords.Select(k => new ItemKeyword(k, 0)).ToList());
 
-    private static RecipeEntry Recipe(string key, string name, IReadOnlyList<RecipeItemRef> ingredients, IReadOnlyList<RecipeItemRef>? results = null, string skill = "Cooking", int skillReq = 0, string internalName = "r_default") =>
+    private static RecipeEntry Recipe(string key, string name, IReadOnlyList<RecipeIngredient> ingredients, IReadOnlyList<RecipeItemRef>? results = null, string skill = "Cooking", int skillReq = 0, string internalName = "r_default") =>
         new(
             Key: key, Name: name, InternalName: internalName, IconId: 0,
             Skill: skill, SkillLevelReq: skillReq,
@@ -37,8 +39,8 @@ public class CraftableRecipeCalculatorTests
                 ["recipe_stew"] = Recipe("recipe_stew", "Stew",
                     ingredients:
                     [
-                        new(100, 2, null),
-                        new(200, 1, null),
+                        new RecipeItemIngredient(100, 2, null),
+                        new RecipeItemIngredient(200, 1, null),
                     ],
                     results: [new(900, 1, null)]),
             });
@@ -68,7 +70,7 @@ public class CraftableRecipeCalculatorTests
             recipes: new()
             {
                 ["recipe_peppered_onion"] = Recipe("recipe_peppered_onion", "Peppered Onion",
-                    ingredients: [new(100, 2, null), new(300, 1, null)]),
+                    ingredients: [new RecipeItemIngredient(100, 2, null), new RecipeItemIngredient(300, 1, null)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute(
@@ -87,7 +89,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = Item(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "OnionSoup", ingredients: [new(100, 1, null)]),
+                ["r"] = Recipe("r", "OnionSoup", ingredients: [new RecipeItemIngredient(100, 1, null)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute(
@@ -107,7 +109,7 @@ public class CraftableRecipeCalculatorTests
             items: new(), // empty — no lookup succeeds
             recipes: new()
             {
-                ["r"] = Recipe("r", "Mystery", ingredients: [new(12345, 1, null)]),
+                ["r"] = Recipe("r", "Mystery", ingredients: [new RecipeItemIngredient(12345, 1, null)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute([], refData, character: null, ConfidenceLevel.P95);
@@ -124,7 +126,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = Item(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "Stew", ingredients: [new(100, 1, null)],
+                ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
                     skill: "Cooking", skillReq: 30, internalName: "recipe_stew"),
             });
 
@@ -152,7 +154,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = Item(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "Stew", ingredients: [new(100, 1, null)],
+                ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
                     skill: "Cooking", skillReq: 30),
             });
 
@@ -168,6 +170,60 @@ public class CraftableRecipeCalculatorTests
     }
 
     [Fact]
+    public void Keyword_ingredient_satisfied_by_any_matching_item()
+    {
+        // Recipe asks for "any item keyworded Crystal x1". Player owns 3 RoughCrystal and 2 PolishedCrystal
+        // — the slot is satisfied by the sum (5 ≥ 1). MaxCraftable is bounded by min(per-slot).
+        var refData = new TestRefData(
+            items: new()
+            {
+                [100] = KeywordedItem(100, "RoughCrystal", "Crystal"),
+                [101] = KeywordedItem(101, "PolishedCrystal", "Crystal"),
+                [200] = Item(200, "EnchantedGear"),
+            },
+            recipes: new()
+            {
+                ["r"] = Recipe("r", "EnchantGear",
+                    ingredients: [new RecipeKeywordIngredient(["Crystal"], "Auxiliary Crystal", 1, null)],
+                    results: [new(200, 1, null)]),
+            });
+
+        var row = CraftableRecipeCalculator
+            .Compute([Row(100, 3, "RoughCrystal"), Row(101, 2, "PolishedCrystal")],
+                refData, character: null, ConfidenceLevel.WorstCase)
+            .Single();
+
+        row.MaxCraftable.Should().Be(5); // 3+2 crystals each consumed 1 per craft
+        row.MissingIngredients.Should().BeEmpty();
+        row.Ingredients.Should().Contain("Auxiliary Crystal x1");
+    }
+
+    [Fact]
+    public void Keyword_ingredient_with_no_matching_inventory_reports_missing()
+    {
+        var refData = new TestRefData(
+            items: new()
+            {
+                [100] = KeywordedItem(100, "RoughCrystal", "Crystal"),
+                [200] = Item(200, "EnchantedGear"),
+            },
+            recipes: new()
+            {
+                ["r"] = Recipe("r", "EnchantGear",
+                    ingredients: [new RecipeKeywordIngredient(["Crystal"], null, 1, null)],
+                    results: [new(200, 1, null)]),
+            });
+
+        // No crystals owned at all.
+        var row = CraftableRecipeCalculator
+            .Compute([], refData, character: null, ConfidenceLevel.WorstCase)
+            .Single();
+
+        row.MaxCraftable.Should().Be(0);
+        row.MissingIngredients.Should().Contain("Crystal x1 (have 0)");
+    }
+
+    [Fact]
     public void Catalyst_Ingredient_Shows_Probability_In_Display()
     {
         var refData = new TestRefData(
@@ -179,7 +235,7 @@ public class CraftableRecipeCalculatorTests
             recipes: new()
             {
                 ["r"] = Recipe("r", "Stew",
-                    ingredients: [new(100, 1, null), new(500, 1, 0.5f)]),
+                    ingredients: [new RecipeItemIngredient(100, 1, null), new RecipeItemIngredient(500, 1, 0.5f)]),
             });
 
         var row = CraftableRecipeCalculator
@@ -200,6 +256,7 @@ public class CraftableRecipeCalculatorTests
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, ItemEntry> Items { get; }
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();

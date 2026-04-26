@@ -140,6 +140,55 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Recipe_ingredients_with_ItemKeys_parse_as_keyword_ingredients()
+    {
+        // items.json drives keyword index population (items must be parsed for the catalog
+        // to know which items carry "Crystal"); recipes.json carries the keyword-matched slot.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_100": { "Name": "Boots", "InternalName": "Boots", "MaxStackSize": 1 },
+              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "MaxStackSize": 50, "Keywords": ["Crystal"] }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_1": {
+                "Name": "EnchantBoots",
+                "InternalName": "EnchantBoots",
+                "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "ItemCode": 100, "StackSize": 1 },
+                  { "Desc": "Auxiliary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ],
+                "ResultItems": [
+                  { "ItemCode": 100, "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.Recipes.Should().ContainKey("recipe_1");
+        var recipe = svc.Recipes["recipe_1"];
+        recipe.Ingredients.Should().HaveCount(2);
+
+        recipe.Ingredients[0].Should().BeOfType<RecipeItemIngredient>()
+            .Which.ItemCode.Should().Be(100);
+
+        var keyword = recipe.Ingredients[1].Should().BeOfType<RecipeKeywordIngredient>().Subject;
+        keyword.ItemKeys.Should().Equal(["Crystal"]);
+        keyword.Desc.Should().Be("Auxiliary Crystal");
+        keyword.StackSize.Should().Be(1);
+
+        // Catalog index picks up the new keyword from items.json.
+        svc.KeywordIndex.ItemsMatching(["Crystal"]).Select(i => i.InternalName)
+            .Should().BeEquivalentTo(["RoughCrystal"]);
+    }
+
+    [Fact]
     public void GetSnapshot_UnknownKey_Throws()
     {
         WriteBundled("""{}""", version: "v100");

@@ -240,6 +240,7 @@ public class AugmentParserTests
         public IReadOnlyList<string> Keys => [];
         public IReadOnlyDictionary<long, ItemEntry> Items { get; }
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+        public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
