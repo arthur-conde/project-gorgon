@@ -169,9 +169,18 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Lookup: `Context` carries the source recipe's internal name (mapped from `RawItemSource.Recipe`); `refData.RecipesByInternalName[Context]` resolves the entry.
 - Render: `Crafted: Tin Bar (Smelting 5)` and a sub-line `Requires recipe TinBar0` when `PrereqRecipe` is set. If the active character is loaded, an additional "you can/cannot learn this yet" badge against `CharacterSnapshot.RecipeCompletions`.
 
-**Item-side equip gate — title-bar hint** (parsed in [`ItemEntry`](../src/Mithril.Shared/Reference/ItemEntry.cs))
-- Fields: `SkillReqs` (`Dictionary<string, int>?`, e.g. `{ "Smithing": 30 }`), `SkillPrereqs` (`List<string>?`), `EquipSlot`.
-- Render: a single subtitle line under the title `"Requires Smithing 30 to use"` when populated. Acquisition-time vs equip-time distinction matters; place it in the title bar, not the Sources card, so it doesn't read as a source gate.
+**Item-side use gate — title-bar hint** (parsed in [`ItemEntry`](../src/Mithril.Shared/Reference/ItemEntry.cs))
+
+**Why this is a separate slot from the Sources card:** Vendor / barter / recipe gates filter *acquisition* — "you can't buy this from Hulon until Liked, you can't craft it without Smelting 5." `SkillReqs` filters *use* — you can buy the seedling from anyone, but you can't plant it without Gardening 10. Mixing them in the Sources card would mislead ("oh, this NPC only sells to gardeners?" — no, anyone can buy). The title bar is the right home: it describes the item itself, independent of how you got it.
+
+**Real-world coverage:** 5,884 of the bundled items carry `SkillReqs` today. The dominant pattern is gardening seedlings (`Cabbage Leafling: { "Gardening": 10 }`), followed by crafting equipment and skill-locked consumables. Multi-skill items exist — e.g. `Alchemy: Wolfen Speed Potion` requires `{ "Alchemy": 35, "Werewolf": 35 }`, and `Battle-Priest's Pendant` requires `{ "JewelryCrafting": 47, "Priest": 47 }`. The renderer needs to handle the multi-key case cleanly; comma-join (`"Requires Alchemy 35, Werewolf 35"`) is the obvious shape.
+
+**Fields**
+- `SkillReqs` (`Dictionary<string, int>?`) — the dominant gate. Skill name → minimum level.
+- `SkillPrereqs` (`List<string>?`) — sometimes overlaps with `SkillReqs.Keys`; surface only when not redundant.
+- `EquipSlot` (`string?`) — situational; the item's name usually conveys this. Probably skip in v1, no information gain.
+
+**Render:** a single subtitle line under the title, e.g. `Requires Gardening 10 to use`, or `Requires Alchemy 35, Werewolf 35 to use`. With the active character loaded, colour green/red against `CharacterSnapshot.Skills` (matching the proposed treatment for the recipe-skill gate).
 
 **Implementation notes:**
 - Extend `AcquisitionSource` with `Requirement: string?` (and maybe `RequirementMetByActiveCharacter: bool?` for green/red colouring).
