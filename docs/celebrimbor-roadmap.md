@@ -50,39 +50,19 @@ Celebrimbor is the crafting planner. Users pick recipes and per-recipe quantitie
 
 ---
 
-## Out of scope for v1
+## What shipped after v1
 
-### 1. Multi-character inventory aggregation
+### Shareable craft-list deep links
 
-**Why deferred:** Keeps v1 focused on the shortest useful loop. `IActiveCharacterService.ActiveStorageContents` is already parsed and cached; scope grew cleanly from "active character only." Multi-character wants to iterate every export, parse each on a background thread, prefix locations with the character name, and cache by `(path, lastModifiedUtc)`. That's a modest but non-trivial feature with its own reliability surface (file-lock handling, stale-cache invalidation, memory ceiling).
+`mithril://list/<base64url>` carries a gzipped copy of the plain-text share format. The picker's "Copy share link" button (`CopyShareLinkCommand` in [RecipePickerViewModel.cs](../src/Celebrimbor.Module/ViewModels/RecipePickerViewModel.cs)) round-trips through `CraftListFormat.EncodeShareLink` / `DecodeShareLink`. The shell's `DeepLinkRouter` ([Mithril.Shared/Modules/DeepLinkRouter.cs](../src/Mithril.Shared/Modules/DeepLinkRouter.cs)) routes `list/` URIs to whichever module implements `ICraftListImportTarget` — Celebrimbor's `CraftListImportTarget` brings the tab to the foreground and prompts append-vs-replace. Registration is opt-in through the About settings toggle (HKCU only, no elevation).
 
-**Likely approach for v2:**
-- Extract `IInventoryQueryService` into `Mithril.Shared` — the shared abstraction both Celebrimbor and Bilbo would consume. The service iterates `IActiveCharacterService.StorageReports`, parses each via `StorageReportLoader.Load`, and exposes `QueryByInternalName(string) → IReadOnlyList<(Character, Location, Quantity)>`.
-- Gate the background parsing behind `IModuleGate` so it doesn't run before the shell is ready.
-- Location chips become `"{Character} · {Normalized Location}"`.
-- Bilbo migrates to consume the same service; its `StorageRowMapper` stays where it is but starts pulling from the shared parse cache.
+### ResultEffects-driven output preview
 
-### 2. Shopping-by-source hints
+**100% of `recipes.json` ResultEffects produce a preview** through one of 15 typed `Parse*` methods, the generic identifier-shape fallback, or the deliberate silent allow-list. Phase 6 (April 2026) introduced the strongly-typed preview pipeline (`AugmentPreview` for `AddItemTSysPower` plus the `EffectDescsRenderer` that resolves `{TOKEN}{value}` placeholders against `attributes.json`). Phase 7 extended it with `CraftedGearPreview` (the `TSysCraftedEquipment` / `GiveTSysItem` / `CraftSimpleTSysItem` chip), `TaughtRecipePreview` (`BestowRecipeIfNotKnown`), `WaxItemPreview` (`CraftWaxItem`), `AugmentPoolPreview` + the dedicated `AugmentPoolView`, and `EffectTagPreview` for the calligraphy / meditation tag families. The April 2026 coverage push (commits `c75aa46` → `e19eae8`) closed the long tail — adding `ResearchProgressPreview` / `XpGrantPreview` / `WordOfPowerPreview` / `LearnedAbilityPreview` (knowledge & progression), `ItemProducingPreview` (brews / surveys / treasure maps), `EquipBonusPreview` + `CraftingEnhancePreview` (equipment-property), `RecipeCooldownPreview` (`AdjustRecipeReuseTime`), `UnpreviewableExtractionPreview` (split out of `AugmentPoolPreview` for `ExtractTSysPower` since its outcome depends on the player-provided cube), the `EffectTagPreview` table-driven dispatch, and a generic identifier-shape fallback. Every typed preview renders inline on the recipe card and tooltip; clicking through opens `ItemDetailWindow` with the full per-effect breakdown — and the bundled `recipes.json` now hits 100% coverage with a standing gate test.
 
-**Why deferred:** Out-of-scope UX work for v1. The useful data exists (`IReferenceDataService.ItemSources`) but surfacing it well needs dedicated design — a popover? an inline chip list? a second tab?
+The eligibility model the pool viewer's pre-fill query uses (gear-level bracket × rolled-rarity floor × form/skill gate × `power.Slots ∋ template.EquipSlot`) is documented in [treasure-system.md](treasure-system.md). The slot clause closed [issue #8](https://github.com/arthur-conde/project-gorgon/issues/8) — without it the headline `OptionCount` over-counted by however many slot-incompatible powers lived in the profile.
 
-**Likely approach for vNext:**
-- Expand each ingredient row with a details-pane / flyout showing `ItemSources[item.InternalName]` grouped by source type (Vendor / Drop / Gather / Craft / Quest).
-- Default: hide Quest and one-off sources; let the user opt in.
-- Combine with multi-character inventory: prefer "you have it here" over "NPC X sells it."
-
-### 3. Recipe prereq chain visualization
-
-**Why deferred:** Not core to the shopping-list goal; users who already have the list in hand have committed to the recipes.
-
-**Likely approach for vNext:**
-- Resolve `RecipeEntry.PrereqRecipe` transitively into a chain.
-- Render a mini-chain in the picker's row detail pane on hover/select.
-- Flag "you cannot learn this yet" when an upstream prereq is missing from `CharacterSnapshot.RecipeCompletions`.
-
-### 3a. `ResultEffects` prefix coverage
-
-**Status: shipped — 100% of `recipes.json` ResultEffects produce a preview through one of 15 typed `Parse*` methods, the generic identifier-shape fallback, or the deliberate silent allow-list.**
+### Reference — `ResultEffects` parser surface
 
 The parser surface in [src/Mithril.Shared/Reference/ResultEffectsParser.cs](../src/Mithril.Shared/Reference/ResultEffectsParser.cs) projects every recipe's `ResultEffects` array into one of these typed preview shapes (each renders as its own collapsible section in `ItemDetailWindow`):
 
@@ -117,37 +97,74 @@ The parser surface in [src/Mithril.Shared/Reference/ResultEffectsParser.cs](../s
 
 **Coverage gate:** [tests/Mithril.Shared.Tests/Reference/ResultEffectsCoverageTests.cs](../tests/Mithril.Shared.Tests/Reference/ResultEffectsCoverageTests.cs) loads the bundled `recipes.json` and asserts every `ResultEffects` entry either produces a preview through one of the 15 `Parse*` methods or matches the silent allow-list. The only effects allow-listed at gate level are `Particle_*` and the documented `TSysCraftedEquipment` silent-skip cases (template lacks `TSysProfile` or profile not in `tsysprofiles.json` — 3 corresponding tests in `AugmentPoolParserTests`). New prefixes introduced by future game patches that don't fit existing typed shapes will surface through the generic fallback; if a future patch ever introduces a structured prefix worth a typed shape, the gate keeps passing while the typed parser gets added.
 
-**Architectural notes for future maintainers:**
+**Architectural rules for adding new prefixes:**
 - New typed preview → add the record under `Mithril.Shared/Reference/`, add the `Parse*` method, wire it through `ItemDetailContext` + `ItemDetailViewModel` + `ItemDetailWindow.xaml`, and add the prefix to `ExcludedFallbackPrefixes` in `ResultEffectsParser.cs` so it doesn't double-render.
 - New behavioural tag with a fixed display string → add to `ExactTagLines`.
 - New numbered family (`PrefixN`) with a "Tier N" rendering → add a `(Prefix, "{format} Tier {0}")` row to `SuffixedTierFamilies`. Listed prefix-longest-first so longer prefixes win over shorter ones.
 - Confirm coverage with `dotnet test tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj --filter "FullyQualifiedName~ResultEffectsCoverageTests"`.
 
-### 3b. Ingredient `ItemKeys` (keyword-matched ingredients)
+### Keyword-matched recipe ingredients (`ItemKeys`)
 
-**Status:** Not parsed today. Current `RawRecipeItem` only reads `ItemCode`; recipes that specify `{ "ItemKeys": ["Crystal"], "StackSize": 1 }` (e.g. the auxiliary-crystal slot on every `*E` enchanted recipe) silently drop that ingredient at parse time, so the user sees an incomplete ingredient list.
+Every `*E` enchanted-equipment recipe (~1,645 of them) carries an "auxiliary crystal" slot encoded as `{ "Desc": "Auxiliary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }` — any item whose `Keywords` includes every listed tag satisfies the slot. Previously the parser dropped these entries (`ItemCode`-only filter), so the shopping list undercounted and the picker tooltip silently lost the slot.
 
-**Why it matters:** Every `TSysCraftedEquipment` enchanted recipe (1,645 of them) has at least one keyword-matched ingredient. The shopping list is currently undercounting.
+The schema now models ingredients as a sealed `RecipeIngredient` hierarchy ([RecipeIngredient.cs](../src/Mithril.Shared/Reference/RecipeIngredient.cs)) — `RecipeItemIngredient` (by `ItemCode`) plus `RecipeKeywordIngredient` (by `ItemKeys` + optional `Desc`). Results stay as `RecipeItemRef`, mirroring the data asymmetry. A new catalog-side `ItemKeywordIndex` ([ItemKeywordIndex.cs](../src/Mithril.Shared/Reference/ItemKeywordIndex.cs)) inverts the keyword → items lookup; `OnHandInventoryQuery` adds a per-keyword owned-set so the aggregator answers single-key on-hand in O(1) and AND-matches multi-key sets via set intersection.
 
-**Likely approach:**
-- Extend `RawRecipeItem` to also expose `Desc` and `ItemKeys`.
-- Surface a new `RecipeItemRef` variant that carries the keyword list instead of an item code.
-- Aggregator-side: when expanding the demand, treat keyword-matched rows as "any item keyworded `<X>` covers this slot." The on-hand resolver then has to scan inventory for any matching item rather than a single item code.
-- Tooltip / picker render: `"1× <Desc> (any Crystal)"` instead of dropping the row.
+`RecipeAggregator` dedupes keyword rows under a synthetic `"#keys:..."` key (so two recipes citing `["Crystal"]` collapse to one shopping-list row) and renders the slot as `1× Auxiliary Crystal (any Crystal)` in both the picker tooltip and shopping list. Bilbo's `CraftableRecipeCalculator` and Elrond's `SkillAdvisorEngine` light up against the same data — Bilbo sums on-hand across matching items, Elrond shows `Any Crystal x1` in skill-advisor tooltips.
 
-### 4. Shareable URL / token formats for craft lists
+### Shopping-by-source pop-out window
 
-**Why deferred:** The plain-text paste format already covers the "share this list on Discord" use case; clipboard round-trips losslessly. Any URL-flavored format is a second serialization contract to maintain.
+The location-pin tooltip on shopping-list rows used to render `Locations` as a flat list of `Label × Quantity`. For keyword rows that union locations across many items at the same chest, this turned into a 30-line wall of `Serbule Community Chest × 47` repeated for items the row couldn't tell apart. The pin is now a `Button` that opens [`IngredientSourcesWindow`](../src/Mithril.Shared/Wpf/IngredientSourcesWindow.xaml) (in `Mithril.Shared.Wpf` so other modules can reuse it).
 
-**Likely approach, ordered by cost:**
-- (a) Self-contained encoded token: `celebrimbor:v1:<base64-json>`. Compact, paste-only, no OS integration, ~30 extra lines. The right next step if users ask for shorter share strings.
-- (b) Real custom URI scheme: `celebrimbor://list?items=Butter:5,Bread:2`. Registered in `HKCU\Software\Classes\celebrimbor`, handled in `Program.cs` single-instance entry, parsed into a craft list on first-instance activation. Needs a security pass — any URL the OS can hand us is untrusted input. Only worth it if we imagine people posting clickable links rather than text.
+`IngredientLocation` ([Mithril.Shared/Storage/IngredientLocation.cs](../src/Mithril.Shared/Storage/IngredientLocation.cs)) carries per-item identity (`ItemInternalName`, `DisplayName`, `IconId`) so the window can group by location with a per-item breakdown sorted by quantity. The window has two tabs — **On hand** (default when stock exists) and **Sources** — populated by [`IngredientSourcesViewModel.Build`](../src/Mithril.Shared/Wpf/IngredientSourcesViewModel.cs) from a module-agnostic `IngredientSourcesInput`. Sources resolve via `IReferenceDataService.ItemSources`:
 
-### 5. ResultEffects-driven output preview
+- `Vendor` / `Barter` / `NpcGift` → `Npcs[npc].Name` + `Area`.
+- `Quest` → `"Quest reward"` with the raw quest id (no quest parser yet — see deferred §3).
+- `Recipe` → `"Crafted"` with the source recipe's internal name.
+- `Monster` / `Drop` / `Angling` / `HangOut` → label + area resolved through the new `AreaCatalog` service.
 
-**Status: shipped.** Phase 6 (April 2026) introduced the strongly-typed preview pipeline (`AugmentPreview` for `AddItemTSysPower` plus the `EffectDescsRenderer` that resolves `{TOKEN}{value}` placeholders against `attributes.json`). Phase 7 extended it with `CraftedGearPreview` (the `TSysCraftedEquipment` / `GiveTSysItem` / `CraftSimpleTSysItem` chip), `TaughtRecipePreview` (`BestowRecipeIfNotKnown`), `WaxItemPreview` (`CraftWaxItem`), `AugmentPoolPreview` + the dedicated `AugmentPoolView`, and `EffectTagPreview` for the calligraphy / meditation tag families. The April 2026 coverage push (commits `c75aa46` → `e19eae8`) closed the long tail — adding `ResearchProgressPreview` / `XpGrantPreview` / `WordOfPowerPreview` / `LearnedAbilityPreview` (knowledge & progression), `ItemProducingPreview` (brews / surveys / treasure maps), `EquipBonusPreview` + `CraftingEnhancePreview` (equipment-property), `RecipeCooldownPreview` (`AdjustRecipeReuseTime`), `UnpreviewableExtractionPreview` (split out of `AugmentPoolPreview` for `ExtractTSysPower` since its outcome depends on the player-provided cube), the `EffectTagPreview` table-driven dispatch, and a generic identifier-shape fallback. **Every typed preview renders inline on the recipe card and tooltip; clicking through opens `ItemDetailWindow` with the full per-effect breakdown — and the bundled `recipes.json` now hits 100% coverage with a standing gate test.** See §3a for the parser surface and the architectural rules for adding new prefixes.
+`AreaCatalog` ([AreaEntry.cs](../src/Mithril.Shared/Reference/AreaEntry.cs)) parses `Reference/BundledData/areas.json` (previously unparsed) into `IReferenceDataService.Areas` — area code → friendly + short-friendly names, falling back to the long form when the JSON omits the short variant.
 
-The eligibility model the pool viewer's pre-fill query uses (gear-level bracket × rolled-rarity floor × form/skill gate × `power.Slots ∋ template.EquipSlot`) is documented in [treasure-system.md](treasure-system.md). The slot clause closed [issue #8](https://github.com/arthur-conde/project-gorgon/issues/8) — without it the headline `OptionCount` over-counted by however many slot-incompatible powers lived in the profile.
+For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") — surfacing a deduped union of vendor/drop/quest sources across 20+ items at once is its own UX problem worth a future pass.
+
+---
+
+## Still deferred
+
+### 1. Multi-character inventory aggregation
+
+**Why deferred:** Keeps v1 focused on the shortest useful loop. `IActiveCharacterService.ActiveStorageContents` is already parsed and cached; scope grew cleanly from "active character only." Multi-character wants to iterate every export, parse each on a background thread, prefix locations with the character name, and cache by `(path, lastModifiedUtc)`. That's a modest but non-trivial feature with its own reliability surface (file-lock handling, stale-cache invalidation, memory ceiling).
+
+**Likely approach for v2:**
+- Extract `IInventoryQueryService` into `Mithril.Shared` — the shared abstraction both Celebrimbor and Bilbo would consume. The service iterates `IActiveCharacterService.StorageReports`, parses each via `StorageReportLoader.Load`, and exposes `QueryByInternalName(string) → IReadOnlyList<(Character, Location, Quantity)>`.
+- Gate the background parsing behind `IModuleGate` so it doesn't run before the shell is ready.
+- Location chips become `"{Character} · {Normalized Location}"`.
+- Bilbo migrates to consume the same service; its `StorageRowMapper` stays where it is but starts pulling from the shared parse cache.
+
+### 2. Recipe prereq chain visualization
+
+**Why deferred:** Not core to the shopping-list goal; users who already have the list in hand have committed to the recipes.
+
+**Likely approach for vNext:**
+- Resolve `RecipeEntry.PrereqRecipe` transitively into a chain.
+- Render a mini-chain in the picker's row detail pane on hover/select.
+- Flag "you cannot learn this yet" when an upstream prereq is missing from `CharacterSnapshot.RecipeCompletions`.
+
+### 3. Quest source resolution
+
+**Status gap:** Quest entries from `sources_items.json` carry only a numeric `questId` (e.g. `45016`), and quests aren't parsed by `IReferenceDataService` yet. The Sources window renders quest sources as `Quest reward (45016)` until a quest parser exists.
+
+**Likely approach:** Add a `QuestEntry` projection (name, reward chain, area) parsed from a future `quests.json` if/when the CDN exposes one, or scrape from existing log/character data. Until then, the placeholder line keeps the slot in view without claiming more than we know.
+
+### 4. Sources tab enrichment for single-item rows
+
+**Why deferred:** v1 ships a minimal Sources tab — `[Kind] Label · Area` per source. Reachable enrichments (no new parsers) include:
+- Vendor / Barter / NpcGift → `NpcEntry.Services[].MinFavorTier` so the line reads `Vendor: Hulon · Serbule (Liked or higher)`.
+- Recipe → `RecipeEntry.Skill` + `SkillLevelReq` + `PrereqRecipe`, e.g. `Crafted: Tin Bar (Smelting 5)`.
+- Title-bar context → `ItemEntry.SkillReqs` to render an equip-time `"Requires Smithing 30 to use"` line.
+
+### 5. Sources tab for keyword rows
+
+**Why deferred:** v1 keyword rows show a placeholder in the Sources tab. Aggregating vendor/drop/quest sources across 20+ items at once needs its own filtering/grouping UX (otherwise it floods the window). Likely needs a "common across all" vs "per item" toggle.
 
 ### 6. Tighter persistence of UI state
 
