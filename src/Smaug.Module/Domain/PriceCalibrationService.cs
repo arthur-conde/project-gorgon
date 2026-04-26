@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Settings;
 
 namespace Smaug.Domain;
 
@@ -19,13 +20,25 @@ public sealed record PriceEstimateResult(double Price, string Tier, int SampleCo
 /// </summary>
 public sealed class PriceCalibrationService
 {
+    /// <summary>Local schema version: shape of <see cref="PriceObservation"/> records on disk.</summary>
     public const int CurrentSchemaVersion = 1;
+
+    /// <summary>
+    /// Wire schema version stamped into <see cref="VendorRatesPayload.SchemaVersion"/> when
+    /// exporting community payloads. Decoupled from <see cref="CurrentSchemaVersion"/>:
+    /// only bump when the wire shape (<c>VendorRatesPayload</c>) actually changes, not when
+    /// a new field appears on per-observation records (which the wire format never carries).
+    /// Equal to <see cref="CurrentSchemaVersion"/> today by coincidence — do not unify.
+    /// Validated for strict equality by <see cref="ICommunityCalibrationService"/>.
+    /// </summary>
+    public const int CommunityWireSchemaVersion = 1;
 
     private readonly IReferenceDataService _refData;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
+    private readonly string _observationsPath;
 
     private PriceCalibrationData _data = new();
 
@@ -50,6 +63,7 @@ public sealed class PriceCalibrationService
         _calibrationSettings = calibrationSettings;
         _diag = diag;
         _dataPath = Path.Combine(dataDir, "calibration.json");
+        _observationsPath = Path.Combine(dataDir, "observations.json");
         Load();
 
         if (_community is not null) _community.FileUpdated += OnCommunityFileUpdated;
@@ -251,12 +265,63 @@ public sealed class PriceCalibrationService
 
     private void Load()
     {
-        if (!File.Exists(_dataPath)) return;
         try
         {
-            var json = File.ReadAllBytes(_dataPath);
-            _data = JsonSerializer.Deserialize(json, PriceCalibrationJsonContext.Default.PriceCalibrationData) ?? new();
+            // Storage layout: observations.json holds the source of truth (SmaugObservationLog),
+            // calibration.json holds derived aggregates (SmaugAggregatesData). Older releases
+            // wrote both into a single calibration.json (PriceCalibrationData with embedded
+            // Observations). We detect that legacy shape on load and split forward.
+            //
+            // Legacy detection is layout-driven (calibration.json carries an `observations`
+            // array), not version-driven — Smaug has never bumped its record schema, but the
+            // split still needs to fire on every existing user's first post-upgrade load.
+            var legacy = TryLoadLegacy(out var legacyHadObservations);
+            var observations = TryLoadObservationLog();
+
+            List<PriceObservation> mergedObservations;
+            int loadedVersion;
+            if (legacyHadObservations && observations is not null)
+            {
+                // Downgrade-then-upgrade: post-split build wrote observations.json,
+                // user reverted to a pre-split build that re-wrote calibration.json
+                // with embedded observations, then upgraded again. Both files now
+                // carry observations; merge with dedup (ObservationKey).
+                mergedObservations = MergeObservations(observations.Observations, legacy!.Observations);
+                loadedVersion = Math.Min(observations.Version, legacy.Version);
+                _diag?.Info("Smaug.Calibration",
+                    $"Both observations.json and legacy calibration.json have observations; merged " +
+                    $"{observations.Observations.Count} + {legacy.Observations.Count} → {mergedObservations.Count} (deduped).");
+            }
+            else if (observations is not null)
+            {
+                mergedObservations = observations.Observations;
+                loadedVersion = observations.Version;
+            }
+            else if (legacy is not null)
+            {
+                mergedObservations = legacy.Observations;
+                loadedVersion = legacy.Version;
+            }
+            else
+            {
+                // Fresh install — no files at all. Leave _data at default; nothing to migrate.
+                return;
+            }
+
+            _data.Observations = mergedObservations;
+            _data.Version = loadedVersion;
+
             RecomputeRates();
+
+            if (legacyHadObservations)
+            {
+                // Layout migration: lift observations out of calibration.json into
+                // observations.json. One-shot backup of the pre-split file so a user
+                // who notices the layout change can recover their original.
+                BackupBeforeSplit();
+                Save();
+            }
+
             _diag?.Info("Smaug.Calibration",
                 $"Loaded {_data.Observations.Count} observations " +
                 $"({_data.AbsoluteRates.Count} absolute, {_data.RatioRates.Count} ratio)");
@@ -268,21 +333,152 @@ public sealed class PriceCalibrationService
         }
     }
 
-    private void Save()
+    /// <summary>
+    /// Read legacy single-file <c>calibration.json</c>. Sets <paramref name="hadObservations"/>
+    /// to true iff the file existed AND carried a non-empty <c>Observations</c> array — that
+    /// signal drives the split-migration path. Aggregates are intentionally ignored: they're
+    /// derived, <see cref="RecomputeRates"/> will rebuild them from observations.
+    /// </summary>
+    private PriceCalibrationData? TryLoadLegacy(out bool hadObservations)
     {
+        hadObservations = false;
+        if (!File.Exists(_dataPath)) return null;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_dataPath)!);
-            var tmp = _dataPath + ".tmp";
-            using (var stream = File.Create(tmp))
-                JsonSerializer.Serialize(stream, _data, PriceCalibrationJsonContext.Default.PriceCalibrationData);
-            File.Move(tmp, _dataPath, overwrite: true);
+            var json = File.ReadAllBytes(_dataPath);
+            var loaded = JsonSerializer.Deserialize(json, PriceCalibrationJsonContext.Default.PriceCalibrationData);
+            if (loaded is null) return null;
+            hadObservations = loaded.Observations.Count > 0;
+            return loaded;
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to save calibration: {ex.Message}");
+            _diag?.Warn("Smaug.Calibration", $"Failed to read legacy calibration.json: {ex.Message}");
+            return null;
         }
     }
+
+    /// <summary>
+    /// Read <c>observations.json</c>. If the file exists but can't be parsed, rename it
+    /// to <c>observations.json.corrupt.bak</c> and return null — preserves the user's data
+    /// for forensics and prevents the next <see cref="Save"/> from silently overwriting
+    /// the unparseable file with empty content.
+    /// </summary>
+    private SmaugObservationLog? TryLoadObservationLog()
+    {
+        if (!File.Exists(_observationsPath)) return null;
+        try
+        {
+            var json = File.ReadAllBytes(_observationsPath);
+            return JsonSerializer.Deserialize(json, PriceCalibrationJsonContext.Default.SmaugObservationLog);
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Smaug.Calibration", $"Failed to read observations.json: {ex.Message}; quarantining as .corrupt.bak");
+            QuarantineCorruptObservations();
+            return null;
+        }
+    }
+
+    private void QuarantineCorruptObservations()
+    {
+        try
+        {
+            var corruptPath = _observationsPath + ".corrupt.bak";
+            // Don't clobber an existing corrupt backup — if the user already has one,
+            // they're investigating; preserve the original instead.
+            if (File.Exists(corruptPath)) return;
+            File.Move(_observationsPath, corruptPath);
+            _diag?.Info("Smaug.Calibration", $"Quarantined unparseable observations.json → {corruptPath}");
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Smaug.Calibration", $"Failed to quarantine corrupt observations.json: {ex.Message}");
+        }
+    }
+
+    private static List<PriceObservation> MergeObservations(List<PriceObservation> primary, List<PriceObservation> secondary)
+    {
+        var keys = new HashSet<string>(primary.Select(ObservationKey), StringComparer.Ordinal);
+        var merged = new List<PriceObservation>(primary);
+        foreach (var obs in secondary)
+        {
+            if (keys.Add(ObservationKey(obs)))
+                merged.Add(obs);
+        }
+        return merged;
+    }
+
+    /// <summary>
+    /// One-shot snapshot of the legacy single-file <c>calibration.json</c> taken at the
+    /// moment we split observations out into <c>observations.json</c>. Layout-migration
+    /// backup (orthogonal to any future record-schema-migration backups).
+    /// </summary>
+    private void BackupBeforeSplit()
+    {
+        try
+        {
+            var backupPath = $"{_dataPath}.split.bak";
+            if (File.Exists(backupPath)) return;
+            File.Copy(_dataPath, backupPath);
+            _diag?.Info("Smaug.Calibration", $"Wrote pre-split backup: {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Smaug.Calibration", $"Failed to write pre-split backup: {ex.Message}");
+        }
+    }
+
+    private void Save()
+    {
+        // Write order matters for crash safety. observations.json is the source of truth;
+        // calibration.json is purely derived (RecomputeRates rebuilds it on every load).
+        // If we crash after writing observations.json but before writing calibration.json,
+        // the next load re-derives consistent aggregates. Save observations first.
+        try
+        {
+            var observationLog = new SmaugObservationLog
+            {
+                Version = _data.Version,
+                Observations = _data.Observations,
+            };
+            AtomicJsonWriter.Write(_observationsPath, observationLog,
+                PriceCalibrationJsonContext.Default.SmaugObservationLog);
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Smaug.Calibration", $"Failed to save observations: {ex.Message}");
+            return;
+        }
+
+        try
+        {
+            var aggregates = new SmaugAggregatesData
+            {
+                Version = _data.Version,
+                ExportedAt = DateTimeOffset.UtcNow,
+                AbsoluteRates = _data.AbsoluteRates,
+                RatioRates = _data.RatioRates,
+            };
+            AtomicJsonWriter.Write(_dataPath, aggregates,
+                PriceCalibrationJsonContext.Default.SmaugAggregatesData);
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Smaug.Calibration", $"Failed to save aggregates: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Stable identifier used to dedup observations when both files carry data
+    /// (the downgrade-then-upgrade case). PriceObservation has no Quantity or
+    /// sequence id; two genuine consecutive sells of the same item to the same
+    /// NPC at the same price within the same OS clock tick (~15.6ms on Windows)
+    /// will collide on this key. Acceptable: aggregates barely move from one
+    /// dropped duplicate, and the alternative is a schema bump for a sequence id.
+    /// </summary>
+    private static string ObservationKey(PriceObservation o) =>
+        $"{o.NpcKey}|{o.InternalName}|{o.PricePaid}|{o.Timestamp:O}";
 
     // ── Community export ────────────────────────────────────────────────
 
@@ -293,7 +489,7 @@ public sealed class PriceCalibrationService
     {
         var payload = new VendorRatesPayload
         {
-            SchemaVersion = CurrentSchemaVersion,
+            SchemaVersion = CommunityWireSchemaVersion,
             Module = "smaug",
             ExportedAt = DateTimeOffset.UtcNow,
             ContributorNote = contributorNote,

@@ -7,4 +7,6 @@ namespace Smaug.Domain;
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(PriceCalibrationData))]
+[JsonSerializable(typeof(SmaugAggregatesData))]
+[JsonSerializable(typeof(SmaugObservationLog))]
 public partial class PriceCalibrationJsonContext : JsonSerializerContext;

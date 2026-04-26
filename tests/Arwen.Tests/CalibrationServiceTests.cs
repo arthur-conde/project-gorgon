@@ -1068,4 +1068,33 @@ public sealed class CalibrationServiceTests
             SafeDeleteDir(dir);
         }
     }
+
+    [Fact]
+    public void Load_CorruptObservationsJson_QuarantinesAndDoesNotOverwrite()
+    {
+        // If observations.json exists but can't be parsed, the service must rename
+        // it to .corrupt.bak instead of treating it as absent. Without this, the next
+        // Save() (triggered by the next observation, or by any layout migration) would
+        // silently overwrite the unparseable file with empty data — silent loss of
+        // whatever the user had before.
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var observationsPath = Path.Combine(dir, "observations.json");
+            File.WriteAllText(observationsPath, "{ not valid JSON ::");
+            var corruptPath = observationsPath + ".corrupt.bak";
+
+            var (svc, _, _) = BuildService(dir);
+
+            svc.Data.Observations.Should().BeEmpty();
+            File.Exists(corruptPath).Should().BeTrue(
+                "the corrupt file is preserved for forensics, not silently overwritten");
+            File.ReadAllText(corruptPath).Should().Contain("not valid JSON",
+                "the corrupt file's contents must be the original bytes");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
 }

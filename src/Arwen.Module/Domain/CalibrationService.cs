@@ -585,6 +585,14 @@ public sealed class CalibrationService
         }
     }
 
+    /// <summary>
+    /// Read <c>observations.json</c>. If the file exists but can't be parsed, rename it
+    /// to <c>observations.json.corrupt.bak</c> and return null — preserves the user's data
+    /// for forensics and prevents the next <see cref="Save"/> from silently overwriting
+    /// the unparseable file with empty content (the file would otherwise be reconstructed
+    /// from whatever observations were salvaged from legacy <c>calibration.json</c>, or
+    /// from an empty list on fresh state).
+    /// </summary>
     private ObservationLog? TryLoadObservationLog()
     {
         if (!File.Exists(_observationsPath)) return null;
@@ -595,8 +603,26 @@ public sealed class CalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to read observations.json: {ex.Message}");
+            _diag?.Warn("Arwen.Calibration", $"Failed to read observations.json: {ex.Message}; quarantining as .corrupt.bak");
+            QuarantineCorruptObservations();
             return null;
+        }
+    }
+
+    private void QuarantineCorruptObservations()
+    {
+        try
+        {
+            var corruptPath = _observationsPath + ".corrupt.bak";
+            // Don't clobber an existing corrupt backup — if the user already has one,
+            // they're investigating; preserve the original instead.
+            if (File.Exists(corruptPath)) return;
+            File.Move(_observationsPath, corruptPath);
+            _diag?.Info("Arwen.Calibration", $"Quarantined unparseable observations.json → {corruptPath}");
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to quarantine corrupt observations.json: {ex.Message}");
         }
     }
 

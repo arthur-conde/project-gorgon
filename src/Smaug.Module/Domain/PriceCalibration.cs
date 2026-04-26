@@ -3,8 +3,13 @@ using System.Text.Json.Serialization;
 namespace Smaug.Domain;
 
 /// <summary>
-/// On-disk shape persisted to <c>%LocalAppData%/Mithril/Smaug/calibration.json</c>.
-/// Contains the raw observation list plus the two aggregated rate dictionaries.
+/// In-memory union of raw observations and derived aggregates. On disk the two halves
+/// live in separate files: <see cref="SmaugObservationLog"/> in <c>observations.json</c>
+/// (source of truth), <see cref="SmaugAggregatesData"/> in <c>calibration.json</c>
+/// (purely derived — rebuilt from observations on every load via <c>RecomputeRates</c>).
+/// <see cref="PriceCalibrationData"/> exists for the runtime VM contract: SellPricesViewModel
+/// reads <c>Data.AbsoluteRates</c>/<c>Data.RatioRates</c> and the calibration tab reads
+/// <c>Data.Observations</c>.
 /// </summary>
 public sealed class PriceCalibrationData
 {
@@ -19,6 +24,29 @@ public sealed class PriceCalibrationData
 
     /// <summary>Keyed by "NpcKey|KeywordBucket|FavorTier|CivicPrideBucket".</summary>
     public Dictionary<string, RatioRate> RatioRates { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// On-disk shape for <c>calibration.json</c>: aggregates only, no observations.
+/// Purely derived from <see cref="SmaugObservationLog"/> — rebuilt on every load.
+/// Holds LOCAL aggregates only; the merged (local ⊕ community) view lives in
+/// <c>EffectiveAbsoluteRates</c>/<c>EffectiveRatioRates</c> and is never persisted.
+/// </summary>
+public sealed class SmaugAggregatesData
+{
+    public int Version { get; set; } = 1;
+    public DateTimeOffset? ExportedAt { get; set; }
+    public Dictionary<string, PriceRate> AbsoluteRates { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, RatioRate> RatioRates { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// On-disk shape for <c>observations.json</c>: the source of truth for vendor pricing.
+/// </summary>
+public sealed class SmaugObservationLog
+{
+    public int Version { get; set; } = 1;
+    public List<PriceObservation> Observations { get; set; } = [];
 }
 
 /// <summary>
