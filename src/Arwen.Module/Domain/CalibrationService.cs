@@ -6,6 +6,7 @@ using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Inventory;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Settings;
 
 namespace Arwen.Domain;
 
@@ -24,7 +25,17 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// </summary>
 public sealed class CalibrationService
 {
+    /// <summary>Local schema version: shape of <see cref="GiftObservation"/> records on disk.</summary>
     public const int CurrentSchemaVersion = 3;
+
+    /// <summary>
+    /// Wire schema version stamped into <see cref="GiftRatesPayload.SchemaVersion"/> when
+    /// exporting community payloads. Decoupled from <see cref="CurrentSchemaVersion"/>:
+    /// only bump when the wire shape (<c>GiftRatesPayload</c>) actually changes, not when
+    /// a new field appears on per-observation records (which the wire format never carries).
+    /// Validated for strict equality by <see cref="ICommunityCalibrationService"/>.
+    /// </summary>
+    public const int CommunityWireSchemaVersion = 2;
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
@@ -33,6 +44,7 @@ public sealed class CalibrationService
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
+    private readonly string _observationsPath;
     private readonly TtlObservableCollection<PendingGiftObservation> _pending;
 
     // Resolved (local ⊕ community) lookup tables. EstimateFavor reads from these.
@@ -96,6 +108,7 @@ public sealed class CalibrationService
         _calibrationSettings = calibrationSettings;
         _diag = diag;
         _dataPath = Path.Combine(dataDir, "calibration.json");
+        _observationsPath = Path.Combine(dataDir, "observations.json");
 
         var ttl = pendingTtl ?? TimeSpan.FromHours(24);
         if (ttl <= TimeSpan.Zero) ttl = TimeSpan.FromHours(24);
@@ -445,18 +458,61 @@ public sealed class CalibrationService
 
     private void Load()
     {
-        if (!File.Exists(_dataPath)) return;
         try
         {
-            var json = File.ReadAllBytes(_dataPath);
-            var loaded = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData) ?? new();
-            _data = loaded;
+            // Storage layout: observations.json holds the source of truth (ObservationLog),
+            // calibration.json holds derived aggregates (AggregatesData). Older releases
+            // wrote both into a single calibration.json (CalibrationData with embedded
+            // Observations). We detect that legacy shape on load and split forward.
+            //
+            // Legacy detection is layout-driven, NOT version-driven: a v3 single-file
+            // user (current production reality) needs to split too, even though no
+            // record-shape migration is required. Bumping the local Version for "this
+            // file got split" would conflate the two axes and burn a version number
+            // for the next real observation-shape migration.
+            var legacy = TryLoadLegacy(out var legacyHadObservations);
+            var observations = TryLoadObservationLog();
 
+            List<GiftObservation> mergedObservations;
+            int loadedVersion;
+            if (legacyHadObservations && observations is not null)
+            {
+                // Downgrade-then-upgrade: post-split build wrote observations.json,
+                // user reverted to a pre-split build that re-wrote calibration.json
+                // with embedded observations, then upgraded again. Both files now
+                // carry observations; pick neither, merge with dedup (ObservationKey).
+                mergedObservations = MergeObservations(observations.Observations, legacy!.Observations);
+                loadedVersion = Math.Min(observations.Version, legacy.Version);
+                _diag?.Info("Arwen.Calibration",
+                    $"Both observations.json and legacy calibration.json have observations; merged " +
+                    $"{observations.Observations.Count} + {legacy.Observations.Count} → {mergedObservations.Count} (deduped).");
+            }
+            else if (observations is not null)
+            {
+                mergedObservations = observations.Observations;
+                loadedVersion = observations.Version;
+            }
+            else if (legacy is not null)
+            {
+                mergedObservations = legacy.Observations;
+                loadedVersion = legacy.Version;
+            }
+            else
+            {
+                // Fresh install — no files at all. Leave _data at default; nothing to migrate.
+                return;
+            }
+
+            _data.Observations = mergedObservations;
+            _data.Version = loadedVersion;
+
+            var didMigrate = false;
             if (_data.Version < CurrentSchemaVersion)
             {
                 // Snapshot the pre-migration file once before we rewrite it. Recovery path
                 // if a future migration drops the wrong observations.
                 BackupBeforeMigration(_data.Version);
+                didMigrate = true;
 
                 if (_data.Version < 2)
                 {
@@ -475,13 +531,21 @@ public sealed class CalibrationService
                     _data.Observations = kept;
                     _data.Version = 3;
                 }
+            }
 
-                RecomputeRates();
+            RecomputeRates();
+
+            if (legacyHadObservations)
+            {
+                // Layout migration: lift observations out of calibration.json into
+                // observations.json. One-shot backup of the pre-split file so a user
+                // who notices the layout change can recover their original.
+                BackupBeforeSplit();
                 Save();
             }
-            else
+            else if (didMigrate)
             {
-                RecomputeRates();
+                Save();
             }
 
             _diag?.Info("Arwen.Calibration",
@@ -494,6 +558,58 @@ public sealed class CalibrationService
             _diag?.Warn("Arwen.Calibration", $"Failed to load calibration: {ex.Message}");
             _data = new();
         }
+    }
+
+    /// <summary>
+    /// Read legacy single-file <c>calibration.json</c>. Sets <paramref name="hadObservations"/>
+    /// to true iff the file existed AND carried a non-empty <c>Observations</c> array — that
+    /// signal drives the split-migration path. Aggregates are intentionally ignored: they're
+    /// derived, <see cref="RecomputeRates"/> will rebuild them from observations.
+    /// </summary>
+    private CalibrationData? TryLoadLegacy(out bool hadObservations)
+    {
+        hadObservations = false;
+        if (!File.Exists(_dataPath)) return null;
+        try
+        {
+            var json = File.ReadAllBytes(_dataPath);
+            var loaded = JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.CalibrationData);
+            if (loaded is null) return null;
+            hadObservations = loaded.Observations.Count > 0;
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to read legacy calibration.json: {ex.Message}");
+            return null;
+        }
+    }
+
+    private ObservationLog? TryLoadObservationLog()
+    {
+        if (!File.Exists(_observationsPath)) return null;
+        try
+        {
+            var json = File.ReadAllBytes(_observationsPath);
+            return JsonSerializer.Deserialize(json, CalibrationJsonContext.Default.ObservationLog);
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to read observations.json: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static List<GiftObservation> MergeObservations(List<GiftObservation> primary, List<GiftObservation> secondary)
+    {
+        var keys = new HashSet<string>(primary.Select(ObservationKey), StringComparer.Ordinal);
+        var merged = new List<GiftObservation>(primary);
+        foreach (var obs in secondary)
+        {
+            if (keys.Add(ObservationKey(obs)))
+                merged.Add(obs);
+        }
+        return merged;
     }
 
     /// <summary>
@@ -513,6 +629,27 @@ public sealed class CalibrationService
         catch (Exception ex)
         {
             _diag?.Warn("Arwen.Calibration", $"Failed to write pre-migration backup: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// One-shot snapshot of the legacy single-file <c>calibration.json</c> taken at the
+    /// moment we split observations out into <c>observations.json</c>. Orthogonal to
+    /// version-migration backups (which key off observation-record schema): the split
+    /// is a layout change, not a record-shape change.
+    /// </summary>
+    private void BackupBeforeSplit()
+    {
+        try
+        {
+            var backupPath = $"{_dataPath}.split.bak";
+            if (File.Exists(backupPath)) return;
+            File.Copy(_dataPath, backupPath);
+            _diag?.Info("Arwen.Calibration", $"Wrote pre-split backup: {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to write pre-split backup: {ex.Message}");
         }
     }
 
@@ -593,17 +730,45 @@ public sealed class CalibrationService
 
     private void Save()
     {
+        // Write order matters for crash safety. observations.json is the source of truth;
+        // calibration.json is purely derived (RecomputeRates rebuilds it on every load).
+        // If we crash after writing observations.json but before writing calibration.json,
+        // the next load re-derives consistent aggregates. The reverse order would leave
+        // aggregates referencing observations not yet on disk — a wedge between the two
+        // files until the next save. Save observations first.
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_dataPath)!);
-            var tmp = _dataPath + ".tmp";
-            using (var stream = File.Create(tmp))
-                JsonSerializer.Serialize(stream, _data, CalibrationJsonContext.Default.CalibrationData);
-            File.Move(tmp, _dataPath, overwrite: true);
+            var observationLog = new ObservationLog
+            {
+                Version = _data.Version,
+                Observations = _data.Observations,
+            };
+            AtomicJsonWriter.Write(_observationsPath, observationLog,
+                CalibrationJsonContext.Default.ObservationLog);
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to save calibration: {ex.Message}");
+            _diag?.Warn("Arwen.Calibration", $"Failed to save observations: {ex.Message}");
+            return;
+        }
+
+        try
+        {
+            var aggregates = new AggregatesData
+            {
+                Version = _data.Version,
+                ExportedAt = DateTimeOffset.UtcNow,
+                ItemRates = _data.ItemRates,
+                SignatureRates = _data.SignatureRates,
+                NpcRates = _data.NpcRates,
+                KeywordRates = _data.KeywordRates,
+            };
+            AtomicJsonWriter.Write(_dataPath, aggregates,
+                CalibrationJsonContext.Default.AggregatesData);
+        }
+        catch (Exception ex)
+        {
+            _diag?.Warn("Arwen.Calibration", $"Failed to save aggregates: {ex.Message}");
         }
     }
 
@@ -641,7 +806,7 @@ public sealed class CalibrationService
 
         var payload = new GiftRatesPayload
         {
-            SchemaVersion = CurrentSchemaVersion,
+            SchemaVersion = CommunityWireSchemaVersion,
             Module = "arwen",
             ExportedAt = DateTimeOffset.UtcNow,
             ContributorNote = contributorNote,

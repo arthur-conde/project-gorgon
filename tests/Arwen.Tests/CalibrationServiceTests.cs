@@ -412,7 +412,8 @@ public sealed class CalibrationServiceTests
             json.Should().NotContain("matchedPreferences", because: "matched preference lists are observation-scoped");
             json.Should().NotContain("derivedRate", because: "observation-scoped derived fields don't belong in aggregates");
 
-            json.Should().Contain("\"schemaVersion\": 3");
+            json.Should().Contain("\"schemaVersion\": 2",
+                because: "wire schema is decoupled from local schema and pinned to what CommunityCalibrationService validates");
             json.Should().Contain("\"module\": \"arwen\"");
             json.Should().Contain("\"itemRates\"");
             json.Should().Contain("\"signatureRates\"");
@@ -787,4 +788,284 @@ public sealed class CalibrationServiceTests
         obs.DerivedRate.Should().Be(2.0);
     }
 
+    // ── Split-storage migration ───────────────────────────────────────
+
+    [Fact]
+    public void SplitMigration_LegacySingleFile_LiftsObservationsAndWritesBackup()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            // Legacy v3 single-file calibration.json (post-v3 migration, pre-split layout).
+            var legacyPath = Path.Combine(dir, "calibration.json");
+            var observationsPath = Path.Combine(dir, "observations.json");
+            var legacyJson = """
+                {
+                  "version": 3,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 100,
+                      "favorDelta": 22.5,
+                      "quantity": 1,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """;
+            File.WriteAllText(legacyPath, legacyJson);
+            File.Exists(observationsPath).Should().BeFalse("pre-split state has only the legacy file");
+
+            var (svc, _, _) = BuildService(dir);
+
+            svc.Data.Observations.Should().HaveCount(1, "the lone legacy observation lands in memory");
+            svc.Data.Observations[0].ItemInternalName.Should().Be("Moonstone");
+
+            // Layout migration outputs: observations.json populated, calibration.json
+            // rewritten without an `observations` array, and a one-shot .split.bak.
+            File.Exists(observationsPath).Should().BeTrue();
+            using (var obsDoc = JsonDocument.Parse(File.ReadAllBytes(observationsPath)))
+            {
+                obsDoc.RootElement.GetProperty("observations").GetArrayLength().Should().Be(1);
+            }
+            using (var aggDoc = JsonDocument.Parse(File.ReadAllBytes(legacyPath)))
+            {
+                aggDoc.RootElement.TryGetProperty("observations", out _).Should().BeFalse(
+                    "calibration.json is now AggregatesData (rates only)");
+                aggDoc.RootElement.GetProperty("itemRates").EnumerateObject().Should().NotBeEmpty();
+            }
+            File.Exists(legacyPath + ".split.bak").Should().BeTrue("one-shot pre-split snapshot");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void SplitMigration_FreshInstall_NoFilesNoBackup()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, _) = BuildService(dir);
+
+            svc.Data.Observations.Should().BeEmpty();
+            File.Exists(Path.Combine(dir, "calibration.json")).Should().BeFalse("nothing to save until first observation lands");
+            File.Exists(Path.Combine(dir, "observations.json")).Should().BeFalse();
+            File.Exists(Path.Combine(dir, "calibration.json.split.bak")).Should().BeFalse(
+                "no split.bak when there was no legacy file to begin with");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void SplitMigration_PostSplitState_NoSecondBackup()
+    {
+        // Two startups in a row on a post-split build. The second startup must NOT
+        // create another .split.bak — the first one already captured the original
+        // legacy file, and re-snapshotting the new layout would be a double-write.
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            // Startup 1: legacy file → split migration runs.
+            var legacyPath = Path.Combine(dir, "calibration.json");
+            File.WriteAllText(legacyPath, """
+                {
+                  "version": 3,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 100,
+                      "favorDelta": 22.5,
+                      "quantity": 1,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """);
+            BuildService(dir);
+            var splitBakBytes = File.ReadAllBytes(legacyPath + ".split.bak");
+
+            // Startup 2: post-split files exist; .split.bak must be untouched.
+            BuildService(dir);
+            File.ReadAllBytes(legacyPath + ".split.bak").Should().Equal(splitBakBytes,
+                "BackupBeforeSplit is one-shot and idempotent");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void SplitMigration_DowngradeThenUpgrade_MergesWithDedup()
+    {
+        // A user runs the post-split build (writes observations.json with obs A, B),
+        // downgrades to a pre-split build (rewrites legacy calibration.json with
+        // its current observations: A + a NEW C the user gifted on the old build),
+        // then upgrades again. Both files now carry observations; we must MERGE
+        // (dedup A) rather than picking one and dropping the other's unique entries.
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            // Shared timestamps so ObservationKey can dedup deterministically.
+            var tsA = "2026-04-20T00:00:00+00:00";
+            var tsB = "2026-04-21T00:00:00+00:00";
+            var tsC = "2026-04-22T00:00:00+00:00";
+            var prefBlock = """
+                "matchedPreferences": [
+                  { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                ]
+                """;
+            var keywordsBlock = """ "itemKeywords": ["Crystal", "Moonstone"] """;
+
+            string ObsJson(double favorDelta, string ts) => $$"""
+                {
+                  "npcKey": "NPC_Sanja",
+                  "itemInternalName": "Moonstone",
+                  {{keywordsBlock}},
+                  {{prefBlock}},
+                  "itemValue": 100,
+                  "favorDelta": {{favorDelta}},
+                  "quantity": 1,
+                  "timestamp": "{{ts}}"
+                }
+                """;
+
+            // observations.json: post-split layout, contains A and B.
+            File.WriteAllText(Path.Combine(dir, "observations.json"), $$"""
+                {
+                  "version": 3,
+                  "observations": [
+                    {{ObsJson(22.5, tsA)}},
+                    {{ObsJson(15.0, tsB)}}
+                  ]
+                }
+                """);
+
+            // calibration.json: legacy single-file shape rewritten by a downgraded
+            // build. Contains A (duplicate) and C (unique).
+            File.WriteAllText(Path.Combine(dir, "calibration.json"), $$"""
+                {
+                  "version": 3,
+                  "observations": [
+                    {{ObsJson(22.5, tsA)}},
+                    {{ObsJson(30.0, tsC)}}
+                  ]
+                }
+                """);
+
+            var (svc, _, _) = BuildService(dir);
+
+            svc.Data.Observations.Should().HaveCount(3, "A is deduped, B and C are unique");
+            var deltas = svc.Data.Observations.Select(o => o.FavorDelta).OrderBy(d => d).ToArray();
+            deltas.Should().Equal(15.0, 22.5, 30.0);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void SplitMigration_V2OnDisk_BothBackupsCoexist()
+    {
+        // A v2-on-disk user upgrading to a post-split build: BOTH backups should be
+        // created. .v2.bak from the version-ladder migration (orthogonal axis), and
+        // .split.bak from the layout split (also orthogonal axis).
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var legacyPath = Path.Combine(dir, "calibration.json");
+            File.WriteAllText(legacyPath, """
+                {
+                  "version": 2,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 100,
+                      "favorDelta": 22.5,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """);
+
+            BuildService(dir);
+
+            File.Exists(legacyPath + ".v2.bak").Should().BeTrue("version migration backup");
+            File.Exists(legacyPath + ".split.bak").Should().BeTrue("layout split backup");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void ImportJson_RejectsWireFormatPayload_NoStateMutation()
+    {
+        // GiftRatesPayload (community wire format) and CalibrationData (full local
+        // export) share rate-dict property names. Without a sanity check, a wire
+        // payload would partially deserialize as CalibrationData with empty
+        // observations and populated aggregates — and silently flow through the
+        // migration ladder doing nothing. The behavioral guarantee is "no mutation":
+        // the import must not corrupt existing state nor add 0 observations.
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+
+            // Seed one real observation so "no mutation" is observable.
+            inv.Add(100, "Moonstone");
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(100);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5);
+            svc.Data.Observations.Should().HaveCount(1);
+
+            // Wire-format payload as it would arrive from a community-share GitHub issue.
+            var wireJson = """
+                {
+                  "schemaVersion": 2,
+                  "module": "arwen",
+                  "exportedAt": "2026-04-25T06:35:38.27+00:00",
+                  "attributionOptOut": false,
+                  "itemRates": {
+                    "NPC_Larsan|Topaz": { "rate": 0.5, "sampleCount": 1, "minRate": 0.5, "maxRate": 0.5 }
+                  },
+                  "signatureRates": {},
+                  "npcRates": {},
+                  "keywordRates": {}
+                }
+                """;
+
+            var added = svc.ImportJson(wireJson);
+            added.Should().Be(0, "wire payload carries no observations to add");
+            svc.Data.Observations.Should().HaveCount(1, "existing observation must remain unchanged");
+            svc.Data.Observations[0].ItemInternalName.Should().Be("Moonstone");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
 }

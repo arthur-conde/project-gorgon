@@ -74,17 +74,21 @@ public sealed class CategoryRate
 }
 
 /// <summary>
-/// Persisted calibration data: raw observations plus aggregates at four specificity tiers.
+/// In-memory + export shape for calibration: raw observations plus aggregates at four
+/// specificity tiers. On disk, this is split across <see cref="AggregatesData"/>
+/// (<c>calibration.json</c>) and <see cref="ObservationLog"/> (<c>observations.json</c>);
+/// <see cref="CalibrationData"/> is the union used by <see cref="CalibrationService"/>
+/// at runtime and by <c>ExportJson</c>/<c>ImportJson</c> for the user-facing
+/// "share my full calibration" workflow (a single self-contained file).
 ///
 /// <para>
-/// <b>Hand-editing <c>calibration.json</c>:</b> safe, with caveats. The <c>ItemRates</c> /
-/// <c>SignatureRates</c> / <c>NpcRates</c> / <c>KeywordRates</c> blocks are write-only
-/// outputs — <see cref="CalibrationService"/> always rebuilds them from
-/// <see cref="Observations"/> on load (see <c>RecomputeRates</c>), so editing or
-/// deleting fields inside an observation will be reflected in the rates after the next
-/// app start. Edit while the app is closed; saves are tmp+rename and there's no file
-/// watcher, so a new gift landing mid-edit will persist over your changes. Don't lower
-/// <see cref="Version"/> — v2→v3 migration drops every stackable-item observation.
+/// <b>Hand-editing the on-disk files:</b> only <c>observations.json</c> is the source
+/// of truth. <c>calibration.json</c> is purely derived — <see cref="CalibrationService"/>
+/// rebuilds it from observations on every load (see <c>RecomputeRates</c>), so editing
+/// rates accomplishes nothing. Edit observations while the app is closed; saves are
+/// tmp+rename and there's no file watcher, so a new gift landing mid-edit will persist
+/// over your changes. Don't lower <see cref="Version"/> — v2→v3 migration drops every
+/// stackable-item observation.
 /// </para>
 /// </summary>
 public sealed class CalibrationData
@@ -107,11 +111,42 @@ public sealed class CalibrationData
     public Dictionary<string, CategoryRate> KeywordRates { get; set; } = new(StringComparer.Ordinal);
 }
 
+/// <summary>
+/// On-disk shape for <c>calibration.json</c>: aggregates only, no observations.
+/// Purely derived from <see cref="ObservationLog"/> — rebuilt on every load.
+/// <see cref="Version"/> tracks the observation record schema (currently 3) so that
+/// migration decisions key off the on-disk shape, not just the layout split. The split
+/// itself (single-file → two-file) is a layout concern tracked separately on the
+/// observations file.
+/// </summary>
+public sealed class AggregatesData
+{
+    public int Version { get; set; } = 3;
+    public DateTimeOffset ExportedAt { get; set; }
+    public Dictionary<string, CategoryRate> ItemRates { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, CategoryRate> SignatureRates { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, CategoryRate> NpcRates { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, CategoryRate> KeywordRates { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// On-disk shape for <c>observations.json</c>: the source of truth for calibration.
+/// <see cref="Version"/> matches <see cref="AggregatesData.Version"/> — the migration
+/// ladder operates on this list.
+/// </summary>
+public sealed class ObservationLog
+{
+    public int Version { get; set; } = 3;
+    public List<GiftObservation> Observations { get; set; } = [];
+}
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(CalibrationData))]
+[JsonSerializable(typeof(AggregatesData))]
+[JsonSerializable(typeof(ObservationLog))]
 [JsonSerializable(typeof(GiftObservation))]
 [JsonSerializable(typeof(MatchedPreference))]
 public partial class CalibrationJsonContext : JsonSerializerContext;

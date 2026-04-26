@@ -2,10 +2,10 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace Mithril.Shared.Settings;
 
-/// <summary>Write a JSON file atomically: serialize to <c>path.tmp</c>, then rename
+/// <summary>Write a JSON file atomically: serialize to <c>path.partial</c>, then rename
 /// over the target. Backed by <see cref="AtomicFile"/>, which retries the whole
 /// sequence on Windows AV/indexer interference.</summary>
-internal static class AtomicJsonWriter
+public static class AtomicJsonWriter
 {
     public static void Write<T>(string filePath, T value, JsonTypeInfo<T> typeInfo) =>
         AtomicFile.WriteJsonAtomic(filePath, value, typeInfo);
