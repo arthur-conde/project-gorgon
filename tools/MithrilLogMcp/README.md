@@ -4,9 +4,30 @@ MCP server exposing Mithril's log sources (Project Gorgon `Player.log`, `ChatLog
 
 ## Status
 
-- **v0.1** — Player.log only, `query_events`/`aggregate`/`list_event_types`, time windows.
-- **v0.2** — adds chat log + Mithril Serilog sources, `source: "all"` merge, field projection.
-- **v0.3** — persistent cursors, character scoping, `--last-session`, rollover detection.
+- **v0.1** — Player.log only, `query_events`/`aggregate`/`list_event_types`, time windows. ✅
+- **v0.2** — chat log + Mithril Serilog sources, `source: "all"` merge, field projection. ✅
+- **v0.3** — persistent cursors, character scoping, `--last-session`, rollover detection. ✅
+
+## Tool surface
+
+| Tool | Purpose |
+|------|---------|
+| `query_events` | Stream typed events filtered by source, event type, time window, character, or arbitrary `data.*` field |
+| `aggregate` | Server-side `count` / `group_by` / `histogram` / `distinct` / `top` reductions |
+| `list_event_types` | Schema discovery: every event type the server can emit, with field names |
+| `cursor_list` | List named cursors stored at `%LocalAppData%/MithrilLogMcp/cursors.json` |
+| `cursor_reset` | Remove a named cursor so the next query starts fresh |
+
+## Sources
+
+| Source | Path | Notes |
+|--------|------|-------|
+| `player` | `%LocalAppData%Low/Elder Game/Project Gorgon/Player.log` | Lines carry only `[HH:MM:SS]`; date is anchored by file mtime |
+| `chat` | `%LocalAppData%Low/Elder Game/Project Gorgon/ChatLogs/Chat-YY-MM-DD.log` | Lines carry full `YY-MM-DD HH:MM:SS`; files outside the window are skipped without opening |
+| `mithril` | `%LocalAppData%/Mithril/Shell/logs/*.json` | CompactJsonFormatter (`@t`, `@mt`, `Category`, `Message`); detection is by content, so legacy `gorgon-*.json` and migrated `mithril-*-prebrand.json` are also picked up |
+| `all` | merged | 3-way time-ordered merge across the above |
+
+Each can be overridden via env var (`MITHRIL_PLAYER_LOG`, `MITHRIL_CHAT_LOG_DIR`, `MITHRIL_DIAGNOSTIC_LOG_DIR`, `MITHRIL_CHARACTER_ROOT`, `MITHRIL_SHELL_SETTINGS`).
 
 ## Building & running
 
