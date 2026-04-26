@@ -64,6 +64,12 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _profilesSnapshot;
 
+    // Quests (quests.json) — keyed by "quest_N" plus InternalName secondary lookup.
+    private IReadOnlyDictionary<string, QuestEntry> _quests = new Dictionary<string, QuestEntry>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, QuestEntry> _questsByInternalName =
+        new Dictionary<string, QuestEntry>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _questsSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -81,6 +87,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _questsSnapshot = new ReferenceFileSnapshot("quests", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -88,13 +95,14 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadXpTables();
         LoadNpcs();
         LoadAreas();
+        LoadQuests();              // Must run before LoadItemSources — ResolveSourceContext reads _quests.
         LoadItemSources();
         LoadAttributes();
         LoadPowers();
         LoadProfiles();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles", "quests"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -109,6 +117,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
+    public IReadOnlyDictionary<string, QuestEntry> Quests => _quests;
+    public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName => _questsByInternalName;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -122,6 +132,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "attributes" => _attributesSnapshot,
         "tsysclientinfo" => _powersSnapshot,
         "tsysprofiles" => _profilesSnapshot,
+        "quests" => _questsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -139,6 +150,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers, ct),
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles, ct),
+        "quests" => RefreshFileAsync("quests", ReferenceJsonContext.Default.DictionaryStringRawQuest, ParseAndSwapQuests, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -154,6 +166,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("attributes", ct);
         await RefreshAsync("tsysclientinfo", ct);
         await RefreshAsync("tsysprofiles", ct);
+        await RefreshAsync("quests", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -263,6 +276,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers);
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles);
+    private void LoadQuests() => LoadFile("quests", ReferenceJsonContext.Default.DictionaryStringRawQuest, ParseAndSwapQuests);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -538,17 +552,18 @@ public sealed class ReferenceDataService : IReferenceDataService
     /// Resolve a <see cref="RawItemSource"/> entry to its <see cref="ItemSource.Context"/>.
     /// Recipe entries carry a numeric <c>recipeId</c>; we look up the recipe and return its
     /// <see cref="RecipeEntry.InternalName"/> so consumers can use it directly. Quest entries
-    /// carry a numeric <c>questId</c>; until a quest parser exists we expose the id as a
-    /// string. Other types fall through to the existing string fields. Relies on
-    /// <see cref="LoadRecipes"/> running before <see cref="LoadItemSources"/> in the ctor.
+    /// carry a numeric <c>questId</c> resolved symmetrically via <see cref="QuestEntry.InternalName"/>.
+    /// Other types fall through to the existing string fields. Relies on <see cref="LoadRecipes"/>
+    /// and <see cref="LoadQuests"/> running before <see cref="LoadItemSources"/> in the ctor.
     /// </summary>
     private string? ResolveSourceContext(RawItemSource r)
     {
         if (r.RecipeId is { } recipeId
             && _recipes.TryGetValue($"recipe_{recipeId}", out var recipe))
             return recipe.InternalName;
-        if (r.QuestId is { } questId)
-            return questId.ToString();
+        if (r.QuestId is { } questId
+            && _quests.TryGetValue($"quest_{questId}", out var quest))
+            return quest.InternalName;
         return r.Recipe ?? r.Quest ?? r.Monster ?? r.Source ?? r.Interactor;
     }
 
@@ -623,6 +638,133 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _profiles = byProfile;
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byProfile.Count);
+    }
+
+    private void ParseAndSwapQuests(Dictionary<string, RawQuest> raw, ReferenceFileMetadata meta)
+    {
+        var byKey = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
+        var byName = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, v) in raw)
+        {
+            var objectives = (v.Objectives ?? [])
+                .Where(o => !string.IsNullOrEmpty(o.Type))
+                .Select(o => new QuestObjective(
+                    o.Type!,
+                    o.Description ?? "",
+                    o.Number ?? 0,
+                    CoerceTarget(o.Target),
+                    o.ItemName,
+                    o.GroupId))
+                .ToList();
+
+            var requirements = ProjectQuestRequirementList(v.Requirements);
+            var sustainList = ProjectQuestRequirementList(v.RequirementsToSustain);
+            var sustain = sustainList.Count > 0 ? sustainList[0] : null;
+
+            var skillRewards = (v.Rewards ?? [])
+                .Where(r => !string.IsNullOrEmpty(r.Skill))
+                .Select(r => new QuestSkillReward(r.Skill!, r.Xp ?? 0))
+                .ToList();
+
+            var itemRewards = (v.Rewards_Items ?? [])
+                .Where(i => !string.IsNullOrEmpty(i.Item))
+                .Select(i => new QuestItemReward(i.Item!, i.StackSize ?? 1))
+                .ToList();
+
+            var entry = new QuestEntry(
+                Key: key,
+                Name: v.Name ?? "",
+                InternalName: v.InternalName ?? "",
+                Description: v.Description ?? "",
+                DisplayedLocation: string.IsNullOrEmpty(v.DisplayedLocation) ? null : v.DisplayedLocation,
+                FavorNpc: string.IsNullOrEmpty(v.FavorNpc) ? null : v.FavorNpc,
+                Keywords: (IReadOnlyList<string>)(v.Keywords ?? []),
+                Objectives: objectives,
+                Requirements: requirements,
+                RequirementsToSustain: sustain,
+                SkillRewards: skillRewards,
+                ItemRewards: itemRewards,
+                FavorReward: v.Reward_Favor ?? v.Rewards_Favor ?? 0,
+                RewardEffects: (IReadOnlyList<string>)(v.Rewards_Effects ?? []),
+                RewardLootProfile: string.IsNullOrEmpty(v.Rewards_NamedLootProfile) ? null : v.Rewards_NamedLootProfile,
+                ReuseMinutes: v.ReuseTime_Minutes,
+                ReuseHours: v.ReuseTime_Hours,
+                ReuseDays: v.ReuseTime_Days,
+                PrefaceText: string.IsNullOrEmpty(v.PrefaceText) ? null : v.PrefaceText,
+                SuccessText: string.IsNullOrEmpty(v.SuccessText) ? null : v.SuccessText);
+
+            byKey[key] = entry;
+            if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
+        }
+        _quests = byKey;
+        _questsByInternalName = byName;
+        _questsSnapshot = new ReferenceFileSnapshot("quests", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private static QuestRequirement ProjectQuestRequirement(RawQuestRequirement r) =>
+        new(r.T ?? "", r.Quest, CoerceLevel(r.Level), r.Npc, r.Skill, r.Keyword);
+
+    /// <summary>
+    /// Coerces the polymorphic <c>Target</c> field on quest objectives to a single string.
+    /// Array form joins with <c>" | "</c>; string form passes through; null/other returns null.
+    /// </summary>
+    private static string? CoerceTarget(JsonElement? raw)
+    {
+        if (raw is not { } el) return null;
+        return el.ValueKind switch
+        {
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Array => string.Join(" | ", el.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Select(e => e.GetString())),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Coerces the polymorphic <c>Level</c> field on quest requirements to a string.
+    /// Numeric forms (<c>MinSkillLevel</c>) and string forms (<c>MinFavorLevel</c>)
+    /// both render as their textual representation.
+    /// </summary>
+    private static string? CoerceLevel(JsonElement? raw)
+    {
+        if (raw is not { } el) return null;
+        return el.ValueKind switch
+        {
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.GetRawText(),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Unfolds the polymorphic <c>Requirements</c> / <c>RequirementsToSustain</c> shape:
+    /// usually an array of requirement objects, sometimes a single bare object, and
+    /// occasionally (~21 quests) a heterogeneous array containing nested AND/OR groups.
+    /// We flatten everything into a flat list — the AND/OR grouping is lossy but the
+    /// concrete requirements are surfaced for consumers.
+    /// </summary>
+    private static IReadOnlyList<QuestRequirement> ProjectQuestRequirementList(JsonElement? raw)
+    {
+        if (raw is not { } el) return [];
+        var acc = new List<QuestRequirement>();
+        AppendQuestRequirements(el, acc);
+        return acc;
+    }
+
+    private static void AppendQuestRequirements(JsonElement el, List<QuestRequirement> acc)
+    {
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var single = el.Deserialize(ReferenceJsonContext.Default.RawQuestRequirement);
+                if (single is { T.Length: > 0 }) acc.Add(ProjectQuestRequirement(single));
+                break;
+            case JsonValueKind.Array:
+                foreach (var child in el.EnumerateArray())
+                    AppendQuestRequirements(child, acc);
+                break;
+        }
     }
 
     // ── Shared helpers ───────────────────────────────────────────────────

@@ -251,6 +251,8 @@ public class AugmentParserTests
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; }
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; }
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

@@ -73,6 +73,12 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; }
 
+    /// <summary>Quest key (e.g. <c>"quest_10001"</c>) → <see cref="QuestEntry"/>.</summary>
+    IReadOnlyDictionary<string, QuestEntry> Quests { get; }
+
+    /// <summary>InternalName → <see cref="QuestEntry"/> lookup. Matches Quest sources in <c>sources_items.json</c>.</summary>
+    IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

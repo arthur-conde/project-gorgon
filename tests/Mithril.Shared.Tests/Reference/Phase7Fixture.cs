@@ -16,6 +16,9 @@ internal sealed class Phase7Fixture : IReferenceDataService
     public required IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; init; }
     public required IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; init; }
 
+    public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
+    public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+
     public IReadOnlyList<string> Keys => [];
     public ItemKeywordIndex KeywordIndex => new(Items);
     public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
