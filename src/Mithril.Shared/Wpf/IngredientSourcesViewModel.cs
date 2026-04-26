@@ -95,7 +95,8 @@ public sealed record IngredientSourcesViewModel(
                         Kind: src.Type,
                         Label: npc.Name,
                         AreaFriendlyName: string.IsNullOrEmpty(npc.Area) ? null : npc.Area,
-                        Detail: null));
+                        Detail: null,
+                        Requirement: ResolveFavorRequirement(src.Type, npc)));
                     break;
 
                 case "Quest":
@@ -137,6 +138,33 @@ public sealed record IngredientSourcesViewModel(
         if (string.IsNullOrEmpty(context)) return null;
         return refData.Areas.TryGetValue(context, out var area) ? area.FriendlyName : null;
     }
+
+    /// <summary>
+    /// Map a source kind ("Vendor", "Barter", "NpcGift") to the NpcService type that
+    /// gates access, then surface its <see cref="NpcService.MinFavorTier"/> as a
+    /// human-readable line. Vendor sources gate on the NPC's "Store" service; Barter
+    /// sources gate on the matching "Barter" service. NpcGift acceptance is gated
+    /// per-preference (<see cref="NpcPreference.RequiredFavorTier"/>) rather than per-NPC,
+    /// so we skip the requirement line for that kind.
+    /// </summary>
+    private static string? ResolveFavorRequirement(string sourceKind, NpcEntry npc)
+    {
+        var serviceType = sourceKind switch
+        {
+            "Vendor" => "Store",
+            "Barter" => "Barter",
+            _ => null,
+        };
+        if (serviceType is null) return null;
+
+        foreach (var svc in npc.Services)
+        {
+            if (!string.Equals(svc.Type, serviceType, StringComparison.Ordinal)) continue;
+            if (string.IsNullOrEmpty(svc.MinFavorTier)) return null;
+            return $"Requires {svc.MinFavorTier} or higher";
+        }
+        return null;
+    }
 }
 
 public sealed record OnHandLocationGroup(
@@ -154,4 +182,5 @@ public sealed record AcquisitionSource(
     string Kind,
     string Label,
     string? AreaFriendlyName,
-    string? Detail);
+    string? Detail,
+    string? Requirement = null);
