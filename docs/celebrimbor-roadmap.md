@@ -123,7 +123,7 @@ The location-pin tooltip on shopping-list rows used to render `Locations` as a f
 
 - `Vendor` / `Barter` / `NpcGift` → `Npcs[npc].Name` + `Area`. Vendor and Barter sources additionally surface `NpcService.MinFavorTier` as a `Requires <Tier> or higher` sub-line (Vendor routes to the NPC's `Store` service, Barter to its `Barter` service). NpcGift skips the per-NPC line because gift acceptance is gated per-preference (`NpcPreference.RequiredFavorTier`), not per-NPC.
 - `Recipe` → resolved to the recipe's display name + `Requires <Skill> <Level>` and a `prereq: <recipe>` detail when `PrereqRecipe` is set. The parser ([`ResolveSourceContext`](../src/Mithril.Shared/Reference/ReferenceDataService.cs)) maps the JSON's numeric `recipeId` to the recipe's `InternalName` at parse time so the consumer doesn't need to know about the id form.
-- `Quest` → `Quest reward` with the raw `questId` as detail (no quest parser yet — see deferred §3).
+- `Quest` → `Quest reward` with the raw `questId` as detail. The bundled `quests.json` exists but isn't parsed yet (see deferred §3).
 - `Monster` / `Drop` / `Angling` / `HangOut` → label + area resolved through the new `AreaCatalog` service.
 
 `AreaCatalog` ([AreaEntry.cs](../src/Mithril.Shared/Reference/AreaEntry.cs)) parses `Reference/BundledData/areas.json` (previously unparsed) into `IReferenceDataService.Areas` — area code → friendly + short-friendly names, falling back to the long form when the JSON omits the short variant.
@@ -153,17 +153,23 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Render a mini-chain in the picker's row detail pane on hover/select.
 - Flag "you cannot learn this yet" when an upstream prereq is missing from `CharacterSnapshot.RecipeCompletions`.
 
-### 3. Sources tab for keyword rows
+### 3. Quest source resolution
+
+**Why deferred:** `Reference/BundledData/quests.json` exists and is rich (`Name`, `InternalName`, `Description`, `DisplayedLocation`, `Objectives`, `Rewards`, `Rewards_Items`), but `IReferenceDataService` doesn't parse it yet. The Sources window currently renders quest sources as `Quest reward (45016)` — informational only.
+
+**Likely approach:** Parser side, mirror the npcs / areas pattern — add `RawQuest` + `QuestEntry` records, register `Dictionary<string, RawQuest>` in `ReferenceJsonContext`, add `LoadQuests` + `ParseAndSwapQuests` to `ReferenceDataService`, expose `IReadOnlyDictionary<string, QuestEntry> Quests` on `IReferenceDataService`. Window side, the Quest case in `BuildSources` looks up `refData.Quests[$"quest_{questId}"]` and renders `Quest: <Name> · <DisplayedLocation>` with optional objectives or reward summary as detail. Touches the existing 17 test fakes (`Quests` property addition).
+
+### 4. Sources tab for keyword rows
 
 **Why deferred:** v1 keyword rows show a placeholder in the Sources tab. Aggregating vendor/drop/quest sources across 20+ items at once needs its own filtering/grouping UX (otherwise it floods the window). Likely needs a "common across all" vs "per item" toggle.
 
-### 4. Active-character gate evaluation
+### 5. Active-character gate evaluation
 
 **Why deferred:** The shipped Sources-tab enrichments (favor tier, recipe skill, item use-gate) all render the requirement text but don't yet check it against the active character. A natural next step is colouring met / unmet gates against `CharacterSnapshot.Skills` (recipe + use-gate skill comparisons) and `CharacterSnapshot.NpcFavor` (favor-tier comparisons), with a "you cannot learn this yet" badge against `CharacterSnapshot.RecipeCompletions` for `PrereqRecipe`.
 
 **Likely approach:** Extend `AcquisitionSource` (and add a similar field to the title-bar hint) with `RequirementMetByActiveCharacter: bool?` populated when an active character is loaded. The window XAML adds a green/red trigger on the requirement line.
 
-### 5. Tighter persistence of UI state
+### 6. Tighter persistence of UI state
 
 **Why deferred:** v1 persists the craft list, overrides, filter toggles, expansion depth, and tooltip delay. It does not persist DataGrid column layout, expanded-state of step / group headers across sessions, or recent search queries.
 
@@ -172,7 +178,7 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Persist `IsExpanded` per group / step so the user's mental model of what's "done" survives restarts.
 - Recent search queries — drop-down history on the query box.
 
-### 6. Variable-yield planning
+### 7. Variable-yield planning
 
 **Why deferred:** `RecipeItemRef` currently exposes `ChanceToConsume` only; there's no `PercentChance` on result items in the schema. If the schema grows to include bonus-output probabilities (certain recipes do produce bonus copies at low probability), the aggregator's expected-value pipeline is the right slot.
 
@@ -186,12 +192,6 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 ## Blocked on upstream data
 
 Some enrichments aren't reachable today because the underlying CDN data doesn't include the fields. These would either need a new upstream file or out-of-band data sources to make progress.
-
-### Quest names + reward chains
-
-`sources_items.json` carries quest references as a numeric `questId` only. There's no `quests.json` on the CDN today, and `IReferenceDataService` doesn't parse one. The Sources window renders quest sources as `Quest reward (45016)` — informational that the item drops from a quest, but the quest's name, prerequisites, and chain remain unknown to the planner.
-
-**Unblocks:** A `quests.json` published by the game, or a community-maintained quest catalogue we can bundle as a fallback (similar to the way [gorgon-calibration](https://github.com/arthur-conde/gorgon-calibration) backstops Samwise rates).
 
 ### Monster name / level on `Monster` and `Angling` sources
 
