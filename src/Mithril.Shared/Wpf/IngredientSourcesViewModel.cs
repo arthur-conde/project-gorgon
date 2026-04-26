@@ -11,6 +11,7 @@ namespace Mithril.Shared.Wpf;
 public sealed record IngredientSourcesViewModel(
     string Title,
     string? KeywordsLabel,
+    string? UseRequirement,
     int OnHandTotal,
     IReadOnlyList<OnHandLocationGroup> OnHand,
     IReadOnlyList<AcquisitionSource> Sources,
@@ -28,6 +29,7 @@ public sealed record IngredientSourcesViewModel(
 
         IReadOnlyList<AcquisitionSource> sources;
         string? placeholder;
+        string? useRequirement = null;
 
         if (input.ItemInternalName is { } itemName)
         {
@@ -35,6 +37,7 @@ public sealed record IngredientSourcesViewModel(
             placeholder = sources.Count == 0
                 ? "No vendor, drop, or quest sources are catalogued for this item."
                 : null;
+            useRequirement = ResolveUseRequirement(itemName, refData);
         }
         else
         {
@@ -45,7 +48,23 @@ public sealed record IngredientSourcesViewModel(
         // Default tab: On hand (0) when stock exists, otherwise Sources (1).
         var selectedTabIndex = onHand.Count > 0 ? 0 : 1;
 
-        return new IngredientSourcesViewModel(input.Title, input.KeywordsLabel, onHandTotal, onHand, sources, placeholder, selectedTabIndex);
+        return new IngredientSourcesViewModel(input.Title, input.KeywordsLabel, useRequirement, onHandTotal, onHand, sources, placeholder, selectedTabIndex);
+    }
+
+    /// <summary>
+    /// Item-side <em>use</em> gate (post-acquisition). Distinct from Sources-card
+    /// <em>acquisition</em> gates: SkillReqs filters who can plant the seedling /
+    /// cast the scroll, not who can buy it. Multi-key gates render comma-joined.
+    /// Keyword rows skip this (no single item to look up).
+    /// </summary>
+    private static string? ResolveUseRequirement(string itemInternalName, IReferenceDataService refData)
+    {
+        if (!refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item)) return null;
+        if (item.SkillReqs is not { Count: > 0 } reqs) return null;
+        var parts = reqs
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"{kv.Key} {kv.Value}");
+        return $"Requires {string.Join(", ", parts)} to use";
     }
 
     private static IReadOnlyList<OnHandLocationGroup> BuildOnHand(IReadOnlyList<IngredientLocation> entries)
