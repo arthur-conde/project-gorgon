@@ -209,6 +209,63 @@ public class IngredientSourcesViewModelTests
     }
 
     [Fact]
+    public void Single_skill_use_gate_renders_in_title_bar()
+    {
+        var item = new ItemEntry(
+            Id: 1, Name: "Cabbage Leafling", InternalName: "CabbageLeafling",
+            MaxStackSize: 50, IconId: 0, Keywords: [],
+            SkillReqs: new Dictionary<string, int> { ["Gardening"] = 10 });
+        var refData = new StubRefData(
+            itemsByInternalName: new() { ["CabbageLeafling"] = item });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Cabbage Leafling", null, "CabbageLeafling", []), refData);
+
+        vm.UseRequirement.Should().Be("Requires Gardening 10 to use");
+    }
+
+    [Fact]
+    public void Multi_skill_use_gate_renders_comma_joined_alphabetical()
+    {
+        var item = new ItemEntry(
+            Id: 2, Name: "Wolfen Speed Potion", InternalName: "WolfenSpeed",
+            MaxStackSize: 50, IconId: 0, Keywords: [],
+            SkillReqs: new Dictionary<string, int> { ["Werewolf"] = 35, ["Alchemy"] = 35 });
+        var refData = new StubRefData(
+            itemsByInternalName: new() { ["WolfenSpeed"] = item });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Wolfen Speed Potion", null, "WolfenSpeed", []), refData);
+
+        // Alphabetical ordering keeps the rendering stable across runs.
+        vm.UseRequirement.Should().Be("Requires Alchemy 35, Werewolf 35 to use");
+    }
+
+    [Fact]
+    public void Item_with_no_skill_requirements_has_null_UseRequirement()
+    {
+        var item = new ItemEntry(1, "Plain Item", "Plain", 50, 0, []);
+        var refData = new StubRefData(itemsByInternalName: new() { ["Plain"] = item });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Plain", null, "Plain", []), refData);
+
+        vm.UseRequirement.Should().BeNull();
+    }
+
+    [Fact]
+    public void Keyword_row_skips_UseRequirement()
+    {
+        // A keyword row has no single item to gate, even if some matching items have SkillReqs.
+        var refData = new StubRefData();
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Auxiliary Crystal", "any Crystal", ItemInternalName: null, OnHand: []),
+            refData);
+
+        vm.UseRequirement.Should().BeNull();
+    }
+
+    [Fact]
     public void Recipe_source_with_unresolved_context_falls_back_gracefully()
     {
         var refData = new StubRefData(
@@ -274,17 +331,19 @@ public class IngredientSourcesViewModelTests
             Dictionary<string, IReadOnlyList<ItemSource>>? sources = null,
             Dictionary<string, NpcEntry>? npcs = null,
             Dictionary<string, AreaEntry>? areas = null,
-            Dictionary<string, RecipeEntry>? recipesByInternalName = null)
+            Dictionary<string, RecipeEntry>? recipesByInternalName = null,
+            Dictionary<string, ItemEntry>? itemsByInternalName = null)
         {
             ItemSources = sources ?? new Dictionary<string, IReadOnlyList<ItemSource>>();
             Npcs = npcs ?? new Dictionary<string, NpcEntry>();
             Areas = areas ?? new Dictionary<string, AreaEntry>();
             RecipesByInternalName = recipesByInternalName ?? new Dictionary<string, RecipeEntry>();
+            ItemsByInternalName = itemsByInternalName ?? new Dictionary<string, ItemEntry>();
         }
 
         public IReadOnlyList<string> Keys => [];
         public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
