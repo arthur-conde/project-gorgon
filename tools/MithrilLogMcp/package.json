@@ -1,0 +1,30 @@
+{
+  "name": "mithril-log-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing Mithril log sources (Player.log, ChatLogs, Mithril Serilog) to Claude Code.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "dist/src/server.js",
+  "bin": {
+    "mithril-log-mcp": "dist/src/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/src/server.js",
+    "test": "tsc && node --test --test-reporter=spec dist/test/**/*.test.js",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.20.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.13",
+    "rimraf": "6.0.1",
+    "typescript": "5.9.3"
+  }
+}
