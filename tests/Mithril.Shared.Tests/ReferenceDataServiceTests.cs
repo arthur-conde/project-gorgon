@@ -189,6 +189,48 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Recipe_item_source_resolves_recipeId_to_recipe_InternalName()
+    {
+        // sources_items.json carries recipeId numerically; the parser should look up
+        // the matching RecipeEntry and store its InternalName in ItemSource.Context.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_500": { "Name": "Tin Bar", "InternalName": "TinBar" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_101": {
+                "Name": "Smelt Tin Bar",
+                "InternalName": "SmeltTinBar",
+                "Skill": "Smelting",
+                "SkillLevelReq": 5
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.json"), """
+            {
+              "item_500": {
+                "entries": [
+                  { "recipeId": 101, "type": "Recipe" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemSources.Should().ContainKey("TinBar");
+        var sources = svc.ItemSources["TinBar"];
+        sources.Should().ContainSingle();
+        sources[0].Type.Should().Be("Recipe");
+        sources[0].Context.Should().Be("SmeltTinBar"); // InternalName, not the raw id
+    }
+
+    [Fact]
     public void GetSnapshot_UnknownKey_Throws()
     {
         WriteBundled("""{}""", version: "v100");

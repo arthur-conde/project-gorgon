@@ -195,6 +195,10 @@ public sealed class RawItemSource
     public string? Monster { get; set; }
     public string? Source { get; set; }
     public string? Interactor { get; set; }
+    /// <summary>Numeric recipe id from <c>sources_items.json</c> entries with <c>type: "Recipe"</c>.</summary>
+    public long? RecipeId { get; set; }
+    /// <summary>Numeric quest id from <c>sources_items.json</c> entries with <c>type: "Quest"</c>.</summary>
+    public long? QuestId { get; set; }
 }
 
 [JsonSourceGenerationOptions(

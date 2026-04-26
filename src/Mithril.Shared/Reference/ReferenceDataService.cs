@@ -524,7 +524,7 @@ public sealed class ReferenceDataService : IReferenceDataService
             foreach (var r in envelope.Entries)
             {
                 if (string.IsNullOrEmpty(r.Type)) continue;
-                var context = r.Recipe ?? r.Quest ?? r.Monster ?? r.Source ?? r.Interactor;
+                var context = ResolveSourceContext(r);
                 projected.Add(new ItemSource(r.Type!, r.Npc, context));
             }
             if (projected.Count > 0)
@@ -532,6 +532,24 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _itemSources = byInternalName;
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+    }
+
+    /// <summary>
+    /// Resolve a <see cref="RawItemSource"/> entry to its <see cref="ItemSource.Context"/>.
+    /// Recipe entries carry a numeric <c>recipeId</c>; we look up the recipe and return its
+    /// <see cref="RecipeEntry.InternalName"/> so consumers can use it directly. Quest entries
+    /// carry a numeric <c>questId</c>; until a quest parser exists we expose the id as a
+    /// string. Other types fall through to the existing string fields. Relies on
+    /// <see cref="LoadRecipes"/> running before <see cref="LoadItemSources"/> in the ctor.
+    /// </summary>
+    private string? ResolveSourceContext(RawItemSource r)
+    {
+        if (r.RecipeId is { } recipeId
+            && _recipes.TryGetValue($"recipe_{recipeId}", out var recipe))
+            return recipe.InternalName;
+        if (r.QuestId is { } questId)
+            return questId.ToString();
+        return r.Recipe ?? r.Quest ?? r.Monster ?? r.Source ?? r.Interactor;
     }
 
     private void ParseAndSwapAttributes(Dictionary<string, RawAttribute> raw, ReferenceFileMetadata meta)
