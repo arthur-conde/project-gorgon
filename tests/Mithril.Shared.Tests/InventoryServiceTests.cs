@@ -222,11 +222,14 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
-    public async Task UpdateItemCode_NoOpSizeChange_DoesNotFire()
+    public async Task UpdateItemCode_TrueNoOp_DoesNotFire()
     {
-        // A no-op UpdateItemCode (size unchanged) shouldn't push noise to subscribers.
-        // In practice the game doesn't repeat the same code, but defending against it
-        // keeps the event stream tight.
+        // A true no-op UpdateItemCode (size AND confirmation status both
+        // unchanged) shouldn't push noise to subscribers. Note: the first
+        // UpdateItemCode after a default-1 AddItem is *not* a no-op — it
+        // promotes the entry from unconfirmed → confirmed, even when the
+        // numeric size matches. So set up a confirmed entry first, then
+        // verify a literal repeat is suppressed.
         var stream = new ScriptedStream(Array.Empty<string>());
         var svc = new InventoryService(stream);
         var runTask = svc.StartAsync(CancellationToken.None);
@@ -236,12 +239,49 @@ public sealed class InventoryServiceTests
 
         stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)");
         await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
-        // code 0 → size 1; same as the AddItem default.
+        // First UpdateCode confirms size=4. Fires StackChanged (1 → confirmed 4).
+        stream.Push("[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().HaveCount(2);
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+
+        // Repeat the same code — both size and confirmation match. Suppressed.
+        stream.Push("[00:00:03] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().HaveCount(2, "repeat UpdateCode at the same size on a confirmed entry is a no-op");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task UpdateItemCode_FlipsUnconfirmedToConfirmed_EvenAtSameSize()
+    {
+        // The carryover-fix contract: an UpdateItemCode after a default-1 AddItem
+        // must promote the entry from unconfirmed → confirmed and fire StackChanged
+        // so subscribers know the size is now trustworthy — even when the decoded
+        // size happens to be 1.
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(100, out _).Should().BeFalse();
+
+        // code 0 → size 1, identical numeric to the default — but the bool flips.
         stream.Push("[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 0, True)");
         await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-        events.Should().ContainSingle(e => e.Kind == InventoryEventKind.Added);
-        events.Should().NotContain(e => e.Kind == InventoryEventKind.StackChanged);
+        events.Should().HaveCount(2);
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        events[1].StackSize.Should().Be(1);
+        svc.TryGetStackSize(100, out var size).Should().BeTrue();
+        size.Should().Be(1);
 
         await svc.StopAsync(CancellationToken.None);
         _ = runTask;
@@ -440,6 +480,140 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
+    public async Task ExportReconcile_UpdatesSingleLiveEntry_FiresStackChanged()
+    {
+        // Mid-session export landing for an InternalName already tracked once in _map
+        // (with a stale or default size) should reconcile the live entry to the
+        // export's authoritative size and fire StackChanged so subscribers see it.
+        using var fixture = new SeedFixture();
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        // No export at startup → AddItem defaults to size 1.
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().ContainSingle();
+        events[0].StackSize.Should().Be(1);
+
+        // Now an export lands carrying StackSize=23 for the same InternalName.
+        // Trigger LoadExportSeeds directly (the FSW path is asynchronous and
+        // would race the assertions).
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        svc.LoadExportSeeds();
+
+        events.Should().HaveCount(2, "the reconcile pass must fire StackChanged for the corrected entry");
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        events[1].InstanceId.Should().Be(42);
+        events[1].StackSize.Should().Be(23);
+
+        svc.TryGetStackSize(42, out var size).Should().BeTrue();
+        size.Should().Be(23);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task ExportReconcile_AmbiguousLiveDuplicates_LeavesEntriesAlone()
+    {
+        // If the live map already holds two entries of the same InternalName, we
+        // can't tell which one the export's size belongs to — leave both untouched
+        // and just refresh _seededStackSizes for future AddItems.
+        using var fixture = new SeedFixture();
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        stream.Push("[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(99), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().HaveCount(2);
+
+        // Even though the export shows a single Barley stack of size 23, we have
+        // TWO live BarleySeeds entries — ambiguous, no reconcile.
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        svc.LoadExportSeeds();
+
+        events.Should().HaveCount(2, "ambiguous live duplicates → no StackChanged fires");
+        // Both entries remain unconfirmed (default-1 from AddItem with no chat),
+        // and the ambiguous reconcile correctly refused to bless either with the
+        // export's size — so TryGetStackSize still reports unknown for both.
+        svc.TryGetStackSize(42, out _).Should().BeFalse();
+        svc.TryGetStackSize(99, out _).Should().BeFalse();
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task ExportReconcile_NoSizeChange_DoesNotFire()
+    {
+        // Reconcile is a no-op when the live entry already matches the export.
+        using var fixture = new SeedFixture();
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 23, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+
+        // AddItem consumes the seed → live entry already has size 23.
+        stream.Push("[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        events.Should().ContainSingle();
+        events[0].StackSize.Should().Be(23);
+
+        // Fresh export with the same size → reconcile finds nothing to change.
+        svc.LoadExportSeeds();
+
+        events.Should().ContainSingle("no-op reconcile must not fire StackChanged");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
     public async Task SubscriberException_DoesNotBreakOtherSubscribers()
     {
         var stream = new ScriptedStream(
@@ -469,8 +643,10 @@ public sealed class InventoryServiceTests
     /// Stands up a temp <c>GameRoot/Reports/</c> directory and a stub
     /// <see cref="IReferenceDataService"/> that knows about Barley Seeds
     /// (TypeID 10251, MaxStackSize 100). Cleans up on dispose.
+    /// Marked <c>internal</c> so sibling test files in the same assembly
+    /// (e.g. <c>InventoryServiceStackSizeTests</c>) can reuse it.
     /// </summary>
-    private sealed class SeedFixture : IDisposable
+    internal sealed class SeedFixture : IDisposable
     {
         public string GameRoot { get; }
         public string ReportsDir { get; }

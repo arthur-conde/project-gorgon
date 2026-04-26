@@ -10,6 +10,7 @@ public sealed partial class LiveInventoryRow : ObservableObject
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private int _iconId;
     [ObservableProperty] private int _stackSize;
+    [ObservableProperty] private bool _sizeConfirmed;
     [ObservableProperty] private bool _isDeleted;
     [ObservableProperty] private DateTime _lastUpdated;
 }

@@ -16,14 +16,19 @@ namespace Mithril.Shared.Tests.Inventory;
 public sealed class InventoryServiceStackSizeTests
 {
     [Fact]
-    public async Task AddItem_DefaultsToSizeOne_WhenNoChatCorrelation()
+    public async Task AddItem_WithNoConfirmingEvent_ReportsUnknown()
     {
+        // Without chat correlation, an export seed, an UpdateItemCode, or a vault
+        // event, the post-AddItem size is the default 1 — but that 1 is a guess,
+        // not a fact. TryGetStackSize must report unknown so callers (Arwen) can
+        // distinguish "we know it's a single item" from "we replayed an AddItem
+        // for a carryover stack of 10 and have no idea what size to trust."
         var stream = new ScriptedPlayerStream("[00:00:01] LocalPlayer: ProcessAddItem(BirdEgg(100), -1, True)");
         var svc = new InventoryService(stream);
         await RunAsync(svc, stream);
 
-        svc.TryGetStackSize(100, out var size).Should().BeTrue();
-        size.Should().Be(1);
+        svc.TryGetStackSize(100, out _).Should().BeFalse(
+            because: "the 1 is an unconfirmed default — no authoritative source has spoken yet");
     }
 
     [Fact]
@@ -58,7 +63,10 @@ public sealed class InventoryServiceStackSizeTests
     public async Task Split_TracksOriginalAndNewInstanceSeparately()
     {
         // Split Guava 4 → 3 + 1 emits UpdateItemCode (size 3) on the original, then
-        // AddItem with a new InstanceId for the split-off 1.
+        // AddItem with a new InstanceId for the split-off 1. The original is
+        // confirmed by UpdateItemCode; the split-off has only an AddItem with no
+        // confirming source, so its size is unknown — even though the runtime
+        // game-state value happens to be 1.
         var stream = new ScriptedPlayerStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)", // grow to 4
@@ -69,8 +77,10 @@ public sealed class InventoryServiceStackSizeTests
 
         svc.TryGetStackSize(100, out var origSize).Should().BeTrue();
         origSize.Should().Be(3);
-        svc.TryGetStackSize(101, out var splitSize).Should().BeTrue();
-        splitSize.Should().Be(1);
+        svc.TryGetStackSize(101, out _).Should().BeFalse(
+            because: "the split-off's AddItem alone doesn't confirm its size");
+        svc.TryResolve(101, out var splitName).Should().BeTrue();
+        splitName.Should().Be("Guava");
     }
 
     [Fact]
@@ -165,15 +175,82 @@ public sealed class InventoryServiceStackSizeTests
 
         playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
         await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
-        // Without chat yet, size defaults to 1.
-        svc.TryGetStackSize(100, out var preChatSize).Should().BeTrue();
-        preChatSize.Should().Be(1);
+        // Without chat yet, the default-1 size is unconfirmed.
+        svc.TryGetStackSize(100, out _).Should().BeFalse(
+            because: "AddItem-default-1 is unconfirmed until chat or a code-update lands");
 
         chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
         await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
         svc.TryGetStackSize(100, out var postChatSize).Should().BeTrue();
         postChatSize.Should().Be(5);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = run;
+    }
+
+    [Fact]
+    public async Task SessionReplayedAddItem_StaysUnconfirmedUntilCodeUpdateLands()
+    {
+        // The carryover bug: a stackable instance whose AddItem replays into
+        // _map at default-1 (no contemporaneous chat in the replay window)
+        // must NOT be reported as a known stack of 1. Once an UpdateItemCode
+        // lands this session — even one that would set size 1 again — the
+        // entry flips to confirmed and the size is trustworthy.
+        var stream = new ScriptedPlayerStream();
+        var svc = new InventoryService(stream);
+        var run = svc.StartAsync(CancellationToken.None);
+
+        stream.Push(new RawLogLine(DateTime.UtcNow, "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(100, out _).Should().BeFalse(
+            because: "session-replayed AddItem alone is not a confirming source");
+
+        // UpdateItemCode confirms — even though the decoded size happens to be 1.
+        stream.Push(new RawLogLine(DateTime.UtcNow, "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 0, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(100, out var size).Should().BeTrue();
+        size.Should().Be(1);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = run;
+    }
+
+    [Fact]
+    public async Task ExportReconcile_PromotesUnconfirmedDefaultOne_ToConfirmed()
+    {
+        // Mid-session export of a single bag-stack, with the live entry still at
+        // the default-1 unconfirmed state. The reconcile pass must mark it
+        // confirmed even when the export's size is also 1 — and fire StackChanged
+        // so subscribers see the transition.
+        using var fixture = new InventoryServiceTests.SeedFixture();
+        var stream = new ScriptedPlayerStream();
+        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        var run = svc.StartAsync(CancellationToken.None);
+
+        stream.Push(new RawLogLine(DateTime.UtcNow, "[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(42), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(42, out _).Should().BeFalse();
+
+        fixture.WriteExport("""
+{
+  "Character": "Hits",
+  "ServerName": "Pluto",
+  "Timestamp": "2026-04-25T14:00:00Z",
+  "Report": "items",
+  "ReportVersion": 1,
+  "Items": [
+    { "TypeID": 10251, "Name": "Barley Seeds", "StackSize": 1, "Value": 0, "IsInInventory": true, "IsCrafted": false }
+  ]
+}
+""");
+        svc.LoadExportSeeds();
+
+        svc.TryGetStackSize(42, out var size).Should().BeTrue(
+            because: "the export confirms the size — even when it happens to be 1");
+        size.Should().Be(1);
 
         await svc.StopAsync(CancellationToken.None);
         _ = run;
@@ -228,9 +305,8 @@ public sealed class InventoryServiceStackSizeTests
         playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
         await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-        // No correlation found → defaults to 1.
-        svc.TryGetStackSize(100, out var size).Should().BeTrue();
-        size.Should().Be(1);
+        // No correlation found → unconfirmed default 1, reported as unknown.
+        svc.TryGetStackSize(100, out _).Should().BeFalse();
 
         await svc.StopAsync(CancellationToken.None);
         _ = run;

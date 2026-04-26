@@ -14,13 +14,21 @@ namespace Mithril.Shared.Inventory;
 /// for <see cref="InventoryEventKind.Deleted"/> it's the last-known size
 /// before removal; for <see cref="InventoryEventKind.StackChanged"/> it's
 /// the new size.
+/// <paramref name="SizeConfirmed"/> is the same bit
+/// <see cref="IInventoryService.TryGetStackSize"/> consults — false when the
+/// <paramref name="StackSize"/> is the unconfirmed default-1 (a session-replayed
+/// AddItem with no chat correlation), true when an authoritative source
+/// (chat, UpdateItemCode, vault, export seed/reconcile) has spoken.
+/// <see cref="InventoryEventKind.StackChanged"/> events always carry
+/// <c>SizeConfirmed = true</c>.
 /// </summary>
 public readonly record struct InventoryEvent(
     InventoryEventKind Kind,
     long InstanceId,
     string InternalName,
     DateTime Timestamp,
-    int StackSize);
+    int StackSize,
+    bool SizeConfirmed = false);
 
 public enum InventoryEventKind
 {
@@ -59,12 +67,23 @@ public interface IInventoryService
     bool TryResolve(long instanceId, out string internalName);
 
     /// <summary>
-    /// Resolve an instance id to its current stack size, if known. Like
-    /// <see cref="TryResolve"/>, returns the last-known size for entries that
-    /// have been deleted in this session — Arwen's gift-attribution path needs
-    /// the pre-delete size. Returns false for instances the service has never
-    /// observed an event for (e.g. items carried over from a prior PG game
-    /// session that haven't been touched).
+    /// Resolve an instance id to its current stack size, if and only if the
+    /// size has been *confirmed* by an authoritative source — chat correlation,
+    /// <c>ProcessUpdateItemCode</c>, <c>ProcessRemoveFromStorageVault</c>,
+    /// export seeding, or export reconcile. Returns false when:
+    /// <list type="bullet">
+    ///   <item>The instance has never been observed (carryover from a prior
+    ///   game session whose AddItem isn't in this log's replay buffer).</item>
+    ///   <item>The instance is in the map but its size is still the
+    ///   unconfirmed default of 1 (a session-replayed AddItem with no
+    ///   chat status in the correlation window). A real stack of 1 is
+    ///   distinguishable: the chat status confirms it, the corresponding
+    ///   AddItem path flips confirmation on, and TryGetStackSize reports
+    ///   <c>true, 1</c>.</item>
+    /// </list>
+    /// Like <see cref="TryResolve"/>, returns the last-known confirmed size
+    /// for entries that have been deleted in this session — Arwen's
+    /// gift-attribution path needs the pre-delete size.
     /// </summary>
     bool TryGetStackSize(long instanceId, out int stackSize);
 

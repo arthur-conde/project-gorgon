@@ -97,7 +97,28 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // pollutes at most one event per InternalName.
     private readonly Dictionary<string, int> _seededStackSizes = new(StringComparer.Ordinal);
 
-    private readonly record struct MapEntry(string InternalName, DateTime Timestamp, bool Deleted, int StackSize);
+    // SizeConfirmed distinguishes "we know the stack size" from "we defaulted
+    // to 1 because the AddItem had no chat correlation, no export seed, and
+    // no later UpdateItemCode/Vault/chat-back-fill landed yet." Without this,
+    // a session-replayed AddItem for a carryover stack looks identical to a
+    // freshly-picked-up single fish — and Arwen would then record gifts of
+    // those carryover stacks at quantity=1 instead of routing them to the
+    // pending-observation queue. Confirmation flips on at:
+    //   - HandleAddItem chat-correlation hit
+    //   - HandleAddItem export-seed hit
+    //   - HandleUpdateItemCode
+    //   - HandleRemoveFromStorageVault
+    //   - HandleChatStatusAdd back-fill
+    //   - LoadExportSeeds reconcile pass
+    private readonly record struct MapEntry(string InternalName, DateTime Timestamp, bool Deleted, int StackSize, bool SizeConfirmed);
+
+    /// <summary>
+    /// Snapshot of a single live (un-deleted) <see cref="_map"/> entry,
+    /// captured during <see cref="LoadExportSeeds"/>'s reconcile pass.
+    /// Replaces a (long, int, bool) tuple so the call sites below read
+    /// like prose instead of <c>live.Item3</c>.
+    /// </summary>
+    private readonly record struct LiveEntrySnapshot(long Id, int Size, bool Confirmed);
 
     public InventoryService(
         IPlayerLogStream stream,
@@ -133,7 +154,9 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         lock (_subLock)
         {
-            if (_map.TryGetValue(instanceId, out var entry) && entry.StackSize > 0)
+            if (_map.TryGetValue(instanceId, out var entry)
+                && entry.StackSize > 0
+                && entry.SizeConfirmed)
             {
                 stackSize = entry.StackSize;
                 return true;
@@ -155,7 +178,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             {
                 if (entry.Deleted) continue;
                 Invoke(handler, new InventoryEvent(
-                    InventoryEventKind.Added, id, entry.InternalName, entry.Timestamp, entry.StackSize));
+                    InventoryEventKind.Added, id, entry.InternalName, entry.Timestamp, entry.StackSize, entry.SizeConfirmed));
             }
             _handlers.Add(handler);
             return new Subscription(this, handler);
@@ -253,9 +276,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // Try the pending-chat queue first — chat may have arrived ahead of us.
             int size = 1;
             bool seeded = false;
+            bool confirmed = false;
             if (TryDequeuePendingChat(internalName, out var pendingCount))
             {
                 size = pendingCount;
+                confirmed = true;
             }
             else if (_seededStackSizes.TryGetValue(internalName, out var seededSize))
             {
@@ -266,19 +291,22 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 // can override the seeded size via the standard StackChanged path.
                 size = seededSize;
                 seeded = true;
+                confirmed = true;
                 _seededStackSizes.Remove(internalName);
                 EnqueuePendingAdd(internalName, instanceId);
             }
             else
             {
                 // No chat yet, no export seed; remember this InstanceId so a later
-                // chat status can back-fill the size.
+                // chat status can back-fill the size. Size remains the unconfirmed
+                // default — TryGetStackSize will report unknown until a confirming
+                // event lands (chat back-fill, UpdateItemCode, vault, reconcile).
                 EnqueuePendingAdd(internalName, instanceId);
             }
 
-            _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size);
-            _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size}{(seeded ? " (export-seeded)" : "")} (total={_map.Count})");
-            Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size));
+            _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size, SizeConfirmed: confirmed);
+            _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size}{(seeded ? " (export-seeded)" : confirmed ? " (chat)" : " (unconfirmed)")} (total={_map.Count})");
+            Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size, confirmed));
         }
     }
 
@@ -303,7 +331,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // they've already read past.
             _map[instanceId] = entry with { Deleted = true, Timestamp = timestamp };
             _diag?.Trace("Inventory", $"Delete id={instanceId} name={entry.InternalName} size={entry.StackSize} (retained)");
-            Fire(new InventoryEvent(InventoryEventKind.Deleted, instanceId, entry.InternalName, timestamp, entry.StackSize));
+            Fire(new InventoryEvent(InventoryEventKind.Deleted, instanceId, entry.InternalName, timestamp, entry.StackSize, entry.SizeConfirmed));
         }
     }
 
@@ -323,10 +351,15 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 _diag?.Trace("Inventory", $"UpdateCode id={instanceId} size={newSize} — not in map, ignored");
                 return;
             }
-            if (entry.StackSize == newSize) return;
-            _map[instanceId] = entry with { StackSize = newSize, Timestamp = timestamp };
+            // UpdateCode is authoritative for the post-event size, so confirmation
+            // flips on regardless of whether the size value changed (a "1 → 1"
+            // UpdateCode for a previously-defaulted entry still moves it from
+            // unconfirmed to confirmed). Only suppress the StackChanged fire when
+            // both size and confirmation status match what's already there.
+            if (entry.StackSize == newSize && entry.SizeConfirmed) return;
+            _map[instanceId] = entry with { StackSize = newSize, Timestamp = timestamp, SizeConfirmed = true };
             _diag?.Trace("Inventory", $"UpdateCode id={instanceId} name={entry.InternalName} size={newSize}");
-            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, newSize));
+            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, newSize, SizeConfirmed: true));
         }
     }
 
@@ -341,11 +374,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // cases (the vault-side InstanceId, which we don't track). Only update if we
             // know this id — that filters cleanly.
             if (!_map.TryGetValue(instanceId, out var entry)) return;
-            if (entry.StackSize == stackSize) return;
+            if (entry.StackSize == stackSize && entry.SizeConfirmed) return;
 
-            _map[instanceId] = entry with { StackSize = stackSize, Timestamp = timestamp };
+            _map[instanceId] = entry with { StackSize = stackSize, Timestamp = timestamp, SizeConfirmed = true };
             _diag?.Trace("Inventory", $"RemoveFromVault id={instanceId} name={entry.InternalName} size={stackSize}");
-            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, stackSize));
+            Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, stackSize, SizeConfirmed: true));
         }
     }
 
@@ -361,11 +394,12 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // Try to back-fill a recent AddItem that defaulted to size = 1.
             if (TryDequeuePendingAdd(internalName, out var instanceId))
             {
-                if (_map.TryGetValue(instanceId, out var entry) && entry.StackSize != count)
+                if (_map.TryGetValue(instanceId, out var entry)
+                    && (entry.StackSize != count || !entry.SizeConfirmed))
                 {
-                    _map[instanceId] = entry with { StackSize = count, Timestamp = timestamp };
+                    _map[instanceId] = entry with { StackSize = count, Timestamp = timestamp, SizeConfirmed = true };
                     _diag?.Trace("Inventory", $"Chat → Add id={instanceId} name={internalName} size={count}");
-                    Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, internalName, timestamp, count));
+                    Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, internalName, timestamp, count, SizeConfirmed: true));
                 }
                 return;
             }
@@ -446,8 +480,17 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     /// <see cref="_seededStackSizes"/>. Skipped silently if the dependencies
     /// needed to interpret the export aren't present (no game root, no reference
     /// data). The rebuild is atomic under <see cref="_subLock"/>.
+    ///
+    /// After rebuilding the seed map, makes a second pass that reconciles
+    /// already-tracked instances against the export: for each InternalName that
+    /// appears exactly once in the export AND exactly once (un-deleted) in the
+    /// live map, the export's <c>StackSize</c> is treated as authoritative —
+    /// the live entry is updated and a <see cref="InventoryEventKind.StackChanged"/>
+    /// event fires. Closes the carryover gap when a player runs an export
+    /// mid-session for an instance whose original AddItem is in a prior session
+    /// log (so chat / UpdateItemCode correlation never reaches it).
     /// </summary>
-    private void LoadExportSeeds()
+    internal void LoadExportSeeds()
     {
         if (_gameConfig is null || _refData is null) return;
         var dir = _gameConfig.ReportsDirectory;
@@ -496,6 +539,51 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 if (count == 1) _seededStackSizes[name] = sizes[name];
             }
             _diag?.Trace("Inventory", $"Seeded {_seededStackSizes.Count} stack sizes from {Path.GetFileName(newest.FilePath)}");
+
+            // Reconcile already-tracked instances against the fresh export. Tally
+            // un-deleted live entries by InternalName; mark any name that appears
+            // more than once as ambiguous (no way to know which bag-stack the
+            // export's count maps to). Then for unambiguous matches whose live
+            // size differs from the export, update + fire StackChanged.
+            var liveSingle = new Dictionary<string, LiveEntrySnapshot>(StringComparer.Ordinal);
+            var liveAmbiguous = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (id, entry) in _map)
+            {
+                if (entry.Deleted) continue;
+                if (liveAmbiguous.Contains(entry.InternalName)) continue;
+                if (liveSingle.ContainsKey(entry.InternalName))
+                {
+                    liveSingle.Remove(entry.InternalName);
+                    liveAmbiguous.Add(entry.InternalName);
+                }
+                else
+                {
+                    liveSingle[entry.InternalName] = new LiveEntrySnapshot(id, entry.StackSize, entry.SizeConfirmed);
+                }
+            }
+
+            var now = _time.GetUtcNow().UtcDateTime;
+            int reconciled = 0;
+            foreach (var (name, count) in counts)
+            {
+                if (count != 1) continue;
+                if (!liveSingle.TryGetValue(name, out var live)) continue;
+                var exportSize = sizes[name];
+                // Reconcile when size differs OR when the export confirms a
+                // previously-unconfirmed default. Carryover stacks land here:
+                // _map says size 1 (default), export says size N — fire to
+                // promote unconfirmed → confirmed even if N happens to be 1.
+                if (live.Size == exportSize && live.Confirmed) continue;
+
+                var entry = _map[live.Id];
+                _map[live.Id] = entry with { StackSize = exportSize, Timestamp = now, SizeConfirmed = true };
+                _diag?.Trace("Inventory",
+                    $"Export reconcile id={live.Id} name={name} size {live.Size} → {exportSize}{(live.Confirmed ? "" : " (confirming)")}");
+                Fire(new InventoryEvent(InventoryEventKind.StackChanged, live.Id, name, now, exportSize, SizeConfirmed: true));
+                reconciled++;
+            }
+            if (reconciled > 0)
+                _diag?.Info("Inventory", $"Export reconciled {reconciled} live entries against {Path.GetFileName(newest.FilePath)}");
         }
     }
 

@@ -71,12 +71,14 @@ public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposab
                     delRow.IsDeleted = true;
                     delRow.LastUpdated = e.Timestamp;
                     delRow.StackSize = e.StackSize;
+                    delRow.SizeConfirmed = e.SizeConfirmed;
                 }
                 break;
             case InventoryEventKind.StackChanged:
                 if (_index.TryGetValue(e.InstanceId, out var stackRow))
                 {
                     stackRow.StackSize = e.StackSize;
+                    stackRow.SizeConfirmed = e.SizeConfirmed;
                     stackRow.LastUpdated = e.Timestamp;
                 }
                 break;
@@ -93,6 +95,7 @@ public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposab
             // game emits a duplicate). Treat it as a refresh.
             row.IsDeleted = false;
             row.StackSize = e.StackSize;
+            row.SizeConfirmed = e.SizeConfirmed;
             row.LastUpdated = e.Timestamp;
             return;
         }
@@ -105,6 +108,7 @@ public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposab
             Name = display,
             IconId = iconId,
             StackSize = e.StackSize,
+            SizeConfirmed = e.SizeConfirmed,
             IsDeleted = false,
             LastUpdated = e.Timestamp,
         };

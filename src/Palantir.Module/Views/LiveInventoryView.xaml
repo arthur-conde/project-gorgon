@@ -71,9 +71,33 @@
                         <Style TargetType="TextBlock">
                             <Setter Property="HorizontalAlignment" Value="Right"/>
                             <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SizeConfirmed}" Value="False">
+                                    <Setter Property="Foreground" Value="#FFCC9966"/>
+                                    <Setter Property="ToolTip" Value="Stack size is the unconfirmed default — no chat correlation, UpdateItemCode, vault, or export has spoken yet."/>
+                                </DataTrigger>
+                            </Style.Triggers>
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
+                <DataGridTemplateColumn Header="Sure?" Width="55" SortMemberPath="SizeConfirmed">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock HorizontalAlignment="Center" Text="✓" Foreground="#FFB7E08C">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SizeConfirmed}" Value="False">
+                                                <Setter Property="Text" Value="?"/>
+                                                <Setter Property="Foreground" Value="#FFCC9966"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Internal name" Binding="{Binding InternalName}" SortMemberPath="InternalName" Width="180">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
