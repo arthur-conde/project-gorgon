@@ -333,38 +333,23 @@
                                         <TextBlock Grid.Column="1" Text="{Binding TotalNeeded}" Foreground="#FFE8E8E8" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="0,0,6,0"/>
                                         <TextBlock Grid.Column="2" Text="{Binding OnHandDetected}" Foreground="{Binding OnHandDetected, Converter={StaticResource ZeroToGhost}}" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="0,0,6,0"/>
 
-                                        <!-- Location pin — only visible when there are resolved on-hand locations. Hover for the full breakdown. -->
-                                        <Border Grid.Column="3" Background="Transparent"
+                                        <!-- Location pin — click to open the Sources window with on-hand breakdown + acquisition hints. -->
+                                        <Button Grid.Column="3" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
                                                 Visibility="{Binding Locations.Count, Converter={StaticResource CountToVisibility}}"
-                                                ToolTipService.InitialShowDelay="{Binding DataContext.TooltipDelayMs, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                ToolTipService.BetweenShowDelay="0">
-                                            <Border.ToolTip>
-                                                <ToolTip Background="Transparent" BorderThickness="0" Padding="0">
-                                                    <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
-                                                            CornerRadius="4" Padding="10" MaxWidth="320">
-                                                        <StackPanel>
-                                                            <TextBlock Text="On hand at" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                                                                       FontWeight="SemiBold" Margin="0,0,0,4"/>
-                                                            <ItemsControl ItemsSource="{Binding Locations}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate>
-                                                                        <StackPanel Orientation="Horizontal" Margin="0,1">
-                                                                            <TextBlock Text="{Binding Label}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                                            <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="6,0,0,0">
-                                                                                <Run Text="× "/><Run Text="{Binding Quantity, Mode=OneWay}"/>
-                                                                            </TextBlock>
-                                                                        </StackPanel>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </StackPanel>
+                                                ToolTip="View sources"
+                                                Command="{Binding DataContext.ShowSourcesCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                     </Border>
-                                                </ToolTip>
-                                            </Border.ToolTip>
+                                                </ControlTemplate>
+                                            </Button.Template>
                                             <icon:PackIconLucide Kind="MapPin" Width="12" Height="12"
                                                                  Foreground="#FFD4A847"
                                                                  VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                        </Border>
+                                        </Button>
 
                                         <TextBox Grid.Column="4"
                                                  Text="{Binding Override, UpdateSourceTrigger=LostFocus, TargetNullValue=''}"

@@ -1,0 +1,238 @@
+<Window x:Class="Mithril.Shared.Wpf.IngredientSourcesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mithril.Shared.Wpf"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        mc:Ignorable="d"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        Title="{Binding Title}"
+        SizeToContent="Height"
+        Width="480"
+        MaxHeight="640"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource AppFontFamily}"
+        FontSize="{DynamicResource AppFontSize}">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6">
+        <DockPanel>
+            <!-- Title bar (drag + close) -->
+            <Border DockPanel.Dock="Top" Background="#FF202020" CornerRadius="6,6,0,0"
+                    Padding="14,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Width="24" Height="24" Padding="0"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            ToolTip="Close" Click="CloseButton_Click">
+                        <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
+                    </Button>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}"
+                                   FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeXLarge}"
+                                   Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding KeywordsLabel, StringFormat=({0})}"
+                                   Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                   FontStyle="Italic">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding KeywordsLabel}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Tabbed content: On hand first (when stock exists), then Sources.
+                 SelectedIndex bound one-way; view-model picks 0 when there's stock, else 1. -->
+            <TabControl Background="Transparent" BorderThickness="0" Padding="14,8,14,12"
+                        SelectedIndex="{Binding SelectedTabIndex, Mode=OneWay}">
+                <TabControl.Resources>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Foreground" Value="#88FFFFFF"/>
+                        <Setter Property="FontSize" Value="{DynamicResource AppFontSize}"/>
+                        <Setter Property="Padding" Value="14,6"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabItem">
+                                    <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
+                                            BorderBrush="#FFD4A847" BorderThickness="0,0,0,2">
+                                        <ContentPresenter ContentSource="Header"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="BorderThickness" Value="0,0,0,2"/>
+                                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="False">
+                                            <Setter TargetName="Bd" Property="BorderThickness" Value="0"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </TabControl.Resources>
+
+                <!-- On hand tab -->
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="On hand"/>
+                            <TextBlock Text="{Binding OnHandTotal, StringFormat=({0})}"
+                                       Margin="6,0,0,0" FontWeight="Normal"
+                                       Visibility="{Binding HasOnHand, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </TabItem.Header>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="500" Padding="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="No on-hand stock detected." Foreground="#88FFFFFF"
+                                       FontStyle="Italic" FontSize="{DynamicResource AppFontSizeHint}"
+                                       Margin="0,0,0,8">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasOnHand}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <ItemsControl ItemsSource="{Binding OnHand}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FF222222" BorderBrush="#22FFFFFF" BorderThickness="1"
+                                                CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                            <StackPanel>
+                                                <DockPanel Margin="0,0,0,4">
+                                                    <TextBlock Text="{Binding TotalQuantity, StringFormat=({0})}"
+                                                               DockPanel.Dock="Right" Foreground="#88FFFFFF"
+                                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Label}" FontWeight="SemiBold"
+                                                               Foreground="#FFE8E8E8"/>
+                                                </DockPanel>
+                                                <ItemsControl ItemsSource="{Binding Items}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <DockPanel Margin="0,1">
+                                                                <TextBlock DockPanel.Dock="Right" Foreground="#88FFFFFF"
+                                                                           FontSize="{DynamicResource AppFontSizeHint}">
+                                                                    <Run Text="× "/><Run Text="{Binding Quantity, Mode=OneWay}"/>
+                                                                </TextBlock>
+                                                                <c:IconImage IconId="{Binding IconId}" Width="16" Height="16"
+                                                                             Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                                                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Sources tab -->
+                <TabItem>
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Sources"/>
+                            <TextBlock Text="{Binding Sources.Count, StringFormat=({0})}"
+                                       Margin="6,0,0,0" FontWeight="Normal"
+                                       Visibility="{Binding HasSources, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </TabItem.Header>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="500" Padding="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding SourcesPlaceholder}" Foreground="#88FFFFFF"
+                                       FontStyle="Italic" FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Visibility="{Binding HasSourcesPlaceholder, Converter={StaticResource BoolToVis}}"/>
+
+                            <ItemsControl ItemsSource="{Binding Sources}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FF222222" BorderBrush="#22FFFFFF" BorderThickness="1"
+                                                CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Background="#33D4A847" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding Kind}" Foreground="#FFD4A847"
+                                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                                               FontWeight="SemiBold"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Label}" Foreground="#FFE8E8E8"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
+                                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                                           VerticalAlignment="Center"
+                                                           Text="{Binding AreaFriendlyName, StringFormat=· {0}}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding AreaFriendlyName}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
+                                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                                           FontStyle="Italic" VerticalAlignment="Center"
+                                                           Text="{Binding Detail, StringFormat=({0})}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+    </Border>
+</Window>

@@ -1,5 +1,6 @@
 using Celebrimbor.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Mithril.Shared.Storage;
 
 namespace Celebrimbor.ViewModels;
 

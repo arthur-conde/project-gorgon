@@ -84,6 +84,9 @@ public static class ShellServiceCollectionExtensions
                 sp.GetService<ICraftListImportTarget>(),
                 sp.GetService<IDiagnosticsSink>()));
 
+    public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>
+        services.AddSingleton<IIngredientSourcesPresenter, IngredientSourcesPresenter>();
+
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>
         services
             // ViewModels
