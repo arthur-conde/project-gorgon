@@ -198,7 +198,3 @@ Some enrichments aren't reachable today because the underlying CDN data doesn't 
 `sources_items.json` `Monster` and `Angling` entries carry only `{ "type": "Monster" }` — no monster identifier, no level, no area. The Sources window can render them as `Monster: Drop` with no further detail. The bundled data simply doesn't tell us *which* monster drops the item, only that some monster does.
 
 **Unblocks:** Either an upstream change to `sources_items.json` that includes monster ids, or a separate `monsters.json` + drop-table file. Bestiary-style data would also enable Bilbo and Smaug to surface drop hints.
-
-### Recipe drop-off XP curves
-
-Recipe XP-drop-off fields (`RewardSkillXpDropOffLevel`, `RewardSkillXpDropOffPct`, `RewardSkillXpDropOffRate`) are parsed but the in-game formula for combining them is opaque without a confirmed reference implementation. Elrond approximates today; a more accurate "completions to next level" calculation would need either a wiki-confirmed formula or empirical calibration.
