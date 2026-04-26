@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { loadCatalog } from '../parsing/catalog.js';
 import { resolveWindow } from '../util/time-windows.js';
-import { scanPlayerLog } from '../sources/player-log.js';
+import { scanMultiSource, type SourceName } from '../sources/multi-source.js';
+import { resolveLastSessionWindow } from '../state/character-resolver.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
 
@@ -14,7 +15,7 @@ const AggregateKind = z.enum([
 ]);
 
 export const AggregateInput = z.object({
-  source: z.enum(['player']).default('player'),
+  source: z.enum(['player', 'chat', 'mithril', 'all']).default('player'),
   agg: AggregateKind,
   field: z.string().optional(),
   bucket: z.enum(['1m', '5m', '15m', '1h', '1d']).optional(),
@@ -23,6 +24,8 @@ export const AggregateInput = z.object({
   since: z.string().optional(),
   until: z.string().optional(),
   between: z.tuple([z.string(), z.string()]).optional(),
+  last_session: z.boolean().optional(),
+  character: z.string().optional(),
   filter: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
@@ -33,9 +36,17 @@ const DISTINCT_CAP = 100_000;
 export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
   const t0 = performance.now();
   const catalog = loadCatalog();
-  const window = resolveWindow(new Date(), args);
-  const eventTypeFilter = args.event_type ? new Set(args.event_type) : null;
+  const now = new Date();
 
+  let window;
+  if (args.last_session) {
+    if (!args.character) throw new Error("'last_session' requires 'character'");
+    window = resolveLastSessionWindow(config, catalog, args.character, now);
+  } else {
+    window = resolveWindow(now, args);
+  }
+
+  const eventTypeFilter = args.event_type ? new Set(args.event_type) : null;
   const stats = { scannedBytes: 0, scannedLines: 0 };
   let matched = 0;
   let truncated = false;
@@ -43,9 +54,10 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
   const groups = new Map<string, number>();
   const distinct = new Set<string>();
 
-  for await (const ev of scanPlayerLog(
+  for await (const ev of scanMultiSource(
     catalog,
-    { path: config.playerLogPath, since: window.since, until: window.until },
+    config,
+    { source: args.source as SourceName, since: window.since, until: window.until },
     stats,
   )) {
     if (eventTypeFilter && !eventTypeFilter.has(ev.type)) continue;
@@ -92,6 +104,7 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
     scannedBytes: stats.scannedBytes,
     scannedLines: stats.scannedLines,
     elapsedMs,
+    window: { since: window.since.toISOString(), until: window.until.toISOString() },
   };
 
   let buckets: Array<{ key: string; count: number }>;
@@ -121,7 +134,6 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
 }
 
 function extractAggField(ev: ParsedEvent, field: string): unknown {
-  // Support a few well-known top-level fields plus any data.* field.
   if (field === 'type') return ev.type;
   if (field === 'module') return ev.module;
   if (field === 'source') return ev.source;

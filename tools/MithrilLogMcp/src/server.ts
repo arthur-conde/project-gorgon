@@ -20,6 +20,13 @@ import {
   QueryEventsInput,
   runQueryEvents,
 } from './tools/query-events.js';
+import {
+  CursorListInput,
+  CursorResetInput,
+  runCursorList,
+  runCursorReset,
+} from './tools/cursor.js';
+import { CursorStore } from './state/cursors.js';
 
 /**
  * Entrypoint. Wires the three v0.1 tools to the MCP stdio transport.
@@ -37,7 +44,8 @@ const TOOLS = [
     name: 'query_events',
     description:
       'Stream typed events from Mithril log sources within a time window. ' +
-      'Returns NDJSON-shaped parsed events plus a summary envelope.',
+      'Sources: player (Player.log), chat (ChatLogs/), mithril (Serilog), all (merged by ts). ' +
+      'Pass character + last_session=true for "everything from this character\'s most recent session".',
     inputSchema: zodToJsonSchema(QueryEventsInput),
   },
   {
@@ -55,10 +63,25 @@ const TOOLS = [
       'Use this to discover what queries are possible.',
     inputSchema: zodToJsonSchema(ListEventTypesInput),
   },
+  {
+    name: 'cursor_list',
+    description:
+      'Lists named cursors stored at %LocalAppData%/MithrilLogMcp/cursors.json. ' +
+      'Cursors track per-file byte offsets so subsequent queries can resume.',
+    inputSchema: zodToJsonSchema(CursorListInput),
+  },
+  {
+    name: 'cursor_reset',
+    description:
+      'Removes a named cursor so the next query starts from the configured ' +
+      'time window again.',
+    inputSchema: zodToJsonSchema(CursorResetInput),
+  },
 ] as const;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const cursorStore = new CursorStore();
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} } },
@@ -90,6 +113,20 @@ async function main(): Promise<void> {
         case 'list_event_types': {
           const args = ListEventTypesInput.parse(rawArgs ?? {});
           const result = runListEventTypes(args);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        }
+        case 'cursor_list': {
+          const args = CursorListInput.parse(rawArgs ?? {});
+          const result = runCursorList(args, cursorStore);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        }
+        case 'cursor_reset': {
+          const args = CursorResetInput.parse(rawArgs ?? {});
+          const result = runCursorReset(args, cursorStore);
           return {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           };
