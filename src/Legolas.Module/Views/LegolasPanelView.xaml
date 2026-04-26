@@ -4,7 +4,7 @@
              xmlns:vm="clr-namespace:Legolas.ViewModels"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:controls="clr-namespace:Legolas.Controls"
-             Background="{StaticResource BgPrimaryBrush}">
+             Background="{DynamicResource BgPrimaryBrush}">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
