@@ -15,3 +15,6 @@ src/temp
 
 # Legacy browser-based garden helper (superseded by Samwise module)
 garden/
+
+# Continue
+.continue/agents/local-env.yaml
