@@ -157,10 +157,25 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 
 ### 4. Sources tab enrichment for single-item rows
 
-**Why deferred:** v1 ships a minimal Sources tab — `[Kind] Label · Area` per source. Reachable enrichments (no new parsers) include:
-- Vendor / Barter / NpcGift → `NpcEntry.Services[].MinFavorTier` so the line reads `Vendor: Hulon · Serbule (Liked or higher)`.
-- Recipe → `RecipeEntry.Skill` + `SkillLevelReq` + `PrereqRecipe`, e.g. `Crafted: Tin Bar (Smelting 5)`.
-- Title-bar context → `ItemEntry.SkillReqs` to render an equip-time `"Requires Smithing 30 to use"` line.
+**Why deferred:** v1 ships a minimal Sources tab — `[Kind] Label · Area` per source. The reference data already parses several gates that would meaningfully enrich each line; surveyed and confirmed reachable without new parsers:
+
+**Vendor / Barter / NpcGift — favor-tier gate** (already parsed; consumed today by Smaug's [`VendorCapResolver`](../src/Smaug.Module/Domain/VendorCapResolver.cs) and `SellPlannerService`)
+- Path: `RawNpcService.Favor` → `NpcService.MinFavorTier` (string?, e.g. `"Liked"`).
+- Lookup: `refData.Npcs[src.Npc].Services` — find the service whose `Type` matches the source kind, surface its `MinFavorTier`.
+- Render: `Vendor: Hulon · Serbule (Liked or higher)` when non-null; current rendering otherwise.
+
+**Recipe — skill gate + prereq recipe** (parsed in [`RecipeEntry`](../src/Mithril.Shared/Reference/RecipeEntry.cs#L7-L24))
+- Fields: `Skill` (string), `SkillLevelReq` (int), `PrereqRecipe` (string?).
+- Lookup: `Context` carries the source recipe's internal name (mapped from `RawItemSource.Recipe`); `refData.RecipesByInternalName[Context]` resolves the entry.
+- Render: `Crafted: Tin Bar (Smelting 5)` and a sub-line `Requires recipe TinBar0` when `PrereqRecipe` is set. If the active character is loaded, an additional "you can/cannot learn this yet" badge against `CharacterSnapshot.RecipeCompletions`.
+
+**Item-side equip gate — title-bar hint** (parsed in [`ItemEntry`](../src/Mithril.Shared/Reference/ItemEntry.cs))
+- Fields: `SkillReqs` (`Dictionary<string, int>?`, e.g. `{ "Smithing": 30 }`), `SkillPrereqs` (`List<string>?`), `EquipSlot`.
+- Render: a single subtitle line under the title `"Requires Smithing 30 to use"` when populated. Acquisition-time vs equip-time distinction matters; place it in the title bar, not the Sources card, so it doesn't read as a source gate.
+
+**Implementation notes:**
+- Extend `AcquisitionSource` with `Requirement: string?` (and maybe `RequirementMetByActiveCharacter: bool?` for green/red colouring).
+- All three enrichments are pure projections in `IngredientSourcesViewModel.Build` — no new parsers needed. Tests follow the existing `IngredientSourcesViewModelTests` style.
 
 ### 5. Sources tab for keyword rows
 
