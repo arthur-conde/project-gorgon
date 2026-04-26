@@ -115,16 +115,20 @@ The schema now models ingredients as a sealed `RecipeIngredient` hierarchy ([Rec
 
 The location-pin tooltip on shopping-list rows used to render `Locations` as a flat list of `Label × Quantity`. For keyword rows that union locations across many items at the same chest, this turned into a 30-line wall of `Serbule Community Chest × 47` repeated for items the row couldn't tell apart. The pin is now a `Button` that opens [`IngredientSourcesWindow`](../src/Mithril.Shared/Wpf/IngredientSourcesWindow.xaml) (in `Mithril.Shared.Wpf` so other modules can reuse it).
 
-`IngredientLocation` ([Mithril.Shared/Storage/IngredientLocation.cs](../src/Mithril.Shared/Storage/IngredientLocation.cs)) carries per-item identity (`ItemInternalName`, `DisplayName`, `IconId`) so the window can group by location with a per-item breakdown sorted by quantity. The window has two tabs — **On hand** (default when stock exists) and **Sources** — populated by [`IngredientSourcesViewModel.Build`](../src/Mithril.Shared/Wpf/IngredientSourcesViewModel.cs) from a module-agnostic `IngredientSourcesInput`. Sources resolve via `IReferenceDataService.ItemSources`:
+`IngredientLocation` ([Mithril.Shared/Storage/IngredientLocation.cs](../src/Mithril.Shared/Storage/IngredientLocation.cs)) carries per-item identity (`ItemInternalName`, `DisplayName`, `IconId`) so the window can group by location with a per-item breakdown sorted by quantity. The window has two tabs — **On hand** (default when stock exists) and **Sources** — populated by [`IngredientSourcesViewModel.Build`](../src/Mithril.Shared/Wpf/IngredientSourcesViewModel.cs) from a module-agnostic `IngredientSourcesInput`.
 
-- `Vendor` / `Barter` / `NpcGift` → `Npcs[npc].Name` + `Area`.
-- `Quest` → `"Quest reward"` with the raw quest id (no quest parser yet — see deferred §3).
-- `Recipe` → `"Crafted"` with the source recipe's internal name.
+**Title-bar use-gate hint:** `ItemEntry.SkillReqs` is rendered as a sub-line under the item title (`Requires Gardening 10 to use`, or comma-joined for multi-skill `Requires Alchemy 35, Werewolf 35 to use`). Distinct from acquisition gates because it filters *use* (planting a seedling, casting a scroll), not *purchase*. Skipped for keyword rows (no single item to gate).
+
+**Sources tab — `IReferenceDataService.ItemSources` resolution with gate enrichment:**
+
+- `Vendor` / `Barter` / `NpcGift` → `Npcs[npc].Name` + `Area`. Vendor and Barter sources additionally surface `NpcService.MinFavorTier` as a `Requires <Tier> or higher` sub-line (Vendor routes to the NPC's `Store` service, Barter to its `Barter` service). NpcGift skips the per-NPC line because gift acceptance is gated per-preference (`NpcPreference.RequiredFavorTier`), not per-NPC.
+- `Recipe` → resolved to the recipe's display name + `Requires <Skill> <Level>` and a `prereq: <recipe>` detail when `PrereqRecipe` is set. The parser ([`ResolveSourceContext`](../src/Mithril.Shared/Reference/ReferenceDataService.cs)) maps the JSON's numeric `recipeId` to the recipe's `InternalName` at parse time so the consumer doesn't need to know about the id form.
+- `Quest` → `Quest reward` with the raw `questId` as detail (no quest parser yet — see deferred §3).
 - `Monster` / `Drop` / `Angling` / `HangOut` → label + area resolved through the new `AreaCatalog` service.
 
 `AreaCatalog` ([AreaEntry.cs](../src/Mithril.Shared/Reference/AreaEntry.cs)) parses `Reference/BundledData/areas.json` (previously unparsed) into `IReferenceDataService.Areas` — area code → friendly + short-friendly names, falling back to the long form when the JSON omits the short variant.
 
-For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") — surfacing a deduped union of vendor/drop/quest sources across 20+ items at once is its own UX problem worth a future pass.
+For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") — surfacing a deduped union of vendor/drop/quest sources across 20+ items at once is its own UX problem worth a future pass (see deferred §4).
 
 ---
 
@@ -149,48 +153,17 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Render a mini-chain in the picker's row detail pane on hover/select.
 - Flag "you cannot learn this yet" when an upstream prereq is missing from `CharacterSnapshot.RecipeCompletions`.
 
-### 3. Quest source resolution
-
-**Status gap:** Quest entries from `sources_items.json` carry only a numeric `questId` (e.g. `45016`), and quests aren't parsed by `IReferenceDataService` yet. The Sources window renders quest sources as `Quest reward (45016)` until a quest parser exists.
-
-**Likely approach:** Add a `QuestEntry` projection (name, reward chain, area) parsed from a future `quests.json` if/when the CDN exposes one, or scrape from existing log/character data. Until then, the placeholder line keeps the slot in view without claiming more than we know.
-
-### 4. Sources tab enrichment for single-item rows
-
-**Why deferred:** v1 ships a minimal Sources tab — `[Kind] Label · Area` per source. The reference data already parses several gates that would meaningfully enrich each line; surveyed and confirmed reachable without new parsers:
-
-**Vendor / Barter / NpcGift — favor-tier gate** (already parsed; consumed today by Smaug's [`VendorCapResolver`](../src/Smaug.Module/Domain/VendorCapResolver.cs) and `SellPlannerService`)
-- Path: `RawNpcService.Favor` → `NpcService.MinFavorTier` (string?, e.g. `"Liked"`).
-- Lookup: `refData.Npcs[src.Npc].Services` — find the service whose `Type` matches the source kind, surface its `MinFavorTier`.
-- Render: `Vendor: Hulon · Serbule (Liked or higher)` when non-null; current rendering otherwise.
-
-**Recipe — skill gate + prereq recipe** (parsed in [`RecipeEntry`](../src/Mithril.Shared/Reference/RecipeEntry.cs#L7-L24))
-- Fields: `Skill` (string), `SkillLevelReq` (int), `PrereqRecipe` (string?).
-- Lookup: `Context` carries the source recipe's internal name (mapped from `RawItemSource.Recipe`); `refData.RecipesByInternalName[Context]` resolves the entry.
-- Render: `Crafted: Tin Bar (Smelting 5)` and a sub-line `Requires recipe TinBar0` when `PrereqRecipe` is set. If the active character is loaded, an additional "you can/cannot learn this yet" badge against `CharacterSnapshot.RecipeCompletions`.
-
-**Item-side use gate — title-bar hint** (parsed in [`ItemEntry`](../src/Mithril.Shared/Reference/ItemEntry.cs))
-
-**Why this is a separate slot from the Sources card:** Vendor / barter / recipe gates filter *acquisition* — "you can't buy this from Hulon until Liked, you can't craft it without Smelting 5." `SkillReqs` filters *use* — you can buy the seedling from anyone, but you can't plant it without Gardening 10. Mixing them in the Sources card would mislead ("oh, this NPC only sells to gardeners?" — no, anyone can buy). The title bar is the right home: it describes the item itself, independent of how you got it.
-
-**Real-world coverage:** 5,884 of the bundled items carry `SkillReqs` today. The dominant pattern is gardening seedlings (`Cabbage Leafling: { "Gardening": 10 }`), followed by crafting equipment and skill-locked consumables. Multi-skill items exist — e.g. `Alchemy: Wolfen Speed Potion` requires `{ "Alchemy": 35, "Werewolf": 35 }`, and `Battle-Priest's Pendant` requires `{ "JewelryCrafting": 47, "Priest": 47 }`. The renderer needs to handle the multi-key case cleanly; comma-join (`"Requires Alchemy 35, Werewolf 35"`) is the obvious shape.
-
-**Fields**
-- `SkillReqs` (`Dictionary<string, int>?`) — the dominant gate. Skill name → minimum level.
-- `SkillPrereqs` (`List<string>?`) — sometimes overlaps with `SkillReqs.Keys`; surface only when not redundant.
-- `EquipSlot` (`string?`) — situational; the item's name usually conveys this. Probably skip in v1, no information gain.
-
-**Render:** a single subtitle line under the title, e.g. `Requires Gardening 10 to use`, or `Requires Alchemy 35, Werewolf 35 to use`. With the active character loaded, colour green/red against `CharacterSnapshot.Skills` (matching the proposed treatment for the recipe-skill gate).
-
-**Implementation notes:**
-- Extend `AcquisitionSource` with `Requirement: string?` (and maybe `RequirementMetByActiveCharacter: bool?` for green/red colouring).
-- All three enrichments are pure projections in `IngredientSourcesViewModel.Build` — no new parsers needed. Tests follow the existing `IngredientSourcesViewModelTests` style.
-
-### 5. Sources tab for keyword rows
+### 3. Sources tab for keyword rows
 
 **Why deferred:** v1 keyword rows show a placeholder in the Sources tab. Aggregating vendor/drop/quest sources across 20+ items at once needs its own filtering/grouping UX (otherwise it floods the window). Likely needs a "common across all" vs "per item" toggle.
 
-### 6. Tighter persistence of UI state
+### 4. Active-character gate evaluation
+
+**Why deferred:** The shipped Sources-tab enrichments (favor tier, recipe skill, item use-gate) all render the requirement text but don't yet check it against the active character. A natural next step is colouring met / unmet gates against `CharacterSnapshot.Skills` (recipe + use-gate skill comparisons) and `CharacterSnapshot.NpcFavor` (favor-tier comparisons), with a "you cannot learn this yet" badge against `CharacterSnapshot.RecipeCompletions` for `PrereqRecipe`.
+
+**Likely approach:** Extend `AcquisitionSource` (and add a similar field to the title-bar hint) with `RequirementMetByActiveCharacter: bool?` populated when an active character is loaded. The window XAML adds a green/red trigger on the requirement line.
+
+### 5. Tighter persistence of UI state
 
 **Why deferred:** v1 persists the craft list, overrides, filter toggles, expansion depth, and tooltip delay. It does not persist DataGrid column layout, expanded-state of step / group headers across sessions, or recent search queries.
 
@@ -199,7 +172,7 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Persist `IsExpanded` per group / step so the user's mental model of what's "done" survives restarts.
 - Recent search queries — drop-down history on the query box.
 
-### 7. Variable-yield planning
+### 6. Variable-yield planning
 
 **Why deferred:** `RecipeItemRef` currently exposes `ChanceToConsume` only; there's no `PercentChance` on result items in the schema. If the schema grows to include bonus-output probabilities (certain recipes do produce bonus copies at low probability), the aggregator's expected-value pipeline is the right slot.
 
@@ -207,3 +180,25 @@ For keyword rows, the Sources tab shows a placeholder ("not aggregated yet") —
 - Model `RecipeItemRef.PercentChance` for result rows.
 - Add an "assume bonus yield" settings toggle that divides planned batch count by `1 + Σ percentChance * yieldMultiplier` when enabled (off by default — pessimistic planning avoids unhappy surprises).
 - Surface the raw chance in a tooltip regardless of toggle state.
+
+---
+
+## Blocked on upstream data
+
+Some enrichments aren't reachable today because the underlying CDN data doesn't include the fields. These would either need a new upstream file or out-of-band data sources to make progress.
+
+### Quest names + reward chains
+
+`sources_items.json` carries quest references as a numeric `questId` only. There's no `quests.json` on the CDN today, and `IReferenceDataService` doesn't parse one. The Sources window renders quest sources as `Quest reward (45016)` — informational that the item drops from a quest, but the quest's name, prerequisites, and chain remain unknown to the planner.
+
+**Unblocks:** A `quests.json` published by the game, or a community-maintained quest catalogue we can bundle as a fallback (similar to the way [gorgon-calibration](https://github.com/arthur-conde/gorgon-calibration) backstops Samwise rates).
+
+### Monster name / level on `Monster` and `Angling` sources
+
+`sources_items.json` `Monster` and `Angling` entries carry only `{ "type": "Monster" }` — no monster identifier, no level, no area. The Sources window can render them as `Monster: Drop` with no further detail. The bundled data simply doesn't tell us *which* monster drops the item, only that some monster does.
+
+**Unblocks:** Either an upstream change to `sources_items.json` that includes monster ids, or a separate `monsters.json` + drop-table file. Bestiary-style data would also enable Bilbo and Smaug to surface drop hints.
+
+### Recipe drop-off XP curves
+
+Recipe XP-drop-off fields (`RewardSkillXpDropOffLevel`, `RewardSkillXpDropOffPct`, `RewardSkillXpDropOffRate`) are parsed but the in-game formula for combining them is opaque without a confirmed reference implementation. Elrond approximates today; a more accurate "completions to next level" calculation would need either a wiki-confirmed formula or empirical calibration.
