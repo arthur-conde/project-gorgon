@@ -1,0 +1,341 @@
+{
+  "$comment": "Single source of truth for log-line regexes shared between Mithril (.NET) and downstream tools (e.g. tools/MithrilLogMcp). Each entry mirrors a [GeneratedRegex] attribute in the listed C# method; LogPatternCatalogParityTests asserts they remain identical. Adding a new pattern: add an entry here AND apply the same string to a [GeneratedRegex] attribute. Removing or editing a pattern: change both sides in the same commit.",
+  "version": 1,
+  "regexes": {
+    "samwise.GardenLogParser.SetPetOwnerRx": {
+      "pattern": "LocalPlayer: ProcessSetPetOwner\\((\\d+),",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "SetPetOwnerRx" },
+      "eventType": "samwise.SetPetOwner",
+      "fields": [
+        { "name": "entityId", "group": 1, "type": "string" }
+      ]
+    },
+    "samwise.GardenLogParser.AppearanceRx": {
+      "pattern": "Download appearance loop @(\\w+)\\(scale=([\\d.]+)\\)",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "AppearanceRx" },
+      "eventType": "samwise.AppearanceLoop",
+      "fields": [
+        { "name": "modelName", "group": 1, "type": "string" },
+        { "name": "scale", "group": 2, "type": "double" }
+      ]
+    },
+    "samwise.GardenLogParser.UpdateDescRx": {
+      "pattern": "ProcessUpdateDescription\\((\\d+),\\s*\"([^\"]+)\",\\s*\"([^\"]+)\",\\s*\"([^\"]+)\",\\s*\\w+,\\s*\"\\w+\\(Scale=([\\d.]+)\\)\",\\s*\\d+\\)",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "UpdateDescRx" },
+      "eventType": "samwise.UpdateDescription",
+      "fields": [
+        { "name": "plotId", "group": 1, "type": "string" },
+        { "name": "title", "group": 2, "type": "string" },
+        { "name": "description", "group": 3, "type": "string" },
+        { "name": "action", "group": 4, "type": "string" },
+        { "name": "scale", "group": 5, "type": "double" }
+      ]
+    },
+    "samwise.GardenLogParser.StartInteractRx": {
+      "pattern": "ProcessStartInteraction\\((\\d+),\\s*\\d+,\\s*[\\d.-]+,\\s*\\w+,\\s*\"(Summoned\\w+)\"\\)",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "StartInteractRx" },
+      "eventType": "samwise.StartInteraction",
+      "notes": "Same root verb as arwen.FavorLogParser.StartInteractionRx and smaug.VendorLogParser.StartInteractionRx, but constrained to plant targets (\"Summoned*\").",
+      "fields": [
+        { "name": "plotId", "group": 1, "type": "string" },
+        { "name": "target", "group": 2, "type": "string" }
+      ]
+    },
+    "samwise.GardenLogParser.UpdateItemCodeRx": {
+      "pattern": "ProcessUpdateItemCode\\((\\d+)",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "UpdateItemCodeRx" },
+      "eventType": "samwise.UpdateItemCode",
+      "fields": [
+        { "name": "itemId", "group": 1, "type": "string" }
+      ]
+    },
+    "samwise.GardenLogParser.GardeningXpRx": {
+      "pattern": "ProcessUpdateSkill.*type=Gardening",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "GardeningXpRx" },
+      "eventType": "samwise.GardeningXp",
+      "kind": "marker",
+      "notes": "IsMatch-only; produces a payload-less GardeningXp event.",
+      "fields": []
+    },
+    "samwise.GardenLogParser.ScreenTextErrorRx": {
+      "pattern": "ProcessScreenText.*ErrorMessage",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "ScreenTextErrorRx" },
+      "eventType": "samwise.ScreenTextError",
+      "kind": "marker",
+      "fields": []
+    },
+    "samwise.GardenLogParser.PlantingCapRx": {
+      "pattern": "ProcessErrorMessage\\(ItemUnusable,\\s*\"([^\"]+?) can't be used: You already have the maximum of that type of plant growing\"",
+      "source": "player",
+      "module": "samwise",
+      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "PlantingCapRx" },
+      "eventType": "samwise.PlantingCapReached",
+      "fields": [
+        { "name": "seedDisplayName", "group": 1, "type": "string" }
+      ]
+    },
+    "arwen.FavorLogParser.StartInteractionRx": {
+      "pattern": "ProcessStartInteraction\\((\\d+),\\s*\\d+,\\s*([\\d.-]+),\\s*\\w+,\\s*\"(NPC_\\w+)\"\\)",
+      "source": "player",
+      "module": "arwen",
+      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "StartInteractionRx" },
+      "eventType": "arwen.FavorUpdate",
+      "fields": [
+        { "name": "entityId", "group": 1, "type": "long" },
+        { "name": "absoluteFavor", "group": 2, "type": "double" },
+        { "name": "npcKey", "group": 3, "type": "string" }
+      ]
+    },
+    "arwen.FavorLogParser.DeltaFavorRx": {
+      "pattern": "ProcessDeltaFavor\\(\\d+,\\s*\"(NPC_\\w+)\",\\s*([\\d.-]+),\\s*\\w+\\)",
+      "source": "player",
+      "module": "arwen",
+      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "DeltaFavorRx" },
+      "eventType": "arwen.FavorDelta",
+      "fields": [
+        { "name": "npcKey", "group": 1, "type": "string" },
+        { "name": "delta", "group": 2, "type": "double" }
+      ]
+    },
+    "arwen.FavorLogParser.DeleteItemRx": {
+      "pattern": "ProcessDeleteItem\\((\\d+)\\)",
+      "source": "player",
+      "module": "arwen",
+      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "DeleteItemRx" },
+      "eventType": "arwen.ItemDeleted",
+      "fields": [
+        { "name": "instanceId", "group": 1, "type": "long" }
+      ]
+    },
+    "smaug.VendorLogParser.VendorScreenRx": {
+      "pattern": "ProcessVendorScreen\\((-?\\d+),\\s*(\\w+),\\s*(-?\\d+),\\s*(\\d+),\\s*(\\d+),",
+      "source": "player",
+      "module": "smaug",
+      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorScreenRx" },
+      "eventType": "smaug.VendorScreenOpened",
+      "fields": [
+        { "name": "entityId", "group": 1, "type": "int" },
+        { "name": "favorTier", "group": 2, "type": "string" },
+        { "name": "remainingGold", "group": 3, "type": "long" },
+        { "name": "_resetCounter", "group": 4, "type": "long" },
+        { "name": "goldCap", "group": 5, "type": "long" }
+      ]
+    },
+    "smaug.VendorLogParser.VendorAddItemRx": {
+      "pattern": "ProcessVendorAddItem\\((\\d+),\\s*(\\w+)\\((\\d+)\\),",
+      "source": "player",
+      "module": "smaug",
+      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorAddItemRx" },
+      "eventType": "smaug.VendorItemSold",
+      "fields": [
+        { "name": "price", "group": 1, "type": "long" },
+        { "name": "internalName", "group": 2, "type": "string" },
+        { "name": "instanceId", "group": 3, "type": "long" }
+      ]
+    },
+    "smaug.VendorLogParser.VendorGoldRx": {
+      "pattern": "ProcessVendorUpdateAvailableGold\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)",
+      "source": "player",
+      "module": "smaug",
+      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorGoldRx" },
+      "eventType": "smaug.VendorGoldUpdated",
+      "fields": [
+        { "name": "remainingGold", "group": 1, "type": "long" },
+        { "name": "_resetCounter", "group": 2, "type": "long" },
+        { "name": "goldCap", "group": 3, "type": "long" }
+      ]
+    },
+    "smaug.VendorLogParser.StartInteractionRx": {
+      "pattern": "ProcessStartInteraction\\((\\d+),\\s*\\d+,\\s*[\\d.-]+,\\s*\\w+,\\s*\"(NPC_\\w+)\"\\)",
+      "source": "player",
+      "module": "smaug",
+      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "StartInteractionRx" },
+      "eventType": "smaug.NpcInteractionStarted",
+      "notes": "Same shape as arwen.FavorLogParser.StartInteractionRx — both runtimes can dedupe at parse time if desired.",
+      "fields": [
+        { "name": "entityId", "group": 1, "type": "int" },
+        { "name": "npcKey", "group": 2, "type": "string" }
+      ]
+    },
+    "smaug.VendorLogParser.CivicPrideRx": {
+      "pattern": "\\{type=CivicPride,raw=(\\d+),bonus=(\\d+),",
+      "source": "player",
+      "module": "smaug",
+      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "CivicPrideRx" },
+      "eventType": "smaug.CivicPrideUpdated",
+      "fields": [
+        { "name": "raw", "group": 1, "type": "int" },
+        { "name": "bonus", "group": 2, "type": "int" }
+      ]
+    },
+    "pippin.GourmandLogParser.ProcessBookFoodsRx": {
+      "pattern": "LocalPlayer:\\s*ProcessBook\\(\"Skill Info\",\\s*\"(Foods Consumed:\\\\n\\\\n(?:[^\"\\\\]|\\\\.)*)\".*\"SkillReport\"",
+      "source": "player",
+      "module": "pippin",
+      "csharp": { "type": "Pippin.Parsing.GourmandLogParser", "method": "ProcessBookFoodsRx" },
+      "eventType": "pippin.FoodsConsumedReport",
+      "kind": "compound",
+      "notes": "Outer match captures the full Foods Consumed report body; entries inside are extracted by FoodEntryRx after splitting on literal \\n (two-char escape).",
+      "fields": [
+        { "name": "body", "group": 1, "type": "string" }
+      ]
+    },
+    "pippin.GourmandLogParser.FoodEntryRx": {
+      "pattern": "^\\s+(.+?)(?:\\s+\\(([^)]+)\\))?\\s*:\\s*(\\d+)$",
+      "source": "player",
+      "module": "pippin",
+      "csharp": { "type": "Pippin.Parsing.GourmandLogParser", "method": "FoodEntryRx" },
+      "kind": "helper",
+      "notes": "Sub-pattern applied to each entry line of the Foods Consumed report body.",
+      "fields": [
+        { "name": "name", "group": 1, "type": "string" },
+        { "name": "tags", "group": 2, "type": "string" },
+        { "name": "count", "group": 3, "type": "int" }
+      ]
+    },
+    "saruman.WordOfPowerChatParser.ChatLineRx": {
+      "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[[^\\]]+\\]\\s*(?<speaker>[^:]+?)\\s*:\\s*(?<msg>.*)$",
+      "source": "chat",
+      "module": "saruman",
+      "csharp": { "type": "Saruman.Parsing.WordOfPowerChatParser", "method": "ChatLineRx" },
+      "kind": "helper",
+      "notes": "Splits a chat line into speaker + message; codebook-validated upper-token match decides whether to emit.",
+      "fields": [
+        { "name": "speaker", "group": "speaker", "type": "string" },
+        { "name": "msg", "group": "msg", "type": "string" }
+      ]
+    },
+    "saruman.WordOfPowerChatParser.UpperTokenRx": {
+      "pattern": "\\b[A-Z]{4,}\\b",
+      "source": "chat",
+      "module": "saruman",
+      "csharp": { "type": "Saruman.Parsing.WordOfPowerChatParser", "method": "UpperTokenRx" },
+      "kind": "helper",
+      "notes": "Match-all upper-token scanner; downstream code validates each match against SarumanCodebookService before emitting saruman.WordOfPowerSpoken.",
+      "fields": [
+        { "name": "token", "group": 0, "type": "string" }
+      ]
+    },
+    "saruman.WordOfPowerDiscoveredParser.DiscoveryRx": {
+      "pattern": "LocalPlayer:\\s*ProcessBook\\(\"You discovered a word of power!\",\\s*\"You've discovered a word of power: <sel>(?<code>[A-Z]+)</sel>.*?<b><size=125%>Word of Power: (?<effect>[^<]+)</size></b>\\\\n(?<desc>.+?)\\\\n\\\\n<i>",
+      "source": "player",
+      "module": "saruman",
+      "csharp": { "type": "Saruman.Parsing.WordOfPowerDiscoveredParser", "method": "DiscoveryRx" },
+      "eventType": "saruman.WordOfPowerDiscovered",
+      "notes": "ProcessBook newlines are encoded as literal \\n (backslash + n), so the pattern carries \\\\n.",
+      "fields": [
+        { "name": "code", "group": "code", "type": "string" },
+        { "name": "effect", "group": "effect", "type": "string" },
+        { "name": "desc", "group": "desc", "type": "string" }
+      ]
+    },
+    "legolas.ChatLogParser.SurveyRegex": {
+      "pattern": "\\[Status\\] The (?<name>.+?) is (?<a>\\d+)m (?<aDir>north|south|east|west) and (?<b>\\d+)m (?<bDir>north|south|east|west)\\b",
+      "source": "chat",
+      "module": "legolas",
+      "csharp": {
+        "type": "Legolas.Services.ChatLogParser",
+        "method": "SurveyRegex",
+        "options": ["Compiled", "CultureInvariant", "IgnoreCase"]
+      },
+      "eventType": "legolas.SurveyDetected",
+      "flags": ["i"],
+      "fields": [
+        { "name": "name", "group": "name", "type": "string" },
+        { "name": "a", "group": "a", "type": "int" },
+        { "name": "aDir", "group": "aDir", "type": "string" },
+        { "name": "b", "group": "b", "type": "int" },
+        { "name": "bDir", "group": "bDir", "type": "string" }
+      ]
+    },
+    "legolas.ChatLogParser.CollectRegex": {
+      "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+(?:x(?<count>\\d+)\\s+)?collected!",
+      "source": "chat",
+      "module": "legolas",
+      "csharp": {
+        "type": "Legolas.Services.ChatLogParser",
+        "method": "CollectRegex",
+        "options": ["Compiled", "CultureInvariant"]
+      },
+      "eventType": "legolas.ItemCollected",
+      "fields": [
+        { "name": "name", "group": "name", "type": "string" },
+        { "name": "count", "group": "count", "type": "int" }
+      ]
+    },
+    "legolas.ChatLogParser.MotherlodeRegex": {
+      "pattern": "The treasure is (?<dist>\\d+) metres from here",
+      "source": "chat",
+      "module": "legolas",
+      "csharp": {
+        "type": "Legolas.Services.ChatLogParser",
+        "method": "MotherlodeRegex",
+        "options": ["Compiled", "CultureInvariant"]
+      },
+      "eventType": "legolas.MotherlodeDistance",
+      "fields": [
+        { "name": "dist", "group": "dist", "type": "int" }
+      ]
+    },
+    "shared.InventoryStatusChatParser.CountedRx": {
+      "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+x(?<count>\\d+)\\s+added to inventory\\.",
+      "source": "chat",
+      "module": "shared",
+      "csharp": { "type": "Mithril.Shared.Inventory.InventoryStatusChatParser", "method": "CountedRx" },
+      "eventType": "shared.InventoryAdded",
+      "notes": "Counted form must be tried before SingleRx so 'Guava x42 added to inventory.' doesn't match with name='Guava x42'.",
+      "fields": [
+        { "name": "name", "group": "name", "type": "string" },
+        { "name": "count", "group": "count", "type": "int" }
+      ]
+    },
+    "shared.InventoryStatusChatParser.SingleRx": {
+      "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+added to inventory\\.",
+      "source": "chat",
+      "module": "shared",
+      "csharp": { "type": "Mithril.Shared.Inventory.InventoryStatusChatParser", "method": "SingleRx" },
+      "eventType": "shared.InventoryAdded",
+      "notes": "Implicit count = 1.",
+      "fields": [
+        { "name": "name", "group": "name", "type": "string" }
+      ]
+    },
+    "shared.ActiveCharacterLogSynchronizer.AddPlayerRx": {
+      "pattern": "LocalPlayer:\\s*ProcessAddPlayer\\([^,]+,\\s*[^,]+,\\s*\"[^\"]*\",\\s*\"([^\"]+)\"",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.Shared.Character.ActiveCharacterLogSynchronizer", "method": "AddPlayerRx" },
+      "eventType": "shared.ProcessAddPlayer",
+      "kind": "session-marker",
+      "notes": "Drives active-character tracking and is the session-start marker for tail readers; also matches the literal scanned by PlayerLogTailReader.SeedToSessionStart.",
+      "fields": [
+        { "name": "characterName", "group": 1, "type": "string" }
+      ]
+    }
+  },
+  "shared": {
+    "sessionMarker": {
+      "literal": "ProcessAddPlayer(",
+      "scanChunkBytes": 10485760,
+      "notes": "Mirrors PlayerLogTailReader.SessionMarker / SessionScanChunkBytes."
+    },
+    "playerLogTimestampPrefix": {
+      "regex": "^\\[(\\d{2}:\\d{2}:\\d{2})\\]\\s",
+      "notes": "Per-line timestamp; date is inferred from file mtime or the most recent dated header line."
+    }
+  }
+}

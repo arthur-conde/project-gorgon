@@ -19,6 +19,7 @@
     <Content Include="Reference\BundledData\**\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <EmbeddedResource Include="Reference\log-patterns.json" LogicalName="Mithril.Shared.Reference.log-patterns.json" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Icons\placeholder.png" />
