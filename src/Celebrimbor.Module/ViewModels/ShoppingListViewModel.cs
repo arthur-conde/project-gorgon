@@ -18,6 +18,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeChar;
     private readonly IItemDetailPresenter _itemDetail;
+    private readonly IIngredientSourcesPresenter _sourcesPresenter;
 
     public event EventHandler? BackRequested;
 
@@ -27,7 +28,8 @@ public sealed partial class ShoppingListViewModel : ObservableObject
         OnHandInventoryQuery onHand,
         IReferenceDataService refData,
         IActiveCharacterService activeChar,
-        IItemDetailPresenter itemDetail)
+        IItemDetailPresenter itemDetail,
+        IIngredientSourcesPresenter sourcesPresenter)
     {
         _settings = settings;
         _aggregator = aggregator;
@@ -35,6 +37,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
         _refData = refData;
         _activeChar = activeChar;
         _itemDetail = itemDetail;
+        _sourcesPresenter = sourcesPresenter;
 
         _settings.PropertyChanged += OnSettingsChanged;
         _activeChar.StorageReportsChanged += (_, _) => DispatchOnUi(Rebuild);
@@ -75,6 +78,19 @@ public sealed partial class ShoppingListViewModel : ObservableObject
     {
         _activeChar.Refresh();
         Rebuild();
+    }
+
+    [RelayCommand]
+    private void ShowSources(IngredientRowViewModel? row)
+    {
+        if (row is null) return;
+        var model = row.Model;
+        var input = new IngredientSourcesInput(
+            Title: model.DisplayName,
+            KeywordsLabel: model.KeywordsLabel,
+            ItemInternalName: model.KeywordsLabel is null ? model.ItemInternalName : null,
+            OnHand: model.Locations);
+        _sourcesPresenter.Show(input);
     }
 
     public void Rebuild()

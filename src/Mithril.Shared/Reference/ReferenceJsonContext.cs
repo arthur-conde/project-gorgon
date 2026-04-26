@@ -120,6 +120,13 @@ public sealed class RawNpc
     public List<RawNpcService>? Services { get; set; }
 }
 
+/// <summary>Raw areas.json shape — the fields we project into <see cref="AreaEntry"/>.</summary>
+public sealed class RawArea
+{
+    public string? FriendlyName { get; set; }
+    public string? ShortFriendlyName { get; set; }
+}
+
 public sealed class RawNpcPreference
 {
     public string? Desire { get; set; }
@@ -201,6 +208,7 @@ public sealed class RawItemSource
 [JsonSerializable(typeof(Dictionary<string, RawSkill>))]
 [JsonSerializable(typeof(Dictionary<string, RawXpTable>))]
 [JsonSerializable(typeof(Dictionary<string, RawNpc>))]
+[JsonSerializable(typeof(Dictionary<string, RawArea>))]
 [JsonSerializable(typeof(Dictionary<string, RawItemSourceEnvelope>))]
 [JsonSerializable(typeof(Dictionary<string, RawAttribute>))]
 [JsonSerializable(typeof(Dictionary<string, RawPower>))]

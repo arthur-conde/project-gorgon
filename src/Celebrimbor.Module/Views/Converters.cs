@@ -4,6 +4,7 @@ using System.Windows.Data;
 using System.Windows.Media;
 using Celebrimbor.Domain;
 using Celebrimbor.ViewModels;
+using Mithril.Shared.Storage;
 
 namespace Celebrimbor.Views;
 

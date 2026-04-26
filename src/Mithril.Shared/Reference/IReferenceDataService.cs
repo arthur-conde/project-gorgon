@@ -38,6 +38,13 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, NpcEntry> Npcs { get; }
 
     /// <summary>
+    /// Area key (e.g. <c>"AreaSerbule"</c>) → friendly display names. Pulled from
+    /// <c>areas.json</c>; primary use is resolving area codes that appear on
+    /// non-NPC item sources (drops, quests).
+    /// </summary>
+    IReadOnlyDictionary<string, AreaEntry> Areas { get; }
+
+    /// <summary>
     /// Item InternalName → sources describing how the item can be obtained
     /// (Vendor / Recipe / Quest / Monster / HangOut / NpcGift / Barter / Angling / …).
     /// Pulled from <c>sources_items.json</c>.

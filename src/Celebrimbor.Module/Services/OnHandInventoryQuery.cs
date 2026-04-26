@@ -50,7 +50,7 @@ public sealed class OnHandInventoryQuery
             if (existingLoc >= 0)
                 list[existingLoc] = list[existingLoc] with { Quantity = list[existingLoc].Quantity + item.StackSize };
             else
-                list.Add(new IngredientLocation(label, item.StackSize));
+                list.Add(new IngredientLocation(label, item.StackSize, key, itemEntry.Name, itemEntry.IconId));
 
             foreach (var kw in itemEntry.Keywords)
             {

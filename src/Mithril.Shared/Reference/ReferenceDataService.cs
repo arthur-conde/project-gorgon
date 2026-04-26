@@ -40,6 +40,10 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, NpcEntry> _npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _npcsSnapshot;
 
+    // Areas (areas.json) — area code → friendly display names.
+    private IReadOnlyDictionary<string, AreaEntry> _areas = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _areasSnapshot;
+
     // Item sources (sources_items.json)
     private IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> _itemSources =
         new Dictionary<string, IReadOnlyList<ItemSource>>(StringComparer.Ordinal);
@@ -72,6 +76,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _skillsSnapshot = new ReferenceFileSnapshot("skills", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _xpTablesSnapshot = new ReferenceFileSnapshot("xptables", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _areasSnapshot = new ReferenceFileSnapshot("areas", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -82,13 +87,14 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadSkills();
         LoadXpTables();
         LoadNpcs();
+        LoadAreas();
         LoadItemSources();
         LoadAttributes();
         LoadPowers();
         LoadProfiles();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -98,6 +104,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
+    public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
@@ -110,6 +117,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "skills" => _skillsSnapshot,
         "xptables" => _xpTablesSnapshot,
         "npcs" => _npcsSnapshot,
+        "areas" => _areasSnapshot,
         "sources_items" => _itemSourcesSnapshot,
         "attributes" => _attributesSnapshot,
         "tsysclientinfo" => _powersSnapshot,
@@ -126,6 +134,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "skills" => RefreshFileAsync("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills, ct),
         "xptables" => RefreshFileAsync("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables, ct),
         "npcs" => RefreshFileAsync("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs, ct),
+        "areas" => RefreshFileAsync("areas", ReferenceJsonContext.Default.DictionaryStringRawArea, ParseAndSwapAreas, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
         "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers, ct),
@@ -140,6 +149,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("skills", ct);
         await RefreshAsync("xptables", ct);
         await RefreshAsync("npcs", ct);
+        await RefreshAsync("areas", ct);
         await RefreshAsync("sources_items", ct);
         await RefreshAsync("attributes", ct);
         await RefreshAsync("tsysclientinfo", ct);
@@ -248,6 +258,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadSkills() => LoadFile("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills);
     private void LoadXpTables() => LoadFile("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables);
     private void LoadNpcs() => LoadFile("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs);
+    private void LoadAreas() => LoadFile("areas", ReferenceJsonContext.Default.DictionaryStringRawArea, ParseAndSwapAreas);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
     private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers);
@@ -463,6 +474,19 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _npcs = byKey;
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private void ParseAndSwapAreas(Dictionary<string, RawArea> raw, ReferenceFileMetadata meta)
+    {
+        var byKey = new Dictionary<string, AreaEntry>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, v) in raw)
+        {
+            var friendly = v.FriendlyName ?? key;
+            var shortFriendly = string.IsNullOrEmpty(v.ShortFriendlyName) ? friendly : v.ShortFriendlyName;
+            byKey[key] = new AreaEntry(key, friendly, shortFriendly);
+        }
+        _areas = byKey;
+        _areasSnapshot = new ReferenceFileSnapshot("areas", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
     /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>
