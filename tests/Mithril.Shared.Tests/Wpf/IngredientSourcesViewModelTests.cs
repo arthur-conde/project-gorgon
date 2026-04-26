@@ -113,13 +113,63 @@ public class IngredientSourcesViewModelTests
         var input = new IngredientSourcesInput("Iron Bar", null, "IronBar", []);
         var vm = IngredientSourcesViewModel.Build(input, refData);
 
-        vm.Sources.Should().ContainSingle()
-            .Which.Should().BeEquivalentTo(new
-            {
-                Kind = "Vendor",
-                Label = "Hulon the Huge",
-                AreaFriendlyName = "Serbule",
-            });
+        var source = vm.Sources.Should().ContainSingle().Subject;
+        source.Kind.Should().Be("Vendor");
+        source.Label.Should().Be("Hulon the Huge");
+        source.AreaFriendlyName.Should().Be("Serbule");
+        // Service has no MinFavorTier → no requirement line.
+        source.Requirement.Should().BeNull();
+    }
+
+    [Fact]
+    public void Vendor_source_surfaces_Store_service_MinFavorTier_as_Requirement()
+    {
+        // Hulon's Store service is gated on "Liked" favor; we should expose that.
+        var store = new NpcService(Type: "Store", MinFavorTier: "Liked", CapIncreases: []);
+        var npc = new NpcEntry("NPC_Hulon", "Hulon", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store]);
+        var refData = new StubRefData(
+            sources: new() { ["IronBar"] = [new ItemSource("Vendor", "NPC_Hulon", null)] },
+            npcs: new() { ["NPC_Hulon"] = npc });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Iron Bar", null, "IronBar", []), refData);
+
+        vm.Sources.Single().Requirement.Should().Be("Requires Liked or higher");
+    }
+
+    [Fact]
+    public void Barter_source_uses_Barter_service_for_Requirement_lookup()
+    {
+        // Same NPC has a Store at Neutral and a Barter at "Loved" — only the Barter gate
+        // applies for a Barter source. Confirms the service-type routing isn't conflated.
+        var store = new NpcService("Store", MinFavorTier: null, CapIncreases: []);
+        var barter = new NpcService("Barter", MinFavorTier: "Loved", CapIncreases: []);
+        var npc = new NpcEntry("NPC_Velkort", "Velkort", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store, barter]);
+        var refData = new StubRefData(
+            sources: new() { ["RareIngot"] = [new ItemSource("Barter", "NPC_Velkort", null)] },
+            npcs: new() { ["NPC_Velkort"] = npc });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Rare Ingot", null, "RareIngot", []), refData);
+
+        vm.Sources.Single().Requirement.Should().Be("Requires Loved or higher");
+    }
+
+    [Fact]
+    public void NpcGift_source_does_not_emit_per_npc_favor_Requirement()
+    {
+        // NpcGift gating lives on per-preference RequiredFavorTier, not per-NPC.
+        // The Sources tab line should not claim a vendor-style favor gate for gifts.
+        var store = new NpcService("Store", MinFavorTier: "Liked", CapIncreases: []);
+        var npc = new NpcEntry("NPC_Marna", "Marna", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store]);
+        var refData = new StubRefData(
+            sources: new() { ["GiftedItem"] = [new ItemSource("NpcGift", "NPC_Marna", null)] },
+            npcs: new() { ["NPC_Marna"] = npc });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Gifted Item", null, "GiftedItem", []), refData);
+
+        vm.Sources.Single().Requirement.Should().BeNull();
     }
 
     [Fact]

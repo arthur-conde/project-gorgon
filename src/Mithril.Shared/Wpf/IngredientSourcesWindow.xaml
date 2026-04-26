@@ -188,36 +188,51 @@
                                     <DataTemplate>
                                         <Border Background="#FF222222" BorderBrush="#22FFFFFF" BorderThickness="1"
                                                 CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Border Background="#33D4A847" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
-                                                    <TextBlock Text="{Binding Kind}" Foreground="#FFD4A847"
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Background="#33D4A847" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                                                        <TextBlock Text="{Binding Kind}" Foreground="#FFD4A847"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                                   FontWeight="SemiBold"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Label}" Foreground="#FFE8E8E8"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
                                                                FontSize="{DynamicResource AppFontSizeHint}"
-                                                               FontWeight="SemiBold"/>
-                                                </Border>
-                                                <TextBlock Text="{Binding Label}" Foreground="#FFE8E8E8"
-                                                           VerticalAlignment="Center"/>
-                                                <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Text="{Binding AreaFriendlyName, StringFormat=· {0}}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding AreaFriendlyName}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
+                                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                                               FontStyle="Italic" VerticalAlignment="Center"
+                                                               Text="{Binding Detail, StringFormat=({0})}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Requirement}" Foreground="#FFB07A47"
                                                            FontSize="{DynamicResource AppFontSizeHint}"
-                                                           VerticalAlignment="Center"
-                                                           Text="{Binding AreaFriendlyName, StringFormat=· {0}}">
+                                                           Margin="0,2,0,0">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding AreaFriendlyName}" Value="{x:Null}">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                                <TextBlock Foreground="#88FFFFFF" Margin="6,0,0,0"
-                                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                                           FontStyle="Italic" VerticalAlignment="Center"
-                                                           Text="{Binding Detail, StringFormat=({0})}">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Detail}" Value="{x:Null}">
+                                                                <DataTrigger Binding="{Binding Requirement}" Value="{x:Null}">
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
