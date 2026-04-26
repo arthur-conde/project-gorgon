@@ -13,5 +13,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
+    <!-- Module references exist solely so LogPatternCatalogParityTests can
+         reflect over [GeneratedRegex] attributes in module-level parsers. -->
+    <ProjectReference Include="..\..\src\Samwise.Module\Samwise.Module.csproj" />
+    <ProjectReference Include="..\..\src\Arwen.Module\Arwen.Module.csproj" />
+    <ProjectReference Include="..\..\src\Smaug.Module\Smaug.Module.csproj" />
+    <ProjectReference Include="..\..\src\Pippin.Module\Pippin.Module.csproj" />
+    <ProjectReference Include="..\..\src\Saruman.Module\Saruman.Module.csproj" />
+    <ProjectReference Include="..\..\src\Legolas.Module\Legolas.Module.csproj" />
   </ItemGroup>
 </Project>
