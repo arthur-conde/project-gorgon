@@ -60,6 +60,8 @@
     <Resource Include="Resources\appearance.jpg" />
     <Resource Include="Resources\about.ico" />
     <Resource Include="Resources\about.jpg" />
+    <Resource Include="Resources\attention-overlay.ico" />
+    <Resource Include="Resources\mithril-attention.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />

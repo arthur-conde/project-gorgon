@@ -14,6 +14,9 @@
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Arwen.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Resource Include="Resources\arwen.ico" />
     <Resource Include="Resources\arwen.jpg" />
   </ItemGroup>

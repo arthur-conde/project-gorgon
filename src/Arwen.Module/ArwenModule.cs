@@ -81,6 +81,7 @@ public sealed class ArwenModule : IMithrilModule
                 pendingTtl: settings.PendingObservationTtl,
                 dispatch: UiDispatch);
         });
+        services.AddSingleton<IAttentionSource, ArwenAttentionSource>();
 
         services.AddSingleton<FavorDashboardViewModel>();
         services.AddSingleton<FavorCalculatorViewModel>();

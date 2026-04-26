@@ -21,6 +21,13 @@ public sealed partial class ModuleEntry : ObservableObject
     public System.Windows.Media.ImageSource? ImageSource =>
         string.IsNullOrEmpty(Module.IconUri) ? null
             : new System.Windows.Media.Imaging.BitmapImage(new Uri(Module.IconUri, UriKind.Absolute));
+
+    [ObservableProperty]
+    private int _attentionCount;
+
+    public bool HasAttention => AttentionCount > 0;
+
+    partial void OnAttentionCountChanged(int value) => OnPropertyChanged(nameof(HasAttention));
 }
 
 public sealed partial class CharacterChip : ObservableObject
@@ -39,6 +46,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IActiveCharacterService _activeChar;
     private readonly IUpdateStatusService _updateStatus;
     private readonly IUpdateApplier _updateApplier;
+    private readonly IAttentionAggregator _attention;
     private readonly IReadOnlyList<IMithrilModule> _allModules;
 
     private readonly ModuleGates _gates;
@@ -50,7 +58,8 @@ public sealed partial class ShellViewModel : ObservableObject
         ModuleGates gates,
         IActiveCharacterService activeChar,
         IUpdateStatusService updateStatus,
-        IUpdateApplier updateApplier)
+        IUpdateApplier updateApplier,
+        IAttentionAggregator attention)
     {
         _services = services;
         _settings = settings;
@@ -58,6 +67,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeChar = activeChar;
         _updateStatus = updateStatus;
         _updateApplier = updateApplier;
+        _attention = attention;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -68,8 +78,39 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
         _updateStatus.StateChanged += (_, _) => RefreshUpdateStatus();
         _settings.PropertyChanged += OnSettingsChanged;
+        _attention.AttentionChanged += OnAttentionChanged;
         RefreshCharacter();
         RefreshUpdateStatus();
+        RefreshAttentionSurface();
+    }
+
+    private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
+    {
+        // Aggregator already marshalled to the UI thread.
+        var entry = Modules.FirstOrDefault(m => m.Module.Id == e.ModuleId);
+        if (entry is not null) entry.AttentionCount = e.Count;
+        RefreshAttentionSurface();
+    }
+
+    private static readonly Lazy<System.Windows.Media.ImageSource> OverlayIcon =
+        new(() => new System.Windows.Media.Imaging.BitmapImage(
+            new Uri("pack://application:,,,/Mithril;component/Resources/attention-overlay.ico", UriKind.Absolute)));
+
+    private void RefreshAttentionSurface()
+    {
+        var total = _attention.TotalCount;
+        if (total > 0)
+        {
+            AttentionOverlayIcon = OverlayIcon.Value;
+            AttentionTooltip = total == 1
+                ? "Mithril — 1 item needs attention"
+                : $"Mithril — {total} items need attention";
+        }
+        else
+        {
+            AttentionOverlayIcon = null;
+            AttentionTooltip = "Mithril";
+        }
     }
 
     private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -87,7 +128,11 @@ public sealed partial class ShellViewModel : ObservableObject
         foreach (var m in _allModules)
         {
             if (m.IsDeveloperOnly && !_settings.DeveloperMode) continue;
-            Modules.Add(new ModuleEntry { Module = m });
+            Modules.Add(new ModuleEntry
+            {
+                Module = m,
+                AttentionCount = _attention.CountFor(m.Id),
+            });
         }
         // If the previously selected module was just hidden, clear the selection
         // chip so the sidebar doesn't keep highlighting an absent entry.
@@ -110,6 +155,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private bool _isUpdateAvailable;
     [ObservableProperty] private string _updateBannerText = "";
+
+    [ObservableProperty] private System.Windows.Media.ImageSource? _attentionOverlayIcon;
+    [ObservableProperty] private string _attentionTooltip = "Mithril";
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();
@@ -188,6 +236,14 @@ public sealed partial class ShellViewModel : ObservableObject
     partial void OnSelectedModuleChanged(ModuleEntry? value)
     {
         if (value is not null) ActivateModule(value);
+    }
+
+    [RelayCommand]
+    private void ActivateModuleById(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        var entry = Modules.FirstOrDefault(m => m.Module.Id == id);
+        if (entry is not null) SelectedModule = entry;
     }
 
     [RelayCommand]

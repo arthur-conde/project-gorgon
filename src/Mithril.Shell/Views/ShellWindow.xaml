@@ -17,9 +17,22 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Window.Resources>
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo Overlay="{Binding AttentionOverlayIcon}"
+                         Description="{Binding AttentionTooltip}"/>
+    </Window.TaskbarItemInfo>
     <DockPanel>
         <tb:TaskbarIcon x:Name="Tray" DockPanel.Dock="Top" Visibility="Visible"
-                        ToolTipText="Mithril"/>
+                        ToolTipText="Mithril">
+            <tb:TaskbarIcon.ContextMenu>
+                <ContextMenu x:Name="TrayMenu">
+                    <MenuItem Header="Show Mithril" Click="OnShowFromTray"/>
+                    <Separator x:Name="TrayAttentionSeparatorTop" Visibility="Collapsed"/>
+                    <Separator x:Name="TrayAttentionSeparatorBottom"/>
+                    <MenuItem Header="Exit" Click="OnExitFromTray"/>
+                </ContextMenu>
+            </tb:TaskbarIcon.ContextMenu>
+        </tb:TaskbarIcon>
         <Border DockPanel.Dock="Bottom" Background="#FF252525" Padding="8,4">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}"
@@ -124,19 +137,33 @@
 
                 <ListBox ItemsSource="{Binding Modules}"
                          SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
+                         HorizontalContentAlignment="Stretch"
                          Background="Transparent" BorderThickness="0" Padding="6">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Orientation="Horizontal" Margin="4,6">
-                                <Grid Width="28" Height="28" Margin="0,0,10,0">
+                            <Grid Margin="4,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid Grid.Column="0" Width="28" Height="28" Margin="0,0,10,0">
                                     <icon:PackIconLucide Kind="{Binding Icon}" Width="22" Height="22"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Visibility="{Binding HasImage, Converter={StaticResource InverseBoolToVis}}"/>
                                     <Image Source="{Binding ImageSource}" Width="28" Height="28"
                                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}"/>
                                 </Grid>
-                                <TextBlock Text="{Binding Title}" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
-                            </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="{DynamicResource AppFontSizeLarge}" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+                                <Border Grid.Column="2" CornerRadius="9" MinWidth="20" Height="18" Padding="6,0" Margin="6,0,0,0"
+                                        Background="#FFD4A847" VerticalAlignment="Center"
+                                        Visibility="{Binding HasAttention, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Needs attention">
+                                    <TextBlock Text="{Binding AttentionCount}" Foreground="#FF1A1A1A"
+                                               FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

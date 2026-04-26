@@ -105,3 +105,27 @@ Subject: a single large square keycap viewed head-on, its face slightly convex, 
 ### Settings
 
 Subject: a classic eight-tooth gear (cog) centered in the frame, with a smaller gear meshing with it in the lower-right quadrant. A narrow wrench lies diagonally behind the main gear, its head just visible at the upper-left. Faint radial tick marks in the background texture.
+
+## Status overlays (system-tray + taskbar attention)
+
+These two icons drive the "user attention required" surface — a Windows taskbar overlay and a tray-icon swap when one or more modules have pending user input. They must read clearly at 16×16, so they ignore the shared style header (the gold border + grunge texture do not survive that small) and use a much simpler, higher-contrast composition. Both should be exported as multi-res `.ico` (16, 24, 32, 48, 64, 256) so Windows picks the right size for the taskbar overlay slot vs. the tray.
+
+### Attention overlay (taskbar)
+
+Used as `Window.TaskbarItemInfo.Overlay` whenever any module reports `AttentionCount > 0`. Windows composites it onto the bottom-right corner of the taskbar's app icon, so it must be a self-contained badge — readable on both light and dark taskbars, no internal detail finer than ~2px at 16×16.
+
+Saved to `src/Mithril.Shell/Resources/attention-overlay.ico`.
+
+```
+Square multi-resolution icon (export 16, 24, 32, 48, 64, 256). Subject is a single solid filled circle filling ~85% of the canvas, painted in warm amber-gold (#D4A74A) with a slim 1-2px crisp white outer ring around it for contrast against arbitrary taskbar colors. A small darker amber inner highlight curves along the upper-left of the circle to give it a slight gem-like depth. Centered in the circle is a single bold white exclamation mark — a tall vertical bar tapering slightly toward the top, with a small square dot beneath. The exclamation mark must remain legible at 16px (no serifs, no flourishes, stroke weight ~3px relative to a 16px canvas). No background — fully transparent outside the circle. No text, no other glyphs, no border.
+```
+
+### Mithril-with-attention (system tray)
+
+Used as the `tb:TaskbarIcon.Icon` whenever `AttentionAggregator.HasAttention` is true. It's the existing `mithril.ico` with the attention badge composited into the lower-right corner, baked in as a single icon so the swap is a one-property change with no GDI compositing on the dispatcher thread.
+
+Easiest path: take the existing `src/Mithril.Shell/Resources/mithril.ico` and inpaint the badge in an image editor (or via image-to-image with the prompt below). Re-export as multi-res `.ico` to `src/Mithril.Shell/Resources/mithril-attention.ico`. No need to regenerate the coin from scratch — the badge is the only change.
+
+```
+Inpaint into the lower-right quadrant of the supplied image: a solid amber-gold filled circle (#D4A74A) at ~40% of the canvas width, with a crisp 2px white outer ring, a darker amber upper-left inner highlight, and a centered bold white exclamation mark (tall tapered bar with a square dot beneath, no serifs, stroke weight readable at 16px). The badge sits at the 4-5 o'clock position, slightly overlapping the gold border. Preserve the rest of the source image untouched. No text, no other glyphs.
+```

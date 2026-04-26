@@ -144,6 +144,7 @@ public static class Program
                 .AddMithrilDialogs()
                 .AddMithrilModuleGates()
                 .AddMithrilModules()
+                .AddMithrilAttention()
                 .AddMithrilShellUpdates()
                 .AddMithrilShellViews()
                 .AddMithrilItemDetail();

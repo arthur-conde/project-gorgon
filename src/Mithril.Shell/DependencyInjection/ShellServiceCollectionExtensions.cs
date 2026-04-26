@@ -53,6 +53,16 @@ public static class ShellServiceCollectionExtensions
         return services;
     }
 
+    public static IServiceCollection AddMithrilAttention(this IServiceCollection services) =>
+        services.AddSingleton<IAttentionAggregator>(sp => new AttentionAggregator(
+            sp.GetServices<IAttentionSource>(),
+            dispatch: a =>
+            {
+                var d = System.Windows.Application.Current?.Dispatcher;
+                if (d is null || d.CheckAccess()) a();
+                else d.InvokeAsync(a);
+            }));
+
     public static IServiceCollection AddMithrilShellUpdates(this IServiceCollection services) =>
         services
             .AddSingleton<UpdateChannelInfo>(_ => UpdateChannelInfo.FromEmbedded())
