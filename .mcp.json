@@ -1,0 +1,13 @@
+{
+  "$comment": "Project-scoped MCP server registry for Claude Code. mithril-logs is in-tree (built from tools/MithrilLogMcp). pg-data is fetched on demand by npx from github.com/arthur-conde/pg-data-mcp — no local clone required; npx caches per-commit. The github server is configured per-user in ~/.claude.json under this project entry (not committed) since it requires a PAT in GITHUB_MCP_PAT.",
+  "mcpServers": {
+    "mithril-logs": {
+      "command": "node",
+      "args": ["tools/MithrilLogMcp/dist/src/server.js"]
+    },
+    "pg-data": {
+      "command": "npx",
+      "args": ["-y", "github:arthur-conde/pg-data-mcp"]
+    }
+  }
+}
