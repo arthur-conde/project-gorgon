@@ -2,7 +2,9 @@ import * as fs from 'node:fs';
 import { lineStream, scannedBytes } from '../util/file-streams.js';
 import { PlayerLogTimestamper } from '../util/time-windows.js';
 import { PlayerLineParser } from '../parsing/player-parser.js';
+import { ActiveCharacterTracker } from '../parsing/active-character-tracker.js';
 import { rolloverDetected, type FileCursor } from '../state/cursors.js';
+import { findActiveCharacterAt } from '../state/character-resolver.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { Catalog } from '../parsing/catalog.js';
 
@@ -54,6 +56,14 @@ export async function* scanPlayerLog(
   const parser = new PlayerLineParser(catalog);
   const stamper = new PlayerLogTimestamper(stat.mtime);
 
+  // Seed the active-character tracker from a backward scan when resuming
+  // mid-stream — without it, every event before the next ProcessAddPlayer
+  // would be unstamped and dropped by `character: "X"` filters.
+  const initialActive = startOffset > 0
+    ? findActiveCharacterAt(query.path, startOffset, catalog)
+    : null;
+  const tracker = new ActiveCharacterTracker(initialActive ?? undefined);
+
   for await (const rec of lineStream(query.path, { start: startOffset })) {
     stats.scannedLines += 1;
     stats.endOffsets[query.path] = rec.byteOffset + rec.byteLength;
@@ -61,6 +71,8 @@ export async function* scanPlayerLog(
     if (ts < query.since) continue;
     if (ts > query.until) break;
     for (const ev of parser.parse(rec.line, ts, query.path, rec.lineNo, rec.byteOffset)) {
+      tracker.observe(ev);
+      if (tracker.active) ev.activeCharacter = tracker.active;
       yield ev;
     }
   }

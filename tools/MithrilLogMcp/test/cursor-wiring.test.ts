@@ -21,15 +21,17 @@ function newPlayerLog(): { dir: string; path: string } {
       '[12:00:01] LocalPlayer: ProcessSetPetOwner(11111, 22222)',
       '[12:00:02] LocalPlayer: ProcessSetPetOwner(33333, 44444)',
     ].join('\n') + '\n');
-  const future = new Date(Date.now() + 60_000);
-  fs.utimesSync(p, future, future);
+  // Past mtime keeps line `[HH:MM:SS]` stamps safely before `now` — see the
+  // matching note in query-events.test.ts.
+  const yesterday = new Date(Date.now() - 86_400_000);
+  fs.utimesSync(p, yesterday, yesterday);
   return { dir, path: p };
 }
 
 function append(p: string, lines: string[]): void {
   fs.appendFileSync(p, lines.join('\n') + '\n');
-  const future = new Date(Date.now() + 120_000);
-  fs.utimesSync(p, future, future);
+  const yesterday = new Date(Date.now() - 86_400_000);
+  fs.utimesSync(p, yesterday, yesterday);
 }
 
 function makeConfig(playerLogPath: string) {
@@ -118,7 +120,9 @@ describe('query_events cursor wiring', () => {
 
       // Truncate + write a single new line. Size shrinks vs the cursor's recorded
       // fileSize, so rolloverDetected returns true and we read from 0.
-      fs.writeFileSync(playerPath, '[12:00:99] LocalPlayer: ProcessSetPetOwner(99999, 0)\n');
+      fs.writeFileSync(playerPath, '[12:00:09] LocalPlayer: ProcessSetPetOwner(99999, 0)\n');
+      const past = new Date(Date.now() - 86_400_000);
+      fs.utimesSync(playerPath, past, past);
 
       const after = await runQueryEvents(args, makeConfig(playerPath), store);
       assert.equal(after.events.length, 1);

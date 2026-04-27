@@ -28,9 +28,12 @@ function fixturePath(): string {
     '[12:00:07] ProcessStartInteraction(901, 1, 200.5, True, "NPC_Velkort")',
   ];
   fs.writeFileSync(p, lines.join('\n') + '\n');
-  // Future-date the file so the timestamper anchors to "today" rather than 2025.
-  const future = new Date(Date.now() + 60_000);
-  fs.utimesSync(p, future, future);
+  // Anchor mtime to yesterday so line `[HH:MM:SS]` stamps land safely before
+  // `now`, regardless of the time of day or local timezone offset (BST/EST/etc.).
+  // PlayerLogTimestamper uses mtime as the date anchor; fixturing into the future
+  // would make events appear later than `until: now` during early-UTC test runs.
+  const yesterday = new Date(Date.now() - 86_400_000);
+  fs.utimesSync(p, yesterday, yesterday);
   return p;
 }
 

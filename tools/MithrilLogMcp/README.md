@@ -7,6 +7,8 @@ MCP server exposing Mithril's log sources (Project Gorgon `Player.log`, `ChatLog
 - **v0.1** — Player.log only, `query_events`/`aggregate`/`list_event_types`, time windows. ✅
 - **v0.2** — chat log + Mithril Serilog sources, `source: "all"` merge, field projection. ✅
 - **v0.3** — persistent cursors, character scoping, `--last-session`, rollover detection. ✅
+- **v0.4** — cursor advancement on successful queries (`cursor: "name"` resumes where the previous call stopped). ✅
+- **v0.5** — active-character streaming: `character: "Foo"` filters Player.log events using a tracker that watches `ProcessAddPlayer` mid-stream and is backfilled from a backward scan on cursor resume. ✅
 
 ## Tool surface
 
