@@ -24,10 +24,24 @@ export function resolveWindow(
   },
 ): ResolvedWindow {
   if (args.between) {
-    return { since: parseInstant(args.between[0], now), until: parseInstant(args.between[1], now) };
+    const since = parseInstant(args.between[0], now);
+    const until = parseInstant(args.between[1], now);
+    if (since > until) {
+      throw new Error(
+        `'between' range is reversed: '${args.between[0]}' (${since.toISOString()}) ` +
+        `is after '${args.between[1]}' (${until.toISOString()}). Pass [start, end].`,
+      );
+    }
+    return { since, until };
   }
   const since = args.since ? parseInstant(args.since, now, { negative: true }) : new Date(0);
   const until = args.until ? parseInstant(args.until, now) : now;
+  if (since > until) {
+    throw new Error(
+      `'since' (${since.toISOString()}) is after 'until' (${until.toISOString()}). ` +
+      `Check the duration sign or ISO timestamps.`,
+    );
+  }
   return { since, until };
 }
 

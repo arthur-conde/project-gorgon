@@ -1,15 +1,18 @@
-import * as fs from 'node:fs';
 import { z } from 'zod';
 import { loadCatalog } from '../parsing/catalog.js';
 import { resolveWindow } from '../util/time-windows.js';
 import {
   emptyMultiSourceStats,
   scanMultiSource,
-  type MultiSourceStats,
   type SourceName,
 } from '../sources/multi-source.js';
 import { resolveLastSessionWindow } from '../state/character-resolver.js';
-import { CursorStore, snapshotCursor, type CursorState } from '../state/cursors.js';
+import { CursorStore } from '../state/cursors.js';
+import {
+  countAdvancedFiles,
+  loadCursorsForName,
+  persistCursor,
+} from '../state/cursor-helpers.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
 
@@ -55,7 +58,7 @@ export async function runQueryEvents(
     window = resolveWindow(now, args);
   }
 
-  const cursorsByName = args.cursor ? loadCursorsForSource(cursorStore, args.cursor) : undefined;
+  const cursorsByName = loadCursorsForName(cursorStore, args.cursor);
 
   const stats = emptyMultiSourceStats();
   let matched = 0;
@@ -74,6 +77,8 @@ export async function runQueryEvents(
       since: window.since,
       until: window.until,
       cursors: cursorsByName,
+      eventTypeAllowlist: eventTypeFilter ?? undefined,
+      context: args.context,
     },
     stats,
   )) {
@@ -128,47 +133,6 @@ export async function runQueryEvents(
     events,
     format: args.format,
   };
-}
-
-function loadCursorsForSource(
-  store: CursorStore,
-  name: string,
-): Record<string, CursorState> {
-  return {
-    player: store.get(name, 'player'),
-    chat: store.get(name, 'chat'),
-    mithril: store.get(name, 'mithril'),
-  };
-}
-
-function persistCursor(
-  store: CursorStore,
-  name: string,
-  stats: MultiSourceStats,
-): void {
-  for (const [source, endOffsets] of Object.entries(stats.endOffsetsBySource)) {
-    const perFile: CursorState['perFile'] = {};
-    for (const [file, offset] of Object.entries(endOffsets)) {
-      // Snapshot mtime-derived metadata at the *advanced* offset so the next
-      // call's rolloverDetected has fresh fileSize / birthtimeMs to compare.
-      try {
-        const stat = fs.statSync(file);
-        perFile[file] = snapshotCursor(stat, offset);
-      } catch {
-        // File disappeared between scan and persist — skip it; next call
-        // will treat it as a fresh read.
-      }
-    }
-    store.put(name, source, { perFile });
-  }
-}
-
-function countAdvancedFiles(stats: MultiSourceStats): number {
-  let n = 0;
-  for (const eo of Object.values(stats.endOffsetsBySource)) {
-    n += Object.keys(eo).length;
-  }
-  return n;
 }
 
 function matchesFilter(

@@ -3,6 +3,12 @@ import { loadCatalog } from '../parsing/catalog.js';
 import { resolveWindow } from '../util/time-windows.js';
 import { emptyMultiSourceStats, scanMultiSource, type SourceName } from '../sources/multi-source.js';
 import { resolveLastSessionWindow } from '../state/character-resolver.js';
+import { CursorStore } from '../state/cursors.js';
+import {
+  countAdvancedFiles,
+  loadCursorsForName,
+  persistCursor,
+} from '../state/cursor-helpers.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
 
@@ -26,6 +32,7 @@ export const AggregateInput = z.object({
   between: z.tuple([z.string(), z.string()]).optional(),
   last_session: z.boolean().optional(),
   character: z.string().optional(),
+  cursor: z.string().optional(),
   filter: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
@@ -33,7 +40,11 @@ export type AggregateArgs = z.infer<typeof AggregateInput>;
 
 const DISTINCT_CAP = 100_000;
 
-export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
+export async function runAggregate(
+  args: AggregateArgs,
+  config: ServerConfig,
+  cursorStore: CursorStore,
+) {
   const t0 = performance.now();
   const catalog = loadCatalog();
   const now = new Date();
@@ -42,10 +53,14 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
   if (args.last_session) {
     if (!args.character) throw new Error("'last_session' requires 'character'");
     window = resolveLastSessionWindow(config, catalog, args.character, now);
+  } else if (args.cursor && !args.since && !args.until && !args.between) {
+    // Cursor-only aggregate: count what's new since last call.
+    window = { since: new Date(0), until: now };
   } else {
     window = resolveWindow(now, args);
   }
 
+  const cursorsByName = loadCursorsForName(cursorStore, args.cursor);
   const eventTypeFilter = args.event_type ? new Set(args.event_type) : null;
   const stats = emptyMultiSourceStats();
   let matched = 0;
@@ -57,7 +72,13 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
   for await (const ev of scanMultiSource(
     catalog,
     config,
-    { source: args.source as SourceName, since: window.since, until: window.until },
+    {
+      source: args.source as SourceName,
+      since: window.since,
+      until: window.until,
+      cursors: cursorsByName,
+      eventTypeAllowlist: eventTypeFilter ?? undefined,
+    },
     stats,
   )) {
     if (eventTypeFilter && !eventTypeFilter.has(ev.type)) continue;
@@ -96,8 +117,21 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
     }
   }
 
+  if (args.cursor) {
+    persistCursor(cursorStore, args.cursor, stats);
+  }
+
   const elapsedMs = Math.round(performance.now() - t0);
-  const summary = {
+  const summary: {
+    matched: number;
+    returned: number;
+    truncated: boolean;
+    scannedBytes: number;
+    scannedLines: number;
+    elapsedMs: number;
+    window: { since: string; until: string };
+    cursor?: { name: string; advanced: number; rolledOverFiles: string[] };
+  } = {
     matched,
     returned: 0,
     truncated,
@@ -106,6 +140,13 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
     elapsedMs,
     window: { since: window.since.toISOString(), until: window.until.toISOString() },
   };
+  if (args.cursor) {
+    summary.cursor = {
+      name: args.cursor,
+      advanced: countAdvancedFiles(stats),
+      rolledOverFiles: stats.rolledOverFiles,
+    };
+  }
 
   let buckets: Array<{ key: string; count: number }>;
   switch (args.agg) {

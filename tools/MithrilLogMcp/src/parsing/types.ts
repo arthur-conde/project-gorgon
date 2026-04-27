@@ -23,6 +23,14 @@ export interface ParsedEvent {
    * events that occur before the first observed `ProcessAddPlayer` line.
    */
   activeCharacter?: string;
+  /**
+   * Raw lines surrounding the matched line in the source file when the
+   * caller requested `context: N`. Currently populated only for
+   * `source: "player"`; other sources will land in a follow-up. The arrays
+   * may be shorter than N if the match is near the start/end of the file
+   * or the scan window.
+   */
+  contextLines?: { before: string[]; after: string[] };
 }
 
 export interface QuerySummary {

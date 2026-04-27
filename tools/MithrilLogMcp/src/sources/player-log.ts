@@ -14,6 +14,13 @@ export interface PlayerLogQuery {
   until: Date;
   /** Cursor entry for this file, if any. Honoured when not stale. */
   prevCursor?: FileCursor | undefined;
+  /**
+   * Number of raw lines of surrounding context to attach to each emitted
+   * event as `contextLines: { before, after }`. 0 disables (default).
+   * Implemented as a ring buffer of the last N lines (before) plus a
+   * pending queue that holds events until N more lines are read (after).
+   */
+  context?: number | undefined;
 }
 
 export interface PlayerLogScanStats {
@@ -73,16 +80,56 @@ export async function* scanPlayerLog(
     : null;
   const tracker = new ActiveCharacterTracker(initialActive ?? undefined);
 
+  const N = query.context ?? 0;
+  const ringBefore: string[] = [];
+  // Each entry's `after` aliases ev.contextLines.after, so pushing to it
+  // mutates the event's own array — no second pass needed at yield time.
+  const pending: Array<{ ev: ParsedEvent; after: string[] }> = [];
+
   for await (const rec of lineStream(query.path, { start: startOffset })) {
+    // Feed this line as after-context to events still waiting; yield any
+    // whose after-window is now full.
+    if (N > 0) {
+      for (const p of pending) {
+        if (p.after.length < N) p.after.push(rec.line);
+      }
+      while (pending.length > 0 && pending[0]!.after.length >= N) {
+        yield pending.shift()!.ev;
+      }
+    }
+
     stats.scannedLines += 1;
     stats.endOffsets[query.path] = rec.byteOffset + rec.byteLength;
     const ts = stamper.stamp(rec.line, stat.mtime);
-    if (ts < query.since) continue;
+    if (ts < query.since) {
+      if (N > 0) pushRing(ringBefore, rec.line, N);
+      continue;
+    }
     if (ts > query.until) break;
+
     for (const ev of parser.parse(rec.line, ts, query.path, rec.lineNo, rec.byteOffset)) {
       tracker.observe(ev);
       if (tracker.active) ev.activeCharacter = tracker.active;
-      yield ev;
+      if (N > 0) {
+        ev.contextLines = { before: [...ringBefore], after: [] };
+        pending.push({ ev, after: ev.contextLines.after });
+      } else {
+        yield ev;
+      }
     }
+
+    if (N > 0) pushRing(ringBefore, rec.line, N);
   }
+
+  // Drain whatever events are still waiting for their full after-context.
+  // They get whatever was accumulated before the scan ended.
+  while (pending.length > 0) {
+    yield pending.shift()!.ev;
+  }
+}
+
+function pushRing(ring: string[], line: string, max: number): void {
+  if (max <= 0) return;
+  ring.push(line);
+  while (ring.length > max) ring.shift();
 }

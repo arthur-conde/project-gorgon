@@ -10,6 +10,63 @@ MCP server exposing Mithril's log sources (Project Gorgon `Player.log`, `ChatLog
 - **v0.4** — cursor advancement on successful queries (`cursor: "name"` resumes where the previous call stopped). ✅
 - **v0.5** — active-character streaming: `character: "Foo"` filters Player.log events using a tracker that watches `ProcessAddPlayer` mid-stream and is backfilled from a backward scan on cursor resume. ✅
 
+## Example queries
+
+These show the typical shapes Claude should reach for. All run as MCP tool calls.
+
+**1. Top NPCs the player interacted with in the last hour**
+
+```jsonc
+// tool: aggregate
+{
+  "source": "player",
+  "agg": "top",
+  "field": "npcKey",
+  "event_type": ["arwen.FavorUpdate", "smaug.NpcInteractionStarted"],
+  "since": "1h",
+  "top_n": 10
+}
+```
+Returns ten `{ key, count }` buckets — orders of magnitude smaller than the raw events.
+
+**2. Everything Emraell did in their most recent session**
+
+```jsonc
+// tool: query_events
+{
+  "source": "player",
+  "character": "Emraell",
+  "last_session": true,
+  "event_type": ["arwen.FavorUpdate", "smaug.VendorItemSold", "samwise.PlantingCapReached"],
+  "limit": 200
+}
+```
+The server resolves "last session" by walking back through Player.log to the most recent `ProcessAddPlayer` for that character; events are stamped with `activeCharacter` so cross-character noise is filtered out.
+
+**3. Multi-turn investigation: keep a cursor and only see new events**
+
+```jsonc
+// turn 1 — establishes cursor "debug-vendor-bug"
+{ "source": "player", "cursor": "debug-vendor-bug", "event_type": ["smaug.VendorItemSold"] }
+
+// turn 2, after the player sells more — only new events
+{ "source": "player", "cursor": "debug-vendor-bug", "event_type": ["smaug.VendorItemSold"] }
+```
+Second call scans only the bytes appended since turn 1. Rollover detection (truncation, file recreate) automatically resets to byte 0 and reports it in `summary.cursor.rolledOverFiles`.
+
+**4. Context lines around each match (Player.log)**
+
+```jsonc
+// tool: query_events
+{
+  "source": "player",
+  "event_type": ["samwise.PlantingCapReached"],
+  "since": "30m",
+  "context": 3
+}
+```
+Each event gains `contextLines: { before: [...], after: [...] }` with up to 3 raw lines on each side.
+
 ## Tool surface
 
 | Tool | Purpose |

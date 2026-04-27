@@ -25,6 +25,12 @@ export interface MultiSourceQuery {
   until: Date;
   /** Optional per-source cursor state for resumed reads. */
   cursors?: Record<string, CursorState> | undefined;
+  /** Set of full event_type values requested. Used by sources that can
+   *  cheaply pre-filter (e.g. Mithril Serilog by `"Category":"X"`). */
+  eventTypeAllowlist?: ReadonlySet<string> | undefined;
+  /** Lines of surrounding raw context to attach to each event. Currently
+   *  honoured by source: 'player' only. */
+  context?: number | undefined;
 }
 
 const PER_SOURCE_KEYS: Array<Exclude<SourceName, 'all'>> = ['player', 'chat', 'mithril'];
@@ -56,6 +62,7 @@ export async function* scanMultiSource(
       since: query.since,
       until: query.until,
       prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+      context: query.context,
     }, playerStats)[Symbol.asyncIterator](),
     scanChatLogs(catalog, {
       dir: config.chatLogDir,
@@ -68,6 +75,7 @@ export async function* scanMultiSource(
       since: query.since,
       until: query.until,
       prevCursors: query.cursors?.mithril?.perFile,
+      categoryAllowlist: extractMithrilCategories(query.eventTypeAllowlist),
     }, serilogStats)[Symbol.asyncIterator](),
   ];
 
@@ -122,6 +130,7 @@ async function* singleSource(
         since: query.since,
         until: query.until,
         prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+        context: query.context,
       }, sub);
       stats.scannedBytes = sub.scannedBytes;
       stats.scannedLines = sub.scannedLines;
@@ -150,6 +159,7 @@ async function* singleSource(
         since: query.since,
         until: query.until,
         prevCursors: query.cursors?.mithril?.perFile,
+        categoryAllowlist: extractMithrilCategories(query.eventTypeAllowlist),
       }, sub);
       stats.scannedBytes = sub.scannedBytes;
       stats.scannedLines = sub.scannedLines;
@@ -177,4 +187,26 @@ export function emptyMultiSourceStats(): MultiSourceStats {
     endOffsetsBySource: {},
     rolledOverFiles: [],
   };
+}
+
+/**
+ * Extracts `mithril.<Category>` event types from the user's `event_type`
+ * allowlist and returns just the bare Categories. Returns `undefined`
+ * (no pre-filter) if there's no allowlist or none of the requested types
+ * are mithril-flavoured — falling back to the regular post-parse filter.
+ */
+function extractMithrilCategories(
+  eventTypes: ReadonlySet<string> | undefined,
+): ReadonlySet<string> | undefined {
+  if (!eventTypes || eventTypes.size === 0) return undefined;
+  const out = new Set<string>();
+  let sawNonMithril = false;
+  for (const t of eventTypes) {
+    if (t.startsWith('mithril.')) out.add(t.slice('mithril.'.length));
+    else sawNonMithril = true;
+  }
+  // If the allowlist mixes mithril.* with other event types, the source
+  // has to read everything anyway — pre-filter would drop legitimate hits.
+  if (sawNonMithril) return undefined;
+  return out.size > 0 ? out : undefined;
 }

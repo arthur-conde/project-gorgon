@@ -100,7 +100,7 @@ describe('runAggregate', () => {
     const p = fixturePath();
     try {
       const args = AggregateInput.parse({ source: 'player', agg: 'count' });
-      const result = await runAggregate(args, makeConfig(p));
+      const result = await runAggregate(args, makeConfig(p), stubCursorStore());
       assert.equal(result.buckets.length, 1);
       assert.equal(result.buckets[0]?.key, 'count');
       // 8 lines, but ProcessStartInteraction matches twice (arwen + smaug).
@@ -119,7 +119,7 @@ describe('runAggregate', () => {
         agg: 'group_by',
         field: 'type',
       });
-      const result = await runAggregate(args, makeConfig(p));
+      const result = await runAggregate(args, makeConfig(p), stubCursorStore());
       const map = new Map(result.buckets.map((b) => [b.key, b.count]));
       assert.equal(map.get('arwen.FavorUpdate'), 2);
       assert.equal(map.get('smaug.NpcInteractionStarted'), 2);
@@ -137,7 +137,7 @@ describe('runAggregate', () => {
         event_type: ['arwen.FavorUpdate'],
         top_n: 3,
       });
-      const result = await runAggregate(args, makeConfig(p));
+      const result = await runAggregate(args, makeConfig(p), stubCursorStore());
       assert.deepEqual(
         result.buckets.map((b) => b.key).sort(),
         ['NPC_Marna', 'NPC_Velkort'],

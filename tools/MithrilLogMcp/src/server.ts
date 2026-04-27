@@ -23,8 +23,10 @@ import {
 import {
   CursorListInput,
   CursorResetInput,
+  CursorSetInput,
   runCursorList,
   runCursorReset,
+  runCursorSet,
 } from './tools/cursor.js';
 import { CursorStore } from './state/cursors.js';
 
@@ -77,6 +79,15 @@ const TOOLS = [
       'time window again.',
     inputSchema: zodToJsonSchema(CursorResetInput),
   },
+  {
+    name: 'cursor_set',
+    description:
+      'Manually positions a named cursor for one source/file. anchor=start ' +
+      're-reads from byte 0; anchor=end fast-forwards to the current end of ' +
+      "file (skip everything written before now); anchor=offset uses an exact " +
+      'byteOffset.',
+    inputSchema: zodToJsonSchema(CursorSetInput),
+  },
 ] as const;
 
 async function main(): Promise<void> {
@@ -105,7 +116,7 @@ async function main(): Promise<void> {
         }
         case 'aggregate': {
           const args = AggregateInput.parse(rawArgs ?? {});
-          const result = await runAggregate(args, config);
+          const result = await runAggregate(args, config, cursorStore);
           return {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           };
@@ -127,6 +138,13 @@ async function main(): Promise<void> {
         case 'cursor_reset': {
           const args = CursorResetInput.parse(rawArgs ?? {});
           const result = runCursorReset(args, cursorStore);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        }
+        case 'cursor_set': {
+          const args = CursorSetInput.parse(rawArgs ?? {});
+          const result = runCursorSet(args, cursorStore);
           return {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           };
