@@ -15,6 +15,14 @@ export interface ParsedEvent {
   line: number;
   byteOffset: number;
   data: Record<string, unknown>;
+  /**
+   * Player character active when this event was emitted, stamped by
+   * {@link ActiveCharacterTracker}. Only populated for `source: "player"`
+   * events (chat events expose `data.speaker` instead; mithril events are
+   * app-internal and aren't bound to a character). Undefined for player
+   * events that occur before the first observed `ProcessAddPlayer` line.
+   */
+  activeCharacter?: string;
 }
 
 export interface QuerySummary {

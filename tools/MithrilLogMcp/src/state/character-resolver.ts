@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import type { ServerConfig } from '../config.js';
 import type { Catalog } from '../parsing/catalog.js';
 
+const ADD_PLAYER_KEY = 'shared.ActiveCharacterLogSynchronizer.AddPlayerRx';
+
 /**
  * Reads Mithril's character-presence state to support `--last-session` and
  * `character: "Foo"` queries. State files are read-only; the MCP server never
@@ -84,6 +86,60 @@ export function resolveLastSessionWindow(
 
   const since = scanBackForSessionStart(config, catalog, name) ?? new Date(0);
   return { since, until };
+}
+
+/**
+ * Scans Player.log backward from {@link beforeOffset} for the most recent
+ * `LocalPlayer: ProcessAddPlayer(...)` line and returns the captured character
+ * name. Used to seed {@link ActiveCharacterTracker} when a cursor resumes
+ * mid-stream without prior context.
+ *
+ * Returns `null` if no ProcessAddPlayer is found anywhere before the offset
+ * (cold session, log truncated, etc.) — callers should treat that as
+ * "active character unknown".
+ */
+export function findActiveCharacterAt(
+  playerLogPath: string,
+  beforeOffset: number,
+  catalog: Catalog,
+): string | null {
+  if (beforeOffset <= 0) return null;
+  if (!fs.existsSync(playerLogPath)) return null;
+
+  const entry = catalog.byKey.get(ADD_PLAYER_KEY);
+  if (!entry) return null;
+
+  const fd = fs.openSync(playerLogPath, 'r');
+  try {
+    const chunkSize = Math.min(catalog.sessionMarker.scanChunkBytes, beforeOffset);
+    const overlap = catalog.sessionMarker.literal.length;
+    let end = beforeOffset;
+    while (end > 0) {
+      const size = Math.min(chunkSize, end);
+      const start = end - size;
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, start);
+      const text = buf.toString('utf8');
+      const idx = text.lastIndexOf(catalog.sessionMarker.literal);
+      if (idx >= 0) {
+        const lineStart = text.lastIndexOf('\n', idx) + 1;
+        const lineEnd = text.indexOf('\n', idx);
+        const line = text.substring(lineStart, lineEnd < 0 ? text.length : lineEnd);
+        const m = entry.regex.exec(line);
+        if (m) {
+          const captured = typeof entry.fields[0]?.group === 'number'
+            ? m[entry.fields[0].group]
+            : m.groups?.[entry.fields[0]?.group as string];
+          if (typeof captured === 'string' && captured.length > 0) return captured;
+        }
+      }
+      if (start === 0) break;
+      end = start + overlap;
+    }
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function scanBackForSessionStart(

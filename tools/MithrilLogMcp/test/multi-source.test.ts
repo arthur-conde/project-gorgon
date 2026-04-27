@@ -14,19 +14,22 @@ function setupAllSources() {
   fs.writeFileSync(playerLog,
     '[12:00:01] LocalPlayer: ProcessSetPetOwner(11111, 22222)\n' +
     '[12:00:03] ProcessDeltaFavor(0, "NPC_Marna", 50.0, True)\n');
-  const future = new Date(Date.now() + 60_000);
-  fs.utimesSync(playerLog, future, future);
+  // Anchor mtime to yesterday so `[HH:MM:SS]` line stamps land before `now`
+  // regardless of timezone. Chat-log + Serilog timestamps are date-bearing
+  // (parsed from filename/`@t` directly) so they use the same anchor for shape.
+  const yesterday = new Date(Date.now() - 86_400_000);
+  fs.utimesSync(playerLog, yesterday, yesterday);
 
   const chatDir = path.join(root, 'ChatLogs');
   fs.mkdirSync(chatDir);
-  const todayStr = isoDate(future);
+  const todayStr = isoDate(yesterday);
   fs.writeFileSync(path.join(chatDir, `Chat-${todayStr}.log`),
     `${todayStr} 12:00:02\t[Status] The Iron Vein is 5m east and 7m north\n`);
 
   const mithrilDir = path.join(root, 'mithril-logs');
   fs.mkdirSync(mithrilDir);
   fs.writeFileSync(path.join(mithrilDir, 'mithril-test.json'),
-    JSON.stringify({ '@t': isoTodayAt(future, 12, 0, 0), '@mt': '{Category} {Message}', Category: 'Reference', Message: 'Loaded' }) + '\n');
+    JSON.stringify({ '@t': isoTodayAt(yesterday, 12, 0, 0), '@mt': '{Category} {Message}', Category: 'Reference', Message: 'Loaded' }) + '\n');
 
   return {
     root,

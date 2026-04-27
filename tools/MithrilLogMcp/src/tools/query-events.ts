@@ -187,15 +187,22 @@ function matchesFilter(
   return true;
 }
 
+/**
+ * Applies the `character: "Foo"` filter, source-aware:
+ *  - chat: matches the chat speaker (Status events have no speaker; treated as unmatched).
+ *  - mithril: app-internal logs aren't bound to a character — always pass.
+ *  - player: uses the `activeCharacter` stamped by ActiveCharacterTracker.
+ *    Events before the first observed ProcessAddPlayer have no stamp; they're
+ *    skipped because the active character is genuinely unknown.
+ */
 function matchesCharacter(ev: ParsedEvent, character: string): boolean {
+  if (ev.source === 'mithril') return true;
   if (ev.source === 'chat') {
     const speaker = ev.data.speaker;
     return typeof speaker === 'string' && speaker === character;
   }
-  if (ev.type === 'shared.ProcessAddPlayer') {
-    return ev.data.characterName === character;
-  }
-  return true;
+  // source: "player"
+  return ev.activeCharacter === character;
 }
 
 function projectFields(ev: ParsedEvent, fields: string[]): ParsedEvent {
