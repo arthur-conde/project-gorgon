@@ -97,5 +97,8 @@ function parseChatTimestamp(line: string): Date | null {
   const H = Number.parseInt(g.H!, 10);
   const M = Number.parseInt(g.M!, 10);
   const S = Number.parseInt(g.S!, 10);
-  return new Date(Date.UTC(year, month, day, H, M, S));
+  // The game writes chat timestamps in the user's local timezone. Use the
+  // local Date constructor so the resulting UTC instant matches the wall
+  // clock the user sees.
+  return new Date(year, month, day, H, M, S);
 }
