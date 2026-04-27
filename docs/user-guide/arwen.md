@@ -72,7 +72,7 @@ are merged for each tier:
 - **Local only** — never use community data.
 
 Community rates are pulled from
-[github.com/arthur-conde/gorgon-calibration](https://github.com/arthur-conde/gorgon-calibration)
+[github.com/arthur-conde/mithril-calibration](https://github.com/arthur-conde/mithril-calibration)
 and refreshed in the background.
 
 ## 4. Stackable items and the pending queue
