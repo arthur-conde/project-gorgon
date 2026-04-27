@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { lineStream } from '../util/file-streams.js';
 import { ChatLineParser } from '../parsing/chat-parser.js';
+import { rolloverDetected, type FileCursor } from '../state/cursors.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { Catalog } from '../parsing/catalog.js';
 
@@ -12,20 +13,22 @@ export interface ChatLogQuery {
   dir: string;
   since: Date;
   until: Date;
+  /** Per-file cursors keyed by absolute path. Stale entries trigger rollover. */
+  prevCursors?: Record<string, FileCursor> | undefined;
 }
 
 export interface ChatScanStats {
   scannedBytes: number;
   scannedLines: number;
+  endOffsets: Record<string, number>;
+  rolledOverFiles: string[];
 }
 
 /**
  * Streams Mithril's `ChatLogs/Chat-YY-MM-DD.log` files in chronological order,
- * yielding parsed events that fall within the requested time window. Files
- * outside the window (by filename date) are skipped without opening.
- *
- * The chat line itself carries a full `YY-MM-DD HH:MM:SS` timestamp, which
- * we parse directly — no mtime anchor needed (unlike Player.log).
+ * yielding parsed events within the time window. Files outside the window (by
+ * filename date) are skipped without opening; in-window files start at their
+ * cursor offset (when available and not stale).
  */
 export async function* scanChatLogs(
   catalog: Catalog,
@@ -42,8 +45,6 @@ export async function* scanChatLogs(
     if (!m) continue;
 
     const fileDate = chatFileDate(m[1]!, m[2]!, m[3]!);
-    // Skip files entirely outside the window. Conservative: keep the file if any
-    // hour of its day overlaps with [since, until].
     const dayStart = new Date(fileDate.getTime());
     const dayEnd = new Date(fileDate.getTime() + 24 * 3_600_000);
     if (dayEnd < query.since) continue;
@@ -51,14 +52,27 @@ export async function* scanChatLogs(
 
     const fullPath = path.join(query.dir, name);
     const stat = fs.statSync(fullPath);
-    stats.scannedBytes += stat.size;
+    const prev = query.prevCursors?.[fullPath];
 
-    for await (const rec of lineStream(fullPath)) {
+    let startOffset = 0;
+    if (prev) {
+      if (rolloverDetected(prev, stat)) {
+        stats.rolledOverFiles.push(fullPath);
+      } else {
+        startOffset = Math.min(prev.byteOffset, stat.size);
+      }
+    }
+
+    stats.scannedBytes += Math.max(0, stat.size - startOffset);
+    stats.endOffsets[fullPath] = startOffset;
+
+    for await (const rec of lineStream(fullPath, { start: startOffset })) {
       stats.scannedLines += 1;
+      stats.endOffsets[fullPath] = rec.byteOffset + rec.byteLength;
       const ts = parseChatTimestamp(rec.line);
       if (!ts) continue;
       if (ts < query.since) continue;
-      if (ts > query.until) return; // sorted, so anything past is also past
+      if (ts > query.until) return;
       for (const ev of parser.parse(rec.line, ts, fullPath, rec.lineNo, rec.byteOffset)) {
         yield ev;
       }
@@ -67,8 +81,6 @@ export async function* scanChatLogs(
 }
 
 function chatFileDate(y: string, m: string, d: string): Date {
-  // Two-digit year: 26 -> 2026. Bake in the simple +2000 convention; revisit
-  // if Project Gorgon's filename format ever changes.
   const year = 2000 + Number.parseInt(y, 10);
   const month = Number.parseInt(m, 10) - 1;
   const day = Number.parseInt(d, 10);

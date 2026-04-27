@@ -23,7 +23,7 @@ describe('scanMithrilSerilog', () => {
   it('parses compact JSON lines into mithril.<Category> events', async () => {
     const dir = setupSerilogDir();
     try {
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanMithrilSerilog({
         dir,
@@ -43,7 +43,7 @@ describe('scanMithrilSerilog', () => {
   it('skips non-Serilog .json files quietly', async () => {
     const dir = setupSerilogDir();
     try {
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanMithrilSerilog({
         dir,

@@ -6,6 +6,9 @@ import * as path from 'node:path';
 import { runQueryEvents, QueryEventsInput } from '../src/tools/query-events.js';
 import { runAggregate, AggregateInput } from '../src/tools/aggregate.js';
 import { runListEventTypes } from '../src/tools/list-event-types.js';
+import { CursorStore } from '../src/state/cursors.js';
+
+const stubCursorStore = () => new CursorStore(path.join(os.tmpdir(), `mithril-cursor-stub-${Date.now()}-${Math.random()}.json`));
 
 /**
  * Integration-style: write a small synthetic Player.log to a tmp file, point
@@ -40,7 +43,7 @@ describe('runQueryEvents', () => {
         event_type: ['arwen.FavorUpdate'],
         limit: 100,
       });
-      const result = await runQueryEvents(args, makeConfig(p));
+      const result = await runQueryEvents(args, makeConfig(p), stubCursorStore());
       assert.ok(result.summary.scannedLines >= 8);
       assert.equal(result.events.length, 2);
       assert.ok(result.events.every((e) => e.type === 'arwen.FavorUpdate'));
@@ -51,7 +54,7 @@ describe('runQueryEvents', () => {
     const p = fixturePath();
     try {
       const args = QueryEventsInput.parse({ source: 'player', limit: 1 });
-      const result = await runQueryEvents(args, makeConfig(p));
+      const result = await runQueryEvents(args, makeConfig(p), stubCursorStore());
       assert.equal(result.events.length, 1);
       assert.equal(result.summary.truncated, true);
       assert.ok(result.summary.matched > 1);
@@ -67,7 +70,7 @@ describe('runQueryEvents', () => {
         offset: 1,
         limit: 5,
       });
-      const result = await runQueryEvents(args, makeConfig(p));
+      const result = await runQueryEvents(args, makeConfig(p), stubCursorStore());
       assert.equal(result.events.length, 1);
       assert.equal(result.events[0]?.data.npcKey, 'NPC_Velkort');
     } finally { fs.unlinkSync(p); }
@@ -82,7 +85,7 @@ describe('runQueryEvents', () => {
         filter: { npcKey: 'NPC_Marna' },
         limit: 10,
       });
-      const result = await runQueryEvents(args, makeConfig(p));
+      const result = await runQueryEvents(args, makeConfig(p), stubCursorStore());
       assert.equal(result.events.length, 1);
       assert.equal(result.events[0]?.data.npcKey, 'NPC_Marna');
     } finally { fs.unlinkSync(p); }

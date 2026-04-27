@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       switch (name) {
         case 'query_events': {
           const args = QueryEventsInput.parse(rawArgs ?? {});
-          const result = await runQueryEvents(args, config);
+          const result = await runQueryEvents(args, config, cursorStore);
           return {
             content: [
               { type: 'text', text: JSON.stringify(result.summary) },

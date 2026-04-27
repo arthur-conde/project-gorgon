@@ -1,17 +1,21 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { lineStream } from '../util/file-streams.js';
+import { rolloverDetected, type FileCursor } from '../state/cursors.js';
 import type { ParsedEvent } from '../parsing/types.js';
 
 export interface MithrilSerilogQuery {
   dir: string;
   since: Date;
   until: Date;
+  prevCursors?: Record<string, FileCursor> | undefined;
 }
 
 export interface MithrilSerilogScanStats {
   scannedBytes: number;
   scannedLines: number;
+  endOffsets: Record<string, number>;
+  rolledOverFiles: string[];
 }
 
 interface CompactSerilogLine {
@@ -26,14 +30,10 @@ interface CompactSerilogLine {
 }
 
 /**
- * Streams Mithril's own Serilog output (CompactJsonFormatter, one record per line,
- * `@t`/`@mt`/`Category`/`Message` fields). Glob is `*.json` so the historical
- * `gorgon-*.json` files captured by the legacy-log migration step are also
- * indexed alongside the renamed `mithril-*-prebrand.json` and current `mithril-*.json`.
- *
- * Detection: try `JSON.parse` on the first non-empty line; if it parses and has
- * `@t`, treat as a Serilog file. Otherwise skip — we don't fall back to a
- * regex parser for v0.2.
+ * Streams Mithril's own Serilog output (CompactJsonFormatter, one record per line).
+ * Detection is by content (first line has `@t`), so the legacy
+ * `gorgon-*.json` files migrated to `mithril-*-prebrand.json` and the current
+ * `mithril-*.json` files are all picked up under one glob.
  */
 export async function* scanMithrilSerilog(
   query: MithrilSerilogQuery,
@@ -49,10 +49,22 @@ export async function* scanMithrilSerilog(
     if (!(await fileLooksLikeSerilog(e.full))) continue;
 
     const stat = fs.statSync(e.full);
-    stats.scannedBytes += stat.size;
+    const prev = query.prevCursors?.[e.full];
+    let startOffset = 0;
+    if (prev) {
+      if (rolloverDetected(prev, stat)) {
+        stats.rolledOverFiles.push(e.full);
+      } else {
+        startOffset = Math.min(prev.byteOffset, stat.size);
+      }
+    }
 
-    for await (const rec of lineStream(e.full)) {
+    stats.scannedBytes += Math.max(0, stat.size - startOffset);
+    stats.endOffsets[e.full] = startOffset;
+
+    for await (const rec of lineStream(e.full, { start: startOffset })) {
       stats.scannedLines += 1;
+      stats.endOffsets[e.full] = rec.byteOffset + rec.byteLength;
       if (rec.line.length === 0) continue;
 
       let parsed: CompactSerilogLine;
@@ -80,8 +92,6 @@ export async function* scanMithrilSerilog(
       const exception = parsed['@x'];
       if (typeof exception === 'string') data.exception = exception;
 
-      // Surface any non-Serilog-internal fields verbatim so structured log
-      // properties remain queryable by downstream tools.
       for (const [k, v] of Object.entries(parsed)) {
         if (k.startsWith('@')) continue;
         if (k === 'Category' || k === 'Message') continue;
