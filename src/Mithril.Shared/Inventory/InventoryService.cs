@@ -277,10 +277,18 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             int size = 1;
             bool seeded = false;
             bool confirmed = false;
+            bool nonStackable = false;
             if (TryDequeuePendingChat(internalName, out var pendingCount))
             {
                 size = pendingCount;
                 confirmed = true;
+            }
+            else if (TryGetMaxStackSize(internalName, out var maxStack) && maxStack == 1)
+            {
+                // Reference data says this item never stacks (equipment, unique consumables,
+                // etc.) — the AddItem alone is authoritative for size = 1. No chat needed.
+                confirmed = true;
+                nonStackable = true;
             }
             else if (_seededStackSizes.TryGetValue(internalName, out var seededSize))
             {
@@ -305,9 +313,31 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             }
 
             _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size, SizeConfirmed: confirmed);
-            _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size}{(seeded ? " (export-seeded)" : confirmed ? " (chat)" : " (unconfirmed)")} (total={_map.Count})");
+            var sourceTag = nonStackable ? " (non-stackable)"
+                : seeded ? " (export-seeded)"
+                : confirmed ? " (chat)"
+                : " (unconfirmed)";
+            _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size}{sourceTag} (total={_map.Count})");
             Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size, confirmed));
         }
+    }
+
+    /// <summary>
+    /// Resolve an InternalName to its <see cref="ItemEntry.MaxStackSize"/> via reference data.
+    /// Used by <see cref="HandleAddItem"/> to short-circuit chat correlation for items that
+    /// can never stack (equipment, unique consumables) — for those, the AddItem alone is
+    /// authoritative for size = 1.
+    /// </summary>
+    private bool TryGetMaxStackSize(string internalName, out int maxStackSize)
+    {
+        if (_refData is not null
+            && _refData.ItemsByInternalName.TryGetValue(internalName, out var entry))
+        {
+            maxStackSize = entry.MaxStackSize;
+            return true;
+        }
+        maxStackSize = 0;
+        return false;
     }
 
     private void HandleDeleteItem(long instanceId, DateTime timestamp)
@@ -386,7 +416,15 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         if (count <= 0) return;
         if (_refData is null) return; // can't resolve display→internal without reference data
-        if (!TryResolveDisplayNameToInternalName(displayName, out var internalName)) return;
+        if (!TryResolveDisplayNameToInternalName(displayName, out var internalName))
+        {
+            // The chat line parsed cleanly but no item with that display name exists in
+            // reference data — likely a name-mapping miss (renamed item, localization
+            // variant, or new item not in the bundled fallback). Logging here is the
+            // bread-crumb that lets us spot the gap when an AddItem stays unconfirmed.
+            _diag?.Trace("Inventory", $"Chat status: '{displayName}' (x{count}) — no InternalName match in reference data");
+            return;
+        }
 
         lock (_subLock)
         {
@@ -539,6 +577,27 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 if (count == 1) _seededStackSizes[name] = sizes[name];
             }
             _diag?.Trace("Inventory", $"Seeded {_seededStackSizes.Count} stack sizes from {Path.GetFileName(newest.FilePath)}");
+
+            // Non-stackable confirm pass: any un-confirmed live entry whose item has
+            // MaxStackSize == 1 is trivially size = 1. The export trigger is just a
+            // convenient pump; the truth is reference-data-derived, not export-derived.
+            // Done independently of the stackable reconcile below because non-stackables
+            // are excluded from `counts`/`sizes` (filtered out at line ~528 above).
+            var nowNs = _time.GetUtcNow().UtcDateTime;
+            int nonStackConfirmed = 0;
+            foreach (var (id, entry) in _map.ToArray())
+            {
+                if (entry.Deleted || entry.SizeConfirmed) continue;
+                if (!_refData.ItemsByInternalName.TryGetValue(entry.InternalName, out var itemEntry)) continue;
+                if (itemEntry.MaxStackSize != 1) continue;
+
+                _map[id] = entry with { StackSize = 1, Timestamp = nowNs, SizeConfirmed = true };
+                _diag?.Trace("Inventory", $"Non-stack confirm id={id} name={entry.InternalName} size=1");
+                Fire(new InventoryEvent(InventoryEventKind.StackChanged, id, entry.InternalName, nowNs, 1, SizeConfirmed: true));
+                nonStackConfirmed++;
+            }
+            if (nonStackConfirmed > 0)
+                _diag?.Info("Inventory", $"Confirmed {nonStackConfirmed} non-stackable live entries from reference data");
 
             // Reconcile already-tracked instances against the fresh export. Tally
             // un-deleted live entries by InternalName; mark any name that appears
