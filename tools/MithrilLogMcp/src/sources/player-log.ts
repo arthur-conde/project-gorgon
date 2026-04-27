@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { lineStream, scannedBytes } from '../util/file-streams.js';
-import { PlayerLogTimestamper } from '../util/time-windows.js';
+import { countPlayerLogCrossings, PlayerLogTimestamper } from '../util/time-windows.js';
 import { PlayerLineParser } from '../parsing/player-parser.js';
 import { ActiveCharacterTracker } from '../parsing/active-character-tracker.js';
 import { rolloverDetected, type FileCursor } from '../state/cursors.js';
@@ -54,7 +54,16 @@ export async function* scanPlayerLog(
   stats.endOffsets[query.path] = startOffset;
 
   const parser = new PlayerLineParser(catalog);
-  const stamper = new PlayerLogTimestamper(stat.mtime);
+
+  // Anchor the *start* of the file, not the end. A first pass counts midnight
+  // crossings; the start-of-file date is mtime UTC date - crossings. The
+  // forward scan then advances the date as it sees its own crossings, so the
+  // last line of the file ends up stamped at the mtime UTC date — the only
+  // value we know for certain.
+  const crossings = await countPlayerLogCrossings(lineStream(query.path, { start: startOffset }));
+  const startDate = new Date(stat.mtime);
+  startDate.setUTCDate(startDate.getUTCDate() - crossings);
+  const stamper = new PlayerLogTimestamper(startDate);
 
   // Seed the active-character tracker from a backward scan when resuming
   // mid-stream — without it, every event before the next ProcessAddPlayer

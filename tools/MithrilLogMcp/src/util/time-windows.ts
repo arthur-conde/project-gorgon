@@ -67,17 +67,29 @@ function unitToMs(value: number, unit: string): number {
 /**
  * Player.log per-line stamper.
  *
- * `[HH:MM:SS]` at the start of every line is interpreted relative to a date
- * anchor (the file's mtime). To make midnight crossings within a single file
- * sensible, the anchor rolls *backward* one day when an emitted timestamp is
- * later than `mtime + 1 minute` (1 minute slack absorbs clock skew).
+ * Lines carry only `[HH:MM:SS]` (local game time) — no date. The date
+ * anchor for the *first* line is supplied by the caller (typically computed
+ * by {@link countPlayerLogCrossings}: the file's mtime UTC date, walked back
+ * one day per midnight crossing detected in the file). As we stream forward,
+ * a backward jump in HH:MM:SS of more than ~1 minute is taken as a midnight
+ * crossing and the running date advances by one day.
+ *
+ * Times are constructed with the *local* Date constructor on purpose — the
+ * game writes wall-clock time in the user's timezone, and the resulting
+ * Date object's UTC instant is what callers compare against `since`/`until`
+ * windows (also UTC instants).
  */
 export class PlayerLogTimestamper {
-  private static readonly TIME_RE = /^\[(\d{2}):(\d{2}):(\d{2})\]\s/;
-  private currentDate: Date;
+  static readonly TIME_RE = /^\[(\d{2}):(\d{2}):(\d{2})\]\s/;
+  private static readonly BACKWARD_JUMP_SLACK_SECONDS = 60;
 
-  constructor(anchor: Date) {
-    this.currentDate = startOfDay(anchor);
+  private currentDate: Date;
+  private prevSeconds = -1;
+
+  constructor(startDate: Date) {
+    this.currentDate = new Date(Date.UTC(
+      startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate(),
+    ));
   }
 
   stamp(line: string, fallback: Date): Date {
@@ -86,6 +98,16 @@ export class PlayerLogTimestamper {
     const h = Number.parseInt(m[1] ?? '0', 10);
     const min = Number.parseInt(m[2] ?? '0', 10);
     const s = Number.parseInt(m[3] ?? '0', 10);
+
+    const seconds = h * 3600 + min * 60 + s;
+    if (this.prevSeconds >= 0 &&
+        seconds < this.prevSeconds - PlayerLogTimestamper.BACKWARD_JUMP_SLACK_SECONDS) {
+      // HH:MM:SS dropped — the file crossed midnight; advance the date.
+      this.currentDate = new Date(this.currentDate);
+      this.currentDate.setUTCDate(this.currentDate.getUTCDate() + 1);
+    }
+    this.prevSeconds = seconds;
+
     return new Date(
       this.currentDate.getUTCFullYear(),
       this.currentDate.getUTCMonth(),
@@ -97,4 +119,33 @@ export class PlayerLogTimestamper {
 
 export function startOfDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+/**
+ * First pass over a Player.log: counts how many midnight crossings the file
+ * contains by walking `[HH:MM:SS]` markers. Combined with the file's mtime,
+ * lets us anchor the *start* of the file rather than the end.
+ *
+ * Without this, the timestamper would naively anchor every line to the mtime's
+ * UTC date — which is wrong for any line earlier in the day than the current
+ * mtime time, and badly wrong for lines from previous days that the game has
+ * accumulated in the same Player.log.
+ */
+export async function countPlayerLogCrossings(
+  lines: AsyncIterable<{ line: string }>,
+  slackSeconds = 60,
+): Promise<number> {
+  let prev = -1;
+  let crossings = 0;
+  for await (const rec of lines) {
+    const m = PlayerLogTimestamper.TIME_RE.exec(rec.line);
+    if (!m) continue;
+    const h = Number.parseInt(m[1] ?? '0', 10);
+    const min = Number.parseInt(m[2] ?? '0', 10);
+    const s = Number.parseInt(m[3] ?? '0', 10);
+    const seconds = h * 3600 + min * 60 + s;
+    if (prev >= 0 && seconds < prev - slackSeconds) crossings++;
+    prev = seconds;
+  }
+  return crossings;
 }
