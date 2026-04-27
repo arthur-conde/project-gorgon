@@ -56,7 +56,7 @@ describe('scanMultiSource', () => {
     const { root, config } = setupAllSources();
     try {
       const catalog = loadCatalog();
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsetsBySource: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanMultiSource(catalog, config, {
         source: 'all',
@@ -85,7 +85,7 @@ describe('scanMultiSource', () => {
     const { root, config } = setupAllSources();
     try {
       const catalog = loadCatalog();
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsetsBySource: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanMultiSource(catalog, config, {
         source: 'chat',

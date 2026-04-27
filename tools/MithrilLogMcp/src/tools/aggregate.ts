@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { loadCatalog } from '../parsing/catalog.js';
 import { resolveWindow } from '../util/time-windows.js';
-import { scanMultiSource, type SourceName } from '../sources/multi-source.js';
+import { emptyMultiSourceStats, scanMultiSource, type SourceName } from '../sources/multi-source.js';
 import { resolveLastSessionWindow } from '../state/character-resolver.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
@@ -47,7 +47,7 @@ export async function runAggregate(args: AggregateArgs, config: ServerConfig) {
   }
 
   const eventTypeFilter = args.event_type ? new Set(args.event_type) : null;
-  const stats = { scannedBytes: 0, scannedLines: 0 };
+  const stats = emptyMultiSourceStats();
   let matched = 0;
   let truncated = false;
   let count = 0;

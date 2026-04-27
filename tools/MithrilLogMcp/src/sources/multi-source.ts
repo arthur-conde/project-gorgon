@@ -4,51 +4,73 @@ import { scanMithrilSerilog, type MithrilSerilogScanStats } from './mithril-seri
 import type { Catalog } from '../parsing/catalog.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
+import type { CursorState, FileCursor } from '../state/cursors.js';
 
 export type SourceName = 'player' | 'chat' | 'mithril' | 'all';
 
 export interface MultiSourceStats {
   scannedBytes: number;
   scannedLines: number;
+  /**
+   * Where each file was last read up to. Aggregated across sources for the
+   * `all` case. Callers use this to advance cursors after a successful query.
+   */
+  endOffsetsBySource: Record<string, Record<string, number>>;
+  rolledOverFiles: string[];
 }
 
 export interface MultiSourceQuery {
   source: SourceName;
   since: Date;
   until: Date;
+  /** Optional per-source cursor state for resumed reads. */
+  cursors?: Record<string, CursorState> | undefined;
 }
 
-/**
- * Yields parsed events from one or more sources, merged in timestamp order.
- *
- * For a single source, falls through to the underlying scanner. For
- * `source: "all"`, opens one async iterator per known source and yields
- * the lowest-timestamp event across all of them on each step (manual
- * 3-way heap; small enough that an actual heap would just add overhead).
- */
+const PER_SOURCE_KEYS: Array<Exclude<SourceName, 'all'>> = ['player', 'chat', 'mithril'];
+
 export async function* scanMultiSource(
   catalog: Catalog,
   config: ServerConfig,
   query: MultiSourceQuery,
   stats: MultiSourceStats,
 ): AsyncGenerator<ParsedEvent, void, void> {
+  // Pre-create slots for every requested source so callers can safely read
+  // `endOffsetsBySource[s]` even when nothing was scanned (e.g. a missing
+  // chat dir on a fresh install).
+  const sourcesToScan = query.source === 'all' ? PER_SOURCE_KEYS : [query.source];
+  for (const s of sourcesToScan) stats.endOffsetsBySource[s] = {};
+
   if (query.source !== 'all') {
     yield* singleSource(catalog, config, query, stats);
     return;
   }
 
-  const playerStats: PlayerLogScanStats = { scannedBytes: 0, scannedLines: 0 };
-  const chatStats: ChatScanStats = { scannedBytes: 0, scannedLines: 0 };
-  const serilogStats: MithrilSerilogScanStats = { scannedBytes: 0, scannedLines: 0 };
+  const playerStats = makeSubStats();
+  const chatStats = makeSubStats();
+  const serilogStats = makeSubStats();
 
   const iterators: AsyncIterator<ParsedEvent>[] = [
-    scanPlayerLog(catalog, { path: config.playerLogPath, since: query.since, until: query.until }, playerStats)[Symbol.asyncIterator](),
-    scanChatLogs(catalog, { dir: config.chatLogDir, since: query.since, until: query.until }, chatStats)[Symbol.asyncIterator](),
-    scanMithrilSerilog({ dir: config.mithrilLogDir, since: query.since, until: query.until }, serilogStats)[Symbol.asyncIterator](),
+    scanPlayerLog(catalog, {
+      path: config.playerLogPath,
+      since: query.since,
+      until: query.until,
+      prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+    }, playerStats)[Symbol.asyncIterator](),
+    scanChatLogs(catalog, {
+      dir: config.chatLogDir,
+      since: query.since,
+      until: query.until,
+      prevCursors: query.cursors?.chat?.perFile,
+    }, chatStats)[Symbol.asyncIterator](),
+    scanMithrilSerilog({
+      dir: config.mithrilLogDir,
+      since: query.since,
+      until: query.until,
+      prevCursors: query.cursors?.mithril?.perFile,
+    }, serilogStats)[Symbol.asyncIterator](),
   ];
 
-  // Buffer one event per iterator. Pop the smallest, advance that iterator,
-  // refill its slot. End when every slot is empty.
   const slots: Array<{ ev: ParsedEvent; iter: AsyncIterator<ParsedEvent> } | null> = [];
   for (const it of iterators) {
     const next = await it.next();
@@ -76,6 +98,14 @@ export async function* scanMultiSource(
 
   stats.scannedBytes = playerStats.scannedBytes + chatStats.scannedBytes + serilogStats.scannedBytes;
   stats.scannedLines = playerStats.scannedLines + chatStats.scannedLines + serilogStats.scannedLines;
+  stats.endOffsetsBySource.player = playerStats.endOffsets;
+  stats.endOffsetsBySource.chat = chatStats.endOffsets;
+  stats.endOffsetsBySource.mithril = serilogStats.endOffsets;
+  stats.rolledOverFiles.push(
+    ...playerStats.rolledOverFiles,
+    ...chatStats.rolledOverFiles,
+    ...serilogStats.rolledOverFiles,
+  );
 }
 
 async function* singleSource(
@@ -86,27 +116,65 @@ async function* singleSource(
 ): AsyncGenerator<ParsedEvent, void, void> {
   switch (query.source) {
     case 'player': {
-      const s: PlayerLogScanStats = { scannedBytes: 0, scannedLines: 0 };
-      yield* scanPlayerLog(catalog, { path: config.playerLogPath, since: query.since, until: query.until }, s);
-      stats.scannedBytes = s.scannedBytes;
-      stats.scannedLines = s.scannedLines;
+      const sub = makeSubStats();
+      yield* scanPlayerLog(catalog, {
+        path: config.playerLogPath,
+        since: query.since,
+        until: query.until,
+        prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+      }, sub);
+      stats.scannedBytes = sub.scannedBytes;
+      stats.scannedLines = sub.scannedLines;
+      stats.endOffsetsBySource.player = sub.endOffsets;
+      stats.rolledOverFiles.push(...sub.rolledOverFiles);
       return;
     }
     case 'chat': {
-      const s: ChatScanStats = { scannedBytes: 0, scannedLines: 0 };
-      yield* scanChatLogs(catalog, { dir: config.chatLogDir, since: query.since, until: query.until }, s);
-      stats.scannedBytes = s.scannedBytes;
-      stats.scannedLines = s.scannedLines;
+      const sub = makeSubStats();
+      yield* scanChatLogs(catalog, {
+        dir: config.chatLogDir,
+        since: query.since,
+        until: query.until,
+        prevCursors: query.cursors?.chat?.perFile,
+      }, sub);
+      stats.scannedBytes = sub.scannedBytes;
+      stats.scannedLines = sub.scannedLines;
+      stats.endOffsetsBySource.chat = sub.endOffsets;
+      stats.rolledOverFiles.push(...sub.rolledOverFiles);
       return;
     }
     case 'mithril': {
-      const s: MithrilSerilogScanStats = { scannedBytes: 0, scannedLines: 0 };
-      yield* scanMithrilSerilog({ dir: config.mithrilLogDir, since: query.since, until: query.until }, s);
-      stats.scannedBytes = s.scannedBytes;
-      stats.scannedLines = s.scannedLines;
+      const sub = makeSubStats();
+      yield* scanMithrilSerilog({
+        dir: config.mithrilLogDir,
+        since: query.since,
+        until: query.until,
+        prevCursors: query.cursors?.mithril?.perFile,
+      }, sub);
+      stats.scannedBytes = sub.scannedBytes;
+      stats.scannedLines = sub.scannedLines;
+      stats.endOffsetsBySource.mithril = sub.endOffsets;
+      stats.rolledOverFiles.push(...sub.rolledOverFiles);
       return;
     }
     default:
       throw new Error(`Unknown source: ${query.source}`);
   }
+}
+
+function makeSubStats(): PlayerLogScanStats & ChatScanStats & MithrilSerilogScanStats {
+  return { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
+}
+
+function cursorEntryFor(state: CursorState | undefined, file: string): FileCursor | undefined {
+  return state?.perFile[file];
+}
+
+export function emptyMultiSourceStats(): MultiSourceStats {
+  return {
+    scannedBytes: 0,
+    scannedLines: 0,
+    endOffsetsBySource: {},
+    rolledOverFiles: [],
+  };
 }

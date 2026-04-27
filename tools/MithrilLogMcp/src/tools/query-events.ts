@@ -1,8 +1,15 @@
+import * as fs from 'node:fs';
 import { z } from 'zod';
 import { loadCatalog } from '../parsing/catalog.js';
 import { resolveWindow } from '../util/time-windows.js';
-import { scanMultiSource, type SourceName } from '../sources/multi-source.js';
+import {
+  emptyMultiSourceStats,
+  scanMultiSource,
+  type MultiSourceStats,
+  type SourceName,
+} from '../sources/multi-source.js';
 import { resolveLastSessionWindow } from '../state/character-resolver.js';
+import { CursorStore, snapshotCursor, type CursorState } from '../state/cursors.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
 
@@ -14,6 +21,7 @@ export const QueryEventsInput = z.object({
   between: z.tuple([z.string(), z.string()]).optional(),
   last_session: z.boolean().optional(),
   character: z.string().optional(),
+  cursor: z.string().optional(),
   filter: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   fields: z.array(z.string()).optional(),
   context: z.number().int().min(0).max(50).optional(),
@@ -26,22 +34,30 @@ export type QueryEventsArgs = z.infer<typeof QueryEventsInput>;
 
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-export async function runQueryEvents(args: QueryEventsArgs, config: ServerConfig) {
+export async function runQueryEvents(
+  args: QueryEventsArgs,
+  config: ServerConfig,
+  cursorStore: CursorStore,
+) {
   const t0 = performance.now();
   const catalog = loadCatalog();
   const now = new Date();
 
   let window;
   if (args.last_session) {
-    if (!args.character) {
-      throw new Error("'last_session' requires 'character'");
-    }
+    if (!args.character) throw new Error("'last_session' requires 'character'");
     window = resolveLastSessionWindow(config, catalog, args.character, now);
+  } else if (args.cursor && !args.since && !args.until && !args.between) {
+    // Cursor-only query: don't bound by time, just resume from where the
+    // cursor left off through "now".
+    window = { since: new Date(0), until: now };
   } else {
     window = resolveWindow(now, args);
   }
 
-  const stats = { scannedBytes: 0, scannedLines: 0 };
+  const cursorsByName = args.cursor ? loadCursorsForSource(cursorStore, args.cursor) : undefined;
+
+  const stats = emptyMultiSourceStats();
   let matched = 0;
   let skipped = 0;
   let truncated = false;
@@ -53,7 +69,12 @@ export async function runQueryEvents(args: QueryEventsArgs, config: ServerConfig
   for await (const ev of scanMultiSource(
     catalog,
     config,
-    { source: args.source as SourceName, since: window.since, until: window.until },
+    {
+      source: args.source as SourceName,
+      since: window.since,
+      until: window.until,
+      cursors: cursorsByName,
+    },
     stats,
   )) {
     if (eventTypeFilter && !eventTypeFilter.has(ev.type)) continue;
@@ -81,6 +102,10 @@ export async function runQueryEvents(args: QueryEventsArgs, config: ServerConfig
     bytesEmitted += encoded.length + 1;
   }
 
+  if (args.cursor) {
+    persistCursor(cursorStore, args.cursor, stats);
+  }
+
   const elapsedMs = Math.round(performance.now() - t0);
 
   return {
@@ -92,10 +117,58 @@ export async function runQueryEvents(args: QueryEventsArgs, config: ServerConfig
       scannedLines: stats.scannedLines,
       elapsedMs,
       window: { since: window.since.toISOString(), until: window.until.toISOString() },
+      cursor: args.cursor
+        ? {
+            name: args.cursor,
+            advanced: countAdvancedFiles(stats),
+            rolledOverFiles: stats.rolledOverFiles,
+          }
+        : undefined,
     },
     events,
     format: args.format,
   };
+}
+
+function loadCursorsForSource(
+  store: CursorStore,
+  name: string,
+): Record<string, CursorState> {
+  return {
+    player: store.get(name, 'player'),
+    chat: store.get(name, 'chat'),
+    mithril: store.get(name, 'mithril'),
+  };
+}
+
+function persistCursor(
+  store: CursorStore,
+  name: string,
+  stats: MultiSourceStats,
+): void {
+  for (const [source, endOffsets] of Object.entries(stats.endOffsetsBySource)) {
+    const perFile: CursorState['perFile'] = {};
+    for (const [file, offset] of Object.entries(endOffsets)) {
+      // Snapshot mtime-derived metadata at the *advanced* offset so the next
+      // call's rolloverDetected has fresh fileSize / birthtimeMs to compare.
+      try {
+        const stat = fs.statSync(file);
+        perFile[file] = snapshotCursor(stat, offset);
+      } catch {
+        // File disappeared between scan and persist — skip it; next call
+        // will treat it as a fresh read.
+      }
+    }
+    store.put(name, source, { perFile });
+  }
+}
+
+function countAdvancedFiles(stats: MultiSourceStats): number {
+  let n = 0;
+  for (const eo of Object.values(stats.endOffsetsBySource)) {
+    n += Object.keys(eo).length;
+  }
+  return n;
 }
 
 function matchesFilter(
@@ -114,14 +187,6 @@ function matchesFilter(
   return true;
 }
 
-/**
- * Best-effort character match. Chat events surface the character name in
- * `data.speaker`; player events themselves don't carry the active character
- * (it's tracked across-the-stream by the .NET-side ActiveCharacterLogSynchronizer).
- * For v0.2 we match on speaker for chat and accept all player events when a
- * character filter is set — the proper cross-stream stamping lives in v0.3
- * once cursors land and we can keep an active-character running state.
- */
 function matchesCharacter(ev: ParsedEvent, character: string): boolean {
   if (ev.source === 'chat') {
     const speaker = ev.data.speaker;

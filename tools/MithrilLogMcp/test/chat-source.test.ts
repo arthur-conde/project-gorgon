@@ -28,7 +28,7 @@ describe('scanChatLogs', () => {
     const dir = setupChatDir();
     try {
       const catalog = loadCatalog();
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanChatLogs(catalog, {
         dir,
@@ -48,7 +48,7 @@ describe('scanChatLogs', () => {
     const dir = setupChatDir();
     try {
       const catalog = loadCatalog();
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
       const events: any[] = [];
       for await (const e of scanChatLogs(catalog, {
         dir,
@@ -66,7 +66,7 @@ describe('scanChatLogs', () => {
     const dir = setupChatDir();
     try {
       const catalog = loadCatalog();
-      const stats = { scannedBytes: 0, scannedLines: 0 };
+      const stats = { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
       const events: any[] = [];
       // Window is entirely before either file's date.
       for await (const e of scanChatLogs(catalog, {
