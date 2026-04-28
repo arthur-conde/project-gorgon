@@ -28,6 +28,7 @@ import {
   runCursorReset,
   runCursorSet,
 } from './tools/cursor.js';
+import { ServerInfoInput, runServerInfo } from './tools/server-info.js';
 import { CursorStore } from './state/cursors.js';
 
 /**
@@ -42,6 +43,15 @@ const SERVER_NAME = 'mithril-log-mcp';
 const SERVER_VERSION = '0.1.0';
 
 const TOOLS = [
+  {
+    name: 'server_info',
+    description:
+      'Returns the mithril-log-mcp version, the on-disk mtime of the running ' +
+      'JS bundle (the "when was this last built" signal — useful since the ' +
+      'server is rebuilt locally rather than released), and the resolved log ' +
+      'paths the server reads from.',
+    inputSchema: zodToJsonSchema(ServerInfoInput),
+  },
   {
     name: 'query_events',
     description:
@@ -104,6 +114,17 @@ async function main(): Promise<void> {
     const { name, arguments: rawArgs } = req.params;
     try {
       switch (name) {
+        case 'server_info': {
+          const args = ServerInfoInput.parse(rawArgs ?? {});
+          const result = runServerInfo(
+            args,
+            { name: SERVER_NAME, version: SERVER_VERSION },
+            config,
+          );
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        }
         case 'query_events': {
           const args = QueryEventsInput.parse(rawArgs ?? {});
           const result = await runQueryEvents(args, config, cursorStore);
