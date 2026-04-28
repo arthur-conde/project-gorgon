@@ -44,7 +44,7 @@ import { CursorStore } from './state/cursors.js';
  */
 
 const SERVER_NAME = 'mithril-log-mcp';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 
 const TOOLS = [
   {
