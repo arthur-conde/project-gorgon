@@ -1,0 +1,69 @@
+<UserControl x:Class="Palantir.Views.NotificationTesterView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Background="Transparent">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,12,4,4">
+        <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+
+            <TextBlock Text="Notification tester"
+                       FontFamily="{DynamicResource AppHeaderFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeLarge}"
+                       FontWeight="SemiBold"
+                       Foreground="#FFD4A847"
+                       Margin="0,0,0,4"/>
+
+            <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}"
+                       Margin="0,0,0,16">
+                Drives a developer-only IAttentionSource registered as
+                "palantir". Bump / Decrement / Clear / Set count exercise
+                the shell sidebar pip, taskbar overlay, and tray icon
+                without needing a real game event.
+            </TextBlock>
+
+            <Border Background="#FF252525" CornerRadius="4" Padding="14,10" Margin="0,0,0,16">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="Current count"
+                               Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                    <TextBlock HorizontalAlignment="Right"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeLarge}"
+                               Foreground="#FFD4A847"
+                               Text="{Binding CurrentCount, Mode=OneWay}"/>
+                </DockPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <Button Content="Bump (+1)" Command="{Binding BumpCommand}"
+                        Padding="14,6" Margin="0,0,8,0"/>
+                <Button Content="Decrement (-1)" Command="{Binding DecrementCommand}"
+                        Padding="14,6" Margin="0,0,8,0"/>
+                <Button Content="Clear" Command="{Binding ClearCommand}"
+                        Padding="14,6"/>
+            </StackPanel>
+
+            <TextBlock Text="Set explicit count"
+                       Foreground="#CCFFFFFF"
+                       Margin="0,0,0,6"/>
+            <StackPanel Orientation="Horizontal">
+                <TextBox Width="80" Padding="6,4"
+                         FontFamily="{DynamicResource AppMonoFontFamily}"
+                         Text="{Binding SetCountInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Content="Apply" Command="{Binding ApplySetCountCommand}"
+                        Padding="14,6" Margin="8,0,0,0"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
