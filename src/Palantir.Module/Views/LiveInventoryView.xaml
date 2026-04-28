@@ -6,7 +6,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              mc:Ignorable="d"
-             Background="#FF1A1A1A">
+             Background="Transparent">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -15,15 +15,9 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <DockPanel Margin="12">
-        <!-- Header -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal">
-                <Image Source="pack://application:,,,/Palantir.Module;component/Resources/palantir.ico"
-                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Palantir · Live Inventory" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
-                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
-            </StackPanel>
+    <DockPanel Margin="0,8,0,0">
+        <!-- Counts strip -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                 <Border Background="#FF252525" CornerRadius="3" Padding="8,3" Margin="0,0,6,0">
                     <TextBlock Foreground="#FFE8E8E8" FontFamily="{DynamicResource AppMonoFontFamily}">
@@ -36,6 +30,7 @@
                     </TextBlock>
                 </Border>
             </StackPanel>
+            <TextBlock/>
         </DockPanel>
 
         <!-- Controls bar -->
