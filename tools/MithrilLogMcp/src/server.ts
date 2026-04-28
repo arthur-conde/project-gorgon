@@ -29,6 +29,10 @@ import {
   runCursorSet,
 } from './tools/cursor.js';
 import { ServerInfoInput, runServerInfo } from './tools/server-info.js';
+import {
+  QueryRawLinesInput,
+  runQueryRawLines,
+} from './tools/query-raw-lines.js';
 import { CursorStore } from './state/cursors.js';
 
 /**
@@ -40,7 +44,7 @@ import { CursorStore } from './state/cursors.js';
  */
 
 const SERVER_NAME = 'mithril-log-mcp';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 
 const TOOLS = [
   {
@@ -67,6 +71,18 @@ const TOOLS = [
       'over the same event stream. Returns a small bucket list instead of ' +
       'megabytes of raw events.',
     inputSchema: zodToJsonSchema(AggregateInput),
+  },
+  {
+    name: 'query_raw_lines',
+    description:
+      'Stream raw log lines from Player.log + ChatLogs/ verbatim, dropping ' +
+      'Unity boot output / stack traces (everything without a [HH:MM:SS] or ' +
+      'YY-MM-DD HH:MM:SS prefix). Optional substring or regex filter. ' +
+      'Time-window forms (pick one): since/until, between, or at/around ' +
+      '("at: <iso-or-2h>, around: 30s" → ±30s window). Cursors live in ' +
+      'separate raw-player / raw-chat slots so they do not collide with ' +
+      'query_events cursors of the same name.',
+    inputSchema: zodToJsonSchema(QueryRawLinesInput),
   },
   {
     name: 'list_event_types',
@@ -138,6 +154,13 @@ async function main(): Promise<void> {
         case 'aggregate': {
           const args = AggregateInput.parse(rawArgs ?? {});
           const result = await runAggregate(args, config, cursorStore);
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        }
+        case 'query_raw_lines': {
+          const args = QueryRawLinesInput.parse(rawArgs ?? {});
+          const result = await runQueryRawLines(args, config, cursorStore);
           return {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
           };

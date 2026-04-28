@@ -9,7 +9,7 @@ import type { MultiSourceStats } from '../sources/multi-source.js';
  * per-source `CursorState` shape the scanners consume.
  */
 
-const SOURCES = ['player', 'chat', 'mithril'] as const;
+const SOURCES = ['player', 'chat', 'mithril', 'raw-player', 'raw-chat'] as const;
 
 /**
  * Loads every per-source cursor record for a named cursor in one shot.

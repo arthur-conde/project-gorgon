@@ -79,6 +79,31 @@ function unitToMs(value: number, unit: string): number {
 }
 
 /**
+ * Center-and-radius window form. `at` is the center instant (ISO 8601 or a
+ * relative duration interpreted as `now - duration`); `around` is a duration
+ * (e.g. "30s", "1m") that becomes the half-width. The resolved window is
+ * `[at - around, at + around]`. Defaults to ±1m if `around` is omitted.
+ */
+export function resolveAtAround(
+  now: Date,
+  at: string,
+  around: string | undefined,
+): ResolvedWindow {
+  const center = parseInstant(at, now, { negative: true });
+  const radiusMs = parseDuration(around ?? '1m');
+  return {
+    since: new Date(center.getTime() - radiusMs),
+    until: new Date(center.getTime() + radiusMs),
+  };
+}
+
+function parseDuration(input: string): number {
+  const m = RELATIVE_RE.exec(input.trim());
+  if (!m) throw new Error(`Cannot parse duration: '${input}' (expected '30s', '1m', '5h', etc.)`);
+  return unitToMs(Number.parseInt(m[1] ?? '0', 10), (m[2] ?? 's').toLowerCase());
+}
+
+/**
  * Player.log per-line stamper.
  *
  * Lines carry only `[HH:MM:SS]` (local game time) — no date. The date

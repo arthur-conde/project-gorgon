@@ -6,8 +6,8 @@ import { rolloverDetected, type FileCursor } from '../state/cursors.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { Catalog } from '../parsing/catalog.js';
 
-const CHAT_LINE_RE = /^(?<y>\d{2})-(?<m>\d{2})-(?<d>\d{2})\s+(?<H>\d{2}):(?<M>\d{2}):(?<S>\d{2})\s*\t/;
-const CHAT_FILE_RE = /^Chat-(\d{2})-(\d{2})-(\d{2})\.log$/;
+export const CHAT_LINE_RE = /^(?<y>\d{2})-(?<m>\d{2})-(?<d>\d{2})\s+(?<H>\d{2}):(?<M>\d{2}):(?<S>\d{2})\s*\t/;
+export const CHAT_FILE_RE = /^Chat-(\d{2})-(\d{2})-(\d{2})\.log$/;
 
 export interface ChatLogQuery {
   dir: string;
@@ -80,14 +80,14 @@ export async function* scanChatLogs(
   }
 }
 
-function chatFileDate(y: string, m: string, d: string): Date {
+export function chatFileDate(y: string, m: string, d: string): Date {
   const year = 2000 + Number.parseInt(y, 10);
   const month = Number.parseInt(m, 10) - 1;
   const day = Number.parseInt(d, 10);
   return new Date(Date.UTC(year, month, day));
 }
 
-function parseChatTimestamp(line: string): Date | null {
+export function parseChatTimestamp(line: string): Date | null {
   const m = CHAT_LINE_RE.exec(line);
   if (!m) return null;
   const g = m.groups!;
