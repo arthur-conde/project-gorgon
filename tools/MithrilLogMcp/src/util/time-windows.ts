@@ -106,17 +106,17 @@ function parseDuration(input: string): number {
 /**
  * Player.log per-line stamper.
  *
- * Lines carry only `[HH:MM:SS]` (local game time) — no date. The date
- * anchor for the *first* line is supplied by the caller (typically computed
- * by {@link countPlayerLogCrossings}: the file's mtime UTC date, walked back
+ * Lines carry only `[HH:MM:SS]` (UTC) — no date. The date anchor for the
+ * *first* line is supplied by the caller (typically computed by
+ * {@link countPlayerLogCrossings}: the file's mtime UTC date, walked back
  * one day per midnight crossing detected in the file). As we stream forward,
  * a backward jump in HH:MM:SS of more than ~1 minute is taken as a midnight
  * crossing and the running date advances by one day.
  *
- * Times are constructed with the *local* Date constructor on purpose — the
- * game writes wall-clock time in the user's timezone, and the resulting
- * Date object's UTC instant is what callers compare against `since`/`until`
- * windows (also UTC instants).
+ * The game writes Player.log timestamps in UTC (cross-checked against
+ * ChatLogs/ entries, which are local-TZ — see issue #24). Times are
+ * constructed with `Date.UTC(...)` so the resulting instant matches the
+ * `since`/`until` window without a TZ-offset shift.
  */
 export class PlayerLogTimestamper {
   static readonly TIME_RE = /^\[(\d{2}):(\d{2}):(\d{2})\]\s/;
@@ -147,12 +147,12 @@ export class PlayerLogTimestamper {
     }
     this.prevSeconds = seconds;
 
-    return new Date(
+    return new Date(Date.UTC(
       this.currentDate.getUTCFullYear(),
       this.currentDate.getUTCMonth(),
       this.currentDate.getUTCDate(),
       h, min, s,
-    );
+    ));
   }
 }
 
