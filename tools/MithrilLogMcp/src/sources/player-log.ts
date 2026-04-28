@@ -5,15 +5,19 @@ import { PlayerLineParser } from '../parsing/player-parser.js';
 import { ActiveCharacterTracker } from '../parsing/active-character-tracker.js';
 import { rolloverDetected, type FileCursor } from '../state/cursors.js';
 import { findActiveCharacterAt } from '../state/character-resolver.js';
+import { discoverPlayerLogPaths, type DiscoveredPlayerLog } from './player-log-discovery.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { Catalog } from '../parsing/catalog.js';
 
 export interface PlayerLogQuery {
+  /** Path to the *current* Player.log. The scanner discovers Player-prev.log
+   *  beside it automatically and reads both in chronological order. */
   path: string;
   since: Date;
   until: Date;
-  /** Cursor entry for this file, if any. Honoured when not stale. */
-  prevCursor?: FileCursor | undefined;
+  /** Per-file cursor map (same shape as `CursorState.perFile`). Each file's
+   *  entry is honoured independently; missing entries restart from byte 0. */
+  prevCursors?: Record<string, FileCursor> | undefined;
   /**
    * Number of raw lines of surrounding context to attach to each emitted
    * event as `contextLines: { before, after }`. 0 disables (default).
@@ -33,32 +37,55 @@ export interface PlayerLogScanStats {
 }
 
 /**
- * Streams Player.log forward, yielding parsed events within the requested
- * time window. If `prevCursor` is supplied and still valid (no rollover),
- * scanning starts at its byteOffset; otherwise from byte 0. The final reached
- * byte offset is recorded in `stats.endOffsets[path]` so callers can persist
- * it as the next cursor.
+ * Streams every Player.log file in age order (oldest first), yielding parsed
+ * events within the requested time window. Discovers `Player-prev.log` next
+ * to the current `Player.log` so a multi-day query window catches events
+ * from the previous session. Each file gets its own cursor lookup; the
+ * `ActiveCharacterTracker` is shared across files so a `ProcessAddPlayer`
+ * in `Player-prev.log` keeps tagging events in `Player.log`.
+ *
+ * Ordering invariant for the multi-source merge: rotation guarantees the
+ * last line of `Player-prev.log` precedes the first line of `Player.log`,
+ * so streaming oldest-first preserves global ascending `ts`.
  */
 export async function* scanPlayerLog(
   catalog: Catalog,
   query: PlayerLogQuery,
   stats: PlayerLogScanStats,
 ): AsyncGenerator<ParsedEvent, void, void> {
-  if (!fs.existsSync(query.path)) return;
+  const files = discoverPlayerLogPaths(query.path);
+  if (files.length === 0) return;
 
-  const stat = fs.statSync(query.path);
+  const tracker = new ActiveCharacterTracker();
+
+  for (const file of files) {
+    yield* scanSinglePlayerFile(catalog, file, query, stats, tracker);
+  }
+}
+
+async function* scanSinglePlayerFile(
+  catalog: Catalog,
+  file: DiscoveredPlayerLog,
+  query: PlayerLogQuery,
+  stats: PlayerLogScanStats,
+  tracker: ActiveCharacterTracker,
+): AsyncGenerator<ParsedEvent, void, void> {
+  const stat = file.stat;
+  const filePath = file.path;
+  const prev = query.prevCursors?.[filePath];
+
   let startOffset = 0;
-  if (query.prevCursor) {
-    if (rolloverDetected(query.prevCursor, stat)) {
-      stats.rolledOverFiles.push(query.path);
+  if (prev) {
+    if (rolloverDetected(prev, stat)) {
+      stats.rolledOverFiles.push(filePath);
       startOffset = 0;
     } else {
-      startOffset = Math.min(query.prevCursor.byteOffset, stat.size);
+      startOffset = Math.min(prev.byteOffset, stat.size);
     }
   }
 
   stats.scannedBytes += scannedBytes(stat, startOffset);
-  stats.endOffsets[query.path] = startOffset;
+  stats.endOffsets[filePath] = startOffset;
 
   const parser = new PlayerLineParser(catalog);
 
@@ -67,18 +94,19 @@ export async function* scanPlayerLog(
   // forward scan then advances the date as it sees its own crossings, so the
   // last line of the file ends up stamped at the mtime UTC date — the only
   // value we know for certain.
-  const crossings = await countPlayerLogCrossings(lineStream(query.path, { start: startOffset }));
+  const crossings = await countPlayerLogCrossings(lineStream(filePath, { start: startOffset }));
   const startDate = new Date(stat.mtime);
   startDate.setUTCDate(startDate.getUTCDate() - crossings);
   const stamper = new PlayerLogTimestamper(startDate);
 
   // Seed the active-character tracker from a backward scan when resuming
   // mid-stream — without it, every event before the next ProcessAddPlayer
-  // would be unstamped and dropped by `character: "X"` filters.
-  const initialActive = startOffset > 0
-    ? findActiveCharacterAt(query.path, startOffset, catalog)
-    : null;
-  const tracker = new ActiveCharacterTracker(initialActive ?? undefined);
+  // would be unstamped and dropped by `character: "X"` filters. Skip when
+  // the tracker already has a value carried over from an earlier file.
+  if (startOffset > 0 && !tracker.active) {
+    const initialActive = findActiveCharacterAt(filePath, startOffset, catalog);
+    if (initialActive) tracker.set(initialActive);
+  }
 
   const N = query.context ?? 0;
   const ringBefore: string[] = [];
@@ -86,7 +114,7 @@ export async function* scanPlayerLog(
   // mutates the event's own array — no second pass needed at yield time.
   const pending: Array<{ ev: ParsedEvent; after: string[] }> = [];
 
-  for await (const rec of lineStream(query.path, { start: startOffset })) {
+  for await (const rec of lineStream(filePath, { start: startOffset })) {
     // Feed this line as after-context to events still waiting; yield any
     // whose after-window is now full.
     if (N > 0) {
@@ -99,7 +127,7 @@ export async function* scanPlayerLog(
     }
 
     stats.scannedLines += 1;
-    stats.endOffsets[query.path] = rec.byteOffset + rec.byteLength;
+    stats.endOffsets[filePath] = rec.byteOffset + rec.byteLength;
     const ts = stamper.stamp(rec.line, stat.mtime);
     if (ts < query.since) {
       if (N > 0) pushRing(ringBefore, rec.line, N);
@@ -107,7 +135,7 @@ export async function* scanPlayerLog(
     }
     if (ts > query.until) break;
 
-    for (const ev of parser.parse(rec.line, ts, query.path, rec.lineNo, rec.byteOffset)) {
+    for (const ev of parser.parse(rec.line, ts, filePath, rec.lineNo, rec.byteOffset)) {
       tracker.observe(ev);
       if (tracker.active) ev.activeCharacter = tracker.active;
       if (N > 0) {

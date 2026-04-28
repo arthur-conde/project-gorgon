@@ -59,8 +59,8 @@ describe('PlayerLogTimestamper', () => {
     const a = t.stamp('[10:00:00] foo', new Date(0));
     const b = t.stamp('[10:00:01] foo', new Date(0));
     const c = t.stamp('[10:00:02] foo', new Date(0));
-    assert.equal(a.getDate(), b.getDate());
-    assert.equal(b.getDate(), c.getDate());
+    assert.equal(a.getUTCDate(), b.getUTCDate());
+    assert.equal(b.getUTCDate(), c.getUTCDate());
     assert.ok(a < b && b < c);
   });
 
@@ -70,7 +70,7 @@ describe('PlayerLogTimestamper', () => {
     const firstAfter = t.stamp('[00:00:05] foo', new Date(0));
     // Different calendar dates, and firstAfter > lastBefore.
     assert.ok(firstAfter.getTime() > lastBefore.getTime());
-    assert.notEqual(lastBefore.getDate(), firstAfter.getDate());
+    assert.notEqual(lastBefore.getUTCDate(), firstAfter.getUTCDate());
   });
 
   it('returns the fallback for lines without a timestamp prefix', () => {
@@ -78,6 +78,14 @@ describe('PlayerLogTimestamper', () => {
     const fallback = new Date('2026-04-27T05:00:00Z');
     const got = t.stamp('Some Unity startup chatter without brackets', fallback);
     assert.equal(got.getTime(), fallback.getTime());
+  });
+
+  it('stamps [HH:MM:SS] as a UTC instant regardless of process TZ', () => {
+    // Game writes Player.log in UTC. The stamper must produce the same
+    // absolute instant whether the process runs in UTC, BST, or EST.
+    const t = new PlayerLogTimestamper(utcDay(2026, 4, 27));
+    const got = t.stamp('[12:34:56] foo', new Date(0));
+    assert.equal(got.toISOString(), '2026-04-27T12:34:56.000Z');
   });
 });
 

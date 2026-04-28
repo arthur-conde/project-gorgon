@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { ServerConfig } from '../config.js';
+import { discoverPlayerLogPaths } from '../sources/player-log-discovery.js';
 
 export const ServerInfoInput = z.object({});
 
@@ -30,6 +31,11 @@ export function runServerInfo(
       characterRoot: config.characterRoot,
       shellSettingsPath: config.shellSettingsPath,
     },
+    playerLogFiles: discoverPlayerLogPaths(config.playerLogPath).map((f) => ({
+      path: f.path,
+      sizeBytes: f.stat.size,
+      mtime: f.stat.mtime.toISOString(),
+    })),
   };
 }
 

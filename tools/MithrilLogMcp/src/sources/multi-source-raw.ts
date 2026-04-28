@@ -55,7 +55,7 @@ export async function* scanMultiSourceRaw(
       path: config.playerLogPath,
       since: query.since,
       until: query.until,
-      prevCursor: query.cursors?.['raw-player']?.perFile?.[config.playerLogPath],
+      prevCursors: query.cursors?.['raw-player']?.perFile,
     }, playerStats)[Symbol.asyncIterator](),
     scanChatLogsRaw({
       dir: config.chatLogDir,
@@ -110,7 +110,7 @@ async function* singleSource(
         path: config.playerLogPath,
         since: query.since,
         until: query.until,
-        prevCursor: query.cursors?.['raw-player']?.perFile?.[config.playerLogPath],
+        prevCursors: query.cursors?.['raw-player']?.perFile,
       }, sub);
       stats.scannedBytes = sub.scannedBytes;
       stats.scannedLines = sub.scannedLines;

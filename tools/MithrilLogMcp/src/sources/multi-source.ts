@@ -4,7 +4,7 @@ import { scanMithrilSerilog, type MithrilSerilogScanStats } from './mithril-seri
 import type { Catalog } from '../parsing/catalog.js';
 import type { ParsedEvent } from '../parsing/types.js';
 import type { ServerConfig } from '../config.js';
-import type { CursorState, FileCursor } from '../state/cursors.js';
+import type { CursorState } from '../state/cursors.js';
 
 export type SourceName = 'player' | 'chat' | 'mithril' | 'all';
 
@@ -61,7 +61,7 @@ export async function* scanMultiSource(
       path: config.playerLogPath,
       since: query.since,
       until: query.until,
-      prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+      prevCursors: query.cursors?.player?.perFile,
       context: query.context,
     }, playerStats)[Symbol.asyncIterator](),
     scanChatLogs(catalog, {
@@ -129,7 +129,7 @@ async function* singleSource(
         path: config.playerLogPath,
         since: query.since,
         until: query.until,
-        prevCursor: cursorEntryFor(query.cursors?.player, config.playerLogPath),
+        prevCursors: query.cursors?.player?.perFile,
         context: query.context,
       }, sub);
       stats.scannedBytes = sub.scannedBytes;
@@ -174,10 +174,6 @@ async function* singleSource(
 
 function makeSubStats(): PlayerLogScanStats & ChatScanStats & MithrilSerilogScanStats {
   return { scannedBytes: 0, scannedLines: 0, endOffsets: {}, rolledOverFiles: [] };
-}
-
-function cursorEntryFor(state: CursorState | undefined, file: string): FileCursor | undefined {
-  return state?.perFile[file];
 }
 
 export function emptyMultiSourceStats(): MultiSourceStats {
