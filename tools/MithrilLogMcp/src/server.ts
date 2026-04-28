@@ -203,7 +203,7 @@ function describeSchema(schema: z.ZodType): Record<string, unknown> {
     case 'ZodArray':
       return { type: 'array', items: describeSchema(def.type) };
     case 'ZodTuple':
-      return { type: 'array', items: def.items.map((i: z.ZodType) => describeSchema(i)) };
+      return { type: 'array', prefixItems: def.items.map((i: z.ZodType) => describeSchema(i)) };
     case 'ZodEnum':
       return { type: 'string', enum: def.values };
     case 'ZodString':
