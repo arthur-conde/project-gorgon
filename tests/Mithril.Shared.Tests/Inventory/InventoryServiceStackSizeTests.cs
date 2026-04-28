@@ -312,6 +312,135 @@ public sealed class InventoryServiceStackSizeTests
         _ = run;
     }
 
+    [Fact]
+    public async Task AddItem_ReEmit_AfterUpdateCode_PreservesStackSize()
+    {
+        // Issue #10 — the 108233134 shape: AddItem-True → UpdateCode→2 → AddItem-False ×3 → Delete.
+        // Each AddItem-False is a server resync pulse that carries no size; without the re-emit guard
+        // the second-onwards AddItem clobbers the confirmed size 2 back to (1, unconfirmed) and the
+        // Deleted event reports stack 1 instead of 2.
+        var stream = new ScriptedPlayerStream(
+            "[00:43:15] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, True)",
+            "[00:52:48] LocalPlayer: ProcessUpdateItemCode(108233134, 66683, True)", // size 2
+            "[00:56:27] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, False)",
+            "[01:06:03] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, False)",
+            "[01:48:58] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, False)",
+            "[01:52:45] LocalPlayer: ProcessDeleteItem(108233134)");
+        var svc = new InventoryService(stream);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        await RunAsync(svc, stream);
+
+        var deleted = events.Single(e => e.Kind == InventoryEventKind.Deleted);
+        deleted.StackSize.Should().Be(2);
+        deleted.SizeConfirmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AddItem_ReEmit_DoesNotConsumePendingChat()
+    {
+        // A re-emit must not dequeue from _pendingChat — chat correlation must remain
+        // available for the next genuine new-stack AddItem of the same InternalName.
+        var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
+        var playerStream = new ScriptedPlayerStream();
+        var chatStream = new ScriptedPlayerStream();
+        var refData = new FakeRefData(("HumanSkull", "Human Skull"));
+        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var run = svc.StartAsync(CancellationToken.None);
+
+        // Chat-first establishes id=100 at confirmed size 2 via the pending-chat path,
+        // which leaves _pendingAdd empty (avoids the "chat back-fills the still-queued
+        // original AddItem" interaction unrelated to this test).
+        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Human Skull x2 added to inventory."));
+        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)"));
+        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(100, out var seedSize).Should().BeTrue();
+        seedSize.Should().Be(2);
+
+        // Queue a chat count of 7 for the *next* HumanSkull pickup.
+        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:49\t[Status] Human Skull x7 added to inventory."));
+        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        // Re-emit pulse for id=100 — must NOT dequeue the queued 7 from _pendingChat.
+        playerStream.Push(new RawLogLine(ts, "[14:10:50] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)"));
+        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        svc.TryGetStackSize(100, out var afterReemit).Should().BeTrue();
+        afterReemit.Should().Be(2);
+
+        // Genuinely new AddItem (different id) — should consume the queued 7.
+        playerStream.Push(new RawLogLine(ts, "[14:10:51] LocalPlayer: ProcessAddItem(HumanSkull(200), -1, True)"));
+        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        svc.TryGetStackSize(200, out var newSize).Should().BeTrue();
+        newSize.Should().Be(7);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = run;
+    }
+
+    [Fact]
+    public async Task AddItem_ReEmit_FiresNoStackChangedOrAddedEvents()
+    {
+        // Subscribers should see exactly one Added (from the original new-stack AddItem)
+        // and one StackChanged (from UpdateCode); the re-emit pulses must be silent.
+        var stream = new ScriptedPlayerStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)", // size 4
+            "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)",
+            "[00:00:04] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)");
+        var svc = new InventoryService(stream);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        await RunAsync(svc, stream);
+
+        events.Should().HaveCount(2);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].StackSize.Should().Be(1);
+        events[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        events[1].StackSize.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task AddItem_AfterDelete_TreatsAsNewStack()
+    {
+        // The re-emit guard skips entries marked Deleted — the game can reuse an InstanceId
+        // for a fresh stack after the original was deleted, and that legitimately needs a
+        // new Added event.
+        var stream = new ScriptedPlayerStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(100)",
+            "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)");
+        var svc = new InventoryService(stream);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        await RunAsync(svc, stream);
+
+        events.Should().HaveCount(3);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[1].Kind.Should().Be(InventoryEventKind.Deleted);
+        events[2].Kind.Should().Be(InventoryEventKind.Added);
+    }
+
+    [Fact]
+    public async Task AddItem_GenuineSize1_ReEmitDoesNotChangeBehaviour()
+    {
+        // Issue's 108363377 shape: a stack that really is size 1, AddItem-True followed by
+        // AddItem-False pulses, then Delete. Reported size stays 1 (unchanged behaviour).
+        var stream = new ScriptedPlayerStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(HumanSkull(108363377), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessAddItem(HumanSkull(108363377), -1, False)",
+            "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(108363377), -1, False)",
+            "[00:00:04] LocalPlayer: ProcessDeleteItem(108363377)");
+        var svc = new InventoryService(stream);
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        await RunAsync(svc, stream);
+
+        var deleted = events.Single(e => e.Kind == InventoryEventKind.Deleted);
+        deleted.StackSize.Should().Be(1);
+    }
+
     private static async Task RunAsync(InventoryService svc, ScriptedPlayerStream stream)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

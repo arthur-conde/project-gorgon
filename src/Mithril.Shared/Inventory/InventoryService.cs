@@ -273,6 +273,19 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         {
             DrainPendingStale();
 
+            // Re-emission pulse (zone change / server resync) for an already-tracked
+            // InstanceId. Carries no size information, so we must not touch StackSize,
+            // SizeConfirmed, _pendingChat, or _pendingAdd — otherwise a confirmed N
+            // gets silently clobbered to (1, unconfirmed) and a queued chat slot is
+            // burned on the wrong id. See issue #10.
+            if (_map.TryGetValue(instanceId, out var existing) && !existing.Deleted)
+            {
+                _map[instanceId] = existing with { Timestamp = timestamp };
+                _diag?.Trace("Inventory",
+                    $"Add-reemit id={instanceId} name={existing.InternalName} size={existing.StackSize} confirmed={existing.SizeConfirmed}");
+                return;
+            }
+
             // Try the pending-chat queue first — chat may have arrived ahead of us.
             int size = 1;
             bool seeded = false;
