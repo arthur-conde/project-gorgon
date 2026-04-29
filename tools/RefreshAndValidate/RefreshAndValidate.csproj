@@ -20,6 +20,9 @@
     <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="RefreshAndValidate.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!--
       Mithril.Reference declares Newtonsoft.Json + JsonSubTypes as PrivateAssets="all"
       so consumers don't see them at compile time. The IParserSpec implementations
