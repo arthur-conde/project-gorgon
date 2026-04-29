@@ -233,9 +233,11 @@ public class ReferenceDataServiceTests : IDisposable
     [Fact]
     public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
     {
-        // Verifies the [JsonPropertyName("T")] attribute on RawQuestRequirement.T:
-        // the camelCase naming policy would otherwise lowercase "T" to "t" and the
-        // discriminator would silently deserialize to null.
+        // Verifies the polymorphic discriminator dispatch in Mithril.Reference's
+        // ParseQuests: the JSON's "T" field maps to a concrete QuestRequirement
+        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.)
+        // and ParseAndSwapQuests projects that to the flat QuestRequirement
+        // record exposed on QuestEntry.Requirements.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
         File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
         File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
