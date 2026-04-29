@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      Models target netstandard2.0 so the eventual Mithril.Reference.Models split is
+      framework-portable without a refactor. The Serialization folder also targets
+      netstandard2.0 today; if it ever needs net10-only features we'll multi-target.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>Mithril.Reference</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      PrivateAssets="all" prevents Newtonsoft.Json and JsonSubTypes from transiting to
+      consumers via project reference. Modules that reference Mithril.Reference see
+      only the public POCO surface; the serializer is invisible to their compile.
+      That's the containment boundary: if it ever needs to hold against a determined
+      consumer trying to take a Newtonsoft hard-dep, only the future
+      Mithril.Reference.Models split will close that gap. For now the discipline is
+      "don't import Newtonsoft outside Serialization/".
+    -->
+    <PackageReference Include="Newtonsoft.Json" PrivateAssets="all" />
+    <PackageReference Include="JsonSubTypes" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

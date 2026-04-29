@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />
     <Project Path="src/Mithril.Shared/Mithril.Shared.csproj" />
     <Project Path="src/Mithril.Shell/Mithril.Shell.csproj" />
     <Project Path="src/Samwise.Module/Samwise.Module.csproj" />
@@ -18,6 +19,7 @@
     <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />
     <Project Path="tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj" />
     <Project Path="tests/Pippin.Tests/Pippin.Tests.csproj" />
     <Project Path="tests/Samwise.Tests/Samwise.Tests.csproj" />
