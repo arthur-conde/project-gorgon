@@ -76,7 +76,7 @@ If a non-Newtonsoft consumer ever materialises, splitting into
 - Wire both into `Mithril.slnx`.
 - Empty build passes.
 
-### Phase 1 — Bridge primitives + Quests end-to-end  *(~2 days)*
+### Phase 1 — Bridge primitives + validation harness + Quests end-to-end  *(~2.5 days)*
 
 Quests is the canary because its polymorphism (3 dict-or-list shapes, 25
 requirement T-values, 9 reward T-values, single-or-list `Target`, string-or-int
@@ -86,9 +86,9 @@ requirement T-values, 9 reward T-values, single-or-list `Target`, string-or-int
 
 - `SingleOrArrayConverter<T>` — JSON value or array → `IReadOnlyList<T>`.
 - `StringOrIntStringConverter` — coerces both to string.
-- `DiscriminatedUnionFallbackConverter<TBase>` — wraps `JsonSubTypes` so an
-  unknown discriminator deserializes to a sentinel `Unknown` subclass instead
-  of throwing. **Critical for CDN drift tolerance.**
+- `DiscriminatedUnionFallback` — wraps `JsonSubTypes` so an unknown
+  discriminator deserializes to a sentinel `Unknown` subclass instead of
+  throwing. **Critical for CDN drift tolerance.**
 
 **Models** (`Models/Quests/`):
 
@@ -98,16 +98,21 @@ requirement T-values, 9 reward T-values, single-or-list `Target`, string-or-int
   sentinel.
 - `QuestReward` abstract + 9 concrete subclasses.
 
-**Tests:**
+**Validation harness** (`tests/Mithril.Reference.Tests/Validation/`):
 
-- Round-trip the bundled `quests.json`; assert count == 2981.
-- Assert zero `Unknown*` sentinels (means discriminator coverage is complete).
-- Spot-check fixtures: `quest_13` (dict-shape Requirements), `quest_17101`
-  (Or-list), `quest_45131` (list-shape RequirementsToSustain), `quest_29010`
-  (objective-level Requirements).
+- `IParserSpec` interface — `FileName`, `Parse(json) → object`, an enumerator
+  that yields every `Unknown*` sentinel encountered, and an expected entry
+  count gate.
+- `BundledDataValidationTests` — single `[Theory]` whose `MemberData` discovers
+  every `IParserSpec` implementation in the assembly via reflection. Each
+  `ParserSpec` adding itself to the test suite is automatic.
+- Hard-fail on any unknown sentinel, parse exception, or count mismatch. (Soft
+  allow-list mode revisitable later if drift outpaces bandwidth.)
 
-**Exit criterion:** `ParseQuests(bundledJson)` returns 2981 quests, zero
-unknowns, zero exceptions. Tests passing.
+**Exit criterion:** `BundledDataValidationTests` passes for `quests.json`:
+2981 entries deserialized, zero `Unknown*` sentinels, zero exceptions.
+Reflection-based discovery means subsequent files in Phase 2-4 inherit the
+test for free — they need only ship their `IParserSpec` implementation.
 
 ### Phase 2 — Tier 1 files  *(~3-4 days)*
 
@@ -128,7 +133,8 @@ polymorphism complexity, not file size:
    …). Discriminator pattern reusable from quests.
 
 Per file: POCOs, discriminator wiring (if polymorphic), `Parse<File>` entry,
-round-trip test with zero-unknowns assertion plus ~3 spot-check fixtures.
+and a `<File>ParserSpec : IParserSpec` registration. The Phase 1 validation
+theory picks the new spec up automatically; no per-file test boilerplate.
 
 **Exit criterion:** every Tier-1 file deserializes its bundled copy with zero
 unknowns. **Stop and revisit the bridge primitives if any new polymorphism
@@ -182,21 +188,26 @@ projection types and `IReferenceDataService`.
 
 ### Phase 6 — CDN drift instrumentation  *(~1 day)*
 
-Once unknowns are tolerated, surface them.
+The Phase 1 validation harness already gates the *bundled* JSON. Phase 6 takes
+the same machinery and points it at runtime.
 
-- `IDiagnosticsSink` warning whenever an `Unknown*` sentinel is parsed:
-  includes file, key, and discriminator value.
-- Optional startup diagnostic running `ParseAll()` against bundled data and
-  logging unknown counts per file.
-- Future: a CDN-refresh hook that diffs unknown counts against the previous
-  version. That's the schema-drift alarm.
+- `IDiagnosticsSink` warning whenever an `Unknown*` sentinel is parsed during
+  a runtime `ReferenceDataService.RefreshAsync` pass: includes file, key, and
+  discriminator value.
+- Field-coverage walker: optional extension to the validation harness that
+  diffs every property name in the raw `JObject` against the property names
+  declared on the matching POCO, logs anything the JSON has that we don't.
+  Catches "Elder Game added a new field" before it lands as a silent null.
+- Optional live-CDN parity test marked `[Trait("Category", "Live")]`, skipped
+  by default; CI runs nightly or on manual trigger to surface drift before a
+  bundled-data refresh ships.
 
 ## Budget
 
 | Phase | Effort | Output |
 |-------|--------|--------|
 | 0 | ½ day | Skeleton + test project + dependencies wired |
-| 1 | 2 days | Bridge primitives + Quest POCOs end-to-end |
+| 1 | 2.5 days | Bridge primitives + validation harness + Quest POCOs end-to-end |
 | 2 | 3-4 days | Tier-1 files (recipes, items, npcs, sources_*) |
 | 3 | 2 days | Tier-2 files (~13 small/medium files) |
 | 4 | 2 days | Tier-3 files (~7 large/sparse files) |
