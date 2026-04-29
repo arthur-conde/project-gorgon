@@ -23,6 +23,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nerdbank.GitVersioning (wired in via Directory.Build.targets) needs
+          # full history to compute build height; default fetch-depth: 1 fails
+          # the build. Same reason release.yml does this.
+          fetch-depth: 0
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
