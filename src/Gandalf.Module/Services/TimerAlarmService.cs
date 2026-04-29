@@ -1,12 +1,12 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
 using Gandalf.Domain;
-using Samwise.Alarms;
+using Mithril.Shared.Audio;
+using Mithril.Shared.Wpf;
 
 namespace Gandalf.Services;
 
-public sealed partial class TimerAlarmService : IDisposable
+public sealed class TimerAlarmService : IDisposable
 {
     private readonly TimerProgressService _progress;
     private readonly GandalfSettings _settings;
@@ -52,12 +52,12 @@ public sealed partial class TimerAlarmService : IDisposable
         _firedIds.Add(id);
         Dispatch(() =>
         {
-            var handle = AlarmSoundPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
+            var handle = AudioPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
             _playback[id] = handle;
             if (_settings.FlashWindow)
             {
                 var win = Application.Current?.MainWindow;
-                if (win is not null) FlashWindow(win);
+                if (win is not null) WindowFlasher.Flash(win);
             }
         });
     }
@@ -78,33 +78,5 @@ public sealed partial class TimerAlarmService : IDisposable
     {
         foreach (var h in _playback.Values) h.Stop();
         _playback.Clear();
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct FLASHWINFO
-    {
-        public uint cbSize;
-        public IntPtr hwnd;
-        public uint dwFlags;
-        public uint uCount;
-        public uint dwTimeout;
-    }
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool FlashWindowEx(ref FLASHWINFO pwfi);
-
-    private static void FlashWindow(Window window)
-    {
-        var helper = new System.Windows.Interop.WindowInteropHelper(window);
-        var fi = new FLASHWINFO
-        {
-            cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
-            hwnd = helper.Handle,
-            dwFlags = 0x0000000F,
-            uCount = 5,
-            dwTimeout = 0,
-        };
-        FlashWindowEx(ref fi);
     }
 }

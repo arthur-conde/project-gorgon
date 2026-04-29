@@ -1,4 +1,5 @@
 using System.Windows;
+using Mithril.Shared.Audio;
 using Mithril.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
@@ -19,7 +20,7 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
         var dlg = new OpenFileDialog
         {
             Title = "Choose an alarm sound",
-            Filter = AlarmSoundPlayer.OpenFileFilter,
+            Filter = AudioPlayer.OpenFileFilter,
         };
         if (dlg.ShowDialog() == true) rule.SoundFilePath = dlg.FileName;
     }
@@ -30,7 +31,7 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
             && DataContext is SamwiseSettings s)
         {
             _testHandle?.Stop();
-            _testHandle = AlarmSoundPlayer.Play(rule.SoundFilePath, (float)s.Alarms.AlarmVolume, "samwise");
+            _testHandle = AudioPlayer.Play(rule.SoundFilePath, (float)s.Alarms.AlarmVolume, "samwise");
         }
     }
 

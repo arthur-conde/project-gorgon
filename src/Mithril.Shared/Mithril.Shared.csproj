@@ -13,6 +13,7 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+    <PackageReference Include="NAudio" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="Reference\BundledData\**\*.json" />

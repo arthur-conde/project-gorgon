@@ -9,12 +9,10 @@
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="NAudio" />
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
-    <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\gandalf.ico" />
