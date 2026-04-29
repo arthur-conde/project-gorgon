@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Mithril.Reference.Models.Quests;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Reference.Serialization.Converters;
 using Mithril.Reference.Serialization.Discriminators;
 using Newtonsoft.Json;
@@ -41,5 +42,20 @@ public static class ReferenceDeserializer
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Quest>>(json, settings);
         return result ?? new Dictionary<string, Quest>();
+    }
+
+    /// <summary>
+    /// Deserializes the contents of <c>recipes.json</c> into a dictionary of
+    /// <see cref="Recipe"/> POCOs keyed by the JSON envelope's recipe_id strings.
+    /// </summary>
+    public static IReadOnlyDictionary<string, Recipe> ParseRecipes(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(RecipeDiscriminators.BuildRequirementConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<RecipeRequirement>());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, Recipe>>(json, settings);
+        return result ?? new Dictionary<string, Recipe>();
     }
 }
