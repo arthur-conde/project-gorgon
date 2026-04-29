@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Mithril.Reference.Models.Abilities;
+using Mithril.Reference.Models.Effects;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
@@ -195,5 +197,88 @@ public static class ReferenceDeserializer
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, T>>(json, settings);
         return result ?? new Dictionary<string, T>();
+    }
+
+    /// <summary>
+    /// <c>items_raw.json</c> shares the structural shape of <c>items.json</c>;
+    /// reuses the <see cref="Item"/> POCO.
+    /// </summary>
+    public static IReadOnlyDictionary<string, Item> ParseItemsRaw(string json)
+        => ParseItems(json);
+
+    public static IReadOnlyDictionary<string, Ability> ParseAbilities(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(AbilityDiscriminators.BuildSpecialCasterRequirementConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<AbilitySpecialCasterRequirement>());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, Ability>>(json, settings);
+        return result ?? new Dictionary<string, Ability>();
+    }
+
+    public static IReadOnlyDictionary<string, Effect> ParseEffects(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new StringOrIntStringConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, Effect>>(json, settings);
+        return result ?? new Dictionary<string, Effect>();
+    }
+
+    /// <summary>
+    /// <c>advancementtables.json</c> has a two-level dictionary shape:
+    /// table-name → level-string → attribute-name → numeric value. Modelled
+    /// directly as nested dictionaries; ints and floats both occur, modelled
+    /// as <see cref="double"/> for tolerance.
+    /// </summary>
+    public static IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, double>>>
+        ParseAdvancementTables(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<
+            Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, double>>>>(json, settings);
+        return result
+            ?? new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, double>>>();
+    }
+
+    public static IReadOnlyDictionary<string, AiBehavior> ParseAi(string json)
+        => DeserializeDictionary<AiBehavior>(json);
+
+    public static IReadOnlyList<AbilityKeyword> ParseAbilityKeywords(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+        var result = JsonConvert.DeserializeObject<List<AbilityKeyword>>(json, settings);
+        return result ?? new List<AbilityKeyword>();
+    }
+
+    public static IReadOnlyList<AbilityDynamicDot> ParseAbilityDynamicDots(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+        var result = JsonConvert.DeserializeObject<List<AbilityDynamicDot>>(json, settings);
+        return result ?? new List<AbilityDynamicDot>();
+    }
+
+    public static IReadOnlyList<AbilityDynamicSpecialValue> ParseAbilityDynamicSpecialValues(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+        var result = JsonConvert.DeserializeObject<List<AbilityDynamicSpecialValue>>(json, settings);
+        return result ?? new List<AbilityDynamicSpecialValue>();
+    }
+
+    /// <summary>
+    /// <c>strings_all.json</c> is a flat string-to-string lookup table
+    /// (placeholder ID → human-readable text). No POCO; deserialize directly
+    /// to a dictionary.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ParseStringsAll(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<Dictionary<string, string>>(json, settings);
+        return result ?? new Dictionary<string, string>();
     }
 }

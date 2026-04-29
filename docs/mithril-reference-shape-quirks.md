@@ -235,4 +235,39 @@ trivially-typed collection (string→string, string→list-of-string,
 string→int), don't invent a POCO. The Models/ folder is for *records with
 named fields* — a list-of-string already has the structure baked in.
 
+### Always inspect *element types* of list-typed fields, don't infer
+
+**Where:** [Models/Abilities/Ability.cs](../src/Mithril.Reference/Models/Abilities/Ability.cs).
+The Phase 4 inspection script reported `ConditionalKeywords: 922 types={'list': 922}`
+and `AmmoKeywords: 613 types={'list': 613}`. I initially modelled both as
+`IReadOnlyList<string>?` because the field-name suffix (<i>Keywords</i>)
+suggested string keywords. Validation failed twice — the elements are
+records:
+
+```json
+"ConditionalKeywords": [
+    { "Default": true, "EffectKeywordMustNotExist": "BarrageAoE", "Keyword": "Melee" },
+    { "EffectKeywordMustExist": "BarrageAoE", "Keyword": "Burst" }
+]
+```
+
+```json
+"AmmoKeywords": [
+    { "Count": 1, "ItemKeyword": "SporeBomb1" }
+]
+```
+
+**The rule this implies:** when the field-shape inspector reports
+`{'list': N}` for a field, the report says nothing about *element type*.
+A separate pass to count `kind(element)` per list-typed field is needed
+before assuming `IReadOnlyList<string>?`. Field names that *sound* like
+strings (`Keywords`, `*Reqs`, `*Tags`) are particularly misleading — Project
+Gorgon happily uses them for both flat string lists and lists of richer
+records.
+
+**Cheap defensive workflow for future files:** the Python inspection
+should always include the per-list-field element-kind counter from the
+abilities-debug pass, not just the parent field's `kind`. Costs ~10 lines,
+catches this class of bug before it hits the validation harness.
+
 ---
