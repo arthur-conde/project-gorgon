@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Mithril.Tools.RefreshAndValidate</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Tool runs against the live CDN, not the runtime app — opt out of analyzers
+         tuned to the WPF shell (Windows-platform + VS-extension threading). -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Only ProjectReference Mithril.Reference: it's netstandard2.0 and contains every
+      IParserSpec we drive. Mithril.Shared targets net10.0-windows (UseWPF=true) and
+      can't be referenced from this cross-platform tool. CdnVersionDetector and the
+      fallback version literal are duplicated locally — see CdnVersionDetector.cs.
+    -->
+    <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RefreshAndValidate.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Mithril.Reference declares Newtonsoft.Json + JsonSubTypes as PrivateAssets="all"
+      so consumers don't see them at compile time. The IParserSpec implementations
+      use Newtonsoft for deserialization, so we need the assemblies on disk at run
+      time. Restate them here.
+    -->
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="JsonSubTypes" />
+  </ItemGroup>
+</Project>

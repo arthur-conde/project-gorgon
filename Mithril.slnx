@@ -17,6 +17,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
+    <Project Path="tools/RefreshAndValidate/RefreshAndValidate.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />
@@ -32,5 +33,6 @@
     <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
     <Project Path="tests/Celebrimbor.Tests/Celebrimbor.Tests.csproj" />
     <Project Path="tests/Palantir.Tests/Palantir.Tests.csproj" />
+    <Project Path="tests/RefreshAndValidate.Tests/RefreshAndValidate.Tests.csproj" />
   </Folder>
 </Solution>

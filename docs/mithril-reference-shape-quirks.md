@@ -271,3 +271,40 @@ abilities-debug pass, not just the parent field's `kind`. Costs ~10 lines,
 catches this class of bug before it hits the validation harness.
 
 ---
+
+## Operational notes
+
+### Pre-merge drift detection via `tools/RefreshAndValidate`
+
+The `BundledDataValidationTests` harness only gates the JSON checked into
+this repo. The Phase 6 `IDiagnosticsSink` instrumentation only fires *at
+runtime on a user's machine* — by then the broken model is already
+shipped. To close the gap, a daily GitHub Actions cron
+([cdn-drift-check.yml](../.github/workflows/cdn-drift-check.yml)) runs
+[tools/RefreshAndValidate](../tools/RefreshAndValidate/Program.cs) against
+the live CDN. The tool fetches every BundledData file from
+`https://cdn.projectgorgon.com/{version}/data/{file}.json` (version
+auto-detected, with `v469` as the fallback), runs every `IParserSpec`
+discovered in `Mithril.Reference` over them, and exits non-zero on any
+parse failure, sub-floor entry count, or unknown discriminator.
+
+A red `CDN drift check` workflow means **Elder Game shipped a new
+discriminator value the model layer hasn't been updated to recognise**.
+Resolution path:
+
+1. Click into the failing workflow run; the failing file and the new
+   `T`-value (or other discriminator) appear in the log.
+2. In `Mithril.Reference`, add a new concrete subclass for the new
+   discriminator value and an entry in the corresponding
+   `JsonSubTypes`/discriminator map.
+3. Run `dotnet test tests/Mithril.Reference.Tests` locally to confirm
+   the bundled gate still passes.
+4. Commit, PR, merge — the next cron run will go green.
+
+The tool can also be run locally (`dotnet run --project
+tools/RefreshAndValidate`) any time you want to refresh-and-check before
+bumping `src/Mithril.Shared/Reference/BundledData/`. It does not modify
+the bundled JSON; auto-bundled-data-refresh is a deferred follow-up
+([refresh-and-validate-tool.md "Out of scope"](agent-plans/refresh-and-validate-tool.md#out-of-scope-future-follow-ups-in-priority-order)).
+
+---

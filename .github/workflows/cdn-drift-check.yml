@@ -1,0 +1,35 @@
+name: CDN drift check
+
+# Daily scan of the Project Gorgon CDN to catch schema drift between the live
+# data and the bundled JSON our app ships with. The job is intentionally separate
+# from `Release` so a CDN drift failure doesn't block a tagged release; instead
+# it surfaces a red workflow that flags "Elder Game shipped a new discriminator
+# value, the model layer needs an update."
+#
+# See tools/RefreshAndValidate/Program.cs for the actual logic.
+
+on:
+  schedule:
+    # 08:00 UTC daily — quiet for the CDN, awake for both US and EU triagers.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      # Don't `dotnet build Mithril.slnx` — it contains net10.0-windows projects
+      # (every *.Module.csproj plus Mithril.Shared) which won't build on Linux.
+      # `dotnet run --project tools/RefreshAndValidate` only restores/builds
+      # the tool and its single ProjectReference (Mithril.Reference, netstandard2.0).
+      - name: Run drift validator against live CDN
+        run: dotnet run --project tools/RefreshAndValidate --configuration Release
