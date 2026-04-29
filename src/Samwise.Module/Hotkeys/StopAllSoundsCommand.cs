@@ -1,5 +1,5 @@
+using Mithril.Shared.Audio;
 using Mithril.Shared.Hotkeys;
-using Samwise.Alarms;
 
 namespace Samwise.Hotkeys;
 
@@ -12,7 +12,7 @@ public sealed class StopAllSoundsCommand : IHotkeyCommand
 
     public Task ExecuteAsync(CancellationToken ct)
     {
-        AlarmSoundPlayer.Stop();
+        AudioPlayer.Stop();
         return Task.CompletedTask;
     }
 }

@@ -4,20 +4,14 @@ using NAudio.MediaFoundation;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
-namespace Samwise.Alarms;
+namespace Mithril.Shared.Audio;
 
-public interface IPlaybackHandle : IDisposable
-{
-    void Stop();
-    bool IsPlaying { get; }
-}
-
-public static class AlarmSoundPlayer
+public static class AudioPlayer
 {
     private static readonly object _lock = new();
     private static readonly List<PlaybackHandle> _active = new();
 
-    static AlarmSoundPlayer()
+    static AudioPlayer()
     {
         MediaFoundationApi.Startup();
     }

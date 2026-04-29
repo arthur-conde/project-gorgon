@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Game;
@@ -18,7 +19,6 @@ using Mithril.Shell.ViewModels;
 using Mithril.Shell.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Samwise.Alarms;
 using Velopack;
 
 namespace Mithril.Shell;
@@ -222,12 +222,12 @@ public static class Program
             hk.Attach(hwnd);
             hk.ReloadFromBindings(shellSettings.HotkeyBindings.Values);
 
-            AlarmSoundPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
+            AudioPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
             audioSettings.PropertyChanged += (_, ev) =>
             {
                 if (ev.PropertyName == nameof(AudioSettings.ConcurrentAlarms))
                 {
-                    AlarmSoundPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
+                    AudioPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
                     shellSettings.ConcurrentAlarms = audioSettings.ConcurrentAlarms;
                 }
             };
