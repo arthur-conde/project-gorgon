@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
+using Mithril.Reference.Models.Sources;
 using Mithril.Reference.Serialization.Converters;
 using Mithril.Reference.Serialization.Discriminators;
 using Newtonsoft.Json;
@@ -87,5 +88,22 @@ public static class ReferenceDeserializer
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Npc>>(json, settings);
         return result ?? new Dictionary<string, Npc>();
+    }
+
+    /// <summary>
+    /// Deserializes any of <c>sources_items.json</c>, <c>sources_recipes.json</c>,
+    /// or <c>sources_abilities.json</c> into a dictionary of
+    /// <see cref="SourceEnvelope"/> POCOs keyed by the JSON envelope's id strings
+    /// (e.g. <c>"item_5010"</c>, <c>"recipe_172"</c>, <c>"ability_42"</c>).
+    /// All three files share the same entry-shape hierarchy.
+    /// </summary>
+    public static IReadOnlyDictionary<string, SourceEnvelope> ParseSources(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(SourceDiscriminators.BuildEntryConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, SourceEnvelope>>(json, settings);
+        return result ?? new Dictionary<string, SourceEnvelope>();
     }
 }

@@ -163,4 +163,40 @@ subclasses, rather than collapsing the two hierarchies into one.
 accidentally (e.g. someone adds a field to one but forgets the other). If
 that becomes a real source of bugs, the cost calculation flips.
 
+### `SourceEntry` is a single shared hierarchy across three files
+
+**Where:** [Models/Sources/SourceEntry.cs](../src/Mithril.Reference/Models/Sources/SourceEntry.cs).
+One abstract `SourceEntry` base + 19 concrete subclasses, used by
+`sources_items.json`, `sources_recipes.json`, and `sources_abilities.json`
+via the same `SourceDiscriminators.BuildEntryConverter()` and the same
+`ReferenceDeserializer.ParseSources()` entry point.
+
+**Why this departs from the Quest/Recipe rule:** the
+`QuestRequirement`/`RecipeRequirement` split was driven by *field-set
+divergence* between domains — recipe `HasEffectKeyword` has a `MinCount`
+field that quest `HasEffectKeyword` lacks, etc. The sources_* files have no
+such divergence: a `Quest` entry's shape is `{ type, questId }` in every
+file that contains one; an `Item` entry's shape is `{ type, itemTypeId }`
+identically across files. Different *which* types appear, but the same
+*what* shape per type.
+
+**The two competing rules, reconciled:**
+
+1. *Separate hierarchies when field sets diverge.* (Quest vs Recipe.)
+2. *Share hierarchies when field sets are identical.* (sources_* family.)
+
+The deciding test is: would a consumer asking "every place that grants
+recipe X" want a single typed result type, or three? For sources_*, the
+answer is one — a cross-file query is the natural shape. For quest vs
+recipe requirements, the answer is two — they're evaluated in different
+contexts and the field sets carry context-specific meaning.
+
+**Naming convention deviation:** the sources_*.json files use lowercase
+`type` as the discriminator and camelCase property names (`npc`,
+`itemTypeId`, `friendlyName`). POCO property names match literally,
+producing non-idiomatic C# names (`SourceEntry.type`, `ItemSource.itemTypeId`).
+Consistent with the project-wide "literal-match property names" policy
+that avoids per-type contract resolvers, but worth noting that consumers
+will see lowercase identifiers when accessing these fields.
+
 ---
