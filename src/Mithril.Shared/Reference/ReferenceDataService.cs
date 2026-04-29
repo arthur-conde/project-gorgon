@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using Mithril.Reference;
 using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
@@ -33,6 +34,22 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly string _bundledDir;
     private readonly HttpClient _http;
     private readonly IDiagnosticsSink? _diag;
+
+    /// <summary>
+    /// Map from bundled-file base name (e.g. <c>"quests"</c>) to the
+    /// <see cref="IParserSpec"/> that knows how to walk that file's parsed
+    /// graph and emit <see cref="UnknownReport"/>s. Cached at construction
+    /// from <see cref="ParserRegistry.Discover"/> so per-refresh drift
+    /// detection costs nothing in the steady-state (zero unknowns) case.
+    /// </summary>
+    private readonly IReadOnlyDictionary<string, IParserSpec> _specsByBaseName;
+
+    /// <summary>
+    /// Cap on the number of unknown reports logged per file per refresh —
+    /// a CDN-shipped flood of unknowns shouldn't drown the diagnostics sink.
+    /// First N entries surfaced; remainder summarised with a count.
+    /// </summary>
+    private const int MaxUnknownReportsPerFile = 5;
 
     // Items
     private IReadOnlyDictionary<long, ItemEntry> _items = new Dictionary<long, ItemEntry>();
@@ -95,6 +112,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         _http = http;
         _diag = diag;
         _bundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+
+        _specsByBaseName = ParserRegistry.Discover()
+            .ToDictionary(
+                s => Path.GetFileNameWithoutExtension(s.FileName),
+                StringComparer.Ordinal);
 
         _itemsSnapshot = new ReferenceFileSnapshot("items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -223,6 +245,7 @@ public sealed class ReferenceDataService : IReferenceDataService
                 var json = File.ReadAllText(cachePath);
                 var parsed = parser(json);
                 swapper(parsed, meta);
+                ReportUnknowns(fileName, parsed!, meta.CdnVersion);
                 _diag?.Info("Reference", $"Loaded {fileName} from cache ({meta.CdnVersion}).");
                 return;
             }
@@ -243,6 +266,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         var bundledJson = File.ReadAllText(bundledPath);
         var bundledParsed = parser(bundledJson);
         swapper(bundledParsed, bundledMeta);
+        ReportUnknowns(fileName, bundledParsed!, bundledMeta.CdnVersion);
         _diag?.Info("Reference", $"Loaded {fileName} from bundled ({bundledMeta.CdnVersion}).");
     }
 
@@ -288,8 +312,49 @@ public sealed class ReferenceDataService : IReferenceDataService
         var json = Encoding.UTF8.GetString(body);
         var parsed = parser(json);
         swapper(parsed, meta);
+        ReportUnknowns(fileName, parsed!, meta.CdnVersion);
         _diag?.Info("Reference", $"{fileName}.json refreshed: version {version}.");
         FileUpdated?.Invoke(this, fileName);
+    }
+
+    /// <summary>
+    /// Walks the freshly-parsed graph for any <see cref="Mithril.Reference.Models.IUnknownDiscriminator"/>
+    /// sentinels and emits a diagnostics warning per finding (capped at
+    /// <see cref="MaxUnknownReportsPerFile"/>). The bundled JSON is validated
+    /// to have zero unknowns by <c>BundledDataValidationTests</c>; any
+    /// warning here therefore means the live CDN has shipped a discriminator
+    /// value the model layer hasn't been updated to recognise — that's the
+    /// schema-drift alarm.
+    /// </summary>
+    private void ReportUnknowns(string fileName, object parsed, string cdnVersion)
+    {
+        if (_diag is null) return;
+        if (!_specsByBaseName.TryGetValue(fileName, out var spec)) return;
+
+        IList<UnknownReport> reports;
+        try
+        {
+            reports = spec.EnumerateUnknowns(parsed).Take(MaxUnknownReportsPerFile + 1).ToList();
+        }
+        catch (Exception ex)
+        {
+            _diag.Warn("Reference", $"{fileName} unknown-walk threw: {ex.Message}");
+            return;
+        }
+
+        if (reports.Count == 0) return;
+
+        var truncated = reports.Count > MaxUnknownReportsPerFile;
+        var visible = truncated ? reports.Take(MaxUnknownReportsPerFile) : reports;
+        foreach (var u in visible)
+            _diag.Warn(
+                "Reference",
+                $"{fileName} (v{cdnVersion}): unknown {u.BaseTypeName} discriminator '{u.DiscriminatorValue}' at {u.Path}");
+
+        if (truncated)
+            _diag.Warn(
+                "Reference",
+                $"{fileName} (v{cdnVersion}): additional unknowns truncated; first {MaxUnknownReportsPerFile} reported.");
     }
 
     // ── Per-type load entry points ───────────────────────────────────────

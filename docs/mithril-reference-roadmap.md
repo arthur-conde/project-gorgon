@@ -171,36 +171,50 @@ POCO → register → test count.
 **Defer:** `strings_all.json` (15 MB; flat `Dictionary<string, string>`, no
 POCOs needed).
 
-### Phase 5 — Migrate existing projection  *(~2 days)*
+### Phase 5 — Migrate existing projection  *(~2 days — done)*
 
-Once enough Tier-1 files have POCO parity, swap consumers file-by-file:
+`ReferenceDataService` now consumes `Mithril.Reference` POCOs instead of
+`RawQuest`/`RawItem`/etc. The public `IReferenceDataService` surface (the
+projection records `ItemEntry`, `RecipeEntry`, `QuestEntry`, etc.) stayed
+unchanged — modules don't notice the swap.
 
-- `Mithril.Shared.Reference.QuestEntry` projects from `Quest` POCO instead of
-  `RawQuest` + `JsonElement` unfolding. Polymorphic-cast logic deletes.
-- `ReferenceDataService` calls `Mithril.Reference.ParseQuests` instead of
-  `JsonSerializer.Deserialize<Dictionary<string, RawQuest>>`.
-- Delete `RawQuest` and friends from `ReferenceJsonContext.cs`.
-- Repeat per file.
+Internal changes:
 
-**Exit criterion:** `ReferenceJsonContext.cs` shrinks file-by-file. Eventually
-the file becomes redundant and `Mithril.Shared.Reference` houses only
-projection types and `IReferenceDataService`.
+- `LoadFile` and `RefreshFileAsync` take `Func<string, T>` parser delegates,
+  decoupling them from System.Text.Json source-gen `JsonTypeInfo`.
+- `ParseAndSwapQuests` pattern-matches concrete `QuestRequirement` subclasses
+  to populate the flat `QuestRequirement` projection record.
+- `ParseAndSwapItemSources` pattern-matches concrete `SourceEntry` subclasses
+  to extract `npc` and resolve recipe/quest ids.
+- `ReferenceJsonContext.cs` trimmed from ~310 LOC to ~25, retaining only the
+  `ReferenceFileMetadata` sidecar source-gen registration.
 
-### Phase 6 — CDN drift instrumentation  *(~1 day)*
+**Outcome:** 1002 tests pass across `Mithril.Shared.Tests` (564) and 11 module
+test projects + 29 `Mithril.Reference.Tests`. No public-API regressions.
 
-The Phase 1 validation harness already gates the *bundled* JSON. Phase 6 takes
-the same machinery and points it at runtime.
+### Phase 6 — CDN drift instrumentation  *(~½ day — done)*
 
-- `IDiagnosticsSink` warning whenever an `Unknown*` sentinel is parsed during
-  a runtime `ReferenceDataService.RefreshAsync` pass: includes file, key, and
-  discriminator value.
-- Field-coverage walker: optional extension to the validation harness that
-  diffs every property name in the raw `JObject` against the property names
-  declared on the matching POCO, logs anything the JSON has that we don't.
-  Catches "Elder Game added a new field" before it lands as a silent null.
-- Optional live-CDN parity test marked `[Trait("Category", "Live")]`, skipped
-  by default; CI runs nightly or on manual trigger to surface drift before a
-  bundled-data refresh ships.
+The Phase 1 validation harness gates the *bundled* JSON. Phase 6 wires the
+same machinery into the runtime parse path.
+
+- `ReferenceDataService` caches `IParserSpec` instances at construction
+  (keyed by base file name) and calls `spec.EnumerateUnknowns(parsed)` after
+  every `LoadFile` and `RefreshFileAsync` pass.
+- Each `UnknownReport` becomes a `Warn` entry in `IDiagnosticsSink` with
+  file name, CDN version, base type name, discriminator string, and JSON
+  path. Capped at 5 reports per file per refresh; a truncation marker fires
+  if more remain.
+- Validated by `Unknown_quest_requirement_T_value_emits_diagnostics_warning`
+  in `ReferenceDataServiceTests` — feeds a quest with a synthetic
+  `T: "TotallyMadeUpRequirementType123"`, asserts the warning surfaces.
+
+**Optional future work** (not in Phase 6's scope):
+
+- Field-coverage walker that diffs raw `JObject` property names against POCO
+  declarations to catch "Elder Game added a new field" before it lands as a
+  silent null.
+- Live-CDN parity test gated behind `[Trait("Category", "Live")]`; CI runs
+  nightly to surface drift between bundled and live before a refresh ships.
 
 ## Budget
 
