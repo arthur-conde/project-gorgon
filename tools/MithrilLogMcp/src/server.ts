@@ -6,6 +6,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { zodToJsonSchema as zodToJsonSchemaLib } from 'zod-to-json-schema';
 
 import { loadConfig } from './config.js';
 import {
@@ -218,59 +219,21 @@ function errorResult(message: string) {
 }
 
 /**
- * Minimal Zod -> JSON Schema bridge — the MCP SDK accepts plain JSON Schema
- * for `inputSchema`. A full library (zod-to-json-schema) would be more
- * accurate, but this server's schemas are simple enough that the Zod parser
- * does the real validation at call time and the JSON Schema is just a
- * description for the client.
+ * Zod -> JSON Schema bridge. Delegates to `zod-to-json-schema` so every Zod
+ * construct (refine/effects, literal, nullable, discriminatedUnion, …) maps
+ * to a strictly-valid JSON Schema. `target: 'jsonSchema7'` matches what MCP
+ * clients (Claude Code, Continue.dev, etc.) expect; `$refStrategy: 'none'`
+ * inlines everything so a single tool's inputSchema is self-contained.
  */
 function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  return describeSchema(schema);
-}
-
-function describeSchema(schema: z.ZodType): Record<string, unknown> {
-  const def = (schema as any)._def;
-  if (!def) return { type: 'object' };
-
-  switch (def.typeName) {
-    case 'ZodObject': {
-      const shape = def.shape();
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-      for (const [k, v] of Object.entries(shape)) {
-        const child = v as z.ZodType;
-        properties[k] = describeSchema(child);
-        if (!isOptional(child)) required.push(k);
-      }
-      return { type: 'object', properties, ...(required.length ? { required } : {}) };
-    }
-    case 'ZodArray':
-      return { type: 'array', items: describeSchema(def.type) };
-    case 'ZodTuple':
-      return { type: 'array', prefixItems: def.items.map((i: z.ZodType) => describeSchema(i)) };
-    case 'ZodEnum':
-      return { type: 'string', enum: def.values };
-    case 'ZodString':
-      return { type: 'string' };
-    case 'ZodNumber':
-      return { type: 'number' };
-    case 'ZodBoolean':
-      return { type: 'boolean' };
-    case 'ZodOptional':
-    case 'ZodDefault':
-      return describeSchema(def.innerType);
-    case 'ZodUnion':
-      return { anyOf: def.options.map((o: z.ZodType) => describeSchema(o)) };
-    case 'ZodRecord':
-      return { type: 'object', additionalProperties: describeSchema(def.valueType) };
-    default:
-      return {};
-  }
-}
-
-function isOptional(schema: z.ZodType): boolean {
-  const def = (schema as any)._def;
-  return def?.typeName === 'ZodOptional' || def?.typeName === 'ZodDefault';
+  const out = zodToJsonSchemaLib(schema, {
+    target: 'jsonSchema7',
+    $refStrategy: 'none',
+  }) as Record<string, unknown>;
+  // Strip the top-level $schema marker — MCP clients don't need it and some
+  // strict validators reject unknown keys at the inputSchema root.
+  delete out.$schema;
+  return out;
 }
 
 main().catch((err) => {
