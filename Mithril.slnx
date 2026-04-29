@@ -33,5 +33,6 @@
     <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
     <Project Path="tests/Celebrimbor.Tests/Celebrimbor.Tests.csproj" />
     <Project Path="tests/Palantir.Tests/Palantir.Tests.csproj" />
+    <Project Path="tests/RefreshAndValidate.Tests/RefreshAndValidate.Tests.csproj" />
   </Folder>
 </Solution>
