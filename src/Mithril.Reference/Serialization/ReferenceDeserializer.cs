@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
@@ -105,5 +106,94 @@ public static class ReferenceDeserializer
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, SourceEnvelope>>(json, settings);
         return result ?? new Dictionary<string, SourceEnvelope>();
+    }
+
+    public static IReadOnlyDictionary<string, XpTable> ParseXpTables(string json)
+        => DeserializeDictionary<XpTable>(json);
+
+    public static IReadOnlyDictionary<string, Area> ParseAreas(string json)
+        => DeserializeDictionary<Area>(json);
+
+    public static IReadOnlyDictionary<string, AttributeDef> ParseAttributes(string json)
+        => DeserializeDictionary<AttributeDef>(json);
+
+    public static IReadOnlyDictionary<string, PlayerTitle> ParsePlayerTitles(string json)
+        => DeserializeDictionary<PlayerTitle>(json);
+
+    public static IReadOnlyDictionary<string, Lorebook> ParseLorebooks(string json)
+        => DeserializeDictionary<Lorebook>(json);
+
+    public static IReadOnlyDictionary<string, ItemUses> ParseItemUses(string json)
+        => DeserializeDictionary<ItemUses>(json);
+
+    public static LorebookInfo ParseLorebookInfo(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<LorebookInfo>(json, settings);
+        return result ?? new LorebookInfo();
+    }
+
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> ParseTsysProfiles(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<Dictionary<string, IReadOnlyList<string>>>(json, settings);
+        return result ?? new Dictionary<string, IReadOnlyList<string>>();
+    }
+
+    public static IReadOnlyList<DirectedGoal> ParseDirectedGoals(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<List<DirectedGoal>>(json, settings);
+        return result ?? new List<DirectedGoal>();
+    }
+
+    public static IReadOnlyDictionary<string, IReadOnlyList<Landmark>> ParseLandmarks(string json)
+    {
+        var settings = SerializerSettings.Build();
+        var result = JsonConvert.DeserializeObject<Dictionary<string, IReadOnlyList<Landmark>>>(json, settings);
+        return result ?? new Dictionary<string, IReadOnlyList<Landmark>>();
+    }
+
+    public static IReadOnlyDictionary<string, Skill> ParseSkills(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, Skill>>(json, settings);
+        return result ?? new Dictionary<string, Skill>();
+    }
+
+    public static IReadOnlyDictionary<string, PowerProfile> ParseTsysClientInfo(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, PowerProfile>>(json, settings);
+        return result ?? new Dictionary<string, PowerProfile>();
+    }
+
+    public static IReadOnlyDictionary<string, StorageVault> ParseStorageVaults(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(StorageDiscriminators.BuildRequirementConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<StorageRequirement>());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, StorageVault>>(json, settings);
+        return result ?? new Dictionary<string, StorageVault>();
+    }
+
+    /// <summary>
+    /// Helper for the common case of <c>Dictionary&lt;string, T&gt;</c> envelopes
+    /// that need only a baseline serializer + the global string list converter.
+    /// </summary>
+    private static IReadOnlyDictionary<string, T> DeserializeDictionary<T>(string json)
+        where T : class
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, T>>(json, settings);
+        return result ?? new Dictionary<string, T>();
     }
 }

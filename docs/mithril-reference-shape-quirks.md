@@ -199,4 +199,40 @@ Consistent with the project-wide "literal-match property names" policy
 that avoids per-type contract resolvers, but worth noting that consumers
 will see lowercase identifiers when accessing these fields.
 
+### Top-level shape is not always `Dictionary<string, T>`
+
+**Where:** [ReferenceDeserializer.cs](../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs).
+Most BundledData files use the convention <c>{ "id_N": { …entry… } }</c>,
+deserialized as <c>Dictionary&lt;string, T&gt;</c>. Three files break the
+mould and need bespoke top-level shapes:
+
+- **`directedgoals.json`** — top is a JSON *array*, not an object.
+  `ParseDirectedGoals` returns `IReadOnlyList<DirectedGoal>`.
+- **`lorebookinfo.json`** — top is a single object with one root key
+  (`"Categories"`) wrapping a nested dictionary. `ParseLorebookInfo` returns
+  a `LorebookInfo` POCO (not a dictionary).
+- **`landmarks.json`** — top is a dictionary, but values are *lists* of
+  landmark records, not single records. `ParseLandmarks` returns
+  `IReadOnlyDictionary<string, IReadOnlyList<Landmark>>`.
+
+**Why flag this:** the validation harness's `IParserSpec.CountEntries`
+takes `object` precisely so each spec can interpret "entry count" however
+fits its file's shape. The broader implication: future POCO authors must
+spot-check the top-level shape (`isinstance(data, dict)` vs `list`, single
+key vs many) before assuming the dictionary envelope.
+
+### `tsysprofiles.json` ships no POCO at all
+
+**Where:** [ReferenceDeserializer.ParseTsysProfiles](../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs).
+
+The file's shape is `Dictionary<string, List<string>>` — each profile name
+maps to a flat list of power-key strings. Wrapping that in a one-field
+POCO would add ceremony with zero clarity benefit. Returned directly as
+`IReadOnlyDictionary<string, IReadOnlyList<string>>`.
+
+**The rule this implies:** when a file's shape is genuinely a
+trivially-typed collection (string→string, string→list-of-string,
+string→int), don't invent a POCO. The Models/ folder is for *records with
+named fields* — a list-of-string already has the structure baked in.
+
 ---
