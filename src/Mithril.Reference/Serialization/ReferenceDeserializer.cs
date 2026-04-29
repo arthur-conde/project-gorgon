@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Reference.Serialization.Converters;
@@ -72,5 +73,19 @@ public static class ReferenceDeserializer
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Item>>(json, settings);
         return result ?? new Dictionary<string, Item>();
+    }
+
+    /// <summary>
+    /// Deserializes the contents of <c>npcs.json</c> into a dictionary of
+    /// <see cref="Npc"/> POCOs keyed by NPC internal name (e.g. <c>"NPC_Joe"</c>).
+    /// </summary>
+    public static IReadOnlyDictionary<string, Npc> ParseNpcs(string json)
+    {
+        var settings = SerializerSettings.Build();
+        settings.Converters.Add(NpcDiscriminators.BuildServiceConverter());
+        settings.Converters.Add(new SingleOrArrayConverter<string>());
+
+        var result = JsonConvert.DeserializeObject<Dictionary<string, Npc>>(json, settings);
+        return result ?? new Dictionary<string, Npc>();
     }
 }

@@ -80,6 +80,30 @@ nested-array `Requirements`, look up their gating logic on the Project
 Gorgon wiki or in-game, and confirm the AND interpretation. ~15 minutes of
 spot-checking, deferred until a real consumer needs the certainty.
 
+### NPCs: `LevelRange` is dash-separated strings, not int pairs
+
+**Where:** `npcs.json`, `Services` entries with `Type: "InstallAugments"`
+carry a `LevelRange` field. The shape is a list-of-strings, not list-of-ints
+as the field name suggests:
+
+```json
+{ "Favor": "Friends", "LevelRange": ["0-60"], "Type": "InstallAugments" }
+```
+
+Surfaced during the Phase 2 NPC validation run as `JsonReaderException:
+Could not convert string to integer: 0-60` after I initially modelled
+`LevelRange` as `IReadOnlyList<int>?`.
+
+**How the deserializer copes:** `InstallAugmentsService.LevelRange` is
+`IReadOnlyList<string>?`. Consumers split each entry on `-` and parse the
+two halves at use time. No converter needed; the raw shape is preserved.
+
+**Why flag this:** the pattern of "dash-separated range as a single string"
+is likely to recur across BundledData (skill brackets, level requirements,
+power tier ranges). Future POCO authors who see a *Range* or *Bracket* field
+name should expect string-range shapes by default and only model as int when
+the data verifies.
+
 ---
 
 ## Design notes
