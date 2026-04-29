@@ -1,7 +1,27 @@
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using Mithril.Reference;
+using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
+using PocoArea = Mithril.Reference.Models.Misc.Area;
+using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
+using PocoItem = Mithril.Reference.Models.Items.Item;
+using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
+using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
+using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
+using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
+using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
+using PocoQuest = Mithril.Reference.Models.Quests.Quest;
+using PocoQuestObjective = Mithril.Reference.Models.Quests.QuestObjective;
+using PocoQuestRequirement = Mithril.Reference.Models.Quests.QuestRequirement;
+using PocoRecipe = Mithril.Reference.Models.Recipes.Recipe;
+using PocoRecipeIngredient = Mithril.Reference.Models.Recipes.RecipeIngredient;
+using PocoSkill = Mithril.Reference.Models.Misc.Skill;
+using PocoSourceEnvelope = Mithril.Reference.Models.Sources.SourceEnvelope;
+using PocoXpTable = Mithril.Reference.Models.Misc.XpTable;
+using SourceModels = Mithril.Reference.Models.Sources;
 
 namespace Mithril.Shared.Reference;
 
@@ -14,6 +34,22 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly string _bundledDir;
     private readonly HttpClient _http;
     private readonly IDiagnosticsSink? _diag;
+
+    /// <summary>
+    /// Map from bundled-file base name (e.g. <c>"quests"</c>) to the
+    /// <see cref="IParserSpec"/> that knows how to walk that file's parsed
+    /// graph and emit <see cref="UnknownReport"/>s. Cached at construction
+    /// from <see cref="ParserRegistry.Discover"/> so per-refresh drift
+    /// detection costs nothing in the steady-state (zero unknowns) case.
+    /// </summary>
+    private readonly IReadOnlyDictionary<string, IParserSpec> _specsByBaseName;
+
+    /// <summary>
+    /// Cap on the number of unknown reports logged per file per refresh —
+    /// a CDN-shipped flood of unknowns shouldn't drown the diagnostics sink.
+    /// First N entries surfaced; remainder summarised with a count.
+    /// </summary>
+    private const int MaxUnknownReportsPerFile = 5;
 
     // Items
     private IReadOnlyDictionary<long, ItemEntry> _items = new Dictionary<long, ItemEntry>();
@@ -76,6 +112,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         _http = http;
         _diag = diag;
         _bundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+
+        _specsByBaseName = ParserRegistry.Discover()
+            .ToDictionary(
+                s => Path.GetFileNameWithoutExtension(s.FileName),
+                StringComparer.Ordinal);
 
         _itemsSnapshot = new ReferenceFileSnapshot("items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -140,17 +181,17 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     public Task RefreshAsync(string key, CancellationToken ct = default) => key switch
     {
-        "items" => RefreshFileAsync("items", ReferenceJsonContext.Default.DictionaryStringRawItem, ParseAndSwapItems, ct),
-        "recipes" => RefreshFileAsync("recipes", ReferenceJsonContext.Default.DictionaryStringRawRecipe, ParseAndSwapRecipes, ct),
-        "skills" => RefreshFileAsync("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills, ct),
-        "xptables" => RefreshFileAsync("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables, ct),
-        "npcs" => RefreshFileAsync("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs, ct),
-        "areas" => RefreshFileAsync("areas", ReferenceJsonContext.Default.DictionaryStringRawArea, ParseAndSwapAreas, ct),
-        "sources_items" => RefreshFileAsync("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources, ct),
-        "attributes" => RefreshFileAsync("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes, ct),
-        "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers, ct),
-        "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles, ct),
-        "quests" => RefreshFileAsync("quests", ReferenceJsonContext.Default.DictionaryStringRawQuest, ParseAndSwapQuests, ct),
+        "items" => RefreshFileAsync("items", ReferenceDeserializer.ParseItems, ParseAndSwapItems, ct),
+        "recipes" => RefreshFileAsync("recipes", ReferenceDeserializer.ParseRecipes, ParseAndSwapRecipes, ct),
+        "skills" => RefreshFileAsync("skills", ReferenceDeserializer.ParseSkills, ParseAndSwapSkills, ct),
+        "xptables" => RefreshFileAsync("xptables", ReferenceDeserializer.ParseXpTables, ParseAndSwapXpTables, ct),
+        "npcs" => RefreshFileAsync("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs, ct),
+        "areas" => RefreshFileAsync("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas, ct),
+        "sources_items" => RefreshFileAsync("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources, ct),
+        "attributes" => RefreshFileAsync("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes, ct),
+        "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers, ct),
+        "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
+        "quests" => RefreshFileAsync("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -180,10 +221,18 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     // ── Generic load/refresh helpers ──────────────────────────────────────
 
-    private void LoadFile<TRaw>(
+    /// <summary>
+    /// Loads <paramref name="fileName"/> from the on-disk cache (preferring the latest
+    /// CDN copy if present) or falls back to the bundled JSON shipped with the app.
+    /// The JSON content is parsed via <paramref name="parser"/> — typically a
+    /// <see cref="ReferenceDeserializer"/> entry point — and the resulting POCO graph
+    /// is handed to <paramref name="swapper"/> for projection into the per-file
+    /// <see cref="*Entry"/> dictionaries this service exposes.
+    /// </summary>
+    private void LoadFile<T>(
         string fileName,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<Dictionary<string, TRaw>> typeInfo,
-        Action<Dictionary<string, TRaw>, ReferenceFileMetadata> swapper)
+        Func<string, T> parser,
+        Action<T, ReferenceFileMetadata> swapper)
     {
         var cachePath = Path.Combine(_cacheDir, $"{fileName}.json");
         var cacheMetaPath = Path.Combine(_cacheDir, $"{fileName}.meta.json");
@@ -193,10 +242,11 @@ public sealed class ReferenceDataService : IReferenceDataService
             try
             {
                 var meta = TryLoadMetadata(cacheMetaPath, ReferenceFileSource.Cache);
-                using var stream = File.OpenRead(cachePath);
-                var raw = JsonSerializer.Deserialize(stream, typeInfo) ?? new Dictionary<string, TRaw>();
-                swapper(raw, meta);
-                _diag?.Info("Reference", $"Loaded {fileName} from cache ({raw.Count} raw entries, {meta.CdnVersion}).");
+                var json = File.ReadAllText(cachePath);
+                var parsed = parser(json);
+                swapper(parsed, meta);
+                ReportUnknowns(fileName, parsed!, meta.CdnVersion);
+                _diag?.Info("Reference", $"Loaded {fileName} from cache ({meta.CdnVersion}).");
                 return;
             }
             catch (Exception ex)
@@ -213,16 +263,17 @@ public sealed class ReferenceDataService : IReferenceDataService
             return;
         }
         var bundledMeta = TryLoadMetadata(bundledMetaPath, ReferenceFileSource.Bundled);
-        using var bundledStream = File.OpenRead(bundledPath);
-        var bundledRaw = JsonSerializer.Deserialize(bundledStream, typeInfo) ?? new Dictionary<string, TRaw>();
-        swapper(bundledRaw, bundledMeta);
-        _diag?.Info("Reference", $"Loaded {fileName} from bundled ({bundledRaw.Count} raw entries, {bundledMeta.CdnVersion}).");
+        var bundledJson = File.ReadAllText(bundledPath);
+        var bundledParsed = parser(bundledJson);
+        swapper(bundledParsed, bundledMeta);
+        ReportUnknowns(fileName, bundledParsed!, bundledMeta.CdnVersion);
+        _diag?.Info("Reference", $"Loaded {fileName} from bundled ({bundledMeta.CdnVersion}).");
     }
 
-    private async Task RefreshFileAsync<TRaw>(
+    private async Task RefreshFileAsync<T>(
         string fileName,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<Dictionary<string, TRaw>> typeInfo,
-        Action<Dictionary<string, TRaw>, ReferenceFileMetadata> swapper,
+        Func<string, T> parser,
+        Action<T, ReferenceFileMetadata> swapper,
         CancellationToken ct)
     {
         var version = await CdnVersionDetector.TryDetectAsync(_http, CdnRoot, ct)
@@ -258,29 +309,71 @@ public sealed class ReferenceDataService : IReferenceDataService
         await Settings.AtomicFile.WriteJsonAtomicAsync(metaPath, meta,
             ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
 
-        var raw = JsonSerializer.Deserialize(body, typeInfo) ?? new Dictionary<string, TRaw>();
-        swapper(raw, meta);
+        var json = Encoding.UTF8.GetString(body);
+        var parsed = parser(json);
+        swapper(parsed, meta);
+        ReportUnknowns(fileName, parsed!, meta.CdnVersion);
         _diag?.Info("Reference", $"{fileName}.json refreshed: version {version}.");
         FileUpdated?.Invoke(this, fileName);
     }
 
+    /// <summary>
+    /// Walks the freshly-parsed graph for any <see cref="Mithril.Reference.Models.IUnknownDiscriminator"/>
+    /// sentinels and emits a diagnostics warning per finding (capped at
+    /// <see cref="MaxUnknownReportsPerFile"/>). The bundled JSON is validated
+    /// to have zero unknowns by <c>BundledDataValidationTests</c>; any
+    /// warning here therefore means the live CDN has shipped a discriminator
+    /// value the model layer hasn't been updated to recognise — that's the
+    /// schema-drift alarm.
+    /// </summary>
+    private void ReportUnknowns(string fileName, object parsed, string cdnVersion)
+    {
+        if (_diag is null) return;
+        if (!_specsByBaseName.TryGetValue(fileName, out var spec)) return;
+
+        IList<UnknownReport> reports;
+        try
+        {
+            reports = spec.EnumerateUnknowns(parsed).Take(MaxUnknownReportsPerFile + 1).ToList();
+        }
+        catch (Exception ex)
+        {
+            _diag.Warn("Reference", $"{fileName} unknown-walk threw: {ex.Message}");
+            return;
+        }
+
+        if (reports.Count == 0) return;
+
+        var truncated = reports.Count > MaxUnknownReportsPerFile;
+        var visible = truncated ? reports.Take(MaxUnknownReportsPerFile) : reports;
+        foreach (var u in visible)
+            _diag.Warn(
+                "Reference",
+                $"{fileName} (v{cdnVersion}): unknown {u.BaseTypeName} discriminator '{u.DiscriminatorValue}' at {u.Path}");
+
+        if (truncated)
+            _diag.Warn(
+                "Reference",
+                $"{fileName} (v{cdnVersion}): additional unknowns truncated; first {MaxUnknownReportsPerFile} reported.");
+    }
+
     // ── Per-type load entry points ───────────────────────────────────────
 
-    private void LoadItems() => LoadFile("items", ReferenceJsonContext.Default.DictionaryStringRawItem, ParseAndSwapItems);
-    private void LoadRecipes() => LoadFile("recipes", ReferenceJsonContext.Default.DictionaryStringRawRecipe, ParseAndSwapRecipes);
-    private void LoadSkills() => LoadFile("skills", ReferenceJsonContext.Default.DictionaryStringRawSkill, ParseAndSwapSkills);
-    private void LoadXpTables() => LoadFile("xptables", ReferenceJsonContext.Default.DictionaryStringRawXpTable, ParseAndSwapXpTables);
-    private void LoadNpcs() => LoadFile("npcs", ReferenceJsonContext.Default.DictionaryStringRawNpc, ParseAndSwapNpcs);
-    private void LoadAreas() => LoadFile("areas", ReferenceJsonContext.Default.DictionaryStringRawArea, ParseAndSwapAreas);
-    private void LoadItemSources() => LoadFile("sources_items", ReferenceJsonContext.Default.DictionaryStringRawItemSourceEnvelope, ParseAndSwapItemSources);
-    private void LoadAttributes() => LoadFile("attributes", ReferenceJsonContext.Default.DictionaryStringRawAttribute, ParseAndSwapAttributes);
-    private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceJsonContext.Default.DictionaryStringRawPower, ParseAndSwapPowers);
-    private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceJsonContext.Default.DictionaryStringListString, ParseAndSwapProfiles);
-    private void LoadQuests() => LoadFile("quests", ReferenceJsonContext.Default.DictionaryStringRawQuest, ParseAndSwapQuests);
+    private void LoadItems() => LoadFile("items", ReferenceDeserializer.ParseItems, ParseAndSwapItems);
+    private void LoadRecipes() => LoadFile("recipes", ReferenceDeserializer.ParseRecipes, ParseAndSwapRecipes);
+    private void LoadSkills() => LoadFile("skills", ReferenceDeserializer.ParseSkills, ParseAndSwapSkills);
+    private void LoadXpTables() => LoadFile("xptables", ReferenceDeserializer.ParseXpTables, ParseAndSwapXpTables);
+    private void LoadNpcs() => LoadFile("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs);
+    private void LoadAreas() => LoadFile("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas);
+    private void LoadItemSources() => LoadFile("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources);
+    private void LoadAttributes() => LoadFile("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes);
+    private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers);
+    private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
+    private void LoadQuests() => LoadFile("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
-    private void ParseAndSwapItems(Dictionary<string, RawItem> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapItems(IReadOnlyDictionary<string, PocoItem> raw, ReferenceFileMetadata meta)
     {
         var byId = new Dictionary<long, ItemEntry>(raw.Count);
         var byName = new Dictionary<string, ItemEntry>(raw.Count, StringComparer.Ordinal);
@@ -291,9 +384,20 @@ public sealed class ReferenceDataService : IReferenceDataService
             if (!long.TryParse(key.AsSpan(underscore + 1), out var id)) continue;
             var skillPrereqs = v.SkillReqs?.Keys.ToList();
             var keywords = ParseKeywords(v.Keywords, v.EquipSlot, skillPrereqs, v.Value);
-            var effectDescs = (IReadOnlyList<string>?)v.EffectDescs;
-            var entry = new ItemEntry(id, v.Name ?? "", v.InternalName ?? "", v.MaxStackSize ?? 1, v.IconId ?? 0,
-                keywords, v.EquipSlot, skillPrereqs, v.Value ?? 0, v.FoodDesc, v.SkillReqs, effectDescs, v.Description,
+            var entry = new ItemEntry(
+                id,
+                v.Name ?? "",
+                v.InternalName ?? "",
+                v.MaxStackSize,
+                v.IconId,
+                keywords,
+                v.EquipSlot,
+                skillPrereqs,
+                (decimal)v.Value,
+                v.FoodDesc,
+                v.SkillReqs,
+                v.EffectDescs,
+                v.Description,
                 string.IsNullOrEmpty(v.TSysProfile) ? null : v.TSysProfile,
                 v.CraftingTargetLevel);
             byId[id] = entry;
@@ -312,9 +416,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     /// We synthesize these as additional ItemKeyword entries so the GiftIndex can match them.
     /// </summary>
     private static IReadOnlyList<ItemKeyword> ParseKeywords(
-        List<string>? raw, string? equipSlot, List<string>? skillPrereqs, decimal? value)
+        IReadOnlyList<string>? raw, string? equipSlot, List<string>? skillPrereqs, double value)
     {
-        var result = new List<ItemKeyword>(raw?.Count ?? 0 + 4);
+        var result = new List<ItemKeyword>((raw?.Count ?? 0) + 4);
 
         if (raw is not null)
         {
@@ -340,12 +444,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
 
         // Synthesize "MinValue:{threshold}" virtual keywords for common thresholds
-        if (value.HasValue)
-        {
-            var v = (int)value.Value;
-            if (v >= 1000) result.Add(new ItemKeyword("MinValue:1000", 0));
-            if (v >= 500) result.Add(new ItemKeyword("MinValue:500", 0));
-        }
+        var v = (int)value;
+        if (v >= 1000) result.Add(new ItemKeyword("MinValue:1000", 0));
+        if (v >= 500) result.Add(new ItemKeyword("MinValue:500", 0));
 
         // Synthesize rarity virtual keywords from the keyword list.
         // "Loot" items can drop at any rarity; "Stock" items are always Common.
@@ -366,7 +467,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         return result;
     }
 
-    private void ParseAndSwapRecipes(Dictionary<string, RawRecipe> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapRecipes(IReadOnlyDictionary<string, PocoRecipe> raw, ReferenceFileMetadata meta)
     {
         var byKey = new Dictionary<string, RecipeEntry>(raw.Count, StringComparer.Ordinal);
         var byName = new Dictionary<string, RecipeEntry>(raw.Count, StringComparer.Ordinal);
@@ -380,31 +481,31 @@ public sealed class ReferenceDataService : IReferenceDataService
                 ?? (IReadOnlyList<RecipeIngredient>)[];
 
             var results = v.ResultItems?
-                .Where(i => i.ItemCode.HasValue)
-                .Select(i => new RecipeItemRef(i.ItemCode!.Value, i.StackSize ?? 1, null))
+                .Where(i => i.ItemCode != 0)
+                .Select(i => new RecipeItemRef(i.ItemCode, i.StackSize, null))
                 .ToList()
                 ?? (IReadOnlyList<RecipeItemRef>)[];
 
             var protoResults = v.ProtoResultItems?
-                .Where(i => i.ItemCode.HasValue)
-                .Select(i => new RecipeItemRef(i.ItemCode!.Value, i.StackSize ?? 1, null))
+                .Where(i => i.ItemCode != 0)
+                .Select(i => new RecipeItemRef(i.ItemCode, i.StackSize, null))
                 .ToList()
                 ?? (IReadOnlyList<RecipeItemRef>)[];
 
-            var resultEffects = (IReadOnlyList<string>)(v.ResultEffects ?? []);
+            var resultEffects = v.ResultEffects ?? (IReadOnlyList<string>)[];
 
             var entry = new RecipeEntry(
                 key,
                 v.Name ?? "",
                 v.InternalName ?? "",
-                v.IconId ?? 0,
+                v.IconId,
                 v.Skill ?? "",
-                v.SkillLevelReq ?? 0,
+                v.SkillLevelReq,
                 v.RewardSkill ?? "",
-                v.RewardSkillXp ?? 0,
-                v.RewardSkillXpFirstTime ?? 0,
+                v.RewardSkillXp,
+                v.RewardSkillXpFirstTime,
                 v.RewardSkillXpDropOffLevel,
-                v.RewardSkillXpDropOffPct,
+                (float?)v.RewardSkillXpDropOffPct,
                 v.RewardSkillXpDropOffRate,
                 ingredients,
                 results,
@@ -419,61 +520,61 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
-    private static RecipeIngredient? ProjectIngredient(RawRecipeItem i)
+    private static RecipeIngredient? ProjectIngredient(PocoRecipeIngredient i)
     {
-        if (i.ItemCode.HasValue)
-            return new RecipeItemIngredient(i.ItemCode.Value, i.StackSize ?? 1, i.ChanceToConsume);
+        if (i.ItemCode is { } itemCode)
+            return new RecipeItemIngredient(itemCode, i.StackSize, (float?)i.ChanceToConsume);
         if (i.ItemKeys is { Count: > 0 } keys)
-            return new RecipeKeywordIngredient(keys, i.Desc, i.StackSize ?? 1, i.ChanceToConsume);
+            return new RecipeKeywordIngredient(keys, i.Desc, i.StackSize, (float?)i.ChanceToConsume);
         return null;
     }
 
-    private void ParseAndSwapSkills(Dictionary<string, RawSkill> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)
     {
         var byName = new Dictionary<string, SkillEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var entry = new SkillEntry(key, v.Id ?? 0, v.Combat ?? false, v.XpTable ?? "", v.MaxBonusLevels ?? 0);
+            var entry = new SkillEntry(key, v.Id, v.Combat, v.XpTable ?? "", v.MaxBonusLevels);
             byName[key] = entry;
         }
         _skills = byName;
         _skillsSnapshot = new ReferenceFileSnapshot("skills", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byName.Count);
     }
 
-    private void ParseAndSwapXpTables(Dictionary<string, RawXpTable> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapXpTables(IReadOnlyDictionary<string, PocoXpTable> raw, ReferenceFileMetadata meta)
     {
         var byName = new Dictionary<string, XpTableEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (_, v) in raw)
         {
             if (string.IsNullOrEmpty(v.InternalName)) continue;
-            var entry = new XpTableEntry(v.InternalName, (IReadOnlyList<long>)(v.XpAmounts ?? []));
+            var entry = new XpTableEntry(v.InternalName, v.XpAmounts ?? (IReadOnlyList<long>)[]);
             byName[v.InternalName] = entry;
         }
         _xpTables = byName;
         _xpTablesSnapshot = new ReferenceFileSnapshot("xptables", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byName.Count);
     }
 
-    private void ParseAndSwapNpcs(Dictionary<string, RawNpc> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapNpcs(IReadOnlyDictionary<string, PocoNpc> raw, ReferenceFileMetadata meta)
     {
         var byKey = new Dictionary<string, NpcEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var prefs = (v.Preferences ?? [])
+            var prefs = (v.Preferences ?? (IReadOnlyList<PocoNpcPreference>)[])
                 .Where(p => p.Keywords is { Count: > 0 })
                 .Select(p => new NpcPreference(
                     p.Desire ?? "",
-                    (IReadOnlyList<string>)(p.Keywords ?? []),
-                    p.Name ?? string.Join(", ", p.Keywords ?? []),
-                    p.Pref ?? 0,
+                    p.Keywords ?? (IReadOnlyList<string>)[],
+                    p.Name ?? string.Join(", ", p.Keywords ?? (IReadOnlyList<string>)[]),
+                    p.Pref,
                     p.Favor))
                 .ToList();
 
-            var services = (v.Services ?? [])
+            var services = (v.Services ?? (IReadOnlyList<PocoNpcService>)[])
                 .Where(s => !string.IsNullOrEmpty(s.Type))
                 .Select(s => new NpcService(
-                    s.Type!,
+                    s.Type,
                     s.Favor,
-                    ParseCapIncreases(s.CapIncreases)))
+                    s is PocoNpcStoreService store ? ParseCapIncreases(store.CapIncreases) : (IReadOnlyList<NpcStoreCapIncrease>)[]))
                 .ToList();
 
             var entry = new NpcEntry(
@@ -481,7 +582,7 @@ public sealed class ReferenceDataService : IReferenceDataService
                 v.Name ?? key.Replace("NPC_", ""),
                 v.AreaFriendlyName ?? "",
                 prefs,
-                (IReadOnlyList<string>)(v.ItemGifts ?? []),
+                v.ItemGifts ?? (IReadOnlyList<string>)[],
                 services);
 
             byKey[key] = entry;
@@ -490,7 +591,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
-    private void ParseAndSwapAreas(Dictionary<string, RawArea> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapAreas(IReadOnlyDictionary<string, PocoArea> raw, ReferenceFileMetadata meta)
     {
         var byKey = new Dictionary<string, AreaEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
@@ -504,7 +605,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     }
 
     /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>
-    private static IReadOnlyList<NpcStoreCapIncrease> ParseCapIncreases(List<string>? raw)
+    private static IReadOnlyList<NpcStoreCapIncrease> ParseCapIncreases(IReadOnlyList<string>? raw)
     {
         if (raw is null || raw.Count == 0) return [];
         var result = new List<NpcStoreCapIncrease>(raw.Count);
@@ -522,9 +623,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         return result;
     }
 
-    private void ParseAndSwapItemSources(Dictionary<string, RawItemSourceEnvelope> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapItemSources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)
     {
-        // sources_items.json shape: { "item_N": { "entries": [ { npc, type, ... }, ... ] } }
+        // sources_items.json shape: { "item_N": { "entries": [ { type, npc, ... }, ... ] } }
         var byInternalName = new Dictionary<string, IReadOnlyList<ItemSource>>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, envelope) in raw)
         {
@@ -532,14 +633,13 @@ public sealed class ReferenceDataService : IReferenceDataService
             if (underscore < 0) continue;
             if (!long.TryParse(key.AsSpan(underscore + 1), out var id)) continue;
             if (!_items.TryGetValue(id, out var item) || string.IsNullOrEmpty(item.InternalName)) continue;
-            if (envelope.Entries is null || envelope.Entries.Count == 0) continue;
+            if (envelope.entries is null || envelope.entries.Count == 0) continue;
 
-            var projected = new List<ItemSource>(envelope.Entries.Count);
-            foreach (var r in envelope.Entries)
+            var projected = new List<ItemSource>(envelope.entries.Count);
+            foreach (var r in envelope.entries)
             {
-                if (string.IsNullOrEmpty(r.Type)) continue;
-                var context = ResolveSourceContext(r);
-                projected.Add(new ItemSource(r.Type!, r.Npc, context));
+                if (string.IsNullOrEmpty(r.type)) continue;
+                projected.Add(new ItemSource(r.type, ExtractNpc(r), ResolveSourceContext(r)));
             }
             if (projected.Count > 0)
                 byInternalName[item.InternalName] = projected;
@@ -548,26 +648,35 @@ public sealed class ReferenceDataService : IReferenceDataService
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
     }
 
-    /// <summary>
-    /// Resolve a <see cref="RawItemSource"/> entry to its <see cref="ItemSource.Context"/>.
-    /// Recipe entries carry a numeric <c>recipeId</c>; we look up the recipe and return its
-    /// <see cref="RecipeEntry.InternalName"/> so consumers can use it directly. Quest entries
-    /// carry a numeric <c>questId</c> resolved symmetrically via <see cref="QuestEntry.InternalName"/>.
-    /// Other types fall through to the existing string fields. Relies on <see cref="LoadRecipes"/>
-    /// and <see cref="LoadQuests"/> running before <see cref="LoadItemSources"/> in the ctor.
-    /// </summary>
-    private string? ResolveSourceContext(RawItemSource r)
+    private static string? ExtractNpc(SourceModels.SourceEntry s) => s switch
     {
-        if (r.RecipeId is { } recipeId
-            && _recipes.TryGetValue($"recipe_{recipeId}", out var recipe))
-            return recipe.InternalName;
-        if (r.QuestId is { } questId
-            && _quests.TryGetValue($"quest_{questId}", out var quest))
-            return quest.InternalName;
-        return r.Recipe ?? r.Quest ?? r.Monster ?? r.Source ?? r.Interactor;
-    }
+        SourceModels.VendorSource v => v.npc,
+        SourceModels.BarterSource b => b.npc,
+        SourceModels.NpcGiftSource n => n.npc,
+        SourceModels.HangOutSource h => h.npc,
+        SourceModels.TrainingSource t => t.npc,
+        _ => null,
+    };
 
-    private void ParseAndSwapAttributes(Dictionary<string, RawAttribute> raw, ReferenceFileMetadata meta)
+    /// <summary>
+    /// Resolve a polymorphic <see cref="SourceModels.SourceEntry"/> to its
+    /// <see cref="ItemSource.Context"/> string. Recipe / Quest sources carry a
+    /// numeric id that we look up against the recipes / quests dictionaries
+    /// to surface the InternalName. Relies on <see cref="LoadRecipes"/> and
+    /// <see cref="LoadQuests"/> running before <see cref="LoadItemSources"/>.
+    /// </summary>
+    private string? ResolveSourceContext(SourceModels.SourceEntry s) => s switch
+    {
+        SourceModels.RecipeSource r when _recipes.TryGetValue($"recipe_{r.recipeId}", out var recipe) => recipe.InternalName,
+        SourceModels.QuestSource q when _quests.TryGetValue($"quest_{q.questId}", out var quest) => quest.InternalName,
+        SourceModels.QuestObjectiveMacGuffinSource qm when _quests.TryGetValue($"quest_{qm.questId}", out var quest) => quest.InternalName,
+        SourceModels.CraftedInteractorSource ci => ci.friendlyName,
+        SourceModels.ResourceInteractorSource ri => ri.friendlyName,
+        SourceModels.SkillSource sk => sk.skill,
+        _ => null,
+    };
+
+    private void ParseAndSwapAttributes(IReadOnlyDictionary<string, PocoAttribute> raw, ReferenceFileMetadata meta)
     {
         var byToken = new Dictionary<string, AttributeEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (token, v) in raw)
@@ -586,7 +695,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byToken.Count);
     }
 
-    private void ParseAndSwapPowers(Dictionary<string, RawPower> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapPowers(IReadOnlyDictionary<string, PocoPower> raw, ReferenceFileMetadata meta)
     {
         // Key the output by PowerEntry.InternalName so recipe effects
         // (AddItemTSysPower(<InternalName>, <tier>)) resolve directly.
@@ -605,11 +714,11 @@ public sealed class ReferenceDataService : IReferenceDataService
                     if (underscore < 0) continue;
                     if (!int.TryParse(tierKey.AsSpan(underscore + 1), out var tierNum)) continue;
 
-                    var descs = (IReadOnlyList<string>)(rawTier.EffectDescs ?? []);
+                    var descs = rawTier.EffectDescs ?? (IReadOnlyList<string>)[];
                     tiers[tierNum] = new PowerTier(
                         tierNum,
                         descs,
-                        rawTier.MaxLevel ?? 0,
+                        rawTier.MaxLevel,
                         MinLevel: rawTier.MinLevel,
                         MinRarity: string.IsNullOrEmpty(rawTier.MinRarity) ? null : rawTier.MinRarity,
                         SkillLevelPrereq: rawTier.SkillLevelPrereq);
@@ -619,7 +728,7 @@ public sealed class ReferenceDataService : IReferenceDataService
             var entry = new PowerEntry(
                 InternalName: v.InternalName,
                 Skill: v.Skill ?? "",
-                Slots: (IReadOnlyList<string>)(v.Slots ?? []),
+                Slots: v.Slots ?? (IReadOnlyList<string>)[],
                 Suffix: string.IsNullOrEmpty(v.Suffix) ? null : v.Suffix,
                 Tiers: tiers);
             byInternalName[entry.InternalName] = entry;
@@ -628,7 +737,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
     }
 
-    private void ParseAndSwapProfiles(Dictionary<string, List<string>> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapProfiles(IReadOnlyDictionary<string, IReadOnlyList<string>> raw, ReferenceFileMetadata meta)
     {
         var byProfile = new Dictionary<string, IReadOnlyList<string>>(raw.Count, StringComparer.Ordinal);
         foreach (var (profileName, powers) in raw)
@@ -640,35 +749,39 @@ public sealed class ReferenceDataService : IReferenceDataService
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byProfile.Count);
     }
 
-    private void ParseAndSwapQuests(Dictionary<string, RawQuest> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapQuests(IReadOnlyDictionary<string, PocoQuest> raw, ReferenceFileMetadata meta)
     {
         var byKey = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
         var byName = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var objectives = (v.Objectives ?? [])
+            var objectives = (v.Objectives ?? (IReadOnlyList<PocoQuestObjective>)[])
                 .Where(o => !string.IsNullOrEmpty(o.Type))
                 .Select(o => new QuestObjective(
                     o.Type!,
                     o.Description ?? "",
-                    o.Number ?? 0,
-                    CoerceTarget(o.Target),
+                    o.Number,
+                    o.Target is { Count: > 0 } t ? string.Join(" | ", t) : null,
                     o.ItemName,
                     o.GroupId))
                 .ToList();
 
-            var requirements = ProjectQuestRequirementList(v.Requirements);
-            var sustainList = ProjectQuestRequirementList(v.RequirementsToSustain);
-            var sustain = sustainList.Count > 0 ? sustainList[0] : null;
+            var requirements = (v.Requirements ?? (IReadOnlyList<PocoQuestRequirement>)[])
+                .Select(ProjectQuestRequirement)
+                .ToList();
 
-            var skillRewards = (v.Rewards ?? [])
+            var sustainList = v.RequirementsToSustain ?? (IReadOnlyList<PocoQuestRequirement>)[];
+            var sustain = sustainList.Count > 0 ? ProjectQuestRequirement(sustainList[0]) : null;
+
+            var skillRewards = (v.Rewards ?? (IReadOnlyList<Mithril.Reference.Models.Quests.QuestReward>)[])
+                .OfType<Mithril.Reference.Models.Quests.SkillXpReward>()
                 .Where(r => !string.IsNullOrEmpty(r.Skill))
                 .Select(r => new QuestSkillReward(r.Skill!, r.Xp ?? 0))
                 .ToList();
 
-            var itemRewards = (v.Rewards_Items ?? [])
+            var itemRewards = (v.Rewards_Items ?? (IReadOnlyList<Mithril.Reference.Models.Quests.QuestItemRef>)[])
                 .Where(i => !string.IsNullOrEmpty(i.Item))
-                .Select(i => new QuestItemReward(i.Item!, i.StackSize ?? 1))
+                .Select(i => new QuestItemReward(i.Item!, i.StackSize))
                 .ToList();
 
             var entry = new QuestEntry(
@@ -678,14 +791,14 @@ public sealed class ReferenceDataService : IReferenceDataService
                 Description: v.Description ?? "",
                 DisplayedLocation: string.IsNullOrEmpty(v.DisplayedLocation) ? null : v.DisplayedLocation,
                 FavorNpc: string.IsNullOrEmpty(v.FavorNpc) ? null : v.FavorNpc,
-                Keywords: (IReadOnlyList<string>)(v.Keywords ?? []),
+                Keywords: v.Keywords ?? (IReadOnlyList<string>)[],
                 Objectives: objectives,
                 Requirements: requirements,
                 RequirementsToSustain: sustain,
                 SkillRewards: skillRewards,
                 ItemRewards: itemRewards,
                 FavorReward: v.Reward_Favor ?? v.Rewards_Favor ?? 0,
-                RewardEffects: (IReadOnlyList<string>)(v.Rewards_Effects ?? []),
+                RewardEffects: v.Rewards_Effects ?? (IReadOnlyList<string>)[],
                 RewardLootProfile: string.IsNullOrEmpty(v.Rewards_NamedLootProfile) ? null : v.Rewards_NamedLootProfile,
                 ReuseMinutes: v.ReuseTime_Minutes,
                 ReuseHours: v.ReuseTime_Hours,
@@ -701,71 +814,25 @@ public sealed class ReferenceDataService : IReferenceDataService
         _questsSnapshot = new ReferenceFileSnapshot("quests", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
-    private static QuestRequirement ProjectQuestRequirement(RawQuestRequirement r) =>
-        new(r.T ?? "", r.Quest, CoerceLevel(r.Level), r.Npc, r.Skill, r.Keyword);
-
     /// <summary>
-    /// Coerces the polymorphic <c>Target</c> field on quest objectives to a single string.
-    /// Array form joins with <c>" | "</c>; string form passes through; null/other returns null.
+    /// Project a polymorphic <see cref="PocoQuestRequirement"/> subclass to the
+    /// flat <see cref="QuestRequirement"/> projection record. Reads only the
+    /// discriminator-relevant fields per concrete type; the rest stay null.
     /// </summary>
-    private static string? CoerceTarget(JsonElement? raw)
+    private static QuestRequirement ProjectQuestRequirement(PocoQuestRequirement r) => r switch
     {
-        if (raw is not { } el) return null;
-        return el.ValueKind switch
-        {
-            JsonValueKind.String => el.GetString(),
-            JsonValueKind.Array => string.Join(" | ", el.EnumerateArray()
-                .Where(e => e.ValueKind == JsonValueKind.String)
-                .Select(e => e.GetString())),
-            _ => null,
-        };
-    }
-
-    /// <summary>
-    /// Coerces the polymorphic <c>Level</c> field on quest requirements to a string.
-    /// Numeric forms (<c>MinSkillLevel</c>) and string forms (<c>MinFavorLevel</c>)
-    /// both render as their textual representation.
-    /// </summary>
-    private static string? CoerceLevel(JsonElement? raw)
-    {
-        if (raw is not { } el) return null;
-        return el.ValueKind switch
-        {
-            JsonValueKind.String => el.GetString(),
-            JsonValueKind.Number => el.GetRawText(),
-            _ => null,
-        };
-    }
-
-    /// <summary>
-    /// Unfolds the polymorphic <c>Requirements</c> / <c>RequirementsToSustain</c> shape:
-    /// usually an array of requirement objects, sometimes a single bare object, and
-    /// occasionally (~21 quests) a heterogeneous array containing nested AND/OR groups.
-    /// We flatten everything into a flat list — the AND/OR grouping is lossy but the
-    /// concrete requirements are surfaced for consumers.
-    /// </summary>
-    private static IReadOnlyList<QuestRequirement> ProjectQuestRequirementList(JsonElement? raw)
-    {
-        if (raw is not { } el) return [];
-        var acc = new List<QuestRequirement>();
-        AppendQuestRequirements(el, acc);
-        return acc;
-    }
-
-    private static void AppendQuestRequirements(JsonElement el, List<QuestRequirement> acc)
-    {
-        switch (el.ValueKind)
-        {
-            case JsonValueKind.Object:
-                var single = el.Deserialize(ReferenceJsonContext.Default.RawQuestRequirement);
-                if (single is { T.Length: > 0 }) acc.Add(ProjectQuestRequirement(single));
-                break;
-            case JsonValueKind.Array:
-                foreach (var child in el.EnumerateArray())
-                    AppendQuestRequirements(child, acc);
-                break;
-        }
-    }
+        Mithril.Reference.Models.Quests.MinSkillLevelRequirement m =>
+            new QuestRequirement(r.T, null, m.Level, null, m.Skill, null),
+        Mithril.Reference.Models.Quests.MinFavorLevelRequirement m =>
+            new QuestRequirement(r.T, null, m.Level, m.Npc, null, null),
+        Mithril.Reference.Models.Quests.QuestCompletedRequirement q =>
+            new QuestRequirement(r.T, q.Quest, null, null, null, null),
+        Mithril.Reference.Models.Quests.HasEffectKeywordRequirement h =>
+            new QuestRequirement(r.T, null, null, null, null, h.Keyword),
+        Mithril.Reference.Models.Quests.MinCombatSkillLevelRequirement c =>
+            new QuestRequirement(r.T, null, c.Level?.ToString(), null, null, null),
+        _ => new QuestRequirement(r.T, null, null, null, null, null),
+    };
 
     // ── Shared helpers ───────────────────────────────────────────────────
 

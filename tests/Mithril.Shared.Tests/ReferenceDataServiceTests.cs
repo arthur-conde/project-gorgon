@@ -233,9 +233,11 @@ public class ReferenceDataServiceTests : IDisposable
     [Fact]
     public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
     {
-        // Verifies the [JsonPropertyName("T")] attribute on RawQuestRequirement.T:
-        // the camelCase naming policy would otherwise lowercase "T" to "t" and the
-        // discriminator would silently deserialize to null.
+        // Verifies the polymorphic discriminator dispatch in Mithril.Reference's
+        // ParseQuests: the JSON's "T" field maps to a concrete QuestRequirement
+        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.)
+        // and ParseAndSwapQuests projects that to the flat QuestRequirement
+        // record exposed on QuestEntry.Requirements.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
         File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
         File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
@@ -346,6 +348,47 @@ public class ReferenceDataServiceTests : IDisposable
         sources.Should().ContainSingle();
         sources[0].Type.Should().Be("Quest");
         sources[0].Context.Should().Be("GetCatEyeballsForJoeh"); // InternalName, not the raw id
+    }
+
+    [Fact]
+    public void Unknown_quest_requirement_T_value_emits_diagnostics_warning()
+    {
+        // Phase 6 drift detection: a Requirements row whose T discriminator
+        // doesn't match any concrete QuestRequirement subclass should
+        // deserialize to UnknownQuestRequirement and surface a Warn entry
+        // through IDiagnosticsSink. Bundled JSON has zero unknowns, so any
+        // warning here is a real CDN-drift signal.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_999": {
+                "Name": "Future Quest",
+                "InternalName": "FutureQuest",
+                "Description": "Mock quest with a discriminator the model doesn't recognise.",
+                "Requirements": [
+                  { "T": "TotallyMadeUpRequirementType123", "Foo": "bar" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var diag = new Mithril.Shared.Diagnostics.DiagnosticsSink();
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), diag, bundledDir: _bundledDir);
+
+        // Confirm parse still succeeded — drift detection is non-fatal.
+        svc.Quests.Should().ContainKey("quest_999");
+
+        var driftWarnings = diag.Snapshot()
+            .Where(e => e.Level == Mithril.Shared.Diagnostics.DiagnosticLevel.Warn
+                        && e.Category == "Reference"
+                        && e.Message.Contains("unknown")
+                        && e.Message.Contains("TotallyMadeUpRequirementType123"))
+            .ToList();
+
+        driftWarnings.Should().NotBeEmpty(
+            "the unknown discriminator should surface as a Warn through IDiagnosticsSink");
     }
 
     [Fact]

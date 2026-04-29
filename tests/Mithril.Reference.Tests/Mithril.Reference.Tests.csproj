@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Mithril.Reference.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      The bundled JSON shipped with Mithril.Shared is the canonical fixture
+      for the validation harness. Linking instead of copying avoids drift —
+      both projects read the same files on disk.
+    -->
+    <Content Include="..\..\src\Mithril.Shared\Reference\BundledData\*.json"
+             Exclude="..\..\src\Mithril.Shared\Reference\BundledData\*.meta.json"
+             Link="BundledData\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
