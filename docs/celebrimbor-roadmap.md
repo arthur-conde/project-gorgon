@@ -1,6 +1,8 @@
 # Celebrimbor · Crafting Planner — roadmap
 
-What shipped in v1, and the obvious next steps.
+> **Active backlog:** [`module:celebrimbor` issues](https://github.com/arthur-conde/project-gorgon/issues?q=is%3Aissue+is%3Aopen+label%3Amodule%3Acelebrimbor) (replaced with the `Mithril Roadmap` Project URL once Phase 2 of the docs-wiki-projects migration creates it).
+
+What shipped in v1, what shipped after, and the rationale for what's still deferred. Per-item *task tracking* lives in Issues; this doc keeps the design narrative — *why* each piece was scoped the way it was, and the architectural rules that keep new prefixes additive.
 
 ## Context
 

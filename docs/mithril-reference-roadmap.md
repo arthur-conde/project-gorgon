@@ -1,5 +1,7 @@
 # Mithril.Reference Roadmap
 
+> **Status:** Phases 0–6 done as of April 2026 — see History at the bottom. Phase 6 *Optional future work* tracked as issues [#50](https://github.com/arthur-conde/project-gorgon/issues/50) (field-coverage walker) and [#51](https://github.com/arthur-conde/project-gorgon/issues/51) (live-CDN parity test).
+
 A faithful POCO library covering every BundledData JSON file, with serialization
 isolated so the library can be split into a Models / Serialization pair later
 without touching consumers.
@@ -208,13 +210,7 @@ same machinery into the runtime parse path.
   in `ReferenceDataServiceTests` — feeds a quest with a synthetic
   `T: "TotallyMadeUpRequirementType123"`, asserts the warning surfaces.
 
-**Optional future work** (not in Phase 6's scope):
-
-- Field-coverage walker that diffs raw `JObject` property names against POCO
-  declarations to catch "Elder Game added a new field" before it lands as a
-  silent null.
-- Live-CDN parity test gated behind `[Trait("Category", "Live")]`; CI runs
-  nightly to surface drift between bundled and live before a refresh ships.
+**Optional future work:** tracked as issues — [#50 field-coverage walker](https://github.com/arthur-conde/project-gorgon/issues/50), [#51 live-CDN parity test](https://github.com/arthur-conde/project-gorgon/issues/51). Both are additive; the Phase 1 validation harness is the substrate.
 
 ## Budget
 
