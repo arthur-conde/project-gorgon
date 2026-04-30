@@ -96,10 +96,18 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<TimerDefinitionsService>();
         services.AddSingleton<TimerProgressService>();
         services.AddSingleton<UserTimerSource>();
-        // Same instance is registered as ITimerSource so the alarm service (and any
-        // future cross-source aggregator) can resolve it via the abstraction.
+        // Each source is registered both concretely and as ITimerSource so the
+        // alarm service and the dashboard aggregator can resolve them via the
+        // abstraction. AddSingleton<TInterface>(factory) appends to the
+        // IEnumerable<TInterface> resolution.
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<UserTimerSource>());
+        services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<QuestSource>());
+        services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<LootSource>());
         services.AddSingleton<TimerAlarmService>();
+
+        // Dashboard aggregator + VM — fans in every registered ITimerSource.
+        services.AddSingleton<DashboardAggregator>();
+        services.AddSingleton<DashboardViewModel>();
 
         services.AddSingleton<TimerListViewModel>(sp => new TimerListViewModel(
             sp.GetRequiredService<UserTimerSource>(),
