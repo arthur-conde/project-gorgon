@@ -29,7 +29,7 @@ export const AggregateInput = z.object({
   event_type: z.array(z.string()).optional(),
   since: z.string().optional(),
   until: z.string().optional(),
-  between: z.tuple([z.string(), z.string()]).optional(),
+  between: z.array(z.string()).length(2).optional(),
   last_session: z.boolean().optional(),
   character: z.string().optional(),
   cursor: z.string().optional(),
