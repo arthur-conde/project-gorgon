@@ -97,6 +97,21 @@ roadmap doc):
   (`gorgon_query_box_shortcuts.md`).
 - Item rarity color scheme + RarityToBrushConverter
   (`rarity_color_scheme.md`).
+- Celebrimbor aggregator first-output bug
+  (`celebrimbor_aggregator_first_result_bug.md`). *Confirmed standalone
+  bug; not yet duplicated under `celebrimbor-roadmap.md`'s entry above —
+  if both surfaces produce an issue candidate, file once and reference
+  both.*
+- Smaug remaining tabs
+  (`smaug_remaining_tabs.md`). *Covered transitively by the
+  `smaug-roadmap.md` v1.1/v1.2/v2 backlog above; named here so the
+  memory audit (Phase 3.6) doesn't miss the entry.*
+
+> **Footnote on `quest_typed_requirements.md`:** the `Typed
+> QuestRequirement records + repeatable-quest-timer module` memory
+> entry is **already tracked by issue #12**. *Do not* file a new
+> issue. Instead, in Phase 3.5 below, rewrite the memory body to a
+> `Tracked in #12` pointer.
 
 ---
 
@@ -128,8 +143,12 @@ Block on these before doing irreversible work:
    - Anything else he wants relocated from the proposed split?
 2. **`Project shape`** — one Project per active module
    (Mithril.Reference, Celebrimbor, Smaug, Gandalf) or one big
-   "Mithril" Project with a `Module` field? Working assumption:
-   per-module Projects + a top-level "Mithril Release Planning" board.
+   "Mithril" Project with a `Module` field? **Decision (resolved
+   2026-04-30 with Arthur):** single Project (`Mithril Roadmap`) with
+   `Module` as a single-select field. Solo dev with ~20 issues — one
+   board with field-based filters is simpler than five boards to keep
+   in sync. Per-module Projects remain a documented alternative if
+   the single board gets crowded later.
 3. **`gh project` scope** — Arthur may need to run
    `gh auth refresh -s project` once to grant the Projects v2 scope.
    The session can't do this for him; ask if `gh project list` returns
@@ -224,17 +243,15 @@ design rationale and agent plans live in
 **Exit:** wiki has 7 reference pages + an index; `docs/` originals
 still exist (deleted in Phase 4).
 
-### Phase 2 — Set up Projects + custom fields *(~45 min)*
+### Phase 2 — Set up the Project + custom fields *(~30 min)*
 
-For each of: **Mithril.Reference**, **Celebrimbor**, **Smaug**,
-**Gandalf**, plus a top-level **Mithril Release Planning**:
+Create one Project (decision: see open question #2):
 
 ```bash
-gh project create --owner arthur-conde --title "Mithril.Reference roadmap"
-# repeat for the other modules
+gh project create --owner arthur-conde --title "Mithril Roadmap"
 ```
 
-For each Project, add custom fields via `gh project field-create`:
+Add custom fields via `gh project field-create`:
 
 - `Status` (single-select): Todo / In Progress / Blocked / Done
 - `Priority` (single-select): P0 / P1 / P2 / P3
@@ -244,15 +261,57 @@ For each Project, add custom fields via `gh project field-create`:
   Elrond / Bilbo / Arwen / Saruman / Smaug / Celebrimbor / Palantir /
   Mithril.Reference / Shell
 
-(`Module` only useful on the cross-cutting Release Planning board, but
-applying it everywhere keeps the schema uniform and the cross-board
-view filterable.)
+Use the Project's filter-by-`Module` view to get per-module slices
+without maintaining separate boards.
 
 **Note:** `gh project field-create` syntax for single-select options
 needs a single-line list. Use `--single-select-options "Todo,In
 Progress,Blocked,Done"` etc.
 
-**Exit:** five Projects exist with consistent custom fields.
+**Exit:** one Project (`Mithril Roadmap`) with the five custom fields
+above.
+
+### Phase 2.5 — Label taxonomy + issue templates *(~30 min)*
+
+Stock GitHub labels won't scale. Add three label axes so issue triage
+and Project filters stay coherent:
+
+```bash
+# module:* — 13 labels, one per module surface
+for m in samwise pippin legolas arwen elrond gandalf bilbo smaug \
+         celebrimbor palantir saruman mithril.reference shell; do
+  gh label create "module:$m" --color BFD4F2 --description "Touches the $m module"
+done
+
+# area:* — 5 cross-cutting axes
+gh label create "area:parser"  --color C5DEF5 --description "Log parsing / state machines"
+gh label create "area:ui"      --color D4C5F9 --description "WPF / XAML / ViewModels"
+gh label create "area:ci"      --color BFDADC --description "Build / CI / release"
+gh label create "area:docs"    --color C2E0C6 --description "Documentation"
+gh label create "area:test"    --color FAD8C7 --description "Test infrastructure / coverage"
+
+# type:* — 3 dispositions
+gh label create "type:bug"     --color D73A4A --description "Defect"
+gh label create "type:feature" --color A2EEEF --description "New capability"
+gh label create "type:chore"   --color CCCCCC --description "Maintenance / refactor / housekeeping"
+```
+
+(Stock `bug` / `enhancement` labels can stay or be deleted — the
+`type:*` axis supersedes them.)
+
+Add minimal issue templates at `.github/ISSUE_TEMPLATE/`:
+
+- `bug.yml` — title, repro steps, expected/actual, module dropdown,
+  area dropdown.
+- `feature.yml` — title, motivation, sketch of acceptance criteria,
+  module dropdown.
+
+The dropdowns set labels automatically (`labels:` block on each
+option), so triage doesn't need a manual label pass for templated
+issues.
+
+**Exit:** ~21 labels created; two YAML templates in
+`.github/ISSUE_TEMPLATE/`.
 
 ### Phase 3 — File backlog issues + populate Projects *(~1.5 hours)*
 
@@ -288,6 +347,94 @@ it belong to?
 **Exit:** every pending unit of work is an issue, attached to a Project,
 with a Target Version and Priority.
 
+### Phase 3.5 — Rewrite migrated memory entries to pointers *(~30 min)*
+
+For each "to do / future work" memory entry that became (or already
+was) a tracked issue, replace the body with a one-line pointer so the
+`MEMORY.md` index entry survives but the duplicated content goes away.
+*(User decision 2026-04-30: keep memory entries as pointers, don't
+delete.)*
+
+**Memory entries → issues:**
+
+| Memory file | Issue | Action |
+|---|---|---|
+| `quest_typed_requirements.md` | **#12 (existing)** | Rewrite body to pointer; **do not** file a new issue. |
+| `gorgon_query_box_shortcuts.md` | new (Phase 3) | Rewrite after issue is filed. |
+| `rarity_color_scheme.md` | new (Phase 3) | Rewrite after issue is filed. |
+| `celebrimbor_aggregator_first_result_bug.md` | new (Phase 3) | Rewrite after issue is filed. |
+| `smaug_remaining_tabs.md` | new (Phase 3, multiple) | Rewrite to point at the parent Project filter for `module:smaug`. |
+
+**Pointer template** (replace whole body):
+
+```markdown
+---
+name: {{original name}}
+description: Tracked in #NN — {{one-line summary}}
+type: project
+---
+
+Tracked in https://github.com/arthur-conde/project-gorgon/issues/NN.
+```
+
+Update the `description:` frontmatter to match. Leave `MEMORY.md`
+index entry intact — its existing pointer line still resolves.
+
+**Exit:** every "to do" memory entry is a 1-line pointer; no
+duplicated content.
+
+### Phase 3.6 — Audit reference / current-state memory entries *(~30 min)*
+
+For each "Reference / current-state" memory entry, decide: **delete**
+(if it duplicates code-derivable state per `CLAUDE.md`'s memory rules)
+or **keep** (if it captures non-obvious context).
+
+| Memory file | Action | Why |
+|---|---|---|
+| `gorgon_architecture.md` | **delete** | Duplicates `CLAUDE.md`'s architecture section. |
+| `mithril_reference_design_notebook.md` | **keep**, narrow | Body is a pointer at `docs/mithril-reference-shape-quirks.md`; keep but verify the pointer still resolves after Phase 4. |
+| `samwise_parser.md` | **keep** | Captures gardening identification trade-offs not in code. |
+| `character_presence_service.md` | **keep** | Cross-module shell coupling note not obvious from code. |
+| `celebrimbor_result_effects.md` | **keep** | Tracks the ~686-effect deferred backlog by category. |
+| `shell_module_coupling.md` | **keep** | Status doc for the leak audit; non-obvious from code. |
+| `gorgon_calibration_repo.md` | **keep** | External-repo pointer; would otherwise need to grep for it. |
+
+Drop the deleted entries from `MEMORY.md`'s "Reference / current-state"
+section.
+
+**Exit:** memory's reference section is leaner; no entries duplicate
+code or `CLAUDE.md`.
+
+### Phase 3.7 — Audit `~/.claude/plans/` folder *(~1.5 hours)*
+
+46 gorgon-related plan files exist under `C:\Users\arthu\.claude\plans\`
+(ripgrep for the module names). Most are spent — the work shipped via
+a merged PR — but the folder hasn't been pruned. *(User decision
+2026-04-30: audit + delete spent plans; out-of-repo chore.)*
+
+For each plan file:
+
+1. Identify the corresponding work. Try, in order:
+   - Grep the plan body for a `gh pr` / `github.com/.../pull/` URL.
+   - Match the plan title against `gh pr list --state merged --search "<keyword>"`.
+   - Match the filename's keyword against branch names in
+     `git -C "i:/src/project gorgon" branch -a --merged main`.
+2. **If the work merged:** delete the plan file. The git history is
+   the authoritative record.
+3. **If unfinished:** file an issue (or attach to an existing one)
+   capturing the leftover work, then delete the plan file. Issue
+   description references the plan via a quoted excerpt if useful.
+4. **If unclear:** leave the file in place and note it in a
+   short summary written at session end.
+
+This is a chore that runs **outside** the migration PR (the plans
+folder is not in the repo). Run it as housekeeping after the migration
+PR merges, so any newly-filed issues land on the populated Project.
+
+**Exit:** the plans folder is meaningfully smaller (target: under 15
+gorgon-related files; remainder are genuinely active or unfinished
+work tracked in an issue).
+
 ### Phase 4 — Trim roadmap docs + delete migrated files *(~1 hour)*
 
 For each of `celebrimbor-roadmap.md`, `smaug-roadmap.md`,
@@ -313,6 +460,74 @@ rule there prevents drift.
 
 **Exit:** PR diff shows: deleted migrated docs, trimmed roadmaps with
 Project links, updated CLAUDE.md.
+
+### Phase 4.5 — Make the new layout discoverable to agents and humans *(~30 min)*
+
+Beyond `CLAUDE.md` (Phase 4) and the wiki `Home.md` (Phase 1), wire
+the four-tier rule into two more surfaces an agent or contributor
+might consult first:
+
+1. **Auto-memory standards entry** — write
+   `C:\Users\arthu\.claude\projects\i--src-project-gorgon\memory\where_things_live.md`:
+
+   ```markdown
+   ---
+   name: Where Mithril project knowledge lives
+   description: Four-tier rule — Projects (live state) / Issues (tasks) / wiki (reference) / docs/ (design narrative)
+   type: feedback
+   ---
+
+   When working in the Mithril (Project Gorgon) repo, route new
+   content by tier:
+
+   - **Pending unit of work** → GitHub Issue, attach to the
+     `Mithril Roadmap` Project.
+   - **Roadmap / prioritisation state** → the `Mithril Roadmap`
+     Project's custom fields (`Status`, `Priority`, `Target Version`).
+   - **Stable reference / process / user guides** → the wiki
+     (`https://github.com/arthur-conde/project-gorgon/wiki`).
+   - **Design rationale that co-evolves with code** → `docs/` in the
+     code repo.
+   - **Implementation spec for a follow-up agent** →
+     `docs/agent-plans/`. Open with a `**Tracked in:** #NN` line.
+
+   **Why:** confirmed during the docs/wiki/Projects migration on
+   2026-04-30; encoding here so a fresh agent has the rule loaded
+   before it touches a file.
+   ```
+
+   Add to `MEMORY.md` under "Standards & guidelines":
+
+   ```
+   - [Where Mithril project knowledge lives](where_things_live.md) — Projects/Issues/wiki/docs four-tier rule
+   ```
+
+2. **`README.md`** — add a "## Project knowledge map" section near
+   the top (above any installation instructions):
+
+   ```markdown
+   ## Project knowledge map
+
+   - **Roadmap & live status** → [Mithril Roadmap Project]({project_url})
+   - **Open work / bugs** → [Issues](https://github.com/arthur-conde/project-gorgon/issues)
+   - **Stable reference & user guides** → [Wiki](https://github.com/arthur-conde/project-gorgon/wiki)
+   - **Design rationale & agent plans** → [`docs/`](docs/)
+   ```
+
+   Substitute the actual Project URL from Phase 2.
+
+3. **Plan template convention** — extend `CLAUDE.md`'s "Where does
+   new content go?" subsection with a one-line rule:
+
+   > Every new `docs/agent-plans/*.md` opens with a `**Tracked in:** #NN`
+   > line (or `_no issue yet_` if pre-issue). Spinning up an agent on
+   > a plan gives them the issue context for free.
+
+**Exit:** four discoverability surfaces are in sync (`CLAUDE.md`, wiki
+`Home`, auto-memory `where_things_live.md`, repo `README.md`).
+Smoke-test by starting a fresh Claude Code session and asking "where
+do I file a new bug for the parser?" — the agent should cite Issues +
+the `module:samwise` (or whichever) label without grepping.
 
 ### Phase 5 — Open the PR + close the agent plan *(~15 min)*
 
@@ -391,12 +606,18 @@ put new content. Encode these in `CLAUDE.md` and the wiki Home page:
 
 - Phase 0: 15 min
 - Phase 1: 1 hour
-- Phase 2: 45 min
+- Phase 2: 30 min *(was 45 min — single Project, not five)*
+- Phase 2.5: 30 min *(labels + issue templates)*
 - Phase 3: 1.5 hours
+- Phase 3.5: 30 min *(memory pointer rewrite)*
+- Phase 3.6: 30 min *(reference-memory audit)*
+- Phase 3.7: 1.5 hours *(`~/.claude/plans/` audit)*
 - Phase 4: 1 hour
+- Phase 4.5: 30 min *(discoverability surfaces)*
 - Phase 5: 15 min
 - Buffer for clarifying questions, rate-limit waits, link audit:
   30 min
 
-**Total: ~5 hours.** A long session, but mostly mechanical once the
-open questions are resolved.
+**Total: ~8 hours.** Mostly mechanical once the open questions are
+resolved. Phase 3.7 (`~/.claude/plans/` audit) is the most variable —
+budget more if many plans need spelunking against `gh pr` history.
