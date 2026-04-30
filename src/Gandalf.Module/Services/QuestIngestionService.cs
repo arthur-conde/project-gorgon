@@ -7,13 +7,15 @@ namespace Gandalf.Services;
 
 /// <summary>
 /// Subscribes to <see cref="IPlayerLogStream"/> and routes quest journal events
-/// (<c>ProcessLoadQuest</c> / <c>ProcessCompleteQuest</c>) into
-/// <see cref="QuestSource"/>. No <c>ModuleGate</c> wait — Gandalf is eager.
+/// (<c>ProcessLoadQuests</c> bulk login + <c>ProcessBook("New Quest:" …)</c>
+/// per-accept + <c>ProcessCompleteQuest</c>) into <see cref="QuestSource"/>.
+/// No <c>ModuleGate</c> wait — Gandalf is eager.
 /// </summary>
 public sealed class QuestIngestionService : BackgroundService
 {
     private readonly IPlayerLogStream _stream;
-    private readonly QuestLoadedParser _loaded;
+    private readonly QuestJournalLoadParser _journalLoad;
+    private readonly QuestAcceptedParser _accepted;
     private readonly QuestCompletedParser _completed;
     private readonly QuestSource _source;
     private readonly IDiagnosticsSink? _diag;
@@ -21,13 +23,15 @@ public sealed class QuestIngestionService : BackgroundService
 
     public QuestIngestionService(
         IPlayerLogStream stream,
-        QuestLoadedParser loaded,
+        QuestJournalLoadParser journalLoad,
+        QuestAcceptedParser accepted,
         QuestCompletedParser completed,
         QuestSource source,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
-        _loaded = loaded;
+        _journalLoad = journalLoad;
+        _accepted = accepted;
         _completed = completed;
         _source = source;
         _diag = diag;
@@ -44,9 +48,16 @@ public sealed class QuestIngestionService : BackgroundService
 
     private void Dispatch(RawLogLine raw)
     {
-        if (_loaded.TryParse(raw.Line, raw.Timestamp) is QuestLoadedEvent loaded)
+        if (_journalLoad.TryParse(raw.Line, raw.Timestamp) is QuestJournalLoadedEvent loaded)
         {
-            _source.OnQuestLoaded(loaded.QuestInternalName);
+            _source.OnQuestJournalLoaded(loaded.WorkOrderQuestIds, loaded.RegularQuestIds);
+            FirstObservation();
+            return;
+        }
+
+        if (_accepted.TryParse(raw.Line, raw.Timestamp) is QuestAcceptedEvent accepted)
+        {
+            _source.OnQuestAccepted(accepted.QuestInternalName);
             FirstObservation();
             return;
         }

@@ -87,8 +87,10 @@ public sealed class GandalfModule : IMithrilModule
         services.AddHostedService<GandalfSplitMigration>();
 
         // Quest source — repeatable-quest cooldowns derived from QuestEntry.Reuse*
-        // and ProcessLoadQuest / ProcessCompleteQuest log lines.
-        services.AddSingleton<QuestLoadedParser>();
+        // and the captured quest signal flow (ProcessLoadQuests bulk login,
+        // ProcessBook "New Quest:" per-accept, ProcessCompleteQuest turn-in).
+        services.AddSingleton<QuestJournalLoadParser>();
+        services.AddSingleton<QuestAcceptedParser>();
         services.AddSingleton<QuestCompletedParser>();
         services.AddSingleton<QuestSource>();
         services.AddHostedService<QuestIngestionService>();

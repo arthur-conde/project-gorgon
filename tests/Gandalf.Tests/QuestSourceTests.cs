@@ -143,7 +143,7 @@ public class QuestSourceTests : IDisposable
         var (src, derived, _, time) = Build(quest);
         try
         {
-            src.OnQuestLoaded("Q1");
+            src.OnQuestAccepted("Q1");
             src.PendingInternalNames.Should().Contain("Q1");
 
             src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
@@ -220,15 +220,47 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void OnQuestLoaded_adds_to_pending()
+    public void OnQuestAccepted_adds_to_pending()
     {
         var (src, derived, _, _) = Build();
         try
         {
-            src.OnQuestLoaded("Q1");
-            src.OnQuestLoaded("Q2");
+            src.OnQuestAccepted("Q1");
+            src.OnQuestAccepted("Q2");
 
             src.PendingInternalNames.Should().BeEquivalentTo("Q1", "Q2");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnQuestJournalLoaded_replaces_pending_with_resolved_internal_names()
+    {
+        var q1 = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(1));
+        var q2 = QuestEntryFactory.Repeatable("quest_3", "Quest_Reg_3", "Regular 3", TimeSpan.FromHours(1));
+        var (src, derived, _, _) = Build(q1, q2);
+        try
+        {
+            // Pre-seed _pending with a stale name; the bulk-load should clear it.
+            src.OnQuestAccepted("Quest_StaleFromPriorSession");
+            src.PendingInternalNames.Should().Contain("Quest_StaleFromPriorSession");
+
+            src.OnQuestJournalLoaded([50208], [3]);
+
+            src.PendingInternalNames.Should().BeEquivalentTo("Quest_WO_50208", "Quest_Reg_3");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnQuestJournalLoaded_drops_unknown_quest_ids_silently()
+    {
+        var q1 = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(1));
+        var (src, derived, _, _) = Build(q1);
+        try
+        {
+            src.OnQuestJournalLoaded([50208, 999999], []);
+            src.PendingInternalNames.Should().BeEquivalentTo("Quest_WO_50208");
         }
         finally { src.Dispose(); derived.Dispose(); }
     }

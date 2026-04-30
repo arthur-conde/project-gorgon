@@ -4,21 +4,101 @@ using Xunit;
 
 namespace Gandalf.Tests.Parsing;
 
-public sealed class QuestLoadedParserTests
+public sealed class QuestJournalLoadParserTests
 {
-    private readonly QuestLoadedParser _parser = new();
+    private readonly QuestJournalLoadParser _parser = new();
 
     [Fact]
-    public void Parses_load_quest_line()
+    public void Parses_real_login_capture_with_two_lists()
     {
-        // Verification owed: exact shape pending #60 spike. v1 expects the
-        // first quoted argument to carry the InternalName.
-        var line = "[12:34:56] LocalPlayer: ProcessLoadQuest(\"Quest_RepeatableSerbule01\", 0, True)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
+        // From Player-prev.log:2173, captured 2026-04-29 15:12:44. Trimmed for
+        // readability — full capture has ~18 work-order ids and ~280 regular ids.
+        var line = "[15:12:44] LocalPlayer: ProcessLoadQuests(8285856, TransitionalQuestState[], "
+                 + "[50208,51252,51258,50675,], [3,4,5,21001,21501,])";
+        var evt = (QuestJournalLoadedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
-        evt.Should().BeOfType<QuestLoadedEvent>();
-        ((QuestLoadedEvent)evt!).QuestInternalName.Should().Be("Quest_RepeatableSerbule01");
+        evt.Should().NotBeNull();
+        evt!.WorkOrderQuestIds.Should().Equal(50208, 51252, 51258, 50675);
+        evt.RegularQuestIds.Should().Equal(3, 4, 5, 21001, 21501);
     }
+
+    [Fact]
+    public void Parses_empty_lists()
+    {
+        var line = "LocalPlayer: ProcessLoadQuests(123, TransitionalQuestState[], [], [])";
+        var evt = (QuestJournalLoadedEvent?)_parser.TryParse(line, DateTime.UtcNow);
+
+        evt.Should().NotBeNull();
+        evt!.WorkOrderQuestIds.Should().BeEmpty();
+        evt.RegularQuestIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Returns_null_for_singular_ProcessLoadQuest() =>
+        // Defensive — the placeholder-era regex matched a (non-existent)
+        // singular ProcessLoadQuest line. Confirm the new parser ignores it.
+        _parser.TryParse("LocalPlayer: ProcessLoadQuest(\"Quest_X\", 0, True)", DateTime.UtcNow).Should().BeNull();
+
+    [Fact]
+    public void Returns_null_for_unrelated_line() =>
+        _parser.TryParse("LocalPlayer: ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
+
+    [Fact]
+    public void Returns_null_for_empty_line() =>
+        _parser.TryParse("", DateTime.UtcNow).Should().BeNull();
+}
+
+public sealed class QuestAcceptedParserTests
+{
+    // Real captures from Player-prev.log (line 449668) and Player.log (line 65933):
+    // ProcessBook("New Quest: <<<quest_25212_Name>>>", ...) and quest_25211.
+    private readonly QuestAcceptedParser _parser;
+
+    public QuestAcceptedParserTests()
+    {
+        var refData = new FakeReferenceData([
+            QuestEntryFactory.Repeatable("quest_25211", "Quest_Sample_25211", "Sample 25211", TimeSpan.FromHours(20)),
+            QuestEntryFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample 25212", TimeSpan.FromHours(20)),
+        ]);
+        _parser = new QuestAcceptedParser(refData);
+    }
+
+    [Fact]
+    public void Parses_real_capture_quest_25212()
+    {
+        var line = "[01:10:53] LocalPlayer: ProcessBook(\"New Quest: <<<quest_25212_Name>>>\", "
+                 + "\"<<<quest_25212_Preface>>>\", \"\", \"\", \"\", False, False, False, False, False, \"\")";
+        var evt = (QuestAcceptedEvent?)_parser.TryParse(line, DateTime.UtcNow);
+
+        evt.Should().NotBeNull();
+        evt!.QuestInternalName.Should().Be("Quest_Sample_25212");
+    }
+
+    [Fact]
+    public void Parses_real_capture_quest_25211()
+    {
+        var line = "[12:48:03] LocalPlayer: ProcessBook(\"New Quest: <<<quest_25211_Name>>>\", "
+                 + "\"<<<quest_25211_Preface>>>\", \"\", \"\", \"\", False, False, False, False, False, \"\")";
+        var evt = (QuestAcceptedEvent?)_parser.TryParse(line, DateTime.UtcNow);
+
+        evt.Should().NotBeNull();
+        evt!.QuestInternalName.Should().Be("Quest_Sample_25211");
+    }
+
+    [Fact]
+    public void Returns_null_for_non_quest_book() =>
+        // Other ProcessBook lines (lore books, NPC dialog, etc) never carry
+        // the "New Quest:" prefix.
+        _parser.TryParse(
+            "LocalPlayer: ProcessBook(\"Whispers from the Void\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+            DateTime.UtcNow).Should().BeNull();
+
+    [Fact]
+    public void Returns_null_for_unknown_quest_id() =>
+        // questId not in reference data — drop silently.
+        _parser.TryParse(
+            "LocalPlayer: ProcessBook(\"New Quest: <<<quest_999999_Name>>>\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+            DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_unrelated_line() =>
