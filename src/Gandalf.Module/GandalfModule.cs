@@ -71,7 +71,6 @@ public sealed class GandalfModule : IMithrilModule
         // through one ITimerSource and share the derived progress store.
         services.AddSingleton<ChestInteractionParser>();
         services.AddSingleton<ChestRejectionParser>();
-        services.AddSingleton<ScriptedEventBossParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
         services.AddSingleton(sp => DefeatCatalogSeed.Bundled);

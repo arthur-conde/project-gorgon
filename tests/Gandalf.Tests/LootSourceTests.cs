@@ -118,98 +118,11 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void ScriptedEvent_kill_within_cooldown_window_is_suppressed()
+    public void DefeatCooldown_corpse_search_stamps_row_for_megaspider()
     {
         var defeats = new[]
         {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax the Ever-Pudding", TimeSpan.FromHours(3), DefeatClass.ScriptedEvent),
-        };
-        var (src, derived, _, time) = Build(defeats);
-        try
-        {
-            // First kill — anchors cooldown.
-            src.OnScriptedEventBossDefeated("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
-            var firstStart = src.Progress[LootSource.DefeatKey("Olugax")].StartedAt;
-
-            // Second kill 30 minutes later, still inside the 3h window.
-            time.Advance(TimeSpan.FromMinutes(30));
-            src.OnScriptedEventBossDefeated("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
-
-            // StartedAt should NOT have moved — within-cooldown kills are suppressed.
-            src.Progress[LootSource.DefeatKey("Olugax")].StartedAt.Should().Be(firstStart);
-        }
-        finally
-        {
-            src.Dispose(); derived.Dispose();
-        }
-    }
-
-    [Fact]
-    public void ScriptedEvent_kill_after_cooldown_resets_clock()
-    {
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax the Ever-Pudding", TimeSpan.FromHours(3), DefeatClass.ScriptedEvent),
-        };
-        var (src, derived, _, time) = Build(defeats);
-        try
-        {
-            src.OnScriptedEventBossDefeated("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
-
-            time.Advance(TimeSpan.FromHours(4));
-            src.OnScriptedEventBossDefeated("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
-
-            src.Progress[LootSource.DefeatKey("Olugax")].StartedAt
-                .Should().Be(time.GetUtcNow());
-        }
-        finally
-        {
-            src.Dispose(); derived.Dispose();
-        }
-    }
-
-    [Fact]
-    public void ScriptedEvent_with_unknown_npc_creates_no_row()
-    {
-        var (src, derived, _, time) = Build([]);
-        try
-        {
-            src.OnScriptedEventBossDefeated("Some Random Mob", time.GetUtcNow().UtcDateTime);
-            src.Progress.Should().BeEmpty();
-        }
-        finally
-        {
-            src.Dispose(); derived.Dispose();
-        }
-    }
-
-    [Fact]
-    public void ScriptedEvent_path_ignores_DefeatCooldown_class_entry()
-    {
-        // Catalog has Megaspider as DefeatCooldown class. The kill-credit signal
-        // path must not stamp a row for it — only the corpse-search path does.
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3), DefeatClass.DefeatCooldown),
-        };
-        var (src, derived, _, time) = Build(defeats);
-        try
-        {
-            src.OnScriptedEventBossDefeated("Megaspider", time.GetUtcNow().UtcDateTime);
-            src.Progress.Should().BeEmpty();
-        }
-        finally
-        {
-            src.Dispose(); derived.Dispose();
-        }
-    }
-
-    [Fact]
-    public void DefeatCooldown_corpse_search_stamps_row_for_megaspider_class_entry()
-    {
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3), DefeatClass.DefeatCooldown),
+            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3)),
         };
         var (src, derived, _, time) = Build(defeats);
         try
@@ -226,19 +139,23 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefeatCooldown_path_ignores_ScriptedEvent_class_entry()
+    public void DefeatCooldown_corpse_search_stamps_row_for_olugax()
     {
-        // Catalog has Olugax as ScriptedEvent class. A corpse-search signal
-        // for Olugax must not stamp via this path — the kill-credit path does.
+        // Olugax used to route through ScriptedEventBossParser on a kill-credit
+        // line. The 2026-04-30 capture confirmed it shares Megaspider's
+        // signal mechanism, so the corpse-search positive signal is the
+        // single canonical path.
         var defeats = new[]
         {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax the Ever-Pudding", TimeSpan.FromHours(3), DefeatClass.ScriptedEvent),
+            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax The Ever-Pudding", TimeSpan.FromHours(3)),
         };
         var (src, derived, _, time) = Build(defeats);
         try
         {
-            src.OnDefeatCooldownObserved("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
-            src.Progress.Should().BeEmpty();
+            src.OnDefeatCooldownObserved("Olugax The Ever-Pudding", time.GetUtcNow().UtcDateTime);
+
+            src.Progress.Should().ContainKey(LootSource.DefeatKey("Olugax"));
+            src.Progress[LootSource.DefeatKey("Olugax")].StartedAt.Should().Be(time.GetUtcNow());
         }
         finally
         {
@@ -268,7 +185,7 @@ public class LootSourceTests : IDisposable
     {
         var defeats = new[]
         {
-            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3), DefeatClass.DefeatCooldown),
+            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3)),
         };
         var (src, derived, _, time) = Build(defeats);
         try
@@ -302,7 +219,7 @@ public class LootSourceTests : IDisposable
     {
         var defeats = new[]
         {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax the Ever-Pudding", TimeSpan.FromHours(3), DefeatClass.ScriptedEvent),
+            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax The Ever-Pudding", TimeSpan.FromHours(3)),
         };
         var (src, derived, _, _) = Build(defeats);
         try

@@ -24,12 +24,3 @@ public sealed record InteractionStartEvent(DateTime Timestamp, long InteractorId
 /// </summary>
 public sealed record ChestCooldownObservedEvent(DateTime Timestamp, string ChestInternalName, TimeSpan Duration)
     : LogEvent(Timestamp);
-
-/// <summary>
-/// Player earned a kill credit on a reward-cooldown creature. v1 anchors the
-/// cooldown on this line; the "reduced rewards" line that distinguishes a
-/// rewarded kill from a cooldown-suppressed one is **Verification owed** per the
-/// wiki and will refine this trigger when captured.
-/// </summary>
-public sealed record DefeatRewardEvent(DateTime Timestamp, string NpcDisplayName)
-    : LogEvent(Timestamp);
