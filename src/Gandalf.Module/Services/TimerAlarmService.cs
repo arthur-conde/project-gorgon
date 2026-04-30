@@ -6,54 +6,62 @@ using Mithril.Shared.Wpf;
 
 namespace Gandalf.Services;
 
+/// <summary>
+/// Plays the alarm sound + flashes the window when a timer transitions to ready.
+/// Subscribes to <see cref="ITimerSource.TimerReady"/> rather than
+/// <c>TimerProgressService.TimerExpired</c> directly — the source-level event is
+/// the cross-source surface a future shell-level inbox will share. Today only the
+/// user feed is wired in; quest/loot sources will register the same way when those
+/// phases land.
+/// </summary>
 public sealed class TimerAlarmService : IDisposable
 {
-    private readonly TimerProgressService _progress;
+    private readonly ITimerSource _source;
     private readonly GandalfSettings _settings;
-    private readonly HashSet<string> _firedIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _firedKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
-    public TimerAlarmService(TimerProgressService progress, GandalfSettings settings)
+    public TimerAlarmService(ITimerSource source, GandalfSettings settings)
     {
-        _progress = progress;
+        _source = source;
         _settings = settings;
-        _progress.TimerExpired += OnTimerExpired;
+        _source.TimerReady += OnTimerReady;
     }
 
     public void SnoozeAll()
     {
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.SnoozeMinutes);
-        foreach (var id in _firedIds.ToArray()) _snoozedUntil[id] = until;
-        _firedIds.Clear();
+        foreach (var key in _firedKeys.ToArray()) _snoozedUntil[key] = until;
+        _firedKeys.Clear();
         StopAllPlayback();
     }
 
     public void DismissAll()
     {
-        _firedIds.Clear();
+        _firedKeys.Clear();
         StopAllPlayback();
     }
 
-    public void Dismiss(string id)
+    public void Dismiss(string key)
     {
-        _firedIds.Remove(id);
-        if (_playback.Remove(id, out var handle))
+        _firedKeys.Remove(key);
+        if (_playback.Remove(key, out var handle))
             handle.Stop();
     }
 
-    private void OnTimerExpired(object? sender, TimerExpiredEventArgs e)
+    private void OnTimerReady(object? sender, TimerReadyEventArgs e)
     {
         if (!_settings.AlarmEnabled) return;
-        var id = e.Def.Id;
-        if (_firedIds.Contains(id)) return;
-        if (_snoozedUntil.TryGetValue(id, out var until) && until > DateTimeOffset.UtcNow) return;
+        var key = e.Key;
+        if (_firedKeys.Contains(key)) return;
+        if (_snoozedUntil.TryGetValue(key, out var until) && until > DateTimeOffset.UtcNow) return;
 
-        _firedIds.Add(id);
+        _firedKeys.Add(key);
         Dispatch(() =>
         {
             var handle = AudioPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
-            _playback[id] = handle;
+            _playback[key] = handle;
             if (_settings.FlashWindow)
             {
                 var win = Application.Current?.MainWindow;
@@ -70,7 +78,7 @@ public sealed class TimerAlarmService : IDisposable
 
     public void Dispose()
     {
-        _progress.TimerExpired -= OnTimerExpired;
+        _source.TimerReady -= OnTimerReady;
         StopAllPlayback();
     }
 

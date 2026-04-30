@@ -15,22 +15,25 @@ namespace Gandalf.ViewModels;
 
 public sealed partial class TimerListViewModel : ObservableObject
 {
-    private readonly TimerDefinitionsService _defs;
-    private readonly TimerProgressService _progress;
-    private readonly TimerAlarmService _alarmService;
-    private readonly IDialogService _dialogService;
-    private readonly IActiveCharacterService _active;
-    private readonly ICharacterPresenceService _presence;
+    private readonly ITimerSource _source;
+    private readonly TimerDefinitionsService? _defs;
+    private readonly TimerProgressService? _progress;
+    private readonly TimerAlarmService? _alarmService;
+    private readonly IDialogService? _dialogService;
+    private readonly IActiveCharacterService? _active;
+    private readonly ICharacterPresenceService? _presence;
     private readonly DispatcherTimer _refreshTimer;
 
     public TimerListViewModel(
-        TimerDefinitionsService defs,
-        TimerProgressService progress,
-        TimerAlarmService alarmService,
-        IDialogService dialogService,
-        IActiveCharacterService active,
-        ICharacterPresenceService presence)
+        ITimerSource source,
+        TimerDefinitionsService? defs = null,
+        TimerProgressService? progress = null,
+        TimerAlarmService? alarmService = null,
+        IDialogService? dialogService = null,
+        IActiveCharacterService? active = null,
+        ICharacterPresenceService? presence = null)
     {
+        _source = source;
         _defs = defs;
         _progress = progress;
         _alarmService = alarmService;
@@ -38,8 +41,8 @@ public sealed partial class TimerListViewModel : ObservableObject
         _active = active;
         _presence = presence;
 
-        _defs.DefinitionsChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
-        _progress.ProgressChanged += (_, _) => SyncFromState();
+        _source.CatalogChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
+        _source.ProgressChanged += (_, _) => SyncFromState();
 
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
@@ -64,7 +67,8 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void AddTimer()
     {
-        var vm = new TimerDialogViewModel(existing: null, KnownRegions, KnownMaps);
+        if (_defs is null || _dialogService is null) return;
+        var vm = new TimerDialogViewModel(existing: null, isIdleOnActive: true, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;
@@ -81,15 +85,15 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void EditTimer(TimerItemViewModel? item)
     {
-        if (item is null) return;
+        if (item is null || _defs is null || _dialogService is null) return;
+        if (item.Catalog.SourceMetadata is not GandalfTimerDef existing) return;
 
-        var vm = new TimerDialogViewModel(item.View, KnownRegions, KnownMaps);
+        var isIdleOnActive = item.State == TimerState.Idle;
+        var vm = new TimerDialogViewModel(existing, isIdleOnActive, KnownRegions, KnownMaps);
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;
-
-        var isIdleOnActive = item.State == TimerState.Idle;
-        _defs.Update(item.Id, d =>
+        _defs.Update(item.Key, d =>
         {
             d.Name = vm.ResultName;
             d.Region = vm.ResultRegion;
@@ -106,41 +110,46 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void StartTimer(TimerItemViewModel? vm)
     {
-        if (vm is null) return;
+        if (vm is null || _progress is null) return;
         vm.ElapsedWhileAway = false;
-        _progress.Start(vm.Id);
+        _progress.Start(vm.Key);
     }
 
     [RelayCommand]
     private void RestartTimer(TimerItemViewModel? vm)
     {
-        if (vm is null) return;
+        if (vm is null || _progress is null) return;
         vm.ElapsedWhileAway = false;
-        _progress.Restart(vm.Id);
+        _progress.Restart(vm.Key);
     }
 
     [RelayCommand]
     private void DeleteTimer(TimerItemViewModel? vm)
     {
-        if (vm is null) return;
+        if (vm is null || _defs is null) return;
         vm.ElapsedWhileAway = false;
-        _defs.Remove(vm.Id);
+        _defs.Remove(vm.Key);
     }
 
     [RelayCommand]
-    private void ClearDone() => _progress.ClearAllDoneOnActive();
+    private void ClearDone()
+    {
+        _progress?.ClearAllDoneOnActive();
+    }
 
     [RelayCommand]
     private void CopyTimer(TimerItemViewModel? vm)
     {
         if (vm is null) return;
-        var json = TimerClipboard.Serialize([vm.View.Def]);
+        if (vm.Catalog.SourceMetadata is not GandalfTimerDef def) return;
+        var json = TimerClipboard.Serialize([def]);
         try { Clipboard.SetText(json); } catch { }
     }
 
     [RelayCommand]
     private void PasteTimers()
     {
+        if (_defs is null) return;
         string text;
         try { text = Clipboard.GetText(); } catch { return; }
         if (string.IsNullOrWhiteSpace(text)) return;
@@ -156,18 +165,19 @@ public sealed partial class TimerListViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SnoozeAll() => _alarmService.SnoozeAll();
+    private void SnoozeAll() => _alarmService?.SnoozeAll();
 
     [RelayCommand]
-    private void DismissAll() => _alarmService.DismissAll();
+    private void DismissAll() => _alarmService?.DismissAll();
 
     private void SyncFromState()
     {
         Timers.Clear();
-        foreach (var def in _defs.Definitions)
+        var progress = _source.Progress;
+        foreach (var entry in _source.Catalog)
         {
-            var progress = _progress.GetProgress(def.Id) ?? new TimerProgress();
-            Timers.Add(new TimerItemViewModel(new TimerView(def, progress)));
+            progress.TryGetValue(entry.Key, out var p);
+            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p)));
         }
 
         ApplyElapsedWhileAwayBadges();
@@ -183,6 +193,7 @@ public sealed partial class TimerListViewModel : ObservableObject
     /// </summary>
     private void ApplyElapsedWhileAwayBadges()
     {
+        if (_active is null || _presence is null) return;
         var name = _active.ActiveCharacterName;
         var server = _active.ActiveServer;
         if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(server)) return;
@@ -193,16 +204,19 @@ public sealed partial class TimerListViewModel : ObservableObject
         var now = DateTimeOffset.UtcNow;
         foreach (var vm in Timers)
         {
-            if (ElapsedWhileAwayClassifier.IsElapsedWhileAway(
-                vm.View.Progress, vm.View.Def.Duration, lastActive, now))
-            {
+            if (vm.Row.Progress is null) continue;
+            // Bridge the source-shape progress into the classifier's TimerProgress shape.
+            var progress = new TimerProgress { StartedAt = vm.Row.Progress.StartedAt };
+            if (ElapsedWhileAwayClassifier.IsElapsedWhileAway(progress, vm.Row.Duration, lastActive, now))
                 vm.ElapsedWhileAway = true;
-            }
         }
     }
 
     private void RefreshAutocomplete()
     {
+        // Autocomplete still reads the user-specific def list (Region+Map are user-only fields).
+        if (_defs is null) return;
+
         var regions = _defs.Definitions
             .Select(d => d.Region)
             .Where(r => !string.IsNullOrWhiteSpace(r))
@@ -224,14 +238,15 @@ public sealed partial class TimerListViewModel : ObservableObject
 
     private void Tick()
     {
-        _progress.CheckExpirations();
+        _progress?.CheckExpirations();
         // Re-join with latest progress in case CheckExpirations stamped a CompletedAt.
+        var progress = _source.Progress;
+        var catalog = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         foreach (var vm in Timers)
         {
-            var def = _defs.Definitions.FirstOrDefault(d => d.Id == vm.Id);
-            if (def is null) continue;
-            var progress = _progress.GetProgress(def.Id) ?? new TimerProgress();
-            vm.UpdateView(new TimerView(def, progress));
+            if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
+            progress.TryGetValue(vm.Key, out var p);
+            vm.UpdateRow(new TimerRow(entry, p));
         }
     }
 }
