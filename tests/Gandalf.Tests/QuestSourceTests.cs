@@ -85,31 +85,26 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void Catalog_filter_drops_QuestCompletedRecently_gated_quests()
+    public void Catalog_admits_quests_with_any_requirement_type_when_Reuse_is_present()
     {
-        var gated = QuestEntryFactory.Repeatable("quest_g", "QG", "Gated", TimeSpan.FromHours(1),
+        // The game is the authoritative gate; QuestSource does not re-evaluate
+        // QuestCompletedRecently / MinDelayAfterFirstCompletion / etc. Any quest
+        // with a Reuse* duration is in the catalog and a future completion
+        // observation will stamp the cooldown row.
+        var recentlyGated = QuestEntryFactory.Repeatable("quest_a", "QA", "Recently-gated daily",
+            TimeSpan.FromHours(20),
             requirements: QuestEntryFactory.TimeGate("QuestCompletedRecently"));
-        var ok = QuestEntryFactory.Repeatable("quest_ok", "QOK", "Ungated", TimeSpan.FromHours(1));
-
-        var (src, derived, _, _) = Build(gated, ok);
-        try
-        {
-            src.Catalog.Should().HaveCount(1);
-            src.Catalog[0].DisplayName.Should().Be("Ungated");
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void Catalog_filter_drops_MinDelayAfterFirstCompletion_prefixed_requirements()
-    {
-        var gated = QuestEntryFactory.Repeatable("quest_g", "QG", "Gated", TimeSpan.FromHours(1),
+        var firstDelayGated = QuestEntryFactory.Repeatable("quest_b", "QB", "First-delay-gated daily",
+            TimeSpan.FromHours(20),
             requirements: QuestEntryFactory.TimeGate("MinDelayAfterFirstCompletion_Hours"));
+        var plain = QuestEntryFactory.Repeatable("quest_c", "QC", "Plain daily", TimeSpan.FromHours(20));
 
-        var (src, derived, _, _) = Build(gated);
+        var (src, derived, _, _) = Build(recentlyGated, firstDelayGated, plain);
         try
         {
-            src.Catalog.Should().BeEmpty();
+            src.Catalog.Should().HaveCount(3);
+            src.Catalog.Select(c => c.DisplayName).Should().BeEquivalentTo(
+                "Recently-gated daily", "First-delay-gated daily", "Plain daily");
         }
         finally { src.Dispose(); derived.Dispose(); }
     }

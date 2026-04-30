@@ -18,15 +18,17 @@ public sealed partial class LootTimersViewModel : ObservableObject
 {
     private readonly LootSource _source;
     private readonly DerivedTimerProgressService _derived;
+    private readonly TimeProvider _time;
     private readonly DispatcherTimer _refreshTimer;
 
     [ObservableProperty] private LootKindFilter _kindFilter = LootKindFilter.All;
     [ObservableProperty] private LootStateFilter _stateFilter = LootStateFilter.All;
 
-    public LootTimersViewModel(LootSource source, DerivedTimerProgressService derived)
+    public LootTimersViewModel(LootSource source, DerivedTimerProgressService derived, TimeProvider? time = null)
     {
         _source = source;
         _derived = derived;
+        _time = time ?? TimeProvider.System;
 
         _source.CatalogChanged += (_, _) => Sync();
         _source.ProgressChanged += (_, _) => Sync();
@@ -96,7 +98,7 @@ public sealed partial class LootTimersViewModel : ObservableObject
         foreach (var entry in _source.Catalog)
         {
             progress.TryGetValue(entry.Key, out var p);
-            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p)));
+            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time }));
         }
         TimersView.Refresh();
     }
@@ -109,7 +111,7 @@ public sealed partial class LootTimersViewModel : ObservableObject
         {
             if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
             progress.TryGetValue(vm.Key, out var p);
-            vm.UpdateRow(new TimerRow(entry, p));
+            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
         }
         TimersView.Refresh();
     }

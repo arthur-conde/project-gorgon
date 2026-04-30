@@ -22,6 +22,7 @@ public sealed partial class TimerListViewModel : ObservableObject
     private readonly IDialogService? _dialogService;
     private readonly IActiveCharacterService? _active;
     private readonly ICharacterPresenceService? _presence;
+    private readonly TimeProvider _time;
     private readonly DispatcherTimer _refreshTimer;
 
     public TimerListViewModel(
@@ -31,7 +32,8 @@ public sealed partial class TimerListViewModel : ObservableObject
         TimerAlarmService? alarmService = null,
         IDialogService? dialogService = null,
         IActiveCharacterService? active = null,
-        ICharacterPresenceService? presence = null)
+        ICharacterPresenceService? presence = null,
+        TimeProvider? time = null)
     {
         _source = source;
         _defs = defs;
@@ -40,6 +42,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         _dialogService = dialogService;
         _active = active;
         _presence = presence;
+        _time = time ?? TimeProvider.System;
 
         _source.CatalogChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
         _source.ProgressChanged += (_, _) => SyncFromState();
@@ -177,7 +180,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         foreach (var entry in _source.Catalog)
         {
             progress.TryGetValue(entry.Key, out var p);
-            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p)));
+            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time }));
         }
 
         ApplyElapsedWhileAwayBadges();
@@ -201,7 +204,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         var lastActive = _presence.GetLastActiveAt(name, server);
         if (lastActive is null) return;
 
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
         foreach (var vm in Timers)
         {
             if (vm.Row.Progress is null) continue;
@@ -246,7 +249,7 @@ public sealed partial class TimerListViewModel : ObservableObject
         {
             if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
             progress.TryGetValue(vm.Key, out var p);
-            vm.UpdateRow(new TimerRow(entry, p));
+            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
         }
     }
 }

@@ -22,16 +22,18 @@ public sealed partial class QuestTimersViewModel : ObservableObject
 {
     private readonly QuestSource _source;
     private readonly DerivedTimerProgressService _derived;
+    private readonly TimeProvider _time;
     private readonly DispatcherTimer _refreshTimer;
     private readonly Dictionary<string, TimerItemViewModel> _byKey = new(StringComparer.Ordinal);
     private Dictionary<string, TimerCatalogEntry> _catalogByKey = new(StringComparer.Ordinal);
 
     [ObservableProperty] private QuestStateFilter _stateFilter = QuestStateFilter.All;
 
-    public QuestTimersViewModel(QuestSource source, DerivedTimerProgressService derived)
+    public QuestTimersViewModel(QuestSource source, DerivedTimerProgressService derived, TimeProvider? time = null)
     {
         _source = source;
         _derived = derived;
+        _time = time ?? TimeProvider.System;
 
         _source.CatalogChanged += (_, _) => Sync();
         _source.ProgressChanged += (_, _) => Sync();
@@ -125,11 +127,11 @@ public sealed partial class QuestTimersViewModel : ObservableObject
             seen.Add(entry.Key);
             if (_byKey.TryGetValue(entry.Key, out var vm))
             {
-                vm.UpdateRow(new TimerRow(entry, p));
+                vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
             }
             else
             {
-                vm = new TimerItemViewModel(new TimerRow(entry, p));
+                vm = new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time });
                 _byKey[entry.Key] = vm;
                 Timers.Add(vm);
             }
@@ -162,7 +164,7 @@ public sealed partial class QuestTimersViewModel : ObservableObject
             if (!_catalogByKey.TryGetValue(vm.Key, out var entry)) continue;
             progress.TryGetValue(vm.Key, out var p);
             var prior = vm.State;
-            vm.UpdateRow(new TimerRow(entry, p));
+            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
             if (vm.State != prior) stateChanged = true;
         }
 
