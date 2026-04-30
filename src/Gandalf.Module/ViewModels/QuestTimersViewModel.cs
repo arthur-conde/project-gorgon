@@ -13,12 +13,18 @@ namespace Gandalf.ViewModels;
 /// ViewModel for the Quests tab. Renders repeatable-quest cooldowns from the
 /// shared <see cref="QuestSource"/> and exposes the State filter chip
 /// (Pending / Cooling / Ready / All) plus bulk dismiss commands.
+///
+/// Materializes only the rows the player cares about: pending in journal, or
+/// cooling/done. The full catalog is ~2,000 entries — projecting it all into
+/// a non-virtualizing WrapPanel froze the UI thread.
 /// </summary>
 public sealed partial class QuestTimersViewModel : ObservableObject
 {
     private readonly QuestSource _source;
     private readonly DerivedTimerProgressService _derived;
     private readonly DispatcherTimer _refreshTimer;
+    private readonly Dictionary<string, TimerItemViewModel> _byKey = new(StringComparer.Ordinal);
+    private Dictionary<string, TimerCatalogEntry> _catalogByKey = new(StringComparer.Ordinal);
 
     [ObservableProperty] private QuestStateFilter _stateFilter = QuestStateFilter.All;
 
@@ -86,35 +92,81 @@ public sealed partial class QuestTimersViewModel : ObservableObject
 
     private bool IsPending(TimerItemViewModel vm)
     {
-        // Pending: in the player's journal but not currently cooling.
         if (vm.Catalog.SourceMetadata is not QuestCatalogPayload payload) return false;
         if (vm.State != TimerState.Idle) return false;
         return _source.PendingInternalNames.Contains(payload.Quest.InternalName);
     }
 
+    private static bool IsRelevant(TimerCatalogEntry entry, TimerProgressEntry? progress, IReadOnlySet<string> pending)
+    {
+        if (progress is { DismissedAt: null }) return true;
+        if (entry.SourceMetadata is QuestCatalogPayload payload &&
+            pending.Contains(payload.Quest.InternalName)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Reconcile <see cref="Timers"/> against the source's relevant set. Diffs
+    /// in place — adds new rows, updates existing rows, removes gone rows —
+    /// instead of clearing the collection, which would thrash WPF's grouping.
+    /// </summary>
     private void Sync()
     {
-        Timers.Clear();
+        _catalogByKey = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         var progress = _source.Progress;
+        var pending = _source.PendingInternalNames;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in _source.Catalog)
         {
             progress.TryGetValue(entry.Key, out var p);
-            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p)));
+            if (!IsRelevant(entry, p, pending)) continue;
+
+            seen.Add(entry.Key);
+            if (_byKey.TryGetValue(entry.Key, out var vm))
+            {
+                vm.UpdateRow(new TimerRow(entry, p));
+            }
+            else
+            {
+                vm = new TimerItemViewModel(new TimerRow(entry, p));
+                _byKey[entry.Key] = vm;
+                Timers.Add(vm);
+            }
         }
+
+        for (var i = Timers.Count - 1; i >= 0; i--)
+        {
+            var vm = Timers[i];
+            if (seen.Contains(vm.Key)) continue;
+            Timers.RemoveAt(i);
+            _byKey.Remove(vm.Key);
+        }
+
         TimersView.Refresh();
     }
 
-    private void Tick()
+    /// <summary>
+    /// Per-second update of progress fractions and time labels. Per-item
+    /// <c>OnPropertyChanged</c> handles the bindings; only call
+    /// <see cref="ICollectionView.Refresh"/> when an item's <c>State</c>
+    /// transitioned (Running &harr; Done) — that changes filter / sort keys.
+    /// </summary>
+    internal void Tick()
     {
         var progress = _source.Progress;
-        var catalog = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
-        foreach (var vm in Timers)
+        var stateChanged = false;
+
+        foreach (var vm in _byKey.Values)
         {
-            if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
+            if (!_catalogByKey.TryGetValue(vm.Key, out var entry)) continue;
             progress.TryGetValue(vm.Key, out var p);
+            var prior = vm.State;
             vm.UpdateRow(new TimerRow(entry, p));
+            if (vm.State != prior) stateChanged = true;
         }
-        TimersView.Refresh();
+
+        if (stateChanged) TimersView.Refresh();
     }
 }
 
