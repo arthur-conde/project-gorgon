@@ -22,7 +22,7 @@ public sealed class GandalfModule : IMithrilModule
     public string? IconUri => "pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico";
     public int SortOrder => 300;
     public ActivationMode DefaultActivation => ActivationMode.Eager;
-    public Type ViewType => typeof(TimerListView);
+    public Type ViewType => typeof(GandalfShellView);
     public Type? SettingsViewType => typeof(GandalfSettingsView);
 
     public void Register(IServiceCollection services)
@@ -65,9 +65,10 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<ICharacterPresenceService>()));
 
-        services.AddSingleton<TimerListView>(sp => new TimerListView
+        services.AddSingleton<GandalfShellViewModel>();
+        services.AddSingleton<GandalfShellView>(sp => new GandalfShellView
         {
-            DataContext = sp.GetRequiredService<TimerListViewModel>(),
+            DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
         });
 
         services.AddSingleton<GandalfSettingsViewModel>();
