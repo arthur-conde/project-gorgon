@@ -1,6 +1,8 @@
 # Smaug · Vendor Prices — roadmap
 
-What shipped in v1, what was deliberately deferred, and the obvious next steps.
+> **Active backlog:** [Mithril Roadmap Project — `Module: Smaug`](https://github.com/users/arthur-conde/projects/3/views/1?filterQuery=module%3A%22Smaug%22).
+
+What shipped in v1 and the rationale for what was deliberately deferred. Per-item *task tracking* lives in Issues; this doc keeps the *why* and the design-decision narrative.
 
 ## Context
 
@@ -79,13 +81,6 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 
 ---
 
-## Suggested next steps (ordered)
+## History
 
-1. **Bundle `sources_items.json`** — trivial, unblocks the Vendor Catalog tab pre-refresh. (scope: 1 file commit)
-2. **Wire Civic Pride from character export** — fixes the lazy-activation blind spot, no new parser work. (scope: 1 service hookup)
-3. **Sell Planner tab** — highest-utility UI feature still on the table; ~80% of the "min-max" pitch lands here. (scope: 1 view + viewmodel + estimator consumer)
-4. **Cap-aware acceptance indicator in Catalog** — visible win, builds on data we already parse. (scope: viewmodel projection)
-5. **Vendor gold-pool tracking** — useful for bulk sellers, needs persisted per-character state. (scope: new service + column)
-6. **Buy-price crowdsourcing** — manual-entry first, then survey the log for a currency-update signal. (scope: new schema, new UI, extension to mithril-calibration repo)
-
-Items 1–2 are small and should probably ship together as a v1.1. Items 3–4 form a meaningful v1.2. Items 5–6 are full v2 features.
+- **2026-04-30** — backlog migrated from inline checklist into [issues #33–#41](https://github.com/arthur-conde/project-gorgon/issues?q=is%3Aissue+label%3Amodule%3Asmaug) as part of the docs-wiki-projects three-tier reorganization. v1.1 candidates (sources_items bundle, Civic Pride from export) and the Sell Planner tab tagged for prioritisation in the `Mithril Roadmap` Project.

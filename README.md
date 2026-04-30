@@ -4,6 +4,15 @@ A modular WPF desktop companion app for the MMORPG [*Project Gorgon*](https://pr
 
 The app is read-only with respect to the game. It never injects into the client, reads memory, or modifies anything the game produces. It only watches the log and report files the game writes to disk.
 
+## Project knowledge map
+
+| If you're looking for… | It's at… |
+|---|---|
+| **Roadmap & live status** | the [Mithril Roadmap Project](https://github.com/users/arthur-conde/projects/3) (board view, custom fields per module / target version) |
+| **Open work / bugs** | [Issues](https://github.com/arthur-conde/project-gorgon/issues) — file via the bug / feature templates |
+| **Stable reference & user guides** | the [Wiki](https://github.com/arthur-conde/project-gorgon/wiki) — CDN data, releasing, treasure system, Arwen / Legolas user guides |
+| **Design rationale & roadmap narrative** | [`docs/`](docs/) — per-module roadmap narrative + design notebooks |
+
 ## Modules
 
 Each feature lives in its own class library, loaded dynamically at startup. Modules share infrastructure from `Mithril.Shared` but are otherwise independent.
@@ -13,7 +22,7 @@ Each feature lives in its own class library, loaded dynamically at startup. Modu
 | Samwise | samwise  | Garden / crop tracking, ripeness alarms                      | Eager      |
 | Pippin  | pippin   | Food consumption and recipe tracking                         | Lazy       |
 | Legolas | legolas  | Surveying, route optimization, map overlay                   | Lazy       |
-| Arwen   | arwen    | NPC favor and gift tracking ([guide](docs/user-guide/arwen.md)) | Lazy     |
+| Arwen   | arwen    | NPC favor and gift tracking ([guide](https://github.com/arthur-conde/project-gorgon/wiki/User-Guide-Arwen)) | Lazy     |
 | Elrond  | elrond   | Skill leveling advisor                                       | Lazy       |
 | Gandalf | gandalf  | User-created timers with alarms                              | Eager      |
 | Bilbo   | bilbo    | Storage / inventory management                               | Lazy       |

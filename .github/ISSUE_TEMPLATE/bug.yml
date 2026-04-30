@@ -1,0 +1,76 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the bug.
+      placeholder: e.g. "Samwise shows planted crops as 'Unknown' after the IInventoryService refactor."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Concrete sequence — what you did, what files / log lines were involved.
+      placeholder: |
+        1. Launch Mithril with character X logged into game.
+        2. Plant any crop.
+        3. Open Samwise tab.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual
+      description: What should have happened, vs. what did.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Which module is affected? Adds the matching `module:*` label.
+      options:
+        - shell
+        - samwise
+        - pippin
+        - legolas
+        - arwen
+        - elrond
+        - gandalf
+        - bilbo
+        - saruman
+        - smaug
+        - celebrimbor
+        - palantir
+        - mithril.reference
+        - cross-module / unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which cross-cutting area, if any?
+      options:
+        - none
+        - parser
+        - ui
+        - ci
+        - docs
+        - test
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Logs, environment, links
+      description: Anything else that helps — relevant `Player.log` lines, app version, related PR / issue links.

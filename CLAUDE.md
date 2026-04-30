@@ -91,4 +91,22 @@ App settings persist to `%LocalAppData%/Mithril/`.
 
 ### CDN Reference Data
 
-`ReferenceDataService` fetches versioned JSON from `https://cdn.projectgorgon.com/{version}/data/{file}.json`. Version is auto-detected by `CdnVersionDetector` (parses redirect meta tag). Bundled copies under `Mithril.Shared/Reference/BundledData/` serve as fallback. Item icons are available at `https://cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`.
+`ReferenceDataService` fetches versioned JSON from `https://cdn.projectgorgon.com/{version}/data/{file}.json`. Version is auto-detected by `CdnVersionDetector` (parses redirect meta tag). Bundled copies under `Mithril.Shared/Reference/BundledData/` serve as fallback. Item icons are available at `https://cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`. Full file inventory + schema notes: [wiki: CDN Reference Data](https://github.com/arthur-conde/project-gorgon/wiki/CDN-Reference-Data).
+
+## Where does new content go?
+
+Project knowledge is split across four tiers. Route new content by what it is:
+
+| If you're writing… | Put it… |
+|---|---|
+| A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template; the dropdowns auto-apply `module:*` and `area:*` labels. |
+| Roadmap / prioritisation state | The **Mithril Roadmap** Project (`Status`, `Priority`, `Effort`, `Target Version`, `Module` custom fields). Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
+| Stable reference, process, how-to, user guide | The [wiki](https://github.com/arthur-conde/project-gorgon/wiki). Stable content; doesn't co-evolve with code. |
+| Design rationale that co-evolves with code | `docs/` in this repo. Roadmap *narrative* (why we deferred X, what would unblock Y), design notebooks, architecture decisions. |
+| Implementation spec for a follow-up agent | `docs/agent-plans/`. **Open with `**Tracked in:** #NN`** (or `_no issue yet_` if pre-issue) so spinning up an agent on the plan gives them the issue context for free. |
+
+**Workflow rules:**
+
+1. **Backlog item → Issue first.** Don't add a checkbox to a roadmap doc. Issues are queryable, have state, and surface on the Project board.
+2. **Issue references doc, doc doesn't list issues.** Each issue body links to the relevant `docs/` or wiki page for context. Roadmap docs link to the *Project* (which lists the issues), not to individual issues, so docs don't rot when issues close.
+3. **Anything load-bearing-but-unverified gets a "Verification owed" marker** in the design notebook. Filing an issue for the spot-check is the *task side*; the doc entry stays for context.
