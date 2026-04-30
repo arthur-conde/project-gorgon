@@ -1,25 +1,27 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Mithril.Shared.Logging;
 
 namespace Gandalf.Parsing;
 
 /// <summary>
-/// Parses <c>ProcessStartInteraction</c> lines for static-chest interactions.
-/// Per the wiki page Player-Log-Signals (Static treasure chests):
-/// <c>LocalPlayer: ProcessStartInteraction(-162, 7, 0, False, "GoblinStaticChest1")</c>
-/// where the trailing quoted token is the chest's prefab name. The integer
-/// interactor id is reused across static interactors, so we key off the prefab
-/// name only.
+/// Parses any <c>ProcessStartInteraction</c> line into an
+/// <see cref="InteractionStartEvent"/>. The parser is intentionally broad —
+/// loot vs storage vs NPC discrimination happens downstream in
+/// <c>LootBracketTracker</c> based on which other signals fire inside the
+/// bracket (<c>ProcessAddItem</c> = loot, <c>ProcessTalkScreen</c> = UI dialog).
 ///
-/// v1 emits an event for *every* StartInteraction whose entity name ends with
-/// "StaticChest" (the convention observed in samples). Refines later if other
-/// chest naming patterns surface — the catalog cache absorbs the discovery
-/// either way.
+/// #64 v1 used a <c>Contains("StaticChest")</c> name filter, which silently
+/// dropped real loot prefabs like <c>EltibuleSecretChest</c>; live-log
+/// verification under #73 moved the filter from naming to signal.
+///
+/// Wiki sample:
+/// <c>LocalPlayer: ProcessStartInteraction(-162, 7, 0, False, "GoblinStaticChest1")</c>
 /// </summary>
 public sealed partial class ChestInteractionParser : ILogParser
 {
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessStartInteraction\(-?\d+,\s*\d+,\s*\d+,\s*(?:True|False),\s*"(?<name>[^"]+)"\)""",
+        """LocalPlayer:\s*ProcessStartInteraction\((?<id>-?\d+),\s*\d+,\s*\d+,\s*(?:True|False),\s*"(?<name>[^"]+)"\)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex InteractionRx();
 
@@ -29,12 +31,8 @@ public sealed partial class ChestInteractionParser : ILogParser
         var m = InteractionRx().Match(line);
         if (!m.Success) return null;
 
-        var name = m.Groups["name"].Value;
-        // Static chests follow the "<Theme>StaticChest<N>" convention in observed
-        // samples (GoblinStaticChest1). Filter to that prefix shape so we don't
-        // create timers for vendor interactions, NPC dialog, etc.
-        if (!name.Contains("StaticChest", StringComparison.Ordinal)) return null;
-
-        return new ChestInteractionEvent(timestamp, name);
+        if (!long.TryParse(m.Groups["id"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            return null;
+        return new InteractionStartEvent(timestamp, id, m.Groups["name"].Value);
     }
 }

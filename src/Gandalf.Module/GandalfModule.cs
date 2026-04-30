@@ -72,6 +72,7 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<ChestInteractionParser>();
         services.AddSingleton<ChestRejectionParser>();
         services.AddSingleton<DefeatRewardParser>();
+        services.AddSingleton<LootBracketTracker>();
         services.AddSingleton(sp => DefeatCatalogSeed.Bundled);
         services.AddSingleton<LootSource>(sp => new LootSource(
             sp.GetRequiredService<DerivedTimerProgressService>(),
