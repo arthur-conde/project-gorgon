@@ -8,9 +8,10 @@ namespace Gandalf.Parsing;
 /// turned in. Anchors the cooldown clock on this Timestamp so log-replay
 /// produces the right elapsed time.
 ///
-/// **Verification owed.** Same caveat as <see cref="QuestLoadedParser"/> —
-/// regex is a plausible <c>LocalPlayer: ProcessXxx("InternalName"...)</c>
-/// match pending real captures. Refines once samples land.
+/// Captured shape (wiki Player-Log-Signals § Quest signals): two integer
+/// args — <c>ProcessCompleteQuest(&lt;charEntityId&gt;, &lt;questId&gt;)</c> — not
+/// the quoted-string form this regex matches. Real-shape rewrite tracked in
+/// #77; until that lands the parser silently no-ops on every real line.
 /// </summary>
 public sealed partial class QuestCompletedParser : ILogParser
 {
