@@ -1,0 +1,89 @@
+<UserControl x:Class="Gandalf.Views.GandalfShellView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Gandalf.ViewModels"
+             xmlns:views="clr-namespace:Gandalf.Views"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Gandalf.Module;component/Views/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate DataType="{x:Type vm:TimerListViewModel}">
+                <views:TimerListView/>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal">
+                <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Gandalf · Timers"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" Padding="0">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                    <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMedium}"/>
+                    <Setter Property="Padding" Value="14,6"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
+                                        BorderBrush="Transparent" BorderThickness="0,0,0,2" Margin="0,0,2,0">
+                                    <ContentPresenter ContentSource="Header"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
+                                        <Setter Property="Foreground" Value="#FFE8E8E8"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#18FFFFFF"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.Resources>
+
+            <TabItem Header="Dashboard" Margin="0,8,0,0">
+                <Border>
+                    <TextBlock Text="{Binding DashboardPlaceholder}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
+                </Border>
+            </TabItem>
+
+            <TabItem Header="User" Margin="0,8,0,0">
+                <ContentControl Content="{Binding UserTab}"/>
+            </TabItem>
+
+            <TabItem Header="Quests" Margin="0,8,0,0">
+                <Border>
+                    <TextBlock Text="{Binding QuestsPlaceholder}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
+                </Border>
+            </TabItem>
+
+            <TabItem Header="Loot" Margin="0,8,0,0">
+                <Border>
+                    <TextBlock Text="{Binding LootPlaceholder}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
+                </Border>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</UserControl>

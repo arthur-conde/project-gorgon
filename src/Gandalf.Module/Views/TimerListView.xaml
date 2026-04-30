@@ -12,26 +12,19 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
-    <DockPanel Margin="12">
-        <!-- Header -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal">
-                <Image Source="pack://application:,,,/Gandalf.Module;component/Resources/gandalf.ico"
-                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <TextBlock Text="Gandalf · Timers" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
-                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Clear done" Padding="10,4" Margin="4,0"
-                        Command="{Binding ClearDoneCommand}"
-                        ToolTip="Reset progress on every finished timer (definitions untouched)"/>
-                <Button Content="Paste" Padding="10,4" Margin="4,0"
-                        Command="{Binding PasteTimersCommand}"
-                        ToolTip="Paste timers from clipboard (JSON)"/>
-                <Button Content="+ Add Timer" Padding="10,4"
-                        Command="{Binding AddTimerCommand}"/>
-            </StackPanel>
-        </DockPanel>
+    <DockPanel>
+        <!-- Action row -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,0,0,12">
+            <Button Content="Clear done" Padding="10,4" Margin="4,0"
+                    Command="{Binding ClearDoneCommand}"
+                    ToolTip="Reset progress on every finished timer (definitions untouched)"/>
+            <Button Content="Paste" Padding="10,4" Margin="4,0"
+                    Command="{Binding PasteTimersCommand}"
+                    ToolTip="Paste timers from clipboard (JSON)"/>
+            <Button Content="+ Add Timer" Padding="10,4"
+                    Command="{Binding AddTimerCommand}"/>
+        </StackPanel>
 
         <!-- Timer List -->
         <Grid>
