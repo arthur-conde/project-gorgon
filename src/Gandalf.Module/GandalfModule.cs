@@ -1,5 +1,6 @@
 using System.IO;
 using Gandalf.Domain;
+using Gandalf.Parsing;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
@@ -59,6 +60,14 @@ public sealed class GandalfModule : IMithrilModule
         // One-shot startup fanout: split the old combined per-char gandalf.json into the
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
+
+        // Quest source — repeatable-quest cooldowns derived from QuestEntry.Reuse*
+        // and ProcessLoadQuest / ProcessCompleteQuest log lines.
+        services.AddSingleton<QuestLoadedParser>();
+        services.AddSingleton<QuestCompletedParser>();
+        services.AddSingleton<QuestSource>();
+        services.AddHostedService<QuestIngestionService>();
+        services.AddSingleton<QuestTimersViewModel>();
 
         services.AddSingleton<TimerDefinitionsService>();
         services.AddSingleton<TimerProgressService>();

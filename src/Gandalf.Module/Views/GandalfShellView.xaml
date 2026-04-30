@@ -14,6 +14,9 @@
             <DataTemplate DataType="{x:Type vm:TimerListViewModel}">
                 <views:TimerListView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:QuestTimersViewModel}">
+                <views:QuestTimersView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -70,11 +73,7 @@
             </TabItem>
 
             <TabItem Header="Quests" Margin="0,8,0,0">
-                <Border>
-                    <TextBlock Text="{Binding QuestsPlaceholder}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
-                </Border>
+                <ContentControl Content="{Binding QuestsTab}"/>
             </TabItem>
 
             <TabItem Header="Loot" Margin="0,8,0,0">
