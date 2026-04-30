@@ -6,9 +6,15 @@ namespace Gandalf.Services;
 /// <summary>
 /// <see cref="ITimerSource"/> for repeatable-quest cooldowns. Catalog projects
 /// from <see cref="IReferenceDataService.Quests"/> filtered to entries with a
-/// <c>Reuse*</c> duration and no time-flavored requirement gate. Progress
-/// routes through <see cref="DerivedTimerProgressService"/> with sourceId
-/// <c>"gandalf.quest"</c>.
+/// <c>Reuse*</c> duration. Progress routes through
+/// <see cref="DerivedTimerProgressService"/> with sourceId <c>"gandalf.quest"</c>.
+///
+/// Eligibility gates (<c>QuestCompletedRecently</c>, <c>MinFavorLevel</c>,
+/// <c>MinSkillLevel</c>, …) are intentionally not re-evaluated here. The
+/// game is the authoritative gate: a <see cref="QuestCompletedEvent"/>
+/// observation already implies the server validated every requirement,
+/// so the cooldown can be stamped without local pre-checks. See the wiki
+/// note "Mithril does not re-evaluate game gates".
 ///
 /// "Pending" filter: tracks an in-memory set of currently-in-journal quests.
 /// <see cref="QuestJournalLoadedEvent"/> snapshot-replaces it on login;
@@ -18,12 +24,6 @@ namespace Gandalf.Services;
 public sealed class QuestSource : ITimerSource, IDisposable
 {
     public const string Id = "gandalf.quest";
-
-    private static readonly HashSet<string> TimeGatedRequirementTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "QuestCompletedRecently",
-    };
-    private static readonly string TimeGatedPrefix = "MinDelayAfterFirstCompletion";
 
     private readonly DerivedTimerProgressService _derived;
     private readonly IReferenceDataService _refData;
@@ -171,7 +171,6 @@ public sealed class QuestSource : ITimerSource, IDisposable
         var list = new List<TimerCatalogEntry>();
         foreach (var quest in _refData.Quests.Values)
         {
-            if (!IsRepeatableNonTimeGated(quest)) continue;
             var duration = ComputeDuration(quest);
             if (duration <= TimeSpan.Zero) continue;
 
@@ -184,24 +183,6 @@ public sealed class QuestSource : ITimerSource, IDisposable
         }
         return list;
     }
-
-    private static bool IsRepeatableNonTimeGated(QuestEntry quest)
-    {
-        if (HasReuse(quest) is false) return false;
-
-        // Drop quests gated by non-Reuse cooldowns — every cooldown shown must be
-        // one this source can compute correctly.
-        foreach (var req in quest.Requirements)
-        {
-            if (req.Type is null) continue;
-            if (TimeGatedRequirementTypes.Contains(req.Type)) return false;
-            if (req.Type.StartsWith(TimeGatedPrefix, StringComparison.OrdinalIgnoreCase)) return false;
-        }
-        return true;
-    }
-
-    private static bool HasReuse(QuestEntry q) =>
-        (q.ReuseMinutes ?? 0) > 0 || (q.ReuseHours ?? 0) > 0 || (q.ReuseDays ?? 0) > 0;
 
     private static TimeSpan ComputeDuration(QuestEntry q)
     {

@@ -48,7 +48,7 @@ public class QuestTimersViewModelTests : IDisposable
 
         var refData = new FakeReferenceData(quests);
         var src = new QuestSource(derived, refData, time);
-        var vm = new QuestTimersViewModel(src, derived);
+        var vm = new QuestTimersViewModel(src, derived, time);
         return (vm, src, derived, time);
     }
 
@@ -94,12 +94,11 @@ public class QuestTimersViewModelTests : IDisposable
     public void Recently_completed_quest_appears_as_running()
     {
         var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, _) = Build(q);
+        var (vm, src, derived, time) = Build(q);
         try
         {
-            // StartedAt = now → 1h cooldown still ticking. State reads wall clock,
-            // so anchor on real `DateTime.UtcNow` rather than the injected provider.
-            src.OnQuestCompleted("Q1", DateTime.UtcNow);
+            // StartedAt = now → 1h cooldown still ticking.
+            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Running);
@@ -111,11 +110,11 @@ public class QuestTimersViewModelTests : IDisposable
     public void Quest_completed_long_ago_appears_as_done()
     {
         var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, _) = Build(q);
+        var (vm, src, derived, time) = Build(q);
         try
         {
             // StartedAt = 2h ago → 1h cooldown elapsed → Done.
-            src.OnQuestCompleted("Q1", DateTime.UtcNow - TimeSpan.FromHours(2));
+            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime - TimeSpan.FromHours(2));
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Done);
