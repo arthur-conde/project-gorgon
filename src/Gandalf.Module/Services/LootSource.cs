@@ -9,10 +9,10 @@ namespace Gandalf.Services;
 /// learns them from rejection screen text); defeat catalog is bundled
 /// + overlaid from <c>mithril-calibration/defeats.json</c> when shipped.
 ///
-/// Verification owed: v1 keys on chest internal name only (no area). The wiki
-/// caveat under "Static treasure chests § Per-instance vs per-template state"
-/// notes two GoblinStaticChest1 spawns in one zone may share state; refine when
-/// the parser spike captures area-disambiguating signals.
+/// Per-template chest keying (no per-instance disambiguation) was verified
+/// correct in #73: interactor IDs reshuffle across sessions and the 3h
+/// cooldown spans relogs, so two same-template spawns in one zone share
+/// state in practice.
 /// </summary>
 public sealed class LootSource : ITimerSource, IDisposable
 {
@@ -124,9 +124,11 @@ public sealed class LootSource : ITimerSource, IDisposable
         var prior = _derived.GetProgress(Id, key);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
 
-        // Verification owed: the kill-credit line fires on every kill regardless
-        // of cooldown state. Suppress repeats while the cooldown is still
-        // active so a within-window kill doesn't reset the clock locally.
+        // Scripted-event-class behaviour (Olugax): the kill-credit line fires on
+        // every kill regardless of cooldown. Suppress repeats while the cooldown
+        // is still active so a within-window kill doesn't reset the clock locally.
+        // The defeat-cooldown class (Megaspider) is suppressed by the game itself
+        // and reaches this method via a different parser path — tracked in #79.
         if (prior is not null
             && prior.DismissedAt is null
             && _time.GetUtcNow() < prior.StartedAt + entry.RewardCooldown)

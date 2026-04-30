@@ -26,10 +26,11 @@ public sealed record ChestCooldownObservedEvent(DateTime Timestamp, string Chest
     : LogEvent(Timestamp);
 
 /// <summary>
-/// Player earned a kill credit on a reward-cooldown creature. v1 anchors the
-/// cooldown on this line; the "reduced rewards" line that distinguishes a
-/// rewarded kill from a cooldown-suppressed one is **Verification owed** per the
-/// wiki and will refine this trigger when captured.
+/// Player earned a kill credit on a scripted-event boss (Olugax class — the
+/// kill-credit line fires regardless of cooldown). The defeat-cooldown class
+/// (Megaspider) does not produce this event because the game suppresses the
+/// credit line within-cooldown; a dedicated event for that class is tracked
+/// in #79.
 /// </summary>
 public sealed record DefeatRewardEvent(DateTime Timestamp, string NpcDisplayName)
     : LogEvent(Timestamp);

@@ -8,12 +8,16 @@ namespace Gandalf.Parsing;
 /// (Scripted-event bosses). Sample line:
 /// <c>LocalPlayer: ProcessScreenText(CombatInfo, "You earned 12 Combat Wisdom: Killed Olugax the Ever-Pudding")</c>
 ///
-/// **Verification owed.** Per the wiki, the kill-credit line fires on every kill
-/// regardless of cooldown state — both rewarded and cooldown-suppressed kills
-/// produce identical lines. The "reduced rewards" log line that distinguishes
-/// the two has not been pinned down. Until it is, v1 anchors the cooldown on
-/// the kill itself and lets <c>LootSource</c>'s in-flight check suppress
-/// duplicate triggers within the cooldown window.
+/// Correct for the **scripted-event class** (Olugax) — kill-credit fires on
+/// every kill regardless of cooldown; <c>LootSource</c>'s in-flight check
+/// suppresses duplicates within the cooldown window. The "reduced rewards"
+/// signal that would distinguish rewarded from cooldown-suppressed kills in
+/// this class is still verification-owed.
+///
+/// Wrong for the **defeat-cooldown class** (Megaspider) — the spike (#60)
+/// confirmed the game suppresses the kill-credit line entirely on a
+/// within-cooldown re-kill, and emits a parseable rejection text instead. A
+/// dedicated <c>DefeatCooldownParser</c> for that class is tracked in #79.
 /// </summary>
 public sealed partial class DefeatRewardParser : ILogParser
 {

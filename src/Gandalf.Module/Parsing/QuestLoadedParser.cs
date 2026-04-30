@@ -4,13 +4,15 @@ using Mithril.Shared.Logging;
 namespace Gandalf.Parsing;
 
 /// <summary>
-/// Parses <c>ProcessLoadQuest</c> lines emitted when a quest enters the
-/// player's journal (login replay or fresh acceptance).
+/// Originally intended to parse a per-quest "loaded" line. The spike (#60)
+/// confirmed no such line exists in <c>Player.log</c>: login emits a single
+/// bulk <c>ProcessLoadQuests</c> (plural) carrying two ID lists, and per-quest
+/// acceptance is signalled via <c>ProcessAddQuest</c> + companion
+/// <c>ProcessBook("New Quest: &lt;&lt;&lt;quest_NNNNN_Name&gt;&gt;&gt;", …)</c>.
+/// See wiki Player-Log-Signals § Quest signals.
 ///
-/// **Verification owed.** The exact line shape was deferred from the parser
-/// spike (#60). The regex below is a plausible match against the
-/// <c>LocalPlayer: ProcessXxx(...)</c> family — first quoted argument is the
-/// quest's InternalName. Refines once captured samples land in the wiki.
+/// Redesign (rebuild as bulk-load + accept parsers, or drop) tracked in #78.
+/// Until that lands the parser silently no-ops on every real line.
 /// </summary>
 public sealed partial class QuestLoadedParser : ILogParser
 {
