@@ -10,8 +10,9 @@ namespace Gandalf.Services;
 /// into <see cref="LootSource"/>. Chest detection delegates to
 /// <see cref="LootBracketTracker"/> — a signal-driven state machine that
 /// distinguishes loot chests from storage vaults / NPC dialog without a
-/// naming heuristic. Defeat parsing runs as a parallel path because kill
-/// credits don't share the interaction-bracket envelope.
+/// naming heuristic. Boss kills run two parallel paths, one per
+/// <see cref="Domain.DefeatClass"/> — kill credits don't share the
+/// interaction-bracket envelope.
 ///
 /// No <c>ModuleGate</c> wait — Gandalf is eager; derived-source log replay
 /// must run as soon as the host starts.
@@ -20,7 +21,8 @@ public sealed class LootIngestionService : BackgroundService
 {
     private readonly IPlayerLogStream _stream;
     private readonly LootBracketTracker _bracket;
-    private readonly DefeatRewardParser _defeatReward;
+    private readonly ScriptedEventBossParser _scriptedBoss;
+    private readonly DefeatCooldownParser _defeatCooldown;
     private readonly LootSource _source;
     private readonly IDiagnosticsSink? _diag;
     private bool _firstObservationLogged;
@@ -28,13 +30,15 @@ public sealed class LootIngestionService : BackgroundService
     public LootIngestionService(
         IPlayerLogStream stream,
         LootBracketTracker bracket,
-        DefeatRewardParser defeatReward,
+        ScriptedEventBossParser scriptedBoss,
+        DefeatCooldownParser defeatCooldown,
         LootSource source,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _bracket = bracket;
-        _defeatReward = defeatReward;
+        _scriptedBoss = scriptedBoss;
+        _defeatCooldown = defeatCooldown;
         _source = source;
         _diag = diag;
     }
@@ -52,10 +56,23 @@ public sealed class LootIngestionService : BackgroundService
     {
         _bracket.Observe(raw);
 
-        if (_defeatReward.TryParse(raw.Line, raw.Timestamp) is DefeatRewardEvent defeat)
+        if (_scriptedBoss.TryParse(raw.Line, raw.Timestamp) is ScriptedEventBossDefeatedEvent defeat)
         {
-            _source.OnDefeatReward(defeat.NpcDisplayName, defeat.Timestamp);
+            _source.OnScriptedEventBossDefeated(defeat.NpcDisplayName, defeat.Timestamp);
             FirstObservation();
+            return;
+        }
+
+        switch (_defeatCooldown.TryParse(raw.Line, raw.Timestamp))
+        {
+            case DefeatCooldownObservedEvent observed:
+                _source.OnDefeatCooldownObserved(observed.NpcDisplayName, observed.Timestamp);
+                FirstObservation();
+                break;
+            case DefeatCooldownActiveEvent active:
+                _source.OnDefeatCooldownActive(active.NpcDisplayName, active.Timestamp);
+                FirstObservation();
+                break;
         }
     }
 

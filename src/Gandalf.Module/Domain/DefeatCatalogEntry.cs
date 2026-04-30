@@ -4,10 +4,12 @@ namespace Gandalf.Domain;
 /// One entry in the calibration-driven defeat catalog (eventually shipped from
 /// <c>mithril-calibration/defeats.json</c>). Reward-cooldown creatures don't
 /// emit duration text on the kill itself — the wiki/community is the source
-/// of truth, so the duration is per-NPC config.
+/// of truth, so the duration is per-NPC config. <see cref="Class"/> picks the
+/// parser path: see <see cref="DefeatClass"/> for the trade-off.
 /// </summary>
 public sealed record DefeatCatalogEntry(
     string Area,
     string NpcInternalName,
     string DisplayName,
-    TimeSpan RewardCooldown);
+    TimeSpan RewardCooldown,
+    DefeatClass Class);

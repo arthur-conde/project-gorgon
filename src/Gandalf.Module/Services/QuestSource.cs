@@ -10,10 +10,10 @@ namespace Gandalf.Services;
 /// routes through <see cref="DerivedTimerProgressService"/> with sourceId
 /// <c>"gandalf.quest"</c>.
 ///
-/// "Pending" filter: tracks an in-memory set of currently-loaded quests built
-/// from log replay each session. <see cref="QuestCompletedEvent"/> drops the
-/// quest from Pending and starts the cooldown; <see cref="QuestLoadedEvent"/>
-/// adds it to Pending.
+/// "Pending" filter: tracks an in-memory set of currently-in-journal quests.
+/// <see cref="QuestJournalLoadedEvent"/> snapshot-replaces it on login;
+/// <see cref="QuestAcceptedEvent"/> incrementally adds; <see cref="QuestCompletedEvent"/>
+/// removes and starts the cooldown.
 /// </summary>
 public sealed class QuestSource : ITimerSource, IDisposable
 {
@@ -61,10 +61,38 @@ public sealed class QuestSource : ITimerSource, IDisposable
     }
 
     /// <summary>
-    /// Apply a quest-loaded observation: add the InternalName to the in-memory
+    /// Apply a bulk journal-load observation: snapshot-replace the pending set
+    /// with every quest the server reports as currently in the player's journal.
+    /// Resolves int ids → InternalNames via reference data; unknown ids are
+    /// dropped silently (game-data drift). Drives the "Pending" filter chip on
+    /// fresh login.
+    /// </summary>
+    public void OnQuestJournalLoaded(IReadOnlyList<int> workOrderQuestIds, IReadOnlyList<int> regularQuestIds)
+    {
+        var resolved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in workOrderQuestIds)
+            if (_refData.Quests.TryGetValue($"quest_{id}", out var q)) resolved.Add(q.InternalName);
+        foreach (var id in regularQuestIds)
+            if (_refData.Quests.TryGetValue($"quest_{id}", out var q)) resolved.Add(q.InternalName);
+
+        bool changed;
+        lock (_lock)
+        {
+            changed = !_pending.SetEquals(resolved);
+            if (changed)
+            {
+                _pending.Clear();
+                foreach (var n in resolved) _pending.Add(n);
+            }
+        }
+        if (changed) ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Apply a quest-accepted observation: add the InternalName to the in-memory
     /// pending set so the UI can filter for "in journal, not completed".
     /// </summary>
-    public void OnQuestLoaded(string questInternalName)
+    public void OnQuestAccepted(string questInternalName)
     {
         if (string.IsNullOrEmpty(questInternalName)) return;
         bool changed;

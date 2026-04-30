@@ -80,8 +80,8 @@ public class QuestTimersViewModelTests : IDisposable
         var (vm, src, derived, _) = Build(q1, q2, q3);
         try
         {
-            src.OnQuestLoaded("Q1");
-            src.OnQuestLoaded("Q3");
+            src.OnQuestAccepted("Q1");
+            src.OnQuestAccepted("Q3");
 
             vm.Timers.Should().HaveCount(2);
             vm.Timers.Should().OnlyContain(t => t.State == TimerState.Idle);
@@ -151,7 +151,7 @@ public class QuestTimersViewModelTests : IDisposable
             derived.Dismiss(QuestSource.Id, QuestSource.QuestKey("Q1"));
             vm.Timers.Should().BeEmpty();
 
-            src.OnQuestLoaded("Q1");
+            src.OnQuestAccepted("Q1");
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Idle);

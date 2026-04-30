@@ -71,14 +71,17 @@ public sealed class GandalfModule : IMithrilModule
         // through one ITimerSource and share the derived progress store.
         services.AddSingleton<ChestInteractionParser>();
         services.AddSingleton<ChestRejectionParser>();
-        services.AddSingleton<DefeatRewardParser>();
+        services.AddSingleton<ScriptedEventBossParser>();
+        services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
         services.AddSingleton(sp => DefeatCatalogSeed.Bundled);
         services.AddSingleton<LootSource>(sp => new LootSource(
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
-            sp.GetRequiredService<IReadOnlyList<DefeatCatalogEntry>>()));
+            sp.GetRequiredService<IReadOnlyList<DefeatCatalogEntry>>(),
+            time: null,
+            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
         services.AddHostedService<LootIngestionService>();
         services.AddSingleton<LootTimersViewModel>();
 
@@ -87,8 +90,10 @@ public sealed class GandalfModule : IMithrilModule
         services.AddHostedService<GandalfSplitMigration>();
 
         // Quest source — repeatable-quest cooldowns derived from QuestEntry.Reuse*
-        // and ProcessLoadQuest / ProcessCompleteQuest log lines.
-        services.AddSingleton<QuestLoadedParser>();
+        // and the captured quest signal flow (ProcessLoadQuests bulk login,
+        // ProcessBook "New Quest:" per-accept, ProcessCompleteQuest turn-in).
+        services.AddSingleton<QuestJournalLoadParser>();
+        services.AddSingleton<QuestAcceptedParser>();
         services.AddSingleton<QuestCompletedParser>();
         services.AddSingleton<QuestSource>();
         services.AddHostedService<QuestIngestionService>();
