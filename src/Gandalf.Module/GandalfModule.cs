@@ -33,6 +33,7 @@ public sealed class GandalfModule : IMithrilModule
         Directory.CreateDirectory(gandalfDir);
         var settingsPath = Path.Combine(gandalfDir, "settings.json");
         var defsPath = Path.Combine(gandalfDir, "definitions.json");
+        var lootCatalogPath = Path.Combine(gandalfDir, "loot-catalog.json");
 
         // Global user preferences (alarm volume, sound picker, etc) stay app-wide.
         services.AddSingleton<ISettingsStore<GandalfSettings>>(_ =>
@@ -56,6 +57,29 @@ public sealed class GandalfModule : IMithrilModule
         services.AddPerCharacterModuleStore<DerivedProgress>("gandalf-derived",
             DerivedProgressJsonContext.Default.DerivedProgress);
         services.AddSingleton<DerivedTimerProgressService>();
+
+        // Global chest cooldown cache — durations observed from rejection screen
+        // text accumulate so the second-ever loot of a known chest template
+        // starts with the right duration immediately.
+        services.AddSingleton<ISettingsStore<LootCatalogCache>>(_ =>
+            new JsonSettingsStore<LootCatalogCache>(lootCatalogPath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache));
+        services.AddSingleton<LootCatalogCache>(sp =>
+            sp.GetRequiredService<ISettingsStore<LootCatalogCache>>().Load());
+
+        // Loot source (chests + reward-cooldown defeats) — both kinds render
+        // through one ITimerSource and share the derived progress store.
+        services.AddSingleton<ChestInteractionParser>();
+        services.AddSingleton<ChestRejectionParser>();
+        services.AddSingleton<DefeatRewardParser>();
+        services.AddSingleton(sp => DefeatCatalogSeed.Bundled);
+        services.AddSingleton<LootSource>(sp => new LootSource(
+            sp.GetRequiredService<DerivedTimerProgressService>(),
+            sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
+            sp.GetRequiredService<LootCatalogCache>(),
+            sp.GetRequiredService<IReadOnlyList<DefeatCatalogEntry>>()));
+        services.AddHostedService<LootIngestionService>();
+        services.AddSingleton<LootTimersViewModel>();
 
         // One-shot startup fanout: split the old combined per-char gandalf.json into the
         // global definitions file + per-char progress files. Runs before module gates open.

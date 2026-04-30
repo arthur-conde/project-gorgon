@@ -17,6 +17,9 @@
             <DataTemplate DataType="{x:Type vm:QuestTimersViewModel}">
                 <views:QuestTimersView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:LootTimersViewModel}">
+                <views:LootTimersView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -77,11 +80,7 @@
             </TabItem>
 
             <TabItem Header="Loot" Margin="0,8,0,0">
-                <Border>
-                    <TextBlock Text="{Binding LootPlaceholder}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
-                </Border>
+                <ContentControl Content="{Binding LootTab}"/>
             </TabItem>
         </TabControl>
     </DockPanel>
