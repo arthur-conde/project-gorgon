@@ -55,9 +55,14 @@ public sealed class GandalfModule : IMithrilModule
 
         services.AddSingleton<TimerDefinitionsService>();
         services.AddSingleton<TimerProgressService>();
+        services.AddSingleton<UserTimerSource>();
+        // Same instance is registered as ITimerSource so the alarm service (and any
+        // future cross-source aggregator) can resolve it via the abstraction.
+        services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<UserTimerSource>());
         services.AddSingleton<TimerAlarmService>();
 
         services.AddSingleton<TimerListViewModel>(sp => new TimerListViewModel(
+            sp.GetRequiredService<UserTimerSource>(),
             sp.GetRequiredService<TimerDefinitionsService>(),
             sp.GetRequiredService<TimerProgressService>(),
             sp.GetRequiredService<TimerAlarmService>(),

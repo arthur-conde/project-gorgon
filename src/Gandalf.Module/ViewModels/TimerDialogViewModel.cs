@@ -26,7 +26,8 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     public override string PrimaryButtonText => _isEditing ? "Update" : "Save";
 
     public TimerDialogViewModel(
-        TimerView? existing,
+        GandalfTimerDef? existing,
+        bool isIdleOnActive,
         IReadOnlyList<string> knownRegions,
         IReadOnlyList<string> knownMaps)
     {
@@ -40,14 +41,14 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
             // changing Duration mid-run would reinterpret remaining time. Other characters
             // with in-flight progress for the same def accept the new duration on their
             // next render (rare corner case; users can Restart).
-            _isDurationEditable = existing.State == TimerState.Idle;
-            _name = existing.Def.Name;
-            _hours = existing.Def.Duration.Hours > 0 || existing.Def.Duration.Days > 0
-                ? ((int)existing.Def.Duration.TotalHours).ToString() : "";
-            _minutes = existing.Def.Duration.Minutes > 0 ? existing.Def.Duration.Minutes.ToString() : "";
-            _seconds = existing.Def.Duration.Seconds > 0 ? existing.Def.Duration.Seconds.ToString() : "";
-            _region = existing.Def.Region;
-            _map = existing.Def.Map;
+            _isDurationEditable = isIdleOnActive;
+            _name = existing.Name;
+            _hours = existing.Duration.Hours > 0 || existing.Duration.Days > 0
+                ? ((int)existing.Duration.TotalHours).ToString() : "";
+            _minutes = existing.Duration.Minutes > 0 ? existing.Duration.Minutes.ToString() : "";
+            _seconds = existing.Duration.Seconds > 0 ? existing.Duration.Seconds.ToString() : "";
+            _region = existing.Region;
+            _map = existing.Map;
         }
         else
         {
