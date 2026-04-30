@@ -4,16 +4,17 @@ using Mithril.Shared.Logging;
 namespace Gandalf.Parsing;
 
 /// <summary>
-/// Parses the two signals emitted by defeat-cooldown class bosses (Megaspider
-/// and similar). The game gates re-kills server-side, so:
+/// Parses the two signals emitted by reward-cooldown creatures (Megaspider,
+/// Olugax The Ever-Pudding, and similar). The 2026-04-30 capture of Olugax
+/// emitting the same <c>"too recently"</c> rejection text confirmed both
+/// classes share one signal mechanism, so a single parser handles them.
 ///
 /// <list type="bullet">
 ///   <item><b>Positive (corpse search):</b>
 ///     <c>ProcessTalkScreen(&lt;id&gt;, "Search Corpse of &lt;Name&gt;", …, Corpse)</c>
 ///     fires for every corpse a player can search. Every kill emits one
 ///     (boss or trash mob) so the parser stays permissive — <c>LootSource</c>
-///     filters down to entries in the defeat catalog with
-///     <see cref="Domain.DefeatClass.DefeatCooldown"/>.</item>
+///     filters down to entries in the defeat catalog.</item>
 ///   <item><b>Negative (rejection):</b>
 ///     <c>ProcessScreenText(GeneralInfo, "You have already killed &lt;Name&gt; too recently. …")</c>
 ///     fires when the player tries to engage a still-cooling boss. v1 surfaces
@@ -50,8 +51,6 @@ public sealed partial class DefeatCooldownParser : ILogParser
             }
         }
 
-        // Negative path — both class types can emit this rejection. LootSource
-        // ignores entries whose Class doesn't match.
         if (line.Contains("too recently", StringComparison.Ordinal))
         {
             var m = RejectionRx().Match(line);
@@ -69,8 +68,8 @@ public sealed partial class DefeatCooldownParser : ILogParser
 
 /// <summary>
 /// Player just searched a corpse. Permissive event — fires for every mob, not
-/// just bosses. <see cref="Services.LootSource"/> filters down to defeat-cooldown-class
-/// catalog entries.
+/// just bosses. <see cref="Services.LootSource"/> filters down to entries in
+/// the defeat catalog.
 /// </summary>
 public sealed record DefeatCooldownObservedEvent(DateTime Timestamp, string NpcDisplayName)
     : LogEvent(Timestamp);

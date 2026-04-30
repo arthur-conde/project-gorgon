@@ -9,11 +9,6 @@ namespace Gandalf.Services;
 /// defeat timers. Chest catalog is observed (durations cached as the player
 /// learns them from rejection screen text); defeat catalog is bundled
 /// + overlaid from <c>mithril-calibration/defeats.json</c> when shipped.
-///
-/// Verification owed: v1 keys on chest internal name only (no area). The wiki
-/// caveat under "Static treasure chests § Per-instance vs per-template state"
-/// notes two GoblinStaticChest1 spawns in one zone may share state; refine when
-/// the parser spike captures area-disambiguating signals.
 /// </summary>
 public sealed class LootSource : ITimerSource, IDisposable
 {
@@ -112,48 +107,16 @@ public sealed class LootSource : ITimerSource, IDisposable
     }
 
     /// <summary>
-    /// Apply a scripted-event-class kill-credit observation (Olugax and similar).
-    /// The game emits the kill credit on every kill regardless of cooldown, so
-    /// within-window re-kills must be suppressed locally to avoid resetting the
-    /// clock. Routes only entries whose <see cref="DefeatCatalogEntry.Class"/>
-    /// is <see cref="DefeatClass.ScriptedEvent"/>.
-    /// </summary>
-    public void OnScriptedEventBossDefeated(string npcDisplayName, DateTime timestampUtc)
-    {
-        var entry = LookupByDisplayName(npcDisplayName);
-        if (entry is null || entry.Class != DefeatClass.ScriptedEvent) return;
-
-        var key = DefeatKey(entry.NpcInternalName);
-        var prior = _derived.GetProgress(Id, key);
-        var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
-
-        // The kill-credit line fires on every kill regardless of cooldown state
-        // (per the wiki — the "reduced rewards" discriminator is still
-        // unidentified). Suppress repeats while the cooldown is still active so
-        // a within-window kill doesn't reset the clock locally.
-        if (prior is not null
-            && prior.DismissedAt is null
-            && _time.GetUtcNow() < prior.StartedAt + entry.RewardCooldown)
-        {
-            return;
-        }
-
-        _derived.Start(Id, key, startedAt);
-        FireReady(key, entry.DisplayName, durationOverride: entry.RewardCooldown, atUtc: startedAt + entry.RewardCooldown);
-    }
-
-    /// <summary>
-    /// Apply a defeat-cooldown-class corpse-search observation (Megaspider and
-    /// similar). The corpse-search line fires for every mob the player kills,
-    /// so the catalog filter by display name + <see cref="DefeatClass.DefeatCooldown"/>
-    /// is what restricts this to actual cooldown bosses. No local suppression
+    /// Apply a corpse-search observation. The corpse-search line fires for
+    /// every mob the player kills, so the catalog filter by display name is
+    /// what restricts this to actual cooldown bosses. No local suppression
     /// — the game already gates re-kills server-side, so a positive signal
-    /// always means a real kill.
+    /// always means a real (non-cooldown) kill.
     /// </summary>
     public void OnDefeatCooldownObserved(string npcDisplayName, DateTime timestampUtc)
     {
         var entry = LookupByDisplayName(npcDisplayName);
-        if (entry is null || entry.Class != DefeatClass.DefeatCooldown) return;
+        if (entry is null) return;
 
         var key = DefeatKey(entry.NpcInternalName);
         var prior = _derived.GetProgress(Id, key);
@@ -168,11 +131,9 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     /// <summary>
     /// Apply a "you have already killed &lt;X&gt; too recently" rejection observation.
-    /// Both class types can emit this — Olugax (scripted-event) was confirmed in
-    /// captures alongside Megaspider (defeat-cooldown). v1 is diagnostic-only:
-    /// the prior kill that started the cooldown already stamped a row via the
-    /// positive path. If no row exists (e.g. Mithril started mid-cooldown), the
-    /// row will appear on the next successful kill.
+    /// v1 is diagnostic-only: the prior kill that started the cooldown already
+    /// stamped a row via the positive path. If no row exists (e.g. Mithril
+    /// started mid-cooldown), the row will appear on the next successful kill.
     /// </summary>
     public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
     {
