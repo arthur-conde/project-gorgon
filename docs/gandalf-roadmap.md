@@ -2,9 +2,7 @@
 
 Gandalf owns user-defined timers today (alarm/snooze/dismiss/sound/flash, global-def + per-character-progress shape, split-migration of legacy single-character data). The next major capability is **repeatable-quest timers** — surfacing each quest's `ReuseTime` cooldown in the same timer feed as user-defined timers.
 
-> **Active backlog:** [`module:gandalf` issues](https://github.com/arthur-conde/project-gorgon/issues?q=is%3Aissue+is%3Aopen+label%3Amodule%3Agandalf)
->
-> *(Replaced with the `Mithril Roadmap` Project URL once Phase 2 of the docs-wiki-projects migration creates it.)*
+> **Active backlog:** [Mithril Roadmap Project — `Module: Gandalf`](https://github.com/users/arthur-conde/projects/3/views/1?filterQuery=module%3A%22Gandalf%22).
 
 ## Why repeatable-quest timers
 

@@ -8,7 +8,7 @@ The app is read-only with respect to the game. It never injects into the client,
 
 | If you're looking for… | It's at… |
 |---|---|
-| **Roadmap & live status** | the [Mithril Roadmap Project](https://github.com/arthur-conde/project-gorgon/projects) (board view, custom fields per module / target version) |
+| **Roadmap & live status** | the [Mithril Roadmap Project](https://github.com/users/arthur-conde/projects/3) (board view, custom fields per module / target version) |
 | **Open work / bugs** | [Issues](https://github.com/arthur-conde/project-gorgon/issues) — file via the bug / feature templates |
 | **Stable reference & user guides** | the [Wiki](https://github.com/arthur-conde/project-gorgon/wiki) — CDN data, releasing, treasure system, Arwen / Legolas user guides |
 | **Design rationale & roadmap narrative** | [`docs/`](docs/) — per-module roadmap narrative + design notebooks |

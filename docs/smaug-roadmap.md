@@ -1,6 +1,6 @@
 # Smaug · Vendor Prices — roadmap
 
-> **Active backlog:** [`module:smaug` issues](https://github.com/arthur-conde/project-gorgon/issues?q=is%3Aissue+is%3Aopen+label%3Amodule%3Asmaug) (replaced with the `Mithril Roadmap` Project URL once Phase 2 of the docs-wiki-projects migration creates it).
+> **Active backlog:** [Mithril Roadmap Project — `Module: Smaug`](https://github.com/users/arthur-conde/projects/3/views/1?filterQuery=module%3A%22Smaug%22).
 
 What shipped in v1 and the rationale for what was deliberately deferred. Per-item *task tracking* lives in Issues; this doc keeps the *why* and the design-decision narrative.
 
