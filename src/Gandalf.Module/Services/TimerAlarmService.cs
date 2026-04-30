@@ -7,22 +7,23 @@ using Mithril.Shared.Wpf;
 namespace Gandalf.Services;
 
 /// <summary>
-/// Plays the alarm sound + flashes the window when a timer transitions to ready.
-/// Subscribes to <see cref="ITimerSource.TimerReady"/> rather than
-/// <c>TimerProgressService.TimerExpired</c> directly — the source-level event is
-/// the cross-source surface a future shell-level inbox will share. Today only the
-/// user feed is wired in; quest/loot sources will register the same way when those
-/// phases land.
+/// Plays the alarm sound + flashes the window when a user timer transitions to
+/// ready. Subscribes to <see cref="UserTimerSource"/> directly — quest and loot
+/// cooldowns ship through the cross-source <c>DashboardAggregator</c> instead;
+/// dragging derived rows into the user-tab alarm path would surface an audible
+/// alarm for every chest re-loot the player observes, which isn't the user's
+/// expressed preference. Cross-source notification belongs in a future shell
+/// inbox subsystem (see docs/gandalf-roadmap.md non-goals).
 /// </summary>
 public sealed class TimerAlarmService : IDisposable
 {
-    private readonly ITimerSource _source;
+    private readonly UserTimerSource _source;
     private readonly GandalfSettings _settings;
     private readonly HashSet<string> _firedKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
-    public TimerAlarmService(ITimerSource source, GandalfSettings settings)
+    public TimerAlarmService(UserTimerSource source, GandalfSettings settings)
     {
         _source = source;
         _settings = settings;

@@ -20,6 +20,9 @@
             <DataTemplate DataType="{x:Type vm:LootTimersViewModel}">
                 <views:LootTimersView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+                <views:DashboardView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -35,7 +38,8 @@
             </StackPanel>
         </DockPanel>
 
-        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" Padding="0">
+        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" Padding="0"
+                    SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
             <TabControl.Resources>
                 <Style TargetType="TabItem">
                     <Setter Property="Foreground" Value="#CCFFFFFF"/>
@@ -64,11 +68,7 @@
             </TabControl.Resources>
 
             <TabItem Header="Dashboard" Margin="0,8,0,0">
-                <Border>
-                    <TextBlock Text="{Binding DashboardPlaceholder}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHeader}"/>
-                </Border>
+                <ContentControl Content="{Binding DashboardTab}"/>
             </TabItem>
 
             <TabItem Header="User" Margin="0,8,0,0">
