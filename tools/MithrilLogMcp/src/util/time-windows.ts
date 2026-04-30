@@ -20,16 +20,17 @@ export function resolveWindow(
   args: {
     since?: string | undefined;
     until?: string | undefined;
-    between?: [string, string] | undefined;
+    between?: string[] | undefined;
   },
 ): ResolvedWindow {
   if (args.between) {
-    const since = parseInstant(args.between[0], now);
-    const until = parseInstant(args.between[1], now);
+    const [start, end] = args.between as [string, string];
+    const since = parseInstant(start, now);
+    const until = parseInstant(end, now);
     if (since > until) {
       throw new Error(
-        `'between' range is reversed: '${args.between[0]}' (${since.toISOString()}) ` +
-        `is after '${args.between[1]}' (${until.toISOString()}). Pass [start, end].`,
+        `'between' range is reversed: '${start}' (${since.toISOString()}) ` +
+        `is after '${end}' (${until.toISOString()}). Pass [start, end].`,
       );
     }
     return { since, until };

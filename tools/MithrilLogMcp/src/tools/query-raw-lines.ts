@@ -35,7 +35,7 @@ export const QueryRawLinesInput = z
     // Window form 1: since/until/between (same vocabulary as query_events).
     since: z.string().optional(),
     until: z.string().optional(),
-    between: z.tuple([z.string(), z.string()]).optional(),
+    between: z.array(z.string()).length(2).optional(),
 
     // Window form 2: at/around (centered ± duration).
     at: z.string().optional(),
