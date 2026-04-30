@@ -1,4 +1,5 @@
 using Gandalf.Domain;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 
 namespace Gandalf.Services;
@@ -22,6 +23,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
     private readonly TimeProvider _time;
+    private readonly IDiagnosticsSink? _diag;
     private readonly object _catalogLock = new();
     private IReadOnlyList<DefeatCatalogEntry> _defeatCatalog;
     private IReadOnlyList<TimerCatalogEntry> _catalog;
@@ -31,12 +33,14 @@ public sealed class LootSource : ITimerSource, IDisposable
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
         IEnumerable<DefeatCatalogEntry>? defeats = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        IDiagnosticsSink? diag = null)
     {
         _derived = derived;
         _cacheStore = cacheStore;
         _cache = cache;
         _time = time ?? TimeProvider.System;
+        _diag = diag;
         _defeatCatalog = (defeats ?? []).ToArray();
         _catalog = BuildCatalog();
 
@@ -108,25 +112,25 @@ public sealed class LootSource : ITimerSource, IDisposable
     }
 
     /// <summary>
-    /// Apply a defeat-reward observation: stamp a cooldown row keyed by the
-    /// NPC display name (matched against the calibration catalog). v1 collapses
-    /// area into the catalog entry, so a kill in any zone resolves to the same
-    /// row — refine when the parser spike captures area-on-kill.
+    /// Apply a scripted-event-class kill-credit observation (Olugax and similar).
+    /// The game emits the kill credit on every kill regardless of cooldown, so
+    /// within-window re-kills must be suppressed locally to avoid resetting the
+    /// clock. Routes only entries whose <see cref="DefeatCatalogEntry.Class"/>
+    /// is <see cref="DefeatClass.ScriptedEvent"/>.
     /// </summary>
-    public void OnDefeatReward(string npcDisplayName, DateTime timestampUtc)
+    public void OnScriptedEventBossDefeated(string npcDisplayName, DateTime timestampUtc)
     {
-        if (string.IsNullOrEmpty(npcDisplayName)) return;
-        var entry = _defeatCatalog.FirstOrDefault(d =>
-            string.Equals(d.DisplayName, npcDisplayName, StringComparison.OrdinalIgnoreCase));
-        if (entry is null) return;
+        var entry = LookupByDisplayName(npcDisplayName);
+        if (entry is null || entry.Class != DefeatClass.ScriptedEvent) return;
 
         var key = DefeatKey(entry.NpcInternalName);
         var prior = _derived.GetProgress(Id, key);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
 
-        // Verification owed: the kill-credit line fires on every kill regardless
-        // of cooldown state. Suppress repeats while the cooldown is still
-        // active so a within-window kill doesn't reset the clock locally.
+        // The kill-credit line fires on every kill regardless of cooldown state
+        // (per the wiki — the "reduced rewards" discriminator is still
+        // unidentified). Suppress repeats while the cooldown is still active so
+        // a within-window kill doesn't reset the clock locally.
         if (prior is not null
             && prior.DismissedAt is null
             && _time.GetUtcNow() < prior.StartedAt + entry.RewardCooldown)
@@ -136,6 +140,53 @@ public sealed class LootSource : ITimerSource, IDisposable
 
         _derived.Start(Id, key, startedAt);
         FireReady(key, entry.DisplayName, durationOverride: entry.RewardCooldown, atUtc: startedAt + entry.RewardCooldown);
+    }
+
+    /// <summary>
+    /// Apply a defeat-cooldown-class corpse-search observation (Megaspider and
+    /// similar). The corpse-search line fires for every mob the player kills,
+    /// so the catalog filter by display name + <see cref="DefeatClass.DefeatCooldown"/>
+    /// is what restricts this to actual cooldown bosses. No local suppression
+    /// — the game already gates re-kills server-side, so a positive signal
+    /// always means a real kill.
+    /// </summary>
+    public void OnDefeatCooldownObserved(string npcDisplayName, DateTime timestampUtc)
+    {
+        var entry = LookupByDisplayName(npcDisplayName);
+        if (entry is null || entry.Class != DefeatClass.DefeatCooldown) return;
+
+        var key = DefeatKey(entry.NpcInternalName);
+        var prior = _derived.GetProgress(Id, key);
+        var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
+
+        // Idempotency: identical timestamp + still-active row → no churn.
+        if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
+
+        _derived.Start(Id, key, startedAt);
+        FireReady(key, entry.DisplayName, durationOverride: entry.RewardCooldown, atUtc: startedAt + entry.RewardCooldown);
+    }
+
+    /// <summary>
+    /// Apply a "you have already killed &lt;X&gt; too recently" rejection observation.
+    /// Both class types can emit this — Olugax (scripted-event) was confirmed in
+    /// captures alongside Megaspider (defeat-cooldown). v1 is diagnostic-only:
+    /// the prior kill that started the cooldown already stamped a row via the
+    /// positive path. If no row exists (e.g. Mithril started mid-cooldown), the
+    /// row will appear on the next successful kill.
+    /// </summary>
+    public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
+    {
+        var entry = LookupByDisplayName(npcDisplayName);
+        if (entry is null) return;
+        _diag?.Trace("Gandalf.Loot",
+            $"Cooldown still active for {entry.DisplayName} at {timestampUtc:O}");
+    }
+
+    private DefeatCatalogEntry? LookupByDisplayName(string npcDisplayName)
+    {
+        if (string.IsNullOrEmpty(npcDisplayName)) return null;
+        return _defeatCatalog.FirstOrDefault(d =>
+            string.Equals(d.DisplayName, npcDisplayName, StringComparison.OrdinalIgnoreCase));
     }
 
     public void OverlayDefeatCatalog(IEnumerable<DefeatCatalogEntry> entries)

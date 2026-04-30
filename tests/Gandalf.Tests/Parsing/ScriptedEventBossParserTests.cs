@@ -4,9 +4,9 @@ using Xunit;
 
 namespace Gandalf.Tests.Parsing;
 
-public sealed class DefeatRewardParserTests
+public sealed class ScriptedEventBossParserTests
 {
-    private readonly DefeatRewardParser _parser = new();
+    private readonly ScriptedEventBossParser _parser = new();
 
     [Fact]
     public void Parses_wiki_sample_olugax_kill_credit()
@@ -15,15 +15,15 @@ public sealed class DefeatRewardParserTests
         var line = "[15:30:24] LocalPlayer: ProcessScreenText(CombatInfo, \"You earned 12 Combat Wisdom: Killed Olugax the Ever-Pudding\")";
         var evt = _parser.TryParse(line, DateTime.UtcNow);
 
-        evt.Should().BeOfType<DefeatRewardEvent>();
-        ((DefeatRewardEvent)evt!).NpcDisplayName.Should().Be("Olugax the Ever-Pudding");
+        evt.Should().BeOfType<ScriptedEventBossDefeatedEvent>();
+        ((ScriptedEventBossDefeatedEvent)evt!).NpcDisplayName.Should().Be("Olugax the Ever-Pudding");
     }
 
     [Fact]
     public void Parses_kill_credit_with_decimal_xp()
     {
         var line = "LocalPlayer: ProcessScreenText(CombatInfo, \"You earned 1.5 Combat Wisdom: Killed Some Rare NPC\")";
-        var evt = (DefeatRewardEvent?)_parser.TryParse(line, DateTime.UtcNow);
+        var evt = (ScriptedEventBossDefeatedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
         evt.Should().NotBeNull();
         evt!.NpcDisplayName.Should().Be("Some Rare NPC");
