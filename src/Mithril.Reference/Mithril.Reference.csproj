@@ -11,15 +11,16 @@
 
   <ItemGroup>
     <!--
-      PrivateAssets="all" prevents Newtonsoft.Json and JsonSubTypes from transiting to
-      consumers via project reference. Modules that reference Mithril.Reference see
-      only the public POCO surface; the serializer is invisible to their compile.
-      That's the containment boundary: if it ever needs to hold against a determined
-      consumer trying to take a Newtonsoft hard-dep, only the future
-      Mithril.Reference.Models split will close that gap. For now the discipline is
+      Newtonsoft.Json and JsonSubTypes are runtime dependencies of the
+      Serialization/ folder. They flow normally to consumers so the runtime DLLs
+      get copied into Mithril.Shell/bin alongside Mithril.Reference.dll —
+      ParserRegistry.Discover reflects over types that reference these
+      assemblies and would otherwise crash with FileNotFoundException at
+      startup. Hiding them at compile time without breaking runtime requires
+      the future Mithril.Reference.Models split; until then the discipline is
       "don't import Newtonsoft outside Serialization/".
     -->
-    <PackageReference Include="Newtonsoft.Json" PrivateAssets="all" />
-    <PackageReference Include="JsonSubTypes" PrivateAssets="all" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="JsonSubTypes" />
   </ItemGroup>
 </Project>
