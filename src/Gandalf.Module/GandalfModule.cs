@@ -49,6 +49,13 @@ public sealed class GandalfModule : IMithrilModule
         // Per-character timer progress (StartedAt / CompletedAt keyed by timer id).
         services.AddPerCharacterModuleStore<GandalfProgress>(Id, GandalfProgressJsonContext.Default.GandalfProgress);
 
+        // Per-character derived-source progress — log-anchored StartedAt + DismissedAt.
+        // Sibling to GandalfProgress; lives in characters/{slug}/gandalf-derived.json.
+        // Quest/Loot sources route through DerivedTimerProgressService exclusively.
+        services.AddPerCharacterModuleStore<DerivedProgress>("gandalf-derived",
+            DerivedProgressJsonContext.Default.DerivedProgress);
+        services.AddSingleton<DerivedTimerProgressService>();
+
         // One-shot startup fanout: split the old combined per-char gandalf.json into the
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
