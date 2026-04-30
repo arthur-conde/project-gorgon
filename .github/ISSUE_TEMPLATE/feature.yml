@@ -1,0 +1,75 @@
+name: Feature / enhancement
+description: A new capability, or an improvement to an existing one
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what should change.
+      placeholder: e.g. "Gandalf gains a second timer feed showing repeatable-quest cooldowns."
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve? Who benefits?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know it's done? Bullet list of observable behaviors / shipped artifacts.
+      placeholder: |
+        - [ ] Quest cooldown rows appear in the timer list after `ProcessCompleteQuest`.
+        - [ ] Filter chips toggle Pending / Cooling / Ready states.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Which module owns this work? Adds the matching `module:*` label.
+      options:
+        - shell
+        - samwise
+        - pippin
+        - legolas
+        - arwen
+        - elrond
+        - gandalf
+        - bilbo
+        - saruman
+        - smaug
+        - celebrimbor
+        - palantir
+        - mithril.reference
+        - cross-module / unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which cross-cutting area, if any?
+      options:
+        - none
+        - parser
+        - ui
+        - ci
+        - docs
+        - test
+    validations:
+      required: false
+
+  - type: textarea
+    id: design
+    attributes:
+      label: Design notes / pointers
+      description: Link to a `docs/` design notebook, agent plan, or wiki page if one exists.
