@@ -15,6 +15,9 @@
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Gandalf.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Resource Include="Resources\gandalf.ico" />
     <Resource Include="Resources\gandalf.jpg" />
   </ItemGroup>
