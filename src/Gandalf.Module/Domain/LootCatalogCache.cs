@@ -22,8 +22,24 @@ public sealed class LootCatalogCache
 
     public int SchemaVersion { get; set; } = Version;
 
-    /// <summary>Map keyed by chest internal name (e.g. <c>GoblinStaticChest1</c>).</summary>
+    /// <summary>
+    /// Verified chest cooldown durations learned from the game's re-loot
+    /// rejection screen text. Keyed by chest internal name (e.g.
+    /// <c>GoblinStaticChest1</c>). Membership here means the duration is
+    /// authoritative; rows in <see cref="LearnedChests"/> without a cache entry
+    /// fall back to <see cref="Services.LootSource.PlaceholderChestDuration"/>
+    /// and surface as <c>IsDurationVerified=false</c>.
+    /// </summary>
     public Dictionary<string, TimeSpan> ChestDurationByInternalName { get; set; } =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Chests the player has personally looted in any session. Discovered via
+    /// the bracket-tracker AddItem signal regardless of whether the duration is
+    /// known yet. Persisted so a chest's row reappears after restart even when
+    /// the cooldown is still anchored on a prior session's loot.
+    /// </summary>
+    public Dictionary<string, LearnedChest> LearnedChests { get; set; } =
         new(StringComparer.Ordinal);
 
     /// <summary>
@@ -35,6 +51,18 @@ public sealed class LootCatalogCache
     /// </summary>
     public Dictionary<string, LearnedDefeat> LearnedDefeats { get; set; } =
         new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Per-chest bookkeeping for the auto-discovered catalog. Mirrors
+/// <see cref="LearnedDefeat"/>; the chest's duration lives in
+/// <see cref="LootCatalogCache.ChestDurationByInternalName"/> only once a
+/// rejection has confirmed it.
+/// </summary>
+public sealed class LearnedChest
+{
+    public DateTime FirstObservedAt { get; set; }
+    public DateTime LastObservedAt { get; set; }
 }
 
 /// <summary>

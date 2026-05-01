@@ -50,16 +50,24 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void First_loot_of_unknown_chest_does_not_create_a_row()
+    public void First_loot_of_unknown_chest_creates_unverified_placeholder_row()
     {
         var (src, derived, _, time) = Build();
         try
         {
-            // Duration unknown until rejection observed — don't fabricate one.
-            src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
+            // No rejection observed yet → row stamps with PlaceholderChestDuration,
+            // catalog row flagged unverified. The user sees an immediate timer
+            // instead of silently losing the cooldown.
+            var lootTime = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("GoblinStaticChest1", lootTime);
 
-            src.Catalog.Should().BeEmpty();
-            src.Progress.Should().BeEmpty();
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].Duration.Should().Be(LootSource.PlaceholderChestDuration);
+            ((LootCatalogPayload)src.Catalog[0].SourceMetadata!).IsDurationVerified.Should().BeFalse();
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("GoblinStaticChest1"));
+            src.Progress[LootSource.ChestKey("GoblinStaticChest1")].StartedAt
+                .Should().Be(new DateTimeOffset(lootTime, TimeSpan.Zero));
         }
         finally
         {
@@ -68,7 +76,88 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void Rejection_caches_duration_and_subsequent_loots_create_rows()
+    public void Rejection_after_placeholder_loot_upgrades_duration_and_preserves_StartedAt()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // Loot at T0 with no prior rejection → placeholder row anchored at T0.
+            var lootTime = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("EltibuleSecretChest", lootTime);
+
+            var key = LootSource.ChestKey("EltibuleSecretChest");
+            var anchored = src.Progress[key].StartedAt;
+
+            // Rejection arrives later carrying the real duration. The row's
+            // anchor must remain at the original ProcessStartInteraction
+            // timestamp; only the catalog Duration upgrades.
+            time.Advance(TimeSpan.FromMinutes(45));
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(6));
+
+            src.Progress[key].StartedAt.Should().Be(anchored,
+                "rejection learns the duration but the cooldown is still anchored on the original loot");
+
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(6));
+            ((LootCatalogPayload)src.Catalog[0].SourceMetadata!).IsDurationVerified.Should().BeTrue();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Rejection_with_shorter_real_duration_fires_TimerReady_when_already_elapsed()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            var lootTime = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("GoblinStaticChest1", lootTime);
+
+            var fired = new List<TimerReadyEventArgs>();
+            src.TimerReady += (_, e) => fired.Add(e);
+
+            // Real duration (15 min) is shorter than the 3 h placeholder, and
+            // we've already advanced 30 min — the row is genuinely ready now.
+            time.Advance(TimeSpan.FromMinutes(30));
+            src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromMinutes(15));
+
+            fired.Should().ContainSingle()
+                .Which.Key.Should().Be(LootSource.ChestKey("GoblinStaticChest1"));
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Rejection_after_placeholder_loot_does_not_refire_when_still_cooling()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
+
+            var fired = new List<TimerReadyEventArgs>();
+            src.TimerReady += (_, e) => fired.Add(e);
+
+            // Real duration (6 h) is longer than the placeholder; the row is
+            // still cooling, no ready fire expected.
+            src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(6));
+
+            fired.Should().BeEmpty();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Subsequent_loot_after_rejection_uses_verified_duration()
     {
         var (src, derived, _, time) = Build();
         try
@@ -76,13 +165,15 @@ public class LootSourceTests : IDisposable
             src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
 
-            src.Catalog.Should().HaveCount(1);
-            src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(3));
+            time.Advance(TimeSpan.FromHours(4));
+            var newLoot = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("GoblinStaticChest1", newLoot);
 
-            time.Advance(TimeSpan.FromMinutes(10));
-            src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
-
-            src.Progress.Should().ContainKey(LootSource.ChestKey("GoblinStaticChest1"));
+            var key = LootSource.ChestKey("GoblinStaticChest1");
+            src.Progress[key].StartedAt.Should().Be(new DateTimeOffset(newLoot, TimeSpan.Zero));
+            src.Catalog.Single(c => c.Key == key).Duration.Should().Be(TimeSpan.FromHours(3));
+            ((LootCatalogPayload)src.Catalog.Single(c => c.Key == key).SourceMetadata!)
+                .IsDurationVerified.Should().BeTrue();
         }
         finally
         {
