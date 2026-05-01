@@ -33,6 +33,15 @@ public sealed class LootSource : ITimerSource, IDisposable
     /// </summary>
     public static readonly TimeSpan PlaceholderDefeatDuration = TimeSpan.FromHours(3);
 
+    /// <summary>
+    /// Folklore-default cooldown for a chest looted before any rejection has
+    /// taught us the real duration. The chest's row appears immediately
+    /// anchored on the original loot timestamp; on the next rejection the
+    /// duration upgrades in place and <see cref="LootCatalogPayload.IsDurationVerified"/>
+    /// flips to <c>true</c> without resetting the clock.
+    /// </summary>
+    public static readonly TimeSpan PlaceholderChestDuration = TimeSpan.FromHours(3);
+
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
@@ -70,24 +79,48 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     /// <summary>
     /// Apply a chest interaction observation: stamp a cooldown row anchored on
-    /// the log timestamp. If the duration for this chest template is unknown
-    /// the row is skipped (we'll learn the duration on a future re-loot
-    /// rejection and backfill on the next interaction).
+    /// the log timestamp. If the chest's real duration hasn't been observed
+    /// yet (no rejection screen has fired for this template) the row is
+    /// stamped with <see cref="PlaceholderChestDuration"/> and surfaces as
+    /// <c>IsDurationVerified=false</c>; on a future rejection
+    /// <see cref="OnChestCooldownObserved"/> upgrades the duration without
+    /// resetting the row's <c>StartedAt</c>.
     /// </summary>
     public void OnChestInteraction(string chestInternalName, DateTime timestampUtc)
     {
         if (string.IsNullOrEmpty(chestInternalName)) return;
-        if (!_cache.ChestDurationByInternalName.TryGetValue(chestInternalName, out var duration))
-        {
-            // First-ever loot of this chest template — duration is unknown until
-            // a future re-loot rejection populates the catalog. Don't create a
-            // row with a guessed duration.
-            return;
-        }
 
+        var (duration, _) = ResolveChestDuration(chestInternalName);
         var key = ChestKey(chestInternalName);
         var prior = _derived.GetProgress(Id, key);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
+
+        // Persist the discovery so the row survives across sessions even if
+        // the rejection screen never fires (placeholder behaviour mirrors the
+        // defeat-cooldown auto-learn path).
+        var learnedChanged = false;
+        lock (_catalogLock)
+        {
+            if (!_cache.LearnedChests.TryGetValue(chestInternalName, out var entry))
+            {
+                _cache.LearnedChests[chestInternalName] = new LearnedChest
+                {
+                    FirstObservedAt = timestampUtc,
+                    LastObservedAt = timestampUtc,
+                };
+                learnedChanged = true;
+            }
+            else if (timestampUtc > entry.LastObservedAt)
+            {
+                entry.LastObservedAt = timestampUtc;
+                learnedChanged = true;
+            }
+        }
+        if (learnedChanged)
+        {
+            try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
+            EnsureCatalogReprojected();
+        }
 
         // Idempotency: matching StartedAt means this is a replay of the same
         // line. Skip regardless of DismissedAt — clearing DismissedAt would
@@ -101,8 +134,15 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     /// <summary>
     /// Apply a chest rejection observation: cache the discovered duration
-    /// against the chest template name. Future first-loots of any chest of this
-    /// template will start with the right duration.
+    /// against the chest template name. Future loots of any chest of this
+    /// template will start with the verified duration.
+    ///
+    /// If a placeholder row is already in flight from an earlier loot, the
+    /// row's <c>StartedAt</c> is preserved (it's anchored on the original
+    /// <c>ProcessStartInteraction</c> timestamp). The catalog re-projection
+    /// upgrades the duration and flips <c>IsDurationVerified</c> to <c>true</c>;
+    /// if the new ready time has already elapsed,
+    /// <see cref="TimerReady"/> fires so downstream listeners notice.
     /// </summary>
     public void OnChestCooldownObserved(string chestInternalName, TimeSpan duration)
     {
@@ -121,6 +161,18 @@ public sealed class LootSource : ITimerSource, IDisposable
         {
             try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
             EnsureCatalogReprojected();
+
+            // Re-fire ready for an in-flight row whose anchor + new duration
+            // has already elapsed. StartedAt stays put — only the duration
+            // upgrade matters.
+            var key = ChestKey(chestInternalName);
+            var prior = _derived.GetProgress(Id, key);
+            if (prior is not null && prior.DismissedAt is null)
+            {
+                FireReady(key, chestInternalName,
+                    durationOverride: duration,
+                    atUtc: prior.StartedAt + duration);
+            }
         }
     }
 
@@ -220,6 +272,13 @@ public sealed class LootSource : ITimerSource, IDisposable
         return (PlaceholderDefeatDuration, false);
     }
 
+    private (TimeSpan duration, bool verified) ResolveChestDuration(string internalName)
+    {
+        if (_cache.ChestDurationByInternalName.TryGetValue(internalName, out var d))
+            return (d, true);
+        return (PlaceholderChestDuration, false);
+    }
+
     private void OnDerivedProgressChanged(object? sender, EventArgs e) =>
         ProgressChanged?.Invoke(this, EventArgs.Empty);
 
@@ -236,17 +295,26 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private IReadOnlyList<TimerCatalogEntry> BuildCatalog()
     {
-        var list = new List<TimerCatalogEntry>(
-            _cache.ChestDurationByInternalName.Count + _cache.LearnedDefeats.Count);
+        // Union of every chest that's been looted (LearnedChests) and every
+        // chest whose duration has been observed via rejection
+        // (ChestDurationByInternalName) — covers the rejection-only walk-up
+        // case where the player saw the screen text without ever looting.
+        var chestNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in _cache.LearnedChests.Keys) chestNames.Add(name);
+        foreach (var name in _cache.ChestDurationByInternalName.Keys) chestNames.Add(name);
 
-        foreach (var (internalName, duration) in _cache.ChestDurationByInternalName)
+        var list = new List<TimerCatalogEntry>(chestNames.Count + _cache.LearnedDefeats.Count);
+
+        foreach (var internalName in chestNames)
         {
+            var (duration, verified) = ResolveChestDuration(internalName);
             list.Add(new TimerCatalogEntry(
                 Key: ChestKey(internalName),
                 DisplayName: internalName,
                 Region: "Chests",
                 Duration: duration,
-                SourceMetadata: new LootCatalogPayload(LootKind.Chest, internalName, Region: null)));
+                SourceMetadata: new LootCatalogPayload(
+                    LootKind.Chest, internalName, Region: null, IsDurationVerified: verified)));
         }
 
         foreach (var displayName in _cache.LearnedDefeats.Keys)
