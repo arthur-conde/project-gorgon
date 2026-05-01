@@ -217,6 +217,82 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
+    public void Replay_of_dismissed_boss_kill_preserves_dismissal()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            var killTime = time.GetUtcNow().UtcDateTime;
+            src.OnBossKillCredit("Megaspider", killTime);
+
+            var key = LootSource.DefeatKey("Megaspider");
+            derived.Dismiss(LootSource.Id, key);
+            src.Progress[key].DismissedAt.Should().NotBeNull();
+
+            // Same line replays (e.g. Mithril restarts mid-session and
+            // PlayerLogStream re-feeds the wisdom-credit line). Dismissal
+            // must survive.
+            src.OnBossKillCredit("Megaspider", killTime);
+            src.Progress[key].DismissedAt.Should().NotBeNull(
+                "replay of the same StartedAt must not undo the user's dismissal");
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Genuine_re_kill_after_dismissal_resurrects_the_row()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnBossKillCredit("Megaspider", time.GetUtcNow().UtcDateTime);
+
+            var key = LootSource.DefeatKey("Megaspider");
+            derived.Dismiss(LootSource.Id, key);
+
+            // A *new* kill (different timestamp) is not a replay — the player
+            // legitimately re-killed the boss after the cooldown elapsed and
+            // the row should resurrect with a fresh clock.
+            time.Advance(TimeSpan.FromHours(4));
+            var newKill = time.GetUtcNow().UtcDateTime;
+            src.OnBossKillCredit("Megaspider", newKill);
+
+            src.Progress[key].StartedAt.Should().Be(time.GetUtcNow());
+            src.Progress[key].DismissedAt.Should().BeNull();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Replay_of_dismissed_chest_loot_preserves_dismissal()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
+            var lootTime = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("GoblinStaticChest1", lootTime);
+
+            var key = LootSource.ChestKey("GoblinStaticChest1");
+            derived.Dismiss(LootSource.Id, key);
+
+            // Same chest line replays — dismissal must survive.
+            src.OnChestInteraction("GoblinStaticChest1", lootTime);
+            src.Progress[key].DismissedAt.Should().NotBeNull();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
     public void DefeatCooldownActive_is_diagnostic_only_does_not_mutate_progress()
     {
         var (src, derived, _, time) = Build();

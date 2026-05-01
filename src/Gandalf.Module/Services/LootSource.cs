@@ -89,10 +89,10 @@ public sealed class LootSource : ITimerSource, IDisposable
         var prior = _derived.GetProgress(Id, key);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
 
-        // Idempotency: if we already track this chest with the same StartedAt,
-        // skip the redundant write so we don't churn the persistence layer on
-        // log replay.
-        if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
+        // Idempotency: matching StartedAt means this is a replay of the same
+        // line. Skip regardless of DismissedAt — clearing DismissedAt would
+        // silently resurrect a row the user explicitly X'd out.
+        if (prior is not null && prior.StartedAt == startedAt) return;
 
         _derived.Start(Id, key, startedAt);
         EnsureCatalogReprojected();
@@ -170,9 +170,11 @@ public sealed class LootSource : ITimerSource, IDisposable
             EnsureCatalogReprojected();
         }
 
-        // Idempotency: identical timestamp + still-active row → no churn.
+        // Idempotency: matching StartedAt means this is a replay of the same
+        // wisdom-credit line. Skip regardless of DismissedAt — clearing
+        // DismissedAt would silently resurrect a row the user X'd out.
         var prior = _derived.GetProgress(Id, key);
-        if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
+        if (prior is not null && prior.StartedAt == startedAt) return;
 
         _derived.Start(Id, key, startedAt);
         FireReady(key, displayName, durationOverride: duration, atUtc: startedAt + duration);

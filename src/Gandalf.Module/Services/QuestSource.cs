@@ -120,7 +120,10 @@ public sealed class QuestSource : ITimerSource, IDisposable
         var key = QuestKey(questInternalName);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
         var prior = _derived.GetProgress(Id, key);
-        if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
+        // Idempotency: matching StartedAt means this is a replay of the same
+        // ProcessCompleteQuest line. Skip regardless of DismissedAt —
+        // clearing DismissedAt would silently resurrect a row the user X'd out.
+        if (prior is not null && prior.StartedAt == startedAt) return;
 
         _derived.Start(Id, key, startedAt);
 

@@ -132,6 +132,51 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
+    public void Replay_of_dismissed_quest_completion_preserves_dismissal()
+    {
+        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
+        var (src, derived, _, time) = Build(quest);
+        try
+        {
+            var completedAt = time.GetUtcNow().UtcDateTime;
+            src.OnQuestCompleted("Q1", completedAt);
+
+            var key = QuestSource.QuestKey("Q1");
+            derived.Dismiss(QuestSource.Id, key);
+            src.Progress[key].DismissedAt.Should().NotBeNull();
+
+            // Same line replays (PlayerLogStream re-feeds the
+            // ProcessCompleteQuest line on next launch). Dismissal must survive.
+            src.OnQuestCompleted("Q1", completedAt);
+            src.Progress[key].DismissedAt.Should().NotBeNull(
+                "replay of the same StartedAt must not undo the user's dismissal");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Genuine_re_completion_after_dismissal_resurrects_the_row()
+    {
+        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
+        var (src, derived, _, time) = Build(quest);
+        try
+        {
+            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            var key = QuestSource.QuestKey("Q1");
+            derived.Dismiss(QuestSource.Id, key);
+
+            // A genuine re-completion after the cooldown — different timestamp,
+            // not a replay. The row should resurrect with a fresh clock.
+            time.Advance(TimeSpan.FromHours(21));
+            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
+
+            src.Progress[key].StartedAt.Should().Be(time.GetUtcNow());
+            src.Progress[key].DismissedAt.Should().BeNull();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
     public void OnQuestCompleted_drops_quest_from_pending()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
