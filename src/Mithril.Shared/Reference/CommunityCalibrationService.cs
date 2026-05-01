@@ -15,6 +15,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
     private const int SamwiseSchemaVersion = 1;
     private const int ArwenSchemaVersion = 2;
     private const int SmaugSchemaVersion = 1;
+    private const int GandalfSchemaVersion = 1;
 
     private readonly string _cacheDir;
     private readonly HttpClient _http;
@@ -23,9 +24,11 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
     private GrowthRatesPayload? _samwiseRates;
     private GiftRatesPayload? _arwenRates;
     private VendorRatesPayload? _smaugRates;
+    private DefeatCooldownsPayload? _gandalfDefeats;
     private ReferenceFileSnapshot _samwiseSnapshot = new("samwise", ReferenceFileSource.Bundled, "", null, 0);
     private ReferenceFileSnapshot _arwenSnapshot = new("arwen", ReferenceFileSource.Bundled, "", null, 0);
     private ReferenceFileSnapshot _smaugSnapshot = new("smaug", ReferenceFileSource.Bundled, "", null, 0);
+    private ReferenceFileSnapshot _gandalfSnapshot = new("gandalf", ReferenceFileSource.Bundled, "", null, 0);
 
     public CommunityCalibrationService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null)
     {
@@ -35,19 +38,22 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         LoadSamwiseFromCache();
         LoadArwenFromCache();
         LoadSmaugFromCache();
+        LoadGandalfFromCache();
     }
 
     public GrowthRatesPayload? SamwiseRates => _samwiseRates;
     public GiftRatesPayload? ArwenRates => _arwenRates;
     public VendorRatesPayload? SmaugRates => _smaugRates;
+    public DefeatCooldownsPayload? GandalfDefeats => _gandalfDefeats;
 
-    public IReadOnlyList<string> Keys { get; } = ["samwise", "arwen", "smaug"];
+    public IReadOnlyList<string> Keys { get; } = ["samwise", "arwen", "smaug", "gandalf"];
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
         "samwise" => _samwiseSnapshot,
         "arwen" => _arwenSnapshot,
         "smaug" => _smaugSnapshot,
+        "gandalf" => _gandalfSnapshot,
         _ => throw new ArgumentException($"Unknown community-calibration key: {key}", nameof(key)),
     };
 
@@ -58,6 +64,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         "samwise" => RefreshSamwiseAsync(ct),
         "arwen" => RefreshArwenAsync(ct),
         "smaug" => RefreshSmaugAsync(ct),
+        "gandalf" => RefreshGandalfAsync(ct),
         _ => throw new ArgumentException($"Unknown community-calibration key: {key}", nameof(key)),
     };
 
@@ -66,6 +73,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         await RefreshSamwiseAsync(ct);
         await RefreshArwenAsync(ct);
         await RefreshSmaugAsync(ct);
+        await RefreshGandalfAsync(ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -82,16 +90,20 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         TryDeleteCache("samwise");
         TryDeleteCache("arwen");
         TryDeleteCache("smaug");
+        TryDeleteCache("gandalf");
         _samwiseRates = null;
         _arwenRates = null;
         _smaugRates = null;
+        _gandalfDefeats = null;
         _samwiseSnapshot = new ReferenceFileSnapshot("samwise", ReferenceFileSource.Bundled, "", null, 0);
         _arwenSnapshot = new ReferenceFileSnapshot("arwen", ReferenceFileSource.Bundled, "", null, 0);
         _smaugSnapshot = new ReferenceFileSnapshot("smaug", ReferenceFileSource.Bundled, "", null, 0);
+        _gandalfSnapshot = new ReferenceFileSnapshot("gandalf", ReferenceFileSource.Bundled, "", null, 0);
         _diag?.Info("CommunityCalibration", "Cleared cached community calibration.");
         FileUpdated?.Invoke(this, "samwise");
         FileUpdated?.Invoke(this, "arwen");
         FileUpdated?.Invoke(this, "smaug");
+        FileUpdated?.Invoke(this, "gandalf");
     }
 
     // ── Per-file implementations ────────────────────────────────────────
@@ -132,6 +144,18 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             },
             ct);
 
+    private Task RefreshGandalfAsync(CancellationToken ct) =>
+        RefreshFileAsync(
+            "gandalf",
+            CommunityCalibrationJsonContext.Default.DefeatCooldownsPayload,
+            GandalfSchemaVersion,
+            payload =>
+            {
+                _gandalfDefeats = payload;
+                _gandalfSnapshot = BuildSnapshot("gandalf", ReferenceFileSource.Cdn, DateTimeOffset.UtcNow, GandalfEntryCount(payload));
+            },
+            ct);
+
     private void LoadSamwiseFromCache() =>
         LoadFromCache(
             "samwise",
@@ -163,6 +187,17 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             {
                 _smaugRates = payload;
                 _smaugSnapshot = BuildSnapshot("smaug", ReferenceFileSource.Cache, fetchedAt, SmaugEntryCount(payload));
+            });
+
+    private void LoadGandalfFromCache() =>
+        LoadFromCache(
+            "gandalf",
+            CommunityCalibrationJsonContext.Default.DefeatCooldownsPayload,
+            GandalfSchemaVersion,
+            (payload, fetchedAt) =>
+            {
+                _gandalfDefeats = payload;
+                _gandalfSnapshot = BuildSnapshot("gandalf", ReferenceFileSource.Cache, fetchedAt, GandalfEntryCount(payload));
             });
 
     // ── Generic helpers ─────────────────────────────────────────────────
@@ -274,6 +309,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             GrowthRatesPayload g => g.SchemaVersion,
             GiftRatesPayload a => a.SchemaVersion,
             VendorRatesPayload v => v.SchemaVersion,
+            DefeatCooldownsPayload d => d.SchemaVersion,
             _ => -1,
         };
         if (actual == expected) return true;
@@ -290,6 +326,8 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
 
     private static int SmaugEntryCount(VendorRatesPayload p) =>
         p.AbsoluteRates.Count + p.RatioRates.Count;
+
+    private static int GandalfEntryCount(DefeatCooldownsPayload p) => p.Defeats.Count;
 
     private static ReferenceFileSnapshot BuildSnapshot(string key, ReferenceFileSource source, DateTimeOffset? fetchedAt, int count) =>
         new(key, source, "", fetchedAt, count);

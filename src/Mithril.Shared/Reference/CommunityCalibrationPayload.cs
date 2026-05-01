@@ -115,6 +115,43 @@ public sealed class RatioPriceRatePayload
     public double MaxRatio { get; set; }
 }
 
+// ── Gandalf ────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Wire shape for the Gandalf defeat-cooldown overlay
+/// (<c>aggregated/gandalf.json</c> in the mithril-calibration repo). Provides
+/// per-boss reward-cooldown durations the in-game log doesn't carry.
+///
+/// Keys are post-article-strip wisdom-line display names (e.g. <c>"Mega-Spider"</c>,
+/// <c>"Olugax the Ever-Pudding"</c>, <c>"Den Mother"</c>) — the same key
+/// <see cref="Gandalf.Services.LootSource"/> uses for auto-discovered
+/// bosses, so calibration entries map cleanly onto learned bosses.
+///
+/// Read-only from the app's perspective — Gandalf's data isn't user-observed
+/// (durations are folklore, not log-derived), so there's no Share dialog or
+/// per-contributor submission flow. Edits go through PR to mithril-calibration.
+/// </summary>
+public sealed class DefeatCooldownsPayload
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string Module { get; set; } = "gandalf";
+    public DateTimeOffset? ExportedAt { get; set; }
+    public DateTimeOffset? AggregatedAt { get; set; }
+
+    /// <summary>Keyed by boss display name (post-article-strip wisdom-line form).</summary>
+    public Dictionary<string, DefeatCooldownEntryPayload> Defeats { get; set; } =
+        new(StringComparer.Ordinal);
+}
+
+public sealed class DefeatCooldownEntryPayload
+{
+    /// <summary>Reward cooldown duration in seconds. Required.</summary>
+    public int DurationSeconds { get; set; }
+
+    /// <summary>Geographic / encounter region for UI grouping. Optional.</summary>
+    public string? Area { get; set; }
+}
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
@@ -122,4 +159,5 @@ public sealed class RatioPriceRatePayload
 [JsonSerializable(typeof(GrowthRatesPayload))]
 [JsonSerializable(typeof(GiftRatesPayload))]
 [JsonSerializable(typeof(VendorRatesPayload))]
+[JsonSerializable(typeof(DefeatCooldownsPayload))]
 public partial class CommunityCalibrationJsonContext : JsonSerializerContext;

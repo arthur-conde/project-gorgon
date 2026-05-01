@@ -17,7 +17,13 @@ public interface ICommunityCalibrationService
     /// <summary>Current Smaug payload in memory, or null if never loaded.</summary>
     VendorRatesPayload? SmaugRates { get; }
 
-    /// <summary>File keys this service knows about: "samwise", "arwen", "smaug".</summary>
+    /// <summary>
+    /// Current Gandalf defeat-cooldown overlay in memory, or null if never loaded.
+    /// Read-only: durations are folklore, not user-observed, so there's no Share flow.
+    /// </summary>
+    DefeatCooldownsPayload? GandalfDefeats { get; }
+
+    /// <summary>File keys this service knows about: "samwise", "arwen", "smaug", "gandalf".</summary>
     IReadOnlyList<string> Keys { get; }
 
     /// <summary>Snapshot metadata for a file (source, fetched-at, entry count).</summary>
@@ -26,13 +32,13 @@ public interface ICommunityCalibrationService
     /// <summary>Refresh a single file from GitHub raw. Keeps existing cache on failure.</summary>
     Task RefreshAsync(string key, CancellationToken ct = default);
 
-    /// <summary>Refresh both files.</summary>
+    /// <summary>Refresh all known files.</summary>
     Task RefreshAllAsync(CancellationToken ct = default);
 
     /// <summary>Kick off <see cref="RefreshAllAsync"/> on a background task.</summary>
     void BeginBackgroundRefresh();
 
-    /// <summary>Delete both cached files and clear in-memory payloads.</summary>
+    /// <summary>Delete every cached file and clear in-memory payloads.</summary>
     void ClearCache();
 
     /// <summary>Fires with the file key after a successful refresh or cache load.</summary>

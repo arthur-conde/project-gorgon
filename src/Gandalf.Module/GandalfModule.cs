@@ -69,19 +69,24 @@ public sealed class GandalfModule : IMithrilModule
 
         // Loot source (chests + reward-cooldown defeats) — both kinds render
         // through one ITimerSource and share the derived progress store.
+        // Catalog is observation-driven: chest durations from rejection text,
+        // defeat bosses auto-discovered from the wisdom-credit line. Defeat
+        // durations come from the community calibration overlay (gandalf.json
+        // in mithril-calibration); placeholder fallback for not-yet-calibrated
+        // bosses.
         services.AddSingleton<ChestInteractionParser>();
         services.AddSingleton<ChestRejectionParser>();
+        services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
-        services.AddSingleton(sp => DefeatCatalogSeed.Bundled);
         services.AddSingleton<LootSource>(sp => new LootSource(
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
-            sp.GetRequiredService<IReadOnlyList<DefeatCatalogEntry>>(),
             time: null,
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
         services.AddHostedService<LootIngestionService>();
+        services.AddHostedService<DefeatCalibrationBridge>();
         services.AddSingleton<LootTimersViewModel>();
 
         // One-shot startup fanout: split the old combined per-char gandalf.json into the

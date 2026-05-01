@@ -31,7 +31,7 @@ public class LootBracketTrackerTests : IDisposable
     }
 
     private (LootSource src, LootBracketTracker tracker, DerivedTimerProgressService derived)
-        Build(IEnumerable<DefeatCatalogEntry>? defeats = null)
+        Build()
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -45,7 +45,7 @@ public class LootBracketTrackerTests : IDisposable
         var cacheStore = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
-        var src = new LootSource(derived, cacheStore, cache, defeats ?? [], time);
+        var src = new LootSource(derived, cacheStore, cache, time);
         var tracker = new LootBracketTracker(src, new ChestInteractionParser(), new ChestRejectionParser());
 
         return (src, tracker, derived);
