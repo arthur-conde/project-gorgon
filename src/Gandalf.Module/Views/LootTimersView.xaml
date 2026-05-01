@@ -100,9 +100,17 @@
                                         <TextBlock Text="{Binding Name}" FontWeight="Bold"
                                                    Foreground="#FFE8E8E8" TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding Name}"/>
-                                        <TextBlock Text="{Binding DurationLabel}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   Foreground="#88FFFFFF"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding DurationLabel}"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       Foreground="#88FFFFFF"/>
+                                            <TextBlock Text="approx."
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       FontStyle="Italic" Foreground="#FFD08040"
+                                                       Margin="6,0,0,0"
+                                                       ToolTip="Duration is a placeholder — boss not yet in community calibration data."
+                                                       Visibility="{Binding IsDurationVerified, Converter={StaticResource InverseBoolToVis}}"/>
+                                        </StackPanel>
                                     </StackPanel>
                                     <Button Grid.Column="1" Width="20" Height="20" Padding="0"
                                             Background="Transparent" BorderThickness="0"

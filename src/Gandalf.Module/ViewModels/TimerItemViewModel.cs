@@ -58,6 +58,14 @@ public sealed partial class TimerItemViewModel : ObservableObject
     public bool ShowRestartButton => IsDone;
     public bool ShowProgressBar => IsRunning || IsDone;
 
+    /// <summary>
+    /// Loot-tab defeat rows whose duration came from the placeholder (no
+    /// calibration entry) flag this true so the view can render a small
+    /// "approx." or "?" badge. Other sources / calibrated rows return true.
+    /// </summary>
+    public bool IsDurationVerified =>
+        Catalog.SourceMetadata is LootCatalogPayload p ? p.IsDurationVerified : true;
+
     /// <summary>Swap in a fresh row (new catalog + progress snapshot) and re-fire bindings.</summary>
     public void UpdateRow(TimerRow row)
     {

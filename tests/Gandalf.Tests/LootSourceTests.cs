@@ -30,7 +30,7 @@ public class LootSourceTests : IDisposable
     }
 
     private (LootSource src, DerivedTimerProgressService derived, FakeActiveCharacterService active, ManualTime time)
-        Build(IEnumerable<DefeatCatalogEntry>? defeats = null)
+        Build()
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -44,7 +44,7 @@ public class LootSourceTests : IDisposable
         var cacheStore = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
-        var src = new LootSource(derived, cacheStore, cache, defeats ?? [], time);
+        var src = new LootSource(derived, cacheStore, cache, time);
 
         return (src, derived, active, time);
     }
@@ -73,16 +73,12 @@ public class LootSourceTests : IDisposable
         var (src, derived, _, time) = Build();
         try
         {
-            // First chest: duration unknown.
             src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
-            // Player retries — game emits the rejection screen text.
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
 
             src.Catalog.Should().HaveCount(1);
             src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(3));
 
-            // The first interaction's row was skipped (duration unknown then). A
-            // future interaction now creates a row.
             time.Advance(TimeSpan.FromMinutes(10));
             src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
 
@@ -100,10 +96,8 @@ public class LootSourceTests : IDisposable
         var (src, derived, _, time) = Build();
         try
         {
-            // Seed cache so the first loot below creates a row.
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
 
-            // Loot stamped 90 minutes ago — should leave 90 min remaining.
             var past = time.GetUtcNow().UtcDateTime - TimeSpan.FromMinutes(90);
             src.OnChestInteraction("GoblinStaticChest1", past);
 
@@ -118,19 +112,21 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefeatCooldown_corpse_search_stamps_row_for_megaspider()
+    public void BossKillCredit_auto_discovers_and_stamps_with_placeholder_when_uncalibrated()
     {
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3)),
-        };
-        var (src, derived, _, time) = Build(defeats);
+        var (src, derived, _, time) = Build();
         try
         {
-            src.OnDefeatCooldownObserved("Megaspider", time.GetUtcNow().UtcDateTime);
+            // No calibration overlay → falls back to PlaceholderDefeatDuration,
+            // catalog row is flagged unverified.
+            src.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
 
-            src.Progress.Should().ContainKey(LootSource.DefeatKey("Spider_Boss0"));
-            src.Progress[LootSource.DefeatKey("Spider_Boss0")].StartedAt.Should().Be(time.GetUtcNow());
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].Duration.Should().Be(LootSource.PlaceholderDefeatDuration);
+            ((LootCatalogPayload)src.Catalog[0].SourceMetadata!).IsDurationVerified.Should().BeFalse();
+
+            src.Progress.Should().ContainKey(LootSource.DefeatKey("Den Mother"));
+            src.Progress[LootSource.DefeatKey("Den Mother")].StartedAt.Should().Be(time.GetUtcNow());
         }
         finally
         {
@@ -139,23 +135,28 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefeatCooldown_corpse_search_stamps_row_for_olugax()
+    public void Calibration_overlay_supplies_verified_duration_and_area()
     {
-        // Olugax used to route through ScriptedEventBossParser on a kill-credit
-        // line. The 2026-04-30 capture confirmed it shares Megaspider's
-        // signal mechanism, so the corpse-search positive signal is the
-        // single canonical path.
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax The Ever-Pudding", TimeSpan.FromHours(3)),
-        };
-        var (src, derived, _, time) = Build(defeats);
+        var (src, derived, _, time) = Build();
         try
         {
-            src.OnDefeatCooldownObserved("Olugax The Ever-Pudding", time.GetUtcNow().UtcDateTime);
+            src.OverlayDefeatCalibration(
+            [
+                new DefeatCatalogEntry(
+                    DisplayName: "Mega-Spider",
+                    RewardCooldown: TimeSpan.FromHours(2),
+                    Area: "Sun Vale"),
+            ]);
 
-            src.Progress.Should().ContainKey(LootSource.DefeatKey("Olugax"));
-            src.Progress[LootSource.DefeatKey("Olugax")].StartedAt.Should().Be(time.GetUtcNow());
+            src.OnBossKillCredit("Mega-Spider", time.GetUtcNow().UtcDateTime);
+
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(2));
+            src.Catalog[0].Region.Should().Be("Sun Vale");
+
+            var payload = (LootCatalogPayload)src.Catalog[0].SourceMetadata!;
+            payload.IsDurationVerified.Should().BeTrue();
+            payload.Region.Should().Be("Sun Vale");
         }
         finally
         {
@@ -164,15 +165,50 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefeatCooldown_corpse_search_ignores_unknown_npc()
+    public void Calibration_overlay_applied_after_discovery_re_projects_existing_rows()
     {
-        // Permissive parser fires for every mob; LootSource is the gatekeeper.
-        var (src, derived, _, time) = Build([]);
+        var (src, derived, _, time) = Build();
         try
         {
-            src.OnDefeatCooldownObserved("Snail", time.GetUtcNow().UtcDateTime);
-            src.OnDefeatCooldownObserved("Goblin Archer", time.GetUtcNow().UtcDateTime);
-            src.Progress.Should().BeEmpty();
+            // Discovery first → placeholder row.
+            src.OnBossKillCredit("Megaspider", time.GetUtcNow().UtcDateTime);
+            src.Catalog[0].Duration.Should().Be(LootSource.PlaceholderDefeatDuration);
+
+            // Calibration arrives later → existing row picks up the verified duration.
+            src.OverlayDefeatCalibration(
+            [
+                new DefeatCatalogEntry("Megaspider", TimeSpan.FromHours(2), Area: "Sun Vale"),
+            ]);
+
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(2));
+            ((LootCatalogPayload)src.Catalog[0].SourceMetadata!).IsDurationVerified.Should().BeTrue();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void BossKillCredit_within_window_does_not_reset_clock()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OverlayDefeatCalibration(
+            [
+                new DefeatCatalogEntry("Olugax the Ever-Pudding", TimeSpan.FromHours(3)),
+            ]);
+
+            src.OnBossKillCredit("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
+            var firstStart = src.Progress[LootSource.DefeatKey("Olugax the Ever-Pudding")].StartedAt;
+
+            // Server-side gate normally suppresses re-kills; idempotency check
+            // protects against log replay producing the same line twice.
+            src.OnBossKillCredit("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
+
+            src.Progress[LootSource.DefeatKey("Olugax the Ever-Pudding")].StartedAt.Should().Be(firstStart);
         }
         finally
         {
@@ -183,15 +219,12 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void DefeatCooldownActive_is_diagnostic_only_does_not_mutate_progress()
     {
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Sun Vale", "Spider_Boss0", "Megaspider", TimeSpan.FromHours(3)),
-        };
-        var (src, derived, _, time) = Build(defeats);
+        var (src, derived, _, time) = Build();
         try
         {
             src.OnDefeatCooldownActive("Megaspider", time.GetUtcNow().UtcDateTime);
             src.Progress.Should().BeEmpty();
+            src.Catalog.Should().BeEmpty();
         }
         finally
         {
@@ -217,14 +250,11 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Catalog_includes_both_chest_and_defeat_entries_under_one_source()
     {
-        var defeats = new[]
-        {
-            new DefeatCatalogEntry("Gazluk", "Olugax", "Olugax The Ever-Pudding", TimeSpan.FromHours(3)),
-        };
-        var (src, derived, _, _) = Build(defeats);
+        var (src, derived, _, time) = Build();
         try
         {
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
+            src.OnBossKillCredit("Olugax the Ever-Pudding", time.GetUtcNow().UtcDateTime);
 
             src.Catalog.Should().HaveCount(2);
             src.Catalog.Select(c => ((LootCatalogPayload)c.SourceMetadata!).Kind)
@@ -248,20 +278,23 @@ public class LootSourceTests : IDisposable
         var derivedView = new PerCharacterView<DerivedProgress>(active, derivedStore);
         var derived1 = new DerivedTimerProgressService(derivedView, time);
 
-        // Run 1: observe rejection, then dispose.
+        // Run 1: observe rejection + auto-discover, then dispose.
         var cacheStore1 = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache1 = cacheStore1.Load();
-        var src1 = new LootSource(derived1, cacheStore1, cache1, [], time);
+        var src1 = new LootSource(derived1, cacheStore1, cache1, time);
         src1.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
+        src1.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
         src1.Dispose();
 
-        // Run 2: cache should already know GoblinStaticChest1's duration.
+        // Run 2: cache should remember the chest duration and the learned boss.
         var cacheStore2 = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache2 = cacheStore2.Load();
         cache2.ChestDurationByInternalName.Should().ContainKey("GoblinStaticChest1");
         cache2.ChestDurationByInternalName["GoblinStaticChest1"].Should().Be(TimeSpan.FromHours(3));
+        cache2.LearnedDefeats.Should().ContainKey("Den Mother");
+        cache2.LearnedDefeats["Den Mother"].FirstObservedAt.Should().Be(time.GetUtcNow().UtcDateTime);
 
         derived1.Dispose();
         derivedView.Dispose();

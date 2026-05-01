@@ -5,14 +5,33 @@ using Mithril.Shared.Settings;
 namespace Gandalf.Services;
 
 /// <summary>
-/// Cross-source <see cref="ITimerSource"/> for static chest + reward-cooldown
-/// defeat timers. Chest catalog is observed (durations cached as the player
-/// learns them from rejection screen text); defeat catalog is bundled
-/// + overlaid from <c>mithril-calibration/defeats.json</c> when shipped.
+/// Cross-source <see cref="ITimerSource"/> for static chest + defeat-cooldown
+/// boss timers. Both surfaces are observation-driven:
+///
+/// <list type="bullet">
+///   <item>Chest durations are learned from the game's "loot N hours from now"
+///   re-loot rejection screen text and persisted by chest internal name.</item>
+///   <item>Defeat bosses are auto-discovered from the CombatInfo wisdom-credit
+///   line (<see cref="OnBossKillCredit"/>) and persisted by display name.
+///   Cooldown durations come from the community calibration overlay
+///   (<see cref="OverlayDefeatCalibration"/>); not-yet-calibrated bosses get
+///   a folklore-default placeholder and surface as
+///   <c>IsDurationVerified=false</c> so the UI can flag them.</item>
+/// </list>
+///
+/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#defeat-cooldown-creatures
 /// </summary>
 public sealed class LootSource : ITimerSource, IDisposable
 {
     public const string Id = "gandalf.loot";
+
+    /// <summary>
+    /// Folklore-default cooldown for a freshly-discovered boss with no
+    /// calibration entry yet. 3 h matches the community convention for the
+    /// two prototype bosses (Megaspider, Olugax). Surfaces as
+    /// <see cref="LootCatalogPayload.IsDurationVerified"/> = false.
+    /// </summary>
+    public static readonly TimeSpan PlaceholderDefeatDuration = TimeSpan.FromHours(3);
 
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
@@ -20,14 +39,14 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly object _catalogLock = new();
-    private IReadOnlyList<DefeatCatalogEntry> _defeatCatalog;
+    private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
+        new Dictionary<string, DefeatCatalogEntry>(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<TimerCatalogEntry> _catalog;
 
     public LootSource(
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
-        IEnumerable<DefeatCatalogEntry>? defeats = null,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
@@ -36,7 +55,6 @@ public sealed class LootSource : ITimerSource, IDisposable
         _cache = cache;
         _time = time ?? TimeProvider.System;
         _diag = diag;
-        _defeatCatalog = (defeats ?? []).ToArray();
         _catalog = BuildCatalog();
 
         _derived.ProgressChanged += OnDerivedProgressChanged;
@@ -77,7 +95,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
 
         _derived.Start(Id, key, startedAt);
-        EnsureCatalogContainsChest(chestInternalName, duration);
+        EnsureCatalogReprojected();
         FireReady(key, chestInternalName, durationOverride: duration, atUtc: startedAt + duration);
     }
 
@@ -102,62 +120,102 @@ public sealed class LootSource : ITimerSource, IDisposable
         if (changed)
         {
             try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
-            EnsureCatalogContainsChest(chestInternalName, duration);
+            EnsureCatalogReprojected();
         }
     }
 
     /// <summary>
-    /// Apply a corpse-search observation. The corpse-search line fires for
-    /// every mob the player kills, so the catalog filter by display name is
-    /// what restricts this to actual cooldown bosses. No local suppression
-    /// — the game already gates re-kills server-side, so a positive signal
-    /// always means a real (non-cooldown) kill.
+    /// Apply a wisdom-credit boss-kill observation: auto-learn the boss into
+    /// the persisted catalog (display-name keyed) and stamp the cooldown row.
+    /// Combat Wisdom is awarded only for defeat-cooldown creatures, so the
+    /// presence of this signal is itself the boss-class proof — no per-boss
+    /// catalog curation needed.
+    ///
+    /// Duration comes from the calibration overlay if available; otherwise
+    /// falls back to <see cref="PlaceholderDefeatDuration"/> with the
+    /// catalog entry flagged unverified.
     /// </summary>
-    public void OnDefeatCooldownObserved(string npcDisplayName, DateTime timestampUtc)
+    public void OnBossKillCredit(string npcDisplayName, DateTime timestampUtc)
     {
-        var entry = LookupByDisplayName(npcDisplayName);
-        if (entry is null) return;
+        if (string.IsNullOrEmpty(npcDisplayName)) return;
 
-        var key = DefeatKey(entry.NpcInternalName);
-        var prior = _derived.GetProgress(Id, key);
+        var displayName = npcDisplayName.Trim();
+        var (duration, _) = ResolveDefeatDuration(displayName);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
+        var key = DefeatKey(displayName);
+
+        // Persist the discovery so the row reappears next session even before
+        // the player re-kills the boss.
+        var learnedChanged = false;
+        lock (_catalogLock)
+        {
+            if (!_cache.LearnedDefeats.TryGetValue(displayName, out var entry))
+            {
+                _cache.LearnedDefeats[displayName] = new LearnedDefeat
+                {
+                    FirstObservedAt = timestampUtc,
+                    LastObservedAt = timestampUtc,
+                };
+                learnedChanged = true;
+            }
+            else if (timestampUtc > entry.LastObservedAt)
+            {
+                entry.LastObservedAt = timestampUtc;
+                learnedChanged = true;
+            }
+        }
+        if (learnedChanged)
+        {
+            try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
+            EnsureCatalogReprojected();
+        }
 
         // Idempotency: identical timestamp + still-active row → no churn.
+        var prior = _derived.GetProgress(Id, key);
         if (prior is not null && prior.StartedAt == startedAt && prior.DismissedAt is null) return;
 
         _derived.Start(Id, key, startedAt);
-        FireReady(key, entry.DisplayName, durationOverride: entry.RewardCooldown, atUtc: startedAt + entry.RewardCooldown);
+        FireReady(key, displayName, durationOverride: duration, atUtc: startedAt + duration);
     }
 
     /// <summary>
     /// Apply a "you have already killed &lt;X&gt; too recently" rejection observation.
     /// v1 is diagnostic-only: the prior kill that started the cooldown already
-    /// stamped a row via the positive path. If no row exists (e.g. Mithril
-    /// started mid-cooldown), the row will appear on the next successful kill.
+    /// stamped a row via the positive (wisdom-credit) path. If no row exists
+    /// (e.g. Mithril started mid-cooldown), the row will appear on the next
+    /// successful kill.
     /// </summary>
     public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
     {
-        var entry = LookupByDisplayName(npcDisplayName);
-        if (entry is null) return;
+        if (string.IsNullOrEmpty(npcDisplayName)) return;
         _diag?.Trace("Gandalf.Loot",
-            $"Cooldown still active for {entry.DisplayName} at {timestampUtc:O}");
+            $"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
     }
 
-    private DefeatCatalogEntry? LookupByDisplayName(string npcDisplayName)
+    /// <summary>
+    /// Replace the calibration overlay (durations + region for known bosses).
+    /// Intended for the Gandalf calibration bridge that subscribes to
+    /// <see cref="Mithril.Shared.Reference.ICommunityCalibrationService"/> and
+    /// refreshes when <c>aggregated/gandalf.json</c> updates. Auto-learned
+    /// bosses still appear; they just get the placeholder duration until a
+    /// calibration entry covers them.
+    /// </summary>
+    public void OverlayDefeatCalibration(IEnumerable<DefeatCatalogEntry> entries)
     {
-        if (string.IsNullOrEmpty(npcDisplayName)) return null;
-        return _defeatCatalog.FirstOrDefault(d =>
-            string.Equals(d.DisplayName, npcDisplayName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    public void OverlayDefeatCatalog(IEnumerable<DefeatCatalogEntry> entries)
-    {
+        var byName = entries.ToDictionary(e => e.DisplayName, StringComparer.OrdinalIgnoreCase);
         lock (_catalogLock)
         {
-            _defeatCatalog = entries.ToArray();
+            _calibrationByDisplayName = byName;
             _catalog = BuildCatalog();
         }
         CatalogChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private (TimeSpan duration, bool verified) ResolveDefeatDuration(string displayName)
+    {
+        if (_calibrationByDisplayName.TryGetValue(displayName, out var cal))
+            return (cal.RewardCooldown, true);
+        return (PlaceholderDefeatDuration, false);
     }
 
     private void OnDerivedProgressChanged(object? sender, EventArgs e) =>
@@ -176,7 +234,9 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private IReadOnlyList<TimerCatalogEntry> BuildCatalog()
     {
-        var list = new List<TimerCatalogEntry>(_cache.ChestDurationByInternalName.Count + _defeatCatalog.Count);
+        var list = new List<TimerCatalogEntry>(
+            _cache.ChestDurationByInternalName.Count + _cache.LearnedDefeats.Count);
+
         foreach (var (internalName, duration) in _cache.ChestDurationByInternalName)
         {
             list.Add(new TimerCatalogEntry(
@@ -186,31 +246,32 @@ public sealed class LootSource : ITimerSource, IDisposable
                 Duration: duration,
                 SourceMetadata: new LootCatalogPayload(LootKind.Chest, internalName, Region: null)));
         }
-        foreach (var d in _defeatCatalog)
+
+        foreach (var displayName in _cache.LearnedDefeats.Keys)
         {
+            var (duration, verified) = ResolveDefeatDuration(displayName);
+            _calibrationByDisplayName.TryGetValue(displayName, out var cal);
+            var area = cal?.Area;
+
             list.Add(new TimerCatalogEntry(
-                Key: DefeatKey(d.NpcInternalName),
-                DisplayName: d.DisplayName,
-                Region: string.IsNullOrEmpty(d.Area) ? "Defeats" : d.Area,
-                Duration: d.RewardCooldown,
-                SourceMetadata: new LootCatalogPayload(LootKind.Defeat, d.NpcInternalName, d.Area)));
+                Key: DefeatKey(displayName),
+                DisplayName: displayName,
+                Region: string.IsNullOrEmpty(area) ? "Defeats" : area,
+                Duration: duration,
+                SourceMetadata: new LootCatalogPayload(
+                    LootKind.Defeat, displayName, area, IsDurationVerified: verified)));
         }
+
         return list;
     }
 
-    private void EnsureCatalogContainsChest(string internalName, TimeSpan duration)
+    private void EnsureCatalogReprojected()
     {
-        var raised = false;
+        bool raised;
         lock (_catalogLock)
         {
-            // Reproject — duration may have changed for an already-known chest, or
-            // the catalog may not yet include this internalName.
-            var newCatalog = BuildCatalog();
-            if (!ReferenceEquals(_catalog, newCatalog))
-            {
-                _catalog = newCatalog;
-                raised = true;
-            }
+            _catalog = BuildCatalog();
+            raised = true;
         }
         if (raised) CatalogChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -232,7 +293,13 @@ public sealed class LootSource : ITimerSource, IDisposable
     }
 
     public static string ChestKey(string internalName) => $"chest:{internalName}";
-    public static string DefeatKey(string npcInternalName) => $"defeat:{npcInternalName}";
+
+    /// <summary>
+    /// Defeat row key. Display-name keyed (post-article-strip wisdom-line form)
+    /// because the wisdom line is the only signal carrying an NPC identifier
+    /// for cooldown bosses, and it has no internal-name field.
+    /// </summary>
+    public static string DefeatKey(string npcDisplayName) => $"defeat:{npcDisplayName}";
 
     public void Dispose()
     {
