@@ -87,7 +87,13 @@ public sealed class ArwenModule : IMithrilModule
         services.AddSingleton<FavorCalculatorViewModel>();
         services.AddSingleton<GiftScannerViewModel>();
         services.AddSingleton<ItemLookupViewModel>();
+        services.AddSingleton<StorageGiftsViewModel>();
         services.AddSingleton<CalibrationViewModel>();
+
+        // Holder is constructed early; .Inner is wired below once FavorView exists.
+        // VMs depend on IFavorViewNavigator (the holder) so DI doesn't loop back into FavorView.
+        services.AddSingleton<FavorViewNavigatorHolder>();
+        services.AddSingleton<IFavorViewNavigator>(sp => sp.GetRequiredService<FavorViewNavigatorHolder>());
 
         services.AddSingleton<FavorView>(sp =>
         {
@@ -96,7 +102,9 @@ public sealed class ArwenModule : IMithrilModule
             view.AddTab("Favor Calculator", new FavorCalculatorTab { DataContext = sp.GetRequiredService<FavorCalculatorViewModel>() });
             view.AddTab("Gift Scanner", new GiftScannerTab { DataContext = sp.GetRequiredService<GiftScannerViewModel>() });
             view.AddTab("Item Lookup", new ItemLookupTab { DataContext = sp.GetRequiredService<ItemLookupViewModel>() });
+            view.AddTab("Storage Gifts", new StorageGiftsTab { DataContext = sp.GetRequiredService<StorageGiftsViewModel>() });
             view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
+            sp.GetRequiredService<FavorViewNavigatorHolder>().Inner = view;
             return view;
         });
         services.AddSingleton<ArwenSettingsView>(sp => new ArwenSettingsView
