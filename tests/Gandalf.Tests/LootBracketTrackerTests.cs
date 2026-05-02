@@ -46,7 +46,12 @@ public class LootBracketTrackerTests : IDisposable
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
         var src = new LootSource(derived, cacheStore, cache, time);
-        var tracker = new LootBracketTracker(src, new ChestInteractionParser(), new ChestRejectionParser());
+        var tracker = new LootBracketTracker(
+            src,
+            new ChestInteractionParser(),
+            new ChestRejectionParser(),
+            new InteractionEndParser(),
+            new InteractionDelayLoopParser());
 
         return (src, tracker, derived);
     }
@@ -271,6 +276,130 @@ public class LootBracketTrackerTests : IDisposable
             tracker.Observe("LocalPlayer: ProcessAddItem(Pear(2), -1, True)", EventTime);
             // Still only one row — TestChest from the closed bracket.
             src.Progress.Should().HaveCount(1);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// #91 Mode A: Portal closes via ProcessEndInteraction(id), not
+    /// ProcessEnableInteractors. Without that close signal recognized, the
+    /// bracket sat InFlight and the next stray AddItem (a real chest, quest
+    /// reward, etc.) would commit "Portal" as a chest row.
+    /// </summary>
+    [Fact]
+    public void EndInteraction_with_matching_id_closes_bracket()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            // Portal interaction shape from live capture.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-158, 8, 0, False, \"Portal\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessEndInteraction(-158)", EventTime);
+
+            tracker.IsInFlight.Should().BeFalse();
+
+            // A later, unrelated AddItem must not be attributed to "Portal".
+            tracker.Observe("LocalPlayer: ProcessAddItem(Apple(1), -1, True)", EventTime);
+            src.Progress.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// #91 Mode A: EndInteraction with non-matching id is a stale signal
+    /// (e.g. a prior interactor finishing late) and must not close the
+    /// current bracket.
+    /// </summary>
+    [Fact]
+    public void EndInteraction_with_non_matching_id_does_not_close_bracket()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("TestChest", TimeSpan.FromHours(1));
+
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-200, 7, 0, False, \"TestChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessEndInteraction(-999)", EventTime);
+
+            tracker.IsInFlight.Should().BeTrue();
+            tracker.Observe("LocalPlayer: ProcessAddItem(Apple(1), -1, True)", EventTime);
+            src.Progress.Should().ContainKey(LootSource.ChestKey("TestChest"));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// #91 Mode A: SummonedFlower entities never emit a close signal at all
+    /// (no EndInteraction, no EnableInteractors). The next ProcessStartInteraction
+    /// must replace the stale bracket so an unrelated AddItem from somewhere
+    /// later in the log doesn't get committed under the flower's name.
+    /// </summary>
+    [Fact]
+    public void Stale_summoned_flower_bracket_is_replaced_by_next_start()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            // Flower interaction never closes — only emits an UpdateDescription.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(10148077, 7, 0, False, \"SummonedFlower4\")", EventTime);
+            tracker.Observe("ProcessUpdateDescription(10148077, \"Growing Dahlia\", \"This dahlia is growing nicely.\", \"Check Dahlia\", UseItem, \"Flower4(Scale=0.75)\", 0)", EventTime);
+
+            // Real chest interaction takes over before any AddItem fires.
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(PowerPotion2(1), -1, True)", EventTime);
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("EltibuleSecretChest"));
+            src.Progress.Should().NotContainKey(LootSource.ChestKey("SummonedFlower4"));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// #91 Mode B: LemonTree (and any harvestable tree / plant / node) emits
+    /// a real ProcessAddItem inside the bracket — picking fruit. The
+    /// ProcessDoDelayLoop with the IsInteractorDelayLoop flag distinguishes
+    /// it from a chest; the AddItem must not produce a chest row.
+    /// </summary>
+    [Fact]
+    public void Harvest_delay_loop_suppresses_chest_commit()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            // Verbatim shape from live capture (#91): LemonTree harvest sequence.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(9902924, 7, 0, False, \"LemonTree\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessDoDelayLoop(3, Gather, \"Collecting Fruit...\", 0, AbortIfAttacked, IsInteractorDelayLoop)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(Lemon(115660438), -1, True)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessEndInteraction(9902924)", EventTime);
+
+            tracker.IsInFlight.Should().BeFalse();
+            src.Progress.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// #91 Mode B guard: self-targeted delay loops (Eat / Drink / UseItem /
+    /// UseTeleportationCircle) don't carry the IsInteractorDelayLoop flag and
+    /// therefore must not poison an in-flight chest bracket. Sequence:
+    /// player opens a chest, eats food while it's open, then loots — the
+    /// chest commit must still fire.
+    /// </summary>
+    [Fact]
+    public void Self_targeted_delay_loop_does_not_suppress_chest_commit()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            // Self-targeted "Eat" delay loop — no IsInteractorDelayLoop flag.
+            tracker.Observe("LocalPlayer: ProcessDoDelayLoop(1.5, Eat, \"Using Ranalon Salad\", 5820, AbortIfAttacked)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(PowerPotion2(1), -1, True)", EventTime);
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("EltibuleSecretChest"));
         }
         finally { src.Dispose(); derived.Dispose(); }
     }

@@ -26,20 +26,27 @@ public sealed partial class LootBracketTracker
     private readonly LootSource _source;
     private readonly ChestInteractionParser _interactionParser;
     private readonly ChestRejectionParser _rejectionParser;
+    private readonly InteractionEndParser _endParser;
+    private readonly InteractionDelayLoopParser _delayLoopParser;
 
     private State _state = State.Idle;
     private string? _bracketName;
     private DateTime _bracketStartTimestamp;
     private long _bracketInteractorId;
+    private string? _bracketHarvestVerb;
 
     public LootBracketTracker(
         LootSource source,
         ChestInteractionParser interactionParser,
-        ChestRejectionParser rejectionParser)
+        ChestRejectionParser rejectionParser,
+        InteractionEndParser endParser,
+        InteractionDelayLoopParser delayLoopParser)
     {
         _source = source;
         _interactionParser = interactionParser;
         _rejectionParser = rejectionParser;
+        _endParser = endParser;
+        _delayLoopParser = delayLoopParser;
     }
 
     /// <summary>True iff the tracker is currently inside an interaction bracket.</summary>
@@ -76,6 +83,7 @@ public sealed partial class LootBracketTracker
             _bracketName = start.EntityName;
             _bracketStartTimestamp = start.Timestamp;
             _bracketInteractorId = start.InteractorId;
+            _bracketHarvestVerb = null;
             return;
         }
 
@@ -99,18 +107,48 @@ public sealed partial class LootBracketTracker
             return;
         }
 
-        // 4. AddItem inside bracket → confirmed loot. Commit the chest event.
+        // 4. Interactor-bound delay loop → bracket is a harvest (Gather "Collecting Fruit..."
+        // on a tree, etc.), not a chest. Stash the verb and let the bracket continue
+        // — its closing signal will reset state, and the AddItem step will see a
+        // non-null harvest verb and skip the chest commit. Self-targeted delay loops
+        // (Eat / Drink / UseItem / UseTeleportationCircle) don't carry the
+        // IsInteractorDelayLoop flag and shouldn't poison an unrelated bracket.
+        if (_state == State.InFlight
+            && _delayLoopParser.TryParse(line, timestamp) is InteractionDelayLoopEvent delay
+            && delay.IsInteractor)
+        {
+            _bracketHarvestVerb = delay.Verb;
+            return;
+        }
+
+        // 5. AddItem inside bracket → confirmed loot, *unless* a harvest verb has
+        // been stashed for this bracket. No chest in any captured log emits
+        // ProcessDoDelayLoop, so the discriminator is "delay-loop verb present →
+        // not a chest"; the verb itself is captured for diagnostics and so we
+        // can promote to an explicit allowlist if a chest ever shows up with one.
         if (_state == State.InFlight && AddItemRx().IsMatch(line) && _bracketName is not null)
         {
-            _source.OnChestInteraction(_bracketName, _bracketStartTimestamp);
+            if (_bracketHarvestVerb is null)
+                _source.OnChestInteraction(_bracketName, _bracketStartTimestamp);
             _state = State.Committed;
             return;
         }
 
-        // 5. EnableInteractors with matching id → bracket close.
+        // 6. EnableInteractors with matching id → bracket close.
         if (EnableInteractorsRx().Match(line) is { Success: true } m
             && long.TryParse(m.Groups["id"].Value, out var closingId)
             && closingId == _bracketInteractorId)
+        {
+            ResetIdle();
+            return;
+        }
+
+        // 7. EndInteraction with matching id → bracket close (symmetric to
+        // EnableInteractors). Portals close via this signal; without it the
+        // bracket would sit InFlight long enough for an unrelated AddItem
+        // to commit "Portal" as a chest.
+        if (_endParser.TryParse(line, timestamp) is InteractionEndEvent end
+            && end.InteractorId == _bracketInteractorId)
         {
             ResetIdle();
             return;
@@ -123,6 +161,7 @@ public sealed partial class LootBracketTracker
         _bracketName = null;
         _bracketStartTimestamp = default;
         _bracketInteractorId = 0;
+        _bracketHarvestVerb = null;
     }
 
     private enum State

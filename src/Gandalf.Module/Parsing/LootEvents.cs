@@ -24,3 +24,27 @@ public sealed record InteractionStartEvent(DateTime Timestamp, long InteractorId
 /// </summary>
 public sealed record ChestCooldownObservedEvent(DateTime Timestamp, string ChestInternalName, TimeSpan Duration)
     : LogEvent(Timestamp);
+
+/// <summary>
+/// Player ended an interaction. Symmetric close to <c>ProcessEnableInteractors</c>:
+/// in live captures, portals close via <c>ProcessEndInteraction(id)</c> and
+/// chests close via <c>ProcessEnableInteractors([], [id,])</c>; the tracker
+/// needs to honor both so non-chest brackets don't sit InFlight long enough
+/// for an unrelated <c>ProcessAddItem</c> to commit them as a chest.
+/// </summary>
+public sealed record InteractionEndEvent(DateTime Timestamp, long InteractorId)
+    : LogEvent(Timestamp);
+
+/// <summary>
+/// Player started an action with a delay loop (gather fruit, eat food, recall
+/// to a teleport circle, distill, etc.). The discriminator for the loot
+/// tracker is <see cref="IsInteractor"/>: when set, the delay loop is bound
+/// to the in-flight interaction (e.g. <c>Gather, "Collecting Fruit..."</c> on
+/// a tree), and the subsequent <c>ProcessAddItem</c> is harvested loot, not a
+/// chest. Self-targeted delay loops (<c>Eat</c>, <c>Drink</c>, <c>UseItem</c>,
+/// <c>UseTeleportationCircle</c>) don't carry the flag and shouldn't poison
+/// an unrelated bracket. The verb is captured for diagnostics and so we can
+/// promote to an explicit allowlist if a chest ever emits one.
+/// </summary>
+public sealed record InteractionDelayLoopEvent(DateTime Timestamp, string Verb, bool IsInteractor)
+    : LogEvent(Timestamp);
