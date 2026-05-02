@@ -154,7 +154,7 @@ public sealed partial class GiftScannerViewModel : ObservableObject
             // multiple NPC preferences; each preference's filter-type keywords (MinRarity, Rarity,
             // MinValue, Crafted) must pass for the item to qualify.
             var allPrefs = _giftIndex.MatchAllPreferencesForItem(match.ItemId, SelectedNpc.NpcKey);
-            if (!PassesStorageFilters(item, allPrefs)) continue;
+            if (!GiftFilter.Passes(item, allPrefs)) continue;
 
             var location = StorageReportLoader.NormalizeLocation(item.StorageVault, item.IsInInventory);
             var estimate = _calibration.EstimateFavor(match, SelectedNpc.NpcKey);
@@ -216,60 +216,4 @@ public sealed partial class GiftScannerViewModel : ObservableObject
         StatusMessage = $"Found {rows.Count:N0} giftable items{calibratedSuffix}";
     }
 
-    /// <summary>
-    /// Checks whether a real inventory item passes every filter-style keyword across all
-    /// matched NPC preferences. CDN template matching is over-inclusive for filter keywords
-    /// like MinRarity/MinValue/Rarity — the scanner verifies against actual inventory item
-    /// properties. All filter checks must pass.
-    /// </summary>
-    private static bool PassesStorageFilters(StorageItem item, IReadOnlyList<MatchedPreference> allPrefs)
-    {
-        foreach (var pref in allPrefs)
-        {
-            foreach (var kw in pref.Keywords)
-            {
-                if (!PassesSingleFilter(item, kw)) return false;
-            }
-        }
-        return true;
-    }
-
-    private static bool PassesSingleFilter(StorageItem item, string kw)
-    {
-        if (kw.StartsWith("MinRarity:", StringComparison.Ordinal))
-        {
-            var required = kw["MinRarity:".Length..];
-            return RarityRank(item.Rarity) >= RarityRank(required);
-        }
-
-        if (kw.StartsWith("Rarity:", StringComparison.Ordinal))
-        {
-            var required = kw["Rarity:".Length..];
-            if (required == "Common")
-                return item.Rarity is null;
-            return string.Equals(item.Rarity, required, StringComparison.OrdinalIgnoreCase);
-        }
-
-        if (kw.StartsWith("MinValue:", StringComparison.Ordinal))
-        {
-            if (int.TryParse(kw.AsSpan("MinValue:".Length), out var minVal))
-                return item.Value >= minVal;
-        }
-
-        if (kw == "Crafted:y")
-            return item.IsCrafted;
-
-        return true;
-    }
-
-    private static int RarityRank(string? rarity) => rarity switch
-    {
-        null => 0,           // Common (no rarity field)
-        "Uncommon" => 1,
-        "Rare" => 2,
-        "Exceptional" => 3,
-        "Epic" => 4,
-        "Legendary" => 5,
-        _ => 0,
-    };
 }
