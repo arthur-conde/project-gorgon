@@ -585,6 +585,50 @@
         <Setter Property="Padding"     Value="6,3"/>
     </Style>
 
+    <!-- ═══════════════════ MithrilTabItem ═══════════════════ -->
+
+    <!-- Themed TabItem with optional notification badge. Set
+         c:TabBadge.Count="<int>" on a TabItem to render a small accent pill
+         next to the header; the pill is hidden when Count <= 0. Apply via
+         <TabControl.ItemContainerStyle> or per-item Style. -->
+    <Style x:Key="MithrilTabItemStyle" TargetType="TabItem">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeMedium}"/>
+        <Setter Property="Padding"    Value="14,6"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
+                            BorderBrush="Transparent" BorderThickness="0,0,0,2" Margin="0,0,2,0">
+                        <StackPanel Orientation="Horizontal">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                            <Border x:Name="BadgePill" Margin="6,0,0,0" Padding="5,0"
+                                    MinWidth="16" Height="14" CornerRadius="7"
+                                    Background="{StaticResource AccentBrush}"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding Path=(c:TabBadge.Count), RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource PositiveIntToVis}}">
+                                <TextBlock Text="{Binding Path=(c:TabBadge.Count), RelativeSource={RelativeSource TemplatedParent}}"
+                                           Foreground="#FF1A1A1A" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeXSmall}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#18FFFFFF"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ═══════════════════ MithrilQueryBox ═══════════════════ -->
 
     <!-- Highlight brushes — reused by MithrilQueryBox when coloring tokens. -->

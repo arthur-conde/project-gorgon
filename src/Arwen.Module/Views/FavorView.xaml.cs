@@ -12,18 +12,22 @@ public partial class FavorView : UserControl, IFavorViewNavigator
     }
 
     /// <summary>
-    /// Adds a tab with its DataContext already set.
-    /// Called by ArwenModule during DI registration so each tab
+    /// Adds a tab with its DataContext already set, and returns the created
+    /// <see cref="TabItem"/> so callers can attach a notification badge via
+    /// <c>Mithril.Shared.Wpf.TabBadge.SetCount(item, n)</c> or bind it to a VM
+    /// property. Called by ArwenModule during DI registration so each tab
     /// has its ViewModel before any bindings are evaluated.
     /// </summary>
-    public void AddTab(string header, UserControl content)
+    public TabItem AddTab(string header, UserControl content)
     {
-        Tabs.Items.Add(new TabItem
+        var tab = new TabItem
         {
             Header = header,
             Content = content,
             Margin = new System.Windows.Thickness(0, 8, 0, 0),
-        });
+        };
+        Tabs.Items.Add(tab);
+        return tab;
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ using Mithril.Shared.Inventory;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
+using Mithril.Shared.Wpf;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -103,7 +104,10 @@ public sealed class ArwenModule : IMithrilModule
             view.AddTab("Gift Scanner", new GiftScannerTab { DataContext = sp.GetRequiredService<GiftScannerViewModel>() });
             view.AddTab("Item Lookup", new ItemLookupTab { DataContext = sp.GetRequiredService<ItemLookupViewModel>() });
             view.AddTab("Storage Gifts", new StorageGiftsTab { DataContext = sp.GetRequiredService<StorageGiftsViewModel>() });
-            view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
+            var calibrationVm = sp.GetRequiredService<CalibrationViewModel>();
+            var calibrationTab = view.AddTab("Calibration", new CalibrationTab { DataContext = calibrationVm });
+            calibrationTab.SetBinding(TabBadge.CountProperty,
+                new System.Windows.Data.Binding(nameof(CalibrationViewModel.PendingCount)) { Source = calibrationVm });
             sp.GetRequiredService<FavorViewNavigatorHolder>().Inner = view;
             return view;
         });
