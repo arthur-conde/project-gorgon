@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Elrond.ViewModels"
+             xmlns:views="clr-namespace:Elrond.Views"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -143,50 +144,160 @@
                                     <ColumnDefinition Width="2*" MinWidth="280"/>
                                 </Grid.ColumnDefinitions>
 
-                                <wpf:MithrilDataGrid Grid.Column="0" x:Name="RecipeGrid"
-                                                     ItemsSource="{Binding FilteredRecipes}"
-                                                     SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}"
-                                                     SelectionMode="Single"
-                                                     SelectionUnit="FullRow"
-                                                     Mode="ReadOnly">
-                                    <wpf:MithrilDataGrid.Columns>
-                                        <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="120" SortMemberPath="RecipeName">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding RecipeName}"/>
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Lvl Req" Binding="{Binding LevelRequired}" SortMemberPath="LevelRequired" Width="60">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                        <DataGridTextColumn Header="1st?" Binding="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" SortMemberPath="FirstTimeBonusAvailable" Width="40">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                        <DataGridTextColumn Header="Eff. XP" Binding="{Binding EffectiveXp}" SortMemberPath="EffectiveXp" Width="70">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                        <DataGridTextColumn Header="To Level" Binding="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" SortMemberPath="CompletionsToLevel" Width="70">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                    </wpf:MithrilDataGrid.Columns>
-                                </wpf:MithrilDataGrid>
+                                <DockPanel Grid.Column="0">
+                                    <!-- Sort chip row -->
+                                    <Border DockPanel.Dock="Top" Padding="0,0,0,6">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Sort by:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <ItemsControl ItemsSource="{Binding SortOptions}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal"/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Command="{Binding DataContext.ToggleSortCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding Key}"
+                                                                Margin="0,0,4,0" Padding="8,2"
+                                                                BorderThickness="1" Cursor="Hand">
+                                                            <Button.Tag>
+                                                                <MultiBinding Converter="{x:Static views:IsActiveSortConverter.Instance}">
+                                                                    <Binding Path="DataContext.SortKey" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                    <Binding Path="Key"/>
+                                                                </MultiBinding>
+                                                            </Button.Tag>
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+                                                                    <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                                    <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
+                                                                    <Setter Property="Template">
+                                                                        <Setter.Value>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                                        Padding="{TemplateBinding Padding}"
+                                                                                        CornerRadius="3">
+                                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                    <Style.Triggers>
+                                                                        <Trigger Property="Tag" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Label}"/>
+                                                                <TextBlock>
+                                                                    <TextBlock.Text>
+                                                                        <MultiBinding Converter="{x:Static views:SortIndicatorConverter.Instance}">
+                                                                            <Binding Path="DataContext.SortKey" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                            <Binding Path="DataContext.SortDescending" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                            <Binding Path="Key"/>
+                                                                        </MultiBinding>
+                                                                    </TextBlock.Text>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Column header strip (mirrors the row template's column widths) -->
+                                    <Border DockPanel.Dock="Top" Background="#FF1E1E1E" BorderBrush="#22FFFFFF"
+                                            BorderThickness="0,0,0,1" Padding="8,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="50"/>
+                                                <ColumnDefinition Width="40"/>
+                                                <ColumnDefinition Width="80"/>
+                                                <ColumnDefinition Width="80"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Recipe"
+                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Column="1" Text="Lvl" HorizontalAlignment="Center"
+                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Column="2" Text="1st?" HorizontalAlignment="Center"
+                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Column="3" Text="Eff. XP" HorizontalAlignment="Right"
+                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Column="4" Text="To Level" HorizontalAlignment="Right"
+                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Recipe list -->
+                                    <ListBox ItemsSource="{Binding RecipesView}"
+                                             SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}"
+                                             IsSynchronizedWithCurrentItem="True"
+                                             Background="Transparent" BorderThickness="0"
+                                             HorizontalContentAlignment="Stretch"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             VirtualizingPanel.IsVirtualizing="True"
+                                             VirtualizingPanel.VirtualizationMode="Recycling">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="8,5"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border x:Name="Bd" Background="Transparent"
+                                                                    BorderBrush="#11FFFFFF" BorderThickness="0,0,0,1"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="50"/>
+                                                        <ColumnDefinition Width="40"/>
+                                                        <ColumnDefinition Width="80"/>
+                                                        <ColumnDefinition Width="80"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="4" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
 
                                 <GridSplitter Grid.Column="1" Width="6" Background="#22FFFFFF"
                                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"

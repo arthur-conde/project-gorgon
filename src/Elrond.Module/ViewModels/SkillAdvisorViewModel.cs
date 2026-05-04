@@ -1,21 +1,36 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Domain;
 using Elrond.Services;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Wpf;
 
 namespace Elrond.ViewModels;
 
+public sealed record SortOption(string Label, string Key);
+
 public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposable
 {
+    public IReadOnlyList<SortOption> SortOptions { get; } =
+    [
+        new("Recipe", "RecipeName"),
+        new("Lvl Req", "LevelRequired"),
+        new("Eff. XP", "EffectiveXp"),
+        new("To Level", "CompletionsToLevel"),
+    ];
+
     private readonly SkillAdvisorEngine _engine;
     private readonly LevelingSimulator _simulator;
     private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
+
+    private readonly ObservableCollection<RecipeAnalysis> _recipes = [];
+
+    public ICollectionView RecipesView { get; }
 
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
@@ -31,6 +46,14 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _settings = settings;
 
         _goalLevel = settings.LastGoalLevel;
+        _sortKey = settings.SortKey;
+        _sortDescending = settings.SortDescending;
+
+        var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
+        view.Filter = item => MatchesFilter((RecipeAnalysis)item);
+        view.CurrentChanged += OnCurrentRecipeChanged;
+        RecipesView = view;
+        ApplySortDescriptions();
 
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
         _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
@@ -49,9 +72,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
 
     [ObservableProperty]
     private SkillAnalysis? _analysis;
-
-    [ObservableProperty]
-    private IReadOnlyList<RecipeAnalysis> _filteredRecipes = [];
 
     [ObservableProperty]
     private RecipeAnalysis? _selectedRecipe;
@@ -77,7 +97,11 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     [ObservableProperty]
     private SimulationResult? _simulationResult;
 
-    public DataGridState GridState => _settings.RecipeGrid;
+    [ObservableProperty]
+    private string _sortKey = "EffectiveXp";
+
+    [ObservableProperty]
+    private bool _sortDescending = true;
 
     // ── Property change handlers ─────────────────────────────────────────
 
@@ -95,10 +119,22 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         Reanalyze();
     }
 
-    partial void OnShowKnownOnlyChanged(bool value) => ApplyRecipeFilter();
-    partial void OnShowFirstTimeOnlyChanged(bool value) => ApplyRecipeFilter();
-    partial void OnShowCraftableOnlyChanged(bool value) => ApplyRecipeFilter();
+    partial void OnShowKnownOnlyChanged(bool value) => RecipesView.Refresh();
+    partial void OnShowFirstTimeOnlyChanged(bool value) => RecipesView.Refresh();
+    partial void OnShowCraftableOnlyChanged(bool value) => RecipesView.Refresh();
     partial void OnIncludeZeroXpChanged(bool value) => Reanalyze();
+
+    partial void OnSortKeyChanged(string value)
+    {
+        _settings.SortKey = value;
+        ApplySortDescriptions();
+    }
+
+    partial void OnSortDescendingChanged(bool value)
+    {
+        _settings.SortDescending = value;
+        ApplySortDescriptions();
+    }
 
     // ── Commands ─────────────────────────────────────────────────────────
 
@@ -121,13 +157,28 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         SimulationResult = _simulator.Simulate(SelectedSkill, active, goal);
     }
 
+    [RelayCommand]
+    private void ToggleSort(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return;
+        if (SortKey == key)
+        {
+            SortDescending = !SortDescending;
+        }
+        else
+        {
+            SortKey = key;
+            // Numeric metrics read top-down (largest first); names read alphabetically.
+            SortDescending = key != "RecipeName";
+        }
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private void ReloadSkills()
     {
         var skills = _engine.GetSkillsWithRecipes();
 
-        // If a character is selected, filter to skills the character has
         var active = _activeChar.ActiveCharacter;
         if (active is not null)
         {
@@ -135,8 +186,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         }
 
         AvailableSkills = new ObservableCollection<string>(skills);
-
-        // Restore last selection
         SelectedSkill = skills.Contains(_settings.LastSkill) ? _settings.LastSkill : skills.FirstOrDefault();
     }
 
@@ -146,21 +195,25 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         if (active is null)
         {
             Analysis = null;
+            _recipes.Clear();
             StatusMessage = "No active character — switch one from the shell header.";
             return;
         }
         if (string.IsNullOrEmpty(SelectedSkill))
         {
             Analysis = null;
+            _recipes.Clear();
             StatusMessage = $"{active.Name} on {active.Server} — select a skill.";
             return;
         }
 
         Analysis = _engine.Analyze(SelectedSkill, active, IncludeZeroXp, GoalLevel);
-        ApplyRecipeFilter();
 
+        _recipes.Clear();
         if (Analysis is not null)
         {
+            foreach (var r in Analysis.Recipes) _recipes.Add(r);
+            RecipesView.MoveCurrentToFirst();
             StatusMessage = $"{active.Name} on {active.Server} — exported {active.ExportedAt:g}";
         }
         else
@@ -169,75 +222,26 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         }
     }
 
-    public void ApplyRecipeFilter()
+    private bool MatchesFilter(RecipeAnalysis row)
     {
-        if (Analysis is null)
-        {
-            FilteredRecipes = [];
-            SelectedRecipe = null;
-            return;
-        }
-
-        IEnumerable<RecipeAnalysis> filtered = Analysis.Recipes;
-
-        // Existing checkbox filters
-        if (ShowKnownOnly) filtered = filtered.Where(r => r.IsKnown);
-        if (ShowFirstTimeOnly) filtered = filtered.Where(r => r.FirstTimeBonusAvailable);
-        if (ShowCraftableOnly) filtered = filtered.Where(r => r.LevelRequired <= Analysis.CurrentLevel);
-
-        // Per-column filters
-        foreach (var col in GridState.Columns)
-        {
-            if (string.IsNullOrEmpty(col.FilterText)) continue;
-            var filter = col.FilterText;
-            var key = col.Key;
-            filtered = filtered.Where(row =>
-                GetCellText(row, key).Contains(filter, StringComparison.OrdinalIgnoreCase));
-        }
-
-        // Sort
-        var sortCol = GridState.Columns.FirstOrDefault(c => c.SortDirection is not null);
-        if (sortCol is not null)
-        {
-            filtered = sortCol.SortDirection == "Ascending"
-                ? filtered.OrderBy(r => GetSortValue(r, sortCol.Key))
-                : filtered.OrderByDescending(r => GetSortValue(r, sortCol.Key));
-        }
-
-        var newList = filtered.ToList();
-        FilteredRecipes = newList;
-
-        var previousKey = SelectedRecipe?.RecipeKey;
-        SelectedRecipe = previousKey is null
-            ? newList.FirstOrDefault()
-            : newList.FirstOrDefault(r => r.RecipeKey == previousKey) ?? newList.FirstOrDefault();
+        if (Analysis is null) return false;
+        if (ShowKnownOnly && !row.IsKnown) return false;
+        if (ShowFirstTimeOnly && !row.FirstTimeBonusAvailable) return false;
+        if (ShowCraftableOnly && row.LevelRequired > Analysis.CurrentLevel) return false;
+        return true;
     }
 
-    private static string GetCellText(RecipeAnalysis row, string key) => key switch
+    private void ApplySortDescriptions()
     {
-        "RecipeName" => row.RecipeName,
-        "LevelRequired" => row.LevelRequired.ToString(),
-        "BaseXp" => row.BaseXp.ToString(),
-        "FirstTimeXp" => row.FirstTimeXp.ToString(),
-        "TimesCompleted" => row.TimesCompleted.ToString(),
-        "FirstTimeBonusAvailable" => row.FirstTimeBonusAvailable ? "Yes" : "No",
-        "EffectiveXp" => row.EffectiveXp.ToString(),
-        "CompletionsToLevel" => row.CompletionsToLevel?.ToString() ?? "",
-        _ => "",
-    };
+        var dir = SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        RecipesView.SortDescriptions.Clear();
+        RecipesView.SortDescriptions.Add(new SortDescription(SortKey, dir));
+    }
 
-    private static IComparable GetSortValue(RecipeAnalysis row, string key) => key switch
+    private void OnCurrentRecipeChanged(object? sender, EventArgs e)
     {
-        "RecipeName" => row.RecipeName,
-        "LevelRequired" => row.LevelRequired,
-        "BaseXp" => row.BaseXp,
-        "FirstTimeXp" => row.FirstTimeXp,
-        "TimesCompleted" => row.TimesCompleted,
-        "FirstTimeBonusAvailable" => row.FirstTimeBonusAvailable ? 1 : 0,
-        "EffectiveXp" => row.EffectiveXp,
-        "CompletionsToLevel" => row.CompletionsToLevel ?? int.MaxValue,
-        _ => "",
-    };
+        SelectedRecipe = RecipesView.CurrentItem as RecipeAnalysis;
+    }
 
     private void OnActiveCharacterChanged(object? sender, EventArgs e)
     {
@@ -259,5 +263,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _activeChar.ActiveCharacterChanged -= OnActiveCharacterChanged;
         _activeChar.CharacterExportsChanged -= OnActiveCharacterChanged;
         _referenceData.FileUpdated -= OnReferenceUpdated;
+        RecipesView.CurrentChanged -= OnCurrentRecipeChanged;
     }
 }
