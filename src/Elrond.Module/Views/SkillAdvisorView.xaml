@@ -222,9 +222,9 @@
 
                                                 <!-- XP breakdown -->
                                                 <Border Background="#FF1E1E1E" CornerRadius="2" Padding="8,6" Margin="0,0,0,10">
-                                                    <Grid>
+                                                    <Grid HorizontalAlignment="Left">
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <Grid.RowDefinitions>
@@ -236,26 +236,26 @@
                                                         </Grid.RowDefinitions>
 
                                                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Base XP" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
                                                             <Run Text="{Binding BaseXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
                                                         <TextBlock Grid.Row="1" Grid.Column="0" Text="First-time bonus XP" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
                                                             <Run Text="{Binding FirstTimeXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
                                                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Times completed" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="2" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                        <TextBlock Grid.Row="2" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
                                                                    Text="{Binding TimesCompleted, Mode=OneWay}"/>
 
                                                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Effective XP per craft" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="3" Grid.Column="1" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold">
+                                                        <TextBlock Grid.Row="3" Grid.Column="1" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
                                                             <Run Text="{Binding EffectiveXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
                                                         <TextBlock Grid.Row="4" Grid.Column="0" Text="Crafts to next level" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
                                                                    Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}, Mode=OneWay}"/>
                                                     </Grid>
                                                 </Border>
