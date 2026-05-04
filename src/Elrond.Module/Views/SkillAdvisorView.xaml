@@ -145,8 +145,85 @@
                                 </Grid.ColumnDefinitions>
 
                                 <DockPanel Grid.Column="0">
-                                    <!-- Sort chip row -->
-                                    <Border DockPanel.Dock="Top" Padding="0,0,0,6">
+                                    <!-- Sort chip row + view-mode toggle -->
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
+                                        <!-- View-mode toggle (Rows / Cards) on the right -->
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <TextBlock Text="View:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                       VerticalAlignment="Center" Margin="12,0,6,0"/>
+                                            <Button Command="{Binding SetViewModeCommand}" CommandParameter="Rows"
+                                                    Margin="0,0,2,0" Padding="6,2" Cursor="Hand"
+                                                    ToolTip="Show recipes as compact rows with column-aligned values">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+                                                        <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                                            BorderThickness="1" CornerRadius="3"
+                                                                            Padding="{TemplateBinding Padding}">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ViewMode}" Value="Rows">
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                                <icon:PackIconLucide Kind="List" Width="14" Height="14"/>
+                                            </Button>
+                                            <Button Command="{Binding SetViewModeCommand}" CommandParameter="Cards"
+                                                    Padding="6,2" Cursor="Hand"
+                                                    ToolTip="Show recipes as cards with bigger icons and inline metadata">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+                                                        <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                                            BorderThickness="1" CornerRadius="3"
+                                                                            Padding="{TemplateBinding Padding}">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ViewMode}" Value="Cards">
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                                <icon:PackIconLucide Kind="LayoutList" Width="14" Height="14"/>
+                                            </Button>
+                                        </StackPanel>
+
+                                        <!-- Sort chips on the left -->
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="Sort by:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -217,11 +294,12 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                         </StackPanel>
-                                    </Border>
+                                    </DockPanel>
 
-                                    <!-- Column header strip (mirrors the row template's column widths) -->
+                                    <!-- Column header strip (mirrors the row template's column widths) — only relevant in Rows mode -->
                                     <Border DockPanel.Dock="Top" Background="#FF1E1E1E" BorderBrush="#22FFFFFF"
-                                            BorderThickness="0,0,0,1" Padding="8,4">
+                                            BorderThickness="0,0,0,1" Padding="8,4"
+                                            Visibility="{Binding ViewMode, Converter={x:Static views:StringEqualsToVisConverter.Instance}, ConverterParameter=Rows}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -257,6 +335,7 @@
                                                 <Setter Property="Padding" Value="8,5"/>
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                                 <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                <Setter Property="ContentTemplate" Value="{StaticResource RecipeRowTemplate}"/>
                                                 <Setter Property="Template">
                                                     <Setter.Value>
                                                         <ControlTemplate TargetType="ListBoxItem">
@@ -276,26 +355,14 @@
                                                         </ControlTemplate>
                                                     </Setter.Value>
                                                 </Setter>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DataContext.ViewMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="Cards">
+                                                        <Setter Property="ContentTemplate" Value="{StaticResource RecipeCardTemplate}"/>
+                                                        <Setter Property="Padding" Value="12,10"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
                                             </Style>
                                         </ListBox.ItemContainerStyle>
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="50"/>
-                                                        <ColumnDefinition Width="40"/>
-                                                        <ColumnDefinition Width="80"/>
-                                                        <ColumnDefinition Width="80"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="2" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="3" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="4" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
                                     </ListBox>
                                 </DockPanel>
 

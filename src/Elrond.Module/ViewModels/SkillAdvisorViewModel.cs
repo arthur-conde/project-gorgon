@@ -48,6 +48,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _goalLevel = settings.LastGoalLevel;
         _sortKey = settings.SortKey;
         _sortDescending = settings.SortDescending;
+        _viewMode = settings.ViewMode;
 
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
         view.Filter = item => MatchesFilter((RecipeAnalysis)item);
@@ -103,6 +104,9 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     [ObservableProperty]
     private bool _sortDescending = true;
 
+    [ObservableProperty]
+    private string _viewMode = "Rows";
+
     // ── Property change handlers ─────────────────────────────────────────
 
     partial void OnSelectedSkillChanged(string? value)
@@ -136,6 +140,11 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         ApplySortDescriptions();
     }
 
+    partial void OnViewModeChanged(string value)
+    {
+        _settings.ViewMode = value;
+    }
+
     // ── Commands ─────────────────────────────────────────────────────────
 
     [RelayCommand]
@@ -155,6 +164,12 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         }
 
         SimulationResult = _simulator.Simulate(SelectedSkill, active, goal);
+    }
+
+    [RelayCommand]
+    private void SetViewMode(string? mode)
+    {
+        if (!string.IsNullOrEmpty(mode)) ViewMode = mode;
     }
 
     [RelayCommand]

@@ -1,7 +1,55 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:views="clr-namespace:Elrond.Views">
+                    xmlns:views="clr-namespace:Elrond.Views"
+                    xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared">
     <views:BoolToCheckConverter x:Key="BoolToCheck"/>
     <views:NullableIntConverter x:Key="NullableInt"/>
     <views:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+
+    <!-- Recipe row template — column-aligned values for fast vertical scanning. -->
+    <DataTemplate x:Key="RecipeRowTemplate">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="50"/>
+                <ColumnDefinition Width="40"/>
+                <ColumnDefinition Width="80"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+            <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="2" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="3" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="4" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+    </DataTemplate>
+
+    <!-- Recipe card template — bigger icon, stacked metadata pills, more breathing room. -->
+    <DataTemplate x:Key="RecipeCardTemplate">
+        <DockPanel>
+            <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}" Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center"/>
+            <Border DockPanel.Dock="Right" Background="#33D4A847" CornerRadius="3" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                    Visibility="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="1st time" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeSmall}"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding RecipeName}" Foreground="#FFE8E8E8" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                    <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                        <Run Text="Lvl "/><Run Text="{Binding LevelRequired, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Text=" • " Foreground="#44FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="4,0"/>
+                    <TextBlock Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold">
+                        <Run Text="{Binding EffectiveXp, Mode=OneWay, StringFormat=N0}"/>
+                        <Run Text=" eff XP"/>
+                    </TextBlock>
+                    <TextBlock Text=" • " Foreground="#44FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="4,0"/>
+                    <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                        <Run Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}, Mode=OneWay}"/>
+                        <Run Text=" to level"/>
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
 </ResourceDictionary>

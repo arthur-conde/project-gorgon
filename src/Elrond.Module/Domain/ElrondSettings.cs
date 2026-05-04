@@ -34,6 +34,13 @@ public sealed class ElrondSettings : INotifyPropertyChanged
         set => Set(ref _sortDescending, value);
     }
 
+    private string _viewMode = "Rows";
+    public string ViewMode
+    {
+        get => _viewMode;
+        set => Set(ref _viewMode, value);
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)

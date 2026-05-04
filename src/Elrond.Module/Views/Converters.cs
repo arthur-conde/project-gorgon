@@ -67,3 +67,18 @@ public sealed class IsActiveSortConverter : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>
+/// Returns Visible when the bound value (string) equals the converter
+/// parameter (string). Used to show/hide chrome based on view mode.
+/// </summary>
+public sealed class StringEqualsToVisConverter : IValueConverter
+{
+    public static StringEqualsToVisConverter Instance { get; } = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is string s && parameter is string p && s == p ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
