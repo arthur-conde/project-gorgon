@@ -54,6 +54,9 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     private IReadOnlyList<RecipeAnalysis> _filteredRecipes = [];
 
     [ObservableProperty]
+    private RecipeAnalysis? _selectedRecipe;
+
+    [ObservableProperty]
     private bool _showKnownOnly = true;
 
     [ObservableProperty]
@@ -171,6 +174,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         if (Analysis is null)
         {
             FilteredRecipes = [];
+            SelectedRecipe = null;
             return;
         }
 
@@ -200,7 +204,13 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
                 : filtered.OrderByDescending(r => GetSortValue(r, sortCol.Key));
         }
 
-        FilteredRecipes = filtered.ToList();
+        var newList = filtered.ToList();
+        FilteredRecipes = newList;
+
+        var previousKey = SelectedRecipe?.RecipeKey;
+        SelectedRecipe = previousKey is null
+            ? newList.FirstOrDefault()
+            : newList.FirstOrDefault(r => r.RecipeKey == previousKey) ?? newList.FirstOrDefault();
     }
 
     private static string GetCellText(RecipeAnalysis row, string key) => key switch
