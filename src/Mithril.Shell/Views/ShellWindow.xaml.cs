@@ -34,6 +34,16 @@ public partial class ShellWindow : System.Windows.Window
         RefreshTray();
     }
 
+    public double SidebarWidth
+    {
+        get => SidebarColumn.ActualWidth > 0 ? SidebarColumn.ActualWidth : SidebarColumn.Width.Value;
+        set
+        {
+            if (value > 0 && !double.IsNaN(value) && !double.IsInfinity(value))
+                SidebarColumn.Width = new GridLength(value, GridUnitType.Pixel);
+        }
+    }
+
     private void OnAttentionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(IAttentionAggregator.TotalCount)

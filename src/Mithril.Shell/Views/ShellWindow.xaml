@@ -40,8 +40,14 @@
                 <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
             </DockPanel>
         </Border>
-        <Border DockPanel.Dock="Left" Width="260" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
-            <DockPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="260" MinWidth="180"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#FF202020" BorderThickness="0,0,1,0" BorderBrush="#33FFFFFF">
+                <DockPanel>
                 <StackPanel DockPanel.Dock="Bottom" Margin="10">
                     <Button Margin="0,0,0,6" Padding="10,6" HorizontalContentAlignment="Left"
                             Command="{Binding OpenDiagnosticsCommand}">
@@ -135,6 +141,19 @@
                     </Border>
                 </Popup>
 
+                <Border DockPanel.Dock="Top" Margin="10,6,10,0" Padding="10,4"
+                        Background="#FF252525" CornerRadius="3"
+                        ToolTip="In-game time · 1 in-game hour = 5 real minutes">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="Clock" Width="14" Height="14"
+                                             VerticalAlignment="Center" Margin="0,0,8,0"
+                                             Foreground="#FFD4A847"/>
+                        <TextBlock Text="{Binding GameTimeText}"
+                                   FontSize="{DynamicResource AppFontSizeMedium}"
+                                   Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
                 <ListBox ItemsSource="{Binding Modules}"
                          SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
                          HorizontalContentAlignment="Stretch"
@@ -167,33 +186,38 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-            </DockPanel>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="#FF4A3820" BorderBrush="#FFE8B04A" BorderThickness="0,0,0,1"
-                Padding="12,6" Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}">
-            <DockPanel LastChildFill="True">
-                <icon:PackIconLucide DockPanel.Dock="Left" Kind="TriangleAlert" Width="16" Height="16"
-                                     VerticalAlignment="Center" Margin="0,0,10,0"
-                                     Foreground="#FFE8B04A"/>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
-                    <Button Padding="10,3" Margin="0,0,6,0"
-                            Background="#FFD4A847" Foreground="#FF1A1A1A"
-                            Command="{Binding ApplyUpdateCommand}">
-                        <StackPanel Orientation="Horizontal">
-                            <icon:PackIconLucide Kind="Download" Width="12" Height="12"
-                                                 VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="Install and restart" VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          Background="#33FFFFFF" ShowsPreview="False"/>
+            <DockPanel Grid.Column="2">
+                <Border DockPanel.Dock="Top" Background="#FF4A3820" BorderBrush="#FFE8B04A" BorderThickness="0,0,0,1"
+                        Padding="12,6" Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVis}}">
+                    <DockPanel LastChildFill="True">
+                        <icon:PackIconLucide DockPanel.Dock="Left" Kind="TriangleAlert" Width="16" Height="16"
+                                             VerticalAlignment="Center" Margin="0,0,10,0"
+                                             Foreground="#FFE8B04A"/>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+                            <Button Padding="10,3" Margin="0,0,6,0"
+                                    Background="#FFD4A847" Foreground="#FF1A1A1A"
+                                    Command="{Binding ApplyUpdateCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <icon:PackIconLucide Kind="Download" Width="12" Height="12"
+                                                         VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBlock Text="Install and restart" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Padding="10,3"
+                                    Command="{Binding DismissUpdateCommand}">
+                                <TextBlock Text="Dismiss"/>
+                            </Button>
                         </StackPanel>
-                    </Button>
-                    <Button Padding="10,3"
-                            Command="{Binding DismissUpdateCommand}">
-                        <TextBlock Text="Dismiss"/>
-                    </Button>
-                </StackPanel>
-                <TextBlock Text="{Binding UpdateBannerText}" Foreground="#FFF3E1B8"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding UpdateBannerText}" Foreground="#FFF3E1B8"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                </Border>
+                <ContentPresenter Content="{Binding ActiveContent}"/>
             </DockPanel>
-        </Border>
-        <ContentPresenter Content="{Binding ActiveContent}"/>
+        </Grid>
     </DockPanel>
 </Window>
