@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
-using Mithril.Shared.Wpf;
 
 namespace Elrond.Domain;
 
@@ -21,7 +20,26 @@ public sealed class ElrondSettings : INotifyPropertyChanged
         set => Set(ref _lastGoalLevel, value);
     }
 
-    public DataGridState RecipeGrid { get; set; } = new();
+    private string _sortKey = "EffectiveXp";
+    public string SortKey
+    {
+        get => _sortKey;
+        set => Set(ref _sortKey, value);
+    }
+
+    private bool _sortDescending = true;
+    public bool SortDescending
+    {
+        get => _sortDescending;
+        set => Set(ref _sortDescending, value);
+    }
+
+    private string _viewMode = "Rows";
+    public string ViewMode
+    {
+        get => _viewMode;
+        set => Set(ref _viewMode, value);
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

@@ -37,9 +37,7 @@ public sealed class ElrondModule : IMithrilModule
         services.AddSingleton<LevelingSimulator>();
 
         services.AddSingleton<SkillAdvisorViewModel>();
-        services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView(
-            sp.GetRequiredService<ElrondSettings>(),
-            sp.GetRequiredService<SettingsAutoSaver<ElrondSettings>>())
+        services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView
         {
             DataContext = sp.GetRequiredService<SkillAdvisorViewModel>(),
         });
