@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
+using Mithril.Shared.Game;
 using Mithril.Shared.Modules;
 using Mithril.Shell.Updates;
 using MahApps.Metro.IconPacks;
@@ -47,9 +49,11 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IUpdateStatusService _updateStatus;
     private readonly IUpdateApplier _updateApplier;
     private readonly IAttentionAggregator _attention;
+    private readonly IGameClock _gameClock;
     private readonly IReadOnlyList<IMithrilModule> _allModules;
 
     private readonly ModuleGates _gates;
+    private readonly DispatcherTimer _gameClockTimer;
 
     public ShellViewModel(
         IServiceProvider services,
@@ -59,7 +63,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IActiveCharacterService activeChar,
         IUpdateStatusService updateStatus,
         IUpdateApplier updateApplier,
-        IAttentionAggregator attention)
+        IAttentionAggregator attention,
+        IGameClock gameClock)
     {
         _services = services;
         _settings = settings;
@@ -68,6 +73,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _updateStatus = updateStatus;
         _updateApplier = updateApplier;
         _attention = attention;
+        _gameClock = gameClock;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -82,6 +88,17 @@ public sealed partial class ShellViewModel : ObservableObject
         RefreshCharacter();
         RefreshUpdateStatus();
         RefreshAttentionSurface();
+
+        // 5 real seconds = 1 in-game minute (the smallest unit we display).
+        RefreshGameTime();
+        _gameClockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _gameClockTimer.Tick += (_, _) => RefreshGameTime();
+        _gameClockTimer.Start();
+    }
+
+    private void RefreshGameTime()
+    {
+        GameTimeText = _gameClock.GetCurrent().ToString12Hour();
     }
 
     private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
@@ -158,6 +175,8 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private System.Windows.Media.ImageSource? _attentionOverlayIcon;
     [ObservableProperty] private string _attentionTooltip = "Mithril";
+
+    [ObservableProperty] private string _gameTimeText = "";
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();

@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text.Json.Serialization.Metadata;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
 using Mithril.Shared.Inventory;
@@ -23,6 +24,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddMithrilGameServices(this IServiceCollection services) =>
         services
+            .AddSingleton<IGameClock, GameClock>()
             .AddSingleton<IPlayerLogStream, PlayerLogStream>()
             .AddSingleton<IChatLogStream, ChatLogStream>()
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(

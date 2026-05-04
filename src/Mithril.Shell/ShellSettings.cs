@@ -38,6 +38,9 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     public double WindowWidth { get => _windowWidth; set => Set(ref _windowWidth, value); }
     public double WindowHeight { get => _windowHeight; set => Set(ref _windowHeight, value); }
 
+    private double _sidebarWidth = 260.0;
+    public double SidebarWidth { get => _sidebarWidth; set => Set(ref _sidebarWidth, value); }
+
     public Dictionary<string, HotkeyBinding> HotkeyBindings { get; set; } = new();
     public Dictionary<string, bool> ModuleEagerOverrides { get; set; } = new();
 

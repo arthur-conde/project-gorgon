@@ -201,6 +201,7 @@ public static class Program
             shell.Top = shellSettings.WindowTop;
             shell.Width = shellSettings.WindowWidth;
             shell.Height = shellSettings.WindowHeight;
+            shell.SidebarWidth = shellSettings.SidebarWidth;
             app.MainWindow = shell;
 
             Boot("calling shell.Show()");
@@ -214,6 +215,7 @@ public static class Program
                     shellSettings.WindowWidth = shell.Width;
                     shellSettings.WindowHeight = shell.Height;
                 }
+                shellSettings.SidebarWidth = shell.SidebarWidth;
             };
             Boot("shell shown");
 
