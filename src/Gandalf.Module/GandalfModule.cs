@@ -131,9 +131,16 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<ICharacterPresenceService>()));
 
         services.AddSingleton<GandalfShellViewModel>();
-        services.AddSingleton<GandalfShellView>(sp => new GandalfShellView
+        services.AddSingleton<GandalfShellView>(sp =>
         {
-            DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
+            // Force the autosaver to instantiate so it subscribes to GandalfSettings.PropertyChanged.
+            // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
+            // it unless something explicitly requests it.
+            _ = sp.GetRequiredService<SettingsAutoSaver<GandalfSettings>>();
+            return new GandalfShellView
+            {
+                DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
+            };
         });
 
         services.AddSingleton<GandalfSettingsViewModel>();
