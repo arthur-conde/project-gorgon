@@ -24,7 +24,8 @@
                 CornerRadius="3"
                 Padding="10"
                 MinWidth="220"
-                SnapsToDevicePixels="True">
+                SnapsToDevicePixels="True"
+                KeyDown="OnPopupKeyDown">
             <Border.Effect>
                 <DropShadowEffect Color="Black" BlurRadius="10" ShadowDepth="2" Opacity="0.55"/>
             </Border.Effect>

@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace Mithril.Shared.Wpf.Filtering;
 
@@ -65,7 +67,35 @@ public partial class MithrilFilterPopup : UserControl
         {
             if (p.Source is { } src) p.FiltersList.ItemsSource = src.AvailableFiltersUntyped;
             p.RefreshEmptyHint();
+            p.Dispatcher.BeginInvoke(new Action(p.FocusFirstCheckbox), DispatcherPriority.Input);
         }
+    }
+
+    private void FocusFirstCheckbox()
+    {
+        if (FiltersList.Items.Count == 0) return;
+        if (FiltersList.ItemContainerGenerator.ContainerFromIndex(0) is not FrameworkElement container) return;
+        var checkbox = FindChild<CheckBox>(container);
+        checkbox?.Focus();
+    }
+
+    private static T? FindChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            var found = FindChild<T>(child);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private void OnPopupKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        IsOpen = false;
+        e.Handled = true;
     }
 
     private void RefreshEmptyHint()

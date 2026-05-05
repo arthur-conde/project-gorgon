@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace Mithril.Shared.Wpf.Sorting;
 
@@ -70,11 +72,35 @@ public partial class MithrilSortPopup : UserControl
             // initial OnSourceChanged callback fired (or DIM resolution missed it).
             if (p.Source is { } src) p.TagsList.ItemsSource = src.ActiveSortKeysUntyped;
             p.RefreshEmptyHint();
+            // Focus the first chip when the popup pops, so keyboard users land
+            // somewhere actionable rather than on the popup root.
+            p.Dispatcher.BeginInvoke(new Action(p.FocusFirstChip), DispatcherPriority.Input);
         }
         else
         {
             p.AddPopup.IsOpen = false;
         }
+    }
+
+    private void FocusFirstChip()
+    {
+        if (TagsList.Items.Count == 0) { AddBtn.Focus(); return; }
+        if (TagsList.ItemContainerGenerator.ContainerFromIndex(0) is not FrameworkElement container) return;
+        // Walk to the inner Button (the chip body) so Space/Enter flips immediately.
+        var button = FindChild<Button>(container);
+        button?.Focus();
+    }
+
+    private static T? FindChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            var found = FindChild<T>(child);
+            if (found is not null) return found;
+        }
+        return null;
     }
 
     private void RefreshEmptyHint()
@@ -100,6 +126,55 @@ public partial class MithrilSortPopup : UserControl
         var index = src.ActiveSortKeysUntyped.IndexOf(dc);
         if (index >= 0) src.RemoveSortKeyAt(index);
         RefreshEmptyHint();
+        e.Handled = true;
+    }
+
+    private void OnTagKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Source is not { } src) return;
+        if (((FrameworkElement)sender).DataContext is not { } dc) return;
+        var index = src.ActiveSortKeysUntyped.IndexOf(dc);
+        if (index < 0) return;
+
+        switch (e.Key)
+        {
+            case Key.Up:
+                if (index > 0)
+                {
+                    src.MoveSortKey(index, index - 1);
+                    Dispatcher.BeginInvoke(() => FocusChipAt(index - 1), DispatcherPriority.Input);
+                }
+                e.Handled = true;
+                break;
+            case Key.Down:
+                if (index < src.ActiveSortKeysUntyped.Count - 1)
+                {
+                    src.MoveSortKey(index, index + 1);
+                    Dispatcher.BeginInvoke(() => FocusChipAt(index + 1), DispatcherPriority.Input);
+                }
+                e.Handled = true;
+                break;
+            case Key.Delete:
+                src.RemoveSortKeyAt(index);
+                RefreshEmptyHint();
+                Dispatcher.BeginInvoke(FocusFirstChip, DispatcherPriority.Input);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void FocusChipAt(int index)
+    {
+        if ((uint)index >= (uint)TagsList.Items.Count) return;
+        if (TagsList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container) return;
+        FindChild<Button>(container)?.Focus();
+    }
+
+    private void OnPopupKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (AddPopup.IsOpen) AddPopup.IsOpen = false;
+        else IsOpen = false;
         e.Handled = true;
     }
 

@@ -25,7 +25,8 @@
                 CornerRadius="3"
                 Padding="10"
                 MinWidth="280"
-                SnapsToDevicePixels="True">
+                SnapsToDevicePixels="True"
+                KeyDown="OnPopupKeyDown">
             <Border.Effect>
                 <DropShadowEffect Color="Black" BlurRadius="10" ShadowDepth="2" Opacity="0.55"/>
             </Border.Effect>
@@ -61,14 +62,15 @@
                                         Background="{StaticResource BgSurfaceHoverBrush}"
                                         SnapsToDevicePixels="True">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <!-- Tag body: glyph + label. Click flips direction. -->
+                                        <!-- Tag body: glyph + label. Click flips; ↑/↓ reorder; Delete removes. -->
                                         <Button Click="OnTagBodyClick"
+                                                KeyDown="OnTagKeyDown"
                                                 Cursor="Hand"
                                                 Background="Transparent"
                                                 BorderThickness="0"
                                                 Padding="8,3"
                                                 Foreground="{StaticResource TextPrimaryBrush}"
-                                                ToolTip="Click to flip direction">
+                                                ToolTip="Click or Space/Enter to flip · ↑/↓ reorder · Delete removes">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="Transparent" Padding="{TemplateBinding Padding}">
