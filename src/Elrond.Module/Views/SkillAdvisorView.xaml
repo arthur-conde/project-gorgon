@@ -10,7 +10,7 @@
              xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting;assembly=Mithril.Shared"
              xmlns:filter="clr-namespace:Mithril.Shared.Wpf.Filtering;assembly=Mithril.Shared"
              mc:Ignorable="d"
-             Background="#FF1A1A1A">
+             Background="{StaticResource BgPrimaryBrush}">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -27,7 +27,7 @@
                 <Image Source="pack://application:,,,/Elrond.Module;component/Resources/elrond.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <TextBlock Text="Elrond · Skills" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
-                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
             </StackPanel>
         </DockPanel>
 
@@ -43,7 +43,7 @@
             </Button>
 
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Skill:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Skill:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox Width="180"
                           ItemsSource="{Binding AvailableSkills}"
                           SelectedItem="{Binding SelectedSkill}"/>
@@ -52,7 +52,7 @@
 
         <!-- Status bar -->
         <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="4">
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
         </Border>
 
         <!-- Main content -->
@@ -62,15 +62,15 @@
                         Visibility="{Binding Analysis, Converter={x:Static vm:NullToVisConverter.Instance}, ConverterParameter=invert}">
                 <icon:PackIconLucide Kind="BookOpen" Width="56" Height="56" HorizontalAlignment="Center" Foreground="#66D4A847" Margin="0,0,0,12"/>
                 <TextBlock Text="No skill selected" FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHeader}"
-                           HorizontalAlignment="Center" Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
-                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,0,0,16">
+                           HorizontalAlignment="Center" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSize}" Margin="0,0,0,16">
                     Select a character and skill above to see available recipes, XP rewards,
                     and how many completions are needed to reach the next level.
                 </TextBlock>
-                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="12" CornerRadius="3">
+                <Border Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" Padding="12" CornerRadius="3">
                     <StackPanel>
-                        <TextBlock Text="No character exports?" FontWeight="SemiBold" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-                        <TextBlock FontSize="{DynamicResource AppFontSizeHint}" Foreground="#AAFFFFFF" TextWrapping="Wrap">
+                        <TextBlock Text="No character exports?" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4"/>
+                        <TextBlock FontSize="{DynamicResource AppFontSizeHint}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap">
                             Run <Run Text="/exportcharacter" FontFamily="{DynamicResource AppMonoFontFamily}"/> in-game to create a character export file.
                             Then click Refresh to load it.
                         </TextBlock>
@@ -81,17 +81,17 @@
             <!-- Analysis content -->
             <DockPanel Visibility="{Binding Analysis, Converter={x:Static vm:NullToVisConverter.Instance}}">
                 <!-- Skill summary panel (shared by both tabs) -->
-                <Border DockPanel.Dock="Top" Background="#FF252525" BorderBrush="#33FFFFFF"
+                <Border DockPanel.Dock="Top" Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
                         BorderThickness="1" Padding="12" CornerRadius="3" Margin="0,0,0,10">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,6">
-                            <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeXLarge}" Foreground="#FFE8E8E8">
+                            <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeXLarge}" Foreground="{StaticResource TextPrimaryBrush}">
                                 <Run Text="{Binding Analysis.SkillName, Mode=OneWay}"/>
                                 <Run Text=" Level "/>
                                 <Run Text="{Binding Analysis.CurrentLevel, Mode=OneWay}"/>
                             </TextBlock>
                             <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                       Foreground="#AAFFFFFF" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">
+                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">
                                 <Run Text="{Binding Analysis.CurrentXp, Mode=OneWay, StringFormat=N0}"/>
                                 <Run Text=" / "/>
                                 <Run Text="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
@@ -102,8 +102,8 @@
                                      Minimum="0"
                                      Maximum="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay}"
                                      Value="{Binding Analysis.CurrentXp, Mode=OneWay}"
-                                     Foreground="#FFD4A847" Background="#FF333333"/>
-                        <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0">
+                                     Foreground="{StaticResource AccentBrush}" Background="#FF333333"/>
+                        <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0">
                             <Run Text="{Binding Analysis.XpRemaining, Mode=OneWay, StringFormat=N0}"/>
                             <Run Text=" XP remaining to "/>
                             <Run Text="{Binding Analysis.GoalLevel, Mode=OneWay, TargetNullValue='next level', StringFormat='level {0}'}"/>
@@ -170,27 +170,27 @@
                                     </DockPanel>
 
                                     <!-- Column header strip (mirrors the row template's column widths) — only relevant in Rows mode -->
-                                    <Border DockPanel.Dock="Top" Background="#FF1E1E1E" BorderBrush="#22FFFFFF"
+                                    <Border DockPanel.Dock="Top" Background="{StaticResource BgRecessedBrush}" BorderBrush="#22FFFFFF"
                                             BorderThickness="0,0,0,1" Padding="8,4"
                                             Visibility="{Binding ViewMode, Converter={x:Static views:StringEqualsToVisConverter.Instance}, ConverterParameter=Rows}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="50"/>
-                                                <ColumnDefinition Width="40"/>
-                                                <ColumnDefinition Width="80"/>
-                                                <ColumnDefinition Width="80"/>
+                                                <ColumnDefinition Width="{StaticResource RecipeColRecipe}"/>
+                                                <ColumnDefinition Width="{StaticResource RecipeColLvl}"/>
+                                                <ColumnDefinition Width="{StaticResource RecipeColFirst}"/>
+                                                <ColumnDefinition Width="{StaticResource RecipeColEffXp}"/>
+                                                <ColumnDefinition Width="{StaticResource RecipeColToLevel}"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="Recipe"
-                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                                             <TextBlock Grid.Column="1" Text="Lvl" HorizontalAlignment="Center"
-                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                                             <TextBlock Grid.Column="2" Text="1st?" HorizontalAlignment="Center"
-                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                                             <TextBlock Grid.Column="3" Text="Eff. XP" HorizontalAlignment="Right"
-                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                                             <TextBlock Grid.Column="4" Text="To Level" HorizontalAlignment="Right"
-                                                       Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                                                       Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                                         </Grid>
                                     </Border>
 
@@ -207,7 +207,7 @@
                                             <Style TargetType="ListBoxItem">
                                                 <Setter Property="Padding" Value="8,5"/>
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                                <Setter Property="Foreground" Value="#CCFFFFFF"/>
+                                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
                                                 <Setter Property="ContentTemplate" Value="{StaticResource RecipeRowTemplate}"/>
                                                 <Setter Property="Template">
                                                     <Setter.Value>
@@ -244,12 +244,12 @@
                                               ShowsPreview="True"/>
 
                                 <!-- Detail pane -->
-                                <Border Grid.Column="2" Background="#FF252525" BorderBrush="#33FFFFFF"
+                                <Border Grid.Column="2" Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
                                         BorderThickness="1" CornerRadius="3" Padding="12">
                                     <Grid>
                                         <!-- Empty inner state -->
                                         <TextBlock Text="Select a recipe to view its ingredients, XP breakdown, and crafted outputs."
-                                                   Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                   Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
                                                    TextWrapping="Wrap" TextAlignment="Center"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                    Visibility="{Binding SelectedRecipe, Converter={x:Static vm:NullToVisConverter.Instance}, ConverterParameter=invert}"/>
@@ -263,8 +263,8 @@
                                                                    Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding RecipeName}" FontWeight="Bold"
-                                                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                                                        <TextBlock Foreground="#AAFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0">
+                                                                   Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                                                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0">
                                                             <Run Text="Level"/>
                                                             <Run Text="{Binding LevelRequired, Mode=OneWay}"/>
                                                         </TextBlock>
@@ -272,7 +272,7 @@
                                                 </DockPanel>
 
                                                 <!-- XP breakdown -->
-                                                <Border Background="#FF1E1E1E" CornerRadius="2" Padding="8,6" Margin="0,0,0,10">
+                                                <Border Background="{StaticResource BgRecessedBrush}" CornerRadius="2" Padding="8,6" Margin="0,0,0,10">
                                                     <Grid HorizontalAlignment="Left">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
@@ -286,45 +286,45 @@
                                                             <RowDefinition Height="Auto"/>
                                                         </Grid.RowDefinitions>
 
-                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Base XP" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Base XP" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
                                                             <Run Text="{Binding BaseXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="First-time bonus XP" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="1" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="First-time bonus XP" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
                                                             <Run Text="{Binding FirstTimeXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Times completed" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="2" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
+                                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Times completed" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="2" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
                                                                    Text="{Binding TimesCompleted, Mode=OneWay}"/>
 
-                                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Effective XP per craft" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="3" Grid.Column="1" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
+                                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Effective XP per craft" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="3" Grid.Column="1" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
                                                             <Run Text="{Binding EffectiveXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Crafts to next level" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
+                                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Crafts to next level" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
                                                                    Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}, Mode=OneWay}"/>
                                                     </Grid>
                                                 </Border>
 
                                                 <!-- Ingredients -->
-                                                <TextBlock Text="Ingredients" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                <TextBlock Text="Ingredients" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
                                                            FontWeight="SemiBold" Margin="0,0,0,4"/>
                                                 <ItemsControl ItemsSource="{Binding Ingredients}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
                                                             <StackPanel Orientation="Horizontal" Margin="0,1">
                                                                 <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
-                                                                <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                                                                <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}">
                                                                     <Run Text="{Binding StackSize, Mode=OneWay, StringFormat='{}{0}x '}"/>
                                                                 </TextBlock>
-                                                                <TextBlock Text="{Binding Name}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                                <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
                                                                 <TextBlock Text="{Binding ChanceToConsume, Mode=OneWay, StringFormat=' ({0:P0} chance)'}"
-                                                                           Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic"
+                                                                           Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontStyle="Italic"
                                                                            Visibility="{Binding ChanceToConsume, Converter={x:Static vm:NullToVisConverter.Instance}}"/>
                                                             </StackPanel>
                                                         </DataTemplate>
@@ -332,7 +332,7 @@
                                                 </ItemsControl>
 
                                                 <!-- Crafted gear -->
-                                                <TextBlock Text="Crafted gear" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                                <TextBlock Text="Crafted gear" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
                                                            FontWeight="SemiBold" Margin="0,10,0,4"
                                                            Visibility="{Binding CraftedOutputs.Count, Converter={x:Static vm:CountToVisConverter.Instance}}"/>
                                                 <ItemsControl ItemsSource="{Binding CraftedOutputs}">
@@ -340,7 +340,7 @@
                                                         <DataTemplate>
                                                             <StackPanel Orientation="Horizontal" Margin="0,1">
                                                                 <wpf:IconImage IconId="{Binding IconId}" Width="16" Height="16" Margin="0,0,4,0"/>
-                                                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding DisplayLine}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"/>
                                                             </StackPanel>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -359,7 +359,7 @@
                             <!-- Sim controls -->
                             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Goal level:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="Goal level:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBox Width="60" Margin="0,0,6,0"
                                              Text="{Binding GoalLevel, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
                                              ToolTip="Target level (leave empty for next level)"/>
@@ -377,19 +377,19 @@
                             <!-- Result or empty state -->
                             <Grid>
                                 <TextBlock Text="Set a goal level and click Simulate to see an optimal crafting path."
-                                           Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                           Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
                                            TextWrapping="Wrap" TextAlignment="Center"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420"
                                            Visibility="{Binding SimulationResult, Converter={x:Static vm:NullToVisConverter.Instance}, ConverterParameter=invert}"/>
 
-                                <Border Background="#FF252525" BorderBrush="#33D4A847"
+                                <Border Background="{StaticResource BgSurfaceBrush}" BorderBrush="#33D4A847"
                                         BorderThickness="1" Padding="12" CornerRadius="3"
                                         Visibility="{Binding SimulationResult, Converter={x:Static vm:NullToVisConverter.Instance}}">
                                     <DockPanel>
                                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                             <StackPanel Orientation="Horizontal">
-                                                <icon:PackIconLucide Kind="Route" Width="14" Height="14" VerticalAlignment="Center" Foreground="#FFD4A847" Margin="0,0,6,0"/>
-                                                <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeLarge}" Foreground="#FFD4A847">
+                                                <icon:PackIconLucide Kind="Route" Width="14" Height="14" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Margin="0,0,6,0"/>
+                                                <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeLarge}" Foreground="{StaticResource AccentBrush}">
                                                     <Run Text="Optimal Path"/>
                                                     <Run Text=" — "/>
                                                     <Run Text="{Binding SimulationResult.TotalCompletions, Mode=OneWay}"/>
@@ -401,9 +401,9 @@
                                             <ItemsControl ItemsSource="{Binding SimulationResult.Steps}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Background="#FF1E1E1E" CornerRadius="2" Padding="8,5" Margin="0,0,0,3">
+                                                        <Border Background="{StaticResource BgRecessedBrush}" CornerRadius="2" Padding="8,5" Margin="0,0,0,3">
                                                             <DockPanel>
-                                                                <TextBlock DockPanel.Dock="Right" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center">
+                                                                <TextBlock DockPanel.Dock="Right" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center">
                                                                     <Run Text="Lv "/>
                                                                     <Run Text="{Binding LevelAtStart, Mode=OneWay}"/>
                                                                     <Run Text=" &#x2192; "/>
@@ -411,18 +411,18 @@
                                                                 </TextBlock>
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <wpf:IconImage IconId="{Binding IconId}" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">
+                                                                    <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">
                                                                         <Run Text="{Binding RecipeName, Mode=OneWay}"/>
                                                                     </TextBlock>
-                                                                    <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                                    <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center" Margin="8,0,0,0">
                                                                         <Run Text="x"/>
                                                                         <Run Text="{Binding Completions, Mode=OneWay}"/>
                                                                     </TextBlock>
                                                                     <Border Background="#44D4A847" CornerRadius="3" Padding="4,1" Margin="8,0,0,0"
                                                                             Visibility="{Binding UsesFirstTimeBonus, Converter={StaticResource BoolToVisibility}}">
-                                                                        <TextBlock Text="1st time" Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                                                        <TextBlock Text="1st time" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeSmall}"/>
                                                                     </Border>
-                                                                    <TextBlock Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                                    <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center" Margin="8,0,0,0">
                                                                         <Run Text="{Binding TotalXpFromStep, Mode=OneWay, StringFormat=N0}"/>
                                                                         <Run Text=" XP"/>
                                                                     </TextBlock>
