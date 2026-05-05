@@ -3,6 +3,7 @@ using Celebrimbor.Domain;
 using Celebrimbor.Services;
 using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf;
@@ -27,11 +28,7 @@ public sealed class CelebrimborModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var settingsPath = Path.Combine(localApp, "Mithril", "Celebrimbor", "settings.json");
 
-        services.AddSingleton<ISettingsStore<CelebrimborSettings>>(_ =>
-            new JsonSettingsStore<CelebrimborSettings>(settingsPath, CelebrimborSettingsJsonContext.Default.CelebrimborSettings));
-        services.AddSingleton<CelebrimborSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<CelebrimborSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<CelebrimborSettings>>();
+        services.AddMithrilSettings<CelebrimborSettings>(settingsPath, CelebrimborSettingsJsonContext.Default.CelebrimborSettings);
 
         services.AddSingleton<RecipeAggregator>();
         services.AddSingleton<RecipeSearchIndex>();
@@ -44,23 +41,13 @@ public sealed class CelebrimborModule : IMithrilModule
         services.AddSingleton<CelebrimborShellViewModel>();
         services.AddSingleton<CelebrimborSettingsViewModel>();
 
-        services.AddSingleton<CelebrimborShellView>(sp =>
+        services.AddSingleton<CelebrimborShellView>(sp => new CelebrimborShellView
         {
-            // Resolve the auto-saver here so its INotifyPropertyChanged subscriptions are live
-            // as soon as the module view is built. DI singletons are otherwise lazy.
-            _ = sp.GetRequiredService<SettingsAutoSaver<CelebrimborSettings>>();
-            return new CelebrimborShellView
-            {
-                DataContext = sp.GetRequiredService<CelebrimborShellViewModel>(),
-            };
+            DataContext = sp.GetRequiredService<CelebrimborShellViewModel>(),
         });
-        services.AddSingleton<CelebrimborSettingsView>(sp =>
+        services.AddSingleton<CelebrimborSettingsView>(sp => new CelebrimborSettingsView
         {
-            _ = sp.GetRequiredService<SettingsAutoSaver<CelebrimborSettings>>();
-            return new CelebrimborSettingsView
-            {
-                DataContext = sp.GetRequiredService<CelebrimborSettingsViewModel>(),
-            };
+            DataContext = sp.GetRequiredService<CelebrimborSettingsViewModel>(),
         });
     }
 }

@@ -36,11 +36,7 @@ public sealed class GandalfModule : IMithrilModule
         var lootCatalogPath = Path.Combine(gandalfDir, "loot-catalog.json");
 
         // Global user preferences (alarm volume, sound picker, etc) stay app-wide.
-        services.AddSingleton<ISettingsStore<GandalfSettings>>(_ =>
-            new JsonSettingsStore<GandalfSettings>(settingsPath, GandalfSettingsJsonContext.Default.GandalfSettings));
-        services.AddSingleton<GandalfSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<GandalfSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<GandalfSettings>>();
+        services.AddMithrilSettings<GandalfSettings>(settingsPath, GandalfSettingsJsonContext.Default.GandalfSettings);
 
         // Global timer definitions — one file, shared across every character.
         services.AddSingleton<ISettingsStore<GandalfDefinitions>>(_ =>
@@ -131,16 +127,9 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<ICharacterPresenceService>()));
 
         services.AddSingleton<GandalfShellViewModel>();
-        services.AddSingleton<GandalfShellView>(sp =>
+        services.AddSingleton<GandalfShellView>(sp => new GandalfShellView
         {
-            // Force the autosaver to instantiate so it subscribes to GandalfSettings.PropertyChanged.
-            // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
-            // it unless something explicitly requests it.
-            _ = sp.GetRequiredService<SettingsAutoSaver<GandalfSettings>>();
-            return new GandalfShellView
-            {
-                DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
-            };
+            DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
         });
 
         services.AddSingleton<GandalfSettingsViewModel>();

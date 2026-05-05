@@ -2,6 +2,7 @@ using System.IO;
 using Bilbo.Domain;
 using Bilbo.ViewModels;
 using Bilbo.Views;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf;
 using MahApps.Metro.IconPacks;
@@ -26,11 +27,7 @@ public sealed class BilboModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var settingsPath = Path.Combine(localApp, "Mithril", "Bilbo", "settings.json");
 
-        services.AddSingleton<ISettingsStore<BilboSettings>>(_ =>
-            new JsonSettingsStore<BilboSettings>(settingsPath, BilboSettingsJsonContext.Default.BilboSettings));
-        services.AddSingleton<BilboSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<BilboSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<BilboSettings>>();
+        services.AddMithrilSettings<BilboSettings>(settingsPath, BilboSettingsJsonContext.Default.BilboSettings);
 
         services.AddSingleton<StorageViewModel>();
         services.AddSingleton<StorageView>(sp => new StorageView(

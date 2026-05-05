@@ -49,11 +49,7 @@ public sealed class SamwiseModule : IMithrilModule
         services.AddSingleton<AlarmService>();
 
         // Global preferences stay app-wide.
-        services.AddSingleton<ISettingsStore<SamwiseSettings>>(_ =>
-            new JsonSettingsStore<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings));
-        services.AddSingleton<SamwiseSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<SamwiseSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<SamwiseSettings>>();
+        services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);
 
         // Garden state is per-character; store each char's plot dict in its own file.
         services.AddPerCharacterModuleStore<GardenCharacterState>(Id,

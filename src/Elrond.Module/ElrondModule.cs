@@ -3,6 +3,7 @@ using Elrond.Domain;
 using Elrond.Services;
 using Elrond.ViewModels;
 using Elrond.Views;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
 using Mithril.Shared.Settings;
@@ -27,28 +28,17 @@ public sealed class ElrondModule : IMithrilModule
         var elrondDir = Path.Combine(localApp, "Mithril", "Elrond");
         var settingsPath = Path.Combine(elrondDir, "settings.json");
 
-        services.AddSingleton<ISettingsStore<ElrondSettings>>(_ =>
-            new JsonSettingsStore<ElrondSettings>(settingsPath, ElrondSettingsJsonContext.Default.ElrondSettings));
-        services.AddSingleton<ElrondSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<ElrondSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<ElrondSettings>>();
+        services.AddMithrilSettings<ElrondSettings>(settingsPath, ElrondSettingsJsonContext.Default.ElrondSettings);
 
         services.AddSingleton<SkillAdvisorEngine>();
         services.AddSingleton<LevelingSimulator>();
 
-        services.AddSingleton<SkillAdvisorViewModel>(sp =>
-        {
-            // Force the autosaver to instantiate so it subscribes to ElrondSettings.PropertyChanged.
-            // Same pattern as Celebrimbor/Bilbo — the saver is registered but DI won't construct
-            // it unless something explicitly requests it.
-            _ = sp.GetRequiredService<SettingsAutoSaver<ElrondSettings>>();
-            return new SkillAdvisorViewModel(
-                sp.GetRequiredService<SkillAdvisorEngine>(),
-                sp.GetRequiredService<LevelingSimulator>(),
-                sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
-                sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
-                sp.GetRequiredService<ElrondSettings>());
-        });
+        services.AddSingleton<SkillAdvisorViewModel>(sp => new SkillAdvisorViewModel(
+            sp.GetRequiredService<SkillAdvisorEngine>(),
+            sp.GetRequiredService<LevelingSimulator>(),
+            sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
+            sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
+            sp.GetRequiredService<ElrondSettings>()));
         services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView
         {
             DataContext = sp.GetRequiredService<SkillAdvisorViewModel>(),
