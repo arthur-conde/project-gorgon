@@ -11,6 +11,13 @@ namespace Mithril.Shared.Wpf.Sorting;
 /// <see cref="ICollectionView.Filter"/> to the active sort/filter state owned by a view-model,
 /// so consumers don't have to write the boilerplate themselves.
 /// </summary>
+/// <remarks>
+/// <b>Empty-sort behaviour.</b> When <c>activeSortKeys</c> is empty,
+/// <see cref="ICollectionView.SortDescriptions"/> is empty too — items render in the underlying
+/// collection's iteration order. To keep that case meaningful (and reproducible), consumers
+/// should populate the source collection in a stable, considered default order rather than
+/// relying on dictionary or hash-set iteration.
+/// </remarks>
 public sealed class SortFilterController<T> : IDisposable
 {
     private readonly ICollectionView _view;

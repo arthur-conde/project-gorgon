@@ -50,7 +50,7 @@
                     <Grid>
                         <!-- Centered placeholder, shown when there are no chips. -->
                         <TextBlock x:Name="EmptyPlaceholder"
-                                   Text="No sort applied · list shows source order"
+                                   Text="No sort applied · list shows the source's default order"
                                    Foreground="{StaticResource TextTertiaryBrush}"
                                    FontStyle="Italic"
                                    FontSize="{DynamicResource AppFontSizeHint}"
