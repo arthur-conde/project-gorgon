@@ -41,6 +41,7 @@
 
     <!-- Palette — matches hand-authored colors in Samwise/Shell/Legolas views -->
     <SolidColorBrush x:Key="BgPrimaryBrush"      Color="#FF1A1A1A"/>
+    <SolidColorBrush x:Key="BgRecessedBrush"     Color="#FF1E1E1E"/>
     <SolidColorBrush x:Key="BgSurfaceBrush"      Color="#FF252525"/>
     <SolidColorBrush x:Key="BgSurfaceHoverBrush" Color="#FF303030"/>
     <SolidColorBrush x:Key="TextPrimaryBrush"    Color="#FFE8E8E8"/>
@@ -761,6 +762,140 @@
                             </Popup>
                         </Grid>
                     </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ═══════════════════ Toolbar (Sort / Filter / View) ═══════════════════ -->
+
+    <!-- Compact icon-with-label pill used by the Sort and Filter toolbar buttons.
+         Smaller than the default Button (MinHeight 22 vs 24, padding 8,2 vs 10,4)
+         so a row of these doesn't overpower the master list above which they sit. -->
+    <Style x:Key="MithrilToolbarButtonStyle" TargetType="Button">
+        <Setter Property="Background"  Value="Transparent"/>
+        <Setter Property="Foreground"  Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Padding"     Value="8,2"/>
+        <Setter Property="MinHeight"   Value="22"/>
+        <Setter Property="Cursor"      Value="Hand"/>
+        <Setter Property="FontFamily"  Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"    Value="{DynamicResource AppFontSizeHint}"/>
+        <Setter Property="Focusable"   Value="True"/>
+        <Setter Property="IsTabStop"   Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ═══════════════════ ViewModeToggle ═══════════════════ -->
+
+    <!-- Segmented toggle backed by an internal ListBox. Each ListBoxItem renders a
+         ViewModeOption's Icon (and DisplayName when present); the selected segment
+         picks up AccentBrush on its border + foreground. ListBox.SelectedValuePath
+         points at ViewModeOption.Id so the host VM binds a plain string. -->
+    <Style TargetType="{x:Type c:ViewModeToggle}">
+        <Setter Property="Background"  Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Focusable"   Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:ViewModeToggle}">
+                    <ListBox x:Name="PART_List"
+                             ItemsSource="{Binding Modes, RelativeSource={RelativeSource TemplatedParent}}"
+                             SelectedValue="{Binding SelectedMode, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                             SelectedValuePath="Id"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             KeyboardNavigation.TabNavigation="Once"
+                             SnapsToDevicePixels="True">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Margin" Value="0,0,2,0"/>
+                                <Setter Property="Padding" Value="6,2"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Setter Property="ToolTip" Value="{Binding ToolTipText}"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd"
+                                                    Background="Transparent"
+                                                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="3"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    SnapsToDevicePixels="True">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ContentPresenter Content="{Binding Icon}"
+                                                                      VerticalAlignment="Center"
+                                                                      HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               Margin="4,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{TemplateBinding Foreground}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DisplayName}" Value="">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

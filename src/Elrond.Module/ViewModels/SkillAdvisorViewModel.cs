@@ -167,12 +167,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     }
 
     [RelayCommand]
-    private void SetViewMode(string? mode)
-    {
-        if (!string.IsNullOrEmpty(mode)) ViewMode = mode;
-    }
-
-    [RelayCommand]
     private void ToggleSort(string? key)
     {
         if (string.IsNullOrEmpty(key)) return;

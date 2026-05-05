@@ -147,81 +147,17 @@
                                 <DockPanel Grid.Column="0">
                                     <!-- Sort chip row + view-mode toggle -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
-                                        <!-- View-mode toggle (Rows / Cards) on the right -->
-                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                            <TextBlock Text="View:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                                                       VerticalAlignment="Center" Margin="12,0,6,0"/>
-                                            <Button Command="{Binding SetViewModeCommand}" CommandParameter="Rows"
-                                                    Margin="0,0,2,0" Padding="6,2" Cursor="Hand"
-                                                    ToolTip="Show recipes as compact rows with column-aligned values">
-                                                <Button.Style>
-                                                    <Style TargetType="Button">
-                                                        <Setter Property="Background" Value="Transparent"/>
-                                                        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-                                                        <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                                                        <Setter Property="Template">
-                                                            <Setter.Value>
-                                                                <ControlTemplate TargetType="Button">
-                                                                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                                            BorderThickness="1" CornerRadius="3"
-                                                                            Padding="{TemplateBinding Padding}">
-                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                    </Border>
-                                                                    <ControlTemplate.Triggers>
-                                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
-                                                                        </Trigger>
-                                                                    </ControlTemplate.Triggers>
-                                                                </ControlTemplate>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ViewMode}" Value="Rows">
-                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
+                                        <wpf:ViewModeToggle DockPanel.Dock="Right"
+                                                            SelectedMode="{Binding ViewMode, Mode=TwoWay}">
+                                            <wpf:ViewModeOption Id="Rows"
+                                                                ToolTipText="Show recipes as compact rows with column-aligned values">
                                                 <icon:PackIconLucide Kind="List" Width="14" Height="14"/>
-                                            </Button>
-                                            <Button Command="{Binding SetViewModeCommand}" CommandParameter="Cards"
-                                                    Padding="6,2" Cursor="Hand"
-                                                    ToolTip="Show recipes as cards with bigger icons and inline metadata">
-                                                <Button.Style>
-                                                    <Style TargetType="Button">
-                                                        <Setter Property="Background" Value="Transparent"/>
-                                                        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-                                                        <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                                                        <Setter Property="Template">
-                                                            <Setter.Value>
-                                                                <ControlTemplate TargetType="Button">
-                                                                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                                            BorderThickness="1" CornerRadius="3"
-                                                                            Padding="{TemplateBinding Padding}">
-                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                    </Border>
-                                                                    <ControlTemplate.Triggers>
-                                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
-                                                                        </Trigger>
-                                                                    </ControlTemplate.Triggers>
-                                                                </ControlTemplate>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ViewMode}" Value="Cards">
-                                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
+                                            </wpf:ViewModeOption>
+                                            <wpf:ViewModeOption Id="Cards"
+                                                                ToolTipText="Show recipes as cards with bigger icons and inline metadata">
                                                 <icon:PackIconLucide Kind="LayoutList" Width="14" Height="14"/>
-                                            </Button>
-                                        </StackPanel>
+                                            </wpf:ViewModeOption>
+                                        </wpf:ViewModeToggle>
 
                                         <!-- Sort chips on the left -->
                                         <StackPanel Orientation="Horizontal">
