@@ -1,0 +1,145 @@
+<UserControl x:Class="Pippin.Sharing.PippinShareDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Pippin.Sharing"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:PippinShareDialogViewModel}"
+             MinWidth="500" MaxWidth="520">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock TextWrapping="Wrap" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSize}" Margin="0,0,0,10"
+                   Text="Share your Gourmand progress with another player. The link opens a read-only view in their Pippin tab; the JSON or summary work for Discord, forums, or anywhere a link won't."/>
+
+        <CheckBox Content="Include character name" IsChecked="{Binding IncludeCharacterName}"
+                  IsEnabled="{Binding HasCharacterName}"
+                  Foreground="#CCFFFFFF" Margin="0,0,0,12"/>
+
+        <TextBlock Text="Share link (mithril://pippin/…)" Foreground="#88FFFFFF"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding ShareLink, Mode=OneWay}" IsReadOnly="True"
+                     FontFamily="Consolas,Cascadia Mono,Courier New" FontSize="11"
+                     Background="#FF151515" Foreground="#FFB0E0A0" BorderBrush="#FF333333"
+                     TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto"
+                     Padding="6,4" Margin="0,0,8,0"/>
+            <Button Grid.Column="1" Content="Copy" Command="{Binding CopyLinkCommand}"
+                    Padding="12,6" Background="#FFD4A847" Foreground="#FF1A1A1A" FontWeight="SemiBold"/>
+        </Grid>
+
+        <TextBlock Text="JSON payload" Foreground="#88FFFFFF"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+        <TextBox Text="{Binding JsonPayload, Mode=OneWay}" IsReadOnly="True"
+                 Height="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 FontFamily="Consolas,Cascadia Mono,Courier New" FontSize="11"
+                 Background="#FF151515" Foreground="#FFB0E0A0" BorderBrush="#FF333333"
+                 TextWrapping="NoWrap"/>
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
+            <Button Content="Copy JSON" Command="{Binding CopyJsonCommand}"
+                    Padding="10,4" Margin="0,0,8,0"
+                    Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            <Button Content="Save JSON…" Command="{Binding SaveJsonCommand}"
+                    Padding="10,4"
+                    Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+        </StackPanel>
+
+        <TextBlock Text="Human-readable summary" Foreground="#88FFFFFF"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+        <TextBox Text="{Binding Summary, Mode=OneWay}" IsReadOnly="True"
+                 Height="120" VerticalScrollBarVisibility="Auto"
+                 FontFamily="Consolas,Cascadia Mono,Courier New" FontSize="11"
+                 Background="#FF151515" Foreground="#CCFFFFFF" BorderBrush="#FF333333"
+                 TextWrapping="Wrap"/>
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+            <Button Content="Copy summary" Command="{Binding CopySummaryCommand}"
+                    Padding="10,4"
+                    Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+        </StackPanel>
+
+        <!-- ── Image export (round 3) ─────────────────────────────────── -->
+        <Separator Margin="0,16,0,8" Background="#33FFFFFF"/>
+        <TextBlock Text="Image" Foreground="#88FFFFFF"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"/>
+
+        <!-- Icon-preload banner: only when count > 0 -->
+        <Border Background="#FF2A2A2A" BorderBrush="#33D4A847" BorderThickness="1"
+                CornerRadius="4" Padding="10,8" Margin="0,0,0,10"
+                Visibility="{Binding UncachedIconCount, Converter={StaticResource PositiveIntToVis}}">
+            <StackPanel>
+                <TextBlock Foreground="#CCFFFFFF" TextWrapping="Wrap">
+                    <Run Text="ⓘ"/>
+                    <Run Text="{Binding UncachedIconCount, Mode=OneWay}"/>
+                    <Run Text="icons aren't downloaded yet — share will use placeholders for those."/>
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Content="Load icons now" Command="{Binding LoadIconsCommand}"
+                            Padding="10,4" Margin="0,0,8,0"
+                            Background="#FFD4A847" Foreground="#FF1A1A1A" FontWeight="SemiBold"/>
+                    <ProgressBar Width="160" Height="14" VerticalAlignment="Center"
+                                 Minimum="0" Maximum="1" Value="{Binding PrefetchProgress, Mode=OneWay}"
+                                 Visibility="{Binding IsPrefetching, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="{Binding PrefetchProgressLabel}" Foreground="#88FFFFFF"
+                               VerticalAlignment="Center" Margin="8,0,0,0"
+                               Visibility="{Binding IsPrefetching, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Card image row -->
+        <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Card image" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                <TextBlock Text="1000×400 — Discord-friendly summary" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="Copy" Command="{Binding CopyCardCommand}"
+                        Padding="12,6" Margin="0,0,8,0"
+                        Background="#FFD4A847" Foreground="#FF1A1A1A" FontWeight="SemiBold"/>
+                <Button Content="Save…" Command="{Binding SaveCardCommand}"
+                        Padding="10,6"
+                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Full-grid image row -->
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Full grid" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                <TextBlock Text="Tall PNG with every row — archival" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="Save…" Command="{Binding SaveFullGridCommand}"
+                        Padding="12,6" Margin="0,0,8,0"
+                        Background="#FFD4A847" Foreground="#FF1A1A1A" FontWeight="SemiBold"/>
+                <Button Content="Copy" Command="{Binding CopyFullGridCommand}"
+                        Padding="10,6"
+                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="{Binding StatusMessage}" Foreground="#FF7AB880"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,10,0,0"
+                   Visibility="{Binding StatusMessage, Converter={StaticResource NullOrEmptyToVis}}"/>
+    </StackPanel>
+</UserControl>

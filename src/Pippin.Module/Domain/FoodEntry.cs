@@ -5,6 +5,7 @@ namespace Pippin.Domain;
 /// </summary>
 public sealed record FoodEntry(
     long ItemId,
+    string InternalName,
     string Name,
     int IconId,
     string FoodType,

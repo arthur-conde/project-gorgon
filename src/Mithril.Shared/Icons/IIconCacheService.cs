@@ -29,4 +29,30 @@ public interface IIconCacheService
     /// Reports progress as (completed, total).
     /// </summary>
     Task DownloadAllAsync(IProgress<(int completed, int total)> progress, CancellationToken ct = default);
+
+    /// <summary>
+    /// Synchronous cache-state check. Returns true if the icon is already in memory
+    /// or on disk and can be served immediately without a network round-trip. Never
+    /// triggers a fetch and does not load anything into memory.
+    /// </summary>
+    bool IsCached(int iconId);
+
+    /// <summary>
+    /// Filter <paramref name="iconIds"/> to the subset that aren't cached yet.
+    /// Useful for preload prompts (e.g. the share dialog's icon-preload banner).
+    /// Distinct, preserves first-seen order, drops non-positive ids.
+    /// </summary>
+    IReadOnlyList<int> GetUncachedIcons(IEnumerable<int> iconIds);
+
+    /// <summary>
+    /// Fetch the given subset, skipping any already cached or known-terminally-failed.
+    /// Completes when every requested icon is in cache or has failed; reports
+    /// <c>(completed, total)</c> progress per resolution. <paramref name="total"/> is
+    /// the count of icons that actually needed a download — already-cached ids are
+    /// excluded so the bar reflects real work.
+    /// </summary>
+    Task PreloadAsync(
+        IEnumerable<int> iconIds,
+        IProgress<(int completed, int total)>? progress = null,
+        CancellationToken ct = default);
 }

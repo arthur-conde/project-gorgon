@@ -1,0 +1,104 @@
+<Window x:Class="Pippin.Sharing.SharedProgressWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Pippin.Sharing"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance vm:SharedProgressViewModel}"
+        Title="{Binding Title}"
+        Width="900" Height="640"
+        Background="#FF1A1A1A"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <icon:PackIconLucide Kind="Share2" Width="22" Height="22" Foreground="#FFD4A847"
+                                     VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding Title}" FontFamily="{DynamicResource AppHeaderFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Margin="0,0,20,0">
+                    <Run Text="{Binding EatenCount, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                    <Run Text="/" Foreground="#88FFFFFF"/>
+                    <Run Text="{Binding TotalCount, Mode=OneWay}" Foreground="#88FFFFFF"/>
+                    <Run Text=" eaten" Foreground="#88FFFFFF"/>
+                </TextBlock>
+                <TextBlock Margin="0,0,20,0">
+                    <Run Text="{Binding CompletionPercent, Mode=OneWay, StringFormat={}{0:0.#}}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                    <Run Text="%" Foreground="#88FFFFFF"/>
+                </TextBlock>
+                <TextBlock Foreground="#88FFFFFF" Text="{Binding SyncedLabel}"/>
+            </WrapPanel>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <wpf:MithrilQueryBox Grid.Column="0"
+                                    Grid="{Binding ElementName=FoodsGrid}"
+                                    QueryText="{Binding ElementName=FoodsGrid, Path=QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Watermark="filter shared progress"
+                                    Margin="0,0,12,0"/>
+                <ComboBox Grid.Column="1" SelectedItem="{Binding FoodTypeFilter}" Width="130" Margin="0,0,12,0">
+                    <ComboBoxItem Content="All" IsSelected="True"/>
+                    <ComboBoxItem Content="Meal"/>
+                    <ComboBoxItem Content="Snack"/>
+                    <ComboBoxItem Content="Instant Snack"/>
+                </ComboBox>
+                <ComboBox Grid.Column="2" SelectedItem="{Binding EatenFilter}" Width="110">
+                    <ComboBoxItem Content="All" IsSelected="True"/>
+                    <ComboBoxItem Content="Eaten"/>
+                    <ComboBoxItem Content="Uneaten"/>
+                </ComboBox>
+            </Grid>
+        </StackPanel>
+
+        <wpf:MithrilDataGrid x:Name="FoodsGrid"
+                            ItemsSource="{Binding Foods}"
+                            Mode="ReadOnly"
+                            GridLinesVisibility="None"
+                            EnableRowVirtualization="True"
+                            EnableColumnVirtualization="True"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling"
+                            VirtualizingPanel.ScrollUnit="Pixel"
+                            ScrollViewer.CanContentScroll="True">
+            <wpf:MithrilDataGrid.Columns>
+                <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
+                                        Width="32" IsReadOnly="True"
+                                        wpf:MithrilDataGrid.QueryName="IsEaten"/>
+                <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending"
+                                        wpf:MithrilDataGrid.QueryName="Name">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Type" Binding="{Binding FoodType}" Width="110"/>
+                <DataGridTextColumn Header="Level" Binding="{Binding FoodLevel}" Width="60"/>
+                <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
+                <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
+                <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
+            </wpf:MithrilDataGrid.Columns>
+        </wpf:MithrilDataGrid>
+    </DockPanel>
+</Window>

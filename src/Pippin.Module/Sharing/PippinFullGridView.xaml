@@ -1,0 +1,89 @@
+<UserControl x:Class="Pippin.Sharing.PippinFullGridView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Pippin.Sharing"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:PippinFullGridViewModel}"
+             Width="1200"
+             Background="#FF1A1A1A"
+             FontFamily="Segoe UI"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <DockPanel Margin="20">
+        <!-- Header strip -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+            <StackPanel Orientation="Horizontal">
+                <Image Source="pack://application:,,,/Pippin.Module;component/Resources/pippin.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding CharacterTitle}" FontSize="22" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                <TextBlock Text="  ·  Pippin · Gourmand" FontSize="14" Foreground="#88FFFFFF"
+                           VerticalAlignment="Bottom" Margin="0,0,0,3"
+                           Visibility="{Binding HasIdentity, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+            <TextBlock Text="{Binding StatsLine}" FontSize="14" Foreground="#CCFFFFFF" Margin="0,4,0,0"/>
+            <TextBlock Text="{Binding LastSyncText}" FontSize="12" Foreground="#88FFFFFF" Margin="0,2,0,0"
+                       Visibility="{Binding LastSyncText, Converter={StaticResource NullOrEmptyToVis}}"/>
+        </StackPanel>
+
+        <!-- Column header row -->
+        <Grid DockPanel.Dock="Top" Height="36" Background="#FF222222">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="32"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="60"/>
+                <ColumnDefinition Width="50"/>
+                <ColumnDefinition Width="60"/>
+                <ColumnDefinition Width="180"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="" />
+            <TextBlock Grid.Column="1" Text="Name"  Margin="8,0,0,0" Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="2" Text="Type"  Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="3" Text="Level" Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="4" Text="Req"   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="5" Text="Count" Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="6" Text="Tags"  Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Rows -->
+        <ItemsControl ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid Height="32" Background="#FF1E1E1E">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="32"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="50"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="180"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding IsEaten, Mode=OneWay}"
+                                  IsEnabled="False" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                            <Image Source="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,8,0"
+                                   Visibility="{Binding HasIcon, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="{Binding Name}" Foreground="#FFE8E8E8" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding FoodType}"         Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="{Binding FoodLevel}"        Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="4" Text="{Binding GourmandLevelReq}" Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="5" Text="{Binding EatenCount}"       Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="6" Text="{Binding DietaryTags}"      Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </DockPanel>
+</UserControl>

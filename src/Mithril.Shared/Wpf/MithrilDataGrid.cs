@@ -172,6 +172,17 @@ public class MithrilDataGrid : DataGrid
             return;
         }
 
+        // Defensive: if we're already attached when Loaded fires (which WPF can do on its
+        // own — e.g. when a child Window with Owner=this window is closed and the visual
+        // tree re-templates), detach first so we re-capture the *VM's* filter rather than
+        // the composite filter we previously installed. Without this, repeated attach
+        // cycles wrap the composite around itself, preserving stale query predicates that
+        // outlive the QueryBox text being cleared.
+        if (_attachedView is not null)
+        {
+            DetachFromSource();
+        }
+
         _itemType = InferItemType(ItemsSource);
         if (_itemType is not null)
         {

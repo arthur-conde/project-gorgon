@@ -40,7 +40,12 @@ public sealed class GourmandLegacyMigration : ILegacyMigration<GourmandState>
             using var stream = File.OpenRead(_legacyPath);
             var loaded = JsonSerializer.Deserialize(stream, _typeInfo);
             if (loaded is null) return false;
-            migrated = loaded;
+
+            // PerCharacterStore.Load takes a fast path on legacy migration that bumps
+            // SchemaVersion straight to CurrentVersion without invoking Migrate. Run the
+            // v1→v2 structural step here so PendingLegacyByName captures the legacy dict
+            // before it's discarded.
+            migrated = GourmandState.Migrate(loaded);
             return true;
         }
         catch

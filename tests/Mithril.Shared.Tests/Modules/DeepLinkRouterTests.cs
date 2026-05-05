@@ -122,6 +122,56 @@ public class DeepLinkRouterTests
         listTarget.LastPayload.Should().BeNull();
     }
 
+    // ---- mithril://pippin/… branch ------------------------------------------
+
+    [Fact]
+    public void PippinUri_Dispatched_WithBase64UrlPayload()
+    {
+        var presenter = new RecordingPresenter();
+        var pippinTarget = new RecordingPippinTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: pippinTarget);
+
+        var handled = router.Handle("mithril://pippin/AB-_abcXYZ123");
+
+        handled.Should().BeTrue();
+        pippinTarget.LastPayload.Should().Be("AB-_abcXYZ123");
+    }
+
+    [Fact]
+    public void PippinUri_WithoutRegisteredTarget_IsDropped()
+    {
+        var presenter = new RecordingPresenter();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null);
+
+        router.Handle("mithril://pippin/AB-_abcXYZ123").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("mithril://pippin/has.dot")]
+    [InlineData("mithril://pippin/has space")]
+    [InlineData("mithril://pippin/")]
+    public void PippinUri_MalformedPayload_IsRejected(string uri)
+    {
+        var presenter = new RecordingPresenter();
+        var pippinTarget = new RecordingPippinTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: pippinTarget);
+
+        router.Handle(uri).Should().BeFalse();
+        pippinTarget.LastPayload.Should().BeNull();
+    }
+
+    [Fact]
+    public void PippinUri_PayloadOverLengthCap_IsRejected()
+    {
+        var presenter = new RecordingPresenter();
+        var pippinTarget = new RecordingPippinTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: pippinTarget);
+
+        var tooLong = new string('A', 16_385);
+        router.Handle($"mithril://pippin/{tooLong}").Should().BeFalse();
+        pippinTarget.LastPayload.Should().BeNull();
+    }
+
     private sealed class RecordingPresenter : IItemDetailPresenter
     {
         public string? LastShown { get; private set; }
@@ -131,6 +181,12 @@ public class DeepLinkRouterTests
     }
 
     private sealed class RecordingListTarget : ICraftListImportTarget
+    {
+        public string? LastPayload { get; private set; }
+        public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
+    }
+
+    private sealed class RecordingPippinTarget : IPippinShareImportTarget
     {
         public string? LastPayload { get; private set; }
         public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
