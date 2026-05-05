@@ -47,7 +47,6 @@
                         Padding="3"
                         MinHeight="34">
                     <ItemsControl x:Name="TagsList"
-                                  ItemsSource="{Binding Source.ActiveSortKeysUntyped, ElementName=Self}"
                                   KeyboardNavigation.TabNavigation="Cycle">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>

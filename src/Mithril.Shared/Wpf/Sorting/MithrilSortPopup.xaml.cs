@@ -48,8 +48,17 @@ public partial class MithrilSortPopup : UserControl
         InitializeComponent();
     }
 
-    private static void OnSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
-        ((MithrilSortPopup)d).RefreshEmptyHint();
+    private static void OnSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var p = (MithrilSortPopup)d;
+        // Bind ItemsSource via direct interface call rather than XAML, because the
+        // non-generic facets (AvailableSortKeysUntyped / ActiveSortKeysUntyped) are
+        // default-interface members. WPF's reflection-based binding pipeline cannot
+        // see DIM-only properties on the runtime class — interface vtable dispatch
+        // here works regardless.
+        p.TagsList.ItemsSource = (e.NewValue as ISortableViewModel)?.ActiveSortKeysUntyped;
+        p.RefreshEmptyHint();
+    }
 
     private static void OnIsOpenChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
