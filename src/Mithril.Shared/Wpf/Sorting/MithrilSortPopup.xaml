@@ -1,0 +1,120 @@
+<UserControl x:Class="Mithril.Shared.Wpf.Sorting.MithrilSortPopup"
+             x:Name="Self"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Popup x:Name="Host"
+           IsOpen="{Binding IsOpen, ElementName=Self, Mode=TwoWay}"
+           PlacementTarget="{Binding PlacementTarget, ElementName=Self}"
+           Placement="Bottom"
+           StaysOpen="False"
+           AllowsTransparency="True"
+           PopupAnimation="Fade"
+           HorizontalOffset="0"
+           VerticalOffset="2">
+        <Border Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderStrongBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Padding="8"
+                MinWidth="220"
+                SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect Color="Black" BlurRadius="10" ShadowDepth="2" Opacity="0.55"/>
+            </Border.Effect>
+
+            <DockPanel>
+                <!-- Footer: "+ Add sort key" -->
+                <Button x:Name="AddBtn" DockPanel.Dock="Bottom"
+                        Style="{StaticResource MithrilToolbarButtonStyle}"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6,0,0"
+                        Click="OnAddSortKeyClick"
+                        ToolTip="Append another sort key">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="+ " Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock Text="Add sort key"/>
+                    </StackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu x:Name="AddMenu" Placement="Bottom"/>
+                    </Button.ContextMenu>
+                </Button>
+
+                <!-- Empty-state hint -->
+                <TextBlock x:Name="EmptyHint"
+                           DockPanel.Dock="Top"
+                           Text="No sort keys active. Add one to start ordering the list."
+                           Foreground="{StaticResource TextTertiaryBrush}"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           Padding="2,4"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed"/>
+
+                <!-- Active sort keys, ordered top-to-bottom = precedence -->
+                <ItemsControl x:Name="TagsList"
+                              ItemsSource="{Binding Source.ActiveSortKeysUntyped, ElementName=Self}"
+                              KeyboardNavigation.TabNavigation="Cycle">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Tag body: label + asc/desc indicator. Click flips direction. -->
+                                <Button Grid.Column="0"
+                                        Style="{StaticResource MithrilToolbarButtonStyle}"
+                                        HorizontalContentAlignment="Stretch"
+                                        Click="OnTagBodyClick"
+                                        ToolTip="Click to flip direction">
+                                    <DockPanel LastChildFill="False">
+                                        <TextBlock DockPanel.Dock="Right"
+                                                   Text="{Binding IndicatorGlyph}"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   Margin="6,0,0,0"
+                                                   FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    </DockPanel>
+                                </Button>
+
+                                <Button Grid.Column="1"
+                                        Style="{StaticResource MithrilToolbarButtonStyle}"
+                                        Margin="2,0,0,0" Padding="6,0"
+                                        Click="OnMoveUpClick"
+                                        ToolTip="Move up (higher precedence)">
+                                    <TextBlock Text="▲" FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                </Button>
+                                <Button Grid.Column="2"
+                                        Style="{StaticResource MithrilToolbarButtonStyle}"
+                                        Margin="2,0,0,0" Padding="6,0"
+                                        Click="OnMoveDownClick"
+                                        ToolTip="Move down (lower precedence)">
+                                    <TextBlock Text="▼" FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                </Button>
+                                <Button Grid.Column="3"
+                                        Style="{StaticResource MithrilToolbarButtonStyle}"
+                                        Margin="2,0,0,0" Padding="6,0"
+                                        Click="OnRemoveClick"
+                                        ToolTip="Remove sort key">
+                                    <TextBlock Text="✕" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Border>
+    </Popup>
+</UserControl>

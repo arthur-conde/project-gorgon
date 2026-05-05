@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -7,20 +8,22 @@ using Elrond.Domain;
 using Elrond.Services;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Sorting;
 
 namespace Elrond.ViewModels;
 
-public sealed record SortOption(string Label, string Key);
-
-public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposable
+public sealed partial class SkillAdvisorViewModel
+    : ObservableObject, ISortableViewModel<RecipeAnalysis>, IDisposable
 {
-    public IReadOnlyList<SortOption> SortOptions { get; } =
+    public IReadOnlyList<SortKey<RecipeAnalysis>> AvailableSortKeys { get; } =
     [
-        new("Recipe", "RecipeName"),
-        new("Lvl Req", "LevelRequired"),
-        new("Eff. XP", "EffectiveXp"),
-        new("To Level", "CompletionsToLevel"),
+        new("RecipeName",         "Recipe",   "RecipeName"),
+        new("LevelRequired",      "Lvl Req",  "LevelRequired"),
+        new("EffectiveXp",        "Eff. XP",  "EffectiveXp",        DefaultDescending: true),
+        new("CompletionsToLevel", "To Level", "CompletionsToLevel", DefaultDescending: true),
     ];
+
+    public ObservableCollection<ActiveSortKey<RecipeAnalysis>> ActiveSortKeys { get; } = [];
 
     private readonly SkillAdvisorEngine _engine;
     private readonly LevelingSimulator _simulator;
@@ -46,14 +49,16 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _settings = settings;
 
         _goalLevel = settings.LastGoalLevel;
-        _sortKey = settings.SortKey;
-        _sortDescending = settings.SortDescending;
         _viewMode = settings.ViewMode;
 
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
         view.Filter = item => MatchesFilter((RecipeAnalysis)item);
         view.CurrentChanged += OnCurrentRecipeChanged;
         RecipesView = view;
+
+        HydrateSortKeysFromSettings();
+        ActiveSortKeys.CollectionChanged += OnActiveSortKeysChanged;
+        foreach (var k in ActiveSortKeys) k.PropertyChanged += OnActiveSortKeyPropertyChanged;
         ApplySortDescriptions();
 
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
@@ -99,12 +104,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     private SimulationResult? _simulationResult;
 
     [ObservableProperty]
-    private string _sortKey = "EffectiveXp";
-
-    [ObservableProperty]
-    private bool _sortDescending = true;
-
-    [ObservableProperty]
     private string _viewMode = "Rows";
 
     // ── Property change handlers ─────────────────────────────────────────
@@ -127,18 +126,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
     partial void OnShowFirstTimeOnlyChanged(bool value) => RecipesView.Refresh();
     partial void OnShowCraftableOnlyChanged(bool value) => RecipesView.Refresh();
     partial void OnIncludeZeroXpChanged(bool value) => Reanalyze();
-
-    partial void OnSortKeyChanged(string value)
-    {
-        _settings.SortKey = value;
-        ApplySortDescriptions();
-    }
-
-    partial void OnSortDescendingChanged(bool value)
-    {
-        _settings.SortDescending = value;
-        ApplySortDescriptions();
-    }
 
     partial void OnViewModeChanged(string value)
     {
@@ -166,19 +153,80 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         SimulationResult = _simulator.Simulate(SelectedSkill, active, goal);
     }
 
-    [RelayCommand]
-    private void ToggleSort(string? key)
+    // ── Sort wiring ──────────────────────────────────────────────────────
+
+    private void HydrateSortKeysFromSettings()
     {
-        if (string.IsNullOrEmpty(key)) return;
-        if (SortKey == key)
+        var byId = AvailableSortKeys.ToDictionary(k => k.Id);
+
+        // 1. New persisted list — restore ordered entries, skipping any whose Id no
+        //    longer maps (renamed / removed).
+        foreach (var entry in _settings.ActiveSortKeys)
         {
-            SortDescending = !SortDescending;
+            if (byId.TryGetValue(entry.Id, out var key))
+                ActiveSortKeys.Add(new ActiveSortKey<RecipeAnalysis>(key, entry.Direction));
         }
-        else
+
+        // 2. Legacy single-key migration: SortKey + SortDescending from the pre-popup
+        //    schema, only honoured when the new list didn't contain anything resolvable.
+        if (ActiveSortKeys.Count == 0
+            && !string.IsNullOrEmpty(_settings.SortKey)
+            && byId.TryGetValue(_settings.SortKey, out var legacy))
         {
-            SortKey = key;
-            // Numeric metrics read top-down (largest first); names read alphabetically.
-            SortDescending = key != "RecipeName";
+            var dir = (_settings.SortDescending ?? legacy.DefaultDescending)
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
+            ActiveSortKeys.Add(new ActiveSortKey<RecipeAnalysis>(legacy, dir));
+        }
+
+        // 3. Default seed: most-effective XP first.
+        if (ActiveSortKeys.Count == 0)
+        {
+            ActiveSortKeys.Add(new ActiveSortKey<RecipeAnalysis>(
+                byId["EffectiveXp"], ListSortDirection.Descending));
+        }
+
+        // Drop the legacy fields so they don't shadow the new list on next save.
+        _settings.SortKey = null;
+        _settings.SortDescending = null;
+    }
+
+    private void OnActiveSortKeysChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (ActiveSortKey<RecipeAnalysis> k in e.OldItems)
+                k.PropertyChanged -= OnActiveSortKeyPropertyChanged;
+        if (e.NewItems is not null)
+            foreach (ActiveSortKey<RecipeAnalysis> k in e.NewItems)
+                k.PropertyChanged += OnActiveSortKeyPropertyChanged;
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+            foreach (var k in ActiveSortKeys)
+                k.PropertyChanged += OnActiveSortKeyPropertyChanged;
+
+        PersistAndApplySort();
+    }
+
+    private void OnActiveSortKeyPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ActiveSortKey<RecipeAnalysis>.Direction))
+            PersistAndApplySort();
+    }
+
+    private void PersistAndApplySort()
+    {
+        _settings.ActiveSortKeys = ActiveSortKeys
+            .Select(k => new PersistedSortEntry(k.Key.Id, k.Direction))
+            .ToList();
+        ApplySortDescriptions();
+    }
+
+    private void ApplySortDescriptions()
+    {
+        using (RecipesView.DeferRefresh())
+        {
+            RecipesView.SortDescriptions.Clear();
+            foreach (var k in ActiveSortKeys)
+                RecipesView.SortDescriptions.Add(new SortDescription(k.Key.SortMemberPath, k.Direction));
         }
     }
 
@@ -240,13 +288,6 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         return true;
     }
 
-    private void ApplySortDescriptions()
-    {
-        var dir = SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
-        RecipesView.SortDescriptions.Clear();
-        RecipesView.SortDescriptions.Add(new SortDescription(SortKey, dir));
-    }
-
     private void OnCurrentRecipeChanged(object? sender, EventArgs e)
     {
         SelectedRecipe = RecipesView.CurrentItem as RecipeAnalysis;
@@ -273,5 +314,7 @@ public sealed partial class SkillAdvisorViewModel : ObservableObject, IDisposabl
         _activeChar.CharacterExportsChanged -= OnActiveCharacterChanged;
         _referenceData.FileUpdated -= OnReferenceUpdated;
         RecipesView.CurrentChanged -= OnCurrentRecipeChanged;
+        ActiveSortKeys.CollectionChanged -= OnActiveSortKeysChanged;
+        foreach (var k in ActiveSortKeys) k.PropertyChanged -= OnActiveSortKeyPropertyChanged;
     }
 }

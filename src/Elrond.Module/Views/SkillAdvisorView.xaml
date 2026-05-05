@@ -7,6 +7,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+             xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting;assembly=Mithril.Shared"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>
@@ -145,7 +146,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <DockPanel Grid.Column="0">
-                                    <!-- Sort chip row + view-mode toggle -->
+                                    <!-- Toolbar: Sort button (opens popup) + view-mode toggle -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
                                         <wpf:ViewModeToggle DockPanel.Dock="Right"
                                                             SelectedMode="{Binding ViewMode, Mode=TwoWay}">
@@ -159,77 +160,19 @@
                                             </wpf:ViewModeOption>
                                         </wpf:ViewModeToggle>
 
-                                        <!-- Sort chips on the left -->
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Sort by:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <ItemsControl ItemsSource="{Binding SortOptions}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <StackPanel Orientation="Horizontal"/>
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Button Command="{Binding DataContext.ToggleSortCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                CommandParameter="{Binding Key}"
-                                                                Margin="0,0,4,0" Padding="8,2"
-                                                                BorderThickness="1" Cursor="Hand">
-                                                            <Button.Tag>
-                                                                <MultiBinding Converter="{x:Static views:IsActiveSortConverter.Instance}">
-                                                                    <Binding Path="DataContext.SortKey" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                                    <Binding Path="Key"/>
-                                                                </MultiBinding>
-                                                            </Button.Tag>
-                                                            <Button.Style>
-                                                                <Style TargetType="Button">
-                                                                    <Setter Property="Background" Value="Transparent"/>
-                                                                    <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-                                                                    <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                                                                    <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
-                                                                    <Setter Property="Template">
-                                                                        <Setter.Value>
-                                                                            <ControlTemplate TargetType="Button">
-                                                                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                                                        Padding="{TemplateBinding Padding}"
-                                                                                        CornerRadius="3">
-                                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                                </Border>
-                                                                                <ControlTemplate.Triggers>
-                                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
-                                                                                    </Trigger>
-                                                                                </ControlTemplate.Triggers>
-                                                                            </ControlTemplate>
-                                                                        </Setter.Value>
-                                                                    </Setter>
-                                                                    <Style.Triggers>
-                                                                        <Trigger Property="Tag" Value="True">
-                                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                                                        </Trigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </Button.Style>
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding Label}"/>
-                                                                <TextBlock>
-                                                                    <TextBlock.Text>
-                                                                        <MultiBinding Converter="{x:Static views:SortIndicatorConverter.Instance}">
-                                                                            <Binding Path="DataContext.SortKey" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                                            <Binding Path="DataContext.SortDescending" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                                            <Binding Path="Key"/>
-                                                                        </MultiBinding>
-                                                                    </TextBlock.Text>
-                                                                </TextBlock>
-                                                            </StackPanel>
-                                                        </Button>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
+                                        <Button x:Name="SortBtn"
+                                                Style="{StaticResource MithrilToolbarButtonStyle}"
+                                                Click="OnOpenSortPopup"
+                                                ToolTip="Manage the recipe list's sort keys">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Sort"/>
+                                                <TextBlock Text="…" Margin="2,0,0,0"
+                                                           Foreground="{StaticResource TextTertiaryBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <sort:MithrilSortPopup x:Name="SortPopup"
+                                                               Source="{Binding}"
+                                                               PlacementTarget="{Binding ElementName=SortBtn}"/>
                                     </DockPanel>
 
                                     <!-- Column header strip (mirrors the row template's column widths) — only relevant in Rows mode -->

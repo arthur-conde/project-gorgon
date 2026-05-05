@@ -20,18 +20,36 @@ public sealed class ElrondSettings : INotifyPropertyChanged
         set => Set(ref _lastGoalLevel, value);
     }
 
-    private string _sortKey = "EffectiveXp";
-    public string SortKey
+    /// <summary>
+    /// Active sort keys in precedence order. Each entry is a stable
+    /// <see cref="PersistedSortEntry.Id"/> (looked up against the VM's
+    /// AvailableSortKeys at load time) plus its current direction.
+    /// </summary>
+    private List<PersistedSortEntry> _activeSortKeys = [];
+    public List<PersistedSortEntry> ActiveSortKeys
     {
-        get => _sortKey;
-        set => Set(ref _sortKey, value);
+        get => _activeSortKeys;
+        set => Set(ref _activeSortKeys, value ?? []);
     }
 
-    private bool _sortDescending = true;
-    public bool SortDescending
+    /// <summary>
+    /// Legacy single-key sort field. Read on first launch after upgrade so the
+    /// new <see cref="ActiveSortKeys"/> is seeded with the user's previous
+    /// choice; ignored thereafter. Deserializer keeps this populated for
+    /// backwards compatibility — the migration runs on VM construction.
+    /// </summary>
+    private string? _legacySortKey;
+    public string? SortKey
     {
-        get => _sortDescending;
-        set => Set(ref _sortDescending, value);
+        get => _legacySortKey;
+        set => Set(ref _legacySortKey, value);
+    }
+
+    private bool? _legacySortDescending;
+    public bool? SortDescending
+    {
+        get => _legacySortDescending;
+        set => Set(ref _legacySortDescending, value);
     }
 
     private string _viewMode = "Rows";
@@ -51,6 +69,15 @@ public sealed class ElrondSettings : INotifyPropertyChanged
     }
 }
 
+/// <summary>
+/// One persisted entry in <see cref="ElrondSettings.ActiveSortKeys"/>.
+/// Stored as JSON (id + direction); the VM resolves <paramref name="Id"/> back
+/// to a typed <c>SortKey&lt;RecipeAnalysis&gt;</c> at load time.
+/// </summary>
+public sealed record PersistedSortEntry(string Id, System.ComponentModel.ListSortDirection Direction);
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(ElrondSettings))]
+[JsonSerializable(typeof(PersistedSortEntry))]
+[JsonSerializable(typeof(List<PersistedSortEntry>))]
 public partial class ElrondSettingsJsonContext : JsonSerializerContext { }
