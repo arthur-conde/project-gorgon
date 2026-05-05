@@ -18,102 +18,190 @@
            StaysOpen="False"
            AllowsTransparency="True"
            PopupAnimation="Fade"
-           HorizontalOffset="0"
            VerticalOffset="2">
         <Border Background="{StaticResource BgSurfaceBrush}"
                 BorderBrush="{StaticResource BorderStrongBrush}"
                 BorderThickness="1"
                 CornerRadius="3"
-                Padding="8"
-                MinWidth="220"
+                Padding="10"
+                MinWidth="280"
                 SnapsToDevicePixels="True">
             <Border.Effect>
                 <DropShadowEffect Color="Black" BlurRadius="10" ShadowDepth="2" Opacity="0.55"/>
             </Border.Effect>
 
             <DockPanel>
-                <!-- Footer: "+ Add sort key" -->
-                <Button x:Name="AddBtn" DockPanel.Dock="Bottom"
-                        Style="{StaticResource MithrilToolbarButtonStyle}"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,6,0,0"
-                        Click="OnAddSortKeyClick"
-                        ToolTip="Append another sort key">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <TextBlock Text="+ " Foreground="{StaticResource AccentBrush}"/>
-                        <TextBlock Text="Add sort key"/>
-                    </StackPanel>
-                    <Button.ContextMenu>
-                        <ContextMenu x:Name="AddMenu" Placement="Bottom"/>
-                    </Button.ContextMenu>
-                </Button>
-
-                <!-- Empty-state hint -->
-                <TextBlock x:Name="EmptyHint"
-                           DockPanel.Dock="Top"
-                           Text="No sort keys active. Add one to start ordering the list."
+                <!-- Hint -->
+                <TextBlock DockPanel.Dock="Bottom"
+                           Text="Click a chip to flip direction. ✕ removes."
                            Foreground="{StaticResource TextTertiaryBrush}"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           Padding="2,4"
-                           TextWrapping="Wrap"
-                           Visibility="Collapsed"/>
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           Margin="0,8,0,0"
+                           TextWrapping="Wrap"/>
 
-                <!-- Active sort keys, ordered top-to-bottom = precedence -->
-                <ItemsControl x:Name="TagsList"
-                              ItemsSource="{Binding Source.ActiveSortKeysUntyped, ElementName=Self}"
-                              KeyboardNavigation.TabNavigation="Cycle">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                <!-- Chip surface — looks like a TextBox; chips wrap inside -->
+                <Border BorderBrush="{StaticResource BorderSubtleBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Background="{StaticResource BgRecessedBrush}"
+                        Padding="3"
+                        MinHeight="34">
+                    <ItemsControl x:Name="TagsList"
+                                  ItemsSource="{Binding Source.ActiveSortKeysUntyped, ElementName=Self}"
+                                  KeyboardNavigation.TabNavigation="Cycle">
+                        <ItemsControl.Template>
+                            <ControlTemplate TargetType="ItemsControl">
+                                <WrapPanel x:Name="ItemsHost"
+                                           Orientation="Horizontal"
+                                           IsItemsHost="True"/>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="2" CornerRadius="10"
+                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                        BorderThickness="1"
+                                        Background="{StaticResource BgSurfaceHoverBrush}"
+                                        SnapsToDevicePixels="True">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <!-- Tag body: glyph + label. Click flips direction. -->
+                                        <Button Click="OnTagBodyClick"
+                                                Cursor="Hand"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="8,3"
+                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                ToolTip="Click to flip direction">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter VerticalAlignment="Center"
+                                                                          HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding IndicatorGlyph}"
+                                                           Foreground="{StaticResource AccentBrush}"
+                                                           FontWeight="SemiBold"
+                                                           Margin="0,0,5,0"/>
+                                                <TextBlock Text="{Binding DisplayName}"/>
+                                            </StackPanel>
+                                        </Button>
 
-                                <!-- Tag body: label + asc/desc indicator. Click flips direction. -->
-                                <Button Grid.Column="0"
-                                        Style="{StaticResource MithrilToolbarButtonStyle}"
-                                        HorizontalContentAlignment="Stretch"
-                                        Click="OnTagBodyClick"
-                                        ToolTip="Click to flip direction">
-                                    <DockPanel LastChildFill="False">
-                                        <TextBlock DockPanel.Dock="Right"
-                                                   Text="{Binding IndicatorGlyph}"
-                                                   Foreground="{StaticResource AccentBrush}"
-                                                   Margin="6,0,0,0"
-                                                   FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
-                                    </DockPanel>
-                                </Button>
+                                        <!-- × remove -->
+                                        <Button Click="OnRemoveClick"
+                                                Cursor="Hand"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,3,7,3"
+                                                Foreground="{StaticResource TextTertiaryBrush}"
+                                                ToolTip="Remove sort key">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <TextBlock Text="✕" FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
 
-                                <Button Grid.Column="1"
-                                        Style="{StaticResource MithrilToolbarButtonStyle}"
-                                        Margin="2,0,0,0" Padding="6,0"
-                                        Click="OnMoveUpClick"
-                                        ToolTip="Move up (higher precedence)">
-                                    <TextBlock Text="▲" FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                </Button>
-                                <Button Grid.Column="2"
-                                        Style="{StaticResource MithrilToolbarButtonStyle}"
-                                        Margin="2,0,0,0" Padding="6,0"
-                                        Click="OnMoveDownClick"
-                                        ToolTip="Move down (lower precedence)">
-                                    <TextBlock Text="▼" FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                </Button>
-                                <Button Grid.Column="3"
-                                        Style="{StaticResource MithrilToolbarButtonStyle}"
-                                        Margin="2,0,0,0" Padding="6,0"
-                                        Click="OnRemoveClick"
-                                        ToolTip="Remove sort key">
-                                    <TextBlock Text="✕" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                </Button>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                        <!-- Empty-state hint placeholder, rendered via the items-host's parent border -->
+                    </ItemsControl>
+                </Border>
+
+                <!-- + Add chip lives outside the surface (right-aligned) so it doesn't shift the chip flow -->
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
+                    <TextBlock x:Name="EmptyHint"
+                               DockPanel.Dock="Left"
+                               Text="No sort keys active."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               VerticalAlignment="Center"
+                               Visibility="Collapsed"/>
+                    <Button x:Name="AddBtn"
+                            DockPanel.Dock="Right"
+                            Style="{StaticResource MithrilToolbarButtonStyle}"
+                            Click="OnAddSortKeyClick"
+                            ToolTip="Add another sort key">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="+ " Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"/>
+                            <TextBlock Text="Add sort key"/>
+                        </StackPanel>
+                    </Button>
+                </DockPanel>
+
+                <!-- Themed sub-popup — replaces the unstyled ContextMenu. -->
+                <Popup x:Name="AddPopup"
+                       PlacementTarget="{Binding ElementName=AddBtn}"
+                       Placement="Bottom"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       PopupAnimation="Fade"
+                       VerticalOffset="2">
+                    <Border Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource BorderStrongBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="2"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="8" ShadowDepth="2" Opacity="0.5"/>
+                        </Border.Effect>
+                        <ListBox x:Name="UnusedKeysList"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 MinWidth="160"
+                                 MaxHeight="240"
+                                 KeyboardNavigation.TabNavigation="Cycle"
+                                 SelectionChanged="OnUnusedKeysListSelectionChanged">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="8,4"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Bd"
+                                                        Background="Transparent"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        SnapsToDevicePixels="True">
+                                                    <ContentPresenter VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                        <Setter Property="Foreground" Value="{StaticResource AccentSoftTextBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
             </DockPanel>
         </Border>
     </Popup>

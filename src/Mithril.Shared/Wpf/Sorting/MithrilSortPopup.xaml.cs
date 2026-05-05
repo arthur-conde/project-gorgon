@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -5,9 +6,11 @@ namespace Mithril.Shared.Wpf.Sorting;
 
 /// <summary>
 /// Toolbar popup that lets the user manage an ordered, multi-key sort over an
-/// <see cref="ISortableViewModel"/>. Each active key renders as a "tag" with a
-/// flip-direction body, ↑/↓ reorder buttons, and an × remove button. The footer
-/// Add button shows a context menu of currently-unused keys.
+/// <see cref="ISortableViewModel"/>. The popup interior reads as a TextBox-like
+/// surface holding sort-key chips: each chip is <c>[ ▼/▲ DisplayName ✕ ]</c>;
+/// clicking the body flips the direction, ✕ removes. A "+ Add sort key"
+/// button opens a themed sub-popup (not the system ContextMenu) listing the
+/// keys not currently active.
 /// </summary>
 public partial class MithrilSortPopup : UserControl
 {
@@ -52,6 +55,7 @@ public partial class MithrilSortPopup : UserControl
     {
         var p = (MithrilSortPopup)d;
         if ((bool)e.NewValue) p.RefreshEmptyHint();
+        else p.AddPopup.IsOpen = false;
     }
 
     private void RefreshEmptyHint()
@@ -59,26 +63,12 @@ public partial class MithrilSortPopup : UserControl
         if (!IsLoaded) return;
         var hasItems = Source?.ActiveSortKeysUntyped.Count > 0;
         EmptyHint.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
-        TagsList.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnTagBodyClick(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).DataContext is { } dc)
             ((dynamic)dc).FlipDirection();
-    }
-
-    private void OnMoveUpClick(object sender, RoutedEventArgs e) => Move(sender, -1);
-    private void OnMoveDownClick(object sender, RoutedEventArgs e) => Move(sender, +1);
-
-    private void Move(object sender, int delta)
-    {
-        if (Source is not { } src) return;
-        if (((FrameworkElement)sender).DataContext is not { } dc) return;
-        var from = src.ActiveSortKeysUntyped.IndexOf(dc);
-        var to = from + delta;
-        if (from < 0 || to < 0 || to >= src.ActiveSortKeysUntyped.Count) return;
-        src.MoveSortKey(from, to);
     }
 
     private void OnRemoveClick(object sender, RoutedEventArgs e)
@@ -93,7 +83,6 @@ public partial class MithrilSortPopup : UserControl
     private void OnAddSortKeyClick(object sender, RoutedEventArgs e)
     {
         if (Source is not { } src) return;
-        AddMenu.Items.Clear();
 
         var activeIds = new HashSet<string>();
         foreach (var active in src.ActiveSortKeysUntyped)
@@ -102,37 +91,29 @@ public partial class MithrilSortPopup : UserControl
             activeIds.Add((string)((dynamic)active).Id);
         }
 
-        var added = 0;
+        var unused = new List<object>();
         foreach (var key in src.AvailableSortKeysUntyped)
         {
             if (key is null) continue;
             var id = (string)((dynamic)key).Id;
-            if (activeIds.Contains(id)) continue;
-            var displayName = (string)((dynamic)key).DisplayName;
-            var item = new MenuItem { Header = displayName, Tag = id };
-            item.Click += OnAddMenuItemClick;
-            AddMenu.Items.Add(item);
-            added++;
+            if (!activeIds.Contains(id)) unused.Add(key);
         }
 
-        if (added == 0)
-        {
-            AddMenu.Items.Add(new MenuItem
-            {
-                Header = "All sort keys are already active",
-                IsEnabled = false,
-            });
-        }
-
-        AddMenu.PlacementTarget = AddBtn;
-        AddMenu.IsOpen = true;
+        UnusedKeysList.ItemsSource = unused;
+        UnusedKeysList.SelectedIndex = -1;
+        AddPopup.IsOpen = unused.Count > 0;
     }
 
-    private void OnAddMenuItemClick(object sender, RoutedEventArgs e)
+    private void OnUnusedKeysListSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (Source is not { } src) return;
-        if (((FrameworkElement)sender).Tag is string id)
-            src.AddSortKeyById(id);
+        if (UnusedKeysList.SelectedItem is not { } selected) return;
+
+        var id = (string)((dynamic)selected).Id;
+        src.AddSortKeyById(id);
+
+        AddPopup.IsOpen = false;
+        UnusedKeysList.SelectedIndex = -1;
         RefreshEmptyHint();
     }
 }
