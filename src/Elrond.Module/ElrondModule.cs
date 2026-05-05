@@ -36,7 +36,19 @@ public sealed class ElrondModule : IMithrilModule
         services.AddSingleton<SkillAdvisorEngine>();
         services.AddSingleton<LevelingSimulator>();
 
-        services.AddSingleton<SkillAdvisorViewModel>();
+        services.AddSingleton<SkillAdvisorViewModel>(sp =>
+        {
+            // Force the autosaver to instantiate so it subscribes to ElrondSettings.PropertyChanged.
+            // Same pattern as Celebrimbor/Bilbo — the saver is registered but DI won't construct
+            // it unless something explicitly requests it.
+            _ = sp.GetRequiredService<SettingsAutoSaver<ElrondSettings>>();
+            return new SkillAdvisorViewModel(
+                sp.GetRequiredService<SkillAdvisorEngine>(),
+                sp.GetRequiredService<LevelingSimulator>(),
+                sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
+                sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
+                sp.GetRequiredService<ElrondSettings>());
+        });
         services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView
         {
             DataContext = sp.GetRequiredService<SkillAdvisorViewModel>(),
