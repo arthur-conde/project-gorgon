@@ -10,7 +10,7 @@
              xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting;assembly=Mithril.Shared"
              xmlns:filter="clr-namespace:Mithril.Shared.Wpf.Filtering;assembly=Mithril.Shared"
              mc:Ignorable="d"
-             Background="{StaticResource BgPrimaryBrush}">
+             Background="{DynamicResource BgPrimaryBrush}">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
