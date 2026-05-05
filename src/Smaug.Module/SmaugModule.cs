@@ -56,6 +56,10 @@ public sealed class SmaugModule : IMithrilModule
 
         services.AddSingleton<SmaugView>(sp =>
         {
+            // Force the autosaver to instantiate so it subscribes to SmaugSettings.PropertyChanged.
+            // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
+            // it unless something explicitly requests it.
+            _ = sp.GetRequiredService<SettingsAutoSaver<SmaugSettings>>();
             var view = new SmaugView();
             view.AddTab("Vendor Shop", new VendorShopTab { DataContext = sp.GetRequiredService<VendorShopViewModel>() });
             view.AddTab("Storage Sellback", new StorageSellbackTab { DataContext = sp.GetRequiredService<StorageSellbackViewModel>() });
@@ -65,9 +69,16 @@ public sealed class SmaugModule : IMithrilModule
             view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
             return view;
         });
-        services.AddSingleton<SmaugSettingsView>(sp => new SmaugSettingsView
+        services.AddSingleton<SmaugSettingsView>(sp =>
         {
-            DataContext = sp.GetRequiredService<SmaugSettings>(),
+            // Same discard-resolve as the SmaugView factory — a user opening
+            // Settings without ever opening the main Smaug tab would otherwise
+            // never trigger the autosaver's construction.
+            _ = sp.GetRequiredService<SettingsAutoSaver<SmaugSettings>>();
+            return new SmaugSettingsView
+            {
+                DataContext = sp.GetRequiredService<SmaugSettings>(),
+            };
         });
 
         services.AddHostedService<VendorIngestionService>();

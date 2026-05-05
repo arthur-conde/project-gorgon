@@ -114,12 +114,19 @@ public static class ServiceCollectionExtensions
             .AddSingleton(sp =>
                 sp.GetRequiredService<ISettingsStore<IconSettings>>().Load())
             .AddSingleton<SettingsAutoSaver<IconSettings>>()
-            .AddSingleton<IIconCacheService>(sp => new IconCacheService(
-                cacheDirectory,
-                sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IReferenceDataService>(),
-                sp.GetRequiredService<IDiagnosticsSink>(),
-                sp.GetRequiredService<IconSettings>()));
+            .AddSingleton<IIconCacheService>(sp =>
+            {
+                // Force the autosaver to instantiate so it subscribes to IconSettings.PropertyChanged.
+                // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
+                // it unless something explicitly requests it.
+                _ = sp.GetRequiredService<SettingsAutoSaver<IconSettings>>();
+                return new IconCacheService(
+                    cacheDirectory,
+                    sp.GetRequiredService<HttpClient>(),
+                    sp.GetRequiredService<IReferenceDataService>(),
+                    sp.GetRequiredService<IDiagnosticsSink>(),
+                    sp.GetRequiredService<IconSettings>());
+            });
     }
 
     public static IServiceCollection AddMithrilHotkeys(this IServiceCollection services) =>
