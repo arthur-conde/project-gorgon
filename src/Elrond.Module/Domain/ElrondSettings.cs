@@ -52,6 +52,30 @@ public sealed class ElrondSettings : INotifyPropertyChanged
         set => Set(ref _legacySortDescending, value);
     }
 
+    /// <summary>
+    /// Active filter Ids (resolved against the VM's AvailableFilters at load
+    /// time). Stored as plain strings so adding/renaming filters in code is
+    /// non-fatal: stale Ids are silently ignored.
+    /// </summary>
+    private List<string> _activeFilterIds = [];
+    public List<string> ActiveFilterIds
+    {
+        get => _activeFilterIds;
+        set => Set(ref _activeFilterIds, value ?? []);
+    }
+
+    /// <summary>
+    /// Distinguishes "never persisted" from "persisted as empty" — when false
+    /// the VM keeps its constructor-declared defaults; when true it mirrors
+    /// <see cref="ActiveFilterIds"/> verbatim (including the empty case).
+    /// </summary>
+    private bool _hasPersistedFilters;
+    public bool HasPersistedFilters
+    {
+        get => _hasPersistedFilters;
+        set => Set(ref _hasPersistedFilters, value);
+    }
+
     private string _viewMode = "Rows";
     public string ViewMode
     {
@@ -80,4 +104,5 @@ public sealed record PersistedSortEntry(string Id, System.ComponentModel.ListSor
 [JsonSerializable(typeof(ElrondSettings))]
 [JsonSerializable(typeof(PersistedSortEntry))]
 [JsonSerializable(typeof(List<PersistedSortEntry>))]
+[JsonSerializable(typeof(List<string>))]
 public partial class ElrondSettingsJsonContext : JsonSerializerContext { }

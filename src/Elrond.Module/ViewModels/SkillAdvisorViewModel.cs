@@ -10,12 +10,16 @@ using Elrond.Domain;
 using Elrond.Services;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Filtering;
 using Mithril.Shared.Wpf.Sorting;
 
 namespace Elrond.ViewModels;
 
 public sealed partial class SkillAdvisorViewModel
-    : ObservableObject, ISortableViewModel<RecipeAnalysis>, IDisposable
+    : ObservableObject,
+      ISortableViewModel<RecipeAnalysis>,
+      IFilterableViewModel<RecipeAnalysis>,
+      IDisposable
 {
     public IReadOnlyList<SortKey<RecipeAnalysis>> AvailableSortKeys { get; } =
     [
@@ -26,6 +30,8 @@ public sealed partial class SkillAdvisorViewModel
     ];
 
     public ObservableCollection<ActiveSortKey<RecipeAnalysis>> ActiveSortKeys { get; } = [];
+
+    public IReadOnlyList<FilterPredicate<RecipeAnalysis>> AvailableFilters { get; }
 
     private readonly SkillAdvisorEngine _engine;
     private readonly LevelingSimulator _simulator;
@@ -53,8 +59,20 @@ public sealed partial class SkillAdvisorViewModel
         _goalLevel = settings.LastGoalLevel;
         _viewMode = settings.ViewMode;
 
+        // Filters declared here so each closure captures `this` and reads live state
+        // (e.g. CraftableOnly compares against the current Analysis at predicate-call time).
+        // Labels read from the user's perspective: toggling on does what the label says.
+        AvailableFilters =
+        [
+            // Inverted: predicate r => r.IsKnown applies when IsActive=false; toggling ON reveals unknowns.
+            new("ShowUnknown",        "Show unknown",          r => r.IsKnown,                inverted: true,  isActive: false),
+            new("FirstTimeBonusOnly", "First Time Bonus Only", r => r.FirstTimeBonusAvailable, inverted: false, isActive: false),
+            new("CraftableOnly",      "Craftable only",        r => Analysis is { } a && r.LevelRequired <= a.CurrentLevel, inverted: false, isActive: true),
+            new("HideZeroXp",         "Hide 0 XP",             r => r.EffectiveXp > 0,         inverted: false, isActive: true),
+        ];
+
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
-        view.Filter = item => MatchesFilter((RecipeAnalysis)item);
+        view.Filter = item => MatchesActiveFilters((RecipeAnalysis)item);
         view.CurrentChanged += OnCurrentRecipeChanged;
         RecipesView = view;
 
@@ -62,6 +80,9 @@ public sealed partial class SkillAdvisorViewModel
         ActiveSortKeys.CollectionChanged += OnActiveSortKeysChanged;
         foreach (var k in ActiveSortKeys) k.PropertyChanged += OnActiveSortKeyPropertyChanged;
         ApplySortDescriptions();
+
+        HydrateFiltersFromSettings();
+        foreach (var f in AvailableFilters) f.PropertyChanged += OnFilterPropertyChanged;
 
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
         _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
@@ -83,18 +104,6 @@ public sealed partial class SkillAdvisorViewModel
 
     [ObservableProperty]
     private RecipeAnalysis? _selectedRecipe;
-
-    [ObservableProperty]
-    private bool _showKnownOnly = true;
-
-    [ObservableProperty]
-    private bool _showFirstTimeOnly;
-
-    [ObservableProperty]
-    private bool _showCraftableOnly = true;
-
-    [ObservableProperty]
-    private bool _includeZeroXp;
 
     [ObservableProperty]
     private string _statusMessage = "Select a character export to begin.";
@@ -124,10 +133,11 @@ public sealed partial class SkillAdvisorViewModel
         Reanalyze();
     }
 
-    partial void OnShowKnownOnlyChanged(bool value) => RecipesView.Refresh();
-    partial void OnShowFirstTimeOnlyChanged(bool value) => RecipesView.Refresh();
-    partial void OnShowCraftableOnlyChanged(bool value) => RecipesView.Refresh();
-    partial void OnIncludeZeroXpChanged(bool value) => Reanalyze();
+    partial void OnAnalysisChanged(SkillAnalysis? value)
+    {
+        // CraftableOnly closes over Analysis.CurrentLevel — re-run the filter when it shifts.
+        RecipesView.Refresh();
+    }
 
     partial void OnViewModeChanged(string value)
     {
@@ -232,6 +242,43 @@ public sealed partial class SkillAdvisorViewModel
         }
     }
 
+    // ── Filter wiring ────────────────────────────────────────────────────
+
+    private void HydrateFiltersFromSettings()
+    {
+        // First launch (no persisted filters): keep the constructor-declared defaults.
+        // Otherwise, mirror the persisted set onto IsActive — Ids no longer in code
+        // are silently ignored.
+        if (_settings.ActiveFilterIds is { Count: 0 } && !_settings.HasPersistedFilters) return;
+
+        var persisted = new HashSet<string>(_settings.ActiveFilterIds);
+        foreach (var f in AvailableFilters)
+            f.IsActive = persisted.Contains(f.Id);
+    }
+
+    private void OnFilterPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(FilterPredicate<RecipeAnalysis>.IsActive)) return;
+
+        _settings.ActiveFilterIds = AvailableFilters
+            .Where(f => f.IsActive)
+            .Select(f => f.Id)
+            .ToList();
+        _settings.HasPersistedFilters = true;
+        RecipesView.Refresh();
+    }
+
+    private bool MatchesActiveFilters(RecipeAnalysis row)
+    {
+        if (Analysis is null) return false;
+        foreach (var f in AvailableFilters)
+        {
+            if (!f.ShouldApply) continue;
+            if (!f.Predicate(row)) return false;
+        }
+        return true;
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private void ReloadSkills()
@@ -266,7 +313,10 @@ public sealed partial class SkillAdvisorViewModel
             return;
         }
 
-        Analysis = _engine.Analyze(SelectedSkill, active, IncludeZeroXp, GoalLevel);
+        // Always include 0-XP recipes in the analysis result; the "Hide 0 XP" filter
+        // takes care of hiding them at the view level. Keeps engine output stable
+        // regardless of filter state.
+        Analysis = _engine.Analyze(SelectedSkill, active, includeZeroXp: true, GoalLevel);
 
         _recipes.Clear();
         if (Analysis is not null)
@@ -279,15 +329,6 @@ public sealed partial class SkillAdvisorViewModel
         {
             StatusMessage = $"No data for {SelectedSkill} on this character.";
         }
-    }
-
-    private bool MatchesFilter(RecipeAnalysis row)
-    {
-        if (Analysis is null) return false;
-        if (ShowKnownOnly && !row.IsKnown) return false;
-        if (ShowFirstTimeOnly && !row.FirstTimeBonusAvailable) return false;
-        if (ShowCraftableOnly && row.LevelRequired > Analysis.CurrentLevel) return false;
-        return true;
     }
 
     private void OnCurrentRecipeChanged(object? sender, EventArgs e)
@@ -337,5 +378,6 @@ public sealed partial class SkillAdvisorViewModel
         RecipesView.CurrentChanged -= OnCurrentRecipeChanged;
         ActiveSortKeys.CollectionChanged -= OnActiveSortKeysChanged;
         foreach (var k in ActiveSortKeys) k.PropertyChanged -= OnActiveSortKeyPropertyChanged;
+        foreach (var f in AvailableFilters) f.PropertyChanged -= OnFilterPropertyChanged;
     }
 }

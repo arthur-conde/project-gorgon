@@ -14,4 +14,9 @@ public partial class SkillAdvisorView : UserControl
     {
         SortPopup.IsOpen = !SortPopup.IsOpen;
     }
+
+    private void OnOpenFilterPopup(object sender, RoutedEventArgs e)
+    {
+        FilterPopup.IsOpen = !FilterPopup.IsOpen;
+    }
 }

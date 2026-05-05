@@ -8,6 +8,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
              xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting;assembly=Mithril.Shared"
+             xmlns:filter="clr-namespace:Mithril.Shared.Wpf.Filtering;assembly=Mithril.Shared"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>
@@ -116,27 +117,6 @@
                     <!-- ── Recipes tab ────────────────────────────────────── -->
                     <TabItem Header="Recipes">
                         <DockPanel Margin="0,8,0,0">
-                            <!-- Filter bar -->
-                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                <StackPanel Orientation="Horizontal">
-                                    <CheckBox Content="Known only" VerticalAlignment="Center"
-                                              IsChecked="{Binding ShowKnownOnly}"
-                                              ToolTip="Show only recipes the character has learned"
-                                              Margin="0,0,12,0"/>
-                                    <CheckBox Content="1st time available" VerticalAlignment="Center"
-                                              IsChecked="{Binding ShowFirstTimeOnly}"
-                                              ToolTip="Show only recipes with a first-time bonus still available"
-                                              Margin="0,0,12,0"/>
-                                    <CheckBox Content="Craftable only" VerticalAlignment="Center"
-                                              IsChecked="{Binding ShowCraftableOnly}"
-                                              ToolTip="Show only recipes whose level requirement is at or below your current skill level"
-                                              Margin="0,0,12,0"/>
-                                    <CheckBox Content="Include 0 XP" VerticalAlignment="Center"
-                                              IsChecked="{Binding IncludeZeroXp}"
-                                              ToolTip="Include recipes that give 0 repeatable XP (first-time bonus only)"/>
-                                </StackPanel>
-                            </DockPanel>
-
                             <!-- Master-detail split -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -170,9 +150,23 @@
                                                            Foreground="{StaticResource TextTertiaryBrush}"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button x:Name="FilterBtn"
+                                                Style="{StaticResource MithrilToolbarButtonStyle}"
+                                                Margin="6,0,0,0"
+                                                Click="OnOpenFilterPopup"
+                                                ToolTip="Toggle filter predicates">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Filter"/>
+                                                <TextBlock Text="…" Margin="2,0,0,0"
+                                                           Foreground="{StaticResource TextTertiaryBrush}"/>
+                                            </StackPanel>
+                                        </Button>
                                         <sort:MithrilSortPopup x:Name="SortPopup"
                                                                Source="{Binding}"
                                                                PlacementTarget="{Binding ElementName=SortBtn}"/>
+                                        <filter:MithrilFilterPopup x:Name="FilterPopup"
+                                                                   Source="{Binding}"
+                                                                   PlacementTarget="{Binding ElementName=FilterBtn}"/>
                                     </DockPanel>
 
                                     <!-- Column header strip (mirrors the row template's column widths) — only relevant in Rows mode -->
