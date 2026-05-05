@@ -107,7 +107,7 @@ public partial class MithrilSortPopup : UserControl
     {
         if (!IsLoaded) return;
         var hasItems = Source?.ActiveSortKeysUntyped.Count > 0;
-        EmptyHint.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
+        EmptyPlaceholder.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnTagBodyClick(object sender, RoutedEventArgs e)

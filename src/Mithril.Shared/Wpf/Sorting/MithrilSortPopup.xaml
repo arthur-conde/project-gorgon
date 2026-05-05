@@ -47,8 +47,19 @@
                         Background="{StaticResource BgRecessedBrush}"
                         Padding="3"
                         MinHeight="34">
-                    <ItemsControl x:Name="TagsList"
-                                  KeyboardNavigation.TabNavigation="Cycle">
+                    <Grid>
+                        <!-- Centered placeholder, shown when there are no chips. -->
+                        <TextBlock x:Name="EmptyPlaceholder"
+                                   Text="No sort applied · list shows source order"
+                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                   FontStyle="Italic"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Margin="6,0"
+                                   Visibility="Collapsed"/>
+                        <ItemsControl x:Name="TagsList"
+                                      KeyboardNavigation.TabNavigation="Cycle">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
@@ -115,19 +126,12 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
 
-                        <!-- Empty-state hint placeholder, rendered via the items-host's parent border -->
-                    </ItemsControl>
+                        </ItemsControl>
+                    </Grid>
                 </Border>
 
                 <!-- + Add chip lives outside the surface (right-aligned) so it doesn't shift the chip flow -->
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
-                    <TextBlock x:Name="EmptyHint"
-                               DockPanel.Dock="Left"
-                               Text="No sort keys active."
-                               Foreground="{StaticResource TextTertiaryBrush}"
-                               FontSize="{DynamicResource AppFontSizeSmall}"
-                               VerticalAlignment="Center"
-                               Visibility="Collapsed"/>
                     <Button x:Name="AddBtn"
                             DockPanel.Dock="Right"
                             Style="{StaticResource MithrilToolbarButtonStyle}"
