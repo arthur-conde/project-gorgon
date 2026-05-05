@@ -38,11 +38,7 @@ public sealed class ArwenModule : IMithrilModule
         var settingsPath = Path.Combine(arwenDir, "settings.json");
 
         // Global preferences (just Calibration now that FavorStates has split into per-char arwen.json).
-        services.AddSingleton<ISettingsStore<ArwenSettings>>(_ =>
-            new JsonSettingsStore<ArwenSettings>(settingsPath, ArwenJsonContext.Default.ArwenSettings));
-        services.AddSingleton<ArwenSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<ArwenSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<ArwenSettings>>();
+        services.AddMithrilSettings<ArwenSettings>(settingsPath, ArwenJsonContext.Default.ArwenSettings);
 
         // Per-character favor state (exact favor values parsed from Player.log).
         services.AddPerCharacterModuleStore<ArwenFavorState>(Id, ArwenFavorStateJsonContext.Default.ArwenFavorState);

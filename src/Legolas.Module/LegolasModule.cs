@@ -1,4 +1,5 @@
 using System.IO;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
@@ -31,11 +32,7 @@ public sealed class LegolasModule : IMithrilModule
         var dir = Path.Combine(localApp, "Mithril", "Legolas");
         var settingsPath = Path.Combine(dir, "settings.json");
 
-        services.AddSingleton<ISettingsStore<LegolasSettings>>(_ =>
-            new JsonSettingsStore<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings));
-        services.AddSingleton<LegolasSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<LegolasSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<LegolasSettings>>();
+        services.AddMithrilSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
 

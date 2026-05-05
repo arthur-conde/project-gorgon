@@ -1,4 +1,5 @@
 using System.IO;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -29,11 +30,7 @@ public sealed class SmaugModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var settingsPath = Path.Combine(localApp, "Mithril", "Smaug", "settings.json");
 
-        services.AddSingleton<ISettingsStore<SmaugSettings>>(_ =>
-            new JsonSettingsStore<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings));
-        services.AddSingleton<SmaugSettings>(sp =>
-            sp.GetRequiredService<ISettingsStore<SmaugSettings>>().Load());
-        services.AddSingleton<SettingsAutoSaver<SmaugSettings>>();
+        services.AddMithrilSettings<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings);
 
         services.AddSingleton<VendorLogParser>();
         services.AddSingleton<VendorSellContext>();
@@ -56,10 +53,6 @@ public sealed class SmaugModule : IMithrilModule
 
         services.AddSingleton<SmaugView>(sp =>
         {
-            // Force the autosaver to instantiate so it subscribes to SmaugSettings.PropertyChanged.
-            // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
-            // it unless something explicitly requests it.
-            _ = sp.GetRequiredService<SettingsAutoSaver<SmaugSettings>>();
             var view = new SmaugView();
             view.AddTab("Vendor Shop", new VendorShopTab { DataContext = sp.GetRequiredService<VendorShopViewModel>() });
             view.AddTab("Storage Sellback", new StorageSellbackTab { DataContext = sp.GetRequiredService<StorageSellbackViewModel>() });
@@ -69,16 +62,9 @@ public sealed class SmaugModule : IMithrilModule
             view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
             return view;
         });
-        services.AddSingleton<SmaugSettingsView>(sp =>
+        services.AddSingleton<SmaugSettingsView>(sp => new SmaugSettingsView
         {
-            // Same discard-resolve as the SmaugView factory — a user opening
-            // Settings without ever opening the main Smaug tab would otherwise
-            // never trigger the autosaver's construction.
-            _ = sp.GetRequiredService<SettingsAutoSaver<SmaugSettings>>();
-            return new SmaugSettingsView
-            {
-                DataContext = sp.GetRequiredService<SmaugSettings>(),
-            };
+            DataContext = sp.GetRequiredService<SmaugSettings>(),
         });
 
         services.AddHostedService<VendorIngestionService>();

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Serialization.Metadata;
 using Mithril.Shared.Character;
@@ -105,28 +106,44 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<HttpClient>(),
                 sp.GetRequiredService<IDiagnosticsSink>()));
 
+    /// <summary>
+    /// Register a settings type for JSON persistence with debounced autosave on
+    /// every <see cref="INotifyPropertyChanged.PropertyChanged"/> event. Registers:
+    /// <list type="bullet">
+    /// <item><see cref="ISettingsStore{T}"/> backed by <see cref="JsonSettingsStore{T}"/> at <paramref name="settingsPath"/></item>
+    /// <item><typeparamref name="T"/> as a singleton, loaded from the store</item>
+    /// <item><see cref="SettingsAutoSaver{T}"/> as both singleton and <c>IHostedService</c>, so Generic Host always activates it eagerly at startup</item>
+    /// </list>
+    /// The hosted-service registration is what closes the silent-failure foot-gun
+    /// from #101: previously each module had to remember to inject the saver
+    /// somewhere or use a discard-resolve in a factory; now activation is automatic.
+    /// </summary>
+    public static IServiceCollection AddMithrilSettings<T>(
+        this IServiceCollection services,
+        string settingsPath,
+        JsonTypeInfo<T> typeInfo)
+        where T : class, INotifyPropertyChanged, new()
+    {
+        services.AddSingleton<ISettingsStore<T>>(_ =>
+            new JsonSettingsStore<T>(settingsPath, typeInfo));
+        services.AddSingleton<T>(sp =>
+            sp.GetRequiredService<ISettingsStore<T>>().Load());
+        services.AddSingleton<SettingsAutoSaver<T>>();
+        services.AddHostedService(sp => sp.GetRequiredService<SettingsAutoSaver<T>>());
+        return services;
+    }
+
     public static IServiceCollection AddMithrilIcons(this IServiceCollection services, string cacheDirectory)
     {
         var settingsPath = System.IO.Path.Combine(cacheDirectory, "settings.json");
-        return services
-            .AddSingleton<ISettingsStore<IconSettings>>(_ =>
-                new JsonSettingsStore<IconSettings>(settingsPath, IconSettingsJsonContext.Default.IconSettings))
-            .AddSingleton(sp =>
-                sp.GetRequiredService<ISettingsStore<IconSettings>>().Load())
-            .AddSingleton<SettingsAutoSaver<IconSettings>>()
-            .AddSingleton<IIconCacheService>(sp =>
-            {
-                // Force the autosaver to instantiate so it subscribes to IconSettings.PropertyChanged.
-                // Same pattern as Celebrimbor/Elrond — the saver is registered but DI won't construct
-                // it unless something explicitly requests it.
-                _ = sp.GetRequiredService<SettingsAutoSaver<IconSettings>>();
-                return new IconCacheService(
-                    cacheDirectory,
-                    sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<IReferenceDataService>(),
-                    sp.GetRequiredService<IDiagnosticsSink>(),
-                    sp.GetRequiredService<IconSettings>());
-            });
+        services.AddMithrilSettings<IconSettings>(settingsPath, IconSettingsJsonContext.Default.IconSettings);
+        services.AddSingleton<IIconCacheService>(sp => new IconCacheService(
+            cacheDirectory,
+            sp.GetRequiredService<HttpClient>(),
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IDiagnosticsSink>(),
+            sp.GetRequiredService<IconSettings>()));
+        return services;
     }
 
     public static IServiceCollection AddMithrilHotkeys(this IServiceCollection services) =>
