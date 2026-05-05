@@ -56,15 +56,25 @@ public partial class MithrilSortPopup : UserControl
         // default-interface members. WPF's reflection-based binding pipeline cannot
         // see DIM-only properties on the runtime class — interface vtable dispatch
         // here works regardless.
-        p.TagsList.ItemsSource = (e.NewValue as ISortableViewModel)?.ActiveSortKeysUntyped;
+        if (e.NewValue is ISortableViewModel src)
+            p.TagsList.ItemsSource = src.ActiveSortKeysUntyped;
         p.RefreshEmptyHint();
     }
 
     private static void OnIsOpenChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var p = (MithrilSortPopup)d;
-        if ((bool)e.NewValue) p.RefreshEmptyHint();
-        else p.AddPopup.IsOpen = false;
+        if ((bool)e.NewValue)
+        {
+            // Re-bind on every open in case the consumer assigned Source after the
+            // initial OnSourceChanged callback fired (or DIM resolution missed it).
+            if (p.Source is { } src) p.TagsList.ItemsSource = src.ActiveSortKeysUntyped;
+            p.RefreshEmptyHint();
+        }
+        else
+        {
+            p.AddPopup.IsOpen = false;
+        }
     }
 
     private void RefreshEmptyHint()
@@ -78,6 +88,9 @@ public partial class MithrilSortPopup : UserControl
     {
         if (((FrameworkElement)sender).DataContext is { } dc)
             ((dynamic)dc).FlipDirection();
+        // Stop the click bubbling — Popup.StaysOpen=False can interpret a bubbling
+        // Click whose ancestor chain reaches outside the popup as "click outside".
+        e.Handled = true;
     }
 
     private void OnRemoveClick(object sender, RoutedEventArgs e)
@@ -87,6 +100,7 @@ public partial class MithrilSortPopup : UserControl
         var index = src.ActiveSortKeysUntyped.IndexOf(dc);
         if (index >= 0) src.RemoveSortKeyAt(index);
         RefreshEmptyHint();
+        e.Handled = true;
     }
 
     private void OnAddSortKeyClick(object sender, RoutedEventArgs e)
