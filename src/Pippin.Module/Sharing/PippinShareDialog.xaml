@@ -6,7 +6,7 @@
              xmlns:vm="clr-namespace:Pippin.Sharing"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:PippinShareDialogViewModel}"
-             MinWidth="540" MaxWidth="640">
+             MinWidth="500" MaxWidth="520">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
