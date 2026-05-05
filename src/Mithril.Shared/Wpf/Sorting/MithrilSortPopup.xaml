@@ -49,13 +49,11 @@
                     <ItemsControl x:Name="TagsList"
                                   ItemsSource="{Binding Source.ActiveSortKeysUntyped, ElementName=Self}"
                                   KeyboardNavigation.TabNavigation="Cycle">
-                        <ItemsControl.Template>
-                            <ControlTemplate TargetType="ItemsControl">
-                                <WrapPanel x:Name="ItemsHost"
-                                           Orientation="Horizontal"
-                                           IsItemsHost="True"/>
-                            </ControlTemplate>
-                        </ItemsControl.Template>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Margin="2" CornerRadius="10"
