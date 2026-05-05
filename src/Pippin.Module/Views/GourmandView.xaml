@@ -28,26 +28,36 @@
                            Foreground="#FFD4A847" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <WrapPanel Margin="0,0,0,4">
-                <TextBlock Margin="0,0,20,0">
-                    <Run Text="{Binding EatenCount, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
-                    <Run Text="/" Foreground="#88FFFFFF"/>
-                    <Run Text="{Binding TotalCount, Mode=OneWay}" Foreground="#88FFFFFF"/>
-                    <Run Text=" eaten" Foreground="#88FFFFFF"/>
-                </TextBlock>
-                <TextBlock Margin="0,0,20,0">
-                    <Run Text="{Binding CompletionPercent, Mode=OneWay, StringFormat={}{0:0.#}}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
-                    <Run Text="%" Foreground="#88FFFFFF"/>
-                </TextBlock>
-                <TextBlock Margin="0,0,20,0">
-                    <Run Text="Gourmand Lv " Foreground="#88FFFFFF"/>
-                    <Run Text="{Binding GourmandLevel, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
-                </TextBlock>
-                <TextBlock Foreground="#88FFFFFF">
-                    <Run Text="Synced: "/>
-                    <Run Text="{Binding LastSyncLabel, Mode=OneWay}" Foreground="#CCFFFFFF"/>
-                </TextBlock>
-            </WrapPanel>
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <WrapPanel Grid.Column="0">
+                    <TextBlock Margin="0,0,20,0">
+                        <Run Text="{Binding EatenCount, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                        <Run Text="/" Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding TotalCount, Mode=OneWay}" Foreground="#88FFFFFF"/>
+                        <Run Text=" eaten" Foreground="#88FFFFFF"/>
+                    </TextBlock>
+                    <TextBlock Margin="0,0,20,0">
+                        <Run Text="{Binding CompletionPercent, Mode=OneWay, StringFormat={}{0:0.#}}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                        <Run Text="%" Foreground="#88FFFFFF"/>
+                    </TextBlock>
+                    <TextBlock Margin="0,0,20,0">
+                        <Run Text="Gourmand Lv " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding GourmandLevel, Mode=OneWay}" Foreground="#FFE8E8E8" FontWeight="SemiBold"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#88FFFFFF">
+                        <Run Text="Synced: "/>
+                        <Run Text="{Binding LastSyncLabel, Mode=OneWay}" Foreground="#CCFFFFFF"/>
+                    </TextBlock>
+                </WrapPanel>
+                <Button Grid.Column="1" Command="{Binding ShareProgressCommand}"
+                        Content="Share…" Padding="12,4" VerticalAlignment="Center"
+                        Background="#FF2A2A2A" Foreground="#CCFFFFFF" BorderBrush="#FF444444"
+                        ToolTip="Share progress as a link, JSON, or summary"/>
+            </Grid>
         </StackPanel>
 
         <!-- ── Filters ── -->

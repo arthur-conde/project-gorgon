@@ -1,12 +1,15 @@
 using System.IO;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Icons;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Pippin.Domain;
 using Pippin.Parsing;
+using Pippin.Sharing;
 using Pippin.State;
 using Pippin.ViewModels;
 using Pippin.Views;
@@ -49,12 +52,26 @@ public sealed class PippinModule : IMithrilModule
         services.AddSingleton<GourmandViewModel>(sp => new GourmandViewModel(
             sp.GetRequiredService<GourmandStateMachine>(),
             sp.GetRequiredService<FoodCatalog>(),
-            sp.GetService<IActiveCharacterService>()));
+            sp.GetService<IActiveCharacterService>(),
+            sp.GetService<IDialogService>(),
+            sp.GetService<PippinShareCardRenderer>(),
+            sp.GetService<IIconCacheService>()));
         services.AddSingleton<GourmandView>(sp => new GourmandView
         {
             DataContext = sp.GetRequiredService<GourmandViewModel>(),
         });
         services.AddSingleton<PippinSettingsView>(_ => new PippinSettingsView());
+
+        // Sharing — mithril://pippin/<payload> import target
+        services.AddSingleton<IPippinShareImportTarget>(sp => new PippinShareImportTarget(
+            sp.GetRequiredService<FoodCatalog>(),
+            sp.GetService<IModuleActivator>(),
+            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+
+        // Sharing — image export renderer (round 3)
+        services.AddSingleton<PippinShareCardRenderer>(sp => new PippinShareCardRenderer(
+            sp.GetRequiredService<FoodCatalog>(),
+            sp.GetRequiredService<IIconCacheService>()));
 
         // Background ingestion
         services.AddHostedService<GourmandIngestionService>();

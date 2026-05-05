@@ -76,12 +76,13 @@ public static class ShellServiceCollectionExtensions
         services
             .AddSingleton<IItemDetailPresenter, ItemDetailPresenter>()
             .AddSingleton<IModuleActivator, ShellModuleActivator>()
-            // Factory form so ICraftListImportTarget and IDiagnosticsSink stay optional —
+            // Factory form so module-side import targets and IDiagnosticsSink stay optional —
             // modules register them at their discretion, and the router degrades gracefully
             // (deep links to absent handlers are logged + dropped, never thrown).
             .AddSingleton<IDeepLinkRouter>(sp => new DeepLinkRouter(
                 sp.GetRequiredService<IItemDetailPresenter>(),
                 sp.GetService<ICraftListImportTarget>(),
+                sp.GetService<IPippinShareImportTarget>(),
                 sp.GetService<IDiagnosticsSink>()));
 
     public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>

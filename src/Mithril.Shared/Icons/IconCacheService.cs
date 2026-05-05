@@ -99,6 +99,65 @@ public sealed class IconCacheService : IIconCacheService
         ScanCache();
     }
 
+    public bool IsCached(int iconId)
+    {
+        if (iconId <= 0) return false;
+        if (_memCache.ContainsKey(iconId)) return true;
+        return File.Exists(GetDiskPath(iconId));
+    }
+
+    public IReadOnlyList<int> GetUncachedIcons(IEnumerable<int> iconIds)
+    {
+        var seen = new HashSet<int>();
+        var result = new List<int>();
+        foreach (var id in iconIds)
+        {
+            if (id <= 0) continue;
+            if (!seen.Add(id)) continue;
+            if (IsCached(id)) continue;
+            result.Add(id);
+        }
+        return result;
+    }
+
+    public async Task PreloadAsync(
+        IEnumerable<int> iconIds,
+        IProgress<(int completed, int total)>? progress = null,
+        CancellationToken ct = default)
+    {
+        // Snapshot the subset that actually needs work — already-cached and known-failed
+        // ids are dropped so the progress bar reflects real downloads, not no-ops.
+        var needed = new List<int>();
+        var seen = new HashSet<int>();
+        lock (_failed)
+        {
+            foreach (var id in iconIds)
+            {
+                if (id <= 0) continue;
+                if (!seen.Add(id)) continue;
+                if (IsCached(id)) continue;
+                if (_failed.Contains(id)) continue;
+                needed.Add(id);
+            }
+        }
+
+        var total = needed.Count;
+        progress?.Report((0, total));
+        if (total == 0) return;
+
+        var completed = 0;
+        var tasks = needed.Select(async iconId =>
+        {
+            ct.ThrowIfCancellationRequested();
+            await DownloadSingleAsync(iconId, ct).ConfigureAwait(false);
+            var c = Interlocked.Increment(ref completed);
+            progress?.Report((c, total));
+        });
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+        ScanCache();
+    }
+
     public async Task DownloadAllAsync(IProgress<(int completed, int total)> progress, CancellationToken ct = default)
     {
         var allIconIds = _refData.Items.Values

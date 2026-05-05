@@ -9,11 +9,14 @@ namespace Pippin.Tests;
 
 public class GourmandStateMachineTests
 {
-    private static FoodCatalog CreateEmptyCatalog()
+    private static FoodCatalog CreateEmptyCatalog() => new(new StubReferenceDataService([]));
+
+    private static FoodCatalog CreateCatalog(params (long Id, string InternalName, string Name)[] foods)
     {
-        // Create a minimal mock reference data service
-        var refData = new StubReferenceDataService();
-        return new FoodCatalog(refData);
+        var dict = new Dictionary<long, ItemEntry>();
+        foreach (var (id, internalName, name) in foods)
+            dict[id] = new ItemEntry(id, name, internalName, 1, 0, [], FoodDesc: "Level 0 Snack");
+        return new FoodCatalog(new StubReferenceDataService(dict));
     }
 
     private static FoodsConsumedReport MakeReport(params (string Name, int Count)[] foods)
@@ -24,27 +27,47 @@ public class GourmandStateMachineTests
     }
 
     [Fact]
-    public void Apply_populates_eaten_foods()
+    public void Apply_resolves_known_foods_to_internal_name()
     {
-        var sm = new GourmandStateMachine(CreateEmptyCatalog());
+        var sm = new GourmandStateMachine(CreateCatalog(
+            (1, "FoodAppleJuice", "Apple Juice"),
+            (2, "FoodBacon", "Bacon")));
+
         sm.Apply(MakeReport(("Apple Juice", 5), ("Bacon", 2)));
 
-        sm.EatenFoods.Should().HaveCount(2);
-        sm.EatenFoods["Apple Juice"].Should().Be(5);
-        sm.EatenFoods["Bacon"].Should().Be(2);
+        sm.EatenFoodsByInternalName.Should().HaveCount(2);
+        sm.EatenFoodsByInternalName["FoodAppleJuice"].Should().Be(5);
+        sm.EatenFoodsByInternalName["FoodBacon"].Should().Be(2);
+        sm.UnknownByName.Should().BeEmpty();
         sm.HasData.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Apply_with_unknown_food_buckets_into_UnknownByName()
+    {
+        var sm = new GourmandStateMachine(CreateCatalog((1, "FoodBacon", "Bacon")));
+
+        sm.Apply(MakeReport(("Bacon", 2), ("Mystery Stew", 1)));
+
+        sm.EatenFoodsByInternalName.Should().ContainKey("FoodBacon").WhoseValue.Should().Be(2);
+        sm.UnknownByName.Should().ContainKey("Mystery Stew").WhoseValue.Should().Be(1);
+        sm.EatenCount.Should().Be(2, "unique foods include both resolved and unknown buckets");
     }
 
     [Fact]
     public void Second_report_replaces_first()
     {
-        var sm = new GourmandStateMachine(CreateEmptyCatalog());
+        var sm = new GourmandStateMachine(CreateCatalog(
+            (1, "FoodAppleJuice", "Apple Juice"),
+            (2, "FoodBacon", "Bacon"),
+            (3, "FoodGrapes", "Grapes")));
+
         sm.Apply(MakeReport(("Apple Juice", 5), ("Bacon", 2)));
         sm.Apply(MakeReport(("Grapes", 3)));
 
-        sm.EatenFoods.Should().HaveCount(1);
-        sm.EatenFoods.Should().ContainKey("Grapes");
-        sm.EatenFoods.Should().NotContainKey("Apple Juice");
+        sm.EatenFoodsByInternalName.Should().HaveCount(1);
+        sm.EatenFoodsByInternalName.Should().ContainKey("FoodGrapes");
+        sm.EatenFoodsByInternalName.Should().NotContainKey("FoodAppleJuice");
     }
 
     [Fact]
@@ -56,12 +79,14 @@ public class GourmandStateMachineTests
 
         sm.Hydrate(new GourmandState
         {
-            EatenFoods = new Dictionary<string, int> { ["Bacon"] = 1 },
+            EatenFoodsByInternalName = new Dictionary<string, int>(StringComparer.Ordinal) { ["FoodBacon"] = 1 },
+            UnknownByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["Mystery Stew"] = 4 },
             LastReportTime = DateTimeOffset.UtcNow,
         });
 
         eventFired.Should().BeFalse();
-        sm.EatenFoods.Should().ContainKey("Bacon");
+        sm.EatenFoodsByInternalName.Should().ContainKey("FoodBacon");
+        sm.UnknownByName.Should().ContainKey("Mystery Stew");
     }
 
     [Fact]
@@ -76,13 +101,69 @@ public class GourmandStateMachineTests
         eventFired.Should().BeTrue();
     }
 
-    /// <summary>Minimal stub so FoodCatalog can be constructed without real CDN data.</summary>
+    [Fact]
+    public void ApplyLegacyByName_resolves_through_catalog()
+    {
+        var sm = new GourmandStateMachine(CreateCatalog(
+            (1, "FoodAppleJuice", "Apple Juice"),
+            (2, "FoodBacon", "Bacon")));
+
+        var changed = sm.ApplyLegacyByName(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Apple Juice"] = 8,
+            ["Bacon"] = 2,
+            ["Mystery Stew"] = 1, // not in catalog → unknown
+        });
+
+        changed.Should().BeTrue();
+        sm.EatenFoodsByInternalName["FoodAppleJuice"].Should().Be(8);
+        sm.EatenFoodsByInternalName["FoodBacon"].Should().Be(2);
+        sm.UnknownByName.Should().ContainKey("Mystery Stew").WhoseValue.Should().Be(1);
+    }
+
+    [Fact]
+    public void ReconcileUnknowns_promotes_entries_when_catalog_catches_up()
+    {
+        var stub = new StubReferenceDataService(new Dictionary<long, ItemEntry>
+        {
+            [1] = new(1, "Bacon", "FoodBacon", 1, 0, [], FoodDesc: "Level 0 Snack"),
+        });
+        var catalog = new FoodCatalog(stub);
+        var sm = new GourmandStateMachine(catalog);
+
+        // Sender ate Mystery Stew before our CDN snapshot knew about it.
+        sm.Hydrate(new GourmandState
+        {
+            UnknownByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["Mystery Stew"] = 4 },
+        });
+        sm.UnknownByName.Should().HaveCount(1);
+
+        // CDN refresh adds the food to the catalog and rebuilds.
+        stub.Add(new ItemEntry(2, "Mystery Stew", "FoodMysteryStew", 1, 0, [], FoodDesc: "Level 5 Meal"));
+        stub.RaiseFileUpdated();
+
+        sm.ReconcileUnknowns().Should().BeTrue();
+        sm.UnknownByName.Should().BeEmpty();
+        sm.EatenFoodsByInternalName.Should().ContainKey("FoodMysteryStew").WhoseValue.Should().Be(4);
+    }
+
+    /// <summary>Minimal stub so FoodCatalog can be constructed with controllable contents.</summary>
     private sealed class StubReferenceDataService : IReferenceDataService
     {
+        private readonly Dictionary<long, ItemEntry> _items;
+
+        public StubReferenceDataService(Dictionary<long, ItemEntry> items)
+        {
+            _items = items;
+        }
+
+        public void Add(ItemEntry item) => _items[item.Id] = item;
+        public void RaiseFileUpdated() => FileUpdated?.Invoke(this, "items");
+
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
+        public IReadOnlyDictionary<long, ItemEntry> Items => _items;
         public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
-        public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
+        public ItemKeywordIndex KeywordIndex => ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
@@ -100,6 +181,5 @@ public class GourmandStateMachineTests
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
         public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
         public void BeginBackgroundRefresh() { }
-        private void SuppressWarning() => FileUpdated?.Invoke(this, ""); // suppress CS0067
     }
 }
