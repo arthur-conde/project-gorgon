@@ -2,6 +2,13 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:views="clr-namespace:Elrond.Views"
                     xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared">
+    <ResourceDictionary.MergedDictionaries>
+        <!-- Brought in so the StaticResource references below (TextPrimaryBrush
+             etc.) resolve when this dictionary is parsed standalone, not just
+             when it's merged into a view that already has the shared brushes. -->
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
     <views:BoolToCheckConverter x:Key="BoolToCheck"/>
     <views:NullableIntConverter x:Key="NullableInt"/>
     <views:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
