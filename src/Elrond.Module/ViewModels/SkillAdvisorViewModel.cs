@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Domain;
@@ -295,17 +297,36 @@ public sealed partial class SkillAdvisorViewModel
 
     private void OnActiveCharacterChanged(object? sender, EventArgs e)
     {
-        ReloadSkills();
-        Reanalyze();
+        OnUiThread(() =>
+        {
+            ReloadSkills();
+            Reanalyze();
+        });
     }
 
     private void OnReferenceUpdated(object? sender, string key)
     {
-        if (key is "recipes" or "skills" or "xptables")
+        if (key is not ("recipes" or "skills" or "xptables")) return;
+        OnUiThread(() =>
         {
             ReloadSkills();
             Reanalyze();
-        }
+        });
+    }
+
+    /// <summary>
+    /// Reanalyze mutates <see cref="_recipes"/>, which is observed by a
+    /// <see cref="ListCollectionView"/> that rejects changes off the
+    /// dispatcher thread. ReferenceData and ActiveCharacter events both fire
+    /// from background threads, so marshal here. Otherwise the view's
+    /// internal state desyncs and subsequent refreshes (e.g. a sort change)
+    /// surface zero items.
+    /// </summary>
+    private static void OnUiThread(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess()) action();
+        else dispatcher.InvokeAsync(action, DispatcherPriority.Normal);
     }
 
     public void Dispose()
