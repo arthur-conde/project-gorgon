@@ -156,6 +156,23 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
+    public void Entering_Gathering_auto_opens_inventory_overlay()
+    {
+        var (wizard, session, surveyFlow, _, _) = BuildSut();
+        wizard.PickSurveyModeCommand.Execute(null);
+        session.HasPlayerPosition = true;
+        surveyFlow.ConfirmPlayerPosition();
+        // Place a pin so OptimizeRoute is meaningful.
+        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), gridIndex: 0)));
+        session.IsInventoryVisible.Should().BeFalse();
+
+        surveyFlow.OptimizeRoute();
+
+        wizard.CurrentStep.Should().Be(WizardStep.Gathering);
+        session.IsInventoryVisible.Should().BeTrue();
+    }
+
+    [Fact]
     public void WizardReset_from_Listening_clears_anchor_and_returns_to_AwaitingPosition()
     {
         var (wizard, session, surveyFlow, _, _) = BuildSut();

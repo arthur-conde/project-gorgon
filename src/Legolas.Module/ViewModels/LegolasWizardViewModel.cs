@@ -66,10 +66,15 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
     partial void OnCurrentStepChanged(WizardStep value)
     {
-        // Entering AwaitingPosition (the "click on the map to set player position"
-        // step) auto-opens the map overlay so the user has something to click.
+        // Entering AwaitingPosition auto-opens the map overlay so the user has
+        // something to click for setting player position.
         if (value == WizardStep.AwaitingPosition)
             _session.IsMapVisible = true;
+
+        // Entering Gathering (the Walk step) auto-opens the inventory overlay
+        // so the user can see the queued survey items as they walk the route.
+        if (value == WizardStep.Gathering)
+            _session.IsInventoryVisible = true;
     }
 
     /// <summary>Headline displayed inline with the wizard's per-step nav row.</summary>

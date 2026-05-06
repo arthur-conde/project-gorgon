@@ -6,16 +6,21 @@
         Title="Map Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
-        Background="#80101010"
+        Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
         Width="800" Height="600"
-        Opacity="{Binding Session.MapOpacity, FallbackValue=1.0}"
         d:DataContext="{d:DesignInstance vm:MapOverlayViewModel}"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d">
     <Grid>
+        <!-- Backdrop layer: the only thing the opacity slider affects.
+             Fill alpha + element Opacity multiply, so #80 (50%) × 1.0 keeps the
+             original "full opacity" look while #80 × 0.1 fades the backdrop
+             without dimming pins/header/route lines on top. -->
+        <Rectangle Fill="#80101010" IsHitTestVisible="False"
+                   Opacity="{Binding Session.MapOpacity, FallbackValue=1.0}" />
         <Border BorderBrush="#FF303030" BorderThickness="1">
         <DockPanel>
             <Border DockPanel.Dock="Top" Background="#FF252525" Padding="8,4"

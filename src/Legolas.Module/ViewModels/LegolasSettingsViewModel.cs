@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
+using Mithril.Shared.Settings;
 
 namespace Legolas.ViewModels;
 
@@ -17,13 +18,23 @@ public sealed partial class LegolasSettingsViewModel : ObservableObject
         ControlPanelViewModel controlPanel,
         InventoryGridSettingsViewModel gridSettings,
         LegolasColors colors,
-        LegolasBrushes brushes)
+        LegolasBrushes brushes,
+        SettingsAutoSaver<LegolasSettings> saver)
     {
         Session = session;
         ControlPanel = controlPanel;
         GridSettings = gridSettings;
         Colors = colors;
         Brushes = brushes;
+
+        // Surface autosave activity in the footer so the user knows their
+        // changes stuck. Without this, the slider tweak feels ambiguous —
+        // did it persist? Saved event fires on the dispatcher thread.
+        saver.Saved += time =>
+        {
+            LastSavedAt = time;
+            SaveStatus = $"Saved at {time:HH:mm:ss}";
+        };
     }
 
     public SessionState Session { get; }
@@ -31,6 +42,12 @@ public sealed partial class LegolasSettingsViewModel : ObservableObject
     public InventoryGridSettingsViewModel GridSettings { get; }
     public LegolasColors Colors { get; }
     public LegolasBrushes Brushes { get; }
+
+    [ObservableProperty]
+    private DateTimeOffset? _lastSavedAt;
+
+    [ObservableProperty]
+    private string _saveStatus = "No changes yet — settings are saved automatically.";
 
     [RelayCommand]
     private void ResetColorsToDefaults()

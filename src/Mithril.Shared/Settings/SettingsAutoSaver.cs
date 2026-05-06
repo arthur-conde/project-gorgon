@@ -11,6 +11,13 @@ public sealed class SettingsAutoSaver<T> : IHostedService, IDisposable where T :
     private readonly DispatcherTimer _timer;
     private bool _dirty;
 
+    /// <summary>
+    /// Raised after each successful flush. UI can subscribe to surface a
+    /// "Saved" indicator. Fires on the dispatcher thread (the saver is
+    /// dispatcher-bound via its timer) so handlers can touch UI directly.
+    /// </summary>
+    public event Action<DateTimeOffset>? Saved;
+
     public SettingsAutoSaver(ISettingsStore<T> store, T instance, TimeSpan? debounce = null)
     {
         _store = store;
@@ -56,7 +63,11 @@ public sealed class SettingsAutoSaver<T> : IHostedService, IDisposable where T :
     {
         if (!_dirty) return;
         _dirty = false;
-        try { _store.Save(_instance); }
+        try
+        {
+            _store.Save(_instance);
+            Saved?.Invoke(DateTimeOffset.Now);
+        }
         catch { /* best-effort autosave */ }
     }
 
