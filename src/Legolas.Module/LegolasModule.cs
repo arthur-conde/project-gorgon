@@ -50,8 +50,30 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
 
-        // Session + flow controllers + VMs
-        services.AddSingleton<SessionState>();
+        // Session + flow controllers + VMs.
+        // Session.MapOpacity / InventoryOpacity hydrate from persisted settings on
+        // start and write back on change — gives slider values that survive a
+        // restart without requiring callers to know about both objects.
+        services.AddSingleton<SessionState>(sp =>
+        {
+            var session = new SessionState();
+            var settings = sp.GetRequiredService<LegolasSettings>();
+            session.MapOpacity = settings.MapOpacity;
+            session.InventoryOpacity = settings.InventoryOpacity;
+            session.PropertyChanged += (_, e) =>
+            {
+                switch (e.PropertyName)
+                {
+                    case nameof(SessionState.MapOpacity):
+                        settings.MapOpacity = session.MapOpacity;
+                        break;
+                    case nameof(SessionState.InventoryOpacity):
+                        settings.InventoryOpacity = session.InventoryOpacity;
+                        break;
+                }
+            };
+            return session;
+        });
         services.AddSingleton<SurveyFlowController>();
         services.AddSingleton<MotherlodeFlowController>();
         services.AddSingleton<LegolasWizardViewModel>();

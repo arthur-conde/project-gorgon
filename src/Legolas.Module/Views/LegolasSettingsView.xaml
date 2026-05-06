@@ -9,6 +9,18 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>
+    <DockPanel LastChildFill="True">
+        <!-- Save status footer — surfaces the SettingsAutoSaver "Saved" event so
+             the user gets feedback that their slider/checkbox change actually
+             persisted. -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="0,1,0,0"
+                Padding="24,8">
+            <TextBlock Text="{Binding SaveStatus}"
+                       Foreground="{StaticResource TextTertiaryBrush}"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel MaxWidth="720" Margin="24,16" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
@@ -34,13 +46,13 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Map opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
-                    <Slider   Grid.Row="0" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                    <Slider   Grid.Row="0" Grid.Column="1" Minimum="0.0" Maximum="1.0"
                               Value="{Binding Session.MapOpacity}" VerticalAlignment="Center" />
                     <TextBox  Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
                               Text="{Binding Session.MapOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
 
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Inv opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
-                    <Slider   Grid.Row="1" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                    <Slider   Grid.Row="1" Grid.Column="1" Minimum="0.0" Maximum="1.0"
                               Value="{Binding Session.InventoryOpacity}" VerticalAlignment="Center" />
                     <TextBox  Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
                               Text="{Binding Session.InventoryOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
@@ -62,10 +74,30 @@
                               ToolTip="Mouse clicks pass through the map overlay" />
                     <CheckBox Content="Inventory overlay" Margin="0,0,0,4"
                               IsChecked="{Binding ControlPanel.ClickThroughInventory}"
-                              ToolTip="Mouse clicks pass through the inventory overlay" />
+                              ToolTip="Mouse clicks pass through the inventory overlay (body only — drag header and resize edges stay interactive)" />
                     <CheckBox Content="Auto-enable inventory click-through during a survey session"
                               IsChecked="{Binding ControlPanel.AutoClickThroughInventoryDuringSession}"
                               ToolTip="When the inventory overlay is visible and the player position is set, click-through is enabled automatically." />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Survey tuning -->
+            <GroupBox Header="Survey Tuning" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Dedup radius (m):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="60" Text="{Binding ControlPanel.SurveyDedupRadiusMetres, UpdateSourceTrigger=LostFocus}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock Text="re-pings within this radius are treated as the same target"
+                                   Foreground="{StaticResource TextTertiaryBrush}" Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock Text="Pin radius (px):" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Slider Width="200" Minimum="1" Maximum="100"
+                                Value="{Binding ControlPanel.SurveyPinRadiusMetres}" VerticalAlignment="Center" />
+                        <TextBox Width="48" Margin="6,0,0,0" VerticalAlignment="Center"
+                                 Text="{Binding ControlPanel.SurveyPinRadiusMetres, StringFormat=0.0, UpdateSourceTrigger=LostFocus}" />
+                    </StackPanel>
                 </StackPanel>
             </GroupBox>
 
@@ -182,4 +214,5 @@
             </GroupBox>
         </StackPanel>
     </ScrollViewer>
+    </DockPanel>
 </UserControl>

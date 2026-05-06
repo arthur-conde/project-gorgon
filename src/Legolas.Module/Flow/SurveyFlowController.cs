@@ -117,6 +117,10 @@ public sealed partial class SurveyFlowController : ObservableObject
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored ({DescribeWhyDropped()})";
             return;
         }
+        // Surface the inventory grid the moment a survey vector lands so the
+        // user can see which slot to pick next. AutoOverlayCoordinator picks
+        // up the visibility change and enables click-through if opted in.
+        _session.IsInventoryVisible = true;
         _session.PendingSurvey = sd;
         if (CurrentState != SurveyFlowState.AwaitingPin)
             TransitionTo(SurveyFlowState.AwaitingPin, nameof(OnSurveyDetected));
@@ -151,6 +155,9 @@ public sealed partial class SurveyFlowController : ObservableObject
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored ({DescribeWhyDropped()})";
             return;
         }
+        // Surface the inventory grid as for OnSurveyDetected — even when the
+        // pin auto-placed, the user still wants to see which slot to pick next.
+        _session.IsInventoryVisible = true;
         // No transition; the auto-placement happened directly in Listening.
     }
 

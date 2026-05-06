@@ -36,8 +36,31 @@ public sealed class LegolasSettings : INotifyPropertyChanged
     public LegolasColors Colors { get; set; } = new();
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
-    public double MapOpacity { get; set; } = 1.0;
-    public double InventoryOpacity { get; set; } = 1.0;
+
+    private double _mapOpacity = 1.0;
+    public double MapOpacity
+    {
+        get => _mapOpacity;
+        set
+        {
+            if (Math.Abs(_mapOpacity - value) < 1e-6) return;
+            _mapOpacity = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapOpacity)));
+        }
+    }
+
+    private double _inventoryOpacity = 1.0;
+    public double InventoryOpacity
+    {
+        get => _inventoryOpacity;
+        set
+        {
+            if (Math.Abs(_inventoryOpacity - value) < 1e-6) return;
+            _inventoryOpacity = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InventoryOpacity)));
+        }
+    }
+
     public bool InvertDirections { get; set; }
 
     private bool _clickThroughInventory;

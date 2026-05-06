@@ -124,7 +124,13 @@ public sealed class LogIngestionService : BackgroundService
             var index = _session.Surveys.Count;
             var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
                 with { PixelPos = newPixel };
-            _session.Surveys.Add(new SurveyItemViewModel(survey));
+            var newPinVm = new SurveyItemViewModel(survey);
+            _session.Surveys.Add(newPinVm);
+            // Make the new pin the arrow-key nudge target. Without this, arrows
+            // continue to move the previously-selected pin and a refit ripples
+            // the new pin's position too — looks like "two pins moved on one
+            // keypress". Mirrors what the manual-place path already does.
+            _session.SelectedSurvey = newPinVm;
             _surveyFlow.NoteAutoPlacedSurvey(sd);
             return;
         }

@@ -6,19 +6,22 @@
         Title="Inventory Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
-        Background="#80202020"
+        Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
         Width="540" Height="440"
-        Opacity="{Binding Session.InventoryOpacity, FallbackValue=1.0}"
         d:DataContext="{d:DesignInstance vm:InventoryOverlayViewModel}"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d">
     <Grid>
+        <!-- Backdrop layer: opacity slider affects only this, not the slot tiles
+             or header on top. See MapOverlayView for the same pattern. -->
+        <Rectangle Fill="#80202020" IsHitTestVisible="False"
+                   Opacity="{Binding Session.InventoryOpacity, FallbackValue=1.0}" />
         <Border BorderBrush="#FF404040" BorderThickness="1" Padding="6">
         <DockPanel>
-            <Border DockPanel.Dock="Top" Background="#FF303030" Padding="8,4" CornerRadius="2"
+            <Border x:Name="HeaderRegion" DockPanel.Dock="Top" Background="#FF303030" Padding="8,4" CornerRadius="2"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
                 <TextBlock Text="Inventory" Foreground="White" FontWeight="SemiBold" />
             </Border>
@@ -36,7 +39,11 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:SurveyItemViewModel}">
-                        <Border Background="#FF404040" BorderThickness="2" CornerRadius="2">
+                        <!-- Tile: BorderBrush + child text stay opaque; the gray fill fades with the
+                             inventory opacity slider via the inner Rectangle. Putting the fade on a
+                             dedicated background rectangle (rather than the Border's Opacity) avoids
+                             dimming the slot text and route-order numbers. -->
+                        <Border BorderThickness="2" CornerRadius="2">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Setter Property="BorderBrush">
@@ -64,6 +71,8 @@
                                 </Style>
                             </Border.Style>
                             <Grid>
+                                <Rectangle Fill="#FF404040" IsHitTestVisible="False"
+                                           Opacity="{Binding DataContext.Session.InventoryOpacity, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=1.0}" />
                                 <TextBlock Text="{Binding Name}" Foreground="White"
                                            TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                            Margin="4" FontSize="{DynamicResource AppFontSizeSmall}" />
@@ -83,6 +92,6 @@
             </ItemsControl>
         </DockPanel>
         </Border>
-        <controls:ResizeGrips />
+        <controls:ResizeGrips x:Name="GripsRegion" />
     </Grid>
 </Window>
