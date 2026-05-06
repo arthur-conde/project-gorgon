@@ -68,25 +68,10 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty] private bool _isInventoryVisible;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PhaseDescription))]
-    private SurveyPhase _surveyPhase = SurveyPhase.Idle;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PhaseDescription))]
     private SurveyDetected? _pendingSurvey;
 
     [ObservableProperty]
     private SurveyItemViewModel? _selectedSurvey;
-
-    public string PhaseDescription => SurveyPhase switch
-    {
-        SurveyPhase.Idle => "Click the map to set player position",
-        SurveyPhase.Surveying => "Surveying — waiting for next [Status] line",
-        SurveyPhase.AwaitingPin when PendingSurvey is { } p =>
-            $"Click the ping for: {p.Name}  ({p.Offset.East:0}E, {p.Offset.North:0}N)",
-        SurveyPhase.AwaitingPin => "Click the ping on the map",
-        _ => "",
-    };
 
     public void ClearSurveys()
     {
@@ -98,11 +83,4 @@ public enum SessionMode
 {
     Survey,
     Motherlode
-}
-
-public enum SurveyPhase
-{
-    Idle,
-    Surveying,
-    AwaitingPin,
 }

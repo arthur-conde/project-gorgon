@@ -1,24 +1,21 @@
 using Mithril.Shared.Hotkeys;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.ViewModels;
 
 namespace Legolas.Hotkeys;
 
 public sealed class StartSessionCommand : IHotkeyCommand
 {
-    private readonly SessionState _session;
-    public StartSessionCommand(SessionState session) => _session = session;
+    private readonly SurveyFlowController _surveyFlow;
+    public StartSessionCommand(SurveyFlowController surveyFlow) => _surveyFlow = surveyFlow;
     public string Id => "legolas.session.start";
     public string DisplayName => "Start / Reset Session";
     public string? Category => "Legolas · Session";
     public HotkeyBinding? DefaultBinding => null;
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        _session.ClearSurveys();
-        _session.PendingSurvey = null;
-        _session.SurveyPhase = _session.HasPlayerPosition
-            ? SurveyPhase.Surveying
-            : SurveyPhase.Idle;
+        _surveyFlow.Reset();
         return Task.CompletedTask;
     }
 }
@@ -44,16 +41,15 @@ public sealed class MarkCurrentCollectedCommand : IHotkeyCommand
 
 public sealed class SetPlayerPositionCommand : IHotkeyCommand
 {
-    private readonly SessionState _session;
-    public SetPlayerPositionCommand(SessionState session) => _session = session;
+    private readonly SurveyFlowController _surveyFlow;
+    public SetPlayerPositionCommand(SurveyFlowController surveyFlow) => _surveyFlow = surveyFlow;
     public string Id => "legolas.session.set_position";
     public string DisplayName => "Set Player Position";
     public string? Category => "Legolas · Session";
     public HotkeyBinding? DefaultBinding => null;
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        _session.PendingSurvey = null;
-        _session.SurveyPhase = SurveyPhase.Idle;
+        _surveyFlow.RequestSetPlayerPosition();
         return Task.CompletedTask;
     }
 }

@@ -1,10 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Legolas.Flow;
 
 namespace Legolas.ViewModels;
 
 public sealed partial class LegolasPanelViewModel : ObservableObject
 {
     public LegolasPanelViewModel(SessionState session,
+                                 SurveyFlowController surveyFlow,
+                                 MotherlodeFlowController motherlodeFlow,
                                  InventoryOverlayViewModel inventoryOverlay,
                                  MapOverlayViewModel mapOverlay,
                                  InventoryGridSettingsViewModel gridSettings,
@@ -12,6 +15,8 @@ public sealed partial class LegolasPanelViewModel : ObservableObject
                                  MotherlodeViewModel motherlode)
     {
         Session = session;
+        SurveyFlow = surveyFlow;
+        MotherlodeFlow = motherlodeFlow;
         InventoryOverlay = inventoryOverlay;
         MapOverlay = mapOverlay;
         GridSettings = gridSettings;
@@ -20,6 +25,8 @@ public sealed partial class LegolasPanelViewModel : ObservableObject
     }
 
     public SessionState Session { get; }
+    public SurveyFlowController SurveyFlow { get; }
+    public MotherlodeFlowController MotherlodeFlow { get; }
     public InventoryOverlayViewModel InventoryOverlay { get; }
     public MapOverlayViewModel MapOverlay { get; }
     public InventoryGridSettingsViewModel GridSettings { get; }

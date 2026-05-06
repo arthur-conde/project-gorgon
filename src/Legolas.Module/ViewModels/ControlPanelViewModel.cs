@@ -2,6 +2,7 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
+using Legolas.Flow;
 
 namespace Legolas.ViewModels;
 
@@ -9,17 +10,11 @@ public sealed partial class ControlPanelViewModel : ObservableObject
 {
     private readonly LegolasSettings _settings;
 
-    public ControlPanelViewModel(LegolasSettings settings, SessionState session)
+    public ControlPanelViewModel(LegolasSettings settings, SessionState session, SurveyFlowController surveyFlow)
     {
         _settings = settings;
         Session = session;
-        session.AllCollected += OnAllCollected;
-    }
-
-    private void OnAllCollected()
-    {
-        if (!_settings.AutoResetWhenAllCollected) return;
-        StartSession();
+        SurveyFlow = surveyFlow;
     }
 
     public bool AutoResetWhenAllCollected
@@ -35,6 +30,7 @@ public sealed partial class ControlPanelViewModel : ObservableObject
 
     public LegolasSettings Settings => _settings;
     public SessionState Session { get; }
+    public SurveyFlowController SurveyFlow { get; }
 
     public double SurveyDedupRadiusMetres
     {
@@ -83,21 +79,10 @@ public sealed partial class ControlPanelViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void StartSession()
-    {
-        Session.ClearSurveys();
-        Session.PendingSurvey = null;
-        Session.SurveyPhase = Session.HasPlayerPosition
-            ? SurveyPhase.Surveying
-            : SurveyPhase.Idle;
-    }
+    private void StartSession() => SurveyFlow.Reset();
 
     [RelayCommand]
-    private void SetPlayerPosition()
-    {
-        Session.PendingSurvey = null;
-        Session.SurveyPhase = SurveyPhase.Idle;
-    }
+    private void SetPlayerPosition() => SurveyFlow.RequestSetPlayerPosition();
 
     [RelayCommand]
     private void MarkCurrentCollected()
