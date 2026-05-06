@@ -24,8 +24,19 @@
 
             <!-- Overlay visibility -->
             <WrapPanel Margin="0,0,0,12">
-                <Button Content="Inventory Overlay" Click="ShowInventory_Click" Padding="10,4" Margin="0,0,8,8" />
-                <Button Content="Map Overlay" Click="ShowMap_Click" Padding="10,4" Margin="0,0,8,8" />
+                <Button Padding="10,4" Margin="0,0,8,8"
+                        Command="{Binding ToggleOverlaysCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Content" Value="Show Overlays" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding OverlaysVisible}" Value="True">
+                                    <Setter Property="Content" Value="Hide Overlays" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </WrapPanel>
 
             <!-- Mode -->
@@ -131,9 +142,74 @@
                     <CheckBox Content="Map overlay" Margin="0,0,0,4"
                               IsChecked="{Binding ControlPanel.ClickThroughMap}"
                               ToolTip="Mouse clicks pass through the map overlay" />
-                    <CheckBox Content="Inventory overlay"
+                    <CheckBox Content="Inventory overlay" Margin="0,0,0,4"
                               IsChecked="{Binding ControlPanel.ClickThroughInventory}"
                               ToolTip="Mouse clicks pass through the inventory overlay" />
+                    <CheckBox Content="Auto-enable inventory click-through during a survey session"
+                              IsChecked="{Binding ControlPanel.AutoClickThroughInventoryDuringSession}"
+                              ToolTip="When the inventory overlay is visible and the player position is set, click-through is enabled automatically." />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Marker colors -->
+            <GroupBox Header="Marker Colors" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="20" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Pin (pending)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PinPending, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="0" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PinPending}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Pin (finalized)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PinFinalized, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="1" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PinFinalized}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Player marker" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PlayerMarker, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="2" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PlayerMarker}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Route line" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.RouteLine, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="3" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.RouteLine}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Wedge fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.BearingWedgeFill, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="4" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.BearingWedgeFill}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Wedge stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.BearingWedgeStroke, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="5" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.BearingWedgeStroke}" />
+                    </Grid>
+                    <TextBlock Text="ARGB hex (e.g. #FFFF0000 — opaque red, or #33FFFF80 — translucent yellow). 6-digit RGB also accepted; alpha defaults to FF."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
+                            Padding="10,4" Command="{Binding ResetColorsToDefaultsCommand}" />
                 </StackPanel>
             </GroupBox>
 

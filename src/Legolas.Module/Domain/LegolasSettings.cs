@@ -33,6 +33,7 @@ public sealed class LegolasSettings : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public InventoryGridSettings InventoryGrid { get; set; } = new();
+    public LegolasColors Colors { get; set; } = new();
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
     public double MapOpacity { get; set; } = 1.0;
@@ -75,6 +76,18 @@ public sealed class LegolasSettings : INotifyPropertyChanged
             if (_autoResetWhenAllCollected == value) return;
             _autoResetWhenAllCollected = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AutoResetWhenAllCollected)));
+        }
+    }
+
+    private bool _autoClickThroughInventoryDuringSession = true;
+    public bool AutoClickThroughInventoryDuringSession
+    {
+        get => _autoClickThroughInventoryDuringSession;
+        set
+        {
+            if (_autoClickThroughInventoryDuringSession == value) return;
+            _autoClickThroughInventoryDuringSession = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AutoClickThroughInventoryDuringSession)));
         }
     }
 }
