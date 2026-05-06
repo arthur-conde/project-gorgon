@@ -212,10 +212,24 @@
 
                 <!-- Listening -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Listening}">
-                    <TextBlock Text="Use any survey item from your bag. We'll watch the chat log for the [Status] line and place a pin for you."
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <TextBlock Text="From your inventory, work through the surveys in order:"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,0,8" />
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="1.  Use the leftmost survey"
+                                       FontSize="{DynamicResource AppFontSizeBody}"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                            <TextBlock Text="2.  Click its position on the map when the [Status] line appears"
+                                       FontSize="{DynamicResource AppFontSizeBody}"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                            <TextBlock Text="3.  Repeat left-to-right, then start the next row from the left"
+                                       FontSize="{DynamicResource AppFontSizeBody}"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                        </StackPanel>
+                    </StackPanel>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
                             HorizontalAlignment="Center">
                         <StackPanel Orientation="Horizontal">

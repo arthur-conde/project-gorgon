@@ -156,15 +156,30 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void Entering_Gathering_auto_opens_inventory_overlay()
+    public void Entering_Listening_auto_opens_inventory_overlay()
+    {
+        var (wizard, session, surveyFlow, _, _) = BuildSut();
+        wizard.PickSurveyModeCommand.Execute(null);
+        session.IsInventoryVisible.Should().BeFalse();
+
+        session.HasPlayerPosition = true;
+        surveyFlow.ConfirmPlayerPosition();
+
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        session.IsInventoryVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Entering_Gathering_reopens_inventory_overlay()
     {
         var (wizard, session, surveyFlow, _, _) = BuildSut();
         wizard.PickSurveyModeCommand.Execute(null);
         session.HasPlayerPosition = true;
         surveyFlow.ConfirmPlayerPosition();
+        // User manually closed the inventory mid-Listening.
+        session.IsInventoryVisible = false;
         // Place a pin so OptimizeRoute is meaningful.
         session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), gridIndex: 0)));
-        session.IsInventoryVisible.Should().BeFalse();
 
         surveyFlow.OptimizeRoute();
 

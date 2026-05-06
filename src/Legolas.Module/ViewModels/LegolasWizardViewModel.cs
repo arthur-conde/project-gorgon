@@ -71,9 +71,12 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         if (value == WizardStep.AwaitingPosition)
             _session.IsMapVisible = true;
 
-        // Entering Gathering (the Walk step) auto-opens the inventory overlay
-        // so the user can see the queued survey items as they walk the route.
-        if (value == WizardStep.Gathering)
+        // Entering Listening / Gathering auto-opens the inventory overlay.
+        // Listening: user is picking the leftmost survey to use — they need the
+        // bag visible to see which one. Gathering: the queue serves as a
+        // walk-the-route checklist. AwaitingPin (Place) inherits visibility
+        // from Listening since we never auto-hide between transitions.
+        if (value is WizardStep.Listening or WizardStep.Gathering)
             _session.IsInventoryVisible = true;
     }
 
