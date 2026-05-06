@@ -74,26 +74,16 @@ public partial class MapOverlayView : Window
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        if (DataContext is not MapOverlayViewModel vm) { base.OnPreviewKeyDown(e); return; }
-        var selected = vm.Session.SelectedSurvey;
-        if (selected is null || !selected.EffectivePixel.HasValue) { base.OnPreviewKeyDown(e); return; }
-
-        var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 5.0
-                 : (Keyboard.Modifiers & ModifierKeys.Control) != 0 ? 0.25
-                 : 1.0;
-        double dx = 0, dy = 0;
-        switch (e.Key)
+        // Arrow-key pin nudging moved to global IHotkeyCommand registrations
+        // (Legolas · Pin Nudge category) so it works while the game window has
+        // focus. Local handler now only clears the active selection on Escape.
+        if (DataContext is MapOverlayViewModel vm && e.Key == Key.Escape)
         {
-            case Key.Left: dx = -step; break;
-            case Key.Right: dx = step; break;
-            case Key.Up: dy = -step; break;
-            case Key.Down: dy = step; break;
-            case Key.Escape: vm.Session.SelectedSurvey = null; e.Handled = true; return;
-            default: base.OnPreviewKeyDown(e); return;
+            vm.Session.SelectedSurvey = null;
+            e.Handled = true;
+            return;
         }
-        var p = selected.EffectivePixel.Value;
-        vm.CorrectSurveyCommand.Execute(new CorrectionArgs(selected, new PixelPoint(p.X + dx, p.Y + dy)));
-        e.Handled = true;
+        base.OnPreviewKeyDown(e);
     }
 
     private void SurveyDot_DragDelta(object sender, DragDeltaEventArgs e)

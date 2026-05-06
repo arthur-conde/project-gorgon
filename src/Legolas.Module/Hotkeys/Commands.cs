@@ -194,3 +194,161 @@ public sealed class ToggleBearingWedgesCommand : IHotkeyCommand
         return Task.CompletedTask;
     }
 }
+
+// ─── Pin Nudge ───────────────────────────────────────────────────────────────
+// 12 hotkey commands (4 directions × 3 step tiers) so the user can rebind any
+// combination — including just one tier and skipping the others. Step
+// magnitudes live in LegolasSettings (NudgeStepDefault / Fast / Fine), read
+// fresh on every Execute so settings changes apply immediately. Default
+// bindings are intentionally null because arrow keys collide with in-game
+// movement; users must opt-in via the Hotkeys settings UI.
+
+public abstract class NudgePinCommandBase : IHotkeyCommand
+{
+    private readonly SessionState _session;
+    private readonly MapOverlayViewModel _map;
+    private readonly LegolasSettings _settings;
+
+    protected NudgePinCommandBase(SessionState session, MapOverlayViewModel map, LegolasSettings settings)
+    {
+        _session = session;
+        _map = map;
+        _settings = settings;
+    }
+
+    public abstract string Id { get; }
+    public abstract string DisplayName { get; }
+    public string? Category => "Legolas · Pin Nudge";
+    public HotkeyBinding? DefaultBinding => null;
+
+    /// <summary>Unit vector for the direction this command moves a pin.</summary>
+    protected abstract (double Dx, double Dy) Direction { get; }
+
+    /// <summary>Step magnitude (read from settings on each call).</summary>
+    protected abstract double Step { get; }
+
+    protected double NudgeStepDefault => _settings.NudgeStepDefault;
+    protected double NudgeStepFast => _settings.NudgeStepFast;
+    protected double NudgeStepFine => _settings.NudgeStepFine;
+
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        var selected = _session.SelectedSurvey;
+        if (selected is null || !selected.EffectivePixel.HasValue) return Task.CompletedTask;
+
+        var p = selected.EffectivePixel.Value;
+        var (dx, dy) = Direction;
+        var step = Step;
+        _map.CorrectSurveyCommand.Execute(
+            new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class NudgePinUpCommand : NudgePinCommandBase
+{
+    public NudgePinUpCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.up";
+    public override string DisplayName => "Nudge Pin Up";
+    protected override (double, double) Direction => (0, -1);
+    protected override double Step => NudgeStepDefault;
+}
+
+public sealed class NudgePinUpFastCommand : NudgePinCommandBase
+{
+    public NudgePinUpFastCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.up.fast";
+    public override string DisplayName => "Nudge Pin Up (Fast)";
+    protected override (double, double) Direction => (0, -1);
+    protected override double Step => NudgeStepFast;
+}
+
+public sealed class NudgePinUpFineCommand : NudgePinCommandBase
+{
+    public NudgePinUpFineCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.up.fine";
+    public override string DisplayName => "Nudge Pin Up (Fine)";
+    protected override (double, double) Direction => (0, -1);
+    protected override double Step => NudgeStepFine;
+}
+
+public sealed class NudgePinDownCommand : NudgePinCommandBase
+{
+    public NudgePinDownCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.down";
+    public override string DisplayName => "Nudge Pin Down";
+    protected override (double, double) Direction => (0, 1);
+    protected override double Step => NudgeStepDefault;
+}
+
+public sealed class NudgePinDownFastCommand : NudgePinCommandBase
+{
+    public NudgePinDownFastCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.down.fast";
+    public override string DisplayName => "Nudge Pin Down (Fast)";
+    protected override (double, double) Direction => (0, 1);
+    protected override double Step => NudgeStepFast;
+}
+
+public sealed class NudgePinDownFineCommand : NudgePinCommandBase
+{
+    public NudgePinDownFineCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.down.fine";
+    public override string DisplayName => "Nudge Pin Down (Fine)";
+    protected override (double, double) Direction => (0, 1);
+    protected override double Step => NudgeStepFine;
+}
+
+public sealed class NudgePinLeftCommand : NudgePinCommandBase
+{
+    public NudgePinLeftCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.left";
+    public override string DisplayName => "Nudge Pin Left";
+    protected override (double, double) Direction => (-1, 0);
+    protected override double Step => NudgeStepDefault;
+}
+
+public sealed class NudgePinLeftFastCommand : NudgePinCommandBase
+{
+    public NudgePinLeftFastCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.left.fast";
+    public override string DisplayName => "Nudge Pin Left (Fast)";
+    protected override (double, double) Direction => (-1, 0);
+    protected override double Step => NudgeStepFast;
+}
+
+public sealed class NudgePinLeftFineCommand : NudgePinCommandBase
+{
+    public NudgePinLeftFineCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.left.fine";
+    public override string DisplayName => "Nudge Pin Left (Fine)";
+    protected override (double, double) Direction => (-1, 0);
+    protected override double Step => NudgeStepFine;
+}
+
+public sealed class NudgePinRightCommand : NudgePinCommandBase
+{
+    public NudgePinRightCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.right";
+    public override string DisplayName => "Nudge Pin Right";
+    protected override (double, double) Direction => (1, 0);
+    protected override double Step => NudgeStepDefault;
+}
+
+public sealed class NudgePinRightFastCommand : NudgePinCommandBase
+{
+    public NudgePinRightFastCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.right.fast";
+    public override string DisplayName => "Nudge Pin Right (Fast)";
+    protected override (double, double) Direction => (1, 0);
+    protected override double Step => NudgeStepFast;
+}
+
+public sealed class NudgePinRightFineCommand : NudgePinCommandBase
+{
+    public NudgePinRightFineCommand(SessionState s, MapOverlayViewModel m, LegolasSettings c) : base(s, m, c) { }
+    public override string Id => "legolas.pin.nudge.right.fine";
+    public override string DisplayName => "Nudge Pin Right (Fine)";
+    protected override (double, double) Direction => (1, 0);
+    protected override double Step => NudgeStepFine;
+}

@@ -89,6 +89,47 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         }
     }
 
+    public bool AutoHideOverlaysOnGameUnfocused
+    {
+        get => _settings.AutoHideOverlaysOnGameUnfocused;
+        set
+        {
+            if (_settings.AutoHideOverlaysOnGameUnfocused == value) return;
+            _settings.AutoHideOverlaysOnGameUnfocused = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double NudgeStepDefault
+    {
+        get => _settings.NudgeStepDefault;
+        set
+        {
+            _settings.NudgeStepDefault = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double NudgeStepFast
+    {
+        get => _settings.NudgeStepFast;
+        set
+        {
+            _settings.NudgeStepFast = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double NudgeStepFine
+    {
+        get => _settings.NudgeStepFine;
+        set
+        {
+            _settings.NudgeStepFine = value;
+            OnPropertyChanged();
+        }
+    }
+
     [RelayCommand]
     private void StartSession() => SurveyFlow.Reset();
 

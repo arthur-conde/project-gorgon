@@ -66,6 +66,13 @@
                 </Grid>
             </GroupBox>
 
+            <!-- Auto-hide on game unfocus (issue #116) -->
+            <GroupBox Header="Auto-Hide" Padding="8" Margin="0,0,0,12">
+                <CheckBox Content="Auto-hide overlays when neither the game nor Mithril has focus"
+                          IsChecked="{Binding ControlPanel.AutoHideOverlaysOnGameUnfocused}"
+                          ToolTip="Hides the map and inventory overlays while you alt-tab to a browser, Discord, etc., and restores whichever was visible when you return." />
+            </GroupBox>
+
             <!-- Click-through -->
             <GroupBox Header="Click-Through" Padding="8" Margin="0,0,0,12">
                 <StackPanel>
@@ -98,6 +105,41 @@
                         <TextBox Width="48" Margin="6,0,0,0" VerticalAlignment="Center"
                                  Text="{Binding ControlPanel.SurveyPinRadiusMetres, StringFormat=0.0, UpdateSourceTrigger=LostFocus}" />
                     </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Pin Nudge (issue #117) -->
+            <GroupBox Header="Pin Nudge" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Step magnitudes (pixels) for the global Nudge Pin hotkeys. Bind keys under Settings → Hotkeys, category &quot;Legolas · Pin Nudge&quot;."
+                               Foreground="{StaticResource TextTertiaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Default step (px):" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding ControlPanel.NudgeStepDefault, StringFormat=0.##, UpdateSourceTrigger=LostFocus}" />
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Default 1.0" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fast step (px):" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding ControlPanel.NudgeStepFast, StringFormat=0.##, UpdateSourceTrigger=LostFocus}" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" Text="Default 5.0" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Fine step (px):" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding ControlPanel.NudgeStepFine, StringFormat=0.##, UpdateSourceTrigger=LostFocus}" />
+                        <TextBlock Grid.Row="2" Grid.Column="2" Text="Default 0.25" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    </Grid>
                 </StackPanel>
             </GroupBox>
 

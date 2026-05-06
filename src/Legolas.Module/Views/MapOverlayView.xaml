@@ -129,8 +129,14 @@
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid>
-                                            <!-- Outer ring: pulses while pending (uncorrected) -->
-                                            <Ellipse StrokeThickness="2" Fill="#01000000">
+                                            <!-- Outer ring: pulses opacity + stroke thickness + glow,
+                                                 plus marching-ants dashes, while pending (uncorrected) -->
+                                            <Ellipse StrokeThickness="2" Fill="#01000000"
+                                                     StrokeDashArray="4 2" StrokeDashOffset="0">
+                                                <Ellipse.Effect>
+                                                    <DropShadowEffect ShadowDepth="0" BlurRadius="4" Opacity="0.85"
+                                                                      Color="{Binding DataContext.Brushes.PinPending.Color, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                </Ellipse.Effect>
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
                                                         <Setter Property="Opacity" Value="1" />
@@ -145,11 +151,22 @@
                                                                         <Storyboard RepeatBehavior="Forever" AutoReverse="True">
                                                                             <DoubleAnimation Storyboard.TargetProperty="Opacity"
                                                                                 From="1.0" To="0.35" Duration="0:0:0.7" />
+                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeThickness"
+                                                                                From="2.0" To="4.0" Duration="0:0:0.7" />
+                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                                                                                From="4" To="16" Duration="0:0:0.7" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                    <BeginStoryboard Name="PinDashMarch">
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
+                                                                                From="0" To="6" Duration="0:0:1.0" />
                                                                         </Storyboard>
                                                                     </BeginStoryboard>
                                                                 </DataTrigger.EnterActions>
                                                                 <DataTrigger.ExitActions>
                                                                     <StopStoryboard BeginStoryboardName="PinPulse" />
+                                                                    <StopStoryboard BeginStoryboardName="PinDashMarch" />
                                                                 </DataTrigger.ExitActions>
                                                             </DataTrigger>
                                                         </Style.Triggers>
