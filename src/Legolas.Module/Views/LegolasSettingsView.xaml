@@ -1,0 +1,185 @@
+<UserControl x:Class="Legolas.Views.LegolasSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource BgPrimaryBrush}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="720" Margin="24,16" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Legolas · Settings"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Overlay options -->
+            <GroupBox Header="Overlay Options" Padding="8" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Map opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
+                    <Slider   Grid.Row="0" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                              Value="{Binding Session.MapOpacity}" VerticalAlignment="Center" />
+                    <TextBox  Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                              Text="{Binding Session.MapOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Inv opacity" VerticalAlignment="Center" Margin="0,4,8,4" />
+                    <Slider   Grid.Row="1" Grid.Column="1" Minimum="0.1" Maximum="1.0"
+                              Value="{Binding Session.InventoryOpacity}" VerticalAlignment="Center" />
+                    <TextBox  Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                              Text="{Binding Session.InventoryOpacity, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+
+                    <CheckBox Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                              Content="Show bearing wedges" Margin="0,8,0,4"
+                              IsChecked="{Binding Session.ShowBearingWedges}" />
+                    <CheckBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3"
+                              Content="Show route lines"
+                              IsChecked="{Binding Session.ShowRouteLines}" />
+                </Grid>
+            </GroupBox>
+
+            <!-- Click-through -->
+            <GroupBox Header="Click-Through" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <CheckBox Content="Map overlay" Margin="0,0,0,4"
+                              IsChecked="{Binding ControlPanel.ClickThroughMap}"
+                              ToolTip="Mouse clicks pass through the map overlay" />
+                    <CheckBox Content="Inventory overlay" Margin="0,0,0,4"
+                              IsChecked="{Binding ControlPanel.ClickThroughInventory}"
+                              ToolTip="Mouse clicks pass through the inventory overlay" />
+                    <CheckBox Content="Auto-enable inventory click-through during a survey session"
+                              IsChecked="{Binding ControlPanel.AutoClickThroughInventoryDuringSession}"
+                              ToolTip="When the inventory overlay is visible and the player position is set, click-through is enabled automatically." />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Marker colors -->
+            <GroupBox Header="Marker Colors" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="20" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Pin (pending)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PinPending, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="0" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PinPending}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Pin (finalized)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PinFinalized, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="1" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PinFinalized}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Player marker" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.PlayerMarker, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="2" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.PlayerMarker}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Route line" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.RouteLine, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="3" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.RouteLine}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Wedge fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.BearingWedgeFill, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="4" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.BearingWedgeFill}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Wedge stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                                  Text="{Binding Colors.BearingWedgeStroke, UpdateSourceTrigger=LostFocus}" />
+                        <Border   Grid.Row="5" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                  Background="{Binding Brushes.BearingWedgeStroke}" />
+                    </Grid>
+                    <TextBlock Text="ARGB hex (e.g. #FFFF0000 — opaque red, or #33FFFF80 — translucent yellow). 6-digit RGB also accepted; alpha defaults to FF."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
+                            Padding="10,4" Command="{Binding ResetColorsToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Inventory grid settings -->
+            <GroupBox Header="Inventory Grid Settings" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <Grid DataContext="{Binding GridSettings.Grid}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="40" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Columns" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="20" Value="{Binding Columns}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding Columns, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Cell Width" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="1" Grid.Column="1" Minimum="20" Maximum="200" Value="{Binding CellWidth}" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding CellWidth, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Cell Height" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="2" Grid.Column="1" Minimum="20" Maximum="200" Value="{Binding CellHeight}" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding CellHeight, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Column Gap" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="20" Value="{Binding ColumnGap}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding ColumnGap, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Row Gap" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider   Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="20" Value="{Binding RowGap}"
+                                  TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                        <TextBox  Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  Text="{Binding RowGap, StringFormat=0, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
+                            Padding="10,4" Command="{Binding GridSettings.ResetToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

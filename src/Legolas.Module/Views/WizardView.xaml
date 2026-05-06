@@ -1,0 +1,303 @@
+<UserControl x:Class="Legolas.Views.WizardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:vm="clr-namespace:Legolas.ViewModels"
+             xmlns:controls="clr-namespace:Legolas.Controls"
+             Background="{DynamicResource BgPrimaryBrush}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Primary action button. BasedOn the implicit Button style is *required* —
+                 keyed styles don't inherit the implicit one automatically, and skipping it
+                 reverts the button to WPF's default chrome (light gray box, no Mithril theme). -->
+            <Style x:Key="WizardPrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Padding" Value="18,8" />
+                <Setter Property="MinWidth" Value="140" />
+                <Setter Property="Margin" Value="0,0,12,0" />
+            </Style>
+
+            <!-- Breadcrumb step label. Highlight applied per-step via DataTrigger inline. -->
+            <Style x:Key="WizardBreadcrumbStep" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+                <Setter Property="FontSize" Value="{DynamicResource AppFontSize}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="WizardBreadcrumbSeparator" TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                <Setter Property="Text" Value="›" />
+                <Setter Property="Margin" Value="10,0" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Module header (Mithril convention: every module's view starts with
+             icon + accented title at the top). -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,16,20,0">
+            <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBlock Text="Legolas · Survey"
+                       FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Footer (always visible): status strip -->
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="0,1,0,0"
+                Padding="20,10">
+            <TextBlock Foreground="{StaticResource TextTertiaryBrush}"
+                       Text="{Binding SurveyFlow.PhaseDescription}"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+
+        <!-- Breadcrumb (visible after the user has picked a mode) -->
+        <Border DockPanel.Dock="Top" Margin="20,16,20,0"
+                Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+            <Grid HorizontalAlignment="Center">
+                <!-- Survey breadcrumb -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Survey}">
+                    <TextBlock Text="Mode" Style="{StaticResource WizardBreadcrumbStep}" />
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Position">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="AwaitingPosition">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Listen">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="Listening">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Place">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="AwaitingPin">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Walk">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="Gathering">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Done">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="Done">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <!-- Motherlode breadcrumb (PR1: just one step post-pick) -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Motherlode}">
+                    <TextBlock Text="Mode" Style="{StaticResource WizardBreadcrumbStep}" />
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Measure">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="MotherlodeMeasuring">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Step body: each step's panel centers itself; the visible one fills the available area.
+             A shared hero row at the top of every step renders [← back] [title] [↻ reset] together. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Center">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top"
+                        MaxWidth="780" Margin="20,24,20,16">
+
+                <!-- Shared step hero row: nav + title.
+                     Back/reset hidden in PickMode (no flow yet). Title spans by binding to CurrentStepTitle. -->
+                <Grid Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Style="{StaticResource MithrilToolbarButtonStyle}"
+                            Command="{Binding BackCommand}" ToolTip="Back one step"
+                            VerticalAlignment="Center" HorizontalAlignment="Left"
+                            Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <icon:PackIconLucide Kind="ArrowLeft" Width="14" Height="14" />
+                    </Button>
+                    <TextBlock Grid.Column="1" Text="{Binding CurrentStepTitle}"
+                               FontSize="32" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <Button Grid.Column="2" Style="{StaticResource MithrilToolbarButtonStyle}"
+                            Command="{Binding WizardResetCommand}" ToolTip="Reset this flow (overlays stay open)"
+                            VerticalAlignment="Center" HorizontalAlignment="Right"
+                            Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <icon:PackIconLucide Kind="RotateCcw" Width="14" Height="14" />
+                    </Button>
+                </Grid>
+
+                <!-- Step bodies — one visible at a time, keyed off CurrentStep. -->
+
+                <!-- PickMode -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=PickMode}">
+                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,32"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="Two flows: " />
+                        <Run Text="Survey" FontWeight="SemiBold" />
+                        <Run Text=" — using survey items to find slabs / minerals — or " />
+                        <Run Text="Motherlode" FontWeight="SemiBold" />
+                        <Run Text=" — trilaterating buried treasure from a Treasure Map." />
+                    </TextBlock>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Survey" Style="{StaticResource WizardPrimaryButton}"
+                                Command="{Binding PickSurveyModeCommand}" />
+                        <Button Content="Motherlode" Style="{StaticResource WizardPrimaryButton}" Margin="0"
+                                Command="{Binding PickMotherlodeModeCommand}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- AwaitingPosition -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=AwaitingPosition}">
+                    <TextBlock Text="Click on the map where your character is right now. We've opened the map overlay for you."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+
+                <!-- Listening -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Listening}">
+                    <TextBlock Text="Use any survey item from your bag. We'll watch the chat log for the [Status] line and place a pin for you."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
+                            HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Pins placed: " Foreground="{StaticResource AccentSoftTextBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" />
+                            <TextBlock Text="{Binding Session.Surveys.Count}" FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeBody}"
+                                       Foreground="{StaticResource AccentSoftTextBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
+                            HorizontalAlignment="Center" Margin="0"
+                            Command="{Binding MapOverlay.OptimizeRouteCommand}"
+                            IsEnabled="{Binding SurveyFlow.CanOptimize}"
+                            ToolTip="Compute the shortest path through all placed pins and start walking" />
+                </StackPanel>
+
+                <!-- AwaitingPin -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=AwaitingPin}">
+                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="Survey detected: " />
+                        <Run Text="{Binding Session.PendingSurvey.Name, FallbackValue=''}" FontWeight="SemiBold" />
+                    </TextBlock>
+                    <TextBlock Text="Click on the map where the ping is showing in-game."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+
+                <!-- Gathering -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Gathering}">
+                    <TextBlock Text="Walk to each target in order. We'll mark them collected automatically. New surveys are ignored until you reset (the projector is anchored to where you started)."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,24"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <Button Content="Mark current collected" Style="{StaticResource WizardPrimaryButton}"
+                            HorizontalAlignment="Center" Margin="0"
+                            Command="{Binding ControlPanel.MarkCurrentCollectedCommand}" />
+                </StackPanel>
+
+                <!-- Done -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Done}">
+                    <TextBlock Text="Nice. Hit reset to start a new session — set your player position again first."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+
+                <!-- MotherlodeMeasuring -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeMeasuring}">
+                    <TextBlock Text="Record three positions and the distance reading at each. We'll trilaterate the treasure locations."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <StackPanel DataContext="{Binding Motherlode}" HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
+                            <TextBlock Text="Positions recorded: " Foreground="{StaticResource TextTertiaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding RecordedPositions}" Margin="6,0,0,0" FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                            <TextBlock Text=" / 3" Foreground="{StaticResource TextTertiaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Button Content="Record Player Position" Padding="14,6" Margin="0,0,0,12" HorizontalAlignment="Center"
+                                Command="{Binding RecordPlayerPositionCommand}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
+                            <TextBlock Text="Distance (m):" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       FontSize="{DynamicResource AppFontSizeBody}" />
+                            <TextBox Width="80" Padding="6,4" Text="{Binding DistanceInput, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center" />
+                            <Button Content="Record Distance" Padding="14,6" Margin="12,0,0,0"
+                                    Command="{Binding RecordCurrentDistanceCommand}" />
+                        </StackPanel>
+                        <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
+                                HorizontalAlignment="Center" Margin="0,4,0,0"
+                                Command="{Binding OptimizeRouteCommand}"
+                                ToolTip="Trilaterate and compute the shortest path between treasures" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

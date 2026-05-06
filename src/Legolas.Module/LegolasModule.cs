@@ -25,7 +25,7 @@ public sealed class LegolasModule : IMithrilModule
     public int SortOrder => 200;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(LegolasPanelView);
-    public Type? SettingsViewType => null;
+    public Type? SettingsViewType => typeof(LegolasSettingsView);
 
     public void Register(IServiceCollection services)
     {
@@ -54,17 +54,23 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<SessionState>();
         services.AddSingleton<SurveyFlowController>();
         services.AddSingleton<MotherlodeFlowController>();
-        services.AddSingleton<LegolasPanelViewModel>();
+        services.AddSingleton<LegolasWizardViewModel>();
+        services.AddSingleton<LegolasSettingsViewModel>();
         services.AddSingleton<ControlPanelViewModel>();
         services.AddSingleton<InventoryOverlayViewModel>();
         services.AddSingleton<MapOverlayViewModel>();
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
 
-        // Panel view (shell-hosted UserControl) — singleton so it keeps scroll/state across tab switches
+        // Panel view (shell-hosted UserControl) — singleton so it keeps scroll/state across tab switches.
+        // The panel directly hosts the wizard; settings live in the per-module settings tab.
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {
-            DataContext = sp.GetRequiredService<LegolasPanelViewModel>(),
+            DataContext = sp.GetRequiredService<LegolasWizardViewModel>(),
+        });
+        services.AddSingleton<LegolasSettingsView>(sp => new LegolasSettingsView
+        {
+            DataContext = sp.GetRequiredService<LegolasSettingsViewModel>(),
         });
 
         // Overlay windows — transient so a user-closed window can be re-created cleanly
