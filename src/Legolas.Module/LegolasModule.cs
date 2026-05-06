@@ -36,6 +36,9 @@ public sealed class LegolasModule : IMithrilModule
         services.AddMithrilSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
+        services.AddSingleton<LegolasColors>(sp =>
+            sp.GetRequiredService<LegolasSettings>().Colors);
+        services.AddSingleton<LegolasBrushes>();
 
         // Core services
         services.AddSingleton<IChatLogParser, ChatLogParser>();
@@ -84,6 +87,7 @@ public sealed class LegolasModule : IMithrilModule
 
         // Overlay lifecycle
         services.AddHostedService<OverlayController>();
+        services.AddHostedService<AutoOverlayCoordinator>();
 
         // Hotkey commands (shell auto-collects via IEnumerable<IHotkeyCommand>)
         services.AddSingleton<IHotkeyCommand, StartSessionCommand>();

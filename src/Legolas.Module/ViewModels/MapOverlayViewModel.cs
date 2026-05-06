@@ -18,16 +18,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly IRouteOptimizer _optimizer;
     private readonly LegolasSettings? _settings;
     private readonly SurveyFlowController _surveyFlow;
+    private readonly LegolasBrushes _brushes;
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow)
-        : this(session, projector, optimizer, surveyFlow, settings: null) { }
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
+        : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasSettings? settings)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings)
     {
         _session = session;
         _projector = projector;
         _optimizer = optimizer;
         _surveyFlow = surveyFlow;
+        _brushes = brushes;
         _settings = settings;
         if (_settings is not null)
         {
@@ -96,6 +98,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     public SessionState Session => _session;
 
     public SurveyFlowController SurveyFlow => _surveyFlow;
+
+    public LegolasBrushes Brushes => _brushes;
 
     public PixelPoint PlayerPosition
     {

@@ -56,14 +56,17 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:SurveyItemViewModel}">
-                            <Path Data="{Binding WedgeGeometry}" Fill="#33FFFF80" Stroke="#55FFFF80" StrokeThickness="1" />
+                            <Path Data="{Binding WedgeGeometry}"
+                                  Fill="{Binding DataContext.Brushes.BearingWedgeFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  Stroke="{Binding DataContext.Brushes.BearingWedgeStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  StrokeThickness="1" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
                 <!-- Route polyline layer -->
                 <Polyline Points="{Binding RoutePoints}"
-                          Stroke="Gold" StrokeThickness="2"
+                          Stroke="{Binding Brushes.RouteLine}" StrokeThickness="2"
                           StrokeDashArray="4 2" IsHitTestVisible="False" />
 
                 <!-- Player marker: outer ring + inner dot -->
@@ -72,7 +75,8 @@
                           Canvas.Left="{Binding PlayerPosition.X, Converter={x:Static controls:OffsetConverter.MinusNine}}"
                           Canvas.Top="{Binding PlayerPosition.Y, Converter={x:Static controls:OffsetConverter.MinusNine}}">
                         <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
-                        <Ellipse Width="6" Height="6" Fill="#FF4CAF50"
+                        <Ellipse Width="6" Height="6"
+                                 Fill="{Binding Brushes.PlayerMarker}"
                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                 </Canvas>
@@ -121,12 +125,15 @@
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid>
                                             <!-- Outer ring: pulses while pending (uncorrected) -->
-                                            <Ellipse Stroke="{Binding IsCorrected, Converter={x:Static controls:CorrectedToBrushConverter.Instance}}"
-                                                     StrokeThickness="2" Fill="#01000000">
+                                            <Ellipse StrokeThickness="2" Fill="#01000000">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
                                                         <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCorrected}" Value="True">
+                                                                <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsCorrected}" Value="False">
                                                                 <DataTrigger.EnterActions>
                                                                     <BeginStoryboard Name="PinPulse">
@@ -146,8 +153,18 @@
                                             </Ellipse>
                                             <!-- Center dot: the projected point -->
                                             <Ellipse Width="5" Height="5"
-                                                     Fill="{Binding IsCorrected, Converter={x:Static controls:CorrectedToBrushConverter.Instance}}"
-                                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCorrected}" Value="True">
+                                                                <Setter Property="Fill" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
                                             <TextBlock Text="{Binding RouteOrder, Converter={x:Static controls:OneBasedConverter.Instance}}"
                                                        Foreground="White"
                                                        HorizontalAlignment="Center" VerticalAlignment="Top"

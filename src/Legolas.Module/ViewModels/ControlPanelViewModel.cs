@@ -78,6 +78,17 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         }
     }
 
+    public bool AutoClickThroughInventoryDuringSession
+    {
+        get => _settings.AutoClickThroughInventoryDuringSession;
+        set
+        {
+            if (_settings.AutoClickThroughInventoryDuringSession == value) return;
+            _settings.AutoClickThroughInventoryDuringSession = value;
+            OnPropertyChanged();
+        }
+    }
+
     [RelayCommand]
     private void StartSession() => SurveyFlow.Reset();
 
