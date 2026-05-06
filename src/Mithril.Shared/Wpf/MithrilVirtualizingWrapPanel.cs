@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace Mithril.Shared.Wpf;
 
@@ -35,6 +36,27 @@ public class MithrilVirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
     private Point _offset;
     private ScrollViewer? _owner;
     private int _firstVisibleIndex;
+
+    public MithrilVirtualizingWrapPanel()
+    {
+        // When the panel transitions from Collapsed → Visible (e.g. inside a view-mode
+        // toggle), the first measure pass can run before the ScrollViewer has wired up
+        // ScrollOwner / its viewport. Items get generated against a stale viewport and
+        // the panel paints blank until the user scrolls. Re-measure on every visibility
+        // gain, deferred to ContextIdle so it lands AFTER the ScrollViewer's first pass.
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is true)
+            {
+                InvalidateMeasure();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    InvalidateMeasure();
+                    _owner?.InvalidateScrollInfo();
+                }), DispatcherPriority.ContextIdle);
+            }
+        };
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
