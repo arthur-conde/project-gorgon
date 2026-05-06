@@ -6,6 +6,7 @@ using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.Services;
 
 namespace Legolas.ViewModels;
@@ -16,15 +17,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly ICoordinateProjector _projector;
     private readonly IRouteOptimizer _optimizer;
     private readonly LegolasSettings? _settings;
+    private readonly SurveyFlowController _surveyFlow;
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer)
-        : this(session, projector, optimizer, settings: null) { }
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow)
+        : this(session, projector, optimizer, surveyFlow, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, LegolasSettings? settings)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasSettings? settings)
     {
         _session = session;
         _projector = projector;
         _optimizer = optimizer;
+        _surveyFlow = surveyFlow;
         _settings = settings;
         if (_settings is not null)
         {
@@ -92,6 +95,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     public SessionState Session => _session;
 
+    public SurveyFlowController SurveyFlow => _surveyFlow;
+
     public PixelPoint PlayerPosition
     {
         get => _session.PlayerPosition;
@@ -126,23 +131,22 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _session.HasPlayerPosition = true;
         _projector.SetOrigin(where);
         ReprojectUncorrected();
+        _surveyFlow.ConfirmPlayerPosition();
     }
 
     [RelayCommand]
     public void HandleMapClick(PixelPoint where)
     {
-        switch (_session.SurveyPhase)
+        switch (_surveyFlow.CurrentState)
         {
-            case SurveyPhase.Idle:
+            case SurveyFlowState.AwaitingPosition:
                 SetPlayerPosition(where);
-                _session.SurveyPhase = SurveyPhase.Surveying;
                 break;
-            case SurveyPhase.Surveying:
-                // No-op: prevents accidental player re-set mid-session.
-                break;
-            case SurveyPhase.AwaitingPin when _session.PendingSurvey is { } pending:
+            case SurveyFlowState.AwaitingPin when _session.PendingSurvey is not null:
                 PlacePendingPinAt(where);
                 break;
+            // Listening / Gathering / Done: ignore map clicks (prevents accidental
+            // re-anchor mid-session). User must press Set Player Position to re-anchor.
         }
     }
 
@@ -153,11 +157,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// </summary>
     public SurveyItemViewModel? PlacePendingPinAt(PixelPoint where)
     {
-        if (_session.SurveyPhase != SurveyPhase.AwaitingPin) return null;
+        if (_surveyFlow.CurrentState != SurveyFlowState.AwaitingPin) return null;
         if (_session.PendingSurvey is not { } pending) return null;
         var placed = PlacePin(pending, where);
-        _session.PendingSurvey = null;
-        _session.SurveyPhase = SurveyPhase.Surveying;
+        _surveyFlow.ConfirmPin();
         return placed;
     }
 
@@ -247,6 +250,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             Surveys[src].UpdateModel(Surveys[src].Model with { RouteOrder = i });
         }
         RebuildRouteGeometry();
+        _surveyFlow.OptimizeRoute();
     }
 
     private void ReprojectUncorrected()

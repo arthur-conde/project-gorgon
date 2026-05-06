@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.Services;
 
 namespace Legolas.ViewModels;
@@ -16,14 +17,18 @@ public sealed partial class MotherlodeViewModel : ObservableObject
     private readonly ITrilaterationSolver _trilateration;
     private readonly IRouteOptimizer _optimizer;
     private readonly SessionState _session;
+    private readonly MotherlodeFlowController _flow;
     private readonly MotherlodeSession _state = new();
 
-    public MotherlodeViewModel(ITrilaterationSolver trilateration, IRouteOptimizer optimizer, SessionState session)
+    public MotherlodeViewModel(ITrilaterationSolver trilateration, IRouteOptimizer optimizer, SessionState session, MotherlodeFlowController flow)
     {
         _trilateration = trilateration;
         _optimizer = optimizer;
         _session = session;
+        _flow = flow;
     }
+
+    public MotherlodeFlowController Flow => _flow;
 
     public ObservableCollection<MotherlodeSlotViewModel> Slots { get; } = new();
 
@@ -39,6 +44,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject
         _state.PlayerPositions.Add(_session.PlayerPosition);
         OnPropertyChanged(nameof(CurrentRound));
         OnPropertyChanged(nameof(RecordedPositions));
+        _flow.NoteMeasurement($"position{_state.PlayerPositions.Count}");
     }
 
     [RelayCommand]
@@ -69,6 +75,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject
                 p3, slot.Distances[2]);
             slot.EstimatedPosition = estimate;
         }
+        _flow.NoteMeasurement($"distance{slot.Distances.Count}");
     }
 
     [RelayCommand]
@@ -91,6 +98,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject
         {
             Slots[indices[order[i]]].RouteOrder = i;
         }
+        _flow.OptimizeRoute();
     }
 
     [RelayCommand]
@@ -103,6 +111,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject
         DistanceInput = 0;
         OnPropertyChanged(nameof(CurrentRound));
         OnPropertyChanged(nameof(RecordedPositions));
+        _flow.Reset();
     }
 }
 

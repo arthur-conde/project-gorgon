@@ -2,6 +2,7 @@ using System.Windows;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 
@@ -22,6 +23,7 @@ public sealed class LogIngestionService : BackgroundService
     private readonly SessionState _session;
     private readonly ICoordinateProjector _projector;
     private readonly MotherlodeViewModel _motherlode;
+    private readonly SurveyFlowController _surveyFlow;
 
     public LogIngestionService(
         IChatLogStream stream,
@@ -30,7 +32,8 @@ public sealed class LogIngestionService : BackgroundService
         LegolasSettings settings,
         SessionState session,
         ICoordinateProjector projector,
-        MotherlodeViewModel motherlode)
+        MotherlodeViewModel motherlode,
+        SurveyFlowController surveyFlow)
     {
         _stream = stream;
         _parser = parser;
@@ -39,6 +42,7 @@ public sealed class LogIngestionService : BackgroundService
         _session = session;
         _projector = projector;
         _motherlode = motherlode;
+        _surveyFlow = surveyFlow;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -95,9 +99,10 @@ public sealed class LogIngestionService : BackgroundService
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored (mode is Motherlode)";
             return;
         }
-        if (_session.SurveyPhase == SurveyPhase.Idle)
+        if (!_surveyFlow.CanAcceptSurvey)
         {
-            _session.LastLogEvent = $"Survey: {sd.Name} → ignored (press Start first)";
+            // Controller writes its own diagnostic to LastLogEvent.
+            _surveyFlow.OnSurveyDetected(sd);
             return;
         }
 
@@ -120,11 +125,11 @@ public sealed class LogIngestionService : BackgroundService
             var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
                 with { PixelPos = newPixel };
             _session.Surveys.Add(new SurveyItemViewModel(survey));
+            _surveyFlow.NoteAutoPlacedSurvey(sd);
             return;
         }
 
-        _session.PendingSurvey = sd;
-        _session.SurveyPhase = SurveyPhase.AwaitingPin;
+        _surveyFlow.OnSurveyDetected(sd);
     }
 
     private SurveyItemViewModel? FindDuplicate(string name, MetreOffset newOffset, double radiusMetres)

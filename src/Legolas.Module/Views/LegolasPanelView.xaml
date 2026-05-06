@@ -55,7 +55,7 @@
                                 ToolTip="Manually mark the highlighted next-up survey as collected" />
                     </WrapPanel>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="2" Padding="6,4" Margin="0,4,0,6">
-                        <TextBlock Text="{Binding Session.PhaseDescription}"
+                        <TextBlock Text="{Binding SurveyFlow.PhaseDescription}"
                                    Foreground="{StaticResource AccentSoftTextBrush}" TextWrapping="Wrap" />
                     </Border>
                     <CheckBox Content="Auto-reset when all surveys collected"

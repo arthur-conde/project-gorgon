@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
+using Legolas.Flow;
 using Legolas.ViewModels;
 using Legolas.Domain;
 
@@ -145,7 +146,7 @@ public partial class MapOverlayView : Window
 
         // AwaitingPin: place the pin and let the user keep dragging without
         // releasing the mouse — same gesture for placement and fine-tuning.
-        if (vm.Session.SurveyPhase == SurveyPhase.AwaitingPin
+        if (vm.SurveyFlow.CurrentState == SurveyFlowState.AwaitingPin
             && vm.Session.PendingSurvey is not null)
         {
             var placed = vm.PlacePendingPinAt(clickPoint);

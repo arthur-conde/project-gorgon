@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.ViewModels;
 
 namespace Legolas.Flow;
@@ -25,7 +26,7 @@ public sealed record MotherlodeTransition(
 /// <see cref="MotherlodeViewModel"/> still owns the position list, slot collection,
 /// and trilateration math.
 /// </summary>
-public sealed class MotherlodeFlowController
+public sealed partial class MotherlodeFlowController : ObservableObject
 {
     private readonly SessionState _session;
 
@@ -34,7 +35,10 @@ public sealed class MotherlodeFlowController
         _session = session;
     }
 
-    public MotherlodeFlowState CurrentState { get; private set; } = MotherlodeFlowState.Idle;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanMeasure))]
+    [NotifyPropertyChangedFor(nameof(CanOptimize))]
+    private MotherlodeFlowState _currentState = MotherlodeFlowState.Idle;
 
     public event Action<MotherlodeTransition>? Transitioned;
 
@@ -86,7 +90,7 @@ public sealed class MotherlodeFlowController
     {
         var prev = CurrentState;
         if (prev == next) return;
-        CurrentState = next;
+        CurrentState = next; // generated setter fires PropertyChanged for state + dependents
         Transitioned?.Invoke(new MotherlodeTransition(prev, next, trigger));
     }
 }

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 using Legolas.ViewModels;
 
@@ -28,7 +30,7 @@ public sealed record SurveyTransition(
 /// outside this class is no longer supported (still possible at the language level,
 /// but considered a bug — call a controller method instead).
 /// </summary>
-public sealed class SurveyFlowController
+public sealed partial class SurveyFlowController : ObservableObject
 {
     private readonly SessionState _session;
     private readonly LegolasSettings _settings;
@@ -38,12 +40,34 @@ public sealed class SurveyFlowController
         _session = session;
         _settings = settings;
         _session.AllCollected += OnAllCollected;
+        _session.PropertyChanged += OnSessionPropertyChanged;
     }
 
-    public SurveyFlowState CurrentState { get; private set; } = SurveyFlowState.AwaitingPosition;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PhaseDescription))]
+    [NotifyPropertyChangedFor(nameof(CanAcceptSurvey))]
+    [NotifyPropertyChangedFor(nameof(CanOptimize))]
+    private SurveyFlowState _currentState = SurveyFlowState.AwaitingPosition;
 
     /// <summary>Fires after every successful state change.</summary>
     public event Action<SurveyTransition>? Transitioned;
+
+    /// <summary>
+    /// Human-readable description of the current state, suitable for the in-app
+    /// status strip. The wizard view (when it lands) will use richer per-state
+    /// templates; this is the dashboard-style fallback.
+    /// </summary>
+    public string PhaseDescription => CurrentState switch
+    {
+        SurveyFlowState.AwaitingPosition => "Click the map to set player position",
+        SurveyFlowState.Listening => "Listening for surveys",
+        SurveyFlowState.AwaitingPin when _session.PendingSurvey is { } p =>
+            $"Click the ping for: {p.Name}  ({p.Offset.East:0}E, {p.Offset.North:0}N)",
+        SurveyFlowState.AwaitingPin => "Click the ping on the map",
+        SurveyFlowState.Gathering => "Walk to each target — new surveys will be ignored until reset",
+        SurveyFlowState.Done => "All surveys collected",
+        _ => "",
+    };
 
     /// <summary>True when <see cref="OnSurveyDetected"/> would be accepted.</summary>
     public bool CanAcceptSurvey => CurrentState is SurveyFlowState.Listening or SurveyFlowState.AwaitingPin;
@@ -171,8 +195,16 @@ public sealed class SurveyFlowController
     {
         var prev = CurrentState;
         if (prev == next) return;
-        CurrentState = next;
+        CurrentState = next; // generated setter fires PropertyChanged for state + dependents
         Transitioned?.Invoke(new SurveyTransition(prev, next, trigger));
+    }
+
+    private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // PhaseDescription's AwaitingPin branch reads PendingSurvey. Forward the
+        // change so bound UI reflects updated pin prompts without an extra subscriber.
+        if (e.PropertyName == nameof(SessionState.PendingSurvey))
+            OnPropertyChanged(nameof(PhaseDescription));
     }
 
     private string DescribeWhyDropped() => CurrentState switch

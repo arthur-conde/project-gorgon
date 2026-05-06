@@ -6,6 +6,7 @@ using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
 using Mithril.Shared.Settings;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.Hotkeys;
 using Legolas.Services;
 using Legolas.ViewModels;
@@ -46,8 +47,10 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
 
-        // Session + VMs
+        // Session + flow controllers + VMs
         services.AddSingleton<SessionState>();
+        services.AddSingleton<SurveyFlowController>();
+        services.AddSingleton<MotherlodeFlowController>();
         services.AddSingleton<LegolasPanelViewModel>();
         services.AddSingleton<ControlPanelViewModel>();
         services.AddSingleton<InventoryOverlayViewModel>();
