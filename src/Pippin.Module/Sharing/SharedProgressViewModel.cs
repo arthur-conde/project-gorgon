@@ -58,10 +58,13 @@ public sealed partial class SharedProgressViewModel : ObservableObject
         var unknown = payload.UnknownByName ?? new Dictionary<string, int>();
         var list = new List<FoodItemViewModel>(_catalog.TotalCount + unknown.Count);
 
+        // Shared payloads don't include the sender's Gourmand level, and "locked" is a
+        // viewer-relative state (what *I* can't eat yet), not a sender-relative one.
+        // Pass int.MaxValue so nothing on a remote progress view renders as locked.
         foreach (var food in _catalog.ByInternalName.Values)
         {
             var isEaten = payload.EatenFoodsByInternalName.TryGetValue(food.InternalName, out var count);
-            list.Add(new FoodItemViewModel(food, isEaten, isEaten ? count : 0));
+            list.Add(new FoodItemViewModel(food, isEaten, isEaten ? count : 0, int.MaxValue));
         }
 
         // Sender had foods we don't recognize — show them in the same orphan section

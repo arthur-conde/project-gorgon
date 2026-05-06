@@ -157,21 +157,6 @@ public class PippinShareViewModelTests
     }
 
     [Fact]
-    public void FullGrid_total_height_grows_with_row_count()
-    {
-        var smallCatalog = CreateCatalog((1, "FoodA", "A", 0));
-        var bigCatalog = CreateCatalog(
-            Enumerable.Range(1, 50)
-                .Select(i => ((long)i, $"Food{i}", $"Name{i}", 0))
-                .ToArray());
-
-        var small = new PippinFullGridViewModel(BuildPayload(), smallCatalog, 0, new NoopIconCache());
-        var big   = new PippinFullGridViewModel(BuildPayload(), bigCatalog, 0, new NoopIconCache());
-
-        big.TotalHeight.Should().BeGreaterThan(small.TotalHeight);
-    }
-
-    [Fact]
     public void FullGrid_anonymous_payload_omits_identity_subtitle()
     {
         var catalog = CreateCatalog((1, "FoodApple", "Apple", 0));

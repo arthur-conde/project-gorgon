@@ -31,6 +31,10 @@ public sealed class PippinModule : IMithrilModule
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacyPippinDir = Path.Combine(localApp, "Mithril", "Pippin");
+        var settingsPath = Path.Combine(localApp, "Mithril", "pippin-settings.json");
+
+        // App-level UI prefs (view mode, hide-locked toggle).
+        services.AddMithrilSettings<PippinSettings>(settingsPath, PippinSettingsJsonContext.Default.PippinSettings);
 
         // Per-character persistence with a one-shot migration from the legacy flat file.
         services.AddSingleton<ILegacyMigration<GourmandState>>(_ =>
@@ -52,6 +56,7 @@ public sealed class PippinModule : IMithrilModule
         services.AddSingleton<GourmandViewModel>(sp => new GourmandViewModel(
             sp.GetRequiredService<GourmandStateMachine>(),
             sp.GetRequiredService<FoodCatalog>(),
+            sp.GetRequiredService<PippinSettings>(),
             sp.GetService<IActiveCharacterService>(),
             sp.GetService<IDialogService>(),
             sp.GetService<PippinShareCardRenderer>(),

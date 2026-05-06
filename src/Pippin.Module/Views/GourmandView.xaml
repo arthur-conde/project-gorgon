@@ -60,9 +60,9 @@
             </Grid>
         </StackPanel>
 
-        <!-- ── Filters ── -->
+        <!-- ── Filters + view-mode toggle ── -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <Grid>
+            <Grid Margin="0,0,0,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -85,10 +85,31 @@
                     <ComboBoxItem Content="Uneaten"/>
                 </ComboBox>
             </Grid>
-            <TextBlock Text="{Binding ElementName=FoodsGrid, Path=QueryError}"
-                       Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0"
-                       Visibility="{Binding ElementName=FoodsGrid, Path=QueryError,
-                           Converter={StaticResource NullOrEmptyToVis}}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <CheckBox Grid.Column="0" IsChecked="{Binding HideLocked}" VerticalAlignment="Center"
+                          Content="Hide locked"
+                          ToolTip="Hide foods whose Gourmand requirement exceeds your current skill level"/>
+                <TextBlock Grid.Column="1" Text="{Binding ElementName=FoodsGrid, Path=QueryError}"
+                           Foreground="#FFCC6666" FontSize="{DynamicResource AppFontSizeHint}"
+                           Margin="12,0,12,0" VerticalAlignment="Center"
+                           Visibility="{Binding ElementName=FoodsGrid, Path=QueryError,
+                               Converter={StaticResource NullOrEmptyToVis}}"/>
+                <wpf:ViewModeToggle Grid.Column="2" SelectedMode="{Binding ViewMode, Mode=TwoWay}">
+                    <wpf:ViewModeOption Id="Grid"
+                                        ToolTipText="Show foods in a sortable table">
+                        <icon:PackIconLucide Kind="List" Width="14" Height="14"/>
+                    </wpf:ViewModeOption>
+                    <wpf:ViewModeOption Id="Cards"
+                                        ToolTipText="Show foods as cards with icons and dietary tags">
+                        <icon:PackIconLucide Kind="LayoutGrid" Width="14" Height="14"/>
+                    </wpf:ViewModeOption>
+                </wpf:ViewModeToggle>
+            </Grid>
         </StackPanel>
 
         <!-- ── Empty state ── -->
@@ -103,69 +124,245 @@
                        MaxWidth="360" TextAlignment="Center"/>
         </StackPanel>
 
-        <!-- ── Food grid ── -->
-        <wpf:MithrilDataGrid x:Name="FoodsGrid"
-                            ItemsSource="{Binding Foods}"
-                            Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
-                            Mode="ReadOnly"
-                            GridLinesVisibility="None"
-                            EnableRowVirtualization="True"
-                            EnableColumnVirtualization="True"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling"
-                            VirtualizingPanel.ScrollUnit="Pixel"
-                            ScrollViewer.CanContentScroll="True">
-            <wpf:MithrilDataGrid.Columns>
-                <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
-                                        Width="32" IsReadOnly="True"
-                                        wpf:MithrilDataGrid.QueryName="IsEaten"/>
-                <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending"
-                                        wpf:MithrilDataGrid.QueryName="Name">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Type" Binding="{Binding FoodType}" Width="110"/>
-                <DataGridTextColumn Header="Level" Binding="{Binding FoodLevel}" Width="60"/>
-                <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
-                <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
-                <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
-            </wpf:MithrilDataGrid.Columns>
-            <wpf:MithrilDataGrid.RowStyle>
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
-                    <Setter Property="ToolTip">
-                        <Setter.Value>
-                            <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
-                                     Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <ToolTip.ContentTemplate>
-                                    <DataTemplate>
-                                        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
-                                                CornerRadius="4" Padding="10" MaxWidth="320">
-                                            <DockPanel>
-                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                               Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                                                    <TextBlock Text="{Binding FoodType}" Foreground="#CCFFFFFF"
-                                                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"/>
-                                                </StackPanel>
-                                            </DockPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ToolTip.ContentTemplate>
-                            </ToolTip>
-                        </Setter.Value>
-                    </Setter>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsEaten}" Value="True">
-                            <Setter Property="Opacity" Value="0.6"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </wpf:MithrilDataGrid.RowStyle>
-        </wpf:MithrilDataGrid>
+        <!-- ── Food grid / cards ── -->
+        <Grid Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
+            <wpf:MithrilDataGrid x:Name="FoodsGrid"
+                                ItemsSource="{Binding Foods}"
+                                Visibility="{Binding IsGridView, Converter={StaticResource BoolToVis}}"
+                                Mode="ReadOnly"
+                                GridLinesVisibility="None"
+                                EnableRowVirtualization="True"
+                                EnableColumnVirtualization="True"
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling"
+                                VirtualizingPanel.ScrollUnit="Pixel"
+                                ScrollViewer.CanContentScroll="True">
+                <wpf:MithrilDataGrid.Columns>
+                    <DataGridCheckBoxColumn Header="" Binding="{Binding IsEaten, Mode=OneWay}"
+                                            Width="32" IsReadOnly="True"
+                                            wpf:MithrilDataGrid.QueryName="IsEaten"/>
+                    <DataGridTemplateColumn Header="Name" Width="*" SortMemberPath="Name" SortDirection="Ascending"
+                                            wpf:MithrilDataGrid.QueryName="Name">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Type" Binding="{Binding FoodType}" Width="110"/>
+                    <DataGridTextColumn Header="Level" Binding="{Binding FoodLevel}" Width="60"/>
+                    <DataGridTextColumn Header="Req" Binding="{Binding GourmandLevelReq}" Width="50"/>
+                    <DataGridTextColumn Header="Count" Binding="{Binding EatenCount}" Width="60"/>
+                    <DataGridTextColumn Header="Tags" Binding="{Binding DietaryTags}" Width="140"/>
+                </wpf:MithrilDataGrid.Columns>
+                <wpf:MithrilDataGrid.RowStyle>
+                    <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
+                        <Setter Property="ToolTip">
+                            <Setter.Value>
+                                <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                         Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                    <ToolTip.ContentTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                    CornerRadius="4" Padding="10" MaxWidth="320">
+                                                <DockPanel>
+                                                    <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                   Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding FoodType}" Foreground="#CCFFFFFF"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"/>
+                                                        <TextBlock Text="{Binding LockedReason}" Foreground="#FFCC6666"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"
+                                                                   Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ToolTip.ContentTemplate>
+                                </ToolTip>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsEaten}" Value="True">
+                                <Setter Property="Opacity" Value="{StaticResource EatenOpacityKey}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                <Setter Property="Opacity" Value="{StaticResource LockedOpacityKey}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </wpf:MithrilDataGrid.RowStyle>
+            </wpf:MithrilDataGrid>
+
+            <ListBox x:Name="FoodsCards"
+                     ItemsSource="{Binding Foods}"
+                     Visibility="{Binding IsCardView, Converter={StaticResource BoolToVis}}"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <wpf:MithrilVirtualizingWrapPanel ItemWidth="330" ItemHeight="130"/>
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="CardRoot" Margin="6" Padding="10" CornerRadius="6"
+                                Background="{StaticResource BgSurfaceBrush}">
+                            <Border.Style>
+                                <!-- Three-state visual: default (uneaten), eaten (accent border + check
+                                     badge + slight dim), locked (subtle border + heavy dim + lock badge).
+                                     BorderBrush / BorderThickness / Opacity are owned by the Style so
+                                     triggers can override them — local attribute values would otherwise
+                                     beat trigger setters per WPF DP precedence. -->
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Opacity" Value="1"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEaten}" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
+                                            <Setter Property="Opacity" Value="{StaticResource EatenOpacityKey}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                            <Setter Property="Opacity" Value="{StaticResource LockedOpacityKey}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Border.ToolTip>
+                                <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
+                                         Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                    <ToolTip.ContentTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                                                    CornerRadius="4" Padding="10" MaxWidth="320">
+                                                <DockPanel>
+                                                    <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                                   Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                                                                   Foreground="{StaticResource AccentBrush}"
+                                                                   FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding FoodType}"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"/>
+                                                        <TextBlock Text="{Binding LockedReason}" Foreground="#FFCC6666"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"
+                                                                   Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ToolTip.ContentTemplate>
+                                </ToolTip>
+                            </Border.ToolTip>
+                            <DockPanel LastChildFill="True">
+                                <!-- Icon + state badge overlay (lock for locked, check for eaten) -->
+                                <Grid DockPanel.Dock="Left" Width="64" Height="64" Margin="0,0,10,0" VerticalAlignment="Top">
+                                    <wpf:IconImage IconId="{Binding IconId}" Width="64" Height="64"/>
+                                    <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Width="20" Height="20" CornerRadius="10"
+                                            Background="#FF1A1A1A" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                                            Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}">
+                                        <icon:PackIconLucide Kind="Lock" Width="11" Height="11"
+                                                             Foreground="{StaticResource AccentBrush}"
+                                                             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                                            Width="20" Height="20" CornerRadius="10"
+                                            Background="{StaticResource AccentBrush}" BorderBrush="#FF1A1A1A" BorderThickness="1"
+                                            Visibility="{Binding IsEaten, Converter={StaticResource BoolToVis}}">
+                                        <icon:PackIconLucide Kind="Check" Width="13" Height="13"
+                                                             Foreground="#FF1A1A1A"
+                                                             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </Grid>
+                                <!-- Name + REQ chip -->
+                                <Grid DockPanel.Dock="Top" Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               FontSize="{DynamicResource AppFontSizeMedium}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <Border Grid.Column="1" CornerRadius="3" Padding="5,1" Margin="6,0,0,0"
+                                            Background="{StaticResource BgRecessedBrush}"
+                                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                                            Visibility="{Binding GourmandLevelReq, Converter={StaticResource PositiveIntToVis}}">
+                                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeXSmall}">
+                                            <Run Text="REQ"/>
+                                            <Run Text="{Binding GourmandLevelReq, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </Border>
+                                </Grid>
+                                <!-- Type + Progress -->
+                                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding FoodType}"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                                    <TextBlock Grid.Column="1"
+                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeHint}">
+                                        <Run Text="Progress:"/>
+                                        <Run Text="{Binding EatenCount, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        <Run Text="/1"/>
+                                    </TextBlock>
+                                </Grid>
+                                <!-- Dietary tag chips -->
+                                <ItemsControl ItemsSource="{Binding DietaryTagList}" VerticalAlignment="Bottom">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border CornerRadius="3" Padding="5,1" Margin="0,2,4,0"
+                                                    Background="{StaticResource BgRecessedBrush}"
+                                                    BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1">
+                                                <TextBlock Text="{Binding}"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeXSmall}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
     </DockPanel>
 </UserControl>

@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
+using System.Windows;
 using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
@@ -18,15 +20,18 @@ public sealed partial class GourmandViewModel : ObservableObject
 {
     private readonly GourmandStateMachine _state;
     private readonly FoodCatalog _catalog;
+    private readonly PippinSettings? _settings;
     private readonly IActiveCharacterService? _activeChar;
     private readonly IDialogService? _dialogs;
     private readonly PippinShareCardRenderer? _shareRenderer;
     private readonly IIconCacheService? _iconCache;
     private readonly ICollectionView _foodsView;
+    private readonly Dispatcher _dispatcher;
 
     public GourmandViewModel(
         GourmandStateMachine state,
         FoodCatalog catalog,
+        PippinSettings? settings = null,
         IActiveCharacterService? characterData = null,
         IDialogService? dialogs = null,
         PippinShareCardRenderer? shareRenderer = null,
@@ -34,34 +39,75 @@ public sealed partial class GourmandViewModel : ObservableObject
     {
         _state = state;
         _catalog = catalog;
+        _settings = settings;
         _activeChar = characterData;
         _dialogs = dialogs;
         _shareRenderer = shareRenderer;
         _iconCache = iconCache;
+        _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+
+        if (settings is not null)
+        {
+            _viewMode = settings.ViewMode;
+            _hideLocked = settings.HideLocked;
+        }
 
         Foods = new ObservableCollection<FoodItemViewModel>();
         _foodsView = CollectionViewSource.GetDefaultView(Foods);
         // Grid composes its QueryText predicate on top of this combo-level filter.
         _foodsView.Filter = PassesComboFilters;
 
-        _state.StateChanged += (_, _) => Rebuild();
-        _catalog.CatalogChanged += (_, _) => Rebuild();
+        // Marshal every event-driven Rebuild to the UI thread. CDN refreshes (which
+        // fire CatalogChanged) and Player.log parsing (which fires StateChanged) both
+        // run on background threads; Foods is bound to a WPF ICollectionView that
+        // throws on cross-thread SourceCollection mutations, leaving Foods in a
+        // half-cleared state and the filter pipeline corrupted until app restart.
+        _state.StateChanged += (_, _) => DispatchRebuild();
+        _catalog.CatalogChanged += (_, _) => DispatchRebuild();
         if (_activeChar is not null)
         {
             _activeChar.ActiveCharacterChanged += (_, _) =>
             {
-                OnPropertyChanged(nameof(GourmandLevel));
-                Rebuild();
+                _dispatcher.BeginInvoke(() =>
+                {
+                    OnPropertyChanged(nameof(GourmandLevel));
+                    Rebuild();
+                });
             };
-            _activeChar.CharacterExportsChanged += (_, _) => OnPropertyChanged(nameof(GourmandLevel));
+            // Only rebuild on export refresh if the Gourmand level actually changed —
+            // otherwise we churn Foods every few seconds for no benefit.
+            _activeChar.CharacterExportsChanged += (_, _) =>
+            {
+                _dispatcher.BeginInvoke(() =>
+                {
+                    var newLevel = GourmandLevel;
+                    if (newLevel != _lastObservedLevel)
+                    {
+                        _lastObservedLevel = newLevel;
+                        OnPropertyChanged(nameof(GourmandLevel));
+                        Rebuild();
+                    }
+                });
+            };
+            _lastObservedLevel = GourmandLevel;
         }
         Rebuild();
+    }
+
+    private int _lastObservedLevel;
+
+    private void DispatchRebuild()
+    {
+        if (_dispatcher.CheckAccess()) Rebuild();
+        else _dispatcher.BeginInvoke(Rebuild);
     }
 
     public ObservableCollection<FoodItemViewModel> Foods { get; }
 
     [ObservableProperty] private string _foodTypeFilter = "All";
     [ObservableProperty] private string _eatenFilter = "All";
+    [ObservableProperty] private string _viewMode = "Grid";
+    [ObservableProperty] private bool _hideLocked;
 
     [ObservableProperty] private int _eatenCount;
     [ObservableProperty] private int _totalCount;
@@ -79,8 +125,22 @@ public sealed partial class GourmandViewModel : ObservableObject
         }
     }
 
+    public bool IsGridView => ViewMode == "Grid";
+    public bool IsCardView => ViewMode == "Cards";
+
     partial void OnFoodTypeFilterChanged(string value) => _foodsView.Refresh();
     partial void OnEatenFilterChanged(string value) => _foodsView.Refresh();
+    partial void OnHideLockedChanged(bool value)
+    {
+        _foodsView.Refresh();
+        if (_settings is not null) _settings.HideLocked = value;
+    }
+    partial void OnViewModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsGridView));
+        OnPropertyChanged(nameof(IsCardView));
+        if (_settings is not null) _settings.ViewMode = value;
+    }
 
     private void Rebuild()
     {
@@ -89,11 +149,12 @@ public sealed partial class GourmandViewModel : ObservableObject
 
         // Build the full list off the bound collection, then swap in a single Reset
         // to avoid per-item CollectionChanged notifications on large catalogs.
+        var playerLevel = GourmandLevel;
         var list = new List<FoodItemViewModel>(_catalog.TotalCount + unknown.Count);
         foreach (var food in _catalog.ByInternalName.Values)
         {
             var isEaten = eaten.TryGetValue(food.InternalName, out var count);
-            list.Add(new FoodItemViewModel(food, isEaten, isEaten ? count : 0));
+            list.Add(new FoodItemViewModel(food, isEaten, isEaten ? count : 0, playerLevel));
         }
         foreach (var (name, count) in unknown)
             list.Add(new FoodItemViewModel(name, count));
@@ -133,6 +194,8 @@ public sealed partial class GourmandViewModel : ObservableObject
 
         if (EatenFilter == "Eaten" && !vm.IsEaten) return false;
         if (EatenFilter == "Uneaten" && vm.IsEaten) return false;
+
+        if (HideLocked && vm.IsLocked) return false;
 
         return true;
     }

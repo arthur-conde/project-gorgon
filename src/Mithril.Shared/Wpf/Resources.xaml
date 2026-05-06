@@ -39,6 +39,11 @@
     <sys:Double x:Key="AppFontSizeTitle">20</sys:Double>
     <sys:Double x:Key="AppFontSizeHero">22</sys:Double>
 
+    <!-- State opacities for cards / list items.
+         Eaten = "done, de-emphasised"; Locked = "out of reach, even more de-emphasised". -->
+    <sys:Double x:Key="EatenOpacityKey">0.6</sys:Double>
+    <sys:Double x:Key="LockedOpacityKey">0.45</sys:Double>
+
     <!-- Palette — matches hand-authored colors in Samwise/Shell/Legolas views -->
     <SolidColorBrush x:Key="BgPrimaryBrush"      Color="#FF1A1A1A"/>
     <SolidColorBrush x:Key="BgRecessedBrush"     Color="#FF1E1E1E"/>

@@ -95,6 +95,9 @@ public sealed partial class PippinShareDialogViewModel : DialogViewModelBase
     private bool _isPrefetching;
 
     [ObservableProperty]
+    private bool _isRendering;
+
+    [ObservableProperty]
     private double _prefetchProgress;
 
     [ObservableProperty]
@@ -173,21 +176,43 @@ public sealed partial class PippinShareDialogViewModel : DialogViewModelBase
         }
     }
 
-    [RelayCommand] private void CopyCard()      => CopyImage(BuildCard(), "Card image copied to clipboard.");
-    [RelayCommand] private void SaveCard()      => SaveImage(BuildCard(), "card");
-    [RelayCommand] private void CopyFullGrid()  => CopyImage(BuildFullGrid(), "Full grid copied to clipboard.");
-    [RelayCommand] private void SaveFullGrid()  => SaveImage(BuildFullGrid(), "full");
+    [RelayCommand] private Task CopyCardAsync()     => RenderThen(BuildCardAsync,     image => CopyImage(image, "Card image copied to clipboard."));
+    [RelayCommand] private Task SaveCardAsync()     => RenderThen(BuildCardAsync,     image => SaveImage(image, "card"));
+    [RelayCommand] private Task CopyFullGridAsync() => RenderThen(BuildFullGridAsync, image => CopyImage(image, "Full grid copied to clipboard."));
+    [RelayCommand] private Task SaveFullGridAsync() => RenderThen(BuildFullGridAsync, image => SaveImage(image, "full"));
 
-    private BitmapSource BuildCard()
+    private Task<BitmapSource> BuildCardAsync()
     {
         var payload = _buildPayload(IncludeCharacterName && HasCharacterName);
-        return _renderer.RenderCard(payload, _getGourmandLevel());
+        return _renderer.RenderCardAsync(payload, _getGourmandLevel());
     }
 
-    private BitmapSource BuildFullGrid()
+    private Task<BitmapSource> BuildFullGridAsync()
     {
         var payload = _buildPayload(IncludeCharacterName && HasCharacterName);
-        return _renderer.RenderFullGrid(payload, _getGourmandLevel());
+        return _renderer.RenderFullGridAsync(payload, _getGourmandLevel());
+    }
+
+    /// <summary>Render off the UI thread, surface progress via <see cref="IsRendering"/>,
+    /// then dispatch the bitmap on the UI thread (clipboard / save dialog calls require it).</summary>
+    private async Task RenderThen(Func<Task<BitmapSource>> build, Action<BitmapSource> dispatchOnUi)
+    {
+        if (IsRendering) return;
+        IsRendering = true;
+        StatusMessage = "Rendering image…";
+        try
+        {
+            var image = await build().ConfigureAwait(true);
+            dispatchOnUi(image);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Render failed: {ex.Message}";
+        }
+        finally
+        {
+            IsRendering = false;
+        }
     }
 
     private void CopyText(string text, string okMessage)

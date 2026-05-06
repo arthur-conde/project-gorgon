@@ -27,10 +27,16 @@ public sealed class IconImage : Image
         set => SetValue(IconIdProperty, value);
     }
 
+    static IconImage()
+    {
+        // DP metadata defaults (24×24) so that consumers can still override Width/Height
+        // in XAML without contending with constructor-time local DP writes.
+        WidthProperty.OverrideMetadata(typeof(IconImage), new FrameworkPropertyMetadata(24.0));
+        HeightProperty.OverrideMetadata(typeof(IconImage), new FrameworkPropertyMetadata(24.0));
+    }
+
     public IconImage()
     {
-        Width = 24;
-        Height = 24;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }

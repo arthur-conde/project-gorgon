@@ -14,9 +14,12 @@ namespace Pippin.Sharing;
 /// </summary>
 public sealed class PippinFullGridViewModel
 {
-    public const double Width = 1200;
-    public const double HeaderHeight = 36;
-    public const double RowHeight = 32;
+    // 960px wide exports cleanly fit 3 × 300px card cells inside the 20px DockPanel
+    // margin (920 inner). Larger widths waste right-edge whitespace because the
+    // WrapPanel left-aligns and won't stretch cards. Height is measure-driven —
+    // the renderer reads <see cref="System.Windows.FrameworkElement.DesiredSize"/>
+    // after a layout pass, so the image auto-sizes to wrap content exactly.
+    public const double Width = 960;
 
     public PippinFullGridViewModel(
         PippinSharePayload payload,
@@ -53,27 +56,28 @@ public sealed class PippinFullGridViewModel
         {
             var hasCount = eaten.TryGetValue(food.InternalName, out var count);
             var icon = food.IconId > 0 ? iconCache.GetOrLoadIcon(food.IconId) : null;
+            // For the sender's own export the gourmandLevel is known, so locked items
+            // render with the same lock-badge + dim treatment as the in-app cards.
+            var isLocked = !hasCount && food.GourmandLevelReq > 0 && gourmandLevel < food.GourmandLevelReq;
             rows.Add(new PippinFullGridRow(
                 food.Name, food.FoodType, food.FoodLevel, food.GourmandLevelReq,
-                hasCount ? count : 0, hasCount, FormatTags(food.DietaryTags), icon));
+                hasCount ? count : 0, hasCount, isLocked, food.DietaryTags, icon));
         }
 
         if (payload.UnknownByName is { } unknowns)
         {
             foreach (var (name, count) in unknowns)
-                rows.Add(new PippinFullGridRow(name, "Unknown", 0, 0, count, true, "", null));
+                rows.Add(new PippinFullGridRow(name, "Unknown", 0, 0, count, true, false, Array.Empty<string>(), null));
         }
 
         foreach (var (internalName, count) in eaten)
         {
             if (catalog.TryGetByInternalName(internalName, out _)) continue;
-            rows.Add(new PippinFullGridRow(internalName, "Unknown", 0, 0, count, true, "", null));
+            rows.Add(new PippinFullGridRow(internalName, "Unknown", 0, 0, count, true, false, Array.Empty<string>(), null));
         }
 
         rows.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         Rows = rows;
-
-        TotalHeight = HeaderHeight + Rows.Count * RowHeight + 80; // header strip + footer pad
     }
 
     public string CharacterTitle { get; }
@@ -81,11 +85,6 @@ public sealed class PippinFullGridViewModel
     public string StatsLine { get; }
     public string LastSyncText { get; }
     public IReadOnlyList<PippinFullGridRow> Rows { get; }
-
-    /// <summary>Computed pixel height needed to fit every row + header + footer.</summary>
-    public double TotalHeight { get; }
-
-    private static string FormatTags(IReadOnlyList<string> tags) => string.Join(", ", tags);
 }
 
 public sealed record PippinFullGridRow(
@@ -95,7 +94,8 @@ public sealed record PippinFullGridRow(
     int GourmandLevelReq,
     int EatenCount,
     bool IsEaten,
-    string DietaryTags,
+    bool IsLocked,
+    IReadOnlyList<string> DietaryTags,
     BitmapImage? Icon)
 {
     public bool HasIcon => Icon is not null;
