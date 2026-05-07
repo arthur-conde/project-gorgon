@@ -74,6 +74,25 @@
                           Stroke="{Binding Brushes.RouteLine}" StrokeThickness="2"
                           StrokeDashArray="4 2" IsHitTestVisible="False" />
 
+                <!-- Active segment: from the last-collected pin (or the anchor) to the
+                     current active target. Drawn on top of the static route line with a
+                     marching-ants StrokeDashOffset animation, so the player's eye is led
+                     to "where to go next" without numbering individual pins. -->
+                <Polyline Points="{Binding ActiveSegmentPoints}"
+                          Stroke="{Binding Brushes.RouteLine}" StrokeThickness="4"
+                          StrokeDashArray="6 3" IsHitTestVisible="False">
+                    <Polyline.Triggers>
+                        <EventTrigger RoutedEvent="Polyline.Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
+                                                     From="0" To="9" Duration="0:0:0.6" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Polyline.Triggers>
+                </Polyline>
+
                 <!-- Player marker: outer ring + inner dot -->
                 <Canvas IsHitTestVisible="False">
                     <Grid Width="18" Height="18"
@@ -193,10 +212,6 @@
                                                     </Style>
                                                 </Ellipse.Style>
                                             </Ellipse>
-                                            <TextBlock Text="{Binding RouteOrder, Converter={x:Static controls:OneBasedConverter.Instance}}"
-                                                       Foreground="White"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Top"
-                                                       Margin="0,2,0,0" FontSize="{DynamicResource AppFontSizeSmall}" FontWeight="Bold" />
                                         </Grid>
                                     </ControlTemplate>
                                 </Thumb.Template>

@@ -264,9 +264,30 @@
                 <!-- Gathering -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Gathering}">
                     <TextBlock Text="Walk to each target in order. We'll mark them collected automatically. New surveys are ignored until you reset (the projector is anchored to where you started)."
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,24"
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- Active-target summary: shows progress + the next pin's name out
+                         here, since the map overlay no longer numbers individual pins. -->
+                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
+                            HorizontalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Session.ActiveTargetSummary}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding Session.ActiveTargetSummary}"
+                                   FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource AccentSoftTextBrush}" />
+                    </Border>
+
                     <Button Content="Mark current collected" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
                             Command="{Binding ControlPanel.MarkCurrentCollectedCommand}" />
