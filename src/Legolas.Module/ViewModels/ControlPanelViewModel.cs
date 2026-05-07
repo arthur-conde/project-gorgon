@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
+using Legolas.Interop;
 
 namespace Legolas.ViewModels;
 
@@ -85,6 +87,108 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         {
             if (_settings.AutoClickThroughInventoryDuringSession == value) return;
             _settings.AutoClickThroughInventoryDuringSession = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool AutoHideOverlaysOnGameUnfocused
+    {
+        get => _settings.AutoHideOverlaysOnGameUnfocused;
+        set
+        {
+            if (_settings.AutoHideOverlaysOnGameUnfocused == value) return;
+            _settings.AutoHideOverlaysOnGameUnfocused = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string GameProcessName
+    {
+        get => _settings.GameProcessName;
+        set
+        {
+            if (string.Equals(_settings.GameProcessName, value, StringComparison.Ordinal)) return;
+            _settings.GameProcessName = value;
+            OnPropertyChanged();
+        }
+    }
+
+    [ObservableProperty]
+    private string _detectGameProcessStatus = string.Empty;
+
+    /// <summary>
+    /// Capture the foreground window's process name 3 seconds after click,
+    /// so the user has time to alt-tab to the game. Skips Mithril's own
+    /// process — the foreground at click-time is always Mithril, so without
+    /// the delay we'd just overwrite the setting with our own name.
+    /// </summary>
+    [RelayCommand]
+    private async Task DetectGameProcessAsync()
+    {
+        for (var i = 3; i > 0; i--)
+        {
+            DetectGameProcessStatus = $"Switch to the game window... capturing in {i}s";
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        var hwnd = User32Focus.GetForegroundWindow();
+        if (hwnd == IntPtr.Zero)
+        {
+            DetectGameProcessStatus = "No foreground window detected.";
+            return;
+        }
+
+        User32Focus.GetWindowThreadProcessId(hwnd, out var pid);
+        if (pid == 0)
+        {
+            DetectGameProcessStatus = "Could not resolve foreground process ID.";
+            return;
+        }
+
+        if (pid == (uint)Environment.ProcessId)
+        {
+            DetectGameProcessStatus = "Mithril was foreground — switch to the game and try again.";
+            return;
+        }
+
+        try
+        {
+            using var proc = Process.GetProcessById((int)pid);
+            GameProcessName = proc.ProcessName;
+            DetectGameProcessStatus = $"Captured: {proc.ProcessName}";
+        }
+        catch (Exception ex)
+        {
+            DetectGameProcessStatus = $"Could not read process: {ex.Message}";
+        }
+    }
+
+    public double NudgeStepDefault
+    {
+        get => _settings.NudgeStepDefault;
+        set
+        {
+            _settings.NudgeStepDefault = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double NudgeStepFast
+    {
+        get => _settings.NudgeStepFast;
+        set
+        {
+            _settings.NudgeStepFast = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double NudgeStepFine
+    {
+        get => _settings.NudgeStepFine;
+        set
+        {
+            _settings.NudgeStepFine = value;
             OnPropertyChanged();
         }
     }

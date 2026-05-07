@@ -74,6 +74,25 @@
                           Stroke="{Binding Brushes.RouteLine}" StrokeThickness="2"
                           StrokeDashArray="4 2" IsHitTestVisible="False" />
 
+                <!-- Active segment: from the last-collected pin (or the anchor) to the
+                     current active target. Drawn on top of the static route line with a
+                     marching-ants StrokeDashOffset animation, so the player's eye is led
+                     to "where to go next" without numbering individual pins. -->
+                <Polyline Points="{Binding ActiveSegmentPoints}"
+                          Stroke="{Binding Brushes.RouteLine}" StrokeThickness="4"
+                          StrokeDashArray="6 3" IsHitTestVisible="False">
+                    <Polyline.Triggers>
+                        <EventTrigger RoutedEvent="Polyline.Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
+                                                     From="0" To="9" Duration="0:0:0.6" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Polyline.Triggers>
+                </Polyline>
+
                 <!-- Player marker: outer ring + inner dot -->
                 <Canvas IsHitTestVisible="False">
                     <Grid Width="18" Height="18"
@@ -129,12 +148,24 @@
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid>
-                                            <!-- Outer ring: pulses while pending (uncorrected) -->
-                                            <Ellipse StrokeThickness="2" Fill="#01000000">
+                                            <!-- Outer ring: pulses opacity + stroke thickness + glow,
+                                                 plus marching-ants dashes, while pending (uncorrected).
+                                                 Effect is set via a Setter (not a property-element) so it
+                                                 exists before the IsCorrected=False trigger walks the
+                                                 (UIElement.Effect).(DropShadowEffect.BlurRadius) animation
+                                                 path — otherwise WPF throws "Effect property does not
+                                                 point to a DependencyObject" at template materialization. -->
+                                            <Ellipse StrokeThickness="2" Fill="#01000000"
+                                                     StrokeDashArray="4 2" StrokeDashOffset="0">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
                                                         <Setter Property="Opacity" Value="1" />
                                                         <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect ShadowDepth="0" BlurRadius="4" Opacity="0.85" Color="#FFFFFFFF" />
+                                                            </Setter.Value>
+                                                        </Setter>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsCorrected}" Value="True">
                                                                 <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
@@ -145,11 +176,22 @@
                                                                         <Storyboard RepeatBehavior="Forever" AutoReverse="True">
                                                                             <DoubleAnimation Storyboard.TargetProperty="Opacity"
                                                                                 From="1.0" To="0.35" Duration="0:0:0.7" />
+                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeThickness"
+                                                                                From="2.0" To="4.0" Duration="0:0:0.7" />
+                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                                                                                From="4" To="16" Duration="0:0:0.7" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                    <BeginStoryboard Name="PinDashMarch">
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
+                                                                                From="0" To="6" Duration="0:0:1.0" />
                                                                         </Storyboard>
                                                                     </BeginStoryboard>
                                                                 </DataTrigger.EnterActions>
                                                                 <DataTrigger.ExitActions>
                                                                     <StopStoryboard BeginStoryboardName="PinPulse" />
+                                                                    <StopStoryboard BeginStoryboardName="PinDashMarch" />
                                                                 </DataTrigger.ExitActions>
                                                             </DataTrigger>
                                                         </Style.Triggers>
@@ -170,10 +212,6 @@
                                                     </Style>
                                                 </Ellipse.Style>
                                             </Ellipse>
-                                            <TextBlock Text="{Binding RouteOrder, Converter={x:Static controls:OneBasedConverter.Instance}}"
-                                                       Foreground="White"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Top"
-                                                       Margin="0,2,0,0" FontSize="{DynamicResource AppFontSizeSmall}" FontWeight="Bold" />
                                         </Grid>
                                     </ControlTemplate>
                                 </Thumb.Template>

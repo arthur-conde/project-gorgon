@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
 using Mithril.Shared.Modules;
+using Legolas.Domain;
+using Legolas.Services;
 using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,23 +15,37 @@ namespace Legolas.Hotkeys;
 /// <see cref="SessionState.IsMapVisible"/> / <see cref="SessionState.IsInventoryVisible"/>.
 /// Overlays cannot live inside the shell's ContentPresenter, so they stay as
 /// top-level <see cref="Window"/>s owned by a module-scoped controller.
+///
+/// Visibility is gated by both the user's intent flag AND the in-app
+/// foreground state from <see cref="ForegroundFocusGate"/> (issue #116) so
+/// alt-tabbing to a browser doesn't leave the overlays floating over it.
+/// The user's intent flag is never mutated here — only the rendered window.
 /// </summary>
 public sealed class OverlayController : IHostedService
 {
     private readonly IServiceProvider _services;
     private readonly ModuleGates _gates;
     private readonly SessionState _session;
+    private readonly LegolasSettings _settings;
+    private readonly ForegroundFocusGate _focusGate;
     private readonly CancellationTokenSource _stopCts = new();
     private Task? _activationTask;
     private bool _subscribed;
     private MapOverlayView? _map;
     private InventoryOverlayView? _inventory;
 
-    public OverlayController(IServiceProvider services, ModuleGates gates, SessionState session)
+    public OverlayController(
+        IServiceProvider services,
+        ModuleGates gates,
+        SessionState session,
+        LegolasSettings settings,
+        ForegroundFocusGate focusGate)
     {
         _services = services;
         _gates = gates;
         _session = session;
+        _settings = settings;
+        _focusGate = focusGate;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -44,6 +60,8 @@ public sealed class OverlayController : IHostedService
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     _session.PropertyChanged += OnSessionPropertyChanged;
+                    _focusGate.PropertyChanged += OnFocusGatePropertyChanged;
+                    _settings.PropertyChanged += OnSettingsPropertyChanged;
                     _subscribed = true;
                     SyncMap();
                     SyncInventory();
@@ -61,7 +79,12 @@ public sealed class OverlayController : IHostedService
         if (Application.Current is null) return;
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            if (_subscribed) _session.PropertyChanged -= OnSessionPropertyChanged;
+            if (_subscribed)
+            {
+                _session.PropertyChanged -= OnSessionPropertyChanged;
+                _focusGate.PropertyChanged -= OnFocusGatePropertyChanged;
+                _settings.PropertyChanged -= OnSettingsPropertyChanged;
+            }
             _map?.Close();
             _inventory?.Close();
             _map = null;
@@ -75,15 +98,36 @@ public sealed class OverlayController : IHostedService
         else if (e.PropertyName == nameof(SessionState.IsInventoryVisible)) SyncInventory();
     }
 
+    private void OnFocusGatePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ForegroundFocusGate.IsInApp)) return;
+        SyncMap();
+        SyncInventory();
+    }
+
+    private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // Toggling the auto-hide setting itself should immediately reflect on
+        // current visibility — flipping it ON while a non-game window has focus
+        // should hide the overlays right away, and flipping it OFF should
+        // restore them.
+        if (e.PropertyName != nameof(LegolasSettings.AutoHideOverlaysOnGameUnfocused)) return;
+        SyncMap();
+        SyncInventory();
+    }
+
+    private bool ShouldRender(bool sessionFlag) =>
+        sessionFlag && (_focusGate.IsInApp || !_settings.AutoHideOverlaysOnGameUnfocused);
+
     private void SyncMap()
     {
-        if (_session.IsMapVisible) EnsureMap().Show();
+        if (ShouldRender(_session.IsMapVisible)) EnsureMap().Show();
         else _map?.Hide();
     }
 
     private void SyncInventory()
     {
-        if (_session.IsInventoryVisible) EnsureInventory().Show();
+        if (ShouldRender(_session.IsInventoryVisible)) EnsureInventory().Show();
         else _inventory?.Hide();
     }
 

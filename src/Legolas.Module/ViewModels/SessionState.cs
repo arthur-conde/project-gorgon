@@ -50,10 +50,33 @@ public sealed partial class SessionState : ObservableObject
         foreach (var s in Surveys)
             s.IsActiveTarget = ReferenceEquals(s, next);
 
+        UpdateActiveTargetSummary(next);
+
         // Fire only on the transition: non-empty collection where nothing is
         // uncollected. After a reset (Surveys becomes empty) this doesn't re-fire.
         if (next is null && Surveys.Count > 0)
             AllCollected?.Invoke();
+    }
+
+    /// <summary>
+    /// One-line "Next: #6 of 12 — Pin Name" surfaced in the wizard panel so
+    /// players can see route progress without opening the map overlay.
+    /// Empty when there's no active target (idle, all collected, or no route
+    /// has been computed yet).
+    /// </summary>
+    [ObservableProperty]
+    private string _activeTargetSummary = string.Empty;
+
+    private void UpdateActiveTargetSummary(SurveyItemViewModel? active)
+    {
+        if (active is null || !active.RouteOrder.HasValue)
+        {
+            ActiveTargetSummary = string.Empty;
+            return;
+        }
+        var total = Surveys.Count(s => s.RouteOrder.HasValue);
+        var oneBased = active.RouteOrder!.Value + 1;
+        ActiveTargetSummary = $"Next: #{oneBased} of {total} — {active.Name}";
     }
 
     [ObservableProperty] private PixelPoint _playerPosition = new(400, 300);

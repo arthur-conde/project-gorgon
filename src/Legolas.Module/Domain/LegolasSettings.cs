@@ -113,6 +113,76 @@ public sealed class LegolasSettings : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AutoClickThroughInventoryDuringSession)));
         }
     }
+
+    private bool _autoHideOverlaysOnGameUnfocused = true;
+    public bool AutoHideOverlaysOnGameUnfocused
+    {
+        get => _autoHideOverlaysOnGameUnfocused;
+        set
+        {
+            if (_autoHideOverlaysOnGameUnfocused == value) return;
+            _autoHideOverlaysOnGameUnfocused = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AutoHideOverlaysOnGameUnfocused)));
+        }
+    }
+
+    private string _gameProcessName = "ProjectGorgon";
+    public string GameProcessName
+    {
+        get => _gameProcessName;
+        set
+        {
+            // Trim only — the predicate is a case-insensitive substring match,
+            // so internal whitespace (e.g. "Project Gorgon") is allowed for
+            // launchers that name the executable with a space.
+            var v = value?.Trim() ?? string.Empty;
+            if (string.Equals(_gameProcessName, v, StringComparison.Ordinal)) return;
+            _gameProcessName = v;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GameProcessName)));
+        }
+    }
+
+    private double _nudgeStepDefault = 1.0;
+    public double NudgeStepDefault
+    {
+        get => _nudgeStepDefault;
+        set
+        {
+            // Clamp to a positive minimum so a misconfigured setting can't make
+            // the nudge keys silently no-op. Using DefaultValue here would leave
+            // the user unable to override, so we just guard the lower bound.
+            var clamped = value > 0 ? value : 1.0;
+            if (Math.Abs(_nudgeStepDefault - clamped) < 1e-6) return;
+            _nudgeStepDefault = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NudgeStepDefault)));
+        }
+    }
+
+    private double _nudgeStepFast = 5.0;
+    public double NudgeStepFast
+    {
+        get => _nudgeStepFast;
+        set
+        {
+            var clamped = value > 0 ? value : 5.0;
+            if (Math.Abs(_nudgeStepFast - clamped) < 1e-6) return;
+            _nudgeStepFast = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NudgeStepFast)));
+        }
+    }
+
+    private double _nudgeStepFine = 0.25;
+    public double NudgeStepFine
+    {
+        get => _nudgeStepFine;
+        set
+        {
+            var clamped = value > 0 ? value : 0.25;
+            if (Math.Abs(_nudgeStepFine - clamped) < 1e-6) return;
+            _nudgeStepFine = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NudgeStepFine)));
+        }
+    }
 }
 
 public sealed class WindowLayout

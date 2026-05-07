@@ -113,6 +113,11 @@ public sealed class LegolasModule : IMithrilModule
             return view;
         });
 
+        // Foreground-focus tracking (issue #116). Singleton + hosted-service
+        // so OverlayController can read its IsInApp state directly.
+        services.AddSingleton<ForegroundFocusGate>();
+        services.AddHostedService(sp => sp.GetRequiredService<ForegroundFocusGate>());
+
         // Overlay lifecycle
         services.AddHostedService<OverlayController>();
         services.AddHostedService<AutoOverlayCoordinator>();
@@ -130,6 +135,19 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, ToggleInventoryClickThroughCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleAllOverlaysCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleBearingWedgesCommand>();
+        // Issue #117: 12 pin-nudge commands (4 directions × 3 step tiers)
+        services.AddSingleton<IHotkeyCommand, NudgePinUpCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinUpFastCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinUpFineCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinDownCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinDownFastCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinDownFineCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinLeftCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinLeftFastCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinLeftFineCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinRightCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinRightFastCommand>();
+        services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
 
         // Chat-log ingestion
         services.AddHostedService<LogIngestionService>();

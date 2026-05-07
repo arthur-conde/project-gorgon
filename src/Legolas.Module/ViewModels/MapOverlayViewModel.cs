@@ -91,6 +91,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             RebuildRouteGeometry();
             if (sender is SurveyItemViewModel s) RebuildWedgeFor(s);
         }
+        else if (e.PropertyName is nameof(SurveyItemViewModel.IsActiveTarget))
+        {
+            // Active-target change rotates the live segment without changing
+            // the rest of the route, so don't churn the full polyline.
+            RebuildActiveSegment();
+        }
     }
 
     public ObservableCollection<SurveyItemViewModel> Surveys => _session.Surveys;
@@ -115,6 +121,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     [ObservableProperty]
     private PointCollection _routePoints = new();
+
+    /// <summary>
+    /// Two-point polyline drawn on top of the static route line: from the
+    /// most-recently-collected pin (or the player anchor if nothing's been
+    /// collected yet) to the current <see cref="SurveyItemViewModel.IsActiveTarget"/>
+    /// pin. We can't read the player's live position — we only know the anchor —
+    /// so the last-collected pin is the closest available proxy for "where the
+    /// player physically is right now". Empty when there's no active target.
+    /// </summary>
+    [ObservableProperty]
+    private PointCollection _activeSegmentPoints = new();
 
     [ObservableProperty] private double _zoom = 1.0;
     [ObservableProperty] private double _panX;
@@ -324,6 +341,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         if (!_session.ShowRouteLines)
         {
             RoutePoints = new PointCollection();
+            ActiveSegmentPoints = new PointCollection();
             return;
         }
 
@@ -339,6 +357,43 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             points.Add(new Point(p.X, p.Y));
         }
         RoutePoints = points;
+
+        RebuildActiveSegment();
+    }
+
+    private void RebuildActiveSegment()
+    {
+        if (!_session.ShowRouteLines)
+        {
+            ActiveSegmentPoints = new PointCollection();
+            return;
+        }
+
+        var active = Surveys.FirstOrDefault(s => s.IsActiveTarget);
+        if (active is null || !active.EffectivePixel.HasValue)
+        {
+            ActiveSegmentPoints = new PointCollection();
+            return;
+        }
+
+        // We can't read the live player position — only the anchor set via
+        // "Set Player Position". Use the most-recently-collected pin (highest
+        // RouteOrder among collected) as a proxy for where the player is now;
+        // fall back to the anchor before the first collection.
+        var lastCollected = Surveys
+            .Where(s => s.Collected && s.RouteOrder.HasValue && s.EffectivePixel.HasValue)
+            .OrderByDescending(s => s.RouteOrder!.Value)
+            .FirstOrDefault();
+
+        var startX = lastCollected?.EffectivePixel?.X ?? PlayerPosition.X;
+        var startY = lastCollected?.EffectivePixel?.Y ?? PlayerPosition.Y;
+        var endPx = active.EffectivePixel.Value;
+
+        ActiveSegmentPoints = new PointCollection
+        {
+            new Point(startX, startY),
+            new Point(endPx.X, endPx.Y),
+        };
     }
 }
 

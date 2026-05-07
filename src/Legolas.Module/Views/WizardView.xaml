@@ -222,13 +222,24 @@
                             <TextBlock Text="1.  Use the leftmost survey"
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-                            <TextBlock Text="2.  Click its position on the map when the [Status] line appears"
+                            <TextBlock TextWrapping="Wrap"
                                        FontSize="{DynamicResource AppFontSizeBody}"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2">
+                                <Run Text="2.  Click its position on the map. For the first couple of surveys, read the " />
+                                <Run Text="[Status]" FontWeight="SemiBold" />
+                                <Run Text=" line in chat for direction + distance. After that we have enough data to project, so upcoming pins will pre-position themselves — just click near the in-game ping." />
+                            </TextBlock>
                             <TextBlock Text="3.  Repeat left-to-right, then start the next row from the left"
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
+                        <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextTertiaryBrush}">
+                            <Run Text="Tip: fine-tune the selected pin with the Pin Nudge hotkeys — bind keys under Settings → Hotkeys, category " />
+                            <Run Text="Legolas · Pin Nudge" FontStyle="Italic" />
+                            <Run Text="." />
+                        </TextBlock>
                     </StackPanel>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
                             HorizontalAlignment="Center">
@@ -264,9 +275,30 @@
                 <!-- Gathering -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Gathering}">
                     <TextBlock Text="Walk to each target in order. We'll mark them collected automatically. New surveys are ignored until you reset (the projector is anchored to where you started)."
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,24"
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- Active-target summary: shows progress + the next pin's name out
+                         here, since the map overlay no longer numbers individual pins. -->
+                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
+                            HorizontalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Session.ActiveTargetSummary}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding Session.ActiveTargetSummary}"
+                                   FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource AccentSoftTextBrush}" />
+                    </Border>
+
                     <Button Content="Mark current collected" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
                             Command="{Binding ControlPanel.MarkCurrentCollectedCommand}" />
