@@ -19,13 +19,14 @@
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
 
-            <!-- Step-tier toggle. ToggleButton (not RadioButton) so exclusivity
-                 is driven purely by the SelectedStep binding — RadioButton's
-                 NameScope-based group exclusivity desyncs across the two
-                 NudgePadView instances (wizard + overlay), since each
-                 UserControl introduces its own scope. With ToggleButton the
-                 only source of truth is the bound enum on the shared VM. -->
-            <Style x:Key="StepToggle" TargetType="ToggleButton">
+            <!-- Step-tier picker. RadioButton is the right primitive (mutually
+                 exclusive selection); re-templated to render as a chip rather
+                 than the default circle bullet. Cross-instance sync (wizard ↔
+                 overlay) comes from the shared SelectedStep on the singleton
+                 VM via TwoWay binding — not from RadioButton's NameScope-bound
+                 GroupName, which would only group siblings within one
+                 UserControl. -->
+            <Style x:Key="StepToggle" TargetType="RadioButton">
                 <Setter Property="Margin" Value="2,0" />
                 <Setter Property="Padding" Value="8,3" />
                 <Setter Property="Background" Value="Transparent" />
@@ -36,7 +37,7 @@
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="Template">
                     <Setter.Value>
-                        <ControlTemplate TargetType="ToggleButton">
+                        <ControlTemplate TargetType="RadioButton">
                             <Border x:Name="Bd"
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
@@ -98,26 +99,21 @@
                     Command="{Binding NudgeDownCommand}" />
         </Grid>
 
-        <!-- Step-tier picker. ToggleButtons keyed off SelectedStep via a
-             converter — the bound enum is the single source of truth for
-             exclusivity, so toggles in different NudgePadView instances stay
-             in sync (wizard ↔ overlay). -->
+        <!-- Step-tier picker. RadioButtons bound TwoWay to SelectedStep via
+             NudgeStepSizeRadioConverter; the converter's ConvertBack returns
+             Binding.DoNothing on the uncheck side, so the source-of-truth is
+             only ever set by an explicit user check. The shared singleton VM
+             keeps both NudgePadView instances (wizard + overlay) in sync. -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
-            <ToggleButton Style="{StaticResource StepToggle}"
-                          Content="Fine"
-                          Tag="{x:Static domain:NudgeStepSize.Fine}"
-                          Click="StepToggle_Click"
-                          IsChecked="{Binding SelectedStep, Mode=OneWay, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Fine}}" />
-            <ToggleButton Style="{StaticResource StepToggle}"
-                          Content="Default"
-                          Tag="{x:Static domain:NudgeStepSize.Default}"
-                          Click="StepToggle_Click"
-                          IsChecked="{Binding SelectedStep, Mode=OneWay, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Default}}" />
-            <ToggleButton Style="{StaticResource StepToggle}"
-                          Content="Fast"
-                          Tag="{x:Static domain:NudgeStepSize.Fast}"
-                          Click="StepToggle_Click"
-                          IsChecked="{Binding SelectedStep, Mode=OneWay, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Fast}}" />
+            <RadioButton Style="{StaticResource StepToggle}"
+                         Content="Fine"
+                         IsChecked="{Binding SelectedStep, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Fine}}" />
+            <RadioButton Style="{StaticResource StepToggle}"
+                         Content="Default"
+                         IsChecked="{Binding SelectedStep, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Default}}" />
+            <RadioButton Style="{StaticResource StepToggle}"
+                         Content="Fast"
+                         IsChecked="{Binding SelectedStep, Converter={x:Static domain:NudgeStepSizeRadioConverter.Instance}, ConverterParameter={x:Static domain:NudgeStepSize.Fast}}" />
         </StackPanel>
     </StackPanel>
 </UserControl>

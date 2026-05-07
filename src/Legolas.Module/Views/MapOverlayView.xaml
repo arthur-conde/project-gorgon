@@ -296,7 +296,11 @@
                         <Binding ElementName="Self" Path="Settings.ShowNudgePadOnOverlay"
                                  Converter="{x:Static controls:BoolToVisibilityConverter.Instance}" />
                     </Border.Visibility>
-                    <views:NudgePadView DataContext="{Binding ElementName=Self, Path=NudgePad}" />
+                    <!-- DataContext set explicitly in code-behind. ElementName=Self
+                         binding to a plain CLR auto-property (NudgePad) is brittle
+                         w.r.t. ctor-body timing; null-binding silently broke the
+                         pad's Command/IsChecked bindings, so we set it deterministically. -->
+                    <views:NudgePadView x:Name="OverlayNudgePad" />
                 </Border>
 
                 <!-- On-overlay hint banner. Shown only during AwaitingPosition

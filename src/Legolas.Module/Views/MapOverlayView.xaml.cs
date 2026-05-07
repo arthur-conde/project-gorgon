@@ -42,6 +42,11 @@ public partial class MapOverlayView : Window
     {
         Settings = settings;
         NudgePad = nudgePad;
+        // Set the overlay pad's DataContext directly. An ElementName=Self binding
+        // on a non-notifying CLR property would resolve at indeterminate timing;
+        // assigning here guarantees the pad has its VM before any user input
+        // arrives, so Command/IsChecked bindings inside the pad always work.
+        OverlayNudgePad.DataContext = nudgePad;
         WindowLayoutBinder.Bind(this, settings.MapOverlay, saver.Touch);
         Loaded += (_, _) =>
         {
