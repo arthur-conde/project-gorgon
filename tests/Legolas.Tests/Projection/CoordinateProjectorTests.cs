@@ -69,6 +69,70 @@ public class CoordinateProjectorTests
 
         fitted.Scale.Should().BeApproximately(expectedScale, 1e-6);
         fitted.RotationRadians.Should().BeApproximately(expectedRotation, 1e-6);
+        fitted.Origin.X.Should().BeApproximately(origin.X, 1e-6);
+        fitted.Origin.Y.Should().BeApproximately(origin.Y, 1e-6);
+    }
+
+    [Fact]
+    public void Refit_recovers_true_origin_even_when_setorigin_was_biased()
+    {
+        // The fix: the original 2-DOF Refit kept origin pinned to wherever SetOrigin
+        // last put it, absorbing any anchor bias into scale/rotation as a permanent
+        // residual — worst near the anchor, vanishingly small far away. The new
+        // 4-DOF Refit recovers the true origin alongside scale/rotation.
+
+        const double expectedScale = 3.0;
+        var expectedRotation = Math.PI / 6;
+        var trueOrigin = new PixelPoint(500, 400);
+        var biasedOrigin = new PixelPoint(508, 397); // user clicked 8px east, 3px north of where they actually are
+
+        var offsets = new[]
+        {
+            new MetreOffset(10, 0),
+            new MetreOffset(0, 15),
+            new MetreOffset(-8, 12),
+            new MetreOffset(5, -7),
+            new MetreOffset(20, 25),
+        };
+
+        var corrections = new List<(MetreOffset, PixelPoint)>();
+        foreach (var offset in offsets)
+        {
+            var cos = Math.Cos(expectedRotation);
+            var sin = Math.Sin(expectedRotation);
+            var rotE = offset.East * cos + offset.North * sin;
+            var rotN = -offset.East * sin + offset.North * cos;
+            var pixel = new PixelPoint(trueOrigin.X + expectedScale * rotE,
+                                        trueOrigin.Y - expectedScale * rotN);
+            corrections.Add((offset, pixel));
+        }
+
+        var fitted = new CoordinateProjector();
+        fitted.SetOrigin(biasedOrigin);
+        fitted.Refit(corrections);
+
+        fitted.Scale.Should().BeApproximately(expectedScale, 1e-6);
+        fitted.RotationRadians.Should().BeApproximately(expectedRotation, 1e-6);
+        fitted.Origin.X.Should().BeApproximately(trueOrigin.X, 1e-6);
+        fitted.Origin.Y.Should().BeApproximately(trueOrigin.Y, 1e-6);
+    }
+
+    [Fact]
+    public void Refit_is_noop_when_all_corrections_are_coincident()
+    {
+        // Two corrections at the same offset/pixel carry no rotation/scale info —
+        // their centred metre vectors are zero, so Σ |z'|² = 0. Should silently
+        // no-op rather than divide by zero.
+        var projector = new CoordinateProjector();
+        projector.SetOrigin(new PixelPoint(100, 100));
+        var originalScale = projector.Scale;
+        var originalRotation = projector.RotationRadians;
+
+        var pt = (new MetreOffset(5, 5), new PixelPoint(120, 80));
+        projector.Refit(new[] { pt, pt });
+
+        projector.Scale.Should().Be(originalScale);
+        projector.RotationRadians.Should().Be(originalRotation);
     }
 
     [Fact]
