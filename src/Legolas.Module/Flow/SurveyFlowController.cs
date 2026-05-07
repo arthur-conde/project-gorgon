@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 using Legolas.ViewModels;
@@ -6,15 +5,14 @@ using Legolas.ViewModels;
 namespace Legolas.Flow;
 
 /// <summary>
-/// Phase a Survey-mode session can be in. See docs/agent-plans/legolas-state-machine.md
-/// for the full diagram and rationale (notably the post-Optimize "no new surveys" rule
-/// driven by the position-anchor constraint).
+/// Phase a Survey-mode session can be in. See docs/legolas-overview.md for the
+/// full flow + invariants (post-Optimize "no new surveys" rule, anchor-becomes-
+/// load-bearing-after-first-survey, etc.).
 /// </summary>
 public enum SurveyFlowState
 {
     AwaitingPosition,
     Listening,
-    AwaitingPin,
     Gathering,
     Done,
 }
@@ -26,9 +24,9 @@ public sealed record SurveyTransition(
 
 /// <summary>
 /// State machine for Survey mode. Methods are the public transition API; direct
-/// mutation of <see cref="SessionState.Surveys"/> / <see cref="SessionState.PendingSurvey"/>
-/// outside this class is no longer supported (still possible at the language level,
-/// but considered a bug — call a controller method instead).
+/// mutation of <see cref="SessionState.Surveys"/> outside this class is no longer
+/// supported (still possible at the language level, but considered a bug — call a
+/// controller method instead).
 /// </summary>
 public sealed partial class SurveyFlowController : ObservableObject
 {
@@ -40,7 +38,6 @@ public sealed partial class SurveyFlowController : ObservableObject
         _session = session;
         _settings = settings;
         _session.AllCollected += OnAllCollected;
-        _session.PropertyChanged += OnSessionPropertyChanged;
     }
 
     [ObservableProperty]
@@ -61,16 +58,13 @@ public sealed partial class SurveyFlowController : ObservableObject
     {
         SurveyFlowState.AwaitingPosition => "Click the map to set player position",
         SurveyFlowState.Listening => "Listening for surveys",
-        SurveyFlowState.AwaitingPin when _session.PendingSurvey is { } p =>
-            $"Click the ping for: {p.Name}  ({p.Offset.East:0}E, {p.Offset.North:0}N)",
-        SurveyFlowState.AwaitingPin => "Click the ping on the map",
         SurveyFlowState.Gathering => "Walk to each target — new surveys will be ignored until reset",
         SurveyFlowState.Done => "All surveys collected",
         _ => "",
     };
 
-    /// <summary>True when <see cref="OnSurveyDetected"/> would be accepted.</summary>
-    public bool CanAcceptSurvey => CurrentState is SurveyFlowState.Listening or SurveyFlowState.AwaitingPin;
+    /// <summary>True when <see cref="NoteSurveyDetected"/> would be accepted.</summary>
+    public bool CanAcceptSurvey => CurrentState is SurveyFlowState.Listening;
 
     /// <summary>True when <see cref="OptimizeRoute"/> would be accepted.</summary>
     public bool CanOptimize => CurrentState == SurveyFlowState.Listening && _session.Surveys.Count > 0;
@@ -94,71 +88,31 @@ public sealed partial class SurveyFlowController : ObservableObject
     /// Re-anchor request (e.g. user pressed "Set Player Position"). Goes back to
     /// <c>AwaitingPosition</c> from any state. Preserves <see cref="SessionState.Surveys"/>
     /// (their offsets remain valid; only the projector origin will change on the next
-    /// <see cref="ConfirmPlayerPosition"/>). Clears any pending pin.
+    /// <see cref="ConfirmPlayerPosition"/>).
     /// </summary>
     public void RequestSetPlayerPosition()
     {
-        _session.PendingSurvey = null;
         if (CurrentState == SurveyFlowState.AwaitingPosition) return;
         TransitionTo(SurveyFlowState.AwaitingPosition, nameof(RequestSetPlayerPosition));
     }
 
     /// <summary>
-    /// A new <see cref="SurveyDetected"/> arrived. Sets <see cref="SessionState.PendingSurvey"/>
-    /// and transitions to <c>AwaitingPin</c> from <c>Listening</c> or <c>AwaitingPin</c>
-    /// (overwriting any prior pending — preserves pre-FSM behaviour). Dropped from
-    /// <c>Gathering</c>/<c>Done</c>/<c>AwaitingPosition</c> per the position-anchor
-    /// constraint (see plan doc).
+    /// A new <see cref="SurveyDetected"/> arrived. Caller (LogIngestionService) has
+    /// already auto-placed the pin at the projected position. The controller's job
+    /// is purely to surface the inventory overlay and to log/diagnose drops when
+    /// the survey arrived in a state that doesn't accept new surveys (Gathering /
+    /// Done / AwaitingPosition — the position-anchor constraint).
     /// </summary>
-    public void OnSurveyDetected(SurveyDetected sd)
+    public void NoteSurveyDetected(SurveyDetected sd)
     {
         if (!CanAcceptSurvey)
         {
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored ({DescribeWhyDropped()})";
             return;
         }
-        // Surface the inventory grid the moment a survey vector lands so the
-        // user can see which slot to pick next. AutoOverlayCoordinator picks
-        // up the visibility change and enables click-through if opted in.
+        // Surface the inventory grid so the user can see which slot to pick next.
+        // AutoOverlayCoordinator reacts to visibility changes for click-through.
         _session.IsInventoryVisible = true;
-        _session.PendingSurvey = sd;
-        if (CurrentState != SurveyFlowState.AwaitingPin)
-            TransitionTo(SurveyFlowState.AwaitingPin, nameof(OnSurveyDetected));
-    }
-
-    /// <summary>
-    /// Caller has placed the pending pin (added it to <see cref="SessionState.Surveys"/>).
-    /// Clears <see cref="SessionState.PendingSurvey"/> and returns to <c>Listening</c>.
-    /// </summary>
-    public void ConfirmPin()
-    {
-        if (CurrentState != SurveyFlowState.AwaitingPin)
-        {
-            _session.LastLogEvent = $"ConfirmPin ignored — state is {CurrentState}";
-            return;
-        }
-        _session.PendingSurvey = null;
-        TransitionTo(SurveyFlowState.Listening, nameof(ConfirmPin));
-    }
-
-    /// <summary>
-    /// Survey came in with ≥2 corrections already on file → caller auto-placed the pin
-    /// without entering <c>AwaitingPin</c>. Stays in <c>Listening</c>; no transition.
-    /// Exists to keep symmetry with <see cref="OnSurveyDetected"/>: callers should
-    /// invoke exactly one of the two for every detected survey, so the controller has
-    /// a chance to log/diagnose.
-    /// </summary>
-    public void NoteAutoPlacedSurvey(SurveyDetected sd)
-    {
-        if (!CanAcceptSurvey)
-        {
-            _session.LastLogEvent = $"Survey: {sd.Name} → ignored ({DescribeWhyDropped()})";
-            return;
-        }
-        // Surface the inventory grid as for OnSurveyDetected — even when the
-        // pin auto-placed, the user still wants to see which slot to pick next.
-        _session.IsInventoryVisible = true;
-        // No transition; the auto-placement happened directly in Listening.
     }
 
     /// <summary>Listening → Gathering. Caller is responsible for actually computing the route.</summary>
@@ -173,15 +127,14 @@ public sealed partial class SurveyFlowController : ObservableObject
     }
 
     /// <summary>
-    /// Reset the session: clears surveys + pending pin, returns to either
-    /// <c>Listening</c> (if a player position is still set) or <c>AwaitingPosition</c>.
-    /// Preserves the projector anchor; caller is responsible for clearing the projector
-    /// if they want a hard reset.
+    /// Reset the session: clears surveys, returns to either <c>Listening</c> (if a
+    /// player position is still set) or <c>AwaitingPosition</c>. Preserves the
+    /// projector anchor; caller is responsible for clearing the projector if they
+    /// want a hard reset.
     /// </summary>
     public void Reset()
     {
         _session.ClearSurveys();
-        _session.PendingSurvey = null;
         var target = _session.HasPlayerPosition
             ? SurveyFlowState.Listening
             : SurveyFlowState.AwaitingPosition;
@@ -204,14 +157,6 @@ public sealed partial class SurveyFlowController : ObservableObject
         if (prev == next) return;
         CurrentState = next; // generated setter fires PropertyChanged for state + dependents
         Transitioned?.Invoke(new SurveyTransition(prev, next, trigger));
-    }
-
-    private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        // PhaseDescription's AwaitingPin branch reads PendingSurvey. Forward the
-        // change so bound UI reflects updated pin prompts without an extra subscriber.
-        if (e.PropertyName == nameof(SessionState.PendingSurvey))
-            OnPropertyChanged(nameof(PhaseDescription));
     }
 
     private string DescribeWhyDropped() => CurrentState switch

@@ -12,9 +12,9 @@ Project Gorgon's **Surveying** skill produces survey items that go in the player
 
 Legolas tails the chat log, parses these offsets, and:
 
-1. Asks the user to mark their current position on a map overlay (sets the projector anchor).
-2. Plots each survey at the projected pixel position.
-3. Lets the user drag/nudge mis-projected pins; ≥2 corrections trigger a least-squares refit of scale + rotation.
+1. Asks the user to mark their current position on a map overlay (sets the initial projector anchor).
+2. Plots every detected survey at the projected pixel position. The user never has to click to confirm placement.
+3. Lets the user drag/nudge mis-projected pins; ≥2 corrections trigger a least-squares refit of all four similarity-transform parameters (origin, scale, rotation). The visible anchor follows the refitted origin.
 4. Optimises a route through the unvisited pins.
 5. Watches for `… collected!` lines to mark pins done; auto-resets when the last one drops (configurable).
 
@@ -29,24 +29,24 @@ ChatLog tail              [src/Mithril.Shared/Logging — IChatLogStream]
 ChatLogParser            [Services/ChatLogParser.cs]   regex → SurveyDetected | ItemCollected | MotherlodeDistance | UnknownLine
    │
    ▼
-LogIngestionService      [Services/LogIngestionService.cs]   dedup; auto-place if ≥2 corrections; otherwise hand to FSM
+LogIngestionService      [Services/LogIngestionService.cs]   dedup, auto-place every survey, surface inventory overlay
    │
    ▼
-SurveyFlowController     [Flow/SurveyFlowController.cs]    state mutations + transition events
+SurveyFlowController     [Flow/SurveyFlowController.cs]    state machine; logs/diagnoses out-of-state arrivals
    │
    ▼
-SessionState             [ViewModels/SessionState.cs]   observable shared state (Surveys, PendingSurvey, PlayerPosition…)
+SessionState             [ViewModels/SessionState.cs]   observable shared state (Surveys, SelectedSurvey, PlayerPosition…)
    │                        ▲
-   │                        │ user input
+   │                        │ user input (drag/nudge to correct)
    │                        │
    ▼                     MapOverlayViewModel             [ViewModels/MapOverlayViewModel.cs]
-CoordinateProjector      [Services/CoordinateProjector.cs]   metres → pixels; refits scale + rotation
+CoordinateProjector      [Services/CoordinateProjector.cs]   metres → pixels; 4-DOF refit of origin/scale/rotation
    │
    ▼
 MapOverlayView (XAML)    [Views/MapOverlayView.xaml]   pin layer, route polyline, bearing wedges, anchor thumb
 ```
 
-The user's only inputs to the loop are: clicking the map (sets anchor or places the pending pin), dragging/nudging an existing pin, and pressing **Optimize Route**.
+The user's only inputs to the loop are: clicking the map *once* in `AwaitingPosition` (sets the initial anchor), dragging/nudging existing pins to correct them, and pressing **Optimize Route**. Survey placement is automatic — there is no per-survey click-to-confirm gesture.
 
 ## Coordinate model
 
@@ -68,7 +68,7 @@ Output is a [`MetreOffset(East, North)`](../src/Legolas.Module/Domain/MetreOffse
 
 | Field | Meaning |
 |---|---|
-| `_origin : PixelPoint` | Screen pixel that represents "the player's anchor". Set by `SetOrigin` (map click) or `CalibrateFromClick`. **Never moved by `Refit`**. |
+| `_origin : PixelPoint` | Screen pixel that represents "the player's anchor". Set by `SetOrigin` (map click), seeded by `CalibrateFromClick` for tests, or refitted from corrections by `Refit`. |
 | `_scale : double` | Pixels per metre. |
 | `_rotation : double` | Radians. Map-north relative to overlay-up, measured clockwise. |
 
@@ -80,12 +80,19 @@ Three operations:
   rotN = -E·sin(θ) + N·cos(θ)
   pixel = (origin.X + scale·rotE,  origin.Y - scale·rotN)
   ```
-- **`SetOrigin(PixelPoint)`** — moves the anchor without touching scale/rotation. Called by the "Set Player Position" map-click flow.
-- **`Refit(IReadOnlyList<(MetreOffset, PixelPoint)>)`** — least-squares scale + circular-mean rotation fit:
-  - Scale: `Σ(rPixel · rOffset) / Σ(rOffset²)` — weighted by metre-magnitude.
-  - Rotation: `atan2(Σ sin Δφ, Σ cos Δφ)` — circular mean of bearing deltas, immune to angle-wrap.
-  - **Threshold:** silently no-ops unless ≥2 *non-degenerate* corrections survive (`rOffset > 1e-9` and `rPixel > 1e-9`). Zero-magnitude offsets or pixel coincidences are skipped.
-  - **Origin invariant:** `Refit` does not touch `_origin`. The anchor stays where the user clicked.
+- **`SetOrigin(PixelPoint)`** — moves the anchor without touching scale/rotation. Called by the "Set Player Position" map-click flow as the initial anchor.
+- **`Refit(IReadOnlyList<(MetreOffset, PixelPoint)>)`** — closed-form 2D similarity LSQ. Solves for **all four parameters** (origin X, origin Y, scale, rotation) simultaneously, expressed via 2D-complex arithmetic for compactness:
+  ```
+  z_i = east_i − j·north_i           (− to flip world-N to screen-up)
+  w_i = px_i + j·py_i
+  c   = Σ (w_i − w̄)·conj(z_i − z̄) / Σ |z_i − z̄|²
+  scale    = |c|
+  rotation = arg(c)
+  origin   = w̄ − c·z̄
+  ```
+  Equivalent to the Umeyama 1991 algorithm specialised to 2D with uniform scale.
+  - **Threshold:** silently no-ops unless ≥2 *non-degenerate* corrections (centred metre vectors with non-zero magnitude). Coincident-points case no-ops cleanly instead of dividing by ~0.
+  - **Why 4-DOF instead of 2-DOF:** the user's "Set Player Position" click is rarely pixel-perfect, so any residual anchor bias used to be absorbed into scale/rotation as a permanent residual error — worst near the anchor, basically invisible far away. Solving for the origin as well removes this bias. After Refit, `MapOverlayViewModel` propagates `_projector.Origin` back to `Session.PlayerPosition` so the visible anchor follows the projector's belief.
 
 ### Bearing convention
 
@@ -93,13 +100,12 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 
 ## SurveyFlowController FSM
 
-[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). Five states:
+[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). Four states:
 
 | State | Meaning |
 |---|---|
 | `AwaitingPosition` | No anchor set yet. Map clicks become the anchor. |
-| `Listening` | Anchor set; idle. Incoming `SurveyDetected` events are accepted. |
-| `AwaitingPin` | A `SurveyDetected` has arrived; `PendingSurvey` is set; map clicks place the pin. |
+| `Listening` | Anchor set; surveys auto-place as they arrive. The default working state. |
 | `Gathering` | Route optimised; user is walking it. **New `SurveyDetected` events are dropped** (position-anchor constraint). |
 | `Done` | All surveys collected. If `AutoResetWhenAllCollected`, `Reset()` immediately follows. |
 
@@ -108,19 +114,16 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 | From | Trigger | To | Notes |
 |---|---|---|---|
 | `AwaitingPosition` | `ConfirmPlayerPosition()` | `Listening` | After caller has updated `PlayerPosition` and the projector origin. |
-| `Listening` | `OnSurveyDetected(sd)` | `AwaitingPin` | Sets `PendingSurvey`, makes inventory overlay visible. |
-| `AwaitingPin` | `OnSurveyDetected(sd)` | `AwaitingPin` | Overwrites pending pin (pre-FSM behaviour preserved). |
-| `AwaitingPin` | `ConfirmPin()` | `Listening` | Caller has added the pin to `Surveys`. |
-| `Listening` | `NoteAutoPlacedSurvey(sd)` | `Listening` | Used when `LogIngestionService` auto-placed a pin (≥2 corrections existed). No transition. |
+| `Listening` | `NoteSurveyDetected(sd)` | `Listening` | No transition. Surfaces inventory overlay; `LogIngestionService` has already auto-placed the pin. |
 | `Listening` | `OptimizeRoute()` | `Gathering` | Caller has assigned `RouteOrder`s. Surveys must be non-empty. |
 | `Listening` \| `Gathering` | `AllCollected` event (auto) | `Done` | Fires when last uncollected survey is marked. |
 | `Done` | `Reset()` (auto, if setting on) | `Listening` \| `AwaitingPosition` | Routes through `Reset` — see below. |
-| any | `RequestSetPlayerPosition()` | `AwaitingPosition` | Re-anchor. Clears `PendingSurvey`. **Preserves `Surveys`** — their offsets are still valid; only the projector origin will move. |
-| any | `Reset()` | `Listening` if `HasPlayerPosition`, else `AwaitingPosition` | Clears `Surveys` and `PendingSurvey`. **Does not reset the projector** — caller is responsible. |
+| any | `RequestSetPlayerPosition()` | `AwaitingPosition` | Re-anchor. **Preserves `Surveys`** — their offsets are still valid; only the projector origin will move. |
+| any | `Reset()` | `Listening` if `HasPlayerPosition`, else `AwaitingPosition` | Clears `Surveys`. **Does not reset the projector** — caller is responsible. |
 
 ### Dropped-survey diagnostics
 
-`OnSurveyDetected` and `NoteAutoPlacedSurvey` both check `CanAcceptSurvey` (`Listening` or `AwaitingPin`). When dropping, `SessionState.LastLogEvent` is set to a human-readable reason — surfaced in the panel's status strip. The reason map is at [`DescribeWhyDropped`](../src/Legolas.Module/Flow/SurveyFlowController.cs#L217-L223).
+`NoteSurveyDetected` checks `CanAcceptSurvey` (true only in `Listening`). When dropping (called from `AwaitingPosition`, `Gathering`, or `Done`), `SessionState.LastLogEvent` is set to a human-readable reason — surfaced in the panel's status strip. Reason map: see `DescribeWhyDropped` in the controller.
 
 ## SessionState
 
@@ -129,12 +132,11 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 | Field | Lifetime | Notes |
 |---|---|---|
 | `Surveys : ObservableCollection<SurveyItemViewModel>` | Session | Cleared by `Reset()`. Fires `AllCollected` event when last uncollected is marked. |
-| `PendingSurvey : SurveyDetected?` | Transition | Set during `AwaitingPin`. Cleared by `ConfirmPin` / `RequestSetPlayerPosition`. |
-| `PlayerPosition : PixelPoint` | Session | The anchor click. Mutating this re-fires `RebuildRouteGeometry` + wedges. |
+| `PlayerPosition : PixelPoint` | Session | The projector anchor in pixel space. Initially set by the user's click; updated to follow `_projector.Origin` after every Refit. Mutating this re-fires `RebuildRouteGeometry` + wedges. |
 | `HasPlayerPosition : bool` | Session | True once `SetPlayerPosition` runs. |
 | `IsAnchorEditable : bool` | Derived | `HasPlayerPosition && Surveys.Count == 0`. See below. |
-| `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. |
-| `IsMapVisible`, `IsInventoryVisible : bool` | UI | Overlay visibility intent — `OverlayController` reacts. |
+| `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. Auto-set to the most-recently-placed survey by `LogIngestionService` so arrow-key adjustments target the new pin. |
+| `IsMapVisible`, `IsInventoryVisible : bool` | UI | Overlay visibility intent — `OverlayController` reacts. `IsInventoryVisible` is set true by `NoteSurveyDetected` so the user sees which slot to pick next. |
 | `MapOpacity`, `InventoryOpacity : double` | **Persisted** | Bidirectionally synced with `LegolasSettings` in [`LegolasModule.Register`](../src/Legolas.Module/LegolasModule.cs). |
 | `Mode : SessionMode` | Session | `Survey \| Motherlode`. |
 
@@ -234,21 +236,21 @@ The FSM's `Gathering` state is the explicit mitigation: once the route is optimi
 
 This is not a heuristic; it's a hard constraint. Don't relax it without solving the position-tracking problem.
 
-### Anchor is load-bearing after first survey
+### Anchor is "manually editable" only before the first survey
 
-`IsAnchorEditable` flips to false the instant `Surveys.Count` goes 0→1. From that point on, the anchor pixel is the projection origin for every pin. Moving it would invalidate every pin's projection (the offsets stay the same, but their pixel positions would shift wholesale).
+`IsAnchorEditable` flips to false the instant `Surveys.Count` goes 0→1. From that point on, manual drag/nudge of the player marker is disabled — but **the projector's origin still moves** automatically as Refit runs. The visible anchor follows `_projector.Origin` after every refit.
 
-If you need to re-anchor mid-session, the user has to `Reset()` (loses all pins) or trigger `RequestSetPlayerPosition` (keeps pins; the next `ConfirmPlayerPosition` updates the projector origin, which *will* visibly move every uncorrected pin to a new pixel position).
+If you need to re-anchor *manually* mid-session, the user has to `Reset()` (loses all pins) or trigger `RequestSetPlayerPosition` (keeps pins; the next `ConfirmPlayerPosition` overrides the projector origin to wherever the user clicked).
 
 ### Refit threshold is ≥2 *non-degenerate* corrections
 
-`Refit` skips corrections where either the metre offset or the pixel distance is below `1e-9`. So a pin at the player's exact location, or one the user dragged onto the anchor, doesn't count. The effective minimum for a refit to actually run is two pins that are both away from the origin and away from each other.
+`Refit` skips corrections whose centred metre vector has near-zero magnitude (Σ |z'|² < 1e-9). So two coincident pins, or all pins at exactly the same offset, won't refit. The effective minimum for a refit to actually run is two corrections at meaningfully different metre offsets.
 
-`LogIngestionService` checks `corrections.Count >= 2` to decide whether to auto-place rather than enter `AwaitingPin`. That check uses raw count — a degenerate correction will trick it into auto-placing even though `Refit` will silently no-op. Probably benign in practice, but worth knowing.
+### Placement is automatic; correction requires a drag
 
-### `Refit` doesn't move the origin
+After the auto-place rework, surveys are placed at the projected pixel position the moment they arrive — the user never has to click to confirm. The only correction gesture is **dragging** (or arrow-key nudging) an existing pin. A drag sets `ManualOverride`; that's the sole signal that a pin's pixel position is user-vouched-for.
 
-Scale and rotation refit; the origin stays where `SetOrigin` last put it. If a user's anchor click was off but their pin corrections are good, the pins will project at the right scale + bearing but with a parallel-translated offset. The fix is to re-anchor (which preserves pins per `RequestSetPlayerPosition`).
+This is a deliberate split: in the old flow, every forced click became a "correction" the projector trusted, even when the user had no idea where the in-game ping really was and was just clicking to satisfy the FSM. The wrong-click-becomes-bad-calibration data flowed into Refit and made everything worse. With the split, only deliberate user input drives Refit.
 
 ### Coordinate-system inversion
 

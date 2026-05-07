@@ -70,11 +70,10 @@ public class LegolasWizardViewModelTests
         surveyFlow.ConfirmPlayerPosition();
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
 
+        // Surveys auto-place after the rework — NoteSurveyDetected stays in Listening
+        // and surfaces the inventory overlay; no AwaitingPin step in between.
         var sd = new SurveyDetected(FixedTime, "Diamond", new MetreOffset(50, 30));
-        surveyFlow.OnSurveyDetected(sd);
-        wizard.CurrentStep.Should().Be(WizardStep.AwaitingPin);
-
-        surveyFlow.ConfirmPin();
+        surveyFlow.NoteSurveyDetected(sd);
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
 
         // Add at least one pin so OptimizeRoute is meaningful (state machine permits the transition regardless).
@@ -229,20 +228,4 @@ public class LegolasWizardViewModelTests
         session.HasPlayerPosition.Should().BeFalse();
     }
 
-    [Fact]
-    public void Back_from_AwaitingPin_cancels_pending_and_returns_to_Listening()
-    {
-        var (wizard, session, surveyFlow, _, _) = BuildSut();
-        wizard.PickSurveyModeCommand.Execute(null);
-        session.HasPlayerPosition = true;
-        surveyFlow.ConfirmPlayerPosition();
-        surveyFlow.OnSurveyDetected(new SurveyDetected(FixedTime, "Diamond", new MetreOffset(50, 30)));
-        wizard.CurrentStep.Should().Be(WizardStep.AwaitingPin);
-        session.PendingSurvey.Should().NotBeNull();
-
-        wizard.BackCommand.Execute(null);
-
-        wizard.CurrentStep.Should().Be(WizardStep.Listening);
-        session.PendingSurvey.Should().BeNull();
-    }
 }

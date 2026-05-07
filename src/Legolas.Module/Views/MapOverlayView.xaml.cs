@@ -14,7 +14,6 @@ public partial class MapOverlayView : Window
 {
     private Vector _grabOffset;
     private Vector _anchorGrabOffset;
-    private SurveyItemViewModel? _placementDrag;
 
     public MapOverlayView()
     {
@@ -164,48 +163,10 @@ public partial class MapOverlayView : Window
         var canvasPos = Mouse.GetPosition(Viewport);
         var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
 
-        // AwaitingPin: place the pin and let the user keep dragging without
-        // releasing the mouse — same gesture for placement and fine-tuning.
-        if (vm.SurveyFlow.CurrentState == SurveyFlowState.AwaitingPin
-            && vm.Session.PendingSurvey is not null)
-        {
-            var placed = vm.PlacePendingPinAt(clickPoint);
-            if (placed is not null)
-            {
-                _placementDrag = placed;
-                vm.Session.SelectedSurvey = placed;
-                ViewportRoot.CaptureMouse();
-                e.Handled = true;
-                return;
-            }
-        }
-
+        // The VM only acts on clicks while the FSM is in AwaitingPosition (anchor
+        // setup). Survey placement is automatic; corrections are drag-only. This
+        // handler is still here so AwaitingPosition continues to work.
         vm.HandleMapClickCommand.Execute(clickPoint);
         e.Handled = true;
-    }
-
-    private void Viewport_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_placementDrag is null) return;
-        if (DataContext is not MapOverlayViewModel vm) return;
-
-        var canvasPos = Mouse.GetPosition(Viewport);
-        // Final position via CorrectSurvey so the projector refit fires once
-        // with the user's final intended location.
-        vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_placementDrag,
-            new PixelPoint(canvasPos.X, canvasPos.Y)));
-        _placementDrag = null;
-        ViewportRoot.ReleaseMouseCapture();
-        e.Handled = true;
-    }
-
-    private void Viewport_MouseMove(object sender, MouseEventArgs e)
-    {
-        // Live-update the just-placed pin as the user continues to hold the
-        // mouse button — feels like one continuous place-and-position gesture.
-        if (_placementDrag is null) return;
-        var pos = e.GetPosition(Viewport);
-        _placementDrag.UpdateModel(_placementDrag.Model
-            with { ManualOverride = new PixelPoint(pos.X, pos.Y) });
     }
 }

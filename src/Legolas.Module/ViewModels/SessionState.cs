@@ -103,9 +103,6 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty] private bool _isInventoryVisible;
 
     [ObservableProperty]
-    private SurveyDetected? _pendingSurvey;
-
-    [ObservableProperty]
     private SurveyItemViewModel? _selectedSurvey;
 
     public void ClearSurveys()

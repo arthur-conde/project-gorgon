@@ -50,6 +50,27 @@ public sealed class CoordinateProjector : ICoordinateProjector
         _rotation = NormaliseAngle(phiPixel - phiOffset);
     }
 
+    /// <summary>
+    /// Closed-form 2D similarity fit (origin + scale + rotation) from corrected
+    /// (offset, pixel) pairs. Equivalent to the Umeyama algorithm specialised to 2D
+    /// with uniform scale; expressed via complex-number arithmetic for compactness.
+    ///
+    /// Model: <c>pixel = origin + s\u00b7R(\u03b8)\u00b7offset</c>, where the projection screens
+    /// north as -Y. Encoding <c>z = east \u2212 j\u00b7north</c> and <c>w = px + j\u00b7py</c>
+    /// turns the model into the linear <c>w = O + c\u00b7z</c> with <c>c = s\u00b7e^(j\u03b8)</c>,
+    /// whose least-squares solution is closed-form.
+    ///
+    /// Earlier 2-DOF implementation kept origin fixed at the user's "Set Player
+    /// Position" click. That click is rarely pixel-perfect, so the residual bias
+    /// was absorbed into scale and rotation \u2014 leaving a constant pixel error that
+    /// dominates near-anchor projections. Solving for all four parameters at once
+    /// removes the bias.
+    ///
+    /// Requires <c>corrections.Count &gt;= 2</c> AND at least 2 contributing
+    /// (non-degenerate) corrections \u2014 i.e. centred metre vectors with non-zero
+    /// magnitude. Two coincident points carry no rotation/scale information.
+    /// Silently no-ops otherwise.
+    /// </summary>
     public void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections)
     {
         if (corrections.Count < 2)
@@ -57,53 +78,62 @@ public sealed class CoordinateProjector : ICoordinateProjector
             return;
         }
 
-        double scaleNumerator = 0;
-        double scaleDenominator = 0;
-        double bearingSin = 0;
-        double bearingCos = 0;
-        var contributingCount = 0;
-
+        double zSumRe = 0, zSumIm = 0, wSumRe = 0, wSumIm = 0;
         foreach (var (offset, pixel) in corrections)
         {
-            var rOffset = offset.Magnitude;
-            if (rOffset < 1e-9)
+            zSumRe += offset.East;
+            zSumIm += -offset.North;
+            wSumRe += pixel.X;
+            wSumIm += pixel.Y;
+        }
+        var n = corrections.Count;
+        var zMeanRe = zSumRe / n;
+        var zMeanIm = zSumIm / n;
+        var wMeanRe = wSumRe / n;
+        var wMeanIm = wSumIm / n;
+
+        // c = \u03a3 (w' \u00b7 conj(z')) / \u03a3 |z'|\u00b2
+        double numRe = 0, numIm = 0, denom = 0;
+        var contributing = 0;
+        foreach (var (offset, pixel) in corrections)
+        {
+            var zRe = offset.East - zMeanRe;
+            var zIm = -offset.North - zMeanIm;
+            var wRe = pixel.X - wMeanRe;
+            var wIm = pixel.Y - wMeanIm;
+            var mag2 = zRe * zRe + zIm * zIm;
+            if (mag2 < 1e-9)
             {
                 continue;
             }
-
-            var dx = pixel.X - _origin.X;
-            var dy = pixel.Y - _origin.Y;
-            var rPixel = Math.Sqrt(dx * dx + dy * dy);
-            if (rPixel < 1e-9)
-            {
-                continue;
-            }
-
-            // Weighted least-squares scale: s = \u03a3(r_p * r_o) / \u03a3(r_o^2).
-            scaleNumerator += rPixel * rOffset;
-            scaleDenominator += rOffset * rOffset;
-
-            // Circular mean of (\u03c6_p - \u03c6_o) gives rotation without angle-wrap bugs.
-            var phiOffset = Math.Atan2(offset.East, offset.North);
-            var phiPixel = Math.Atan2(dx, -dy);
-            var dPhi = phiPixel - phiOffset;
-            bearingSin += Math.Sin(dPhi);
-            bearingCos += Math.Cos(dPhi);
-
-            contributingCount++;
+            // (wRe + j\u00b7wIm) \u00b7 (zRe \u2212 j\u00b7zIm) = (wRe\u00b7zRe + wIm\u00b7zIm) + j\u00b7(wIm\u00b7zRe \u2212 wRe\u00b7zIm)
+            numRe += wRe * zRe + wIm * zIm;
+            numIm += wIm * zRe - wRe * zIm;
+            denom += mag2;
+            contributing++;
         }
 
-        if (contributingCount < 2)
+        if (contributing < 2 || denom < 1e-9)
         {
             return;
         }
 
-        if (scaleDenominator > 1e-9)
+        var cRe = numRe / denom;
+        var cIm = numIm / denom;
+
+        var newScale = Math.Sqrt(cRe * cRe + cIm * cIm);
+        if (newScale < 1e-9)
         {
-            _scale = scaleNumerator / scaleDenominator;
+            return;
         }
 
-        _rotation = NormaliseAngle(Math.Atan2(bearingSin, bearingCos));
+        // O = w\u0304 \u2212 c\u00b7z\u0304
+        var cZmeanRe = cRe * zMeanRe - cIm * zMeanIm;
+        var cZmeanIm = cRe * zMeanIm + cIm * zMeanRe;
+
+        _scale = newScale;
+        _rotation = NormaliseAngle(Math.Atan2(cIm, cRe));
+        _origin = new PixelPoint(wMeanRe - cZmeanRe, wMeanIm - cZmeanIm);
     }
 
     private static double NormaliseAngle(double radians)

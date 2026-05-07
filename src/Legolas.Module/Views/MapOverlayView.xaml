@@ -35,9 +35,7 @@
                 </StackPanel>
             </Border>
 
-            <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent"
-                  MouseLeftButtonUp="Viewport_MouseLeftButtonUp"
-                  MouseMove="Viewport_MouseMove">
+            <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent">
               <Grid x:Name="Viewport" Background="Transparent"
                     MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
                 <!-- Bearing-uncertainty wedge layer (behind everything) -->
@@ -156,70 +154,17 @@
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid>
-                                            <!-- Outer ring: pulses opacity + stroke thickness + glow,
-                                                 plus marching-ants dashes, while pending (uncorrected).
-                                                 Effect is set via a Setter (not a property-element) so it
-                                                 exists before the IsCorrected=False trigger walks the
-                                                 (UIElement.Effect).(DropShadowEffect.BlurRadius) animation
-                                                 path — otherwise WPF throws "Effect property does not
-                                                 point to a DependencyObject" at template materialization. -->
+                                            <!-- Outer ring + center dot, both PinPending colour. The earlier
+                                                 IsCorrected pulse/glow signalled "the user still owes a click";
+                                                 with auto-placement that input is no longer required, so the
+                                                 animation has been dropped. Pin styling (border, radius, active
+                                                 highlight) is being overhauled separately. -->
                                             <Ellipse StrokeThickness="2" Fill="#01000000"
-                                                     StrokeDashArray="4 2" StrokeDashOffset="0">
-                                                <Ellipse.Style>
-                                                    <Style TargetType="Ellipse">
-                                                        <Setter Property="Opacity" Value="1" />
-                                                        <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                                        <Setter Property="Effect">
-                                                            <Setter.Value>
-                                                                <DropShadowEffect ShadowDepth="0" BlurRadius="4" Opacity="0.85" Color="#FFFFFFFF" />
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsCorrected}" Value="True">
-                                                                <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsCorrected}" Value="False">
-                                                                <DataTrigger.EnterActions>
-                                                                    <BeginStoryboard Name="PinPulse">
-                                                                        <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                                From="1.0" To="0.35" Duration="0:0:0.7" />
-                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeThickness"
-                                                                                From="2.0" To="4.0" Duration="0:0:0.7" />
-                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
-                                                                                From="4" To="16" Duration="0:0:0.7" />
-                                                                        </Storyboard>
-                                                                    </BeginStoryboard>
-                                                                    <BeginStoryboard Name="PinDashMarch">
-                                                                        <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
-                                                                                From="0" To="6" Duration="0:0:1.0" />
-                                                                        </Storyboard>
-                                                                    </BeginStoryboard>
-                                                                </DataTrigger.EnterActions>
-                                                                <DataTrigger.ExitActions>
-                                                                    <StopStoryboard BeginStoryboardName="PinPulse" />
-                                                                    <StopStoryboard BeginStoryboardName="PinDashMarch" />
-                                                                </DataTrigger.ExitActions>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Ellipse.Style>
-                                            </Ellipse>
-                                            <!-- Center dot: the projected point -->
+                                                     StrokeDashArray="4 2"
+                                                     Stroke="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
                                             <Ellipse Width="5" Height="5"
-                                                     HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Ellipse.Style>
-                                                    <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsCorrected}" Value="True">
-                                                                <Setter Property="Fill" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Ellipse.Style>
-                                            </Ellipse>
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                     Fill="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
                                         </Grid>
                                     </ControlTemplate>
                                 </Thumb.Template>
