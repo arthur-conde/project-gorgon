@@ -130,17 +130,23 @@
                                     <ControlTemplate TargetType="Thumb">
                                         <Grid>
                                             <!-- Outer ring: pulses opacity + stroke thickness + glow,
-                                                 plus marching-ants dashes, while pending (uncorrected) -->
+                                                 plus marching-ants dashes, while pending (uncorrected).
+                                                 Effect is set via a Setter (not a property-element) so it
+                                                 exists before the IsCorrected=False trigger walks the
+                                                 (UIElement.Effect).(DropShadowEffect.BlurRadius) animation
+                                                 path — otherwise WPF throws "Effect property does not
+                                                 point to a DependencyObject" at template materialization. -->
                                             <Ellipse StrokeThickness="2" Fill="#01000000"
                                                      StrokeDashArray="4 2" StrokeDashOffset="0">
-                                                <Ellipse.Effect>
-                                                    <DropShadowEffect ShadowDepth="0" BlurRadius="4" Opacity="0.85"
-                                                                      Color="{Binding DataContext.Brushes.PinPending.Color, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                                </Ellipse.Effect>
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
                                                         <Setter Property="Opacity" Value="1" />
                                                         <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect ShadowDepth="0" BlurRadius="4" Opacity="0.85" Color="#FFFFFFFF" />
+                                                            </Setter.Value>
+                                                        </Setter>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsCorrected}" Value="True">
                                                                 <Setter Property="Stroke" Value="{Binding DataContext.Brushes.PinFinalized, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
