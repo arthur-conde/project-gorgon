@@ -37,14 +37,20 @@ public sealed class LegolasSettings : INotifyPropertyChanged
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
 
+    // WPF stops hit-testing fully-transparent elements regardless of IsHitTestVisible,
+    // so a 0-opacity overlay silently becomes unclickable. Floor at 1% — visually
+    // indistinguishable from invisible, but the surface stays interactive.
+    public const double MinInteractiveOpacity = 0.01;
+
     private double _mapOpacity = 1.0;
     public double MapOpacity
     {
         get => _mapOpacity;
         set
         {
-            if (Math.Abs(_mapOpacity - value) < 1e-6) return;
-            _mapOpacity = value;
+            var clamped = Math.Max(value, MinInteractiveOpacity);
+            if (Math.Abs(_mapOpacity - clamped) < 1e-6) return;
+            _mapOpacity = clamped;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapOpacity)));
         }
     }
@@ -55,8 +61,9 @@ public sealed class LegolasSettings : INotifyPropertyChanged
         get => _inventoryOpacity;
         set
         {
-            if (Math.Abs(_inventoryOpacity - value) < 1e-6) return;
-            _inventoryOpacity = value;
+            var clamped = Math.Max(value, MinInteractiveOpacity);
+            if (Math.Abs(_inventoryOpacity - clamped) < 1e-6) return;
+            _inventoryOpacity = clamped;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InventoryOpacity)));
         }
     }
