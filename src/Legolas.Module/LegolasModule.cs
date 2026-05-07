@@ -33,7 +33,7 @@ public sealed class LegolasModule : IMithrilModule
         var dir = Path.Combine(localApp, "Mithril", "Legolas");
         var settingsPath = Path.Combine(dir, "settings.json");
 
-        services.AddMithrilSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
+        services.AddMithrilVersionedSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
         services.AddSingleton<LegolasColors>(sp =>

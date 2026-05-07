@@ -13,7 +13,7 @@ public class LegolasColorsTests
     [InlineData("#33FFFF80", "#33FFFF80")]   // translucent preserved
     public void Normalize_canonicalizes_hex(string input, string expected)
     {
-        LegolasColors.Normalize(input).Should().Be(expected);
+        HexColor.Normalize(input).Should().Be(expected);
     }
 
     [Theory]
@@ -26,7 +26,7 @@ public class LegolasColorsTests
     [InlineData("#FFFFFFFFF")]        // too long
     public void Normalize_falls_back_to_magenta_on_invalid(string? input)
     {
-        LegolasColors.Normalize(input).Should().Be("#FFFF00FF");
+        HexColor.Normalize(input).Should().Be("#FFFF00FF");
     }
 
     [Fact]
@@ -36,21 +36,21 @@ public class LegolasColorsTests
         var changed = new List<string?>();
         colors.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        colors.PinPending = "00ff00"; // lowercase, no hash, RGB
+        colors.RouteLine = "00ff00"; // lowercase, no hash, RGB
 
-        colors.PinPending.Should().Be("#FF00FF00");
-        changed.Should().ContainSingle().Which.Should().Be(nameof(LegolasColors.PinPending));
+        colors.RouteLine.Should().Be("#FF00FF00");
+        changed.Should().ContainSingle().Which.Should().Be(nameof(LegolasColors.RouteLine));
     }
 
     [Fact]
     public void Setter_no_op_when_canonical_value_unchanged()
     {
         var colors = new LegolasColors();
-        colors.PinPending = "#FF00FFFF"; // matches default after normalization
+        colors.RouteLine = "#FFFFD700"; // matches default after normalization
         var changed = new List<string?>();
         colors.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        colors.PinPending = "00ffff"; // canonicalizes to same value
+        colors.RouteLine = "ffd700"; // canonicalizes to same value
 
         changed.Should().BeEmpty();
     }

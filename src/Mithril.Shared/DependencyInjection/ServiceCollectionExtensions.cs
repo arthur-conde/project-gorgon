@@ -133,6 +133,40 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Variant of <see cref="AddMithrilSettings{T}"/> for settings types that
+    /// implement <see cref="IVersionedState{T}"/>. After loading, dispatches
+    /// through <c>T.Migrate</c> when the persisted <c>SchemaVersion</c> doesn't
+    /// match <c>T.CurrentVersion</c>, then writes the migrated form back so the
+    /// legacy fields don't linger on disk. Mirrors <see cref="PerCharacterStore{T}"/>'s
+    /// dispatch — kept as a separate overload so the constraint failure surfaces
+    /// at the call site instead of at runtime.
+    /// </summary>
+    public static IServiceCollection AddMithrilVersionedSettings<T>(
+        this IServiceCollection services,
+        string settingsPath,
+        JsonTypeInfo<T> typeInfo)
+        where T : class, INotifyPropertyChanged, IVersionedState<T>, new()
+    {
+        services.AddSingleton<ISettingsStore<T>>(_ =>
+            new JsonSettingsStore<T>(settingsPath, typeInfo));
+        services.AddSingleton<T>(sp =>
+        {
+            var store = sp.GetRequiredService<ISettingsStore<T>>();
+            var loaded = store.Load();
+            if (loaded.SchemaVersion != T.CurrentVersion)
+            {
+                loaded = T.Migrate(loaded);
+                loaded.SchemaVersion = T.CurrentVersion;
+                store.Save(loaded);
+            }
+            return loaded;
+        });
+        services.AddSingleton<SettingsAutoSaver<T>>();
+        services.AddHostedService(sp => sp.GetRequiredService<SettingsAutoSaver<T>>());
+        return services;
+    }
+
     public static IServiceCollection AddMithrilIcons(this IServiceCollection services, string cacheDirectory)
     {
         var settingsPath = System.IO.Path.Combine(cacheDirectory, "settings.json");

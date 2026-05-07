@@ -62,7 +62,19 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 RebuildAllWedges();
             }
         };
+
+        // Forward FSM state changes so the pin DataTemplate can gate the
+        // active-pin halo on Listening (the only phase where SelectedSurvey
+        // is meaningful — Gathering uses IsActiveTarget + marching ants).
+        _surveyFlow.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SurveyFlowController.CurrentState))
+                OnPropertyChanged(nameof(IsListening));
+        };
     }
+
+    /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>
+    public bool IsListening => _surveyFlow.CurrentState == SurveyFlowState.Listening;
 
     private void OnSurveysCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -106,6 +118,24 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     public SurveyFlowController SurveyFlow => _surveyFlow;
 
     public LegolasBrushes Brushes => _brushes;
+
+    private static readonly LegolasPinStyle _defaultPinStyle = new();
+    private static readonly LegolasPinStyle _defaultPlayerPinStyle = LegolasPinStyle.PlayerDefaults();
+    private static readonly LegolasActivePinStyle _defaultActivePinStyle = new();
+
+    /// <summary>Survey pin shape configuration for the DataTemplate. Falls
+    /// back to defaults when the simpler test constructor is used (no settings).</summary>
+    public LegolasPinStyle PinStyle => _settings?.PinStyle ?? _defaultPinStyle;
+
+    /// <summary>Player anchor pin shape configuration. Same shape model as
+    /// <see cref="PinStyle"/> but with player-specific defaults; the player
+    /// pin's outer Size is meaningful (drives Thumb bounds) while the survey
+    /// pin's outer size still comes from <c>SurveyPinRadiusMetres</c>.</summary>
+    public LegolasPinStyle PlayerPinStyle => _settings?.PlayerPinStyle ?? _defaultPlayerPinStyle;
+
+    /// <summary>Active-pin highlight configuration. Falls back to defaults
+    /// when the simpler test constructor is used (no settings).</summary>
+    public LegolasActivePinStyle ActivePinStyle => _settings?.ActivePinStyle ?? _defaultActivePinStyle;
 
     public PixelPoint PlayerPosition
     {

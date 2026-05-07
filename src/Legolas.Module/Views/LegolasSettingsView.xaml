@@ -1,6 +1,7 @@
 <UserControl x:Class="Legolas.Views.LegolasSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:Legolas.Views.Converters"
              Background="{DynamicResource BgPrimaryBrush}">
     <UserControl.Resources>
         <ResourceDictionary>
@@ -157,8 +158,10 @@
                 </StackPanel>
             </GroupBox>
 
-            <!-- Marker colors -->
-            <GroupBox Header="Marker Colors" Padding="8" Margin="0,0,0,12">
+            <!-- Map colours (route + wedges). Player marker moved into its own
+                 "Player Pin" group below — it's now a configurable pin like the
+                 survey pin, not just a colour. -->
+            <GroupBox Header="Map Colors" Padding="8" Margin="0,0,0,12">
                 <StackPanel>
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -170,45 +173,24 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Pin (pending)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Route line" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <TextBox  Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.PinPending, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="0" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.PinPending}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Pin (finalized)" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.PinFinalized, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="1" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.PinFinalized}" />
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Player marker" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.PlayerMarker, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="2" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.PlayerMarker}" />
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Route line" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
                                   Text="{Binding Colors.RouteLine, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="3" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                        <Border   Grid.Row="0" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
                                   Background="{Binding Brushes.RouteLine}" />
 
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Wedge fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Wedge fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
                                   Text="{Binding Colors.BearingWedgeFill, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="4" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                        <Border   Grid.Row="1" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
                                   Background="{Binding Brushes.BearingWedgeFill}" />
 
-                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Wedge stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Wedge stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
                                   Text="{Binding Colors.BearingWedgeStroke, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="5" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                        <Border   Grid.Row="2" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
                                   Background="{Binding Brushes.BearingWedgeStroke}" />
                     </Grid>
                     <TextBlock Text="ARGB hex (e.g. #FFFF0000 — opaque red, or #33FFFF80 — translucent yellow). 6-digit RGB also accepted; alpha defaults to FF."
@@ -216,6 +198,463 @@
                                TextWrapping="Wrap" Margin="0,6,0,0" />
                     <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
                             Padding="10,4" Command="{Binding ResetColorsToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Pin Appearance (issue #131) -->
+            <GroupBox Header="Pin Appearance" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Outer ring and centre indicator are independent — fill, stroke, shape, and stroke style can each be set per shape. Outer ring diameter follows the &quot;Pin radius&quot; slider above; the centre has its own size."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                    <!-- Live preview — same Path layers as the real map DataTemplate, just
+                         scaled up so colour/stroke/shape tweaks are immediately visible. -->
+                    <Border BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                            Background="#FF101010" Padding="12" Margin="0,0,0,12"
+                            HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid Width="64" Height="64">
+                                <!-- Outer shape -->
+                                <Path Fill="{Binding Brushes.OuterFill}"
+                                      Stroke="{Binding Brushes.OuterStroke}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      StrokeDashArray="{Binding PinStyle.Outer.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PinStyle.Outer.StrokeStyle" />
+                                            <Binding Path="PinStyle.Outer.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PinStyle.Outer.Shape" />
+                                            <Binding Path="PreviewPinDiameter" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <!-- Centre indicator -->
+                                <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Fill="{Binding Brushes.CenterFill}"
+                                      Stroke="{Binding Brushes.CenterStroke}"
+                                      StrokeDashArray="{Binding PinStyle.Center.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PinStyle.Center.StrokeStyle" />
+                                            <Binding Path="PinStyle.Center.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PinStyle.Center.Shape" />
+                                            <Binding Path="PinStyle.Center.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                            </Grid>
+                            <TextBlock Text="Preview" VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource TextTertiaryBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Outer ring. Grid uses a 4-column layout — label | flex-control |
+                         numeric-value | swatch — so slider rows and colour rows can share
+                         the same template without the value TextBox overlapping the slider. -->
+                    <TextBlock Text="Outer" FontWeight="SemiBold" Margin="0,4,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding PinStyle.Outer}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.OuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.OuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <!-- Centre indicator -->
+                    <TextBlock Text="Centre" FontWeight="SemiBold" Margin="0,12,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding PinStyle.Center}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Size (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="1" Maximum="20" Value="{Binding Size}" />
+                        <TextBox   Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Size, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,12,0,0"
+                            Padding="10,4" Command="{Binding ResetPinStyleToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Player Pin (issue #131) — same shape model as the survey pin but with
+                 player-specific defaults (white circle outer + small green centre dot).
+                 Outer.Size is meaningful here: it drives the Thumb bounds on the map. -->
+            <GroupBox Header="Player Pin" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="The player anchor pin. Same shape + colour controls as the survey pin; here the outer Size is the actual on-map diameter (no separate radius slider)."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                    <!-- Live preview of the player pin. -->
+                    <Border BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                            Background="#FF101010" Padding="12" Margin="0,0,0,12"
+                            HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid Width="64" Height="64">
+                                <Path Fill="{Binding Brushes.PlayerOuterFill}"
+                                      Stroke="{Binding Brushes.PlayerOuterStroke}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      StrokeDashArray="{Binding PlayerPinStyle.Outer.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PlayerPinStyle.Outer.StrokeStyle" />
+                                            <Binding Path="PlayerPinStyle.Outer.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PlayerPinStyle.Outer.Shape" />
+                                            <Binding Path="PlayerPinStyle.Outer.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Fill="{Binding Brushes.PlayerCenterFill}"
+                                      Stroke="{Binding Brushes.PlayerCenterStroke}"
+                                      StrokeDashArray="{Binding PlayerPinStyle.Center.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PlayerPinStyle.Center.StrokeStyle" />
+                                            <Binding Path="PlayerPinStyle.Center.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PlayerPinStyle.Center.Shape" />
+                                            <Binding Path="PlayerPinStyle.Center.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                            </Grid>
+                            <TextBlock Text="Preview" VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource TextTertiaryBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Outer ring -->
+                    <TextBlock Text="Outer" FontWeight="SemiBold" Margin="0,4,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding PlayerPinStyle.Outer}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.PlayerOuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.PlayerOuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Size (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="2" Maximum="40" Value="{Binding Size}" />
+                        <TextBox   Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Size, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <!-- Centre indicator -->
+                    <TextBlock Text="Centre" FontWeight="SemiBold" Margin="0,12,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding PlayerPinStyle.Center}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.PlayerCenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.PlayerCenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Size (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="1" Maximum="20" Value="{Binding Size}" />
+                        <TextBox   Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Size, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,12,0,0"
+                            Padding="10,4" Command="{Binding ResetPlayerPinStyleToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Active Pin Highlight (issue #131) -->
+            <GroupBox Header="Active Pin Highlight" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Visual treatment for the pin you'd nudge with a keyboard shortcut. Only visible while the survey FSM is in Listening — Gathering uses the marching-ants line on the active target instead. Halo draws a static ring (cheap, crisp, can clash with the in-game survey ping animation); Glow draws a soft DropShadow (doesn't clash, slightly softer feel). ScaleUp / FillSwap are reserved for a future PR."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                    <!-- Live preview that mirrors the chosen treatment. The halo Path's
+                         visibility is gated on Treatment==Halo; the Grid.Effect carries the
+                         Glow when Treatment==Glow. The IsSelected/IsListening checks that
+                         apply on the real map don't apply here — this is a static "what
+                         does active look like" preview. -->
+                    <Border BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                            Background="#FF101010" Padding="12" Margin="0,0,0,12"
+                            HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid Width="80" Height="80">
+                                <Grid.Effect>
+                                    <MultiBinding Converter="{x:Static converters:PreviewGlowEffectConverter.Instance}">
+                                        <Binding Path="ActivePinStyle.Treatment" />
+                                        <Binding Path="Brushes.ActivePin" />
+                                        <Binding Path="ActivePinStyle.GlowBlurRadius" />
+                                    </MultiBinding>
+                                </Grid.Effect>
+                                <!-- Halo (outermost), shown only when Treatment == Halo. -->
+                                <Path Stroke="{Binding Brushes.ActivePin}"
+                                      Fill="Transparent"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Visibility="{Binding ActivePinStyle.Treatment, Converter={x:Static converters:TreatmentToHaloVisibilityConverter.Instance}}"
+                                      StrokeThickness="{Binding ActivePinStyle.HaloThickness}">
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:HaloGeometryConverter.Instance}">
+                                            <Binding Path="PinStyle.Outer.Shape" />
+                                            <Binding Path="PreviewPinDiameter" />
+                                            <Binding Path="ActivePinStyle.HaloPaddingPx" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <!-- Outer shape -->
+                                <Path Fill="{Binding Brushes.OuterFill}"
+                                      Stroke="{Binding Brushes.OuterStroke}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      StrokeDashArray="{Binding PinStyle.Outer.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PinStyle.Outer.StrokeStyle" />
+                                            <Binding Path="PinStyle.Outer.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PinStyle.Outer.Shape" />
+                                            <Binding Path="PreviewPinDiameter" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <!-- Centre indicator -->
+                                <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Fill="{Binding Brushes.CenterFill}"
+                                      Stroke="{Binding Brushes.CenterStroke}"
+                                      StrokeDashArray="{Binding PinStyle.Center.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="PinStyle.Center.StrokeStyle" />
+                                            <Binding Path="PinStyle.Center.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="PinStyle.Center.Shape" />
+                                            <Binding Path="PinStyle.Center.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                            </Grid>
+                            <TextBlock Text="Preview (active pin)" VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource TextTertiaryBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid DataContext="{Binding ActivePinStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Treatment" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.ActivePinTreatments, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Treatment}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Color" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Color, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.ActivePin, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Halo thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="1" Maximum="6" Value="{Binding HaloThickness}" />
+                        <TextBox   Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding HaloThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Halo padding (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="10" Value="{Binding HaloPaddingPx}" />
+                        <TextBox   Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding HaloPaddingPx, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Glow blur (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="30" Value="{Binding GlowBlurRadius}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding GlowBlurRadius, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,12,0,0"
+                            Padding="10,4" Command="{Binding ResetActivePinStyleToDefaultsCommand}" />
                 </StackPanel>
             </GroupBox>
 

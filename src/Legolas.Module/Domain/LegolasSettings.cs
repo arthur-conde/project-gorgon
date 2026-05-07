@@ -1,9 +1,63 @@
 using System.ComponentModel;
+using Mithril.Shared.Character;
 
 namespace Legolas.Domain;
 
-public sealed class LegolasSettings : INotifyPropertyChanged
+public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<LegolasSettings>
 {
+    public const int Version = 2;
+    public static int CurrentVersion => Version;
+
+    /// <summary>
+    /// v1 had no schema field; v2 introduces <see cref="LegolasPinStyle"/> +
+    /// <see cref="LegolasActivePinStyle"/> + per-pin <see cref="PlayerPinStyle"/>
+    /// and removes the old <c>PinPending</c>/<c>PinFinalized</c>/<c>PlayerMarker</c>
+    /// fields from <see cref="LegolasColors"/>. Defaults to <c>1</c> (not
+    /// <see cref="Version"/>) so that v1 JSON, which lacks the
+    /// <c>schemaVersion</c> field, deserializes with the legacy version and
+    /// triggers <see cref="Migrate"/>. Fresh in-memory instances also start at
+    /// <c>1</c> — no-op migration since their legacy fields are null — and the
+    /// loader bumps to current after persisting.
+    /// </summary>
+    public int SchemaVersion { get; set; } = 1;
+
+    public static LegolasSettings Migrate(LegolasSettings loaded)
+    {
+        if (loaded.SchemaVersion >= Version) return loaded;
+
+        // v1 → v2: carry forward the user's customised pin colours into the
+        // new style sub-states so they don't reset to defaults.
+        //   * pinPending — single v1 colour, drove BOTH the survey pin's outer
+        //     stroke AND its centre fill; lands in both fields.
+        //   * pinFinalized — unused on main since #130; promoted to the
+        //     active-pin highlight colour for users who customised it.
+        //   * playerMarker — v1 player anchor's centre dot colour; lands in
+        //     PlayerPinStyle.Center.FillColor (the outer ring was hardcoded
+        //     white, so PlayerPinStyle.Outer.* keeps its v1-equivalent default).
+        var legacyPending = loaded.Colors.LegacyPinPending;
+        var legacyFinalized = loaded.Colors.LegacyPinFinalized;
+        var legacyPlayer = loaded.Colors.LegacyPlayerMarker;
+
+        if (!string.IsNullOrWhiteSpace(legacyPending))
+        {
+            loaded.PinStyle.Outer.StrokeColor = legacyPending;
+            loaded.PinStyle.Center.FillColor = legacyPending;
+        }
+        if (!string.IsNullOrWhiteSpace(legacyFinalized))
+        {
+            loaded.ActivePinStyle.Color = legacyFinalized;
+        }
+        if (!string.IsNullOrWhiteSpace(legacyPlayer))
+        {
+            loaded.PlayerPinStyle.Center.FillColor = legacyPlayer;
+        }
+
+        loaded.Colors.LegacyPinPending = null;
+        loaded.Colors.LegacyPinFinalized = null;
+        loaded.Colors.LegacyPlayerMarker = null;
+        return loaded;
+    }
+
     private double _surveyDedupRadiusMetres = 5.0;
     public double SurveyDedupRadiusMetres
     {
@@ -34,6 +88,9 @@ public sealed class LegolasSettings : INotifyPropertyChanged
 
     public InventoryGridSettings InventoryGrid { get; set; } = new();
     public LegolasColors Colors { get; set; } = new();
+    public LegolasPinStyle PinStyle { get; set; } = new();
+    public LegolasPinStyle PlayerPinStyle { get; set; } = LegolasPinStyle.PlayerDefaults();
+    public LegolasActivePinStyle ActivePinStyle { get; set; } = new();
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
 
