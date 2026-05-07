@@ -234,15 +234,57 @@
                             <Run Text="." />
                         </TextBlock>
                     </StackPanel>
-                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8" Margin="0,0,0,20"
-                            HorizontalAlignment="Center">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Pins placed: " Foreground="{StaticResource AccentSoftTextBrush}"
-                                       FontSize="{DynamicResource AppFontSizeBody}" />
-                            <TextBlock Text="{Binding Session.Surveys.Count}" FontWeight="SemiBold"
-                                       FontSize="{DynamicResource AppFontSizeBody}"
-                                       Foreground="{StaticResource AccentSoftTextBrush}" />
-                        </StackPanel>
+                    <!-- Survey list. Selecting an item sets Session.SelectedSurvey, which
+                         the overlay drag-pad uses as its target and the nudge pad routes
+                         to. ListBox uses VirtualizingStackPanel by default — important for
+                         survey runs of 100+ pins. -->
+                    <Border Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                            CornerRadius="3" Margin="0,0,0,12">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top"
+                                    Background="{StaticResource AccentSoftBrush}"
+                                    Padding="10,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Pins placed: " Foreground="{StaticResource AccentSoftTextBrush}"
+                                               FontSize="{DynamicResource AppFontSizeBody}" />
+                                    <TextBlock Text="{Binding Session.Surveys.Count}" FontWeight="SemiBold"
+                                               FontSize="{DynamicResource AppFontSizeBody}"
+                                               Foreground="{StaticResource AccentSoftTextBrush}" />
+                                    <TextBlock Text=" — click to select" Foreground="{StaticResource AccentSoftTextBrush}"
+                                               FontSize="{DynamicResource AppFontSize}"
+                                               VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <ListBox x:Name="SurveyList"
+                                     ItemsSource="{Binding Session.Surveys}"
+                                     SelectedItem="{Binding Session.SelectedSurvey, Mode=TwoWay}"
+                                     SelectionChanged="SurveyList_SelectionChanged"
+                                     BorderThickness="0"
+                                     MaxHeight="240"
+                                     Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:SurveyItemViewModel}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                                            <TextBlock Width="24" TextAlignment="Right" Margin="0,0,8,0"
+                                                       Text="{Binding RouteOrder, TargetNullValue=•, FallbackValue=•}"
+                                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSize}" />
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="{DynamicResource AppFontSize}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
                     </Border>
                     <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"

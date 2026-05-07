@@ -22,17 +22,14 @@ public partial class MapOverlayView : Window
     /// pad's host border). Same instance as the one MapOverlayViewModel sees.</summary>
     public LegolasSettings? Settings { get; }
 
-    private Vector _grabOffset;
-    private Vector _anchorGrabOffset;
-
     // State for the "drag anywhere on the viewport to move the active pin"
-    // gesture (issue #131 follow-up). Routes by FSM state + IsAnchorEditable:
+    // gesture. Routes by FSM state + IsAnchorEditable:
     //  * AwaitingPosition: first MouseDown sets anchor (existing HandleMapClick);
     //    drag continues to refine the anchor.
     //  * Listening + IsAnchorEditable (anchor set, no surveys yet): drag moves
-    //    the player anchor — important when the anchor lands off-screen and
-    //    can't be grabbed via its Thumb.
-    //  * Listening with surveys: drag moves SessionState.SelectedSurvey.
+    //    the player anchor.
+    //  * Listening with surveys: drag moves SessionState.SelectedSurvey, which
+    //    is set from the wizard panel's survey list (no per-pin Thumb grab).
     private bool _draggingAnchorFromViewport;
     private SurveyItemViewModel? _draggingPinFromViewport;
 
@@ -67,28 +64,6 @@ public partial class MapOverlayView : Window
         }
     }
 
-    private void SurveyDot_DragStarted(object sender, DragStartedEventArgs e)
-    {
-        if (sender is not Thumb thumb) return;
-        // Grabbing a pin also selects it for arrow-key nudging.
-        if (thumb.DataContext is SurveyItemViewModel s
-            && DataContext is MapOverlayViewModel vm)
-        {
-            vm.Session.SelectedSurvey = s;
-        }
-        // Capture offset from the dot's center to the cursor at grab time, so
-        // the released dot ends up where the user expected (no snap to cursor).
-        var cursor = Mouse.GetPosition(Viewport);
-        if (thumb.DataContext is SurveyItemViewModel sel && sel.EffectivePixel.HasValue)
-        {
-            _grabOffset = cursor - new Point(sel.EffectivePixel.Value.X, sel.EffectivePixel.Value.Y);
-        }
-        else
-        {
-            _grabOffset = new Vector(0, 0);
-        }
-    }
-
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         // Arrow-key pin nudging moved to global IHotkeyCommand registrations
@@ -103,77 +78,9 @@ public partial class MapOverlayView : Window
         base.OnPreviewKeyDown(e);
     }
 
-    private void SurveyDot_DragDelta(object sender, DragDeltaEventArgs e)
-    {
-        if (sender is not Thumb thumb) return;
-        // Always create/replace with a mutable transform (XAML-declared ones
-        // can be auto-frozen in template contexts).
-        if (thumb.RenderTransform is not TranslateTransform t || t.IsFrozen)
-        {
-            t = new TranslateTransform();
-            thumb.RenderTransform = t;
-        }
-        t.X += e.HorizontalChange;
-        t.Y += e.VerticalChange;
-    }
-
-    private void PlayerAnchor_DragStarted(object sender, DragStartedEventArgs e)
-    {
-        if (DataContext is not MapOverlayViewModel vm) return;
-        if (!vm.Session.IsAnchorEditable) return;
-        // Clear pin selection so subsequent keyboard nudges fall through to the
-        // anchor (NudgePinCommandBase routes by SelectedSurvey first).
-        vm.Session.SelectedSurvey = null;
-        var cursor = Mouse.GetPosition(Viewport);
-        _anchorGrabOffset = cursor - new Point(vm.PlayerPosition.X, vm.PlayerPosition.Y);
-    }
-
-    private void PlayerAnchor_DragDelta(object sender, DragDeltaEventArgs e)
-    {
-        // Same transient-transform trick as SurveyDot_DragDelta — the binding
-        // re-positions the Thumb on DragCompleted.
-        if (sender is not Thumb thumb) return;
-        if (thumb.RenderTransform is not TranslateTransform t || t.IsFrozen)
-        {
-            t = new TranslateTransform();
-            thumb.RenderTransform = t;
-        }
-        t.X += e.HorizontalChange;
-        t.Y += e.VerticalChange;
-    }
-
-    private void PlayerAnchor_DragCompleted(object sender, DragCompletedEventArgs e)
-    {
-        if (sender is not Thumb thumb) return;
-        thumb.RenderTransform = Transform.Identity;
-        if (e.Canceled) return;
-        if (DataContext is not MapOverlayViewModel vm) return;
-        // Re-check editability — a survey could have landed mid-drag and sealed
-        // the anchor. Silently dropping the move is safer than committing it.
-        if (!vm.Session.IsAnchorEditable) return;
-        var cursor = Mouse.GetPosition(Viewport);
-        var newCenter = new PixelPoint(cursor.X - _anchorGrabOffset.X, cursor.Y - _anchorGrabOffset.Y);
-        _anchorGrabOffset = new Vector(0, 0);
-        vm.MoveAnchor(newCenter);
-    }
-
-    private void SurveyDot_DragCompleted(object sender, DragCompletedEventArgs e)
-    {
-        if (sender is not Thumb thumb) return;
-
-        // Drop the transient drag transform; binding to ManualOverride/EffectivePixel
-        // re-positions the dot.
-        thumb.RenderTransform = Transform.Identity;
-
-        if (e.Canceled) return;
-        if (thumb.DataContext is not SurveyItemViewModel survey) return;
-        if (DataContext is not MapOverlayViewModel vm) return;
-
-        var cursor = Mouse.GetPosition(Viewport);
-        var newCenter = new PixelPoint(cursor.X - _grabOffset.X, cursor.Y - _grabOffset.Y);
-        _grabOffset = new Vector(0, 0);
-        vm.CorrectSurveyCommand.Execute(new CorrectionArgs(survey, newCenter));
-    }
+    // Per-pin Thumb drag handlers were removed when pins became visual-only.
+    // All click + drag interaction now flows through the viewport handlers
+    // below; selection moved to the wizard panel's survey list.
 
     private void Viewport_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
