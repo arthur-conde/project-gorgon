@@ -153,4 +153,110 @@ public class NudgePinCommandTests
         cmd.Id.Should().Be("legolas.pin.nudge.up");
         cmd.DefaultBinding.Should().BeNull("arrow keys collide with in-game movement; user must opt in");
     }
+
+    // ─── Anchor fallback (issue #120) ──────────────────────────────────────
+    // When no pin is selected and the anchor is still editable (post-Set
+    // Position, pre-first-survey), nudge keys should move the anchor instead
+    // of no-op'ing.
+
+    [Fact]
+    public async Task Up_with_no_pin_and_editable_anchor_moves_anchor_minus_one_y()
+    {
+        var (session, map, settings) = BuildSut();
+        session.SelectedSurvey = null;
+        session.HasPlayerPosition = true;
+        session.PlayerPosition = new PixelPoint(400, 300);
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.X.Should().Be(400);
+        session.PlayerPosition.Y.Should().Be(299);
+    }
+
+    [Fact]
+    public async Task Right_fast_with_no_pin_and_editable_anchor_moves_anchor_plus_five_x()
+    {
+        var (session, map, settings) = BuildSut();
+        session.HasPlayerPosition = true;
+        session.PlayerPosition = new PixelPoint(400, 300);
+        var cmd = new NudgePinRightFastCommand(session, map, settings);
+
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.X.Should().BeApproximately(405, 1e-9);
+        session.PlayerPosition.Y.Should().Be(300);
+    }
+
+    [Fact]
+    public async Task Down_fine_with_no_pin_and_editable_anchor_moves_anchor_plus_quarter_y()
+    {
+        var (session, map, settings) = BuildSut();
+        session.HasPlayerPosition = true;
+        session.PlayerPosition = new PixelPoint(400, 300);
+        var cmd = new NudgePinDownFineCommand(session, map, settings);
+
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.X.Should().Be(400);
+        session.PlayerPosition.Y.Should().BeApproximately(300.25, 1e-9);
+    }
+
+    [Fact]
+    public async Task No_pin_and_anchor_unset_is_noop()
+    {
+        var (session, map, settings) = BuildSut();
+        // HasPlayerPosition stays false → IsAnchorEditable is false even though
+        // there are no surveys.
+        var initial = session.PlayerPosition;
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.X.Should().Be(initial.X);
+        session.PlayerPosition.Y.Should().Be(initial.Y);
+    }
+
+    [Fact]
+    public async Task No_pin_and_anchor_locked_is_noop()
+    {
+        var (session, map, settings) = BuildSut();
+        session.HasPlayerPosition = true;
+        session.PlayerPosition = new PixelPoint(400, 300);
+        // Adding any survey seals the anchor.
+        var survey = Survey.Create("Sealer", new MetreOffset(1, 1), gridIndex: 0)
+            with { ManualOverride = new PixelPoint(420, 320) };
+        session.Surveys.Add(new SurveyItemViewModel(survey));
+        session.SelectedSurvey = null;
+
+        var cmd = new NudgePinUpCommand(session, map, settings);
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.X.Should().Be(400, "anchor is locked once a survey lands");
+        session.PlayerPosition.Y.Should().Be(300);
+    }
+
+    [Fact]
+    public async Task Selected_pin_takes_precedence_over_editable_anchor()
+    {
+        // Regression guard: if both fallbacks are eligible (selected pin AND
+        // editable anchor), the selected pin wins — keeps the existing nudge
+        // semantics intact for users who have a pin selected mid-session.
+        var (session, map, settings) = BuildSut();
+        session.HasPlayerPosition = true;
+        session.PlayerPosition = new PixelPoint(400, 300);
+        // Important: anchor is still editable (Surveys.Count == 0).
+        // Use a "shadow" pin that lives only in SelectedSurvey, not in Surveys —
+        // matches the hotkey-routing precondition without sealing the anchor.
+        var shadow = Survey.Create("Shadow", new MetreOffset(0, 0), gridIndex: 99)
+            with { ManualOverride = new PixelPoint(100, 200) };
+        var shadowVm = new SurveyItemViewModel(shadow);
+        session.SelectedSurvey = shadowVm;
+        session.IsAnchorEditable.Should().BeTrue();
+
+        var cmd = new NudgePinUpCommand(session, map, settings);
+        await cmd.ExecuteAsync(CancellationToken.None);
+
+        session.PlayerPosition.Y.Should().Be(300, "selected pin should be nudged, not the anchor");
+    }
 }

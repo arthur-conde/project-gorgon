@@ -155,6 +155,20 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _surveyFlow.ConfirmPlayerPosition();
     }
 
+    /// <summary>
+    /// Reposition the anchor without crossing FSM states. Only valid while
+    /// <see cref="SessionState.IsAnchorEditable"/>; intended for drag/nudge
+    /// fine-tuning between <see cref="SetPlayerPosition"/> and the first survey.
+    /// No reproject is needed (no surveys exist yet); wedges and route geometry
+    /// rebuild via the existing <c>PlayerPosition</c> change handler in the ctor.
+    /// </summary>
+    public void MoveAnchor(PixelPoint where)
+    {
+        if (!_session.IsAnchorEditable) return;
+        _session.PlayerPosition = where;
+        _projector.SetOrigin(where);
+    }
+
     [RelayCommand]
     public void HandleMapClick(PixelPoint where)
     {

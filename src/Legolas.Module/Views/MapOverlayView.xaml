@@ -93,16 +93,33 @@
                     </Polyline.Triggers>
                 </Polyline>
 
-                <!-- Player marker: outer ring + inner dot -->
-                <Canvas IsHitTestVisible="False">
-                    <Grid Width="18" Height="18"
-                          Canvas.Left="{Binding PlayerPosition.X, Converter={x:Static controls:OffsetConverter.MinusNine}}"
-                          Canvas.Top="{Binding PlayerPosition.Y, Converter={x:Static controls:OffsetConverter.MinusNine}}">
-                        <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
-                        <Ellipse Width="6" Height="6"
-                                 Fill="{Binding Brushes.PlayerMarker}"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Grid>
+                <!-- Player marker: outer ring + inner dot.
+                     Wrapped in a Thumb so the user can fine-tune the anchor by
+                     dragging — but only while no surveys exist. Once the first
+                     survey lands, projection is anchored to this point and
+                     IsAnchorEditable flips false, restoring the legacy
+                     non-interactive behaviour. -->
+                <Canvas>
+                    <Thumb Width="18" Height="18"
+                           Canvas.Left="{Binding PlayerPosition.X, Converter={x:Static controls:OffsetConverter.MinusNine}}"
+                           Canvas.Top="{Binding PlayerPosition.Y, Converter={x:Static controls:OffsetConverter.MinusNine}}"
+                           IsHitTestVisible="{Binding Session.IsAnchorEditable}"
+                           Cursor="SizeAll"
+                           ToolTip="Drag to fine-tune anchor (locks once the first survey lands)"
+                           DragStarted="PlayerAnchor_DragStarted"
+                           DragDelta="PlayerAnchor_DragDelta"
+                           DragCompleted="PlayerAnchor_DragCompleted">
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <Grid Width="18" Height="18" Background="Transparent">
+                                    <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
+                                    <Ellipse Width="6" Height="6"
+                                             Fill="{Binding Brushes.PlayerMarker}"
+                                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
                 </Canvas>
 
                 <!-- Survey dots with drag-to-correct -->
