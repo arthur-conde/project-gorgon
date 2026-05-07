@@ -68,9 +68,23 @@
 
             <!-- Auto-hide on game unfocus (issue #116) -->
             <GroupBox Header="Auto-Hide" Padding="8" Margin="0,0,0,12">
-                <CheckBox Content="Auto-hide overlays when neither the game nor Mithril has focus"
-                          IsChecked="{Binding ControlPanel.AutoHideOverlaysOnGameUnfocused}"
-                          ToolTip="Hides the map and inventory overlays while you alt-tab to a browser, Discord, etc., and restores whichever was visible when you return." />
+                <StackPanel>
+                    <CheckBox Content="Auto-hide overlays when neither the game nor Mithril has focus"
+                              IsChecked="{Binding ControlPanel.AutoHideOverlaysOnGameUnfocused}"
+                              ToolTip="Hides the map and inventory overlays while you alt-tab to a browser, Discord, etc., and restores whichever was visible when you return." />
+                    <TextBlock Text="Game process name (case-insensitive substring match — covers ProjectGorgon, ProjectGorgon64, Project Gorgon, etc.):"
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,4" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox Width="240" VerticalAlignment="Center"
+                                 Text="{Binding ControlPanel.GameProcessName, UpdateSourceTrigger=LostFocus}" />
+                        <Button Content="Detect from foreground (3s)" Margin="8,0,0,0" Padding="8,2"
+                                Command="{Binding ControlPanel.DetectGameProcessCommand}"
+                                ToolTip="Click, then alt-tab to the game window — its process name is captured after a 3-second countdown." />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ControlPanel.DetectGameProcessStatus}"
+                               Foreground="{StaticResource TextTertiaryBrush}" Margin="0,4,0,0" />
+                </StackPanel>
             </GroupBox>
 
             <!-- Click-through -->

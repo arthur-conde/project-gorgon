@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using Legolas.Domain;
 using Legolas.Interop;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Modules;
@@ -8,16 +9,23 @@ using Mithril.Shared.Modules;
 namespace Legolas.Services;
 
 /// <summary>
-/// Tracks whether the foreground window belongs to Mithril or the Project
-/// Gorgon game process. Exposes a single observable <see cref="IsInApp"/> bool
-/// that <see cref="Hotkeys.OverlayController"/> ANDs with the user's
-/// IsMapVisible / IsInventoryVisible flags so overlays vanish while the user
-/// is in a browser, Discord, etc., and reappear (with prior intent preserved)
-/// when they come back.
+/// Tracks whether the foreground window belongs to Mithril or the configured
+/// game process. Exposes a single observable <see cref="IsInApp"/> bool that
+/// <see cref="Hotkeys.OverlayController"/> ANDs with the user's IsMapVisible /
+/// IsInventoryVisible flags so overlays vanish while the user is in a browser,
+/// Discord, etc., and reappear (with prior intent preserved) when they come
+/// back.
+///
+/// The "in-app" predicate matches by self-PID OR a case-insensitive substring
+/// match against <see cref="LegolasSettings.GameProcessName"/>. Substring
+/// match is forgiving across Steam/Itch/standalone naming variations (e.g.
+/// "ProjectGorgon", "Project Gorgon", "ProjectGorgon64") and lets the user
+/// override via the settings UI without a code change.
 /// </summary>
 public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
 {
     private readonly ModuleGates _gates;
+    private readonly LegolasSettings _settings;
     private readonly CancellationTokenSource _stopCts = new();
     private readonly uint _ownPid;
 
@@ -27,9 +35,10 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private Task? _activationTask;
     private bool _isInApp = true;
 
-    public ForegroundFocusGate(ModuleGates gates)
+    public ForegroundFocusGate(ModuleGates gates, LegolasSettings settings)
     {
         _gates = gates;
+        _settings = settings;
         _ownPid = (uint)Environment.ProcessId;
     }
 
@@ -89,6 +98,11 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
             idThread: 0,
             User32Focus.WINEVENT_OUTOFCONTEXT);
 
+        // Re-evaluate the current foreground when the user changes the
+        // configured process name — otherwise they'd have to alt-tab to make
+        // a corrected name take effect.
+        _settings.PropertyChanged += OnSettingsPropertyChanged;
+
         // Hook delivery is event-driven, so seed the gate from the current
         // foreground window — otherwise IsInApp stays at its default until the
         // next focus change.
@@ -98,9 +112,16 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private void UninstallHook()
     {
         if (_hookHandle == IntPtr.Zero) return;
+        _settings.PropertyChanged -= OnSettingsPropertyChanged;
         User32Focus.UnhookWinEvent(_hookHandle);
         _hookHandle = IntPtr.Zero;
         _hookProc = null;
+    }
+
+    private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(LegolasSettings.GameProcessName)) return;
+        EvaluateForeground(User32Focus.GetForegroundWindow());
     }
 
     private void OnWinEvent(
@@ -128,12 +149,16 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
         if (pid == 0) return _isInApp;
         if (pid == _ownPid) return true;
 
+        var configured = _settings.GameProcessName;
+        if (string.IsNullOrWhiteSpace(configured)) return false;
+
         try
         {
             using var proc = Process.GetProcessById((int)pid);
-            // ProcessName excludes the .exe extension on Windows, matching
-            // the canonical "ProjectGorgon" name.
-            return string.Equals(proc.ProcessName, "ProjectGorgon", StringComparison.OrdinalIgnoreCase);
+            // Substring match (case-insensitive) so "ProjectGorgon",
+            // "ProjectGorgon64", or "Project Gorgon" all count as in-app
+            // without forcing the user to know the exact image name.
+            return proc.ProcessName.Contains(configured, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

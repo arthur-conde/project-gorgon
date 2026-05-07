@@ -126,6 +126,22 @@ public sealed class LegolasSettings : INotifyPropertyChanged
         }
     }
 
+    private string _gameProcessName = "ProjectGorgon";
+    public string GameProcessName
+    {
+        get => _gameProcessName;
+        set
+        {
+            // Trim only — the predicate is a case-insensitive substring match,
+            // so internal whitespace (e.g. "Project Gorgon") is allowed for
+            // launchers that name the executable with a space.
+            var v = value?.Trim() ?? string.Empty;
+            if (string.Equals(_gameProcessName, v, StringComparison.Ordinal)) return;
+            _gameProcessName = v;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GameProcessName)));
+        }
+    }
+
     private double _nudgeStepDefault = 1.0;
     public double NudgeStepDefault
     {
