@@ -34,6 +34,8 @@ public sealed record RecipeAnalysis(
     bool FirstTimeBonusAvailable,
     int EffectiveXp,
     int? CompletionsToLevel,
+    double Complexity,
+    double? Efficiency,
     IReadOnlyList<RecipeIngredientDisplay> Ingredients,
     IReadOnlyList<CraftedGearPreview> CraftedOutputs);
 

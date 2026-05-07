@@ -23,10 +23,12 @@ public sealed partial class SkillAdvisorViewModel
 {
     public IReadOnlyList<SortKey<RecipeAnalysis>> AvailableSortKeys { get; } =
     [
-        new("RecipeName",         "Recipe",   "RecipeName"),
-        new("LevelRequired",      "Lvl Req",  "LevelRequired"),
-        new("EffectiveXp",        "Eff. XP",  "EffectiveXp",        DefaultDescending: true),
-        new("CompletionsToLevel", "To Level", "CompletionsToLevel", DefaultDescending: true),
+        new("RecipeName",         "Recipe",     "RecipeName"),
+        new("LevelRequired",      "Lvl Req",    "LevelRequired"),
+        new("EffectiveXp",        "Eff. XP",    "EffectiveXp",        DefaultDescending: true),
+        new("Complexity",         "Complexity", "Complexity"),
+        new("Efficiency",         "Efficiency", "Efficiency",         DefaultDescending: true),
+        new("CompletionsToLevel", "To Level",   "CompletionsToLevel", DefaultDescending: true),
     ];
 
     public ObservableCollection<ActiveSortKey<RecipeAnalysis>> ActiveSortKeys { get; } = [];

@@ -103,6 +103,16 @@ public sealed class SkillAdvisorEngine
 
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _ref);
 
+            // ChanceToConsume weights catalysts (e.g. Butter's 20%-chance bottle)
+            // fractionally — without it, complexity overcounts.
+            var complexity = recipe.Ingredients
+                .Sum(i => i.StackSize * (double)(i.ChanceToConsume ?? 1.0f));
+            // 0-XP recipes aren't a math hazard, just noise — null suppresses them
+            // alongside the actual divide-by-zero case (zero-ingredient trainers).
+            double? efficiency = effectiveXp > 0 && complexity > 0
+                ? effectiveXp / complexity
+                : null;
+
             recipeAnalyses.Add(new RecipeAnalysis(
                 recipe.Key,
                 recipe.Name,
@@ -116,6 +126,8 @@ public sealed class SkillAdvisorEngine
                 firstTimeBonusAvailable,
                 effectiveXp,
                 completionsToLevel,
+                complexity,
+                efficiency,
                 ingredients,
                 craftedOutputs));
         }
