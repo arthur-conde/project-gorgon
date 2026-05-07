@@ -83,6 +83,7 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<MapOverlayViewModel>();
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
+        services.AddSingleton<NudgePadViewModel>();
 
         // Panel view (shell-hosted UserControl) — singleton so it keeps scroll/state across tab switches.
         // The panel directly hosts the wizard; settings live in the per-module settings tab.
@@ -100,7 +101,8 @@ public sealed class LegolasModule : IMithrilModule
         {
             var view = new MapOverlayView(
                 sp.GetRequiredService<LegolasSettings>(),
-                sp.GetRequiredService<SettingsAutoSaver<LegolasSettings>>());
+                sp.GetRequiredService<SettingsAutoSaver<LegolasSettings>>(),
+                sp.GetRequiredService<NudgePadViewModel>());
             view.DataContext = sp.GetRequiredService<MapOverlayViewModel>();
             return view;
         });

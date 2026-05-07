@@ -155,6 +155,10 @@
                                   Text="{Binding ControlPanel.NudgeStepFine, StringFormat=0.##, UpdateSourceTrigger=LostFocus}" />
                         <TextBlock Grid.Row="2" Grid.Column="2" Text="Default 0.25" Foreground="{StaticResource TextTertiaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </Grid>
+                    <CheckBox Content="Show nudge pad on the map overlay"
+                              IsChecked="{Binding ControlPanel.ShowNudgePadOnOverlay}"
+                              Margin="0,8,0,0"
+                              ToolTip="Mirror the wizard-panel nudge pad onto the map overlay's bottom-right corner. Useful if you don't want to alt-tab between the game and Mithril to fine-tune pins." />
                 </StackPanel>
             </GroupBox>
 

@@ -12,16 +12,39 @@ namespace Legolas.Views;
 
 public partial class MapOverlayView : Window
 {
+    /// <summary>VM for the optional on-overlay nudge pad. Surfaced as a property
+    /// (rather than going through MapOverlayViewModel) to avoid a fake cycle:
+    /// NudgePadViewModel depends on MapOverlayViewModel, so MapOverlayViewModel
+    /// can't take NudgePadViewModel as a ctor param.</summary>
+    public NudgePadViewModel? NudgePad { get; }
+
+    /// <summary>Surfaced for the overlay-local toggle binding (Visibility on the
+    /// pad's host border). Same instance as the one MapOverlayViewModel sees.</summary>
+    public LegolasSettings? Settings { get; }
+
     private Vector _grabOffset;
     private Vector _anchorGrabOffset;
+
+    // State for the "drag anywhere on the viewport to move the active pin"
+    // gesture (issue #131 follow-up). Routes by FSM state + IsAnchorEditable:
+    //  * AwaitingPosition: first MouseDown sets anchor (existing HandleMapClick);
+    //    drag continues to refine the anchor.
+    //  * Listening + IsAnchorEditable (anchor set, no surveys yet): drag moves
+    //    the player anchor — important when the anchor lands off-screen and
+    //    can't be grabbed via its Thumb.
+    //  * Listening with surveys: drag moves SessionState.SelectedSurvey.
+    private bool _draggingAnchorFromViewport;
+    private SurveyItemViewModel? _draggingPinFromViewport;
 
     public MapOverlayView()
     {
         InitializeComponent();
     }
 
-    public MapOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver) : this()
+    public MapOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver, NudgePadViewModel nudgePad) : this()
     {
+        Settings = settings;
+        NudgePad = nudgePad;
         WindowLayoutBinder.Bind(this, settings.MapOverlay, saver.Touch);
         Loaded += (_, _) =>
         {
@@ -163,10 +186,81 @@ public partial class MapOverlayView : Window
         var canvasPos = Mouse.GetPosition(Viewport);
         var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
 
-        // The VM only acts on clicks while the FSM is in AwaitingPosition (anchor
-        // setup). Survey placement is automatic; corrections are drag-only. This
-        // handler is still here so AwaitingPosition continues to work.
-        vm.HandleMapClickCommand.Execute(clickPoint);
+        // AwaitingPosition: first click sets the anchor and transitions FSM to
+        // Listening. Fall through into the IsAnchorEditable path below so the
+        // user can keep dragging to refine the anchor without releasing.
+        if (vm.SurveyFlow.CurrentState == SurveyFlowState.AwaitingPosition)
+        {
+            vm.HandleMapClickCommand.Execute(clickPoint);
+        }
+
+        if (vm.Session.IsAnchorEditable)
+        {
+            _draggingAnchorFromViewport = true;
+            vm.MoveAnchor(clickPoint);
+            Viewport.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
+        var selected = vm.Session.SelectedSurvey;
+        if (selected != null && !selected.Collected && !selected.Skipped)
+        {
+            _draggingPinFromViewport = selected;
+            ApplyDraggedPinPosition(canvasPos);
+            Viewport.CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         e.Handled = true;
+    }
+
+    private void Viewport_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!Viewport.IsMouseCaptured) return;
+        if (DataContext is not MapOverlayViewModel vm) return;
+        var canvasPos = Mouse.GetPosition(Viewport);
+
+        if (_draggingAnchorFromViewport)
+        {
+            vm.MoveAnchor(new PixelPoint(canvasPos.X, canvasPos.Y));
+            return;
+        }
+        if (_draggingPinFromViewport is not null)
+        {
+            ApplyDraggedPinPosition(canvasPos);
+        }
+    }
+
+    private void Viewport_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!Viewport.IsMouseCaptured) return;
+        Viewport.ReleaseMouseCapture();
+
+        if (_draggingAnchorFromViewport)
+        {
+            _draggingAnchorFromViewport = false;
+            return;
+        }
+
+        if (_draggingPinFromViewport is not null && DataContext is MapOverlayViewModel vm)
+        {
+            // Final commit through CorrectSurveyCommand — this triggers the
+            // projector refit and route rebuild that intermediate Move events
+            // intentionally skip.
+            var canvasPos = Mouse.GetPosition(Viewport);
+            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
+            _draggingPinFromViewport = null;
+        }
+    }
+
+    private void ApplyDraggedPinPosition(Point cursor)
+    {
+        if (_draggingPinFromViewport is null) return;
+        var newPixel = new PixelPoint(cursor.X, cursor.Y);
+        var updated = _draggingPinFromViewport.Model with { ManualOverride = newPixel };
+        _draggingPinFromViewport.UpdateModel(updated);
     }
 }

@@ -39,7 +39,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         MotherlodeFlowController motherlodeFlow,
         ControlPanelViewModel controlPanel,
         MotherlodeViewModel motherlode,
-        MapOverlayViewModel mapOverlay)
+        MapOverlayViewModel mapOverlay,
+        NudgePadViewModel nudgePad)
     {
         _session = session;
         _surveyFlow = surveyFlow;
@@ -47,6 +48,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         ControlPanel = controlPanel;
         Motherlode = motherlode;
         MapOverlay = mapOverlay;
+        NudgePad = nudgePad;
 
         _surveyFlow.PropertyChanged += OnSurveyFlowChanged;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
@@ -93,6 +95,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     public ControlPanelViewModel ControlPanel { get; }
     public MotherlodeViewModel Motherlode { get; }
     public MapOverlayViewModel MapOverlay { get; }
+    public NudgePadViewModel NudgePad { get; }
 
     public SessionState Session => _session;
     public SurveyFlowController SurveyFlow => _surveyFlow;

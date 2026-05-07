@@ -178,6 +178,23 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
         }
     }
 
+    /// <summary>
+    /// Mirror the wizard panel's nudge pad onto the map overlay. Off by
+    /// default to keep the overlay clean; users who prefer to nudge without
+    /// alt-tabbing flip this on.
+    /// </summary>
+    private bool _showNudgePadOnOverlay;
+    public bool ShowNudgePadOnOverlay
+    {
+        get => _showNudgePadOnOverlay;
+        set
+        {
+            if (_showNudgePadOnOverlay == value) return;
+            _showNudgePadOnOverlay = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowNudgePadOnOverlay)));
+        }
+    }
+
     private bool _autoHideOverlaysOnGameUnfocused = true;
     public bool AutoHideOverlaysOnGameUnfocused
     {

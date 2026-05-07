@@ -1,9 +1,11 @@
 <Window x:Class="Legolas.Views.MapOverlayView"
+        x:Name="Self"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Legolas.ViewModels"
         xmlns:controls="clr-namespace:Legolas.Controls"
         xmlns:converters="clr-namespace:Legolas.Views.Converters"
+        xmlns:views="clr-namespace:Legolas.Views"
         Title="Map Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -38,7 +40,9 @@
 
             <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent">
               <Grid x:Name="Viewport" Background="Transparent"
-                    MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
+                    MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
+                    MouseMove="Viewport_MouseMove"
+                    MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
                 <!-- Bearing-uncertainty wedge layer (behind everything) -->
                 <ItemsControl ItemsSource="{Binding Surveys}" IsHitTestVisible="False">
                     <ItemsControl.ItemsPanel>
@@ -284,6 +288,36 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Optional on-overlay nudge pad (toggle in settings). Same VM as
+                     the wizard panel's pad, so step-size selection stays in sync. -->
+                <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="0,0,16,16" Padding="10,8"
+                        Background="#CC101010" BorderBrush="#FF505050" BorderThickness="1"
+                        CornerRadius="4">
+                    <Border.Visibility>
+                        <Binding ElementName="Self" Path="Settings.ShowNudgePadOnOverlay"
+                                 Converter="{x:Static controls:BoolToVisibilityConverter.Instance}" />
+                    </Border.Visibility>
+                    <views:NudgePadView DataContext="{Binding ElementName=Self, Path=NudgePad}" />
+                </Border>
+
+                <!-- On-overlay hint banner. Shown only during AwaitingPosition
+                     and Listening-with-no-surveys (where a freshly-projected
+                     anchor can land off-screen). IsHitTestVisible=False so the
+                     banner doesn't block the drag-to-place gesture it documents. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,12,0,0" Padding="14,8"
+                        Background="#CC101010" BorderBrush="#FF505050" BorderThickness="1"
+                        CornerRadius="4" MaxWidth="520"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding IsOverlayHintVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <TextBlock Text="{Binding OverlayHint}"
+                               Foreground="#FFE0E0E0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               FontSize="13" />
+                </Border>
               </Grid>
             </Grid>
         </DockPanel>

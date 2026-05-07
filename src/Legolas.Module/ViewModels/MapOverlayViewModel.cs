@@ -61,6 +61,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             {
                 RebuildAllWedges();
             }
+            else if (e.PropertyName is nameof(SessionState.IsAnchorEditable)
+                  or nameof(SessionState.HasPlayerPosition))
+            {
+                // Anchor-editable state gates the "drag to refine" hint.
+                OnPropertyChanged(nameof(OverlayHint));
+                OnPropertyChanged(nameof(IsOverlayHintVisible));
+            }
         };
 
         // Forward FSM state changes so the pin DataTemplate can gate the
@@ -69,12 +76,42 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _surveyFlow.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SurveyFlowController.CurrentState))
+            {
                 OnPropertyChanged(nameof(IsListening));
+                OnPropertyChanged(nameof(OverlayHint));
+                OnPropertyChanged(nameof(IsOverlayHintVisible));
+            }
         };
     }
 
     /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>
     public bool IsListening => _surveyFlow.CurrentState == SurveyFlowState.Listening;
+
+    /// <summary>
+    /// Move the currently-nudgeable target by <c>(dx, dy) * step</c>. Routes
+    /// to <see cref="SessionState.SelectedSurvey"/> when one is selected and
+    /// has a pixel position; falls back to the player anchor while it's still
+    /// editable. No-op otherwise. Shared between the keyboard hotkey commands
+    /// (NudgePinCommandBase) and the on-screen nudge pad — same semantics, same
+    /// commit path through CorrectSurveyCommand / MoveAnchor.
+    /// </summary>
+    public void Nudge(double dx, double dy, double step)
+    {
+        var selected = _session.SelectedSurvey;
+        if (selected is not null && selected.EffectivePixel.HasValue)
+        {
+            var p = selected.EffectivePixel.Value;
+            CorrectSurveyCommand.Execute(
+                new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+            return;
+        }
+
+        if (_session.IsAnchorEditable)
+        {
+            var p = _session.PlayerPosition;
+            MoveAnchor(new PixelPoint(p.X + dx * step, p.Y + dy * step));
+        }
+    }
 
     private void OnSurveysCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -136,6 +173,31 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// <summary>Active-pin highlight configuration. Falls back to defaults
     /// when the simpler test constructor is used (no settings).</summary>
     public LegolasActivePinStyle ActivePinStyle => _settings?.ActivePinStyle ?? _defaultActivePinStyle;
+
+    /// <summary>
+    /// Context-aware on-overlay instruction. Empty during normal use; appears
+    /// for the two states where a new user can stall:
+    ///  * AwaitingPosition: needs a click to set the anchor.
+    ///  * Listening with anchor placed but no surveys yet: the anchor's initial
+    ///    projection scale can stick the pin off-screen (#131 follow-up). The
+    ///    drag-anywhere gesture rescues it; the hint tells the user how.
+    /// Hidden in Gathering/Done where the route geometry speaks for itself.
+    /// </summary>
+    public string OverlayHint
+    {
+        get
+        {
+            return _surveyFlow.CurrentState switch
+            {
+                SurveyFlowState.AwaitingPosition => "Click anywhere on this map to mark your player position.",
+                SurveyFlowState.Listening when _session.IsAnchorEditable
+                    => "Drag the map to fine-tune your position. Use the Surveying skill in-game — pins place automatically.",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    public bool IsOverlayHintVisible => !string.IsNullOrEmpty(OverlayHint);
 
     public PixelPoint PlayerPosition
     {
@@ -291,7 +353,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     private void RebuildWedgeFor(SurveyItemViewModel s)
     {
-        if (!_session.ShowBearingWedges || s.IsCorrected || s.Offset.Magnitude < 1e-6)
+        // Wedges visualize bearing uncertainty before placement is confirmed.
+        // After PR #130's auto-place flow, IsCorrected stays false even for
+        // confidently-placed pins, so we also hide wedges once the pin is
+        // routed (post-Optimize) or collected/skipped — the uncertainty has
+        // served its purpose and wedges otherwise clutter the Gathering view.
+        if (!_session.ShowBearingWedges
+            || s.IsCorrected
+            || s.RouteOrder.HasValue
+            || s.Collected
+            || s.Skipped
+            || s.Offset.Magnitude < 1e-6)
         {
             s.WedgeGeometry = null;
             return;
