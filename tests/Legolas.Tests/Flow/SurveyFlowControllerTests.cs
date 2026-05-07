@@ -50,52 +50,31 @@ public class SurveyFlowControllerTests
     }
 
     [Fact]
-    public void OnSurveyDetected_Listening_to_AwaitingPin_with_pending_set()
+    public void NoteSurveyDetected_Listening_no_transition_surfaces_inventory()
     {
-        var (flow, session, _, _) = BuildSut();
-        Anchor(flow, session);
-        var sd = NewSurvey();
-        flow.OnSurveyDetected(sd);
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPin);
-        session.PendingSurvey.Should().Be(sd);
-    }
-
-    [Fact]
-    public void ConfirmPin_AwaitingPin_to_Listening_clears_pending()
-    {
-        var (flow, session, _, _) = BuildSut();
-        Anchor(flow, session);
-        flow.OnSurveyDetected(NewSurvey());
-        flow.ConfirmPin();
-        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        session.PendingSurvey.Should().BeNull();
-    }
-
-    [Fact]
-    public void OnSurveyDetected_AwaitingPin_overwrites_pending_no_double_transition()
-    {
+        // After the rework: surveys auto-place, so the controller only logs/diagnoses.
+        // Listening is the only state that accepts a survey notification; entering it
+        // surfaces the inventory overlay (AutoOverlayCoordinator reacts to visibility).
         var (flow, session, _, transitions) = BuildSut();
         Anchor(flow, session);
-        flow.OnSurveyDetected(NewSurvey("Diamond"));
         transitions.Clear();
+        session.IsInventoryVisible.Should().BeFalse();
 
-        var second = NewSurvey("Coal");
-        flow.OnSurveyDetected(second);
+        flow.NoteSurveyDetected(NewSurvey());
 
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPin);
-        session.PendingSurvey.Should().Be(second);
-        transitions.Should().BeEmpty(); // no AwaitingPin → AwaitingPin self-transition
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        session.IsInventoryVisible.Should().BeTrue();
+        transitions.Should().BeEmpty();
     }
 
     [Fact]
-    public void OnSurveyDetected_AwaitingPosition_dropped_with_diagnostic()
+    public void NoteSurveyDetected_AwaitingPosition_dropped_with_diagnostic()
     {
         var (flow, session, _, transitions) = BuildSut();
-        var sd = NewSurvey();
-        flow.OnSurveyDetected(sd);
+        flow.NoteSurveyDetected(NewSurvey());
         flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-        session.PendingSurvey.Should().BeNull();
         session.LastLogEvent.Should().Contain("ignored").And.Contain("set player position first");
+        session.IsInventoryVisible.Should().BeFalse();
         transitions.Should().BeEmpty();
     }
 
@@ -123,33 +102,30 @@ public class SurveyFlowControllerTests
     }
 
     [Fact]
-    public void OnSurveyDetected_Gathering_dropped_per_position_anchor_constraint()
+    public void NoteSurveyDetected_Gathering_dropped_per_position_anchor_constraint()
     {
         var (flow, session, _, transitions) = BuildSut();
         Anchor(flow, session);
         flow.OptimizeRoute();
         transitions.Clear();
 
-        flow.OnSurveyDetected(NewSurvey());
+        flow.NoteSurveyDetected(NewSurvey());
 
         flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
-        session.PendingSurvey.Should().BeNull();
         session.LastLogEvent.Should().Contain("route in progress");
         transitions.Should().BeEmpty();
     }
 
     [Fact]
-    public void RequestSetPlayerPosition_from_Listening_clears_pending_preserves_surveys()
+    public void RequestSetPlayerPosition_from_Listening_preserves_surveys()
     {
         var (flow, session, _, _) = BuildSut();
         Anchor(flow, session);
-        flow.OnSurveyDetected(NewSurvey()); // sets PendingSurvey, goes to AwaitingPin
         session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 0)));
 
         flow.RequestSetPlayerPosition();
 
         flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-        session.PendingSurvey.Should().BeNull();
         session.Surveys.Should().HaveCount(1, "RequestSetPlayerPosition is a re-anchor, not a Reset");
     }
 
@@ -243,34 +219,6 @@ public class SurveyFlowControllerTests
         Anchor(flow, session);
         transitions.Clear();
         flow.ConfirmPlayerPosition();
-        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        transitions.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void ConfirmPin_from_Listening_is_noop_with_diagnostic()
-    {
-        var (flow, session, _, transitions) = BuildSut();
-        Anchor(flow, session);
-        transitions.Clear();
-        flow.ConfirmPin();
-        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        session.LastLogEvent.Should().Contain("ConfirmPin ignored");
-        transitions.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void NoteAutoPlacedSurvey_Listening_no_transition()
-    {
-        // ≥2-corrections shortcut: caller placed the pin directly without going through
-        // AwaitingPin. Controller stays in Listening; method exists for symmetry +
-        // potential future diagnostics.
-        var (flow, session, _, transitions) = BuildSut();
-        Anchor(flow, session);
-        transitions.Clear();
-
-        flow.NoteAutoPlacedSurvey(NewSurvey());
-
         flow.CurrentState.Should().Be(SurveyFlowState.Listening);
         transitions.Should().BeEmpty();
     }
