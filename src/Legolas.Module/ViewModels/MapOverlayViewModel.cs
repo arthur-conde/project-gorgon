@@ -68,14 +68,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 OnPropertyChanged(nameof(OverlayHint));
                 OnPropertyChanged(nameof(IsOverlayHintVisible));
             }
+            else if (e.PropertyName is nameof(SessionState.Mode))
+            {
+                // Switching between Survey and Motherlode flips wedge
+                // visibility wholesale — Survey hides them, Motherlode shows.
+                RebuildAllWedges();
+            }
         };
 
         // Forward FSM state changes so the pin DataTemplate can gate the
         // active-pin halo on Listening (the only phase where SelectedSurvey
         // is meaningful — Gathering uses IsActiveTarget + marching ants).
-        // RebuildAllWedges on transition catches the post-Optimize case
-        // where surveys that arrived after the route was computed have
-        // RouteOrder=null and therefore aren't cleared by Optimize itself.
         _surveyFlow.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SurveyFlowController.CurrentState))
@@ -83,7 +86,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsListening));
                 OnPropertyChanged(nameof(OverlayHint));
                 OnPropertyChanged(nameof(IsOverlayHintVisible));
-                RebuildAllWedges();
             }
         };
     }
@@ -357,17 +359,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     private void RebuildWedgeFor(SurveyItemViewModel s)
     {
-        // Wedges visualize bearing uncertainty before placement is confirmed.
-        // After PR #130's auto-place flow, IsCorrected stays false even for
-        // confidently-placed pins, so we also hide wedges:
-        //   * once the pin is routed (post-Optimize) or collected/skipped,
-        //   * any time the FSM has left Listening — Gathering/Done shouldn't
-        //     show wedges at all, even for surveys that arrived after the
-        //     most recent Optimize and therefore have RouteOrder=null.
+        // Wedges only render in Motherlode mode. Survey mode's 4-DOF refit
+        // (PR #130) lands pins essentially pixel-perfect, so the bearing arc
+        // adds no information — the optimised route + the placed pins are
+        // sufficient and precise. Motherlode triangulation has no comparable
+        // refit, so the bearing arc still narrows the search there.
         if (!_session.ShowBearingWedges
-            || _surveyFlow.CurrentState != SurveyFlowState.Listening
+            || _session.Mode != SessionMode.Motherlode
             || s.IsCorrected
-            || s.RouteOrder.HasValue
             || s.Collected
             || s.Skipped
             || s.Offset.Magnitude < 1e-6)
