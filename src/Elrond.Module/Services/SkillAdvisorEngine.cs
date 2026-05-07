@@ -107,10 +107,15 @@ public sealed class SkillAdvisorEngine
             // fractionally — without it, complexity overcounts.
             var complexity = recipe.Ingredients
                 .Sum(i => i.StackSize * (double)(i.ChanceToConsume ?? 1.0f));
+            // What the player actually pockets next craft. First-time bonus is
+            // not subject to the dropoff curve (matches CompletionsToLevel above).
+            var nextCraftXp = firstTimeBonusAvailable && recipe.RewardSkillXpFirstTime > 0
+                ? recipe.RewardSkillXpFirstTime
+                : effectiveXp;
             // 0-XP recipes aren't a math hazard, just noise — null suppresses them
             // alongside the actual divide-by-zero case (zero-ingredient trainers).
-            double? efficiency = effectiveXp > 0 && complexity > 0
-                ? effectiveXp / complexity
+            double? efficiency = nextCraftXp > 0 && complexity > 0
+                ? nextCraftXp / complexity
                 : null;
 
             recipeAnalyses.Add(new RecipeAnalysis(
@@ -125,6 +130,7 @@ public sealed class SkillAdvisorEngine
                 isKnown,
                 firstTimeBonusAvailable,
                 effectiveXp,
+                nextCraftXp,
                 completionsToLevel,
                 complexity,
                 efficiency,

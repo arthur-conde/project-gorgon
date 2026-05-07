@@ -294,6 +294,7 @@
                                                             <RowDefinition Height="Auto"/>
                                                             <RowDefinition Height="Auto"/>
                                                             <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
                                                         </Grid.RowDefinitions>
 
                                                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Base XP" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
@@ -315,18 +316,24 @@
                                                             <Run Text="{Binding EffectiveXp, Mode=OneWay, StringFormat=N0}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Complexity (expected items)" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
+                                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Next craft XP" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
+                                                                   ToolTip="Effective XP, plus first-time bonus if available — what the next craft actually yields"/>
+                                                        <TextBlock Grid.Row="4" Grid.Column="1" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
+                                                            <Run Text="{Binding NextCraftXp, Mode=OneWay, StringFormat=N0}"/>
+                                                        </TextBlock>
+
+                                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Complexity (expected items)" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="5" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0">
                                                             <Run Text="{Binding Complexity, Mode=OneWay, StringFormat=F2}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Efficiency (XP / item)" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="5" Grid.Column="1" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
+                                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Efficiency (next-craft XP / item)" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="6" Grid.Column="1" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold" Margin="20,0,0,0">
                                                             <Run Text="{Binding Efficiency, Mode=OneWay, StringFormat=F1, TargetNullValue=—}"/>
                                                         </TextBlock>
 
-                                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Crafts to next level" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
-                                                        <TextBlock Grid.Row="6" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
+                                                        <TextBlock Grid.Row="7" Grid.Column="0" Text="Crafts to next level" Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                        <TextBlock Grid.Row="7" Grid.Column="1" Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="20,0,0,0"
                                                                    Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}, Mode=OneWay}"/>
                                                     </Grid>
                                                 </Border>

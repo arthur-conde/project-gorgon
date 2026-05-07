@@ -33,6 +33,7 @@ public sealed record RecipeAnalysis(
     bool IsKnown,
     bool FirstTimeBonusAvailable,
     int EffectiveXp,
+    int NextCraftXp,
     int? CompletionsToLevel,
     double Complexity,
     double? Efficiency,
