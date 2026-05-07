@@ -260,6 +260,6 @@ WPF screen Y grows downward; map north grows upward. `Project` negates the rotat
 
 ### Overlay is strictly 1:1 with the game map
 
-No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the canvas inside renders at exactly 1 device pixel per CSS pixel. The 1×1 player anchor is a single device pixel — `SnapsToDevicePixels` + `UseLayoutRounding` + `EdgeMode="Aliased"` on the rectangle keep it crisp.
+No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the canvas inside renders at exactly 1 device pixel per CSS pixel. The 2×2 player anchor stays crisp via `SnapsToDevicePixels` + `UseLayoutRounding` + `EdgeMode="Aliased"` on the rectangle.
 
 If you find yourself adding a `RenderTransform` to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.

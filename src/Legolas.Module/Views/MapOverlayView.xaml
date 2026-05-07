@@ -74,7 +74,7 @@
                             <BeginStoryboard>
                                 <Storyboard RepeatBehavior="Forever">
                                     <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
-                                                     From="0" To="9" Duration="0:0:0.6" />
+                                                     From="0" To="-9" Duration="0:0:0.6" />
                                 </Storyboard>
                             </BeginStoryboard>
                         </EventTrigger>
@@ -101,7 +101,7 @@
                             <ControlTemplate TargetType="Thumb">
                                 <Grid Width="18" Height="18" Background="Transparent">
                                     <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
-                                    <Rectangle Width="1" Height="1"
+                                    <Rectangle Width="2" Height="2"
                                                Fill="{Binding Brushes.PlayerMarker}"
                                                SnapsToDevicePixels="True"
                                                UseLayoutRounding="True"
