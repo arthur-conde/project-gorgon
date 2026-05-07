@@ -61,7 +61,62 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             {
                 RebuildAllWedges();
             }
+            else if (e.PropertyName is nameof(SessionState.IsAnchorEditable)
+                  or nameof(SessionState.HasPlayerPosition))
+            {
+                // Anchor-editable state gates the "drag to refine" hint.
+                OnPropertyChanged(nameof(OverlayHint));
+                OnPropertyChanged(nameof(IsOverlayHintVisible));
+            }
+            else if (e.PropertyName is nameof(SessionState.Mode))
+            {
+                // Switching between Survey and Motherlode flips wedge
+                // visibility wholesale — Survey hides them, Motherlode shows.
+                RebuildAllWedges();
+            }
         };
+
+        // Forward FSM state changes so the pin DataTemplate can gate the
+        // active-pin halo on Listening (the only phase where SelectedSurvey
+        // is meaningful — Gathering uses IsActiveTarget + marching ants).
+        _surveyFlow.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SurveyFlowController.CurrentState))
+            {
+                OnPropertyChanged(nameof(IsListening));
+                OnPropertyChanged(nameof(OverlayHint));
+                OnPropertyChanged(nameof(IsOverlayHintVisible));
+            }
+        };
+    }
+
+    /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>
+    public bool IsListening => _surveyFlow.CurrentState == SurveyFlowState.Listening;
+
+    /// <summary>
+    /// Move the currently-nudgeable target by <c>(dx, dy) * step</c>. Routes
+    /// to <see cref="SessionState.SelectedSurvey"/> when one is selected and
+    /// has a pixel position; falls back to the player anchor while it's still
+    /// editable. No-op otherwise. Shared between the keyboard hotkey commands
+    /// (NudgePinCommandBase) and the on-screen nudge pad — same semantics, same
+    /// commit path through CorrectSurveyCommand / MoveAnchor.
+    /// </summary>
+    public void Nudge(double dx, double dy, double step)
+    {
+        var selected = _session.SelectedSurvey;
+        if (selected is not null && selected.EffectivePixel.HasValue)
+        {
+            var p = selected.EffectivePixel.Value;
+            CorrectSurveyCommand.Execute(
+                new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+            return;
+        }
+
+        if (_session.IsAnchorEditable)
+        {
+            var p = _session.PlayerPosition;
+            MoveAnchor(new PixelPoint(p.X + dx * step, p.Y + dy * step));
+        }
     }
 
     private void OnSurveysCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -106,6 +161,49 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     public SurveyFlowController SurveyFlow => _surveyFlow;
 
     public LegolasBrushes Brushes => _brushes;
+
+    private static readonly LegolasPinStyle _defaultPinStyle = new();
+    private static readonly LegolasPinStyle _defaultPlayerPinStyle = LegolasPinStyle.PlayerDefaults();
+    private static readonly LegolasActivePinStyle _defaultActivePinStyle = new();
+
+    /// <summary>Survey pin shape configuration for the DataTemplate. Falls
+    /// back to defaults when the simpler test constructor is used (no settings).</summary>
+    public LegolasPinStyle PinStyle => _settings?.PinStyle ?? _defaultPinStyle;
+
+    /// <summary>Player anchor pin shape configuration. Same shape model as
+    /// <see cref="PinStyle"/> but with player-specific defaults; the player
+    /// pin's outer Size is meaningful (drives Thumb bounds) while the survey
+    /// pin's outer size still comes from <c>SurveyPinRadiusMetres</c>.</summary>
+    public LegolasPinStyle PlayerPinStyle => _settings?.PlayerPinStyle ?? _defaultPlayerPinStyle;
+
+    /// <summary>Active-pin highlight configuration. Falls back to defaults
+    /// when the simpler test constructor is used (no settings).</summary>
+    public LegolasActivePinStyle ActivePinStyle => _settings?.ActivePinStyle ?? _defaultActivePinStyle;
+
+    /// <summary>
+    /// Context-aware on-overlay instruction. Empty during normal use; appears
+    /// for the two states where a new user can stall:
+    ///  * AwaitingPosition: needs a click to set the anchor.
+    ///  * Listening with anchor placed but no surveys yet: the anchor's initial
+    ///    projection scale can stick the pin off-screen (#131 follow-up). The
+    ///    drag-anywhere gesture rescues it; the hint tells the user how.
+    /// Hidden in Gathering/Done where the route geometry speaks for itself.
+    /// </summary>
+    public string OverlayHint
+    {
+        get
+        {
+            return _surveyFlow.CurrentState switch
+            {
+                SurveyFlowState.AwaitingPosition => "Click anywhere on this map to mark your player position.",
+                SurveyFlowState.Listening when _session.IsAnchorEditable
+                    => "Drag the map to fine-tune your position. Use the Surveying skill in-game — pins place automatically.",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    public bool IsOverlayHintVisible => !string.IsNullOrEmpty(OverlayHint);
 
     public PixelPoint PlayerPosition
     {
@@ -261,7 +359,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     private void RebuildWedgeFor(SurveyItemViewModel s)
     {
-        if (!_session.ShowBearingWedges || s.IsCorrected || s.Offset.Magnitude < 1e-6)
+        // Wedges only render in Motherlode mode. Survey mode's 4-DOF refit
+        // (PR #130) lands pins essentially pixel-perfect, so the bearing arc
+        // adds no information — the optimised route + the placed pins are
+        // sufficient and precise. Motherlode triangulation has no comparable
+        // refit, so the bearing arc still narrows the search there.
+        if (!_session.ShowBearingWedges
+            || _session.Mode != SessionMode.Motherlode
+            || s.IsCorrected
+            || s.Collected
+            || s.Skipped
+            || s.Offset.Magnitude < 1e-6)
         {
             s.WedgeGeometry = null;
             return;

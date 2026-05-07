@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 
 namespace Legolas.Domain;
 
@@ -12,30 +13,6 @@ namespace Legolas.Domain;
 /// </summary>
 public sealed class LegolasColors : INotifyPropertyChanged
 {
-    /// <summary>Pin shown for an uncorrected (projector-suggested) survey target.</summary>
-    private string _pinPending = "#FF00FFFF"; // cyan
-    public string PinPending
-    {
-        get => _pinPending;
-        set => SetHex(ref _pinPending, value);
-    }
-
-    /// <summary>Pin shown for a manually-corrected (finalized) survey target.</summary>
-    private string _pinFinalized = "#FFFF0000"; // red
-    public string PinFinalized
-    {
-        get => _pinFinalized;
-        set => SetHex(ref _pinFinalized, value);
-    }
-
-    /// <summary>Centre dot of the player position marker.</summary>
-    private string _playerMarker = "#FF4CAF50"; // green
-    public string PlayerMarker
-    {
-        get => _playerMarker;
-        set => SetHex(ref _playerMarker, value);
-    }
-
     /// <summary>Optimised route polyline.</summary>
     private string _routeLine = "#FFFFD700"; // gold
     public string RouteLine
@@ -60,41 +37,46 @@ public sealed class LegolasColors : INotifyPropertyChanged
         set => SetHex(ref _bearingWedgeStroke, value);
     }
 
+    /// <summary>
+    /// v1 single-colour pin field. Removed from the public surface in v2 — this
+    /// pair stays only so <see cref="LegolasSettings.Migrate"/> can read the
+    /// stored value and carry it forward into <c>PinStyle.Outer.StrokeColor</c>
+    /// and <c>PinStyle.Center.FillColor</c>. The migrator clears it back to
+    /// <c>null</c> so it doesn't reappear in saved JSON.
+    /// </summary>
+    [JsonInclude]
+    [JsonPropertyName("pinPending")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyPinPending { get; set; }
+
+    /// <summary>
+    /// v1 corrected-pin colour. Unused on main since #130 collapsed the
+    /// click-to-confirm flow. Migrated forward into
+    /// <c>ActivePinStyle.Color</c> so users who customised it don't lose it.
+    /// </summary>
+    [JsonInclude]
+    [JsonPropertyName("pinFinalized")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyPinFinalized { get; set; }
+
+    /// <summary>
+    /// v1 player anchor centre-dot colour. Removed from the public surface in
+    /// v2; <see cref="LegolasSettings.Migrate"/> copies it into
+    /// <c>PlayerPinStyle.Center.FillColor</c> so users who customised the
+    /// player marker keep their colour. Cleared after migration.
+    /// </summary>
+    [JsonInclude]
+    [JsonPropertyName("playerMarker")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyPlayerMarker { get; set; }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void SetHex(ref string field, string? value, [CallerMemberName] string? name = null)
     {
-        var normalized = Normalize(value);
+        var normalized = HexColor.Normalize(value);
         if (string.Equals(field, normalized, StringComparison.OrdinalIgnoreCase)) return;
         field = normalized;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
-
-    /// <summary>
-    /// Coerces input to a canonical 8-digit ARGB hex string. Accepts either
-    /// 6-digit (RGB; alpha defaults to FF) or 8-digit (ARGB) forms with or
-    /// without a leading '#'. Invalid strings fall back to opaque magenta so
-    /// the bug is visible rather than silently transparent.
-    /// </summary>
-    public static string Normalize(string? input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) return "#FFFF00FF";
-        var s = input.Trim();
-        if (s.StartsWith("#")) s = s.Substring(1);
-        return s.Length switch
-        {
-            6 when IsHex(s) => "#FF" + s.ToUpperInvariant(),
-            8 when IsHex(s) => "#" + s.ToUpperInvariant(),
-            _ => "#FFFF00FF",
-        };
-    }
-
-    private static bool IsHex(string s)
-    {
-        foreach (var c in s)
-        {
-            if (!Uri.IsHexDigit(c)) return false;
-        }
-        return true;
     }
 }

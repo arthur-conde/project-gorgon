@@ -105,6 +105,18 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty]
     private SurveyItemViewModel? _selectedSurvey;
 
+    /// <summary>
+    /// Mirror the SelectedSurvey identity onto each pin's IsSelected flag so
+    /// the DataTemplate can drive its halo treatment without dotted-path
+    /// MultiBindings against a sibling property. Mirrors the
+    /// <see cref="RecalculateActiveTarget"/> pattern.
+    /// </summary>
+    partial void OnSelectedSurveyChanged(SurveyItemViewModel? value)
+    {
+        foreach (var s in Surveys)
+            s.IsSelected = ReferenceEquals(s, value);
+    }
+
     public void ClearSurveys()
     {
         Surveys.Clear();

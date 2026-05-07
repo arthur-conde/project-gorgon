@@ -38,6 +38,12 @@ public sealed partial class SurveyFlowController : ObservableObject
         _session = session;
         _settings = settings;
         _session.AllCollected += OnAllCollected;
+        // CanOptimize reads Surveys.Count, but [NotifyPropertyChangedFor] only
+        // fires from CurrentState. Without this subscription the Go! button
+        // stays disabled forever — surveys arrive, count goes 0→N, but the
+        // bound IsEnabled never refreshes. Re-emit on every collection change
+        // so the wizard's primary action lights up the moment a pin lands.
+        _session.Surveys.CollectionChanged += (_, _) => OnPropertyChanged(nameof(CanOptimize));
     }
 
     [ObservableProperty]

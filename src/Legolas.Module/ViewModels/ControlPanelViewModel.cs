@@ -102,6 +102,17 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         }
     }
 
+    public bool ShowNudgePadOnOverlay
+    {
+        get => _settings.ShowNudgePadOnOverlay;
+        set
+        {
+            if (_settings.ShowNudgePadOnOverlay == value) return;
+            _settings.ShowNudgePadOnOverlay = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string GameProcessName
     {
         get => _settings.GameProcessName;

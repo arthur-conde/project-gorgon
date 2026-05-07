@@ -3,8 +3,26 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:Legolas.Views"
              Background="{DynamicResource BgPrimaryBrush}">
-    <!-- The panel hosts the wizard directly. Settings (overlay options,
-         click-through, marker colors, inventory grid) live in the shell's
-         per-module settings tab via LegolasModule.SettingsViewType. -->
-    <views:WizardView />
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <!-- The panel hosts the wizard plus a docked nudge pad. Pad lives at the
+         bottom so it doesn't push the wizard's primary action buttons off-screen
+         on shorter windows; auto-disables when there's no pin or anchor to
+         nudge. Settings (overlay options, click-through, marker colors,
+         inventory grid) live in the per-module settings tab via
+         LegolasModule.SettingsViewType. -->
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom"
+                BorderBrush="{StaticResource TextTertiaryBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,10">
+            <views:NudgePadView DataContext="{Binding NudgePad}" />
+        </Border>
+        <views:WizardView />
+    </DockPanel>
 </UserControl>

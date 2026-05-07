@@ -15,6 +15,16 @@ public sealed partial class SurveyItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isActiveTarget;
 
+    /// <summary>
+    /// True iff this pin is the <c>SessionState.SelectedSurvey</c> — the
+    /// pin a keyboard nudge will move. Drives the active-pin halo treatment
+    /// while the FSM is in <c>Listening</c>. Distinct from
+    /// <see cref="IsActiveTarget"/>, which marks the next pin to visit
+    /// during <c>Gathering</c>.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
     public SurveyItemViewModel(Survey model)
     {
         _model = model;

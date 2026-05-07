@@ -17,7 +17,7 @@ public class AnchorEditableTests
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
         var projector = new CoordinateProjector();
-        var brushes = new LegolasBrushes(new LegolasColors());
+        var brushes = new LegolasBrushes(settings);
         var map = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings);
         return (session, map, settings);
     }

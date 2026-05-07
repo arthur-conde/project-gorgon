@@ -60,6 +60,7 @@ public sealed class HotkeyChipControl : Control
 
     private IDisposable? _captureScope;
     private HotkeyBinding? _previousBinding;
+    private Button? _clearButton;
 
     private static void OnBindingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -69,7 +70,16 @@ public sealed class HotkeyChipControl : Control
     public override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
+        if (_clearButton is not null) _clearButton.Click -= OnClearButtonClick;
+        _clearButton = GetTemplateChild("PART_ClearButton") as Button;
+        if (_clearButton is not null) _clearButton.Click += OnClearButtonClick;
         RefreshDisplay();
+    }
+
+    private void OnClearButtonClick(object sender, RoutedEventArgs e)
+    {
+        Commit(null);
+        e.Handled = true;
     }
 
     private void RefreshDisplay()
@@ -93,9 +103,25 @@ public sealed class HotkeyChipControl : Control
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
-        if (State != HotkeyChipState.Capturing) StartCapture();
+        if (_clearButton is not null && e.OriginalSource is DependencyObject src && IsDescendantOf(src, _clearButton))
+            return;
+        if (State == HotkeyChipState.Capturing) CancelCapture();
+        else StartCapture();
         Focus();
         e.Handled = true;
+    }
+
+    private static bool IsDescendantOf(DependencyObject node, DependencyObject ancestor)
+    {
+        DependencyObject? current = node;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, ancestor)) return true;
+            current = current is Visual
+                ? VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        }
+        return false;
     }
 
     protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
@@ -139,14 +165,7 @@ public sealed class HotkeyChipControl : Control
 
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
 
-        if (key == Key.Escape) { CancelCapture(); e.Handled = true; return; }
         if (IsModifierOnly(key)) { RefreshDisplay(); e.Handled = true; return; }
-        if (key is Key.Back or Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            Commit(null);
-            e.Handled = true;
-            return;
-        }
         if (IsLockKey(key)) { e.Handled = true; return; } // ignore
 
         var mods = HotkeyModifiers.None;

@@ -1,8 +1,11 @@
 <Window x:Class="Legolas.Views.MapOverlayView"
+        x:Name="Self"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Legolas.ViewModels"
         xmlns:controls="clr-namespace:Legolas.Controls"
+        xmlns:converters="clr-namespace:Legolas.Views.Converters"
+        xmlns:views="clr-namespace:Legolas.Views"
         Title="Map Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -37,7 +40,9 @@
 
             <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent">
               <Grid x:Name="Viewport" Background="Transparent"
-                    MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
+                    MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
+                    MouseMove="Viewport_MouseMove"
+                    MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
                 <!-- Bearing-uncertainty wedge layer (behind everything) -->
                 <ItemsControl ItemsSource="{Binding Surveys}" IsHitTestVisible="False">
                     <ItemsControl.ItemsPanel>
@@ -86,33 +91,76 @@
                      IsAnchorEditable flips false, restoring the legacy
                      non-interactive behaviour. -->
                 <Canvas>
-                    <Thumb Width="18" Height="18"
-                           Canvas.Left="{Binding PlayerPosition.X, Converter={x:Static controls:OffsetConverter.MinusNine}}"
-                           Canvas.Top="{Binding PlayerPosition.Y, Converter={x:Static controls:OffsetConverter.MinusNine}}"
-                           IsHitTestVisible="{Binding Session.IsAnchorEditable}"
-                           Cursor="SizeAll"
-                           ToolTip="Drag to fine-tune anchor (locks once the first survey lands)"
-                           DragStarted="PlayerAnchor_DragStarted"
-                           DragDelta="PlayerAnchor_DragDelta"
-                           DragCompleted="PlayerAnchor_DragCompleted">
-                        <Thumb.Template>
-                            <ControlTemplate TargetType="Thumb">
-                                <Grid Width="18" Height="18" Background="Transparent">
-                                    <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
-                                    <Rectangle Width="2" Height="2"
-                                               Fill="{Binding Brushes.PlayerMarker}"
-                                               SnapsToDevicePixels="True"
-                                               UseLayoutRounding="True"
-                                               RenderOptions.EdgeMode="Aliased"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Grid>
-                            </ControlTemplate>
-                        </Thumb.Template>
-                    </Thumb>
+                    <!-- Player anchor pin. Purely visual — viewport handles drags via
+                         Viewport_MouseLeftButton* handlers, which route by FSM state +
+                         IsAnchorEditable to either move the anchor or the SelectedSurvey.
+                         Removing the Thumb also removes its Width/Height cage that was
+                         clipping the rendered pin to the size box. -->
+                    <Grid IsHitTestVisible="False"
+                          ToolTip="Drag the map to fine-tune anchor (locks once the first survey lands)">
+                        <Canvas.Left>
+                            <MultiBinding Converter="{x:Static controls:CenterOffsetConverter.Instance}">
+                                <Binding Path="PlayerPosition.X" />
+                                <Binding Path="PlayerPinStyle.Outer.Size" />
+                            </MultiBinding>
+                        </Canvas.Left>
+                        <Canvas.Top>
+                            <MultiBinding Converter="{x:Static controls:CenterOffsetConverter.Instance}">
+                                <Binding Path="PlayerPosition.Y" />
+                                <Binding Path="PlayerPinStyle.Outer.Size" />
+                            </MultiBinding>
+                        </Canvas.Top>
+                        <!-- Outer shape (configurable). Stretch="Uniform" + Centre
+                             alignment: stroke fits within the Path's layout slot
+                             without overflow, geometry stays concentric with the
+                             centre indicator regardless of how the Grid auto-sizes. -->
+                        <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Stretch="Uniform"
+                              Fill="{Binding Brushes.PlayerOuterFill}"
+                              Stroke="{Binding Brushes.PlayerOuterStroke}"
+                              StrokeDashArray="{Binding PlayerPinStyle.Outer.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                            <Path.StrokeThickness>
+                                <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                    <Binding Path="PlayerPinStyle.Outer.StrokeStyle" />
+                                    <Binding Path="PlayerPinStyle.Outer.StrokeThickness" />
+                                </MultiBinding>
+                            </Path.StrokeThickness>
+                            <Path.Data>
+                                <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                    <Binding Path="PlayerPinStyle.Outer.Shape" />
+                                    <Binding Path="PlayerPinStyle.Outer.Size" />
+                                </MultiBinding>
+                            </Path.Data>
+                        </Path>
+                        <!-- Centre indicator (configurable). Pixel-snapping retained
+                             for the default 2×2 case. -->
+                        <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Stretch="Uniform"
+                              Fill="{Binding Brushes.PlayerCenterFill}"
+                              Stroke="{Binding Brushes.PlayerCenterStroke}"
+                              SnapsToDevicePixels="True"
+                              UseLayoutRounding="True"
+                              RenderOptions.EdgeMode="Aliased"
+                              StrokeDashArray="{Binding PlayerPinStyle.Center.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                            <Path.StrokeThickness>
+                                <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                    <Binding Path="PlayerPinStyle.Center.StrokeStyle" />
+                                    <Binding Path="PlayerPinStyle.Center.StrokeThickness" />
+                                </MultiBinding>
+                            </Path.StrokeThickness>
+                            <Path.Data>
+                                <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                    <Binding Path="PlayerPinStyle.Center.Shape" />
+                                    <Binding Path="PlayerPinStyle.Center.Size" />
+                                </MultiBinding>
+                            </Path.Data>
+                        </Path>
+                    </Grid>
                 </Canvas>
 
-                <!-- Survey dots with drag-to-correct -->
-                <ItemsControl ItemsSource="{Binding Surveys}">
+                <!-- Survey dots. Purely visual — selection happens in the wizard panel
+                     (ListBox), drag happens via the viewport-wide click handler. -->
+                <ItemsControl ItemsSource="{Binding Surveys}" IsHitTestVisible="False">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <Canvas />
@@ -145,33 +193,132 @@
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:SurveyItemViewModel}">
-                            <Thumb Width="{Binding DataContext.PinDiameter, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                   Height="{Binding DataContext.PinDiameter, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                   DragStarted="SurveyDot_DragStarted"
-                                   DragDelta="SurveyDot_DragDelta"
-                                   DragCompleted="SurveyDot_DragCompleted"
-                                   ToolTip="{Binding Name}">
-                                <Thumb.Template>
-                                    <ControlTemplate TargetType="Thumb">
-                                        <Grid>
-                                            <!-- Outer ring + center dot, both PinPending colour. The earlier
-                                                 IsCorrected pulse/glow signalled "the user still owes a click";
-                                                 with auto-placement that input is no longer required, so the
-                                                 animation has been dropped. Pin styling (border, radius, active
-                                                 highlight) is being overhauled separately. -->
-                                            <Ellipse StrokeThickness="2" Fill="#01000000"
-                                                     StrokeDashArray="4 2"
-                                                     Stroke="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                            <Ellipse Width="5" Height="5"
-                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                     Fill="{Binding DataContext.Brushes.PinPending, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
-                                        </Grid>
-                                    </ControlTemplate>
-                                </Thumb.Template>
-                            </Thumb>
+                            <!-- Three-layer pin (issue #131): halo (active highlight),
+                                 outer shape, centre indicator. All driven by
+                                 LegolasPinStyle + LegolasActivePinStyle so the user can
+                                 fully customise shape, stroke, and fill of each.
+                                 Grid.Effect adds a soft glow when ActivePinTreatment.Glow
+                                 is selected. Grid auto-sizes to its largest child;
+                                 each Path uses Stretch="Uniform" + Center alignment so
+                                 strokes fit within their layout slot and stay concentric
+                                 even when the Halo grows the Grid. -->
+                            <Grid ToolTip="{Binding Name}">
+                                <Grid.Effect>
+                                    <MultiBinding Converter="{x:Static converters:GlowEffectConverter.Instance}">
+                                        <Binding Path="IsSelected" />
+                                        <Binding Path="DataContext.IsListening" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        <Binding Path="DataContext.ActivePinStyle.Treatment" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        <Binding Path="DataContext.Brushes.ActivePin" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        <Binding Path="DataContext.ActivePinStyle.GlowBlurRadius" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                    </MultiBinding>
+                                </Grid.Effect>
+                                            <!-- Halo: visible only when this pin is the SelectedSurvey
+                                                 AND the FSM is in Listening AND the configured treatment
+                                                 is Halo. Geometry is the outer shape sized up by
+                                                 ActivePinStyle.HaloPaddingPx on each side. -->
+                                            <Path Stroke="{Binding DataContext.Brushes.ActivePin, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  Fill="Transparent"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Stretch="Uniform"
+                                                  StrokeThickness="{Binding DataContext.ActivePinStyle.HaloThickness, RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                                                <Path.Visibility>
+                                                    <MultiBinding Converter="{x:Static converters:HaloVisibilityConverter.Instance}">
+                                                        <Binding Path="IsSelected" />
+                                                        <Binding Path="DataContext.IsListening" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.ActivePinStyle.Treatment" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.Visibility>
+                                                <Path.Data>
+                                                    <MultiBinding Converter="{x:Static converters:HaloGeometryConverter.Instance}">
+                                                        <Binding Path="DataContext.PinStyle.Outer.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.PinDiameter" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.ActivePinStyle.HaloPaddingPx" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.Data>
+                                            </Path>
+
+                                            <!-- Outer shape. Stretch="Uniform" scales geometry+stroke to
+                                                 fit the Grid's PinDiameter bounds — strokes don't
+                                                 overflow (no clipping) and "Pin radius" represents the
+                                                 outer-bound radius rather than the geometry-only radius.
+                                                 Centre alignment so the shape stays concentric if the
+                                                 Halo grows the parent Grid. -->
+                                            <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Stretch="Uniform"
+                                                  Fill="{Binding DataContext.Brushes.OuterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  Stroke="{Binding DataContext.Brushes.OuterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  StrokeDashArray="{Binding DataContext.PinStyle.Outer.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                                <Path.StrokeThickness>
+                                                    <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                                        <Binding Path="DataContext.PinStyle.Outer.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.PinStyle.Outer.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.StrokeThickness>
+                                                <Path.Data>
+                                                    <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                                        <Binding Path="DataContext.PinStyle.Outer.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.PinDiameter" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.Data>
+                                            </Path>
+
+                                            <!-- Centre indicator — sized independently from the outer shape. -->
+                                            <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Stretch="Uniform"
+                                                  Fill="{Binding DataContext.Brushes.CenterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  Stroke="{Binding DataContext.Brushes.CenterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                  StrokeDashArray="{Binding DataContext.PinStyle.Center.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                                <Path.StrokeThickness>
+                                                    <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                                        <Binding Path="DataContext.PinStyle.Center.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.PinStyle.Center.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.StrokeThickness>
+                                                <Path.Data>
+                                                    <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                                        <Binding Path="DataContext.PinStyle.Center.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                        <Binding Path="DataContext.PinStyle.Center.Size" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                    </MultiBinding>
+                                                </Path.Data>
+                                </Path>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- Optional on-overlay nudge pad (toggle in settings). Same VM as
+                     the wizard panel's pad, so step-size selection stays in sync. -->
+                <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="0,0,16,16" Padding="10,8"
+                        Background="#CC101010" BorderBrush="#FF505050" BorderThickness="1"
+                        CornerRadius="4">
+                    <Border.Visibility>
+                        <Binding ElementName="Self" Path="Settings.ShowNudgePadOnOverlay"
+                                 Converter="{x:Static controls:BoolToVisibilityConverter.Instance}" />
+                    </Border.Visibility>
+                    <!-- DataContext set explicitly in code-behind. ElementName=Self
+                         binding to a plain CLR auto-property (NudgePad) is brittle
+                         w.r.t. ctor-body timing; null-binding silently broke the
+                         pad's Command/IsChecked bindings, so we set it deterministically. -->
+                    <views:NudgePadView x:Name="OverlayNudgePad" />
+                </Border>
+
+                <!-- On-overlay hint banner. Shown only during AwaitingPosition
+                     and Listening-with-no-surveys (where a freshly-projected
+                     anchor can land off-screen). IsHitTestVisible=False so the
+                     banner doesn't block the drag-to-place gesture it documents. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,12,0,0" Padding="14,8"
+                        Background="#CC101010" BorderBrush="#FF505050" BorderThickness="1"
+                        CornerRadius="4" MaxWidth="520"
+                        IsHitTestVisible="False"
+                        Visibility="{Binding IsOverlayHintVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <TextBlock Text="{Binding OverlayHint}"
+                               Foreground="#FFE0E0E0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               FontSize="13" />
+                </Border>
               </Grid>
             </Grid>
         </DockPanel>
