@@ -15,25 +15,61 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type hk:HotkeyChipControl}">
-                    <Border x:Name="Bd"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="3"
-                            Padding="{TemplateBinding Padding}"
-                            SnapsToDevicePixels="True">
-                        <TextBlock x:Name="Txt"
-                                   Text="{TemplateBinding DisplayText}"
-                                   Foreground="{TemplateBinding Foreground}"
-                                   FontFamily="{TemplateBinding FontFamily}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
-                    </Border>
+                    <DockPanel LastChildFill="True">
+                        <Button x:Name="PART_ClearButton"
+                                DockPanel.Dock="Right"
+                                VerticalAlignment="Center"
+                                Width="16" Height="16"
+                                Padding="0"
+                                Margin="6,0,0,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Foreground="#88FFFFFF"
+                                Cursor="Hand"
+                                Focusable="False"
+                                ToolTip="Clear binding">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="ClearBd"
+                                            Background="{TemplateBinding Background}"
+                                            CornerRadius="2">
+                                        <TextBlock Text="&#x2715;"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="11"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="ClearBd" Property="Background" Value="#33FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#FFD04040"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Border x:Name="Bd"
+                                MinWidth="{TemplateBinding MinWidth}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <TextBlock x:Name="Txt"
+                                       Text="{TemplateBinding DisplayText}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontFamily="{TemplateBinding FontFamily}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                    </DockPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="State" Value="Capturing">
                             <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
                             <Setter TargetName="Bd" Property="Background"  Value="#33D4A847"/>
                             <Setter TargetName="Txt" Property="Foreground" Value="#FFD4A847"/>
+                            <Setter TargetName="PART_ClearButton" Property="Visibility" Value="Collapsed"/>
                         </Trigger>
                         <Trigger Property="State" Value="Conflict">
                             <Setter TargetName="Bd" Property="BorderBrush" Value="#FFE0A030"/>
@@ -49,6 +85,7 @@
                         </Trigger>
                         <Trigger Property="Binding" Value="{x:Null}">
                             <Setter TargetName="Txt" Property="Foreground" Value="#88FFFFFF"/>
+                            <Setter TargetName="PART_ClearButton" Property="Visibility" Value="Hidden"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
