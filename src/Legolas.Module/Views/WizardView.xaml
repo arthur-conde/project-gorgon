@@ -234,6 +234,12 @@
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
+                                   Visibility="{Binding Session.IsAnchorEditable, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextTertiaryBrush}">
+                            <Run Text="Tip: drag the white player marker on the map to fine-tune your starting point — anchor locks once the first survey lands." />
+                        </TextBlock>
+                        <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextTertiaryBrush}">
                             <Run Text="Tip: fine-tune the selected pin with the Pin Nudge hotkeys — bind keys under Settings → Hotkeys, category " />

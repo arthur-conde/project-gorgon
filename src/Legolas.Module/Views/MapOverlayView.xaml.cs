@@ -19,6 +19,7 @@ public partial class MapOverlayView : Window
     private double _panStartX;
     private double _panStartY;
     private Vector _grabOffset;
+    private Vector _anchorGrabOffset;
     private SurveyItemViewModel? _placementDrag;
 
     public MapOverlayView()
@@ -101,6 +102,46 @@ public partial class MapOverlayView : Window
         // track the cursor 1:1 regardless of viewport zoom.
         t.X += e.HorizontalChange;
         t.Y += e.VerticalChange;
+    }
+
+    private void PlayerAnchor_DragStarted(object sender, DragStartedEventArgs e)
+    {
+        if (DataContext is not MapOverlayViewModel vm) return;
+        if (!vm.Session.IsAnchorEditable) return;
+        // Clear pin selection so subsequent keyboard nudges fall through to the
+        // anchor (NudgePinCommandBase routes by SelectedSurvey first).
+        vm.Session.SelectedSurvey = null;
+        var cursor = Mouse.GetPosition(Viewport);
+        _anchorGrabOffset = cursor - new Point(vm.PlayerPosition.X, vm.PlayerPosition.Y);
+    }
+
+    private void PlayerAnchor_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        // Same transient-transform trick as SurveyDot_DragDelta — the binding
+        // re-positions the Thumb on DragCompleted.
+        if (sender is not Thumb thumb) return;
+        if (thumb.RenderTransform is not TranslateTransform t || t.IsFrozen)
+        {
+            t = new TranslateTransform();
+            thumb.RenderTransform = t;
+        }
+        t.X += e.HorizontalChange;
+        t.Y += e.VerticalChange;
+    }
+
+    private void PlayerAnchor_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (sender is not Thumb thumb) return;
+        thumb.RenderTransform = Transform.Identity;
+        if (e.Canceled) return;
+        if (DataContext is not MapOverlayViewModel vm) return;
+        // Re-check editability — a survey could have landed mid-drag and sealed
+        // the anchor. Silently dropping the move is safer than committing it.
+        if (!vm.Session.IsAnchorEditable) return;
+        var cursor = Mouse.GetPosition(Viewport);
+        var newCenter = new PixelPoint(cursor.X - _anchorGrabOffset.X, cursor.Y - _anchorGrabOffset.Y);
+        _anchorGrabOffset = new Vector(0, 0);
+        vm.MoveAnchor(newCenter);
     }
 
     private void SurveyDot_DragCompleted(object sender, DragCompletedEventArgs e)

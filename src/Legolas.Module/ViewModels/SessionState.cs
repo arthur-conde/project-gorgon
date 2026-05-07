@@ -29,6 +29,7 @@ public sealed partial class SessionState : ObservableObject
             foreach (SurveyItemViewModel s in e.OldItems)
                 s.PropertyChanged -= OnSurveyPropertyChanged;
         RecalculateActiveTarget();
+        OnPropertyChanged(nameof(IsAnchorEditable));
     }
 
     private void OnSurveyPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -81,6 +82,17 @@ public sealed partial class SessionState : ObservableObject
 
     [ObservableProperty] private PixelPoint _playerPosition = new(400, 300);
     [ObservableProperty] private bool _hasPlayerPosition;
+
+    /// <summary>
+    /// True while the anchor click was made but no survey has produced a vector
+    /// from it yet. In this window the marker can be re-dragged or nudged
+    /// without consequence; once a survey lands, the anchor becomes load-bearing
+    /// (every <see cref="MetreOffset"/> projection is relative to it) and is sealed.
+    /// </summary>
+    public bool IsAnchorEditable => HasPlayerPosition && Surveys.Count == 0;
+
+    partial void OnHasPlayerPositionChanged(bool value)
+        => OnPropertyChanged(nameof(IsAnchorEditable));
     [ObservableProperty] private string _lastLogEvent = "(waiting)";
     [ObservableProperty] private bool _showBearingWedges = true;
     [ObservableProperty] private bool _showRouteLines = true;

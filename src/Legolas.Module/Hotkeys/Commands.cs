@@ -233,14 +233,26 @@ public abstract class NudgePinCommandBase : IHotkeyCommand
 
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var selected = _session.SelectedSurvey;
-        if (selected is null || !selected.EffectivePixel.HasValue) return Task.CompletedTask;
-
-        var p = selected.EffectivePixel.Value;
         var (dx, dy) = Direction;
         var step = Step;
-        _map.CorrectSurveyCommand.Execute(
-            new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+
+        var selected = _session.SelectedSurvey;
+        if (selected is not null && selected.EffectivePixel.HasValue)
+        {
+            var p = selected.EffectivePixel.Value;
+            _map.CorrectSurveyCommand.Execute(
+                new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+            return Task.CompletedTask;
+        }
+
+        // No pin selected: fall through to the anchor while it's still editable
+        // (post-Set Position, pre-first-survey). Once a survey lands the anchor
+        // becomes load-bearing for projection and IsAnchorEditable flips false.
+        if (_session.IsAnchorEditable)
+        {
+            var p = _session.PlayerPosition;
+            _map.MoveAnchor(new PixelPoint(p.X + dx * step, p.Y + dy * step));
+        }
         return Task.CompletedTask;
     }
 }
