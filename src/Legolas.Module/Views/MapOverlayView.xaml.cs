@@ -12,12 +12,6 @@ namespace Legolas.Views;
 
 public partial class MapOverlayView : Window
 {
-    private const double MinZoom = 0.25;
-    private const double MaxZoom = 8.0;
-
-    private Point? _panStartScreen;
-    private double _panStartX;
-    private double _panStartY;
     private Vector _grabOffset;
     private Vector _anchorGrabOffset;
     private SurveyItemViewModel? _placementDrag;
@@ -97,9 +91,6 @@ public partial class MapOverlayView : Window
             t = new TranslateTransform();
             thumb.RenderTransform = t;
         }
-        // DragDelta values are in the Thumb's local (pre-transform) coords —
-        // adding them to the Thumb's own TranslateTransform makes the visual
-        // track the cursor 1:1 regardless of viewport zoom.
         t.X += e.HorizontalChange;
         t.Y += e.VerticalChange;
     }
@@ -156,8 +147,6 @@ public partial class MapOverlayView : Window
         if (thumb.DataContext is not SurveyItemViewModel survey) return;
         if (DataContext is not MapOverlayViewModel vm) return;
 
-        // Mouse.GetPosition(Viewport) is in pre-transform canvas coordinates:
-        // WPF automatically applies the inverse of Viewport's RenderTransform.
         var cursor = Mouse.GetPosition(Viewport);
         var newCenter = new PixelPoint(cursor.X - _grabOffset.X, cursor.Y - _grabOffset.Y);
         _grabOffset = new Vector(0, 0);
@@ -210,62 +199,13 @@ public partial class MapOverlayView : Window
         e.Handled = true;
     }
 
-    private void Viewport_MouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (DataContext is not MapOverlayViewModel vm) return;
-
-        var cursorScreen = e.GetPosition(ViewportRoot);
-        var zoomOld = vm.Zoom;
-        var factor = e.Delta > 0 ? 1.1 : 1.0 / 1.1;
-        var zoomNew = Math.Clamp(zoomOld * factor, MinZoom, MaxZoom);
-        if (zoomNew == zoomOld) return;
-
-        // Preserve the content point under the cursor across the zoom change.
-        // content = (cursor - pan) / zoom  →  pan_new = cursor - (cursor - pan_old) * zoom_new / zoom_old
-        var panNewX = cursorScreen.X - (cursorScreen.X - vm.PanX) * zoomNew / zoomOld;
-        var panNewY = cursorScreen.Y - (cursorScreen.Y - vm.PanY) * zoomNew / zoomOld;
-
-        vm.Zoom = zoomNew;
-        vm.PanX = panNewX;
-        vm.PanY = panNewY;
-        e.Handled = true;
-    }
-
-    private void Viewport_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (DataContext is not MapOverlayViewModel vm) return;
-        _panStartScreen = e.GetPosition(ViewportRoot);
-        _panStartX = vm.PanX;
-        _panStartY = vm.PanY;
-        ViewportRoot.CaptureMouse();
-        e.Handled = true;
-    }
-
     private void Viewport_MouseMove(object sender, MouseEventArgs e)
     {
         // Live-update the just-placed pin as the user continues to hold the
         // mouse button — feels like one continuous place-and-position gesture.
-        if (_placementDrag is not null)
-        {
-            var pos = e.GetPosition(Viewport);
-            _placementDrag.UpdateModel(_placementDrag.Model
-                with { ManualOverride = new PixelPoint(pos.X, pos.Y) });
-            return;
-        }
-
-        if (_panStartScreen is null) return;
-        if (DataContext is not MapOverlayViewModel vm) return;
-
-        var current = e.GetPosition(ViewportRoot);
-        vm.PanX = _panStartX + (current.X - _panStartScreen.Value.X);
-        vm.PanY = _panStartY + (current.Y - _panStartScreen.Value.Y);
-    }
-
-    private void Viewport_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_panStartScreen is null) return;
-        _panStartScreen = null;
-        ViewportRoot.ReleaseMouseCapture();
-        e.Handled = true;
+        if (_placementDrag is null) return;
+        var pos = e.GetPosition(Viewport);
+        _placementDrag.UpdateModel(_placementDrag.Model
+            with { ManualOverride = new PixelPoint(pos.X, pos.Y) });
     }
 }

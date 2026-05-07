@@ -133,18 +133,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [ObservableProperty]
     private PointCollection _activeSegmentPoints = new();
 
-    [ObservableProperty] private double _zoom = 1.0;
-    [ObservableProperty] private double _panX;
-    [ObservableProperty] private double _panY;
-
-    [RelayCommand]
-    private void ResetView()
-    {
-        Zoom = 1.0;
-        PanX = 0;
-        PanY = 0;
-    }
-
     [RelayCommand]
     public void SetPlayerPosition(PixelPoint where)
     {

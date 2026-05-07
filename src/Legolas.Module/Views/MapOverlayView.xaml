@@ -32,26 +32,14 @@
                     <TextBlock Text=" px/m, Rot: " Foreground="#FF888888" />
                     <TextBlock Text="{Binding RotationDegrees, StringFormat=0.0}" Foreground="#FFCCCCCC" />
                     <TextBlock Text="°" Foreground="#FF888888" />
-                    <TextBlock Text=" | Zoom: " Foreground="#FF888888" Margin="12,0,0,0" />
-                    <TextBlock Text="{Binding Zoom, StringFormat='P0'}" Foreground="#FFCCCCCC" />
-                    <Button Content="Reset" Margin="12,0,0,0" Padding="6,0" Command="{Binding ResetViewCommand}" />
                 </StackPanel>
             </Border>
 
             <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent"
-                  MouseWheel="Viewport_MouseWheel"
-                  MouseRightButtonDown="Viewport_MouseRightButtonDown"
-                  MouseRightButtonUp="Viewport_MouseRightButtonUp"
                   MouseLeftButtonUp="Viewport_MouseLeftButtonUp"
                   MouseMove="Viewport_MouseMove">
               <Grid x:Name="Viewport" Background="Transparent"
                     MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
-                <Grid.RenderTransform>
-                    <TransformGroup>
-                        <ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" />
-                        <TranslateTransform X="{Binding PanX}" Y="{Binding PanY}" />
-                    </TransformGroup>
-                </Grid.RenderTransform>
                 <!-- Bearing-uncertainty wedge layer (behind everything) -->
                 <ItemsControl ItemsSource="{Binding Surveys}" IsHitTestVisible="False">
                     <ItemsControl.ItemsPanel>
@@ -86,7 +74,7 @@
                             <BeginStoryboard>
                                 <Storyboard RepeatBehavior="Forever">
                                     <DoubleAnimation Storyboard.TargetProperty="StrokeDashOffset"
-                                                     From="0" To="9" Duration="0:0:0.6" />
+                                                     From="0" To="-9" Duration="0:0:0.6" />
                                 </Storyboard>
                             </BeginStoryboard>
                         </EventTrigger>
@@ -113,9 +101,12 @@
                             <ControlTemplate TargetType="Thumb">
                                 <Grid Width="18" Height="18" Background="Transparent">
                                     <Ellipse Width="18" Height="18" Stroke="White" StrokeThickness="2" Fill="Transparent" />
-                                    <Ellipse Width="6" Height="6"
-                                             Fill="{Binding Brushes.PlayerMarker}"
-                                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <Rectangle Width="2" Height="2"
+                                               Fill="{Binding Brushes.PlayerMarker}"
+                                               SnapsToDevicePixels="True"
+                                               UseLayoutRounding="True"
+                                               RenderOptions.EdgeMode="Aliased"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Grid>
                             </ControlTemplate>
                         </Thumb.Template>
