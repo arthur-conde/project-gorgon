@@ -17,7 +17,6 @@ public enum WizardStep
     PickMode,
     AwaitingPosition,
     Listening,
-    AwaitingPin,
     Gathering,
     Done,
     MotherlodeMeasuring,
@@ -74,8 +73,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         // Entering Listening / Gathering auto-opens the inventory overlay.
         // Listening: user is picking the leftmost survey to use — they need the
         // bag visible to see which one. Gathering: the queue serves as a
-        // walk-the-route checklist. AwaitingPin (Place) inherits visibility
-        // from Listening since we never auto-hide between transitions.
+        // walk-the-route checklist.
         if (value is WizardStep.Listening or WizardStep.Gathering)
             _session.IsInventoryVisible = true;
     }
@@ -86,7 +84,6 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         WizardStep.PickMode => "What are you doing?",
         WizardStep.AwaitingPosition => "Show me where you are",
         WizardStep.Listening => "Use a survey",
-        WizardStep.AwaitingPin => "Place this pin",
         WizardStep.Gathering => "Walk your route",
         WizardStep.Done => "All collected",
         WizardStep.MotherlodeMeasuring => "Motherlode",
@@ -144,12 +141,6 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
                 // and clear surveys (they were anchored to the old position).
                 _session.HasPlayerPosition = false;
                 _surveyFlow.Reset();
-                break;
-            case WizardStep.AwaitingPin:
-                // Cancel the pending pin. ConfirmPin clears PendingSurvey + transitions
-                // back to Listening — same effect as a "cancel", just named after the
-                // happy-path call site.
-                _surveyFlow.ConfirmPin();
                 break;
             case WizardStep.Gathering:
             case WizardStep.Done:
@@ -228,7 +219,6 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             {
                 SurveyFlowState.AwaitingPosition => WizardStep.AwaitingPosition,
                 SurveyFlowState.Listening => WizardStep.Listening,
-                SurveyFlowState.AwaitingPin => WizardStep.AwaitingPin,
                 SurveyFlowState.Gathering => WizardStep.Gathering,
                 SurveyFlowState.Done => WizardStep.Done,
                 _ => WizardStep.AwaitingPosition,

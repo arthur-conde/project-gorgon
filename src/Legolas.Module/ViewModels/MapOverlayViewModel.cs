@@ -160,57 +160,37 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [RelayCommand]
     public void HandleMapClick(PixelPoint where)
     {
-        switch (_surveyFlow.CurrentState)
-        {
-            case SurveyFlowState.AwaitingPosition:
-                SetPlayerPosition(where);
-                break;
-            case SurveyFlowState.AwaitingPin when _session.PendingSurvey is not null:
-                PlacePendingPinAt(where);
-                break;
-            // Listening / Gathering / Done: ignore map clicks (prevents accidental
-            // re-anchor mid-session). User must press Set Player Position to re-anchor.
-        }
+        // The only state where a map click means "do something" is AwaitingPosition,
+        // where the click sets the projector anchor. Surveys auto-place; user
+        // corrections are exclusively drag/nudge gestures on existing pins.
+        if (_surveyFlow.CurrentState == SurveyFlowState.AwaitingPosition)
+            SetPlayerPosition(where);
     }
 
     /// <summary>
-    /// Place the pending survey's pin at <paramref name="where"/> and return
-    /// the new VM so the caller can keep dragging it. Returns null if there
-    /// is nothing pending.
+    /// Recomputes the projector from any pins with <see cref="Survey.ManualOverride"/>
+    /// set, propagates the refitted origin back to <see cref="SessionState.PlayerPosition"/>
+    /// so the on-screen anchor follows the projector's belief, and reprojects every
+    /// uncorrected pin. No-op below the 2-correction threshold.
     /// </summary>
-    public SurveyItemViewModel? PlacePendingPinAt(PixelPoint where)
+    private void TryRefitFromCorrections()
     {
-        if (_surveyFlow.CurrentState != SurveyFlowState.AwaitingPin) return null;
-        if (_session.PendingSurvey is not { } pending) return null;
-        var placed = PlacePin(pending, where);
-        _surveyFlow.ConfirmPin();
-        return placed;
-    }
-
-    private SurveyItemViewModel PlacePin(SurveyDetected sd, PixelPoint click)
-    {
-        var index = _session.Surveys.Count;
-        var pixel = _projector.Project(sd.Offset);
-        var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
-            with { PixelPos = pixel, ManualOverride = click };
-        var vm = new SurveyItemViewModel(survey);
-        _session.Surveys.Add(vm);
-
         var corrections = Surveys
             .Where(s => s.Model.ManualOverride.HasValue)
             .Select(s => (s.Offset, s.Model.ManualOverride!.Value))
             .ToArray();
-        if (corrections.Length >= 2)
-        {
-            _projector.Refit(corrections);
-            ReprojectUncorrected();
-            OnPropertyChanged(nameof(Scale));
-            OnPropertyChanged(nameof(RotationDegrees));
-            OnPropertyChanged(nameof(PinRadius));
-            OnPropertyChanged(nameof(PinDiameter));
-        }
-        RebuildRouteGeometry();
-        return vm;
+        if (corrections.Length < 2) return;
+
+        _projector.Refit(corrections);
+        // Projector origin may have moved during the 4-DOF refit. Sync the visible
+        // anchor so the player marker keeps representing "where the projector
+        // thinks the player is", not the user's stale initial click.
+        _session.PlayerPosition = _projector.Origin;
+        ReprojectUncorrected();
+        OnPropertyChanged(nameof(Scale));
+        OnPropertyChanged(nameof(RotationDegrees));
+        OnPropertyChanged(nameof(PinRadius));
+        OnPropertyChanged(nameof(PinDiameter));
     }
 
     public double Scale => _projector.Scale;
@@ -229,21 +209,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         var updated = vm.Model with { ManualOverride = args.NewPixel };
         vm.UpdateModel(updated);
 
-        var corrections = Surveys
-            .Where(s => s.IsCorrected && s.Model.ManualOverride.HasValue)
-            .Select(s => (s.Offset, s.Model.ManualOverride!.Value))
-            .ToArray();
-
-        if (corrections.Length >= 2)
-        {
-            _projector.Refit(corrections);
-            ReprojectUncorrected();
-            OnPropertyChanged(nameof(Scale));
-            OnPropertyChanged(nameof(RotationDegrees));
-            OnPropertyChanged(nameof(PinRadius));
-            OnPropertyChanged(nameof(PinDiameter));
-        }
-
+        TryRefitFromCorrections();
         RebuildRouteGeometry();
     }
 

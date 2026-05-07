@@ -89,19 +89,6 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
-                    <TextBlock Text="Place">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CurrentStep}" Value="AwaitingPin">
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
                     <TextBlock Text="Walk">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
@@ -262,20 +249,6 @@
                             Command="{Binding MapOverlay.OptimizeRouteCommand}"
                             IsEnabled="{Binding SurveyFlow.CanOptimize}"
                             ToolTip="Compute the shortest path through all placed pins and start walking" />
-                </StackPanel>
-
-                <!-- AwaitingPin -->
-                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=AwaitingPin}">
-                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="Survey detected: " />
-                        <Run Text="{Binding Session.PendingSurvey.Name, FallbackValue=''}" FontWeight="SemiBold" />
-                    </TextBlock>
-                    <TextBlock Text="Click on the map where the ping is showing in-game."
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
                 </StackPanel>
 
                 <!-- Gathering -->

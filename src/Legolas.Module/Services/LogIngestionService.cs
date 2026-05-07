@@ -102,7 +102,7 @@ public sealed class LogIngestionService : BackgroundService
         if (!_surveyFlow.CanAcceptSurvey)
         {
             // Controller writes its own diagnostic to LastLogEvent.
-            _surveyFlow.OnSurveyDetected(sd);
+            _surveyFlow.NoteSurveyDetected(sd);
             return;
         }
 
@@ -112,30 +112,23 @@ public sealed class LogIngestionService : BackgroundService
             duplicate.UpdateModel(duplicate.Model with { Offset = sd.Offset });
             return;
         }
+
+        // Auto-place every survey at the projected position. The user only ever
+        // interacts to *correct* a pin (drag/nudge), which sets ManualOverride and
+        // drives Refit. A click during AwaitingPin used to set ManualOverride from
+        // the click, but that conflated "place" with "correct" — every forced click
+        // (often a guess) became calibration data. After the rework, placement
+        // never sets ManualOverride; only explicit drags do.
+        var index = _session.Surveys.Count;
         var newPixel = _projector.Project(sd.Offset);
-
-        var correctionCount = 0;
-        foreach (var s in _session.Surveys)
-        {
-            if (s.Model.ManualOverride.HasValue) correctionCount++;
-        }
-        if (correctionCount >= 2)
-        {
-            var index = _session.Surveys.Count;
-            var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
-                with { PixelPos = newPixel };
-            var newPinVm = new SurveyItemViewModel(survey);
-            _session.Surveys.Add(newPinVm);
-            // Make the new pin the arrow-key nudge target. Without this, arrows
-            // continue to move the previously-selected pin and a refit ripples
-            // the new pin's position too — looks like "two pins moved on one
-            // keypress". Mirrors what the manual-place path already does.
-            _session.SelectedSurvey = newPinVm;
-            _surveyFlow.NoteAutoPlacedSurvey(sd);
-            return;
-        }
-
-        _surveyFlow.OnSurveyDetected(sd);
+        var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
+            with { PixelPos = newPixel };
+        var newPinVm = new SurveyItemViewModel(survey);
+        _session.Surveys.Add(newPinVm);
+        // Make the new pin the keyboard-nudge target so arrow-key adjustments
+        // act on the just-arrived pin rather than the previously-selected one.
+        _session.SelectedSurvey = newPinVm;
+        _surveyFlow.NoteSurveyDetected(sd);
     }
 
     private SurveyItemViewModel? FindDuplicate(string name, MetreOffset newOffset, double radiusMetres)
