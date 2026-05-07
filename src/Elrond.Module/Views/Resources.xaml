@@ -20,6 +20,8 @@
     <GridLength x:Key="RecipeColLvl">50</GridLength>
     <GridLength x:Key="RecipeColFirst">40</GridLength>
     <GridLength x:Key="RecipeColEffXp">80</GridLength>
+    <GridLength x:Key="RecipeColComplexity">60</GridLength>
+    <GridLength x:Key="RecipeColEfficiency">70</GridLength>
     <GridLength x:Key="RecipeColToLevel">80</GridLength>
 
     <!-- Recipe row template — column-aligned values for fast vertical scanning. -->
@@ -30,13 +32,17 @@
                 <ColumnDefinition Width="{StaticResource RecipeColLvl}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColFirst}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColEffXp}"/>
+                <ColumnDefinition Width="{StaticResource RecipeColComplexity}"/>
+                <ColumnDefinition Width="{StaticResource RecipeColEfficiency}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColToLevel}"/>
             </Grid.ColumnDefinitions>
             <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
             <TextBlock Grid.Column="1" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             <TextBlock Grid.Column="2" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             <TextBlock Grid.Column="3" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="4" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="4" Text="{Binding Complexity, StringFormat=F1}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="5" Text="{Binding Efficiency, StringFormat=F1, TargetNullValue=—}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="6" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
         </Grid>
     </DataTemplate>
 
@@ -58,6 +64,16 @@
                     <TextBlock Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold">
                         <Run Text="{Binding EffectiveXp, Mode=OneWay, StringFormat=N0}"/>
                         <Run Text=" eff XP"/>
+                    </TextBlock>
+                    <TextBlock Text=" • " Foreground="#44FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="4,0"/>
+                    <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}">
+                        <Run Text="{Binding Complexity, Mode=OneWay, StringFormat=F1}"/>
+                        <Run Text=" cmplx"/>
+                    </TextBlock>
+                    <TextBlock Text=" • " Foreground="#44FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="4,0"/>
+                    <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}">
+                        <Run Text="{Binding Efficiency, Mode=OneWay, StringFormat=F1, TargetNullValue=—}"/>
+                        <Run Text=" XP/item"/>
                     </TextBlock>
                     <TextBlock Text=" • " Foreground="#44FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="4,0"/>
                     <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}">
