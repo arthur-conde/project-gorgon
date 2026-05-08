@@ -10,4 +10,4 @@ public enum HotkeyModifiers : uint
     Win = 0x0008,
 }
 
-public sealed record HotkeyBinding(string CommandId, uint VirtualKey, HotkeyModifiers Modifiers);
+public sealed record HotkeyBinding(string CommandId, uint VirtualKey, HotkeyModifiers Modifiers, bool AlwaysOn = false);

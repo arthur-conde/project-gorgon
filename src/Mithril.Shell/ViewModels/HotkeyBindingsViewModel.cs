@@ -33,8 +33,44 @@ public sealed partial class HotkeyRowViewModel : HotkeyRowViewModelBase, INotify
     public HotkeyBinding? Binding
     {
         get => _binding;
-        set { _binding = value; OnPropertyChanged(nameof(Binding)); }
+        set
+        {
+            _binding = value;
+            OnPropertyChanged(nameof(Binding));
+            OnPropertyChanged(nameof(AlwaysOn));
+            OnPropertyChanged(nameof(CanToggleAlwaysOn));
+            OnPropertyChanged(nameof(IsEffectivelyGlobal));
+        }
     }
+
+    /// <summary>
+    /// Per-binding override: when true, forces the hotkey to stay registered
+    /// even while Mithril/the game is unfocused, regardless of the command's
+    /// <see cref="IHotkeyCommand.RespectsFocusGate"/> default. No-op when no
+    /// binding is set.
+    /// </summary>
+    public bool AlwaysOn
+    {
+        get => _binding?.AlwaysOn ?? false;
+        set
+        {
+            if (_binding is null || _binding.AlwaysOn == value) return;
+            // Re-using the Binding setter pipes us through the existing
+            // OnRowPropertyChanged handler, which persists + re-registers.
+            Binding = _binding with { AlwaysOn = value };
+        }
+    }
+
+    public bool CanToggleAlwaysOn => _binding is not null;
+
+    /// <summary>
+    /// True when this binding ignores the foreground focus gate today —
+    /// either because the command opted out at the dev level, or because
+    /// the user toggled <see cref="AlwaysOn"/>. Drives the Globe badge.
+    /// </summary>
+    public bool IsEffectivelyGlobal
+        => _binding is not null
+           && !HotkeyService.EffectiveRespectsFocusGate(Command, _binding);
 
     public string? ConflictWith
     {
@@ -54,9 +90,12 @@ public sealed partial class HotkeyRowViewModel : HotkeyRowViewModelBase, INotify
 
     public void Commit(HotkeyBinding? newBinding)
     {
+        // The chip control produces a fresh binding from key+modifiers, so it
+        // doesn't carry forward AlwaysOn — preserve whatever the user had.
+        var preservedAlwaysOn = _binding?.AlwaysOn ?? false;
         if (newBinding is null) _settings.HotkeyBindings.Remove(Command.Id);
-        else _settings.HotkeyBindings[Command.Id] = newBinding with { CommandId = Command.Id };
-        Binding = newBinding is null ? null : newBinding with { CommandId = Command.Id };
+        else _settings.HotkeyBindings[Command.Id] = newBinding with { CommandId = Command.Id, AlwaysOn = preservedAlwaysOn };
+        Binding = newBinding is null ? null : newBinding with { CommandId = Command.Id, AlwaysOn = preservedAlwaysOn };
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

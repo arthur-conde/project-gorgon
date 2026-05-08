@@ -88,8 +88,21 @@
                             <hk:HotkeyChipControl DockPanel.Dock="Right"
                                                   Binding="{Binding Binding, Mode=TwoWay}"
                                                   HotkeyService="{Binding DataContext.HotkeyService, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                            <CheckBox DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center"
+                                      Content="Always on"
+                                      Foreground="#FFB8B8B8"
+                                      FontSize="{DynamicResource AppFontSizeHint}"
+                                      IsChecked="{Binding AlwaysOn, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanToggleAlwaysOn}"
+                                      ToolTip="Keep this hotkey registered even when Mithril and the game are both unfocused (e.g. while you're in a browser)."/>
                             <StackPanel>
-                                <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <icon:PackIconLucide Kind="Globe" Width="11" Height="11"
+                                                         Foreground="#FF7AB8E0" VerticalAlignment="Center" Margin="0,0,5,0"
+                                                         Visibility="{Binding IsEffectivelyGlobal, Converter={StaticResource BoolToVis}}"
+                                                         ToolTip="Global: fires regardless of which app has focus."/>
+                                    <TextBlock Text="{Binding DisplayName}" Foreground="#FFE8E8E8"/>
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal"
                                            Visibility="{Binding HasConflict, Converter={StaticResource BoolToVis}}">
                                     <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11" Foreground="#FFE0A030" VerticalAlignment="Center" Margin="0,0,3,0"/>
