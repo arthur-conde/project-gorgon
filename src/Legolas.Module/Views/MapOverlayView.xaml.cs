@@ -86,12 +86,32 @@ public partial class MapOverlayView : Window
 
         var wedges = new List<WedgeArc>(vm.Surveys.Count);
         var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var selected = vm.Session.SelectedSurvey;
+        var listening = vm.IsListening;
+        int? activeIndex = null;
         foreach (var s in vm.Surveys)
         {
             if (s.WedgeArc is { } arc) wedges.Add(arc);
             // IsVisible mirrors the WPF data-template's Visibility binding —
             // collected pins drop out, anything without a projected pixel too.
-            if (s.IsVisible) pins.Add(s.EffectivePixel!.Value);
+            if (s.IsVisible)
+            {
+                if (listening && ReferenceEquals(s, selected))
+                    activeIndex = pins.Count;
+                pins.Add(s.EffectivePixel!.Value);
+            }
+        }
+
+        ActivePinTreatmentSpec? activeSpec = null;
+        if (activeIndex.HasValue)
+        {
+            var aps = vm.ActivePinStyle;
+            activeSpec = new ActivePinTreatmentSpec(
+                Treatment: aps.Treatment,
+                Color: ParseColor(aps.Color),
+                HaloPaddingPx: aps.HaloPaddingPx,
+                StrokeThickness: aps.HaloThickness,
+                GlowBlurRadius: aps.GlowBlurRadius);
         }
 
         var pinStyle = vm.PinStyle;
@@ -117,6 +137,8 @@ public partial class MapOverlayView : Window
             ActiveSegmentPoints: vm.ActiveSegmentPoints,
             Wedges: wedges,
             SurveyPins: pins,
+            ActivePinIndex: activeIndex,
+            ActiveTreatment: activeSpec,
             SurveyOuter: outerStyle,
             SurveyCenter: centerStyle,
             SurveyOuterDiameter: vm.PinDiameter,

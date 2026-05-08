@@ -18,6 +18,8 @@ public sealed record PinScene(
     IReadOnlyList<PixelPoint> ActiveSegmentPoints,
     IReadOnlyList<WedgeArc> Wedges,
     IReadOnlyList<PixelPoint> SurveyPins,
+    int? ActivePinIndex,
+    ActivePinTreatmentSpec? ActiveTreatment,
     PinLayerStyle SurveyOuter,
     PinLayerStyle SurveyCenter,
     double SurveyOuterDiameter,

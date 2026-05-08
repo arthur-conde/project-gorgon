@@ -116,12 +116,119 @@ internal static class PinSceneRenderer
     private static void DrawSurveyPins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
     {
         if (scene.SurveyPins.Count == 0) return;
-        // Outer + centre painted once per pin. Step E will inject halo / glow
-        // / scale-up / fill-swap for the selected pin in front of these.
-        foreach (var pos in scene.SurveyPins)
+        // Render non-active pins first; the active pin (if any) layers its
+        // treatment on top so glow halos can't be occluded by neighbouring
+        // pins. Halo + Glow add visuals around the normal pin draw; ScaleUp
+        // and FillSwap replace it.
+        for (var i = 0; i < scene.SurveyPins.Count; i++)
         {
-            DrawPinLayer(rt, factory, brushes, pos, scene.SurveyOuterDiameter, scene.SurveyOuter);
-            DrawPinLayer(rt, factory, brushes, pos, scene.SurveyCenter.Size, scene.SurveyCenter);
+            if (i == scene.ActivePinIndex) continue;
+            DrawPin(rt, factory, brushes, scene.SurveyPins[i],
+                scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
+        }
+
+        if (scene.ActivePinIndex is { } idx
+            && idx >= 0 && idx < scene.SurveyPins.Count
+            && scene.ActiveTreatment is { } spec)
+        {
+            DrawActivePin(rt, factory, brushes, scene.SurveyPins[idx], scene, spec);
+        }
+    }
+
+    private static void DrawPin(
+        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
+    {
+        DrawPinLayer(rt, factory, brushes, pos, diameter, outer);
+        DrawPinLayer(rt, factory, brushes, pos, center.Size, center);
+    }
+
+    private static void DrawActivePin(
+        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        PixelPoint pos, PinScene scene, ActivePinTreatmentSpec spec)
+    {
+        switch (spec.Treatment)
+        {
+            case ActivePinTreatment.Halo:
+                DrawHalo(rt, factory, brushes, pos, scene.SurveyOuter.Shape, scene.SurveyOuterDiameter, spec);
+                DrawPin(rt, factory, brushes, pos, scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
+                break;
+
+            case ActivePinTreatment.Glow:
+                DrawGlow(rt, factory, brushes, pos, scene.SurveyOuter.Shape, scene.SurveyOuterDiameter, spec);
+                DrawPin(rt, factory, brushes, pos, scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
+                break;
+
+            case ActivePinTreatment.ScaleUp:
+                // 1.5× scale matches a comfortable "noticeably bigger but not
+                // overwhelming" jump for a 16px default pin (-> 24px). Both
+                // outer diameter and centre size scale together so the
+                // proportions stay right.
+                const double scale = 1.5;
+                var scaledCenter = scene.SurveyCenter with { Size = scene.SurveyCenter.Size * scale };
+                DrawPin(rt, factory, brushes, pos,
+                    scene.SurveyOuter, scaledCenter, scene.SurveyOuterDiameter * scale);
+                break;
+
+            case ActivePinTreatment.FillSwap:
+                // Outer fill becomes the active colour. The default outer fill
+                // is near-transparent (#01000000) so users get a vivid solid
+                // disc; if they've already coloured the outer, the swap is
+                // still visible because the colour changes outright.
+                var swappedOuter = scene.SurveyOuter with { FillColor = spec.Color };
+                DrawPin(rt, factory, brushes, pos, swappedOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
+                break;
+        }
+    }
+
+    private static void DrawHalo(
+        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+    {
+        var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
+        // Transparent fill so the halo is a ring, not a filled blob obscuring
+        // the pin underneath.
+        var haloStyle = new PinLayerStyle(
+            Shape: shape,
+            FillColor: System.Windows.Media.Color.FromArgb(0, 0, 0, 0),
+            StrokeColor: spec.Color,
+            StrokeStyle: PinStrokeStyle.Solid,
+            StrokeThickness: spec.StrokeThickness,
+            Size: 0);
+        DrawPinLayer(rt, factory, brushes, pos, haloDiameter, haloStyle);
+    }
+
+    private static void DrawGlow(
+        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+    {
+        if (spec.GlowBlurRadius <= 0) return;
+        // Multi-ring fake blur: 4 concentric filled rings with falling alpha,
+        // approximates a soft Gaussian glow without setting up a Direct2D
+        // effect chain (which needs ID2D1DeviceContext + a separate
+        // intermediate bitmap). Step G can swap this for a real D2D Gaussian
+        // if the difference is visible at extreme blur radii.
+        const int rings = 4;
+        var pinRadius = pinDiameter / 2.0;
+        for (var i = 0; i < rings; i++)
+        {
+            // Outer rings are larger and dimmer; t goes 1 → 1/rings.
+            var t = (rings - i) / (double)rings;
+            var radius = pinRadius + spec.GlowBlurRadius * t;
+            // Alpha ramp: nearest ring keeps ~50% of the configured colour
+            // alpha, outermost ring fades almost to nothing.
+            var alphaScale = 0.5 * (1 - (double)i / rings);
+            var c = spec.Color;
+            var glowColor = System.Windows.Media.Color.FromArgb(
+                (byte)Math.Clamp(c.A * alphaScale, 0, 255), c.R, c.G, c.B);
+            var glowStyle = new PinLayerStyle(
+                Shape: shape,
+                FillColor: glowColor,
+                StrokeColor: System.Windows.Media.Color.FromArgb(0, 0, 0, 0),
+                StrokeStyle: PinStrokeStyle.None,
+                StrokeThickness: 0,
+                Size: 0);
+            DrawPinLayer(rt, factory, brushes, pos, radius * 2, glowStyle);
         }
     }
 
