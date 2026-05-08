@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Windows;
-using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
@@ -218,7 +216,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     }
 
     [ObservableProperty]
-    private PointCollection _routePoints = new();
+    private IReadOnlyList<PixelPoint> _routePoints = Array.Empty<PixelPoint>();
 
     /// <summary>
     /// Two-point polyline drawn on top of the static route line: from the
@@ -229,7 +227,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// player physically is right now". Empty when there's no active target.
     /// </summary>
     [ObservableProperty]
-    private PointCollection _activeSegmentPoints = new();
+    private IReadOnlyList<PixelPoint> _activeSegmentPoints = Array.Empty<PixelPoint>();
 
     [RelayCommand]
     public void SetPlayerPosition(PixelPoint where)
@@ -371,53 +369,34 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             || s.Skipped
             || s.Offset.Magnitude < 1e-6)
         {
-            s.WedgeGeometry = null;
+            s.WedgeArc = null;
             return;
         }
 
         var distancePx = s.Offset.Magnitude * _projector.Scale;
         if (distancePx < 4)
         {
-            s.WedgeGeometry = null;
+            s.WedgeArc = null;
             return;
         }
 
         var bearingOffset = Math.Atan2(s.Offset.East, s.Offset.North);
         var bearing = bearingOffset + _projector.RotationRadians;
 
-        var bMin = bearing - WedgeHalfAngleRadians;
-        var bMax = bearing + WedgeHalfAngleRadians;
-        var origin = new Point(PlayerPosition.X, PlayerPosition.Y);
-        var pStart = new Point(
-            origin.X + distancePx * Math.Sin(bMin),
-            origin.Y - distancePx * Math.Cos(bMin));
-        var pEnd = new Point(
-            origin.X + distancePx * Math.Sin(bMax),
-            origin.Y - distancePx * Math.Cos(bMax));
-
-        var figure = new PathFigure { StartPoint = origin, IsClosed = true, IsFilled = true };
-        figure.Segments.Add(new LineSegment(pStart, isStroked: false));
-        figure.Segments.Add(new ArcSegment(
-            point: pEnd,
-            size: new Size(distancePx, distancePx),
-            rotationAngle: 0,
-            isLargeArc: false,
-            sweepDirection: SweepDirection.Clockwise,
-            isStroked: false));
-        figure.Segments.Add(new LineSegment(origin, isStroked: false));
-
-        var geom = new PathGeometry();
-        geom.Figures.Add(figure);
-        geom.Freeze();
-        s.WedgeGeometry = geom;
+        // Raw inputs only; the D2D renderer constructs the arc each frame.
+        s.WedgeArc = new WedgeArc(
+            Origin: PlayerPosition,
+            BearingRadians: bearing,
+            HalfAngleRadians: WedgeHalfAngleRadians,
+            DistancePx: distancePx);
     }
 
     private void RebuildRouteGeometry()
     {
         if (!_session.ShowRouteLines)
         {
-            RoutePoints = new PointCollection();
-            ActiveSegmentPoints = new PointCollection();
+            RoutePoints = Array.Empty<PixelPoint>();
+            ActiveSegmentPoints = Array.Empty<PixelPoint>();
             return;
         }
 
@@ -426,12 +405,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             .OrderBy(s => s.RouteOrder!.Value)
             .ToList();
 
-        var points = new PointCollection { new Point(PlayerPosition.X, PlayerPosition.Y) };
-        foreach (var s in ordered)
-        {
-            var p = s.EffectivePixel!.Value;
-            points.Add(new Point(p.X, p.Y));
-        }
+        var points = new List<PixelPoint>(ordered.Count + 1) { PlayerPosition };
+        foreach (var s in ordered) points.Add(s.EffectivePixel!.Value);
         RoutePoints = points;
 
         RebuildActiveSegment();
@@ -441,14 +416,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     {
         if (!_session.ShowRouteLines)
         {
-            ActiveSegmentPoints = new PointCollection();
+            ActiveSegmentPoints = Array.Empty<PixelPoint>();
             return;
         }
 
         var active = Surveys.FirstOrDefault(s => s.IsActiveTarget);
         if (active is null || !active.EffectivePixel.HasValue)
         {
-            ActiveSegmentPoints = new PointCollection();
+            ActiveSegmentPoints = Array.Empty<PixelPoint>();
             return;
         }
 
@@ -461,15 +436,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             .OrderByDescending(s => s.RouteOrder!.Value)
             .FirstOrDefault();
 
-        var startX = lastCollected?.EffectivePixel?.X ?? PlayerPosition.X;
-        var startY = lastCollected?.EffectivePixel?.Y ?? PlayerPosition.Y;
-        var endPx = active.EffectivePixel.Value;
-
-        ActiveSegmentPoints = new PointCollection
-        {
-            new Point(startX, startY),
-            new Point(endPx.X, endPx.Y),
-        };
+        var start = lastCollected?.EffectivePixel ?? PlayerPosition;
+        ActiveSegmentPoints = new[] { start, active.EffectivePixel.Value };
     }
 }
 

@@ -4,9 +4,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
-using Legolas.Flow;
-using Legolas.ViewModels;
 using Legolas.Domain;
+using Legolas.Flow;
+using Legolas.Rendering;
+using Legolas.ViewModels;
 
 namespace Legolas.Views;
 
@@ -33,9 +34,16 @@ public partial class MapOverlayView : Window
     private bool _draggingAnchorFromViewport;
     private SurveyItemViewModel? _draggingPinFromViewport;
 
+    private readonly D2DBrushCache _brushCache = new();
+
     public MapOverlayView()
     {
         InitializeComponent();
+        // Wire the D2D pin renderer. Stays attached for the life of the
+        // window; the surface itself manages CompositionTarget.Rendering
+        // subscription based on visibility, so this handler only fires when
+        // there's actually a frame to draw.
+        MapSurface.Render += OnMapSurfaceRender;
     }
 
     public MapOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver, NudgePadViewModel nudgePad) : this()
@@ -59,6 +67,39 @@ public partial class MapOverlayView : Window
             if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
                 ClickThrough.Apply(this, settings.ClickThroughMap);
         };
+        Closed += (_, _) =>
+        {
+            MapSurface.Render -= OnMapSurfaceRender;
+            _brushCache.Dispose();
+            MapSurface.Dispose();
+        };
+    }
+
+    private void OnMapSurfaceRender(object? sender, D2DRenderEventArgs e)
+    {
+        if (DataContext is not MapOverlayViewModel vm) return;
+
+        // Bind the brush cache to the current render target — cheap when
+        // unchanged, drops cached brushes when the target rebuilds (resize,
+        // device-lost) so the cache never holds dangling COM pointers.
+        _brushCache.Bind(e.RenderTarget);
+
+        var wedges = new List<WedgeArc>(vm.Surveys.Count);
+        foreach (var s in vm.Surveys)
+            if (s.WedgeArc is { } arc) wedges.Add(arc);
+
+        var scene = new PinScene(
+            RoutePoints: vm.RoutePoints,
+            ActiveSegmentPoints: vm.ActiveSegmentPoints,
+            Wedges: wedges,
+            RouteLineColor: vm.Brushes.RouteLine.Color,
+            WedgeFillColor: vm.Brushes.BearingWedgeFill.Color,
+            WedgeStrokeColor: vm.Brushes.BearingWedgeStroke.Color,
+            // Step F: marching-ants clock. For now the active segment renders
+            // with a static dash pattern.
+            ActiveSegmentDashOffset: 0);
+
+        PinSceneRenderer.Render(scene, e.RenderTarget, e.Factory, _brushCache);
     }
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

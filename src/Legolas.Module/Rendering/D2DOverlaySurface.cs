@@ -174,7 +174,7 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
 
         if (Render is { } handler)
         {
-            handler(this, new D2DRenderEventArgs(rt, w, h));
+            handler(this, new D2DRenderEventArgs(rt, _lifecycle.Factory, w, h));
         }
         else if (DebugFill)
         {
@@ -217,17 +217,21 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
 /// <summary>
 /// Args passed to <see cref="D2DOverlaySurface.Render"/>. The render target is
 /// already inside a BeginDraw / EndDraw pair; the consumer only emits draw
-/// commands against it.
+/// commands against it. <see cref="Factory"/> is supplied so consumers can
+/// create stroke styles + path geometries without holding a reference to the
+/// device lifecycle directly.
 /// </summary>
 public sealed class D2DRenderEventArgs : EventArgs
 {
     public ID2D1RenderTarget RenderTarget { get; }
+    public ID2D1Factory1 Factory { get; }
     public int PixelWidth { get; }
     public int PixelHeight { get; }
 
-    public D2DRenderEventArgs(ID2D1RenderTarget rt, int w, int h)
+    public D2DRenderEventArgs(ID2D1RenderTarget rt, ID2D1Factory1 factory, int w, int h)
     {
         RenderTarget = rt;
+        Factory = factory;
         PixelWidth = w;
         PixelHeight = h;
     }
