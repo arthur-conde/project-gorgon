@@ -331,6 +331,10 @@
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
+                    <Button Content="View report" Padding="14,6" Margin="0,16,0,0" HorizontalAlignment="Center"
+                            Command="{Binding ViewLastReportCommand}"
+                            Visibility="{Binding HasLatestReport, Converter={StaticResource BoolToVis}}"
+                            ToolTip="Re-open the end-of-run summary (text + PNG card)" />
                 </StackPanel>
 
                 <!-- MotherlodeMeasuring -->

@@ -1,0 +1,97 @@
+<UserControl x:Class="Legolas.Sharing.LegolasShareDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+             xmlns:vm="clr-namespace:Legolas.Sharing"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:LegolasShareDialogViewModel}"
+             MinWidth="720" MaxWidth="1040">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- App resources first so our brushes / fonts win in case of key collisions
+                 with MahApps theme keys. The MahApps dictionaries below give DropDownButton
+                 / DropDownMenu their polish (custom popup chrome, item hover, etc.) without
+                 us having to hand-roll a Popup + Border + Buttons combo. Scoped to this
+                 dialog so the rest of the app's visuals aren't touched. -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <StackPanel>
+        <CheckBox Content="Include character name" IsChecked="{Binding IncludeCharacterName}"
+                  Visibility="{Binding ShowCharacterNameToggle, Converter={StaticResource BoolToVis}}"
+                  Foreground="#CCFFFFFF" Margin="0,0,0,12"/>
+
+        <!-- Hero: card preview. Re-renders on every payload change (toggle).
+             The image itself is 1000×400; we let it scale uniformly to fit the
+             dialog's content width, which at MaxWidth=1040 puts the preview at
+             near-native size so the small footer / item-strip text stays readable.
+             A thin status overlay shows while a render is in flight so the user
+             knows the bitmap below is briefly stale. -->
+        <Border Background="#FF101010" BorderBrush="#FF333333" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="0,0,0,10">
+            <Grid>
+                <Image Source="{Binding CardPreview}" Stretch="Uniform" StretchDirection="DownOnly"
+                       HorizontalAlignment="Center"/>
+                <TextBlock Text="Rendering preview…" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding IsRenderingPreview, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+
+        <!-- Bootstrap-style split: a regular Button for the primary (stable) action
+             paired with a mah:DropDownButton for alternates. We deliberately don't use
+             mah:SplitButton — it derives from ComboBox and treats picking an item as
+             "this is now the default", which isn't the affordance we want here.
+             Each MenuItem in the DropDownButton carries its own Command, and
+             MahApps owns the popup chrome / dark theming so we don't fight it.
+
+             ContentCharacterCasing=Normal opts out of MahApps's default uppercase
+             button face so the primary face matches the menu items below it.
+             CornerRadius is split — primary keeps its left corners, dropdown keeps
+             its right corners, inner corners square — so the pair reads as one
+             control. The seam between them stays (full borders preserved); the
+             cosmetic "merge the borders" tweaks regressed the focus / hover chrome
+             so they're intentionally not in here. -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+
+            <Button Content="Copy image" Command="{Binding CopyImageCommand}"
+                    Padding="12,6"
+                    mah:ControlsHelper.ContentCharacterCasing="Normal"
+                    mah:ControlsHelper.CornerRadius="3,0,0,3"/>
+            <mah:DropDownButton ToolTip="More copy options" Margin="0,0,8,0"
+                                mah:ControlsHelper.ContentCharacterCasing="Normal"
+                                mah:ControlsHelper.CornerRadius="0,3,3,0">
+                <mah:DropDownButton.Items>
+                    <MenuItem Header="Copy link"  Command="{Binding CopyLinkCommand}"/>
+                    <MenuItem Header="Copy text"  Command="{Binding CopySummaryCommand}"/>
+                    <MenuItem Header="Copy JSON"  Command="{Binding CopyJsonCommand}"/>
+                </mah:DropDownButton.Items>
+            </mah:DropDownButton>
+
+            <Button Content="Save image…" Command="{Binding SaveImageCommand}"
+                    Padding="10,6"
+                    mah:ControlsHelper.ContentCharacterCasing="Normal"
+                    mah:ControlsHelper.CornerRadius="3,0,0,3"/>
+            <mah:DropDownButton ToolTip="More save options"
+                                mah:ControlsHelper.ContentCharacterCasing="Normal"
+                                mah:ControlsHelper.CornerRadius="0,3,3,0">
+                <mah:DropDownButton.Items>
+                    <MenuItem Header="Save JSON…" Command="{Binding SaveJsonCommand}"/>
+                </mah:DropDownButton.Items>
+            </mah:DropDownButton>
+
+        </StackPanel>
+
+        <TextBlock Text="{Binding StatusMessage}" Foreground="#FF7AB880"
+                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,10,0,0"
+                   Visibility="{Binding StatusMessage, Converter={StaticResource NullOrEmptyToVis}}"/>
+    </StackPanel>
+</UserControl>

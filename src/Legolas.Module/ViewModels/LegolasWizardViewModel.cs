@@ -3,6 +3,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
+using Legolas.Sharing;
+using Mithril.Shared.Character;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 
 namespace Legolas.ViewModels;
 
@@ -32,6 +36,12 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     private readonly SessionState _session;
     private readonly SurveyFlowController _surveyFlow;
     private readonly MotherlodeFlowController _motherlodeFlow;
+    private readonly LegolasSettings _settings;
+    private readonly LegolasReportService? _reportService;
+    private readonly LegolasShareCardRenderer? _renderer;
+    private readonly IActiveCharacterService? _activeChar;
+    private readonly IReferenceDataService? _refData;
+    private readonly IDialogService? _dialogs;
 
     public LegolasWizardViewModel(
         SessionState session,
@@ -40,11 +50,23 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         ControlPanelViewModel controlPanel,
         MotherlodeViewModel motherlode,
         MapOverlayViewModel mapOverlay,
-        NudgePadViewModel nudgePad)
+        NudgePadViewModel nudgePad,
+        LegolasSettings settings,
+        LegolasReportService? reportService = null,
+        LegolasShareCardRenderer? renderer = null,
+        IActiveCharacterService? activeChar = null,
+        IReferenceDataService? refData = null,
+        IDialogService? dialogs = null)
     {
         _session = session;
         _surveyFlow = surveyFlow;
         _motherlodeFlow = motherlodeFlow;
+        _settings = settings;
+        _reportService = reportService;
+        _renderer = renderer;
+        _activeChar = activeChar;
+        _refData = refData;
+        _dialogs = dialogs;
         ControlPanel = controlPanel;
         Motherlode = motherlode;
         MapOverlay = mapOverlay;
@@ -53,6 +75,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _surveyFlow.PropertyChanged += OnSurveyFlowChanged;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
         _session.PropertyChanged += OnSessionChanged;
+        if (_reportService is not null)
+            _reportService.ReportGenerated += OnReportGenerated;
         RecomputeStep();
     }
 
@@ -206,6 +230,63 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         // Hotkey-driven mode flip should re-project the wizard's step.
         if (e.PropertyName == nameof(SessionState.Mode))
             RecomputeStep();
+    }
+
+    /// <summary>
+    /// True once a survey run has completed at least once this app session, so the
+    /// wizard can show a "View last report" button. The snapshot lives on the
+    /// report service across FSM resets, so this stays true even after AutoReset
+    /// has cleared <see cref="SessionState"/>.
+    /// </summary>
+    public bool HasLatestReport => _reportService?.LatestReport is not null;
+
+    private void OnReportGenerated(LegolasSharePayload payload)
+    {
+        OnPropertyChanged(nameof(HasLatestReport));
+        if (_settings.ShowReportOnDone)
+            ShowReportDialog(payload);
+    }
+
+    [RelayCommand]
+    private void ViewLastReport()
+    {
+        var payload = _reportService?.LatestReport;
+        if (payload is null) return;
+        ShowReportDialog(payload);
+    }
+
+    private void ShowReportDialog(LegolasSharePayload payload)
+    {
+        if (_dialogs is null || _reportService is null) return;
+        // Capture the just-built payload so the dialog can rebuild on character-name
+        // toggle without the FSM having to be in Done at click time.
+        var captured = payload;
+        var hasName = !string.IsNullOrWhiteSpace(_activeChar?.ActiveCharacterName);
+        var vm = new LegolasShareDialogViewModel(
+            buildPayload: includeName =>
+            {
+                if (includeName == (captured.CharacterName != null)) return captured;
+                // Toggle the character name on the captured snapshot rather than
+                // re-snapshotting from a now-reset SessionState.
+                return new LegolasSharePayload
+                {
+                    SchemaVersion = captured.SchemaVersion,
+                    CharacterName = includeName ? _activeChar?.ActiveCharacterName : null,
+                    StartedAt = captured.StartedAt,
+                    CompletedAt = captured.CompletedAt,
+                    Mode = captured.Mode,
+                    SurveyCount = captured.SurveyCount,
+                    CollectedItemsByInternalName = new Dictionary<string, int>(captured.CollectedItemsByInternalName, StringComparer.Ordinal),
+                    UnknownByName = captured.UnknownByName is null
+                        ? null
+                        : new Dictionary<string, int>(captured.UnknownByName, StringComparer.Ordinal),
+                };
+            },
+            renderer: _renderer,
+            settings: _settings,
+            hasCharacterName: hasName,
+            refData: _refData);
+        _dialogs.ShowDialog(vm, new LegolasShareDialog());
     }
 
     private void RecomputeStep()

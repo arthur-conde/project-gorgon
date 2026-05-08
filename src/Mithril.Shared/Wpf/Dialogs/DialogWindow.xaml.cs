@@ -15,6 +15,10 @@ public partial class DialogWindow : Window
 
         TitleText.Text = viewModel.Title;
         PrimaryButton.Content = viewModel.PrimaryButtonText;
+        // The XAML default (MaxWidth=560) suits prose-shaped dialogs; let each VM
+        // override for image-preview / wide-content cases without bumping the
+        // global cap and accidentally letting other dialogs grow.
+        DialogContainer.MaxWidth = viewModel.MaxContentWidth;
 
         if (viewModel.SecondaryButtonText is { } secondaryText)
         {

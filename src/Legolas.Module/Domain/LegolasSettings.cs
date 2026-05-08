@@ -166,6 +166,29 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
         }
     }
 
+    /// <summary>
+    /// When true, the end-of-run report dialog auto-pops as soon as the FSM hits Done.
+    /// Snapshot is taken regardless — this only gates whether the dialog opens
+    /// automatically. The wizard always offers a manual "View last report" button.
+    /// </summary>
+    private bool _showReportOnDone = true;
+    public bool ShowReportOnDone
+    {
+        get => _showReportOnDone;
+        set
+        {
+            if (_showReportOnDone == value) return;
+            _showReportOnDone = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowReportOnDone)));
+        }
+    }
+
+    /// <summary>
+    /// Last directory the user saved a report image / JSON to. Pre-fills the SaveFileDialog
+    /// so successive saves land in the same folder. Null = use the OS default.
+    /// </summary>
+    public string? ReportSaveDirectory { get; set; }
+
     private bool _autoClickThroughInventoryDuringSession = true;
     public bool AutoClickThroughInventoryDuringSession
     {

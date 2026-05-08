@@ -1,14 +1,20 @@
 using System.IO;
+using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
+using Mithril.Shared.Icons;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Mithril.Shared.Settings;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Hotkeys;
 using Legolas.Services;
+using Legolas.Sharing;
 using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -76,6 +82,32 @@ public sealed class LegolasModule : IMithrilModule
         });
         services.AddSingleton<SurveyFlowController>();
         services.AddSingleton<MotherlodeFlowController>();
+
+        // End-of-run report (text + PNG + JSON + share link). Singleton so the
+        // latest snapshot survives FSM resets and is available for the wizard's
+        // "View last report" button. IActiveCharacterService is optional —
+        // anonymous reports are valid and the report service tolerates a null.
+        services.AddSingleton<LegolasReportService>(sp => new LegolasReportService(
+            sp.GetRequiredService<SurveyFlowController>(),
+            sp.GetRequiredService<SessionState>(),
+            clock: TimeProvider.System,
+            activeChar: sp.GetService<IActiveCharacterService>(),
+            refData: sp.GetService<IReferenceDataService>()));
+        services.AddSingleton<LegolasShareCardRenderer>(sp => new LegolasShareCardRenderer(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IIconCacheService>()));
+
+        // Sharing — mithril://legolas/<payload> import target. Opens the same
+        // share dialog the sender used so the receiver gets text + JSON + card
+        // preview + copy/save buttons rather than a stripped-down view.
+        services.AddSingleton<ILegolasShareImportTarget>(sp => new LegolasShareImportTarget(
+            sp.GetService<LegolasShareCardRenderer>(),
+            sp.GetService<LegolasSettings>(),
+            sp.GetService<IDialogService>(),
+            sp.GetService<IReferenceDataService>(),
+            sp.GetService<IModuleActivator>(),
+            sp.GetService<IDiagnosticsSink>()));
+
         services.AddSingleton<LegolasWizardViewModel>();
         services.AddSingleton<LegolasSettingsViewModel>();
         services.AddSingleton<ControlPanelViewModel>();

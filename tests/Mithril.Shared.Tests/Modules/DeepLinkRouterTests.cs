@@ -191,4 +191,60 @@ public class DeepLinkRouterTests
         public string? LastPayload { get; private set; }
         public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
     }
+
+    // ---- mithril://legolas/… branch -----------------------------------------
+
+    [Fact]
+    public void LegolasUri_Dispatched_WithBase64UrlPayload()
+    {
+        var presenter = new RecordingPresenter();
+        var legolasTarget = new RecordingLegolasTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+
+        var handled = router.Handle("mithril://legolas/AB-_abcXYZ123");
+
+        handled.Should().BeTrue();
+        legolasTarget.LastPayload.Should().Be("AB-_abcXYZ123");
+    }
+
+    [Fact]
+    public void LegolasUri_WithoutRegisteredTarget_IsDropped()
+    {
+        var presenter = new RecordingPresenter();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null, legolasImport: null);
+
+        router.Handle("mithril://legolas/AB-_abcXYZ123").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("mithril://legolas/has.dot")]
+    [InlineData("mithril://legolas/has space")]
+    [InlineData("mithril://legolas/")]
+    public void LegolasUri_MalformedPayload_IsRejected(string uri)
+    {
+        var presenter = new RecordingPresenter();
+        var legolasTarget = new RecordingLegolasTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+
+        router.Handle(uri).Should().BeFalse();
+        legolasTarget.LastPayload.Should().BeNull();
+    }
+
+    [Fact]
+    public void LegolasUri_PayloadOverLengthCap_IsRejected()
+    {
+        var presenter = new RecordingPresenter();
+        var legolasTarget = new RecordingLegolasTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+
+        var tooLong = new string('A', 8193);
+        router.Handle($"mithril://legolas/{tooLong}").Should().BeFalse();
+        legolasTarget.LastPayload.Should().BeNull();
+    }
+
+    private sealed class RecordingLegolasTarget : ILegolasShareImportTarget
+    {
+        public string? LastPayload { get; private set; }
+        public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
+    }
 }
