@@ -151,6 +151,10 @@ public sealed class SkillAdvisorEngine
                 ? nextCraftXp / complexity
                 : null;
 
+            var rewardSkillDisplayName = _ref.Skills.TryGetValue(recipe.RewardSkill, out var rewardSkillEntry)
+                ? rewardSkillEntry.DisplayName
+                : recipe.RewardSkill;
+
             recipeAnalyses.Add(new RecipeAnalysis(
                 recipe.Key,
                 recipe.Name,
@@ -169,7 +173,8 @@ public sealed class SkillAdvisorEngine
                 efficiency,
                 ingredients,
                 craftedOutputs,
-                RewardSkill: recipe.RewardSkill));
+                RewardSkill: recipe.RewardSkill,
+                RewardSkillDisplayName: rewardSkillDisplayName));
         }
 
         recipeAnalyses.Sort((a, b) =>

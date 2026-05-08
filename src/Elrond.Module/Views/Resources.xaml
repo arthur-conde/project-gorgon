@@ -39,7 +39,7 @@
                 <ColumnDefinition Width="{StaticResource RecipeColToLevel}"/>
             </Grid.ColumnDefinitions>
             <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding RewardSkill}" HorizontalAlignment="Left" VerticalAlignment="Center"
+            <TextBlock Grid.Column="1" Text="{Binding RewardSkillDisplayName}" HorizontalAlignment="Left" VerticalAlignment="Center"
                        Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" TextTrimming="CharacterEllipsis"/>
             <TextBlock Grid.Column="2" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             <TextBlock Grid.Column="3" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -62,7 +62,7 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="{Binding RecipeName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                     <Border Background="#33D4A847" CornerRadius="3" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding RewardSkill}" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding RewardSkillDisplayName}" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
                     </Border>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,3,0,0">

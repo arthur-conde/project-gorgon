@@ -105,7 +105,11 @@
                             <icon:PackIconLucide DockPanel.Dock="Right" Kind="ChevronDown" VerticalAlignment="Center"
                                                  Width="14" Height="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,0,0"/>
                             <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeXLarge}" Foreground="{StaticResource TextPrimaryBrush}">
-                                <Run Text="{Binding Analysis.SkillName, Mode=OneWay}"/>
+                                <!-- Bind to the display-name view-model property so the section
+                                     header shows the human "Weapon Augmentation", not the
+                                     id-shaped key "WeaponAugmentBrewing" that Analysis.SkillName
+                                     carries. -->
+                                <Run Text="{Binding SelectedSkillDisplayName, Mode=OneWay}"/>
                                 <Run Text=" Level "/>
                                 <Run Text="{Binding Analysis.CurrentLevel, Mode=OneWay}"/>
                             </TextBlock>
@@ -141,50 +145,63 @@
                                   SelectedItemChanged="OnSkillTreeSelectionChanged">
                             <TreeView.Resources>
                                 <HierarchicalDataTemplate DataType="{x:Type vm:SkillNode}" ItemsSource="{Binding Children}">
-                                    <Border Padding="4,4">
-                                        <DockPanel LastChildFill="True">
-                                            <!-- Right side: compact level + XP for leaves; blank for headers. -->
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0"
-                                                        VerticalAlignment="Center"
-                                                        Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}">
-                                                <TextBlock Foreground="{StaticResource TextPrimaryBrush}"
-                                                           FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center"
-                                                           Width="46" TextAlignment="Right">
-                                                    <Run Text="Lv."/><Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
-                                                </TextBlock>
-                                                <Border Width="84" Height="8" Margin="8,0,8,0" VerticalAlignment="Center"
-                                                        Background="#FF333333" BorderBrush="{StaticResource BorderSubtleBrush}"
-                                                        BorderThickness="1" CornerRadius="2">
-                                                    <ProgressBar Foreground="{StaticResource AccentBrush}" Background="Transparent" BorderThickness="0"
-                                                                 Minimum="0"
-                                                                 Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
-                                                                 Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
-                                                </Border>
-                                                <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
-                                                           FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"
-                                                           Width="98" TextAlignment="Right">
-                                                    <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/><Run Text=" / "/><Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                            <!-- Left side: skill name. Headers get a muted, smaller treatment so they read as group labels. -->
-                                            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                                                        <Setter Property="FontWeight" Value="Normal"/>
-                                                        <Setter Property="FontSize" Value="{DynamicResource AppFontSize}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsHeaderOnly}" Value="True">
-                                                                <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
-                                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                                <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </DockPanel>
-                                    </Border>
+                                    <!-- Column-aligned layout: skill name takes the variable-width slot,
+                                         level / bar / XP sit in fixed columns so the eye can scan
+                                         vertically across rows. Headers collapse the right-side columns. -->
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="46"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="110"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Skill name. Header rows render with smaller, all-caps treatment
+                                             plus a top margin to read as group labels. -->
+                                        <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   Margin="0,2">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                    <Setter Property="FontWeight" Value="Normal"/>
+                                                    <Setter Property="FontSize" Value="{DynamicResource AppFontSize}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsHeaderOnly}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
+                                                            <Setter Property="Margin" Value="0,8,0,2"/>
+                                                            <Setter Property="Opacity" Value="0.85"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="1"
+                                                   Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSize}"
+                                                   VerticalAlignment="Center" TextAlignment="Right" Margin="8,0,0,0">
+                                            <Run Text="Lv."/><Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <Border Grid.Column="2" Width="84" Height="8" Margin="8,0,8,0"
+                                                VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                Background="#FF333333" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                BorderThickness="1" CornerRadius="2"
+                                                Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}">
+                                            <ProgressBar Foreground="{StaticResource AccentBrush}" Background="Transparent" BorderThickness="0"
+                                                         Minimum="0"
+                                                         Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                                         Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                        </Border>
+                                        <TextBlock Grid.Column="3"
+                                                   Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center" TextAlignment="Right">
+                                            <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/><Run Text=" / "/><Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                        </TextBlock>
+                                    </Grid>
                                 </HierarchicalDataTemplate>
                             </TreeView.Resources>
                             <TreeView.ItemContainerStyle>

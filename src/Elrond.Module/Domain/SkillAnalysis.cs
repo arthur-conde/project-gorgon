@@ -43,7 +43,8 @@ public sealed record RecipeAnalysis(
     double? Efficiency,
     IReadOnlyList<RecipeIngredientDisplay> Ingredients,
     IReadOnlyList<CraftedGearPreview> CraftedOutputs,
-    string RewardSkill = "");
+    string RewardSkill = "",
+    string RewardSkillDisplayName = "");
 
 /// <summary>Display-ready ingredient for a recipe tooltip.</summary>
 public sealed record RecipeIngredientDisplay(string Name, int IconId, int StackSize, float? ChanceToConsume);
