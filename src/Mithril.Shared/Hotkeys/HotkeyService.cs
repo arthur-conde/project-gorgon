@@ -24,6 +24,10 @@ public sealed partial class HotkeyService : IHotkeyService
         _registry = registry;
         _gate = gate;
         _gate.PropertyChanged += OnGatePropertyChanged;
+        foreach (var gated in _registry.Commands.OfType<IGatedHotkeyCommand>())
+        {
+            gated.PropertyChanged += OnGatedCommandPropertyChanged;
+        }
     }
 
     /// <summary>
@@ -39,6 +43,14 @@ public sealed partial class HotkeyService : IHotkeyService
 
     public static bool EffectiveRespectsFocusGate(IHotkeyCommand command, HotkeyBinding binding)
         => command.RespectsFocusGate && !binding.AlwaysOn;
+
+    /// <summary>
+    /// True when a command's per-command predicate (if any) currently allows
+    /// registration. Commands without an <see cref="IGatedHotkeyCommand"/>
+    /// implementation are always registrable.
+    /// </summary>
+    public static bool IsCommandRegistrable(IHotkeyCommand command)
+        => command is not IGatedHotkeyCommand g || g.IsRegistrable;
 
     public void Attach(IntPtr hwnd)
     {
@@ -68,10 +80,12 @@ public sealed partial class HotkeyService : IHotkeyService
                 report[binding.CommandId] = "Command no longer exists in this build.";
                 continue;
             }
-            if (!ShouldRegister(EffectiveRespectsFocusGate(command, binding), canFire))
+            if (!ShouldRegister(EffectiveRespectsFocusGate(command, binding), canFire) ||
+                !IsCommandRegistrable(command))
             {
-                // Gate is closed and this binding respects it; defer until the
-                // gate reopens. Not a failure — leave the report entry null.
+                // Gate closed (or per-command predicate says skip); defer until
+                // the relevant signal flips. Not a failure — report entry stays
+                // null.
                 report[binding.CommandId] = null;
                 continue;
             }
@@ -118,6 +132,13 @@ public sealed partial class HotkeyService : IHotkeyService
         RegisterAll();
     }
 
+    private void OnGatedCommandPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(IGatedHotkeyCommand.IsRegistrable) && !string.IsNullOrEmpty(e.PropertyName)) return;
+        if (_captureDepth > 0) return;
+        RegisterAll();
+    }
+
     private sealed class CaptureScope : IDisposable
     {
         private readonly HotkeyService _svc;
@@ -142,6 +163,10 @@ public sealed partial class HotkeyService : IHotkeyService
     public void Dispose()
     {
         _gate.PropertyChanged -= OnGatePropertyChanged;
+        foreach (var gated in _registry.Commands.OfType<IGatedHotkeyCommand>())
+        {
+            gated.PropertyChanged -= OnGatedCommandPropertyChanged;
+        }
         UnregisterAll();
         _source?.RemoveHook(WndProc);
     }

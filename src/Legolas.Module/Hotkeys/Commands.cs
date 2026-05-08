@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Mithril.Shared.Hotkeys;
 using Legolas.Domain;
 using Legolas.Flow;
@@ -207,7 +208,7 @@ public sealed class ToggleBearingWedgesCommand : IHotkeyCommand
 // bindings are intentionally null because arrow keys collide with in-game
 // movement; users must opt-in via the Hotkeys settings UI.
 
-public abstract class NudgePinCommandBase : IHotkeyCommand
+public abstract class NudgePinCommandBase : IGatedHotkeyCommand
 {
     private readonly SessionState _session;
     private readonly MapOverlayViewModel _map;
@@ -218,12 +219,40 @@ public abstract class NudgePinCommandBase : IHotkeyCommand
         _session = session;
         _map = map;
         _settings = settings;
+        // Forward the two SessionState signals that change whether a pin is
+        // available to nudge. IsAnchorEditable is itself derived from
+        // HasPlayerPosition + Surveys.Count (both already raise PropertyChanged
+        // for IsAnchorEditable in SessionState), so subscribing to it covers
+        // anchor placement, anchor sealing on first survey, and session reset.
+        _session.PropertyChanged += OnSessionPropertyChanged;
     }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public abstract string Id { get; }
     public abstract string DisplayName { get; }
     public string? Category => "Legolas · Pin Nudge";
     public HotkeyBinding? DefaultBinding => null;
+
+    /// <summary>
+    /// Pin Nudge only matters when there's actually a target to nudge:
+    /// the anchor while it's still editable, or a selected survey pin.
+    /// Outside both windows, arrow keys are dead weight that would otherwise
+    /// be eaten system-wide (#139). The Execute body re-checks the same
+    /// conditions, so a registration that briefly outraces a state change
+    /// is harmless.
+    /// </summary>
+    public bool IsRegistrable
+        => _session.IsAnchorEditable || _session.SelectedSurvey is not null;
+
+    private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SessionState.IsAnchorEditable)
+            or nameof(SessionState.SelectedSurvey))
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
+        }
+    }
 
     /// <summary>Unit vector for the direction this command moves a pin.</summary>
     protected abstract (double Dx, double Dy) Direction { get; }

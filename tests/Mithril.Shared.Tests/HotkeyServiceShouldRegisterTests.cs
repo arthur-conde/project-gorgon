@@ -35,6 +35,21 @@ public class HotkeyServiceShouldRegisterTests
         HotkeyService.EffectiveRespectsFocusGate(command, binding).Should().Be(expected);
     }
 
+    [Fact]
+    public void IsCommandRegistrable_PlainCommand_AlwaysTrue()
+    {
+        HotkeyService.IsCommandRegistrable(new FakeCommand(respectsGate: true)).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void IsCommandRegistrable_GatedCommand_FollowsPredicate(bool registrable)
+    {
+        var gated = new FakeGatedCommand { IsRegistrable = registrable };
+        HotkeyService.IsCommandRegistrable(gated).Should().Be(registrable);
+    }
+
     private sealed class FakeCommand : IHotkeyCommand
     {
         public FakeCommand(bool respectsGate) { RespectsFocusGate = respectsGate; }
@@ -44,5 +59,16 @@ public class HotkeyServiceShouldRegisterTests
         public HotkeyBinding? DefaultBinding => null;
         public bool RespectsFocusGate { get; }
         public Task ExecuteAsync(CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private sealed class FakeGatedCommand : IGatedHotkeyCommand
+    {
+        public string Id => "fake-gated";
+        public string DisplayName => "Fake (Gated)";
+        public string? Category => null;
+        public HotkeyBinding? DefaultBinding => null;
+        public bool IsRegistrable { get; set; }
+        public Task ExecuteAsync(CancellationToken ct) => Task.CompletedTask;
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged { add { } remove { } }
     }
 }
