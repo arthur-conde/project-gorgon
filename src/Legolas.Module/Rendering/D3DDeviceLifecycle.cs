@@ -59,6 +59,7 @@ internal sealed class D3DDeviceLifecycle : IDisposable
     private ID2D1RenderTarget? _renderTarget;
     private int _width;
     private int _height;
+    private float _dpi = 96f;
 
     public D3DDeviceLifecycle()
     {
@@ -136,13 +137,20 @@ internal sealed class D3DDeviceLifecycle : IDisposable
     /// <summary>
     /// Allocate (or reallocate, on size change) the shared D3D11 texture, the
     /// D3D9 surface that aliases it, and a D2D render target on top of it.
-    /// Idempotent for unchanged sizes. Pass strictly positive dimensions —
+    /// Idempotent for unchanged sizes + DPI. Pass strictly positive
+    /// dimensions in device pixels and DPI in dots/inch (96 = no scaling) —
     /// callers should skip the call when the host element has zero extent.
+    ///
+    /// The D2D render target's DPI is set to <paramref name="dpi"/> so
+    /// D2D coordinates given in DIPs are interpreted by the GPU at the
+    /// right pixel scale. This matches WPF's automatic DPI handling for
+    /// regular elements; without it, content on a 144-DPI display would
+    /// render at 67% size and WPF would scale it back up blurry.
     /// </summary>
-    public void EnsureSurface(int width, int height)
+    public void EnsureSurface(int width, int height, float dpi = 96f)
     {
         if (width <= 0 || height <= 0) return;
-        if (width == _width && height == _height && _renderTarget is not null) return;
+        if (width == _width && height == _height && Math.Abs(_dpi - dpi) < 0.5f && _renderTarget is not null) return;
 
         DisposeSurfaceResources();
 
@@ -192,7 +200,7 @@ internal sealed class D3DDeviceLifecycle : IDisposable
         var rtProps = new RenderTargetProperties(
             RenderTargetType.Default,
             new Vortice.DCommon.PixelFormat(DxgiFormat.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied),
-            dpiX: 96.0f, dpiY: 96.0f,
+            dpiX: dpi, dpiY: dpi,
             RenderTargetUsage.None,
             D2DFeatureLevel.Default);
         _renderTarget = _d2dFactory.CreateDxgiSurfaceRenderTarget(dxgiSurface, rtProps);
@@ -200,6 +208,7 @@ internal sealed class D3DDeviceLifecycle : IDisposable
 
         _width = width;
         _height = height;
+        _dpi = dpi;
     }
 
     private void DisposeSurfaceResources()

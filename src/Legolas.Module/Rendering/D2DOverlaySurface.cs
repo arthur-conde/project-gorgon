@@ -146,15 +146,20 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
         if (_disposed || _lifecycle is null) return;
         if (!IsVisible) return;
 
-        // Pixel size matches the element's render size. DPI handled in step G;
-        // for step B device-pixel == DIP.
-        var w = (int)Math.Round(ActualWidth);
-        var h = (int)Math.Round(ActualHeight);
+        // DPI awareness: ActualWidth/Height are in WPF DIPs; the D3D11
+        // texture must be allocated in device pixels, and the D2D render
+        // target's DPI must match so DIP-coordinate draw calls scale to
+        // the right pixel size. On a 96-DPI monitor this is a no-op; on
+        // 144-DPI / 192-DPI displays this is what makes the rendered
+        // pin layer crisp instead of blurry-upscaled.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var w = (int)Math.Round(ActualWidth * dpi.DpiScaleX);
+        var h = (int)Math.Round(ActualHeight * dpi.DpiScaleY);
         if (w <= 0 || h <= 0) return;
 
         try
         {
-            _lifecycle.EnsureSurface(w, h);
+            _lifecycle.EnsureSurface(w, h, (float)(96.0 * dpi.DpiScaleX));
         }
         catch
         {
