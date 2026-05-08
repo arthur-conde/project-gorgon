@@ -19,5 +19,12 @@
     <PackageVersion Include="Velopack" Version="0.0.1298" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageVersion Include="JsonSubTypes" Version="2.0.1" />
+    <!-- Direct2D / Direct3D bindings for the Legolas map-overlay pin renderer.
+         D2D 1.1 requires a D3D11 device; D3D9Ex is needed for D3DImage interop
+         (shared-handle surface produced on D3D11, opened on D3D9Ex, passed to
+         D3DImage.SetBackBuffer). Both packages are MIT-licensed and pull in
+         Vortice.DXGI / Vortice.Direct3D11 transitively. -->
+    <PackageVersion Include="Vortice.Direct2D1" Version="3.8.3" />
+    <PackageVersion Include="Vortice.Direct3D9" Version="3.8.3" />
   </ItemGroup>
 </Project>
