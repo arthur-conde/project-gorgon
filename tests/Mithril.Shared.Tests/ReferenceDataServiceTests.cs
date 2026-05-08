@@ -376,6 +376,48 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Recipe_ProjectsSortSkill_WhenPresent()
+    {
+        // SortSkill says where the recipe is filed in the in-game cookbook UI.
+        // Differs from RewardSkill for fish-based foods (Fishing XP, filed under Cooking).
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_fish_stew": {
+                "Name": "Fish Stew",
+                "InternalName": "FishStew",
+                "Skill": "Fishing",
+                "SkillLevelReq": 30,
+                "RewardSkill": "Fishing",
+                "RewardSkillXp": 60,
+                "RewardSkillXpFirstTime": 240,
+                "SortSkill": "Cooking"
+              },
+              "recipe_bread": {
+                "Name": "Bread",
+                "InternalName": "Bread",
+                "Skill": "Cooking",
+                "SkillLevelReq": 5,
+                "RewardSkill": "Cooking",
+                "RewardSkillXp": 20,
+                "RewardSkillXpFirstTime": 80
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.Recipes["recipe_fish_stew"].SortSkill.Should().Be("Cooking",
+            because: "SortSkill is filed under Cooking even though XP goes to Fishing");
+        svc.Recipes["recipe_fish_stew"].RewardSkill.Should().Be("Fishing");
+        svc.Recipes["recipe_bread"].SortSkill.Should().BeNull(
+            because: "recipes that file under their RewardSkill leave SortSkill absent");
+        svc.Recipes["recipe_bread"].RewardSkill.Should().Be("Cooking");
+    }
+
+    [Fact]
     public void Skill_RealBundledFile_ProjectsAugmentationHierarchy()
     {
         // Cross-check the projection against the real bundled skills.json: the four

@@ -511,7 +511,8 @@ public sealed class ReferenceDataService : IReferenceDataService
                 results,
                 v.PrereqRecipe,
                 protoResults,
-                resultEffects);
+                resultEffects,
+                SortSkill: v.SortSkill);
             byKey[key] = entry;
             if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
         }
