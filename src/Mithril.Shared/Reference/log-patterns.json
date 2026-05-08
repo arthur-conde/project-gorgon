@@ -263,7 +263,7 @@
       ]
     },
     "legolas.ChatLogParser.CollectRegex": {
-      "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+(?:x(?<count>\\d+)\\s+)?collected!",
+      "pattern": "\\[Status\\]\\s+(?<name>.+?)(?:\\s+x(?<count>\\d+))?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)\\s+\\(speed bonus!\\))?",
       "source": "chat",
       "module": "legolas",
       "csharp": {
@@ -274,7 +274,8 @@
       "eventType": "legolas.ItemCollected",
       "fields": [
         { "name": "name", "group": "name", "type": "string" },
-        { "name": "count", "group": "count", "type": "int" }
+        { "name": "count", "group": "count", "type": "int" },
+        { "name": "bonus", "group": "bonus", "type": "string" }
       ]
     },
     "legolas.ChatLogParser.MotherlodeRegex": {
