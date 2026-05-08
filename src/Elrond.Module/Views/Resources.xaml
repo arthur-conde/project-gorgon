@@ -50,7 +50,9 @@
         </Grid>
     </DataTemplate>
 
-    <!-- Recipe card template — bigger icon, stacked metadata pills, more breathing room. -->
+    <!-- Recipe card template — bigger icon, stacked metadata pills, more breathing room.
+         Right-side badges (1st-time, Rewards) dock on the right so they line up vertically
+         across cards regardless of recipe name length. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <DockPanel>
             <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}" Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center"/>
@@ -58,13 +60,11 @@
                     Visibility="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Text="1st time" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeSmall}"/>
             </Border>
+            <Border DockPanel.Dock="Right" Background="#33D4A847" CornerRadius="3" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding RewardSkillDisplayName}" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
+            </Border>
             <StackPanel VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding RecipeName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <Border Background="#33D4A847" CornerRadius="3" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding RewardSkillDisplayName}" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
-                    </Border>
-                </StackPanel>
+                <TextBlock Text="{Binding RecipeName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                 <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
                     <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}">
                         <Run Text="Lvl "/><Run Text="{Binding LevelRequired, Mode=OneWay}"/>
