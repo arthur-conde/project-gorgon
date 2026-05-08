@@ -71,6 +71,12 @@ public sealed partial class SkillAdvisorViewModel
             new("FirstTimeBonusOnly", "First Time Bonus Only", r => r.FirstTimeBonusAvailable, inverted: false, isActive: false),
             new("CraftableOnly",      "Craftable only",        r => Analysis is { } a && r.LevelRequired <= a.CurrentLevel, inverted: false, isActive: true),
             new("HideZeroXp",         "Hide 0 XP",             r => r.EffectiveXp > 0,         inverted: false, isActive: true),
+            // Cookbook view shows recipes filed under a section regardless of which skill they level
+            // (a fish dish in Cooking levels Fishing). Toggling this filter on hides the mixed-reward
+            // recipes — useful when the user wants the classic "what levels skill X" view.
+            new("RewardingSectionOnly", "Only recipes that level this skill",
+                r => Analysis is { } a && r.RewardSkill.Equals(a.SkillName, StringComparison.Ordinal),
+                inverted: false, isActive: false),
         ];
 
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
@@ -90,19 +96,63 @@ public sealed partial class SkillAdvisorViewModel
         _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
-        ReloadSkills();
+        BuildSkillNodes();
     }
 
     // ── Observable properties ────────────────────────────────────────────
 
     [ObservableProperty]
-    private ObservableCollection<string> _availableSkills = [];
+    private ObservableCollection<SkillNode> _skillNodes = [];
 
     [ObservableProperty]
     private string? _selectedSkill;
 
     [ObservableProperty]
+    private string? _selectedSkillDisplayName;
+
+    [ObservableProperty]
+    private int? _selectedSkillLevel;
+
+    /// <summary>
+    /// Skill key requested via <see cref="SelectSkillFromDeepLink"/> that couldn't
+    /// be applied at request time (reference data not yet loaded, no active
+    /// character, or the skill not in the active character's known set). Consumed
+    /// by <see cref="BuildSkillNodes"/> after each rebuild.
+    /// </summary>
+    private string? _pendingDeepLinkSkill;
+
+    [ObservableProperty]
     private SkillAnalysis? _analysis;
+
+    /// <summary>
+    /// Section-header strings that degrade to <c>—</c> when the section is an umbrella
+    /// skill (no XpTable). Backed by <see cref="Analysis"/> — the partial OnAnalysisChanged
+    /// raises change notifications so the bound TextBlocks refresh.
+    /// </summary>
+    public string SectionLevelText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.CurrentLevel.ToString(),
+    };
+    public string SectionCurrentXpText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.CurrentXp.ToString("N0"),
+    };
+    public string SectionXpNeededText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.XpNeededForNextLevel.ToString("N0"),
+    };
+    public string SectionXpRemainingText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.XpRemaining.ToString("N0"),
+    };
 
     [ObservableProperty]
     private RecipeAnalysis? _selectedRecipe;
@@ -125,6 +175,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         if (value is not null)
             _settings.LastSkill = value;
+        UpdateSelectedSkillSummary(value);
         Reanalyze();
     }
 
@@ -139,6 +190,12 @@ public sealed partial class SkillAdvisorViewModel
     {
         // CraftableOnly closes over Analysis.CurrentLevel — re-run the filter when it shifts.
         RecipesView.Refresh();
+        // Section-header text properties are computed from Analysis; nudge the bound
+        // TextBlocks to re-evaluate now that the source has changed.
+        OnPropertyChanged(nameof(SectionLevelText));
+        OnPropertyChanged(nameof(SectionCurrentXpText));
+        OnPropertyChanged(nameof(SectionXpNeededText));
+        OnPropertyChanged(nameof(SectionXpRemainingText));
     }
 
     partial void OnViewModeChanged(string value)
@@ -283,18 +340,109 @@ public sealed partial class SkillAdvisorViewModel
 
     // ── Private helpers ──────────────────────────────────────────────────
 
-    private void ReloadSkills()
+    /// <summary>
+    /// Public deep-link entry point for <c>mithril://elrond/{skillKey}</c>. Selects
+    /// the named skill if it's already in the active character's known set. If the
+    /// view-model isn't ready (no character, no reference data, or character doesn't
+    /// know the skill yet) the request is stashed and applied after the next tree
+    /// rebuild — covers character-switch and CDN-refresh races.
+    /// </summary>
+    public void SelectSkillFromDeepLink(string skillKey)
     {
-        var skills = _engine.GetSkillsWithRecipes();
+        if (string.IsNullOrEmpty(skillKey)) return;
 
         var active = _activeChar.ActiveCharacter;
-        if (active is not null)
+        var leafKeys = SkillNodes.Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
+        if (active is not null && leafKeys.Contains(skillKey))
         {
-            skills = skills.Where(s => active.Skills.ContainsKey(s)).ToList();
+            _pendingDeepLinkSkill = null;
+            SelectedSkill = skillKey;
+            return;
         }
 
-        AvailableSkills = new ObservableCollection<string>(skills);
-        SelectedSkill = skills.Contains(_settings.LastSkill) ? _settings.LastSkill : skills.FirstOrDefault();
+        // Stash and apply after the next list rebuild. Surface a status hint so
+        // the user knows we received the request even when we can't act on it yet.
+        _pendingDeepLinkSkill = skillKey;
+        if (active is null)
+        {
+            StatusMessage = $"Deep link for '{skillKey}' will apply once a character is active.";
+        }
+        else
+        {
+            var displayName = _referenceData.Skills.TryGetValue(skillKey, out var entry)
+                ? entry.DisplayName
+                : skillKey;
+            StatusMessage = $"Elrond cannot advise on '{displayName}' for {active.Name} — the character has no recipes for it.";
+        }
+    }
+
+    private void BuildSkillNodes()
+    {
+        var active = _activeChar.ActiveCharacter;
+        if (active is null)
+        {
+            SkillNodes = [];
+            SelectedSkill = null;
+            return;
+        }
+
+        // Cookbook sections (SortSkill ?? RewardSkill) the character has the section's
+        // own skill for. Sections that aren't real character skills (e.g. Race_Fae)
+        // drop out — the engine can't advise on them. Sorted alphabetically by display
+        // name; flat list, no hierarchy (the picker organises by recipe filing, which
+        // is flat in the in-game cookbook).
+        var nodes = _engine.GetCookbookSections()
+            .Where(k => active.Skills.ContainsKey(k))
+            .Select(k =>
+            {
+                var displayName = _referenceData.Skills.TryGetValue(k, out var entry) ? entry.DisplayName : k;
+                var charSkill = active.Skills[k];
+                return new SkillNode(
+                    Key: k,
+                    DisplayName: displayName,
+                    CurrentLevel: charSkill.Level,
+                    CurrentXp: charSkill.XpTowardNextLevel,
+                    XpNeededForNextLevel: charSkill.XpNeededForNextLevel);
+            })
+            .OrderBy(n => n.DisplayName, StringComparer.Ordinal)
+            .ToList();
+
+        SkillNodes = new ObservableCollection<SkillNode>(nodes);
+
+        // Select: pending deep-link wins, then last-persisted skill, then first node.
+        var allKeys = new HashSet<string>(nodes.Select(n => n.Key), StringComparer.Ordinal);
+        if (_pendingDeepLinkSkill is { } pending && allKeys.Contains(pending))
+        {
+            _pendingDeepLinkSkill = null;
+            SelectedSkill = pending;
+        }
+        else if (allKeys.Contains(_settings.LastSkill ?? string.Empty))
+        {
+            SelectedSkill = _settings.LastSkill;
+        }
+        else
+        {
+            SelectedSkill = nodes.Select(n => n.Key).FirstOrDefault();
+        }
+    }
+
+    private void UpdateSelectedSkillSummary(string? skillKey)
+    {
+        if (skillKey is null)
+        {
+            SelectedSkillDisplayName = null;
+            SelectedSkillLevel = null;
+            return;
+        }
+
+        SelectedSkillDisplayName = _referenceData.Skills.TryGetValue(skillKey, out var entry)
+            ? entry.DisplayName
+            : skillKey;
+
+        var active = _activeChar.ActiveCharacter;
+        SelectedSkillLevel = active is not null && active.Skills.TryGetValue(skillKey, out var charSkill)
+            ? charSkill.Level
+            : null;
     }
 
     private void Reanalyze()
@@ -342,7 +490,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         OnUiThread(() =>
         {
-            ReloadSkills();
+            BuildSkillNodes();
             Reanalyze();
         });
     }
@@ -352,7 +500,7 @@ public sealed partial class SkillAdvisorViewModel
         if (key is not ("recipes" or "skills" or "xptables")) return;
         OnUiThread(() =>
         {
-            ReloadSkills();
+            BuildSkillNodes();
             Reanalyze();
         });
     }

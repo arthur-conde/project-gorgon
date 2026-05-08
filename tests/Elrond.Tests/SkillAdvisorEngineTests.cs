@@ -172,7 +172,7 @@ public class SkillAdvisorEngineTests
     }
 
     [Fact]
-    public void GetSkillsWithRecipes_ReturnsOnlySkillsWithXpRecipes()
+    public void GetCookbookSections_ReturnsOnlySectionsWithXpRecipes()
     {
         var refData = new FakeRefData();
         refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 40, null, null, null);
@@ -180,9 +180,132 @@ public class SkillAdvisorEngineTests
         refData.AddRecipe("recipe_3", "NoXp", "NoXp", "Alchemy", 1, "Alchemy", 0, 0, null, null, null);
 
         var engine = new SkillAdvisorEngine(refData);
-        var skills = engine.GetSkillsWithRecipes();
+        var sections = engine.GetCookbookSections();
 
-        skills.Should().BeEquivalentTo(["Cooking", "Meditation"]);
+        sections.Should().BeEquivalentTo(["Cooking", "Meditation"]);
+    }
+
+    [Fact]
+    public void GetCookbookSections_PrefersSortSkillOverRewardSkill()
+    {
+        // Fish-based food: rewards Fishing XP but files under Cooking in the in-game cookbook.
+        // GetCookbookSections should surface "Cooking" (the filing), not "Fishing" (the reward).
+        var refData = new FakeRefData();
+        refData.AddRecipe("recipe_stew", "Fish Stew", "FishStew", "Fishing", 30, "Fishing", 60, 240,
+            null, null, null, sortSkill: "Cooking");
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 20, 80,
+            null, null, null);
+
+        var engine = new SkillAdvisorEngine(refData);
+        engine.GetCookbookSections().Should().BeEquivalentTo(["Cooking"],
+            because: "all recipes file under Cooking — the standalone Fishing recipe is filed there too via SortSkill");
+    }
+
+    [Fact]
+    public void Analyze_UmbrellaSection_FlagsAnalysisAsUmbrella()
+    {
+        // Phrenology is the canonical umbrella: XpTable="None", recipes file under it
+        // but reward per-race sub-skills. The view degrades the section header to "—"
+        // placeholders for level/XP/remaining when this flag is set.
+        var refData = new FakeRefData();
+        refData.AddSkill("Phrenology", id: 86, combat: false, xpTable: "None", maxBonusLevels: 125);
+        refData.AddSkill("Phrenology_Humans", id: 87, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L, 50L, 50L]);
+        refData.AddRecipe("recipe_phren_human", "Human Phrenology Research", "HumanPhrenologyResearch",
+            "Phrenology_Humans", 1, "Phrenology_Humans", 20, 100, null, null, null, sortSkill: "Phrenology");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Phrenology"] = new(0, 0, 0, 0),
+                ["Phrenology_Humans"] = new(2, 0, 10, 50),
+            },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Phrenology", character)!;
+
+        analysis.IsUmbrellaSection.Should().BeTrue(
+            because: "Phrenology has XpTable=None — the section can't be directly leveled");
+    }
+
+    [Fact]
+    public void Analyze_NormalSection_IsNotUmbrella()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L]);
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 10, 40, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(2, 0, 0, 50) },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.IsUmbrellaSection.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Analyze_RecipeRewardsSection_DiffersFromSectionFlagIsFalse()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L]);
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 10, 40, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(2, 0, 0, 50) },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.Recipes[0].RewardSkillDiffersFromSection.Should().BeFalse(
+            because: "Bread rewards Cooking and is filed in Cooking — no need for the target-skill panel");
+    }
+
+    [Fact]
+    public void Analyze_FishRecipeFiledUnderCooking_ReportsFishingXpAndCompletions()
+    {
+        // Cookbook view: Fish Stew is filed under Cooking, but its metrics use Fishing.
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TestTable", maxBonusLevels: 0);
+        refData.AddSkill("Fishing", id: 2, combat: false, xpTable: "TestTable", maxBonusLevels: 0);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L, 400L, 500L]);
+        refData.AddRecipe("recipe_stew", "Fish Stew", "FishStew", "Fishing", 1, "Fishing", 60, 240,
+            null, null, null, sortSkill: "Cooking");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Cooking"] = new(2, 0, 0, 200),
+                ["Fishing"] = new(3, 0, 50, 300),
+            },
+            recipes: new Dictionary<string, int>
+            {
+                ["FishStew"] = 0, // known but not yet crafted → first-time bonus available
+            });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.SkillName.Should().Be("Cooking");
+        analysis.Recipes.Should().ContainSingle();
+        var stew = analysis.Recipes[0];
+        stew.RewardSkill.Should().Be("Fishing", because: "recipe row carries its own RewardSkill for the pill/column");
+        stew.RewardSkillDiffersFromSection.Should().BeTrue(
+            because: "Fish Stew rewards Fishing but files under Cooking — the target-skill panel should appear");
+        stew.RewardSkillCurrentLevel.Should().Be(3, because: "denormalised from the active character's Fishing level");
+        stew.RewardSkillCurrentXp.Should().Be(50);
+        stew.RewardSkillXpNeededForNextLevel.Should().Be(300);
+        stew.EffectiveXp.Should().Be(60);
+        // Completions-to-level uses Fishing's xpRemaining (300 - 50 = 250), NOT Cooking's
+        // (200 - 0 = 200). One first-time craft delivers 240, a second craft at 60 XP
+        // closes the remaining 10 → 2 completions.
+        stew.CompletionsToLevel.Should().Be(2,
+            because: "completions-to-level uses the recipe's own RewardSkill (Fishing), not the section (Cooking)");
     }
 
     [Fact]
@@ -320,16 +443,21 @@ public class SkillAdvisorEngineTests
 
         public void AddRecipe(string key, string name, string internalName, string skill, int skillLevelReq,
             string rewardSkill, int rewardXp, int rewardXpFirstTime,
-            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null)
+            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null,
+            string? sortSkill = null)
         {
             var entry = new RecipeEntry(key, name, internalName, 0, skill, skillLevelReq,
-                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [], prereqRecipe);
+                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [],
+                prereqRecipe, ProtoResultItems: null, ResultEffects: null, SortSkill: sortSkill);
             _recipes[key] = entry;
             _recipesByName[internalName] = entry;
         }
 
         public void AddSkill(string name, int id, bool combat, string xpTable, int maxBonusLevels)
-            => _skills[name] = new SkillEntry(name, id, combat, xpTable, maxBonusLevels);
+            => _skills[name] = new SkillEntry(
+                Key: name, DisplayName: name, Id: id, Combat: combat, XpTable: xpTable,
+                MaxBonusLevels: maxBonusLevels, Parents: [],
+                Rewards: new Dictionary<string, SkillRewardEntry>());
 
         public void AddXpTable(string internalName, long[] xpAmounts)
             => _xpTables[internalName] = new XpTableEntry(internalName, xpAmounts);

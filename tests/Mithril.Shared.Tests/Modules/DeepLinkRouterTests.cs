@@ -247,4 +247,65 @@ public class DeepLinkRouterTests
         public string? LastPayload { get; private set; }
         public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
     }
+
+    // ---- mithril://elrond/… branch ------------------------------------------
+
+    [Fact]
+    public void ElrondUri_Dispatched_WithSkillKey()
+    {
+        var presenter = new RecordingPresenter();
+        var elrondTarget = new RecordingElrondTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null,
+            legolasImport: null, elrondImport: elrondTarget);
+
+        var handled = router.Handle("mithril://elrond/ArmorAugmentBrewing");
+
+        handled.Should().BeTrue();
+        elrondTarget.LastPayload.Should().Be("ArmorAugmentBrewing");
+    }
+
+    [Fact]
+    public void ElrondUri_WithoutRegisteredTarget_IsDropped()
+    {
+        var presenter = new RecordingPresenter();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null,
+            legolasImport: null, elrondImport: null);
+
+        router.Handle("mithril://elrond/Cooking").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("mithril://elrond/has-hyphen")]   // hyphen — display names allowed but not on the wire
+    [InlineData("mithril://elrond/has space")]
+    [InlineData("mithril://elrond/")]
+    [InlineData("mithril://elrond/has.dot")]
+    public void ElrondUri_MalformedPayload_IsRejected(string uri)
+    {
+        var presenter = new RecordingPresenter();
+        var elrondTarget = new RecordingElrondTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null,
+            legolasImport: null, elrondImport: elrondTarget);
+
+        router.Handle(uri).Should().BeFalse();
+        elrondTarget.LastPayload.Should().BeNull();
+    }
+
+    [Fact]
+    public void ElrondUri_PayloadOverLengthCap_IsRejected()
+    {
+        var presenter = new RecordingPresenter();
+        var elrondTarget = new RecordingElrondTarget();
+        var router = new DeepLinkRouter(presenter, listImport: null, pippinImport: null,
+            legolasImport: null, elrondImport: elrondTarget);
+
+        var tooLong = new string('A', 129);
+        router.Handle($"mithril://elrond/{tooLong}").Should().BeFalse();
+        elrondTarget.LastPayload.Should().BeNull();
+    }
+
+    private sealed class RecordingElrondTarget : IElrondSkillImportTarget
+    {
+        public string? LastPayload { get; private set; }
+        public void ImportFromLinkPayload(string skillKey) => LastPayload = skillKey;
+    }
 }

@@ -17,6 +17,7 @@
          in SkillAdvisorView. Keep these in sync; both Grids reference the same keys
          so the header always lines up with the rows below it. -->
     <GridLength x:Key="RecipeColRecipe">*</GridLength>
+    <GridLength x:Key="RecipeColReward">90</GridLength>
     <GridLength x:Key="RecipeColLvl">50</GridLength>
     <GridLength x:Key="RecipeColFirst">40</GridLength>
     <GridLength x:Key="RecipeColEffXp">80</GridLength>
@@ -29,6 +30,7 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="{StaticResource RecipeColRecipe}"/>
+                <ColumnDefinition Width="{StaticResource RecipeColReward}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColLvl}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColFirst}"/>
                 <ColumnDefinition Width="{StaticResource RecipeColEffXp}"/>
@@ -37,22 +39,29 @@
                 <ColumnDefinition Width="{StaticResource RecipeColToLevel}"/>
             </Grid.ColumnDefinitions>
             <wpf:IconNameCell Grid.Column="0" IconId="{Binding IconId}" DisplayName="{Binding RecipeName}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="2" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="3" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="4" Text="{Binding Complexity, StringFormat=F1}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="5" Text="{Binding Efficiency, StringFormat=F1, TargetNullValue=—}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="6" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="{Binding RewardSkillDisplayName}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock Grid.Column="2" Text="{Binding LevelRequired}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="3" Text="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToCheck}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="4" Text="{Binding EffectiveXp, StringFormat=N0}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="5" Text="{Binding Complexity, StringFormat=F1}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="6" Text="{Binding Efficiency, StringFormat=F1, TargetNullValue=—}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="7" Text="{Binding CompletionsToLevel, Converter={StaticResource NullableInt}}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
         </Grid>
     </DataTemplate>
 
-    <!-- Recipe card template — bigger icon, stacked metadata pills, more breathing room. -->
+    <!-- Recipe card template — bigger icon, stacked metadata pills, more breathing room.
+         Right-side badges (1st-time, Rewards) dock on the right so they line up vertically
+         across cards regardless of recipe name length. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <DockPanel>
             <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}" Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center"/>
             <Border DockPanel.Dock="Right" Background="#33D4A847" CornerRadius="3" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center"
                     Visibility="{Binding FirstTimeBonusAvailable, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Text="1st time" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeSmall}"/>
+            </Border>
+            <Border DockPanel.Dock="Right" Background="#33D4A847" CornerRadius="3" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding RewardSkillDisplayName}" Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"/>
             </Border>
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="{Binding RecipeName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="{DynamicResource AppFontSizeMedium}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
