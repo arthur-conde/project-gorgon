@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Mithril.Shared.Hotkeys;
+using Legolas.Diagnostics;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.ViewModels;
@@ -396,4 +397,146 @@ public sealed class NudgePinRightFineCommand : NudgePinCommandBase
     public override string DisplayName => "Nudge Pin Right (Fine)";
     protected override (double, double) Direction => (1, 0);
     protected override double Step => NudgeStepFine;
+}
+
+// ─── Diagnostics ─────────────────────────────────────────────────────────────
+// Frame-time profiling. All hidden behind ShellSettings.DeveloperMode in the
+// Hotkeys settings UI (IsDeveloperOnly = true). Pin count for the synthetic
+// load is read from LegolasSettings.PerfHarnessPinCount so a single command
+// covers the 30-pin median and 100-pin tail cases. Reports land in
+// %LocalAppData%/Mithril/Legolas/perf/.
+
+/// <summary>
+/// Toggle the live frame-time logger. Use during a real survey session (with
+/// PG running) to capture what the user actually feels. Stop writes a CSV +
+/// summary into the perf folder. Safe to leave bound; it's free when not running.
+/// </summary>
+public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
+{
+    private readonly FrameTimeLogger _logger;
+    private readonly LegolasSettings _settings;
+    private readonly SessionState _session;
+    private readonly SurveyFlowController _surveyFlow;
+    public ToggleFrameTimeLoggerCommand(
+        FrameTimeLogger logger,
+        LegolasSettings settings,
+        SessionState session,
+        SurveyFlowController surveyFlow)
+    {
+        _logger = logger;
+        _settings = settings;
+        _session = session;
+        _surveyFlow = surveyFlow;
+    }
+    public string Id => "legolas.diag.frame_logger.toggle";
+    public string DisplayName => "Toggle Frame-Time Logger";
+    public string? Category => "Legolas · Diagnostics";
+    public HotkeyBinding? DefaultBinding => null;
+    public bool RespectsFocusGate => false;
+    public bool IsDeveloperOnly => true;
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        if (_logger.IsRunning)
+        {
+            _logger.Stop();
+            _session.LastLogEvent = $"Frame logger stopped → {_logger.OutputDirectory}";
+        }
+        else
+        {
+            var cfg = new FrameRunConfig(
+                PinCount: _session.Surveys.Count,
+                ActiveTreatment: _settings.ActivePinStyle.Treatment.ToString(),
+                AllowsTransparency: true,
+                ClickThroughMap: _settings.ClickThroughMap,
+                ShowBearingWedges: _session.ShowBearingWedges,
+                ShowRouteLines: _session.ShowRouteLines,
+                MapWidth: _settings.MapOverlay.Width,
+                MapHeight: _settings.MapOverlay.Height,
+                FsmState: _surveyFlow.CurrentState.ToString());
+            _logger.Start("manual", cfg);
+            _session.LastLogEvent = "Frame logger started — press hotkey again to stop and write report.";
+        }
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Run the synthetic perf harness once with the current active-pin treatment.
+/// Pin count comes from <see cref="LegolasSettings.PerfHarnessPinCount"/>.
+/// Resets the session, anchors at the map centre, injects deterministic
+/// surveys, captures Listening then Gathering, writes paired reports.
+/// </summary>
+public sealed class RunSurveyPerfHarnessCommand : IHotkeyCommand
+{
+    private readonly SurveyPerfHarness _harness;
+    private readonly SessionState _session;
+    private readonly LegolasSettings _settings;
+    public RunSurveyPerfHarnessCommand(SurveyPerfHarness harness, SessionState session, LegolasSettings settings)
+    {
+        _harness = harness;
+        _session = session;
+        _settings = settings;
+    }
+    public string Id => "legolas.diag.perf_harness.run";
+    public string DisplayName => "Run Survey Perf Harness";
+    public string? Category => "Legolas · Diagnostics";
+    public HotkeyBinding? DefaultBinding => null;
+    public bool RespectsFocusGate => false;
+    public bool IsDeveloperOnly => true;
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        if (_harness.IsRunning) return;
+        var pins = _settings.PerfHarnessPinCount;
+        _session.LastLogEvent = $"Perf harness ({pins} pins) running — Listening 15s → Gathering 15s.";
+        try
+        {
+            await _harness.RunAsync(pinCount: pins, phaseSeconds: 15, ct: cancellationToken).ConfigureAwait(false);
+            _session.LastLogEvent = "Perf harness complete — see %LocalAppData%/Mithril/Legolas/perf/";
+        }
+        catch (OperationCanceledException)
+        {
+            _session.LastLogEvent = "Perf harness cancelled.";
+        }
+    }
+}
+
+/// <summary>
+/// Run the harness back-to-back across active-pin treatments (Halo, Glow) so
+/// a single keypress produces matched A/B reports without flipping settings
+/// between runs. Pin count from <see cref="LegolasSettings.PerfHarnessPinCount"/>.
+/// Produces 4 reports per invocation; restores the original treatment when done.
+/// ~65 seconds total.
+/// </summary>
+public sealed class RunSurveyPerfHarnessTreatmentSweepCommand : IHotkeyCommand
+{
+    private readonly SurveyPerfHarness _harness;
+    private readonly SessionState _session;
+    private readonly LegolasSettings _settings;
+    public RunSurveyPerfHarnessTreatmentSweepCommand(SurveyPerfHarness harness, SessionState session, LegolasSettings settings)
+    {
+        _harness = harness;
+        _session = session;
+        _settings = settings;
+    }
+    public string Id => "legolas.diag.perf_harness.sweep";
+    public string DisplayName => "Run Perf Harness — Treatment Sweep (Halo+Glow)";
+    public string? Category => "Legolas · Diagnostics";
+    public HotkeyBinding? DefaultBinding => null;
+    public bool RespectsFocusGate => false;
+    public bool IsDeveloperOnly => true;
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        if (_harness.IsRunning) return;
+        var pins = _settings.PerfHarnessPinCount;
+        _session.LastLogEvent = $"Perf sweep ({pins} pins) running — ~65s.";
+        try
+        {
+            await _harness.RunTreatmentSweepAsync(pins, phaseSeconds: 15, cancellationToken).ConfigureAwait(false);
+            _session.LastLogEvent = $"Perf sweep ({pins} pins) complete — 4 reports in perf folder.";
+        }
+        catch (OperationCanceledException)
+        {
+            _session.LastLogEvent = "Perf sweep cancelled.";
+        }
+    }
 }

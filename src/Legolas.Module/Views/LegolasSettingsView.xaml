@@ -711,6 +711,23 @@
                             Padding="10,4" Command="{Binding GridSettings.ResetToDefaultsCommand}" />
                 </StackPanel>
             </GroupBox>
+
+            <!-- Diagnostics — controls for the perf harness commands (gated under
+                 ShellSettings.DeveloperMode in the Hotkeys settings UI). The pin
+                 count knob lives here unconditionally so a dev can change it
+                 without rebuilding; non-devs see it but it has no effect unless
+                 the diagnostic hotkeys are also bound. -->
+            <GroupBox Header="Diagnostics (developer)" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Perf harness pin count:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="60" Text="{Binding ControlPanel.Settings.PerfHarnessPinCount, UpdateSourceTrigger=LostFocus}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock Text="synthetic pin count for the Run Survey Perf Harness / Treatment Sweep hotkeys"
+                                   Foreground="{StaticResource TextTertiaryBrush}" Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
     </DockPanel>

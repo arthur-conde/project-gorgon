@@ -10,6 +10,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Mithril.Shared.Settings;
+using Legolas.Diagnostics;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Hotkeys;
@@ -189,5 +190,17 @@ public sealed class LegolasModule : IMithrilModule
 
         // Chat-log ingestion
         services.AddHostedService<LogIngestionService>();
+
+        // Diagnostics — frame-time logger + synthetic-load harness. The logger
+        // writes CSV + summary to %LocalAppData%/Mithril/Legolas/perf/. Both
+        // are inert until their hotkey commands fire, so it's safe to leave
+        // registered in production builds — the cost is one zero-allocation
+        // singleton.
+        var perfDir = Path.Combine(dir, "perf");
+        services.AddSingleton(_ => new FrameTimeLogger(perfDir));
+        services.AddSingleton<SurveyPerfHarness>();
+        services.AddSingleton<IHotkeyCommand, ToggleFrameTimeLoggerCommand>();
+        services.AddSingleton<IHotkeyCommand, RunSurveyPerfHarnessCommand>();
+        services.AddSingleton<IHotkeyCommand, RunSurveyPerfHarnessTreatmentSweepCommand>();
     }
 }
