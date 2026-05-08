@@ -205,6 +205,39 @@ This means the same arrow keys that nudge a selected pin will fall through to th
 
 [`Services/AutoOverlayCoordinator.cs`](../src/Legolas.Module/Services/AutoOverlayCoordinator.cs) auto-engages `ClickThroughInventory` while the FSM is in a survey-active state, so the inventory overlay stops eating clicks meant for the game.
 
+## Diagnostics
+
+A frame-time logger plus a synthetic load harness ship with the module so future renderer / FSM changes can be measured against the same fixture.
+
+| Component | Purpose |
+|---|---|
+| [`Diagnostics/FrameTimeLogger.cs`](../src/Legolas.Module/Diagnostics/FrameTimeLogger.cs) | Hooks `CompositionTarget.Rendering`, samples wall-clock dt, writes a CSV (one row per frame) + a `.txt` summary (mean / p50 / p95 / p99 / max / stutter count > 33 ms) plus a config snapshot per run. Singleton; `Start` and `Stop` are reentrant. |
+| [`Diagnostics/SurveyPerfHarness.cs`](../src/Legolas.Module/Diagnostics/SurveyPerfHarness.cs) | Drives a synthetic load through the live overlay: resets the session, anchors at the map centre, injects deterministic surveys, captures Listening (with `SelectedSurvey` set so the active treatment runs) for 15 s, then `OptimizeRoute` → Gathering for 15 s. `RunTreatmentSweepAsync` iterates Halo → Glow back-to-back so a single press produces matched A/B reports. |
+
+Three hotkey commands under **Legolas · Diagnostics** drive this; all are gated under `ShellSettings.DeveloperMode` via [`IHotkeyCommand.IsDeveloperOnly`](../src/Mithril.Shared/Hotkeys/IHotkeyCommand.cs) and have no default key bindings. With Developer Mode off they simply don't appear in Settings → Hotkeys.
+
+| Command | What it does |
+|---|---|
+| Toggle Frame-Time Logger | Manual start/stop. Use during a real session to capture what the user feels. Stop writes a report. |
+| Run Survey Perf Harness | Single sweep with the current treatment (~31 s). |
+| Run Perf Harness — Treatment Sweep (Halo+Glow) | Both treatments back-to-back (~65 s, four reports). |
+
+Pin count for both harness commands is read from `LegolasSettings.PerfHarnessPinCount` (default 30, clamped 1–1000) — adjust under Settings → Legolas → Diagnostics so a single command covers the 30-pin median and 100-pin tail-of-distribution cases.
+
+Reports land in `%LocalAppData%/Mithril/Legolas/perf/`. Every CSV/`.txt` pair includes the active config (treatment, pin count, transparency mode, FSM state, window size) so two runs can be compared without remembering which knobs were on.
+
+### Acceptance criteria — perf floor
+
+The D2D rewrite was scoped against this 100-pin-with-game baseline. Future renderer changes shouldn't fall below it without explicit discussion:
+
+| Metric | Floor |
+|---|---|
+| `fps_mean` | ≥ 110 |
+| `dt_ms_p99` | < 18 ms |
+| `stutter_>33ms` per 15 s phase | < 1 |
+
+Pre-rewrite WPF baseline was **67–84 fps mean / p99 27–30 ms / 2–4 stutters** for the same fixture; today the renderer comfortably clears the floor on all four (Halo / Glow) × (Listening / Gathering) cells.
+
 ## Key files
 
 | File | What's in it |
@@ -228,7 +261,9 @@ This means the same arrow keys that nudge a selected pin will fall through to th
 | [`Rendering/PinSceneRenderer.cs`](../src/Legolas.Module/Rendering/PinSceneRenderer.cs) | Pure draw logic. Routes, active segment (dashed marching ants), bearing wedges, survey pins (outer + centre), active-pin treatments (Halo, Glow, ScaleUp, FillSwap), player anchor. |
 | [`Rendering/D2DBrushCache.cs`](../src/Legolas.Module/Rendering/D2DBrushCache.cs) | ARGB-keyed `ID2D1SolidColorBrush` cache so the renderer doesn't allocate per draw call. Reset on render-target rebuild (resize, DPI change). |
 | [`Rendering/MarchingAntsClock.cs`](../src/Legolas.Module/Rendering/MarchingAntsClock.cs) | Stopwatch-based dash-offset advancer. Replaces the WPF `Storyboard` that used to invalidate continuously. |
-| [`Hotkeys/Commands.cs`](../src/Legolas.Module/Hotkeys/Commands.cs) | All 24 hotkey commands. |
+| [`Diagnostics/FrameTimeLogger.cs`](../src/Legolas.Module/Diagnostics/FrameTimeLogger.cs) | Per-frame dt sampler + CSV/summary writer. Driven by the manual hotkey or the harness. |
+| [`Diagnostics/SurveyPerfHarness.cs`](../src/Legolas.Module/Diagnostics/SurveyPerfHarness.cs) | Synthetic-load + treatment-sweep driver. See "Diagnostics" section above. |
+| [`Hotkeys/Commands.cs`](../src/Legolas.Module/Hotkeys/Commands.cs) | All hotkey commands (24 user-facing + 3 developer-only diagnostics). |
 | [`Controls/ClickThrough.cs`](../src/Legolas.Module/Controls/ClickThrough.cs) | `WS_EX_TRANSPARENT` P/Invoke helpers. |
 | [`Domain/LegolasSettings.cs`](../src/Legolas.Module/Domain/LegolasSettings.cs) | Persisted settings. |
 | [`Domain/GameEvent.cs`](../src/Legolas.Module/Domain/GameEvent.cs) | `SurveyDetected`, `ItemCollected`, `MotherlodeDistance`, `UnknownLine`. |
