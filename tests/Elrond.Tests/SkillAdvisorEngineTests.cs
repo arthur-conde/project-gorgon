@@ -309,6 +309,41 @@ public class SkillAdvisorEngineTests
     }
 
     [Fact]
+    public void Analyze_UmbrellaSection_RecipeCarriesGatingSkillFromCharacter()
+    {
+        // Regression for #148: under an umbrella section like Phrenology, the recipe's gating
+        // skill (recipe.Skill, paired with SkillLevelReq) is a sub-skill — not the umbrella.
+        // The "Craftable only" filter must compare LevelRequired against the player's level
+        // in that gating skill, not the umbrella's level (which may be lower or zero).
+        var refData = new FakeRefData();
+        refData.AddSkill("Phrenology", id: 86, combat: false, xpTable: "None", maxBonusLevels: 125);
+        refData.AddSkill("Phrenology_Goblins", id: 88, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L, 50L, 50L, 210L, 210L, 210L, 210L, 210L, 420L, 420L]);
+        refData.AddRecipe("recipe_23052", "Goblin Phrenology Research 2", "GoblinPhrenologyResearch2",
+            "Phrenology_Goblins", 12, "Phrenology_Goblins", 50, 250, null, null, null, sortSkill: "Phrenology");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Phrenology"] = new(9, 0, 0, 0),               // umbrella — section header
+                ["Phrenology_Goblins"] = new(12, 0, 0, 420),    // gating skill — at the level the recipe requires
+            },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Phrenology", character)!;
+
+        var recipe = analysis.Recipes.Single();
+        recipe.LevelRequired.Should().Be(12);
+        recipe.GatingSkill.Should().Be("Phrenology_Goblins",
+            because: "the recipe's Skill field is the gating skill — not the umbrella section");
+        recipe.GatingSkillCurrentLevel.Should().Be(12,
+            because: "denormalised from the character's Phrenology_Goblins level so the Craftable filter can compare against it");
+        // Sanity: the umbrella section level is 9, which would have failed a section-level comparison.
+        analysis.CurrentLevel.Should().Be(9);
+    }
+
+    [Fact]
     public void Analyze_BuildsMilestones()
     {
         var refData = new FakeRefData();

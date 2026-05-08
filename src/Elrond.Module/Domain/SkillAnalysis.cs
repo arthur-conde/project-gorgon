@@ -37,6 +37,13 @@ public sealed record SkillAnalysis(
 /// re-querying the character. <see cref="RewardSkillDiffersFromSection"/> drives the
 /// visibility of that target-skill panel — when it's false, the section header above
 /// already covers it.
+/// <para/>
+/// <see cref="GatingSkill"/>/<see cref="GatingSkillCurrentLevel"/> name the skill the recipe
+/// actually checks to decide if it's craftable (the recipe's <c>Skill</c> field paired
+/// with <see cref="LevelRequired"/>). For most recipes this matches the section and the
+/// reward skill, but in umbrella sections (Phrenology files Phrenology_Goblins recipes,
+/// Cooking files Fishing-rewarding fish stew) the gate is on a different skill — so the
+/// "Craftable only" filter must compare against this level, not the section level.
 /// </summary>
 public sealed record RecipeAnalysis(
     string RecipeKey,
@@ -61,7 +68,9 @@ public sealed record RecipeAnalysis(
     int RewardSkillCurrentLevel = 0,
     long RewardSkillCurrentXp = 0,
     long RewardSkillXpNeededForNextLevel = 0,
-    bool RewardSkillDiffersFromSection = false);
+    bool RewardSkillDiffersFromSection = false,
+    string GatingSkill = "",
+    int GatingSkillCurrentLevel = 0);
 
 /// <summary>Display-ready ingredient for a recipe tooltip.</summary>
 public sealed record RecipeIngredientDisplay(string Name, int IconId, int StackSize, float? ChanceToConsume);

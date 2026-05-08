@@ -87,6 +87,15 @@ public sealed class SkillAdvisorEngine
             character.Skills.TryGetValue(recipe.RewardSkill, out var rewardCharSkill);
             var rewardLevel = rewardCharSkill?.Level ?? 0;
 
+            // Gating skill = recipe.Skill (paired with SkillLevelReq). For most recipes this
+            // matches the section, but in umbrella sections (Phrenology files Phrenology_Goblins,
+            // Cooking files Fishing-rewarding fish stew) the gate sits on a different skill.
+            // Read the player's level there so the "Craftable only" filter compares apples to apples.
+            var gatingSkillLevel = !string.IsNullOrEmpty(recipe.Skill)
+                && character.Skills.TryGetValue(recipe.Skill, out var gatingCharSkill)
+                    ? gatingCharSkill.Level
+                    : 0;
+
             var isKnown = character.RecipeCompletions.TryGetValue(recipe.InternalName, out var timesCompleted);
             var firstTimeBonusAvailable = isKnown && timesCompleted == 0 && recipe.RewardSkillXpFirstTime > 0;
 
@@ -179,7 +188,9 @@ public sealed class SkillAdvisorEngine
                 RewardSkillCurrentLevel: rewardCharSkill?.Level ?? 0,
                 RewardSkillCurrentXp: rewardCharSkill?.XpTowardNextLevel ?? 0,
                 RewardSkillXpNeededForNextLevel: rewardCharSkill?.XpNeededForNextLevel ?? 0,
-                RewardSkillDiffersFromSection: rewardDiffersFromSection));
+                RewardSkillDiffersFromSection: rewardDiffersFromSection,
+                GatingSkill: recipe.Skill ?? string.Empty,
+                GatingSkillCurrentLevel: gatingSkillLevel));
         }
 
         recipeAnalyses.Sort((a, b) =>
