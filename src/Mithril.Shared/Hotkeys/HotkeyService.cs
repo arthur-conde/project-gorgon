@@ -27,12 +27,18 @@ public sealed partial class HotkeyService : IHotkeyService
     }
 
     /// <summary>
-    /// True when <paramref name="command"/> should hold a Win32 registration
-    /// given the current gate state. Extracted from <see cref="RegisterAll"/>
-    /// so unit tests can exercise the rule without a real hwnd.
+    /// True when a binding should hold a Win32 registration given the current
+    /// gate state. <paramref name="effectiveRespectsFocusGate"/> is the AND of
+    /// the command's <see cref="IHotkeyCommand.RespectsFocusGate"/> default and
+    /// any per-binding override (<see cref="HotkeyBinding.AlwaysOn"/> forces it
+    /// off). Extracted from <see cref="RegisterAll"/> so unit tests can
+    /// exercise the rule without a real hwnd.
     /// </summary>
-    public static bool ShouldRegister(IHotkeyCommand command, bool gateCanFire)
-        => gateCanFire || !command.RespectsFocusGate;
+    public static bool ShouldRegister(bool effectiveRespectsFocusGate, bool gateCanFire)
+        => gateCanFire || !effectiveRespectsFocusGate;
+
+    public static bool EffectiveRespectsFocusGate(IHotkeyCommand command, HotkeyBinding binding)
+        => command.RespectsFocusGate && !binding.AlwaysOn;
 
     public void Attach(IntPtr hwnd)
     {
@@ -62,9 +68,9 @@ public sealed partial class HotkeyService : IHotkeyService
                 report[binding.CommandId] = "Command no longer exists in this build.";
                 continue;
             }
-            if (!ShouldRegister(command, canFire))
+            if (!ShouldRegister(EffectiveRespectsFocusGate(command, binding), canFire))
             {
-                // Gate is closed and this command respects it; defer until the
+                // Gate is closed and this binding respects it; defer until the
                 // gate reopens. Not a failure — leave the report entry null.
                 report[binding.CommandId] = null;
                 continue;
