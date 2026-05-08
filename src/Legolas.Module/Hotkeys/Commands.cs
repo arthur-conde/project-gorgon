@@ -92,6 +92,8 @@ public sealed class ToggleMapOverlayCommand : IHotkeyCommand
     public string DisplayName => "Toggle Map Overlay";
     public string? Category => "Legolas · Overlay";
     public HotkeyBinding? DefaultBinding => null;
+    // Stays registered while alt-tabbed so the user can peek at the map from a browser.
+    public bool RespectsFocusGate => false;
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         _session.IsMapVisible = !_session.IsMapVisible;
@@ -107,6 +109,8 @@ public sealed class ToggleInventoryOverlayCommand : IHotkeyCommand
     public string DisplayName => "Toggle Inventory Overlay";
     public string? Category => "Legolas · Overlay";
     public HotkeyBinding? DefaultBinding => null;
+    // Stays registered while alt-tabbed so the user can peek at inventory from a browser.
+    public bool RespectsFocusGate => false;
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         _session.IsInventoryVisible = !_session.IsInventoryVisible;

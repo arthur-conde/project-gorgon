@@ -13,6 +13,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Mithril.Shared.DependencyInjection;
@@ -180,10 +181,13 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddMithrilHotkeys(this IServiceCollection services) =>
-        services
+    public static IServiceCollection AddMithrilHotkeys(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IHotkeyGate, AlwaysOpenHotkeyGate>();
+        return services
             .AddSingleton<HotkeyRegistry>()
             .AddSingleton<IHotkeyService, HotkeyService>();
+    }
 
     public static IServiceCollection AddMithrilModuleGates(this IServiceCollection services) =>
         services.AddSingleton<ModuleGates>();
