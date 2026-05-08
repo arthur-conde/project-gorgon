@@ -293,7 +293,10 @@ public class LevelingSimulatorTests
         }
 
         public void AddSkill(string name, int id, bool combat, string xpTable, int maxBonusLevels)
-            => _skills[name] = new SkillEntry(name, id, combat, xpTable, maxBonusLevels);
+            => _skills[name] = new SkillEntry(
+                Key: name, DisplayName: name, Id: id, Combat: combat, XpTable: xpTable,
+                MaxBonusLevels: maxBonusLevels, Parents: [],
+                Rewards: new Dictionary<string, SkillRewardEntry>());
 
         public void AddXpTable(string internalName, long[] xpAmounts)
             => _xpTables[internalName] = new XpTableEntry(internalName, xpAmounts);

@@ -28,7 +28,9 @@ public interface IReferenceDataService
     /// <summary>InternalName → RecipeEntry lookup. Matches RecipeCompletions keys from character exports.</summary>
     IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
 
-    /// <summary>Skill name (e.g. "Meditation") → SkillEntry.</summary>
+    /// <summary>Skill key (e.g. "Meditation", "AncillaryArmorAugmentBrewing") → SkillEntry.
+    /// Keys are id-shaped (ASCII identifier-safe) and match recipes' RewardSkill field.
+    /// For the human-readable in-game name use <see cref="SkillEntry.DisplayName"/>.</summary>
     IReadOnlyDictionary<string, SkillEntry> Skills { get; }
 
     /// <summary>XP table InternalName (e.g. "TypicalNoncombatSkill") → XpTableEntry.</summary>

@@ -534,11 +534,36 @@ public sealed class ReferenceDataService : IReferenceDataService
         var byName = new Dictionary<string, SkillEntry>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var entry = new SkillEntry(key, v.Id, v.Combat, v.XpTable ?? "", v.MaxBonusLevels);
+            var entry = new SkillEntry(
+                Key: key,
+                DisplayName: v.Name ?? key,
+                Id: v.Id,
+                Combat: v.Combat,
+                XpTable: v.XpTable ?? "",
+                MaxBonusLevels: v.MaxBonusLevels,
+                Parents: v.Parents?.ToArray() ?? [],
+                Rewards: ProjectSkillRewards(v.Rewards));
             byName[key] = entry;
         }
         _skills = byName;
         _skillsSnapshot = new ReferenceFileSnapshot("skills", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byName.Count);
+    }
+
+    private static IReadOnlyDictionary<string, SkillRewardEntry> ProjectSkillRewards(
+        IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.SkillReward>? raw)
+    {
+        if (raw is null || raw.Count == 0)
+            return new Dictionary<string, SkillRewardEntry>(StringComparer.Ordinal);
+        var projected = new Dictionary<string, SkillRewardEntry>(raw.Count, StringComparer.Ordinal);
+        foreach (var (level, reward) in raw)
+        {
+            projected[level] = new SkillRewardEntry(
+                BonusToSkill: reward.BonusToSkill,
+                Ability: reward.Ability?.ToArray() ?? [],
+                Notes: reward.Notes,
+                Recipe: reward.Recipe);
+        }
+        return projected;
     }
 
     private void ParseAndSwapXpTables(IReadOnlyDictionary<string, PocoXpTable> raw, ReferenceFileMetadata meta)

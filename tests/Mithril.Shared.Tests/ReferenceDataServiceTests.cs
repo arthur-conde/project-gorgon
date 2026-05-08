@@ -310,6 +310,98 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Skill_ProjectsKeyAndDisplayNameSeparately()
+    {
+        // SkillEntry.Key carries the id-shaped dictionary key (matches recipes' RewardSkill);
+        // DisplayName carries the human-readable JSON "Name" field (may contain spaces/hyphens).
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "skills.json"), """
+            {
+              "AncillaryArmorAugmentBrewing": {
+                "Id": 700,
+                "Combat": false,
+                "Name": "Ancillary-Armor Augmentation",
+                "XpTable": "TypicalNoncombatSkill",
+                "MaxBonusLevels": 25
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "skills.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.Skills.Should().ContainKey("AncillaryArmorAugmentBrewing");
+        var entry = svc.Skills["AncillaryArmorAugmentBrewing"];
+        entry.Key.Should().Be("AncillaryArmorAugmentBrewing");
+        entry.DisplayName.Should().Be("Ancillary-Armor Augmentation");
+        entry.XpTable.Should().Be("TypicalNoncombatSkill");
+        entry.MaxBonusLevels.Should().Be(25);
+    }
+
+    [Fact]
+    public void Skill_ProjectsParentsAndRewards()
+    {
+        // Verifies Parents (hierarchy) and Rewards (cross-skill XP graph) project
+        // through the SkillEntry projection. AncillaryArmorAugmentBrewing rolls up
+        // under Augmentation and feeds Augmentation XP at lvl 1.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "skills.json"), """
+            {
+              "AncillaryArmorAugmentBrewing": {
+                "Id": 700,
+                "Combat": false,
+                "Name": "Ancillary-Armor Augmentation",
+                "XpTable": "TypicalNoncombatSkill",
+                "MaxBonusLevels": 25,
+                "Parents": ["Augmentation"],
+                "Rewards": {
+                  "1":  { "BonusToSkill": "Augmentation" },
+                  "35": { "BonusToSkill": "Alchemy", "Notes": "See basic info" }
+                }
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "skills.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        var entry = svc.Skills["AncillaryArmorAugmentBrewing"];
+        entry.Parents.Should().Equal(["Augmentation"]);
+        entry.Rewards.Should().ContainKey("1");
+        entry.Rewards["1"].BonusToSkill.Should().Be("Augmentation");
+        entry.Rewards["35"].BonusToSkill.Should().Be("Alchemy");
+        entry.Rewards["35"].Notes.Should().Be("See basic info");
+    }
+
+    [Fact]
+    public void Skill_RealBundledFile_ProjectsAugmentationHierarchy()
+    {
+        // Cross-check the projection against the real bundled skills.json: the four
+        // Augmentation children must roll up under "Augmentation" with the parent
+        // itself present as its own entry.
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "skills.json")))
+            return;
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: realBundled);
+
+        svc.Skills.Should().ContainKey("Augmentation");
+        var children = new[]
+        {
+            "ArmorAugmentBrewing", "WeaponAugmentBrewing",
+            "JewelryAugmentBrewing", "AncillaryArmorAugmentBrewing",
+        };
+        foreach (var key in children)
+        {
+            svc.Skills.Should().ContainKey(key);
+            svc.Skills[key].Parents.Should().Contain("Augmentation",
+                because: $"{key} should roll up under Augmentation");
+        }
+    }
+
+    [Fact]
     public void Quest_item_source_resolves_questId_to_quest_InternalName()
     {
         // sources_items.json carries questId numerically; the parser should look up
