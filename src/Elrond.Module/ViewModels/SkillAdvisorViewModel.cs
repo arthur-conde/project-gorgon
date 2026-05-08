@@ -96,13 +96,13 @@ public sealed partial class SkillAdvisorViewModel
         _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
-        BuildSkillTree();
+        BuildSkillNodes();
     }
 
     // ── Observable properties ────────────────────────────────────────────
 
     [ObservableProperty]
-    private ObservableCollection<SkillNode> _skillTreeRoots = [];
+    private ObservableCollection<SkillNode> _skillNodes = [];
 
     [ObservableProperty]
     private string? _selectedSkill;
@@ -117,7 +117,7 @@ public sealed partial class SkillAdvisorViewModel
     /// Skill key requested via <see cref="SelectSkillFromDeepLink"/> that couldn't
     /// be applied at request time (reference data not yet loaded, no active
     /// character, or the skill not in the active character's known set). Consumed
-    /// by <see cref="BuildSkillTree"/> after each rebuild.
+    /// by <see cref="BuildSkillNodes"/> after each rebuild.
     /// </summary>
     private string? _pendingDeepLinkSkill;
 
@@ -316,7 +316,7 @@ public sealed partial class SkillAdvisorViewModel
         if (string.IsNullOrEmpty(skillKey)) return;
 
         var active = _activeChar.ActiveCharacter;
-        var leafKeys = CollectLeafKeys(SkillTreeRoots);
+        var leafKeys = SkillNodes.Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
         if (active is not null && leafKeys.Contains(skillKey))
         {
             _pendingDeepLinkSkill = null;
@@ -324,7 +324,7 @@ public sealed partial class SkillAdvisorViewModel
             return;
         }
 
-        // Stash and apply after the next tree rebuild. Surface a status hint so
+        // Stash and apply after the next list rebuild. Surface a status hint so
         // the user knows we received the request even when we can't act on it yet.
         _pendingDeepLinkSkill = skillKey;
         if (active is null)
@@ -340,141 +340,54 @@ public sealed partial class SkillAdvisorViewModel
         }
     }
 
-    private void BuildSkillTree()
+    private void BuildSkillNodes()
     {
         var active = _activeChar.ActiveCharacter;
         if (active is null)
         {
-            SkillTreeRoots = [];
+            SkillNodes = [];
             SelectedSkill = null;
             return;
         }
 
-        // Leaf set: cookbook sections (SortSkill ?? RewardSkill) the character has the
-        // section's own skill for. Sections that aren't real character skills
-        // (e.g. Race_Fae) drop out — the engine can't advise on them.
-        var leafKeys = _engine.GetCookbookSections()
+        // Cookbook sections (SortSkill ?? RewardSkill) the character has the section's
+        // own skill for. Sections that aren't real character skills (e.g. Race_Fae)
+        // drop out — the engine can't advise on them. Sorted alphabetically by display
+        // name; flat list, no hierarchy (the picker organises by recipe filing, which
+        // is flat in the in-game cookbook).
+        var nodes = _engine.GetCookbookSections()
             .Where(k => active.Skills.ContainsKey(k))
-            .ToList();
-
-        // Build leaf nodes carrying the character's current level/XP.
-        var leaves = new List<SkillNode>(leafKeys.Count);
-        foreach (var key in leafKeys)
-        {
-            var displayName = _referenceData.Skills.TryGetValue(key, out var entry) ? entry.DisplayName : key;
-            var charSkill = active.Skills[key];
-            leaves.Add(new SkillNode(
-                Key: key,
-                DisplayName: displayName,
-                CurrentLevel: charSkill.Level,
-                CurrentXp: charSkill.XpTowardNextLevel,
-                XpNeededForNextLevel: charSkill.XpNeededForNextLevel,
-                IsHeaderOnly: false,
-                Children: []));
-        }
-
-        // Group leaves by their immediate parent (skills.json Parents[0]).
-        // A leaf with no parent → potential root. A leaf with a parent → goes into
-        // its parent's bucket; the parent will be materialized as a tree node below.
-        var leafByKey = leaves.ToDictionary(l => l.Key, StringComparer.Ordinal);
-        var parentBuckets = new Dictionary<string, List<SkillNode>>(StringComparer.Ordinal);
-        foreach (var leaf in leaves)
-        {
-            var parentKey = _referenceData.Skills.TryGetValue(leaf.Key, out var entry)
-                ? entry.Parents.FirstOrDefault()
-                : null;
-            if (string.IsNullOrEmpty(parentKey)) continue;
-            if (!parentBuckets.TryGetValue(parentKey, out var bucket))
+            .Select(k =>
             {
-                bucket = [];
-                parentBuckets[parentKey] = bucket;
-            }
-            bucket.Add(leaf);
-        }
-
-        // Build roots: every leaf with no parent. A leaf with a parent is nested
-        // either under a sibling-leaf (if its parent is in our set) or under a
-        // pure header node materialized below. If a root leaf has children of
-        // its own, attach them — produces ONE selectable node with nested
-        // children rather than duplicating the leaf alongside a separate header.
-        var rootsList = new List<SkillNode>();
-        foreach (var leaf in leaves)
-        {
-            var parentKey = _referenceData.Skills.TryGetValue(leaf.Key, out var entry)
-                ? entry.Parents.FirstOrDefault()
-                : null;
-            if (!string.IsNullOrEmpty(parentKey)) continue;
-            if (parentBuckets.TryGetValue(leaf.Key, out var ownChildren))
-            {
-                var sortedChildren = ownChildren
-                    .OrderBy(c => c.DisplayName, StringComparer.Ordinal)
-                    .ToList();
-                rootsList.Add(leaf with { Children = sortedChildren });
-            }
-            else
-            {
-                rootsList.Add(leaf);
-            }
-        }
-
-        // Pure header parents — referenced by children but not themselves a leaf
-        // (e.g. "Augmentation" when none of its child Augment* skills file recipes
-        // directly under Augmentation itself). Materialize as header-only nodes.
-        foreach (var (parentKey, children) in parentBuckets)
-        {
-            if (leafByKey.ContainsKey(parentKey)) continue;
-            var parentDisplay = _referenceData.Skills.TryGetValue(parentKey, out var pe) ? pe.DisplayName : parentKey;
-            var sortedChildren = children
-                .OrderBy(c => c.DisplayName, StringComparer.Ordinal)
-                .ToList();
-            rootsList.Add(new SkillNode(
-                Key: parentKey,
-                DisplayName: parentDisplay,
-                CurrentLevel: null,
-                CurrentXp: null,
-                XpNeededForNextLevel: null,
-                IsHeaderOnly: true,
-                Children: sortedChildren));
-        }
-
-        rootsList = rootsList
+                var displayName = _referenceData.Skills.TryGetValue(k, out var entry) ? entry.DisplayName : k;
+                var charSkill = active.Skills[k];
+                return new SkillNode(
+                    Key: k,
+                    DisplayName: displayName,
+                    CurrentLevel: charSkill.Level,
+                    CurrentXp: charSkill.XpTowardNextLevel,
+                    XpNeededForNextLevel: charSkill.XpNeededForNextLevel);
+            })
             .OrderBy(n => n.DisplayName, StringComparer.Ordinal)
             .ToList();
 
-        SkillTreeRoots = new ObservableCollection<SkillNode>(rootsList);
+        SkillNodes = new ObservableCollection<SkillNode>(nodes);
 
-        // Select: pending deep-link wins, then last-persisted skill, then first leaf.
-        var allLeafKeys = new HashSet<string>(leafKeys, StringComparer.Ordinal);
-        if (_pendingDeepLinkSkill is { } pending && allLeafKeys.Contains(pending))
+        // Select: pending deep-link wins, then last-persisted skill, then first node.
+        var allKeys = new HashSet<string>(nodes.Select(n => n.Key), StringComparer.Ordinal);
+        if (_pendingDeepLinkSkill is { } pending && allKeys.Contains(pending))
         {
             _pendingDeepLinkSkill = null;
             SelectedSkill = pending;
         }
-        else if (allLeafKeys.Contains(_settings.LastSkill ?? string.Empty))
+        else if (allKeys.Contains(_settings.LastSkill ?? string.Empty))
         {
             SelectedSkill = _settings.LastSkill;
         }
         else
         {
-            SelectedSkill = leafKeys.FirstOrDefault();
+            SelectedSkill = nodes.Select(n => n.Key).FirstOrDefault();
         }
-    }
-
-    private static HashSet<string> CollectLeafKeys(IEnumerable<SkillNode> nodes)
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var node in nodes)
-        {
-            if (node.IsHeaderOnly)
-            {
-                foreach (var child in CollectLeafKeys(node.Children)) set.Add(child);
-            }
-            else
-            {
-                set.Add(node.Key);
-            }
-        }
-        return set;
     }
 
     private void UpdateSelectedSkillSummary(string? skillKey)
@@ -541,7 +454,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         OnUiThread(() =>
         {
-            BuildSkillTree();
+            BuildSkillNodes();
             Reanalyze();
         });
     }
@@ -551,7 +464,7 @@ public sealed partial class SkillAdvisorViewModel
         if (key is not ("recipes" or "skills" or "xptables")) return;
         OnUiThread(() =>
         {
-            BuildSkillTree();
+            BuildSkillNodes();
             Reanalyze();
         });
     }

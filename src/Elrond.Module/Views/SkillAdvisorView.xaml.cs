@@ -22,16 +22,15 @@ public partial class SkillAdvisorView : UserControl
     }
 
     /// <summary>
-    /// TreeView.SelectedItem is read-only so we can't two-way bind it to the
-    /// view-model. Forward leaf selections into <see cref="SkillAdvisorViewModel.SelectedSkill"/>
-    /// and dismiss the popup; header-only picks are ignored (the user is still
-    /// expected to expand and pick a leaf).
+    /// Forward ListBox selection into the view-model's SelectedSkill (which is the
+    /// id-shaped key, not the SkillNode), then dismiss the popup. Forwarding via
+    /// code-behind avoids the ListBox-vs-string two-way-binding mismatch.
     /// </summary>
-    private void OnSkillTreeSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    private void OnSkillListSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (DataContext is not SkillAdvisorViewModel vm) return;
-        if (e.NewValue is not SkillNode node) return;
-        if (node.IsHeaderOnly) return;
+        if (e.AddedItems.Count == 0) return;
+        if (e.AddedItems[0] is not SkillNode node) return;
 
         vm.SelectedSkill = node.Key;
         SkillPickerPopup.IsOpen = false;

@@ -11,83 +11,17 @@ using Xunit;
 namespace Elrond.Tests;
 
 /// <summary>
-/// Coverage for the hierarchy-aware skill picker tree (#129).
+/// Coverage for the flat skill picker (#129).
 ///
-/// These tests exercise <see cref="SkillAdvisorViewModel.BuildSkillTree"/> and
+/// These tests exercise <see cref="SkillAdvisorViewModel.BuildSkillNodes"/> and
 /// <see cref="SkillAdvisorViewModel.SelectSkillFromDeepLink"/> through the
 /// public observable surface — wrapping the engine + reference data in fakes
-/// so we can stage parent/child relationships and active-character state
-/// without spinning up the file-IO layer.
+/// so we can stage active-character state without spinning up the file-IO layer.
 /// </summary>
 public class SkillAdvisorViewModelTests
 {
     [Fact]
-    public void BuildSkillTree_ParentWithOwnRecipes_GetsChildrenNestedNotDuplicated()
-    {
-        // Regression: when a parent skill (Alchemy) has its own recipes AND a
-        // child (Transmutation) also has recipes, we used to emit two nodes —
-        // one selectable Alchemy leaf at root + a separate header-only Alchemy
-        // grouping Transmutation. Now: a single selectable Alchemy node with
-        // Transmutation nested under it.
-        var (vm, _, _, _) = MakeFixture(
-            characterSkills: new Dictionary<string, CharacterSkill>
-            {
-                ["Alchemy"] = new(26, 0, 100, 200),
-                ["Transmutation"] = new(48, 0, 0, 200),
-            },
-            register: r =>
-            {
-                r.AddSkill("Alchemy", parents: []);
-                r.AddSkill("Transmutation", parents: ["Alchemy"]);
-                r.AddRecipe(rewardSkill: "Alchemy");
-                r.AddRecipe(rewardSkill: "Transmutation");
-            });
-
-        vm.SkillTreeRoots.Should().ContainSingle(
-            because: "Alchemy is the root; Transmutation nests under it");
-        var alchemy = vm.SkillTreeRoots[0];
-        alchemy.Key.Should().Be("Alchemy");
-        alchemy.IsHeaderOnly.Should().BeFalse(because: "Alchemy itself has recipes — it's selectable");
-        alchemy.IsSelectable.Should().BeTrue();
-        alchemy.CurrentLevel.Should().Be(26);
-        alchemy.Children.Should().ContainSingle();
-        alchemy.Children[0].Key.Should().Be("Transmutation");
-    }
-
-    [Fact]
-    public void BuildSkillTree_GroupsAugmentationChildren_UnderHeaderOnlyParent()
-    {
-        // The two AugmentBrewing leaves both list "Augmentation" as their parent —
-        // they should collapse into a single header-only Augmentation node.
-        var (vm, _, _, _) = MakeFixture(
-            characterSkills: new Dictionary<string, CharacterSkill>
-            {
-                ["ArmorAugmentBrewing"] = new(20, 0, 100, 200),
-                ["WeaponAugmentBrewing"] = new(15, 0, 50, 150),
-            },
-            register: r =>
-            {
-                r.AddSkill("Augmentation", parents: []);
-                r.AddSkill("ArmorAugmentBrewing", parents: ["Augmentation"]);
-                r.AddSkill("WeaponAugmentBrewing", parents: ["Augmentation"]);
-                r.AddRecipe(rewardSkill: "ArmorAugmentBrewing");
-                r.AddRecipe(rewardSkill: "WeaponAugmentBrewing");
-            });
-
-        vm.SkillTreeRoots.Should().ContainSingle(
-            because: "both leaves share Augmentation as their parent — only the parent is a root");
-        var augmentation = vm.SkillTreeRoots[0];
-        augmentation.Key.Should().Be("Augmentation");
-        augmentation.IsHeaderOnly.Should().BeTrue();
-        augmentation.IsSelectable.Should().BeFalse();
-        augmentation.Children.Should().HaveCount(2);
-        augmentation.Children.Select(c => c.Key).Should().Equal(
-            ["ArmorAugmentBrewing", "WeaponAugmentBrewing"],
-            because: "children sort alphabetically by display name");
-    }
-
-    [Fact]
-    public void BuildSkillTree_OmitsSkillsCharacterDoesNotKnow()
+    public void BuildSkillNodes_OmitsSkillsCharacterDoesNotKnow()
     {
         var (vm, _, _, _) = MakeFixture(
             characterSkills: new Dictionary<string, CharacterSkill>
@@ -103,12 +37,12 @@ public class SkillAdvisorViewModelTests
                 r.AddRecipe(rewardSkill: "Mycology");
             });
 
-        vm.SkillTreeRoots.Should().ContainSingle();
-        vm.SkillTreeRoots[0].Key.Should().Be("Cooking");
+        vm.SkillNodes.Should().ContainSingle();
+        vm.SkillNodes[0].Key.Should().Be("Cooking");
     }
 
     [Fact]
-    public void BuildSkillTree_SortsChildrenAlphabeticallyByDisplayName()
+    public void BuildSkillNodes_SortsAlphabeticallyByDisplayName()
     {
         // Display name (not Key) drives ordering. Keys are id-shaped; display names
         // can have a different alphabetical order.
@@ -129,7 +63,7 @@ public class SkillAdvisorViewModelTests
                 r.AddRecipe(rewardSkill: "MidSkill");
             });
 
-        vm.SkillTreeRoots.Select(n => n.DisplayName).Should().Equal(["Apple", "Banana", "Cherry"]);
+        vm.SkillNodes.Select(n => n.DisplayName).Should().Equal(["Apple", "Banana", "Cherry"]);
     }
 
     [Fact]
