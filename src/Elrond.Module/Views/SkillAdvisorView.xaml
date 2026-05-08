@@ -136,72 +136,66 @@
                 <Popup x:Name="SkillPickerPopup" DockPanel.Dock="Top"
                        PlacementTarget="{Binding ElementName=SkillPickerToggle}"
                        Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                    <!-- Border width binds to the toggle's actual width so the popup spans the
+                         same horizontal extent as the panel above it; rows then get the same
+                         room as the summary header to read in the same visual language. -->
                     <Border Background="{StaticResource BgSurfaceBrush}"
                             BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
-                            CornerRadius="3" Padding="4">
-                        <TreeView x:Name="SkillTreeView" Width="460" MaxHeight="520"
+                            CornerRadius="3" Padding="4"
+                            Width="{Binding ActualWidth, ElementName=SkillPickerToggle}">
+                        <TreeView x:Name="SkillTreeView" MaxHeight="520"
                                   Background="Transparent" BorderThickness="0"
                                   ItemsSource="{Binding SkillTreeRoots}"
                                   SelectedItemChanged="OnSkillTreeSelectionChanged">
                             <TreeView.Resources>
+                                <!-- Override WPF default selection colours so the selected
+                                     TreeViewItem doesn't paint a white background that makes
+                                     our text unreadable. Scoped to this TreeView only. -->
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#33D4A847"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFFFF"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#22D4A847"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#FFFFFFFF"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#22D4A847"/>
+
                                 <HierarchicalDataTemplate DataType="{x:Type vm:SkillNode}" ItemsSource="{Binding Children}">
-                                    <!-- Column-aligned layout: skill name takes the variable-width slot,
-                                         level / bar / XP sit in fixed columns so the eye can scan
-                                         vertically across rows. Headers collapse the right-side columns. -->
-                                    <Grid Margin="0,1">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="46"/>
-                                            <ColumnDefinition Width="100"/>
-                                            <ColumnDefinition Width="110"/>
-                                        </Grid.ColumnDefinitions>
-                                        <!-- Skill name. Header rows render with smaller, all-caps treatment
-                                             plus a top margin to read as group labels. -->
-                                        <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
-                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                   Margin="0,2">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                                                    <Setter Property="FontWeight" Value="Normal"/>
-                                                    <Setter Property="FontSize" Value="{DynamicResource AppFontSize}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsHeaderOnly}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                            <Setter Property="FontWeight" Value="SemiBold"/>
-                                                            <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
-                                                            <Setter Property="Margin" Value="0,8,0,2"/>
-                                                            <Setter Property="Opacity" Value="0.85"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        <TextBlock Grid.Column="1"
-                                                   Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSize}"
-                                                   VerticalAlignment="Center" TextAlignment="Right" Margin="8,0,0,0">
-                                            <Run Text="Lv."/><Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
-                                        </TextBlock>
-                                        <Border Grid.Column="2" Width="84" Height="8" Margin="8,0,8,0"
-                                                VerticalAlignment="Center" HorizontalAlignment="Stretch"
-                                                Background="#FF333333" BorderBrush="{StaticResource BorderSubtleBrush}"
-                                                BorderThickness="1" CornerRadius="2"
-                                                Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}">
-                                            <ProgressBar Foreground="{StaticResource AccentBrush}" Background="Transparent" BorderThickness="0"
-                                                         Minimum="0"
-                                                         Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
-                                                         Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
-                                        </Border>
-                                        <TextBlock Grid.Column="3"
-                                                   Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   VerticalAlignment="Center" TextAlignment="Right">
-                                            <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/><Run Text=" / "/><Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
-                                        </TextBlock>
-                                    </Grid>
+                                    <!-- Each row mirrors the skill-summary panel's visual language:
+                                         display name + level (header font) on the left, XP fraction on
+                                         the right, full-width progress bar beneath. Header-only rows
+                                         collapse the level/XP/bar and render as accent group labels. -->
+                                    <StackPanel Margin="2,3">
+                                        <DockPanel Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Right"
+                                                       Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       VerticalAlignment="Center">
+                                                <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/><Run Text=" / "/><Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                                <Run Text=" XP"/>
+                                            </TextBlock>
+                                            <!-- Leaf row: bold display name + "Level N" suffix in muted secondary -->
+                                            <TextBlock TextTrimming="CharacterEllipsis"
+                                                       Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
+                                                       FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                                       FontSize="{DynamicResource AppFontSizeMedium}">
+                                                <Run Text="{Binding DisplayName, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}"/><Run Text=" Level " Foreground="{StaticResource TextSecondaryBrush}"/><Run Text="{Binding CurrentLevel, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </TextBlock>
+                                            <!-- Header row: section name only, smaller + accent -->
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                                       Margin="0,4,0,0"
+                                                       Visibility="{Binding IsHeaderOnly, Converter={StaticResource BoolToVisibility}}"/>
+                                        </DockPanel>
+                                        <ProgressBar Height="6"
+                                                     Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
+                                                     Foreground="{StaticResource AccentBrush}" Background="#FF333333"
+                                                     BorderThickness="0"
+                                                     Minimum="0"
+                                                     Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                                     Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                    </StackPanel>
                                 </HierarchicalDataTemplate>
                             </TreeView.Resources>
                             <TreeView.ItemContainerStyle>
