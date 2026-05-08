@@ -4,6 +4,7 @@ using Legolas.Flow;
 using Legolas.Hotkeys;
 using Legolas.Services;
 using Legolas.ViewModels;
+using Mithril.Shared.Hotkeys;
 
 namespace Legolas.Tests.Hotkeys;
 
@@ -258,5 +259,79 @@ public class NudgePinCommandTests
         await cmd.ExecuteAsync(CancellationToken.None);
 
         session.PlayerPosition.Y.Should().Be(300, "selected pin should be nudged, not the anchor");
+    }
+
+    // ─── #139: registration gate ─────────────────────────────────────────────
+
+    [Fact]
+    public void IsRegistrable_false_at_idle()
+    {
+        var (session, map, settings) = BuildSut();
+        var cmd = new NudgePinUpCommand(session, map, settings);
+        cmd.IsRegistrable.Should().BeFalse("idle session has no pin to nudge");
+    }
+
+    [Fact]
+    public void IsRegistrable_true_when_anchor_editable()
+    {
+        var (session, map, settings) = BuildSut();
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        session.HasPlayerPosition = true;
+
+        session.IsAnchorEditable.Should().BeTrue();
+        cmd.IsRegistrable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsRegistrable_true_when_survey_selected()
+    {
+        var (session, map, settings) = BuildSut();
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        SeedSelectedSurveyAt(session, 100, 200);
+
+        cmd.IsRegistrable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsRegistrable_false_after_anchor_seals_with_no_selection()
+    {
+        // Reproduce the in-game pain point: anchor placed, first survey lands,
+        // anchor becomes load-bearing (IsAnchorEditable=false), nothing
+        // selected — arrow keys should pass through to the game.
+        var (session, map, settings) = BuildSut();
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        session.HasPlayerPosition = true;
+        cmd.IsRegistrable.Should().BeTrue();
+
+        var survey = Survey.Create("First", new MetreOffset(0, 0), gridIndex: 0);
+        session.Surveys.Add(new SurveyItemViewModel(survey));
+        // Surveys.Count > 0 → IsAnchorEditable flips false; selection is null.
+
+        session.IsAnchorEditable.Should().BeFalse();
+        session.SelectedSurvey.Should().BeNull();
+        cmd.IsRegistrable.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRegistrable_raises_PropertyChanged_on_session_state_changes()
+    {
+        var (session, map, settings) = BuildSut();
+        var cmd = new NudgePinUpCommand(session, map, settings);
+
+        var fires = 0;
+        ((IGatedHotkeyCommand)cmd).PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(IGatedHotkeyCommand.IsRegistrable)) fires++;
+        };
+
+        session.HasPlayerPosition = true;       // → IsAnchorEditable change
+        session.SelectedSurvey =
+            new SurveyItemViewModel(Survey.Create("S", new MetreOffset(0, 0), gridIndex: 0)); // → SelectedSurvey change
+
+        fires.Should().BeGreaterThanOrEqualTo(2,
+            "HotkeyService relies on these signals to flip Win32 registration");
     }
 }
