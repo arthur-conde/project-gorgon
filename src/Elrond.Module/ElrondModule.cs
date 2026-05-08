@@ -39,6 +39,10 @@ public sealed class ElrondModule : IMithrilModule
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ElrondSettings>()));
+        services.AddSingleton<IElrondSkillImportTarget>(sp => new Services.ElrondSkillImportTarget(
+            sp.GetRequiredService<SkillAdvisorViewModel>(),
+            sp.GetService<IModuleActivator>(),
+            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
         services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView
         {
             DataContext = sp.GetRequiredService<SkillAdvisorViewModel>(),

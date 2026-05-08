@@ -14,6 +14,8 @@ namespace Mithril.Shared.Modules;
 ///         <see cref="IPippinShareImportTarget"/> (Pippin shared progress).</item>
 ///   <item><c>mithril://legolas/&lt;base64url&gt;</c> — hands the payload to
 ///         <see cref="ILegolasShareImportTarget"/> (Legolas survey report).</item>
+///   <item><c>mithril://elrond/&lt;skillKey&gt;</c> — hands the payload to
+///         <see cref="IElrondSkillImportTarget"/> (Elrond skill advisor).</item>
 /// </list>
 /// Each action defines its own payload grammar so item names stay strict while the craft-list
 /// payload can hold a much longer base64url blob. Unknown actions are logged and dropped.
@@ -39,6 +41,7 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
     private readonly ICraftListImportTarget? _listImport;
     private readonly IPippinShareImportTarget? _pippinImport;
     private readonly ILegolasShareImportTarget? _legolasImport;
+    private readonly IElrondSkillImportTarget? _elrondImport;
     private readonly IDiagnosticsSink? _diag;
 
     public DeepLinkRouter(
@@ -46,12 +49,14 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
         ICraftListImportTarget? listImport = null,
         IPippinShareImportTarget? pippinImport = null,
         ILegolasShareImportTarget? legolasImport = null,
+        IElrondSkillImportTarget? elrondImport = null,
         IDiagnosticsSink? diag = null)
     {
         _itemDetail = itemDetail;
         _listImport = listImport;
         _pippinImport = pippinImport;
         _legolasImport = legolasImport;
+        _elrondImport = elrondImport;
         _diag = diag;
     }
 
@@ -124,6 +129,23 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
                     return false;
                 }
                 _legolasImport.ImportFromLinkPayload(payload);
+                return true;
+
+            case "elrond":
+                // Skill keys are id-shaped (matches SkillEntry.Key, recipes' RewardSkill);
+                // reuse the strict item pattern. Hyphens/spaces are NOT permitted — the
+                // human-readable display name is never on the wire.
+                if (!ItemPayloadPattern.IsMatch(payload))
+                {
+                    _diag?.Info("DeepLink", $"Rejected: elrond payload '{payload}' failed validation.");
+                    return false;
+                }
+                if (_elrondImport is null)
+                {
+                    _diag?.Info("DeepLink", "Rejected: no elrond import target registered.");
+                    return false;
+                }
+                _elrondImport.ImportFromLinkPayload(payload);
                 return true;
 
             default:
