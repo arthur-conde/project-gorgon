@@ -90,16 +90,30 @@ public sealed partial class SkillAdvisorViewModel
         _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
-        ReloadSkills();
+        BuildSkillTree();
     }
 
     // ── Observable properties ────────────────────────────────────────────
 
     [ObservableProperty]
-    private ObservableCollection<string> _availableSkills = [];
+    private ObservableCollection<SkillNode> _skillTreeRoots = [];
 
     [ObservableProperty]
     private string? _selectedSkill;
+
+    [ObservableProperty]
+    private string? _selectedSkillDisplayName;
+
+    [ObservableProperty]
+    private int? _selectedSkillLevel;
+
+    /// <summary>
+    /// Skill key requested via <see cref="SelectSkillFromDeepLink"/> that couldn't
+    /// be applied at request time (reference data not yet loaded, no active
+    /// character, or the skill not in the active character's known set). Consumed
+    /// by <see cref="BuildSkillTree"/> after each rebuild.
+    /// </summary>
+    private string? _pendingDeepLinkSkill;
 
     [ObservableProperty]
     private SkillAnalysis? _analysis;
@@ -125,6 +139,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         if (value is not null)
             _settings.LastSkill = value;
+        UpdateSelectedSkillSummary(value);
         Reanalyze();
     }
 
@@ -283,18 +298,171 @@ public sealed partial class SkillAdvisorViewModel
 
     // ── Private helpers ──────────────────────────────────────────────────
 
-    private void ReloadSkills()
+    /// <summary>
+    /// Public deep-link entry point for <c>mithril://elrond/{skillKey}</c>. Selects
+    /// the named skill if it's already in the active character's known set. If the
+    /// view-model isn't ready (no character, no reference data, or character doesn't
+    /// know the skill yet) the request is stashed and applied after the next tree
+    /// rebuild — covers character-switch and CDN-refresh races.
+    /// </summary>
+    public void SelectSkillFromDeepLink(string skillKey)
     {
-        var skills = _engine.GetSkillsWithRecipes();
+        if (string.IsNullOrEmpty(skillKey)) return;
 
         var active = _activeChar.ActiveCharacter;
-        if (active is not null)
+        var leafKeys = CollectLeafKeys(SkillTreeRoots);
+        if (active is not null && leafKeys.Contains(skillKey))
         {
-            skills = skills.Where(s => active.Skills.ContainsKey(s)).ToList();
+            _pendingDeepLinkSkill = null;
+            SelectedSkill = skillKey;
+            return;
         }
 
-        AvailableSkills = new ObservableCollection<string>(skills);
-        SelectedSkill = skills.Contains(_settings.LastSkill) ? _settings.LastSkill : skills.FirstOrDefault();
+        // Stash and apply after the next tree rebuild. Surface a status hint so
+        // the user knows we received the request even when we can't act on it yet.
+        _pendingDeepLinkSkill = skillKey;
+        if (active is null)
+        {
+            StatusMessage = $"Deep link for '{skillKey}' will apply once a character is active.";
+        }
+        else
+        {
+            var displayName = _referenceData.Skills.TryGetValue(skillKey, out var entry)
+                ? entry.DisplayName
+                : skillKey;
+            StatusMessage = $"Elrond cannot advise on '{displayName}' for {active.Name} — the character has no recipes for it.";
+        }
+    }
+
+    private void BuildSkillTree()
+    {
+        var active = _activeChar.ActiveCharacter;
+        if (active is null)
+        {
+            SkillTreeRoots = [];
+            SelectedSkill = null;
+            return;
+        }
+
+        // Leaf set: skills the engine knows recipes for AND the character has learned.
+        var leafKeys = _engine.GetSkillsWithRecipes()
+            .Where(k => active.Skills.ContainsKey(k))
+            .ToList();
+
+        // Build leaf nodes carrying the character's current level/XP.
+        var leaves = new List<SkillNode>(leafKeys.Count);
+        foreach (var key in leafKeys)
+        {
+            var displayName = _referenceData.Skills.TryGetValue(key, out var entry) ? entry.DisplayName : key;
+            var charSkill = active.Skills[key];
+            leaves.Add(new SkillNode(
+                Key: key,
+                DisplayName: displayName,
+                CurrentLevel: charSkill.Level,
+                CurrentXp: charSkill.XpTowardNextLevel,
+                XpNeededForNextLevel: charSkill.XpNeededForNextLevel,
+                IsHeaderOnly: false,
+                Children: []));
+        }
+
+        // Group by immediate parent (skills.json Parents[0]). Parents that show up
+        // here are header-only — they group children but are themselves never
+        // selectable, even if the parent skill itself happens to have recipes.
+        var rootsList = new List<SkillNode>();
+        var parentBuckets = new Dictionary<string, List<SkillNode>>(StringComparer.Ordinal);
+        foreach (var leaf in leaves)
+        {
+            var parentKey = _referenceData.Skills.TryGetValue(leaf.Key, out var entry)
+                ? entry.Parents.FirstOrDefault()
+                : null;
+            if (string.IsNullOrEmpty(parentKey))
+            {
+                rootsList.Add(leaf);
+            }
+            else
+            {
+                if (!parentBuckets.TryGetValue(parentKey, out var bucket))
+                {
+                    bucket = [];
+                    parentBuckets[parentKey] = bucket;
+                }
+                bucket.Add(leaf);
+            }
+        }
+
+        foreach (var (parentKey, children) in parentBuckets)
+        {
+            var parentDisplay = _referenceData.Skills.TryGetValue(parentKey, out var pe) ? pe.DisplayName : parentKey;
+            var sortedChildren = children
+                .OrderBy(c => c.DisplayName, StringComparer.Ordinal)
+                .ToList();
+            rootsList.Add(new SkillNode(
+                Key: parentKey,
+                DisplayName: parentDisplay,
+                CurrentLevel: null,
+                CurrentXp: null,
+                XpNeededForNextLevel: null,
+                IsHeaderOnly: true,
+                Children: sortedChildren));
+        }
+
+        rootsList = rootsList
+            .OrderBy(n => n.DisplayName, StringComparer.Ordinal)
+            .ToList();
+
+        SkillTreeRoots = new ObservableCollection<SkillNode>(rootsList);
+
+        // Select: pending deep-link wins, then last-persisted skill, then first leaf.
+        var allLeafKeys = new HashSet<string>(leafKeys, StringComparer.Ordinal);
+        if (_pendingDeepLinkSkill is { } pending && allLeafKeys.Contains(pending))
+        {
+            _pendingDeepLinkSkill = null;
+            SelectedSkill = pending;
+        }
+        else if (allLeafKeys.Contains(_settings.LastSkill ?? string.Empty))
+        {
+            SelectedSkill = _settings.LastSkill;
+        }
+        else
+        {
+            SelectedSkill = leafKeys.FirstOrDefault();
+        }
+    }
+
+    private static HashSet<string> CollectLeafKeys(IEnumerable<SkillNode> nodes)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            if (node.IsHeaderOnly)
+            {
+                foreach (var child in CollectLeafKeys(node.Children)) set.Add(child);
+            }
+            else
+            {
+                set.Add(node.Key);
+            }
+        }
+        return set;
+    }
+
+    private void UpdateSelectedSkillSummary(string? skillKey)
+    {
+        if (skillKey is null)
+        {
+            SelectedSkillDisplayName = null;
+            SelectedSkillLevel = null;
+            return;
+        }
+
+        SelectedSkillDisplayName = _referenceData.Skills.TryGetValue(skillKey, out var entry)
+            ? entry.DisplayName
+            : skillKey;
+
+        var active = _activeChar.ActiveCharacter;
+        SelectedSkillLevel = active is not null && active.Skills.TryGetValue(skillKey, out var charSkill)
+            ? charSkill.Level
+            : null;
     }
 
     private void Reanalyze()
@@ -342,7 +510,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         OnUiThread(() =>
         {
-            ReloadSkills();
+            BuildSkillTree();
             Reanalyze();
         });
     }
@@ -352,7 +520,7 @@ public sealed partial class SkillAdvisorViewModel
         if (key is not ("recipes" or "skills" or "xptables")) return;
         OnUiThread(() =>
         {
-            ReloadSkills();
+            BuildSkillTree();
             Reanalyze();
         });
     }

@@ -44,9 +44,79 @@
 
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Skill:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox Width="180"
-                          ItemsSource="{Binding AvailableSkills}"
-                          SelectedItem="{Binding SelectedSkill}"/>
+                <ToggleButton x:Name="SkillPickerToggle"
+                              Width="280" Padding="10,4" HorizontalContentAlignment="Stretch"
+                              IsChecked="{Binding ElementName=SkillPickerPopup, Path=IsOpen, Mode=TwoWay}">
+                    <DockPanel LastChildFill="True">
+                        <icon:PackIconLucide DockPanel.Dock="Right" Kind="ChevronDown"
+                                             Width="12" Height="12" VerticalAlignment="Center" Margin="6,0,0,0"
+                                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding SelectedSkillDisplayName, Mode=OneWay, FallbackValue='Select skill...', TargetNullValue='Select skill...'}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"/><Run Text=" "/><Run
+                                 Text="{Binding SelectedSkillLevel, Mode=OneWay, StringFormat='Lv. {0}', TargetNullValue=''}"
+                                 Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </TextBlock>
+                    </DockPanel>
+                </ToggleButton>
+                <Popup x:Name="SkillPickerPopup"
+                       PlacementTarget="{Binding ElementName=SkillPickerToggle}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                       PopupAnimation="Fade">
+                    <Border Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                            CornerRadius="3" Padding="4">
+                        <TreeView x:Name="SkillTreeView" Width="360" MaxHeight="500"
+                                  Background="Transparent" BorderThickness="0"
+                                  ItemsSource="{Binding SkillTreeRoots}"
+                                  SelectedItemChanged="OnSkillTreeSelectionChanged">
+                            <TreeView.Resources>
+                                <HierarchicalDataTemplate DataType="{x:Type vm:SkillNode}" ItemsSource="{Binding Children}">
+                                    <Border Padding="6,3">
+                                        <DockPanel LastChildFill="True">
+                                            <!-- Right side: compact level + XP for leaves; blank for headers -->
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
+                                                           VerticalAlignment="Center">
+                                                    <Run Text="Lv."/><Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <Border Width="60" Height="6" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                        Background="#FF333333" CornerRadius="2">
+                                                    <ProgressBar Foreground="{StaticResource AccentBrush}" Background="Transparent" BorderThickness="0"
+                                                                 Minimum="0"
+                                                                 Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                                                 Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <!-- Left side: skill name. Headers get a muted treatment to read as group labels. -->
+                                            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                        <Setter Property="FontWeight" Value="Normal"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsHeaderOnly}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </Border>
+                                </HierarchicalDataTemplate>
+                            </TreeView.Resources>
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="True"/>
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                        </TreeView>
+                    </Border>
+                </Popup>
             </StackPanel>
         </DockPanel>
 
