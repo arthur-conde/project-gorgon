@@ -302,6 +302,15 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             : _surveyFlow.CurrentState switch
             {
                 SurveyFlowState.AwaitingPosition => WizardStep.AwaitingPosition,
+                // Ready and Listening project to the same wizard step. The
+                // existing Listening UI block already adapts cleanly to an
+                // empty Surveys list (instructions stay forward-looking, the
+                // pin list shows "0 placed", the Go! button gates on
+                // CanOptimize, and the IsAnchorEditable tip surfaces only
+                // while no pins have landed) — so promoting Ready to its own
+                // wizard step would just add noise without changing what the
+                // user sees.
+                SurveyFlowState.Ready => WizardStep.Listening,
                 SurveyFlowState.Listening => WizardStep.Listening,
                 SurveyFlowState.Gathering => WizardStep.Gathering,
                 SurveyFlowState.Done => WizardStep.Done,

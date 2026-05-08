@@ -104,30 +104,34 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 
 ## SurveyFlowController FSM
 
-[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). Four states:
+[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). Five states:
 
 | State | Meaning |
 |---|---|
 | `AwaitingPosition` | No anchor set yet. Map clicks become the anchor. |
-| `Listening` | Anchor set; surveys auto-place as they arrive. The default working state. |
+| `Ready` | Anchor set, no surveys placed yet. Accepts the first survey but doesn't expose the route-optimise control. The state where `IsAnchorEditable` is true. |
+| `Listening` | Anchor set; surveys auto-place as they arrive. The default mid-run working state. |
 | `Gathering` | Route optimised; user is walking it. **New `SurveyDetected` events are dropped** (position-anchor constraint). |
 | `Done` | All surveys collected. If `AutoResetWhenAllCollected`, `Reset()` immediately follows. |
+
+`Ready` exists so every Listening session has a fresh `StartedAt` stamp — the timestamp is bound to the Ready→Listening edge (first-survey arrival), which fires on every cycle, instead of the once-per-app-session AwaitingPosition→Listening edge that the previous design used. See "Second-run StartedAt regression" in pitfalls below.
 
 ### Transitions
 
 | From | Trigger | To | Notes |
 |---|---|---|---|
-| `AwaitingPosition` | `ConfirmPlayerPosition()` | `Listening` | After caller has updated `PlayerPosition` and the projector origin. |
-| `Listening` | `NoteSurveyDetected(sd)` | `Listening` | No transition. Surfaces inventory overlay; `LogIngestionService` has already auto-placed the pin. |
-| `Listening` | `OptimizeRoute()` | `Gathering` | Caller has assigned `RouteOrder`s. Surveys must be non-empty. |
+| `AwaitingPosition` | `ConfirmPlayerPosition()` | `Ready` | After caller has updated `PlayerPosition` and the projector origin. |
+| `Ready` | `Surveys.Add` (first pin lands) | `Listening` | Driven by `OnSurveysChanged` in the controller. **Stamps `SessionState.StartedAt`** at this moment — that's the canonical "session started" time. |
+| `Ready` \| `Listening` | `NoteSurveyDetected(sd)` | (same) | No transition. Surfaces inventory overlay; `LogIngestionService` has already auto-placed the pin (and the Ready→Listening edge above is what closes the loop). |
+| `Listening` | `OptimizeRoute()` | `Gathering` | Caller has assigned `RouteOrder`s. The "non-empty surveys" precondition is structural: Listening state implies `Surveys.Count > 0`. |
 | `Listening` \| `Gathering` | `AllCollected` event (auto) | `Done` | Fires when last uncollected survey is marked. |
-| `Done` | `Reset()` (auto, if setting on) | `Listening` \| `AwaitingPosition` | Routes through `Reset` — see below. |
+| `Done` | `Reset()` (auto, if setting on) | `Ready` \| `AwaitingPosition` | Routes through `Reset` — see below. |
 | any | `RequestSetPlayerPosition()` | `AwaitingPosition` | Re-anchor. **Preserves `Surveys`** — their offsets are still valid; only the projector origin will move. |
-| any | `Reset()` | `Listening` if `HasPlayerPosition`, else `AwaitingPosition` | Clears `Surveys`. **Does not reset the projector** — caller is responsible. |
+| any | `Reset()` | `Ready` if `HasPlayerPosition`, else `AwaitingPosition` | Clears `Surveys` (and `StartedAt`). **Does not reset the projector** — caller is responsible. |
 
 ### Dropped-survey diagnostics
 
-`NoteSurveyDetected` checks `CanAcceptSurvey` (true only in `Listening`). When dropping (called from `AwaitingPosition`, `Gathering`, or `Done`), `SessionState.LastLogEvent` is set to a human-readable reason — surfaced in the panel's status strip. Reason map: see `DescribeWhyDropped` in the controller.
+`NoteSurveyDetected` checks `CanAcceptSurvey` (true in `Ready` and `Listening`). When dropping (called from `AwaitingPosition`, `Gathering`, or `Done`), `SessionState.LastLogEvent` is set to a human-readable reason — surfaced in the panel's status strip. Reason map: see `DescribeWhyDropped` in the controller.
 
 ## SessionState
 
@@ -308,6 +312,10 @@ WPF screen Y grows downward; map north grows upward. `Project` negates the rotat
 ### Overlay is strictly 1:1 with the game map
 
 No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the D2D canvas inside renders at exactly 1 DIP per CSS pixel, and the D3D11 back buffer is sized in device pixels for per-monitor DPI correctness. If you find yourself adding a `RenderTransform` or scaling factor to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.
+
+### Second-run `StartedAt` regression — keep the stamp on the Ready→Listening edge
+
+`SessionState.StartedAt` is stamped inside `SurveyFlowController.OnSurveysChanged` at the moment the first pin lands while in `Ready`. Don't move it to `ConfirmPlayerPosition` (or any AwaitingPosition→x edge) — the original design did that, and `AutoResetWhenAllCollected = true` (the default) returns the FSM to a non-AwaitingPosition state, so the second run's first-survey edge had nothing to re-trigger the stamp. Symptom: the share-card render shows `0s elapsed` despite a real multi-minute run, with `StartedAt` and `CompletedAt` differing only by the gap between two consecutive `_clock.GetUtcNow()` calls in `LegolasReportService.BuildPayload`. The regression test pinning this is `SecondCycle_after_AutoReset_re_stamps_StartedAt` in `SurveyFlowControllerTests`.
 
 ### Renderer is Direct2D in a D3DImage, not WPF retained-mode
 
