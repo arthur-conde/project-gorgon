@@ -85,13 +85,41 @@ public partial class MapOverlayView : Window
         _brushCache.Bind(e.RenderTarget);
 
         var wedges = new List<WedgeArc>(vm.Surveys.Count);
+        var pins = new List<PixelPoint>(vm.Surveys.Count);
         foreach (var s in vm.Surveys)
+        {
             if (s.WedgeArc is { } arc) wedges.Add(arc);
+            // IsVisible mirrors the WPF data-template's Visibility binding —
+            // collected pins drop out, anything without a projected pixel too.
+            if (s.IsVisible) pins.Add(s.EffectivePixel!.Value);
+        }
+
+        var pinStyle = vm.PinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: pinStyle.Outer.Shape,
+            FillColor: ParseColor(pinStyle.Outer.FillColor),
+            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
+            StrokeStyle: pinStyle.Outer.StrokeStyle,
+            StrokeThickness: pinStyle.Outer.StrokeThickness,
+            // Outer Size on survey pins is unused (driven by SurveyPinRadiusMetres);
+            // see LegolasPinStyle docs.
+            Size: 0);
+        var centerStyle = new PinLayerStyle(
+            Shape: pinStyle.Center.Shape,
+            FillColor: ParseColor(pinStyle.Center.FillColor),
+            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
+            StrokeStyle: pinStyle.Center.StrokeStyle,
+            StrokeThickness: pinStyle.Center.StrokeThickness,
+            Size: pinStyle.Center.Size);
 
         var scene = new PinScene(
             RoutePoints: vm.RoutePoints,
             ActiveSegmentPoints: vm.ActiveSegmentPoints,
             Wedges: wedges,
+            SurveyPins: pins,
+            SurveyOuter: outerStyle,
+            SurveyCenter: centerStyle,
+            SurveyOuterDiameter: vm.PinDiameter,
             RouteLineColor: vm.Brushes.RouteLine.Color,
             WedgeFillColor: vm.Brushes.BearingWedgeFill.Color,
             WedgeStrokeColor: vm.Brushes.BearingWedgeStroke.Color,
@@ -101,6 +129,8 @@ public partial class MapOverlayView : Window
 
         PinSceneRenderer.Render(scene, e.RenderTarget, e.Factory, _brushCache);
     }
+
+    private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

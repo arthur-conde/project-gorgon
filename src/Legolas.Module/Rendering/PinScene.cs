@@ -9,13 +9,18 @@ namespace Legolas.Rendering;
 /// tick from the live <c>MapOverlayViewModel</c> by the surface's
 /// <c>Render</c> handler; consumed by <see cref="PinSceneRenderer"/>.
 ///
-/// Step C: routes + wedges only. Pins, treatments, and the player anchor
-/// land in subsequent steps and add fields to this record.
+/// Step C: routes + wedges. Step D: survey pins (no active treatment).
+/// Active treatments + player anchor land in steps E and F and add fields
+/// here.
 /// </summary>
 public sealed record PinScene(
     IReadOnlyList<PixelPoint> RoutePoints,
     IReadOnlyList<PixelPoint> ActiveSegmentPoints,
     IReadOnlyList<WedgeArc> Wedges,
+    IReadOnlyList<PixelPoint> SurveyPins,
+    PinLayerStyle SurveyOuter,
+    PinLayerStyle SurveyCenter,
+    double SurveyOuterDiameter,
     Color RouteLineColor,
     Color WedgeFillColor,
     Color WedgeStrokeColor,

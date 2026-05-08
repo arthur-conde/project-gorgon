@@ -35,6 +35,7 @@ internal static class PinSceneRenderer
         DrawWedges(scene, rt, factory, brushes);
         DrawRoute(scene, rt, factory, brushes);
         DrawActiveSegment(scene, rt, factory, brushes);
+        DrawSurveyPins(scene, rt, factory, brushes);
     }
 
     private static void DrawWedges(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
@@ -110,6 +111,107 @@ internal static class PinSceneRenderer
             DashOffset = dashOffset,
         };
         return factory.CreateStrokeStyle(props, dashes);
+    }
+
+    private static void DrawSurveyPins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    {
+        if (scene.SurveyPins.Count == 0) return;
+        // Outer + centre painted once per pin. Step E will inject halo / glow
+        // / scale-up / fill-swap for the selected pin in front of these.
+        foreach (var pos in scene.SurveyPins)
+        {
+            DrawPinLayer(rt, factory, brushes, pos, scene.SurveyOuterDiameter, scene.SurveyOuter);
+            DrawPinLayer(rt, factory, brushes, pos, scene.SurveyCenter.Size, scene.SurveyCenter);
+        }
+    }
+
+    /// <summary>
+    /// Draw one shape (fill + optional stroke) centred on the given pixel
+    /// with the given outer-bound diameter. Stroke is inset so the outer
+    /// extent of the rendered shape matches <paramref name="diameter"/>,
+    /// matching the WPF version's <c>Stretch="Uniform"</c> behaviour where
+    /// the stroke fits inside the layout slot rather than overflowing it.
+    /// </summary>
+    private static void DrawPinLayer(
+        ID2D1RenderTarget rt,
+        ID2D1Factory factory,
+        D2DBrushCache brushes,
+        PixelPoint center,
+        double diameter,
+        PinLayerStyle style)
+    {
+        if (style.Shape == PinShape.None || diameter <= 0) return;
+
+        var thickness = style.StrokeStyle == PinStrokeStyle.None ? 0 : (float)style.StrokeThickness;
+        // Outer-bound diameter -> geometry size = diameter - thickness so
+        // the half-stroke on each side stays within the layout slot.
+        var geomSize = (float)(diameter - thickness);
+        if (geomSize <= 0) return;
+        var halfGeom = geomSize / 2f;
+        var cx = (float)center.X;
+        var cy = (float)center.Y;
+
+        var fill = brushes.Get(style.FillColor);
+        var stroke = thickness > 0 ? brushes.Get(style.StrokeColor) : null;
+
+        ID2D1StrokeStyle? strokeStyle = null;
+        if (stroke is not null && style.StrokeStyle == PinStrokeStyle.Dashed)
+        {
+            // Matches LegolasPinShapeStyle's "4 2" dash convention from the
+            // legacy WPF PinShapeStyleToDashArrayConverter.
+            strokeStyle = CreateDashStyle(factory, new[] { 4f, 2f }, dashOffset: 0f);
+        }
+        try
+        {
+            switch (style.Shape)
+            {
+                case PinShape.Circle:
+                    var ellipse = new Ellipse(new Vector2(cx, cy), halfGeom, halfGeom);
+                    if (fill is not null) rt.FillEllipse(ellipse, fill);
+                    if (stroke is not null) rt.DrawEllipse(ellipse, stroke, thickness, strokeStyle);
+                    break;
+
+                case PinShape.Square:
+                    var rect = new Rect(cx - halfGeom, cy - halfGeom, geomSize, geomSize);
+                    if (fill is not null) rt.FillRectangle(rect, fill);
+                    if (stroke is not null) rt.DrawRectangle(rect, stroke, thickness, strokeStyle);
+                    break;
+
+                case PinShape.Diamond:
+                    using (var diamond = BuildDiamondGeometry(factory, cx, cy, halfGeom))
+                    {
+                        if (fill is not null) rt.FillGeometry(diamond, fill);
+                        if (stroke is not null) rt.DrawGeometry(diamond, stroke, thickness, strokeStyle);
+                    }
+                    break;
+
+                case PinShape.Cross:
+                    // Cross is stroke-only; ignore fill.
+                    if (stroke is not null)
+                    {
+                        rt.DrawLine(new Vector2(cx - halfGeom, cy), new Vector2(cx + halfGeom, cy), stroke, thickness, strokeStyle);
+                        rt.DrawLine(new Vector2(cx, cy - halfGeom), new Vector2(cx, cy + halfGeom), stroke, thickness, strokeStyle);
+                    }
+                    break;
+            }
+        }
+        finally
+        {
+            strokeStyle?.Dispose();
+        }
+    }
+
+    private static ID2D1PathGeometry BuildDiamondGeometry(ID2D1Factory factory, float cx, float cy, float half)
+    {
+        var geom = factory.CreatePathGeometry();
+        using var sink = geom.Open();
+        sink.BeginFigure(new Vector2(cx, cy - half), FigureBegin.Filled);
+        sink.AddLine(new Vector2(cx + half, cy));
+        sink.AddLine(new Vector2(cx, cy + half));
+        sink.AddLine(new Vector2(cx - half, cy));
+        sink.EndFigure(FigureEnd.Closed);
+        sink.Close();
+        return geom;
     }
 
     private static ID2D1PathGeometry BuildWedgeGeometry(ID2D1Factory factory, WedgeArc wedge)
