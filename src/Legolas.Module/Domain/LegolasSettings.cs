@@ -167,6 +167,24 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     }
 
     /// <summary>
+    /// Hide both overlays on Done→Ready (session ends) and re-show them on
+    /// Ready→Listening (next survey lands). Lets the user keep the game
+    /// window uncluttered between cycles without manual toggling. Default on
+    /// — opt out for users who want overlays to stay visible across runs.
+    /// </summary>
+    private bool _hideOverlaysBetweenSessions = true;
+    public bool HideOverlaysBetweenSessions
+    {
+        get => _hideOverlaysBetweenSessions;
+        set
+        {
+            if (_hideOverlaysBetweenSessions == value) return;
+            _hideOverlaysBetweenSessions = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HideOverlaysBetweenSessions)));
+        }
+    }
+
+    /// <summary>
     /// When true, the end-of-run report dialog auto-pops as soon as the FSM hits Done.
     /// Snapshot is taken regardless — this only gates whether the dialog opens
     /// automatically. The wizard always offers a manual "View last report" button.

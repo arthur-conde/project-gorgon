@@ -229,4 +229,136 @@ public class LegolasWizardViewModelTests
         session.HasPlayerPosition.Should().BeFalse();
     }
 
+    /// <summary>
+    /// End-to-end happy path covering the auto-hide / auto-show round trip.
+    /// Run #1: anchor → first pin → collect → auto-reset (hide). Run #2:
+    /// next pin → re-show. Pins both edges in one fixture so the contract
+    /// is described as a single observable cycle, not two disconnected facts.
+    /// </summary>
+    [Fact]
+    public void Overlays_auto_hide_on_DoneToReady_and_re_show_on_next_survey()
+    {
+        var (_, session, surveyFlow, _, settings) = BuildSut();
+        settings.AutoResetWhenAllCollected = true;
+        settings.HideOverlaysBetweenSessions = true;
+
+        // Cycle 1: anchor + first survey + collect → auto-reset fires Done→Ready.
+        session.HasPlayerPosition = true;
+        surveyFlow.ConfirmPlayerPosition();
+        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        session.Surveys.Add(s1);  // Ready→Listening — overlays already true here
+        s1.UpdateModel(s1.Model with { Collected = true });
+
+        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Ready,
+            "auto-reset returned to Ready after Done");
+        session.IsMapVisible.Should().BeFalse("Done→Ready hides the map");
+        session.IsInventoryVisible.Should().BeFalse("Done→Ready hides the inventory");
+
+        // Cycle 2: next survey arrives in Ready → both overlays re-show.
+        var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 0));
+        session.Surveys.Add(s2);
+
+        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Listening,
+            "first pin in cycle 2 takes Ready→Listening");
+        session.IsMapVisible.Should().BeTrue("Ready→Listening re-shows the map");
+        session.IsInventoryVisible.Should().BeTrue("Ready→Listening re-shows the inventory");
+    }
+
+    [Fact]
+    public void Overlay_auto_hide_does_nothing_when_setting_off()
+    {
+        var (wizard, session, surveyFlow, _, settings) = BuildSut();
+        settings.AutoResetWhenAllCollected = true;
+        settings.HideOverlaysBetweenSessions = false;
+
+        // Drive through the full happy path so OnCurrentStepChanged opens
+        // both overlays — the auto-hide-disabled assertion is only meaningful
+        // when there's something to (not) hide.
+        wizard.PickSurveyModeCommand.Execute(null);  // map opens (AwaitingPosition)
+        session.HasPlayerPosition = true;
+        surveyFlow.ConfirmPlayerPosition();          // inventory opens (WizardStep.Listening)
+        session.IsMapVisible.Should().BeTrue();
+        session.IsInventoryVisible.Should().BeTrue();
+
+        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        session.Surveys.Add(s1);
+        s1.UpdateModel(s1.Model with { Collected = true });
+
+        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Ready);
+        // With the setting off, the FSM-edge handler doesn't touch overlay
+        // visibility — they stay where the OnCurrentStepChanged path left them.
+        session.IsMapVisible.Should().BeTrue();
+        session.IsInventoryVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Overlay_auto_hide_does_not_fire_on_manual_reset_mid_session()
+    {
+        // Listening→Ready (manual Reset call from a live mid-session state)
+        // is NOT the Done→Ready edge — the user intent is "do this flow
+        // again", not "session ended". Overlays must stay where they are.
+        // Belt-and-braces alongside Reset_preserves_overlay_visibility.
+        var (_, session, surveyFlow, _, settings) = BuildSut();
+        settings.HideOverlaysBetweenSessions = true;
+        session.HasPlayerPosition = true;
+        surveyFlow.ConfirmPlayerPosition();
+        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        session.Surveys.Add(s1);
+        session.IsMapVisible = true;
+        session.IsInventoryVisible = true;
+
+        surveyFlow.Reset();  // Listening → Ready (not Done→Ready)
+
+        session.IsMapVisible.Should().BeTrue();
+        session.IsInventoryVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ToggleOverlays_when_either_visible_hides_both()
+    {
+        var (wizard, session, _, _, _) = BuildSut();
+        session.IsMapVisible = true;
+        session.IsInventoryVisible = false;
+        wizard.AreOverlaysVisible.Should().BeTrue();
+
+        wizard.ToggleOverlaysCommand.Execute(null);
+
+        session.IsMapVisible.Should().BeFalse();
+        session.IsInventoryVisible.Should().BeFalse();
+        wizard.AreOverlaysVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToggleOverlays_when_both_hidden_shows_both()
+    {
+        var (wizard, session, _, _, _) = BuildSut();
+        session.IsMapVisible = false;
+        session.IsInventoryVisible = false;
+        wizard.AreOverlaysVisible.Should().BeFalse();
+
+        wizard.ToggleOverlaysCommand.Execute(null);
+
+        session.IsMapVisible.Should().BeTrue();
+        session.IsInventoryVisible.Should().BeTrue();
+        wizard.AreOverlaysVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AreOverlaysVisible_change_notifies_when_session_visibility_flips()
+    {
+        var (wizard, session, _, _, _) = BuildSut();
+        session.IsMapVisible = false;
+        session.IsInventoryVisible = false;
+        var notifications = 0;
+        wizard.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LegolasWizardViewModel.AreOverlaysVisible))
+                notifications++;
+        };
+
+        session.IsMapVisible = true;  // false → true should notify
+        session.IsInventoryVisible = true;  // false → true should notify
+
+        notifications.Should().BeGreaterOrEqualTo(2);
+    }
 }
