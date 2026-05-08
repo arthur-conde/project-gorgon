@@ -26,14 +26,16 @@ public sealed class LegolasShareCardRenderer
         _iconCache = iconCache;
     }
 
-    /// <summary>1000×400 social card. Async — renders on a background STA worker thread
-    /// so the UI stays responsive while WPF lays out the visual tree.</summary>
+    /// <summary>1000-wide social card, auto-height. The card view sets a MinHeight
+    /// floor so sparse runs don't look dinky; many items grow the card downward via
+    /// the WrapPanel. Async — renders on a background STA worker so the UI stays
+    /// responsive during layout.</summary>
     public Task<BitmapSource> RenderCardAsync(LegolasSharePayload payload)
         => RenderOnStaWorker(() =>
         {
             var vm = new LegolasShareCardViewModel(payload, _refData, _iconCache);
             var view = new LegolasShareCardView { DataContext = vm };
-            return RenderControl(view, LegolasShareCardViewModel.CardWidth, LegolasShareCardViewModel.CardHeight);
+            return RenderControl(view, LegolasShareCardViewModel.CardWidth, height: null);
         });
 
     private static Task<BitmapSource> RenderOnStaWorker(Func<BitmapSource> render)
@@ -53,20 +55,40 @@ public sealed class LegolasShareCardRenderer
         return tcs.Task;
     }
 
-    private static BitmapSource RenderControl(FrameworkElement control, double width, double height)
+    private static BitmapSource RenderControl(FrameworkElement control, double width, double? height)
     {
         // Force a layout pass so every binding resolves before the render. Without the
         // explicit Measure/Arrange/UpdateLayout dance, a never-parented FrameworkElement
         // has zero size and RenderTargetBitmap captures nothing.
         control.Width = width;
-        control.Height = height;
-        control.Measure(new Size(width, height));
-        control.Arrange(new Rect(0, 0, width, height));
-        control.UpdateLayout();
+        double finalHeight;
+        if (height is { } fixedHeight)
+        {
+            control.Height = fixedHeight;
+            control.Measure(new Size(width, fixedHeight));
+            control.Arrange(new Rect(0, 0, width, fixedHeight));
+            control.UpdateLayout();
+            finalHeight = fixedHeight;
+        }
+        else
+        {
+            // Two-pass measure: WrapPanel + ItemsControl don't fully materialise their
+            // children on a single Measure pass when handed infinite height. We need
+            // Measure → Arrange → UpdateLayout → Measure so the second Measure sees
+            // realised item containers and reports the true DesiredSize.
+            control.Measure(new Size(width, double.PositiveInfinity));
+            control.Arrange(new Rect(0, 0, width, control.DesiredSize.Height));
+            control.UpdateLayout();
+            control.Measure(new Size(width, double.PositiveInfinity));
+            var natural = control.DesiredSize.Height;
+            control.Arrange(new Rect(0, 0, width, natural));
+            control.UpdateLayout();
+            finalHeight = natural;
+        }
 
         var bitmap = new RenderTargetBitmap(
             (int)Math.Ceiling(width),
-            (int)Math.Ceiling(height),
+            (int)Math.Ceiling(finalHeight),
             96, 96, PixelFormats.Pbgra32);
         bitmap.Render(control);
         bitmap.Freeze();

@@ -6,7 +6,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:LegolasShareCardViewModel}"
-             Width="1000" Height="400"
+             Width="1000" MinHeight="320"
              Background="#FF1A1A1A"
              FontFamily="Segoe UI"
              UseLayoutRounding="True"
@@ -20,34 +20,54 @@
     </UserControl.Resources>
     <Border BorderBrush="#3387B380" BorderThickness="1" CornerRadius="8" Padding="32">
         <DockPanel>
-            <!-- Header -->
-            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
-                <StackPanel Orientation="Horizontal">
-                    <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
-                           Width="40" Height="40" VerticalAlignment="Center" Margin="0,0,14,0"/>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{Binding CharacterTitle}" FontSize="32" FontWeight="SemiBold"
-                                   Foreground="#FF87B380"/>
-                        <TextBlock Text="{Binding SubtitleText}" FontSize="14" Foreground="#88FFFFFF"/>
-                    </StackPanel>
-                    <Border Margin="20,0,0,0" Padding="10,4" VerticalAlignment="Center"
-                            Background="#3387B380" CornerRadius="4">
-                        <TextBlock Text="{Binding SurveyCountText}" Foreground="#FF87B380"
-                                   FontSize="14" FontWeight="SemiBold"/>
-                    </Border>
-                </StackPanel>
-            </StackPanel>
+            <!-- Header: character info on the left, elapsed pushed to the upper-right
+                 corner. Smaller than the previous centered hero — items are now the
+                 visual focus, with elapsed acting as a stat alongside the survey badge. -->
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,22">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- Footer (timestamps) -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                           Width="40" Height="40" VerticalAlignment="Top" Margin="0,0,14,0"/>
+                    <StackPanel VerticalAlignment="Top">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding CharacterTitle}" FontSize="32" FontWeight="SemiBold"
+                                       Foreground="#FF87B380" VerticalAlignment="Center"/>
+                            <Border Margin="14,0,0,0" Padding="10,4" VerticalAlignment="Center"
+                                    Background="#3387B380" CornerRadius="4">
+                                <TextBlock Text="{Binding SurveyCountText}" Foreground="#FF87B380"
+                                           FontSize="14" FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding SubtitleText}" FontSize="14" Foreground="#88FFFFFF"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="20,0,0,0">
+                    <TextBlock Text="{Binding ElapsedText}" FontSize="36" FontWeight="SemiBold"
+                               Foreground="#FFE8E8E8" HorizontalAlignment="Right"/>
+                    <TextBlock Text="elapsed" FontSize="12" Foreground="#88FFFFFF"
+                               HorizontalAlignment="Right" Margin="0,2,2,0"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Footer (timestamps) — anchored to the bottom of the auto-grown card. -->
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                        HorizontalAlignment="Right" Margin="0,12,0,0">
+                        HorizontalAlignment="Right" Margin="0,18,0,0">
                 <TextBlock Text="{Binding StartedText}" Foreground="#66FFFFFF" FontSize="12" Margin="0,0,16,0"/>
                 <TextBlock Text="{Binding CompletedText}" Foreground="#66FFFFFF" FontSize="12"/>
             </StackPanel>
 
-            <!-- Items earned -->
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
-                <TextBlock Text="Items earned" Foreground="#66FFFFFF" FontSize="12" Margin="0,0,0,6"/>
+            <!-- Items earned — the visual hero. Larger tiles (40×40 icons + name + ×N).
+                 WrapPanel grows the card vertically when more items are present; the
+                 renderer's two-pass measure picks up the natural DesiredSize. -->
+            <StackPanel>
+                <TextBlock Text="Items earned" Foreground="#88FFFFFF" FontSize="12"
+                           Margin="0,0,0,10" FontWeight="SemiBold"/>
                 <ItemsControl ItemsSource="{Binding Items}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -57,28 +77,22 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Background="#FF222222" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="4" Padding="8,4" Margin="0,0,8,8">
+                                    CornerRadius="6" Padding="10,8" Margin="0,0,10,10" MinWidth="170">
                                 <StackPanel Orientation="Horizontal">
-                                    <Image Source="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center"
-                                           Margin="0,0,6,0"
+                                    <Image Source="{Binding Icon}" Width="40" Height="40" VerticalAlignment="Center"
+                                           Margin="0,0,10,0"
                                            Visibility="{Binding HasIcon, Converter={StaticResource BoolToVis}}"/>
-                                    <TextBlock Text="{Binding Name}" Foreground="#FFE8E8E8" FontSize="13"
-                                               VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                    <TextBlock Text="{Binding CountText}" Foreground="#FF87B380"
-                                               FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" Foreground="#FFE8E8E8"
+                                                   FontSize="14" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding CountText}" Foreground="#FF87B380"
+                                                   FontSize="13" Margin="0,2,0,0"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
-
-            <!-- Hero: elapsed time -->
-            <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding ElapsedText}" FontSize="64" FontWeight="SemiBold"
-                           Foreground="#FFE8E8E8" HorizontalAlignment="Center"/>
-                <TextBlock Text="elapsed" FontSize="14" Foreground="#88FFFFFF"
-                           HorizontalAlignment="Center" Margin="0,4,0,0"/>
             </StackPanel>
         </DockPanel>
     </Border>

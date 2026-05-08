@@ -15,7 +15,10 @@ namespace Legolas.Sharing;
 public sealed class LegolasShareCardViewModel
 {
     public const double CardWidth = 1000;
-    public const double CardHeight = 400;
+    // The card auto-grows vertically with the items WrapPanel; CardMinHeight keeps
+    // sparse runs (1–2 items) from looking dinky. Fixed-height layout is gone — see
+    // the renderer's two-pass measure for the auto-height pipeline.
+    public const double CardMinHeight = 320;
 
     public LegolasShareCardViewModel(
         LegolasSharePayload payload,
