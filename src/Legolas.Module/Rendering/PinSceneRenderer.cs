@@ -36,6 +36,16 @@ internal static class PinSceneRenderer
         DrawRoute(scene, rt, factory, brushes);
         DrawActiveSegment(scene, rt, factory, brushes);
         DrawSurveyPins(scene, rt, factory, brushes);
+        DrawPlayerAnchor(scene, rt, factory, brushes);
+    }
+
+    private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    {
+        if (scene.PlayerPosition is not { } pos) return;
+        // Player pin's outer Size is meaningful (drives the visible diameter)
+        // unlike survey pins where outer size comes from SurveyPinRadiusMetres.
+        // See LegolasPinStyle.PlayerDefaults() for the rationale.
+        DrawPin(rt, factory, brushes, pos, scene.PlayerOuter, scene.PlayerCenter, scene.PlayerOuter.Size);
     }
 
     private static void DrawWedges(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)

@@ -35,6 +35,7 @@ public partial class MapOverlayView : Window
     private SurveyItemViewModel? _draggingPinFromViewport;
 
     private readonly D2DBrushCache _brushCache = new();
+    private readonly MarchingAntsClock _antsClock = new();
 
     public MapOverlayView()
     {
@@ -132,6 +133,24 @@ public partial class MapOverlayView : Window
             StrokeThickness: pinStyle.Center.StrokeThickness,
             Size: pinStyle.Center.Size);
 
+        var playerStyle = vm.PlayerPinStyle;
+        var playerOuterStyle = new PinLayerStyle(
+            Shape: playerStyle.Outer.Shape,
+            FillColor: ParseColor(playerStyle.Outer.FillColor),
+            StrokeColor: ParseColor(playerStyle.Outer.StrokeColor),
+            StrokeStyle: playerStyle.Outer.StrokeStyle,
+            StrokeThickness: playerStyle.Outer.StrokeThickness,
+            // Player pin's outer Size IS meaningful — drives the visible
+            // diameter the way SurveyPinRadiusMetres does for survey pins.
+            Size: playerStyle.Outer.Size);
+        var playerCenterStyle = new PinLayerStyle(
+            Shape: playerStyle.Center.Shape,
+            FillColor: ParseColor(playerStyle.Center.FillColor),
+            StrokeColor: ParseColor(playerStyle.Center.StrokeColor),
+            StrokeStyle: playerStyle.Center.StrokeStyle,
+            StrokeThickness: playerStyle.Center.StrokeThickness,
+            Size: playerStyle.Center.Size);
+
         var scene = new PinScene(
             RoutePoints: vm.RoutePoints,
             ActiveSegmentPoints: vm.ActiveSegmentPoints,
@@ -142,12 +161,13 @@ public partial class MapOverlayView : Window
             SurveyOuter: outerStyle,
             SurveyCenter: centerStyle,
             SurveyOuterDiameter: vm.PinDiameter,
+            PlayerPosition: vm.Session.HasPlayerPosition ? vm.PlayerPosition : null,
+            PlayerOuter: playerOuterStyle,
+            PlayerCenter: playerCenterStyle,
             RouteLineColor: vm.Brushes.RouteLine.Color,
             WedgeFillColor: vm.Brushes.BearingWedgeFill.Color,
             WedgeStrokeColor: vm.Brushes.BearingWedgeStroke.Color,
-            // Step F: marching-ants clock. For now the active segment renders
-            // with a static dash pattern.
-            ActiveSegmentDashOffset: 0);
+            ActiveSegmentDashOffset: _antsClock.Advance());
 
         PinSceneRenderer.Render(scene, e.RenderTarget, e.Factory, _brushCache);
     }
