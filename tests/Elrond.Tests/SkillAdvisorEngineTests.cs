@@ -202,6 +202,71 @@ public class SkillAdvisorEngineTests
     }
 
     [Fact]
+    public void Analyze_UmbrellaSection_FlagsAnalysisAsUmbrella()
+    {
+        // Phrenology is the canonical umbrella: XpTable="None", recipes file under it
+        // but reward per-race sub-skills. The view degrades the section header to "—"
+        // placeholders for level/XP/remaining when this flag is set.
+        var refData = new FakeRefData();
+        refData.AddSkill("Phrenology", id: 86, combat: false, xpTable: "None", maxBonusLevels: 125);
+        refData.AddSkill("Phrenology_Humans", id: 87, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L, 50L, 50L]);
+        refData.AddRecipe("recipe_phren_human", "Human Phrenology Research", "HumanPhrenologyResearch",
+            "Phrenology_Humans", 1, "Phrenology_Humans", 20, 100, null, null, null, sortSkill: "Phrenology");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Phrenology"] = new(0, 0, 0, 0),
+                ["Phrenology_Humans"] = new(2, 0, 10, 50),
+            },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Phrenology", character)!;
+
+        analysis.IsUmbrellaSection.Should().BeTrue(
+            because: "Phrenology has XpTable=None — the section can't be directly leveled");
+    }
+
+    [Fact]
+    public void Analyze_NormalSection_IsNotUmbrella()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L]);
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 10, 40, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(2, 0, 0, 50) },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.IsUmbrellaSection.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Analyze_RecipeRewardsSection_DiffersFromSectionFlagIsFalse()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L]);
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 10, 40, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(2, 0, 0, 50) },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.Recipes[0].RewardSkillDiffersFromSection.Should().BeFalse(
+            because: "Bread rewards Cooking and is filed in Cooking — no need for the target-skill panel");
+    }
+
+    [Fact]
     public void Analyze_FishRecipeFiledUnderCooking_ReportsFishingXpAndCompletions()
     {
         // Cookbook view: Fish Stew is filed under Cooking, but its metrics use Fishing.
@@ -230,6 +295,11 @@ public class SkillAdvisorEngineTests
         analysis.Recipes.Should().ContainSingle();
         var stew = analysis.Recipes[0];
         stew.RewardSkill.Should().Be("Fishing", because: "recipe row carries its own RewardSkill for the pill/column");
+        stew.RewardSkillDiffersFromSection.Should().BeTrue(
+            because: "Fish Stew rewards Fishing but files under Cooking — the target-skill panel should appear");
+        stew.RewardSkillCurrentLevel.Should().Be(3, because: "denormalised from the active character's Fishing level");
+        stew.RewardSkillCurrentXp.Should().Be(50);
+        stew.RewardSkillXpNeededForNextLevel.Should().Be(300);
         stew.EffectiveXp.Should().Be(60);
         // Completions-to-level uses Fishing's xpRemaining (300 - 50 = 250), NOT Cooking's
         // (200 - 0 = 200). One first-time craft delivers 240, a second craft at 60 XP

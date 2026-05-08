@@ -124,6 +124,36 @@ public sealed partial class SkillAdvisorViewModel
     [ObservableProperty]
     private SkillAnalysis? _analysis;
 
+    /// <summary>
+    /// Section-header strings that degrade to <c>—</c> when the section is an umbrella
+    /// skill (no XpTable). Backed by <see cref="Analysis"/> — the partial OnAnalysisChanged
+    /// raises change notifications so the bound TextBlocks refresh.
+    /// </summary>
+    public string SectionLevelText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.CurrentLevel.ToString(),
+    };
+    public string SectionCurrentXpText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.CurrentXp.ToString("N0"),
+    };
+    public string SectionXpNeededText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.XpNeededForNextLevel.ToString("N0"),
+    };
+    public string SectionXpRemainingText => Analysis switch
+    {
+        null => "—",
+        { IsUmbrellaSection: true } => "—",
+        var a => a.XpRemaining.ToString("N0"),
+    };
+
     [ObservableProperty]
     private RecipeAnalysis? _selectedRecipe;
 
@@ -160,6 +190,12 @@ public sealed partial class SkillAdvisorViewModel
     {
         // CraftableOnly closes over Analysis.CurrentLevel — re-run the filter when it shifts.
         RecipesView.Refresh();
+        // Section-header text properties are computed from Analysis; nudge the bound
+        // TextBlocks to re-evaluate now that the source has changed.
+        OnPropertyChanged(nameof(SectionLevelText));
+        OnPropertyChanged(nameof(SectionCurrentXpText));
+        OnPropertyChanged(nameof(SectionXpNeededText));
+        OnPropertyChanged(nameof(SectionXpRemainingText));
     }
 
     partial void OnViewModeChanged(string value)

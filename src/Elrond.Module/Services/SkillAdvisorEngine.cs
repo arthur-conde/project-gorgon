@@ -154,6 +154,7 @@ public sealed class SkillAdvisorEngine
             var rewardSkillDisplayName = _ref.Skills.TryGetValue(recipe.RewardSkill, out var rewardSkillEntry)
                 ? rewardSkillEntry.DisplayName
                 : recipe.RewardSkill;
+            var rewardDiffersFromSection = !recipe.RewardSkill.Equals(sectionKey, StringComparison.Ordinal);
 
             recipeAnalyses.Add(new RecipeAnalysis(
                 recipe.Key,
@@ -174,7 +175,11 @@ public sealed class SkillAdvisorEngine
                 ingredients,
                 craftedOutputs,
                 RewardSkill: recipe.RewardSkill,
-                RewardSkillDisplayName: rewardSkillDisplayName));
+                RewardSkillDisplayName: rewardSkillDisplayName,
+                RewardSkillCurrentLevel: rewardCharSkill?.Level ?? 0,
+                RewardSkillCurrentXp: rewardCharSkill?.XpTowardNextLevel ?? 0,
+                RewardSkillXpNeededForNextLevel: rewardCharSkill?.XpNeededForNextLevel ?? 0,
+                RewardSkillDiffersFromSection: rewardDiffersFromSection));
         }
 
         recipeAnalyses.Sort((a, b) =>
@@ -186,6 +191,14 @@ public sealed class SkillAdvisorEngine
 
         var milestones = BuildMilestones(sectionKey, sectionLevel, sectionCurrentXp, sectionXpNeeded, maxLevels: 10);
 
+        // Umbrella skills (Phrenology, Anatomy, Augmentation, …) have no XpTable,
+        // so the section header should degrade to "—" placeholders. Detection by
+        // missing/None XpTable is robust without needing IsUmbrellaSkill projected.
+        var sectionEntry = _ref.Skills.TryGetValue(sectionKey, out var se) ? se : null;
+        var isUmbrellaSection = sectionEntry is null
+            || string.IsNullOrEmpty(sectionEntry.XpTable)
+            || sectionEntry.XpTable.Equals("None", StringComparison.Ordinal);
+
         return new SkillAnalysis(
             sectionKey,
             sectionLevel,
@@ -194,7 +207,8 @@ public sealed class SkillAdvisorEngine
             sectionXpRemaining,
             recipeAnalyses,
             milestones,
-            goalLevel is { } g && g > sectionLevel ? goalLevel : null);
+            goalLevel is { } g && g > sectionLevel ? goalLevel : null,
+            IsUmbrellaSection: isUmbrellaSection);
     }
 
     internal int ComputeEffectiveXp(RecipeEntry recipe, int playerLevel)

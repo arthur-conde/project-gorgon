@@ -108,26 +108,39 @@
                                 <!-- Bind to the display-name view-model property so the section
                                      header shows the human "Weapon Augmentation", not the
                                      id-shaped key "WeaponAugmentBrewing" that Analysis.SkillName
-                                     carries. -->
+                                     carries. SectionLevelText degrades to "—" for umbrella
+                                     sections (Phrenology, Anatomy) that aren't directly levelable. -->
                                 <Run Text="{Binding SelectedSkillDisplayName, Mode=OneWay}"/>
                                 <Run Text=" Level "/>
-                                <Run Text="{Binding Analysis.CurrentLevel, Mode=OneWay}"/>
+                                <Run Text="{Binding SectionLevelText, Mode=OneWay}"/>
                             </TextBlock>
                             <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
                                        Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">
-                                <Run Text="{Binding Analysis.CurrentXp, Mode=OneWay, StringFormat=N0}"/>
+                                <Run Text="{Binding SectionCurrentXpText, Mode=OneWay}"/>
                                 <Run Text=" / "/>
-                                <Run Text="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                <Run Text="{Binding SectionXpNeededText, Mode=OneWay}"/>
                                 <Run Text=" XP"/>
                             </TextBlock>
                         </DockPanel>
+                        <!-- Hide the progress bar for umbrella sections — there's nothing to show. -->
                         <ProgressBar Height="8"
                                      Minimum="0"
-                                     Maximum="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay}"
-                                     Value="{Binding Analysis.CurrentXp, Mode=OneWay}"
-                                     Foreground="{StaticResource AccentBrush}" Background="#FF333333"/>
+                                     Maximum="{Binding Analysis.XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                     Value="{Binding Analysis.CurrentXp, Mode=OneWay, FallbackValue=0}"
+                                     Foreground="{StaticResource AccentBrush}" Background="#FF333333">
+                            <ProgressBar.Style>
+                                <Style TargetType="ProgressBar">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Analysis.IsUmbrellaSection}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ProgressBar.Style>
+                        </ProgressBar>
                         <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,4,0,0">
-                            <Run Text="{Binding Analysis.XpRemaining, Mode=OneWay, StringFormat=N0}"/>
+                            <Run Text="{Binding SectionXpRemainingText, Mode=OneWay}"/>
                             <Run Text=" XP remaining to "/>
                             <Run Text="{Binding Analysis.GoalLevel, Mode=OneWay, TargetNullValue='next level', StringFormat='level {0}'}"/>
                         </TextBlock>
@@ -349,8 +362,61 @@
                                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                                               ShowsPreview="True"/>
 
-                                <!-- Detail pane -->
-                                <Border Grid.Column="2" Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                <!-- Detail pane: a separate target-skill panel (Block A) sits above
+                                     the recipe detail (Block B). Block A only renders when the
+                                     selected recipe's RewardSkill differs from the section — for
+                                     fish-in-Cooking or any Phrenology recipe — surfacing "where
+                                     you stand on the skill this craft actually moves". -->
+                                <Grid Grid.Column="2">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                            BorderThickness="1" CornerRadius="3" Padding="12" Margin="0,0,0,8"
+                                            DataContext="{Binding SelectedRecipe}">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding RewardSkillDiffersFromSection}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <StackPanel>
+                                            <TextBlock Foreground="{StaticResource TextTertiaryBrush}" FontSize="{DynamicResource AppFontSizeHint}"
+                                                       FontWeight="SemiBold" Margin="0,0,0,4">
+                                                <Run Text="Levels:"/>
+                                                <Run Text="{Binding RewardSkillDisplayName, Mode=OneWay}"
+                                                     Foreground="{StaticResource AccentBrush}"/>
+                                            </TextBlock>
+                                            <DockPanel Margin="0,0,0,6">
+                                                <TextBlock DockPanel.Dock="Right"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSize}"
+                                                           VerticalAlignment="Center">
+                                                    <Run Text="{Binding RewardSkillCurrentXp, Mode=OneWay, StringFormat=N0}"/>
+                                                    <Run Text=" / "/>
+                                                    <Run Text="{Binding RewardSkillXpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                                    <Run Text=" XP"/>
+                                                </TextBlock>
+                                                <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}">
+                                                    <Run Text="Lv. "/><Run Text="{Binding RewardSkillCurrentLevel, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </DockPanel>
+                                            <ProgressBar Height="6"
+                                                         Foreground="{StaticResource AccentBrush}" Background="#FF333333"
+                                                         BorderThickness="0"
+                                                         Minimum="0"
+                                                         Maximum="{Binding RewardSkillXpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                                         Value="{Binding RewardSkillCurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                        </StackPanel>
+                                    </Border>
+                                <Border Grid.Row="1" Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
                                         BorderThickness="1" CornerRadius="3" Padding="12">
                                     <Grid>
                                         <!-- Empty inner state -->
@@ -474,6 +540,7 @@
                                         </ScrollViewer>
                                     </Grid>
                                 </Border>
+                                </Grid>
                             </Grid>
                         </DockPanel>
                     </TabItem>
