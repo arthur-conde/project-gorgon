@@ -64,6 +64,7 @@ public sealed class SkillAdvisorEngine
             return null;
 
         var sectionLevel = sectionCharSkill.Level;
+        var sectionBonusLevels = sectionCharSkill.BonusLevels;
         var sectionCurrentXp = sectionCharSkill.XpTowardNextLevel;
         var sectionXpNeeded = sectionCharSkill.XpNeededForNextLevel;
 
@@ -203,8 +204,10 @@ public sealed class SkillAdvisorEngine
         var milestones = BuildMilestones(sectionKey, sectionLevel, sectionCurrentXp, sectionXpNeeded, maxLevels: 10);
 
         // Umbrella skills (Phrenology, Anatomy, Augmentation, …) have no XpTable,
-        // so the section header should degrade to "—" placeholders. Detection by
-        // missing/None XpTable is robust without needing IsUmbrellaSkill projected.
+        // so the section header degrades the XP fraction / progress bar / remaining
+        // line to "—". Level + BonusLevels still come from the export and render
+        // normally. Detection by missing/None XpTable is robust without needing
+        // IsUmbrellaSkill projected.
         var sectionEntry = _ref.Skills.TryGetValue(sectionKey, out var se) ? se : null;
         var isUmbrellaSection = sectionEntry is null
             || string.IsNullOrEmpty(sectionEntry.XpTable)
@@ -213,6 +216,7 @@ public sealed class SkillAdvisorEngine
         return new SkillAnalysis(
             sectionKey,
             sectionLevel,
+            sectionBonusLevels,
             sectionCurrentXp,
             sectionXpNeeded,
             sectionXpRemaining,

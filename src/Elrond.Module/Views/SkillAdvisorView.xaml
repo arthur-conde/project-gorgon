@@ -108,11 +108,13 @@
                                 <!-- Bind to the display-name view-model property so the section
                                      header shows the human "Weapon Augmentation", not the
                                      id-shaped key "WeaponAugmentBrewing" that Analysis.SkillName
-                                     carries. SectionLevelText degrades to "—" for umbrella
-                                     sections (Phrenology, Anatomy) that aren't directly levelable. -->
+                                     carries. SectionBonusLevelsText carries its own leading
+                                     space and is empty when BonusLevels==0, so it just
+                                     vanishes for skills without bonus levels. -->
                                 <Run Text="{Binding SelectedSkillDisplayName, Mode=OneWay}"/>
                                 <Run Text=" Level "/>
                                 <Run Text="{Binding SectionLevelText, Mode=OneWay}"/>
+                                <Run Text="{Binding SectionBonusLevelsText, Mode=OneWay}"/>
                             </TextBlock>
                             <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
                                        Foreground="{StaticResource TextSecondaryBrush}" FontSize="{DynamicResource AppFontSize}" VerticalAlignment="Center">

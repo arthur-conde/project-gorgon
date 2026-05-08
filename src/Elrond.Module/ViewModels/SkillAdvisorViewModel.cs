@@ -128,15 +128,23 @@ public sealed partial class SkillAdvisorViewModel
     private SkillAnalysis? _analysis;
 
     /// <summary>
-    /// Section-header strings that degrade to <c>—</c> when the section is an umbrella
-    /// skill (no XpTable). Backed by <see cref="Analysis"/> — the partial OnAnalysisChanged
-    /// raises change notifications so the bound TextBlocks refresh.
+    /// Section-header strings backed by <see cref="Analysis"/>. The partial
+    /// OnAnalysisChanged raises change notifications so the bound TextBlocks
+    /// refresh. <see cref="SectionLevelText"/> and <see cref="SectionBonusLevelsText"/>
+    /// always render the export's values (even for umbrellas — Phrenology has a
+    /// real Level even though it has no XpTable). The XP fraction / remaining-line
+    /// text degrades to <c>—</c> for umbrellas because the export uses 0/1 sentinels
+    /// there and rendering those would be misleading.
     /// </summary>
     public string SectionLevelText => Analysis switch
     {
         null => "—",
-        { IsUmbrellaSection: true } => "—",
         var a => a.CurrentLevel.ToString(),
+    };
+    public string SectionBonusLevelsText => Analysis switch
+    {
+        { CurrentBonusLevels: > 0 } a => $" ({a.CurrentBonusLevels} from bonuses)",
+        _ => string.Empty,
     };
     public string SectionCurrentXpText => Analysis switch
     {
@@ -196,6 +204,7 @@ public sealed partial class SkillAdvisorViewModel
         // Section-header text properties are computed from Analysis; nudge the bound
         // TextBlocks to re-evaluate now that the source has changed.
         OnPropertyChanged(nameof(SectionLevelText));
+        OnPropertyChanged(nameof(SectionBonusLevelsText));
         OnPropertyChanged(nameof(SectionCurrentXpText));
         OnPropertyChanged(nameof(SectionXpNeededText));
         OnPropertyChanged(nameof(SectionXpRemainingText));
