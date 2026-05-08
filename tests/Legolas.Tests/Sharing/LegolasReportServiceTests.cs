@@ -42,19 +42,22 @@ public class LegolasReportServiceTests
         var (report, flow, session, settings, clock) = BuildSut();
         settings.AutoResetWhenAllCollected = false;
 
-        // Start the session: anchor + transition to Listening (clock stamps StartedAt).
+        // Start the session: anchor → Ready. Clock is at SessionStart for the
+        // first survey landing — that's the Ready→Listening edge that stamps
+        // StartedAt now (the previous design stamped on AwaitingPosition→Listening,
+        // but the Ready-state redesign moved it so every cycle re-stamps).
         session.HasPlayerPosition = true;
         flow.ConfirmPlayerPosition();
-
-        // Advance clock + collect items + add the final survey-collected mark.
-        clock.Set(SessionEnd);
-        session.CollectedItems["Diamond"] = 3;
-        session.CollectedItems["Coal"] = 5;
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 1));
         session.Surveys.Add(s1);
         session.Surveys.Add(s2);
         flow.OptimizeRoute();
+
+        // Advance clock + record items + collect.
+        clock.Set(SessionEnd);
+        session.CollectedItems["Diamond"] = 3;
+        session.CollectedItems["Coal"] = 5;
 
         // Marking the last one fires AllCollected → Transitioned(Done) → snapshot built.
         s1.UpdateModel(s1.Model with { Collected = true });
@@ -88,12 +91,12 @@ public class LegolasReportServiceTests
 
         session.HasPlayerPosition = true;
         flow.ConfirmPlayerPosition();
-        clock.Set(SessionEnd);
-        session.CollectedItems["Diamond"] = 3;
-        session.CollectedItems["NotInCatalog"] = 1;
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
+        clock.Set(SessionEnd);
+        session.CollectedItems["Diamond"] = 3;
+        session.CollectedItems["NotInCatalog"] = 1;
         s1.UpdateModel(s1.Model with { Collected = true });
 
         var p = report.LatestReport!;
@@ -115,11 +118,11 @@ public class LegolasReportServiceTests
 
         session.HasPlayerPosition = true;
         flow.ConfirmPlayerPosition();
-        clock.Set(SessionEnd);
-        session.CollectedItems["Diamond"] = 3;
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
+        clock.Set(SessionEnd);
+        session.CollectedItems["Diamond"] = 3;
         s1.UpdateModel(s1.Model with { Collected = true });
 
         // Auto-reset has cleared the live session…
@@ -131,6 +134,47 @@ public class LegolasReportServiceTests
         report.LatestReport.Should().NotBeNull();
         report.LatestReport!.SurveyCount.Should().Be(1);
         report.LatestReport.UnknownByName!["Diamond"].Should().Be(3);
+    }
+
+    [Fact]
+    public void Second_cycle_after_AutoReset_reports_real_elapsed_time()
+    {
+        // Regression: the original bug (Emraell's "0s elapsed" payload) was that
+        // StartedAt was stamped only on AwaitingPosition→Listening, so after
+        // auto-reset returned the FSM to Listening with StartedAt wiped, the next
+        // run never re-stamped. The Ready-state redesign moves the stamp onto the
+        // Ready→Listening edge (first-survey-arrival), which fires on every cycle.
+        var (report, flow, session, settings, clock) = BuildSut();
+        settings.AutoResetWhenAllCollected = true;
+
+        session.HasPlayerPosition = true;
+        flow.ConfirmPlayerPosition();
+
+        // Cycle 1: surveys arrive at SessionStart, all collected at SessionEnd,
+        // auto-reset fires.
+        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        session.Surveys.Add(s1);
+        clock.Set(SessionEnd);
+        session.CollectedItems["Diamond"] = 1;
+        s1.UpdateModel(s1.Model with { Collected = true });
+
+        // Cycle 2: clock advances another 10 minutes before any survey arrives.
+        var cycle2Start = SessionEnd.AddMinutes(10);
+        var cycle2End = cycle2Start.AddMinutes(7);
+        clock.Set(cycle2Start);
+        session.CollectedItems.Clear();
+        session.CollectedItems["Coal"] = 2;
+        var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 0));
+        session.Surveys.Add(s2);
+        clock.Set(cycle2End);
+        s2.UpdateModel(s2.Model with { Collected = true });
+
+        // The latest report is from cycle 2. Its elapsed must reflect the cycle-2
+        // clock advance, not collapse to ~0 (the pre-fix symptom).
+        var p = report.LatestReport!;
+        p.StartedAt.Should().Be(cycle2Start);
+        p.CompletedAt.Should().Be(cycle2End);
+        (p.CompletedAt - p.StartedAt).Should().Be(TimeSpan.FromMinutes(7));
     }
 
     [Fact]

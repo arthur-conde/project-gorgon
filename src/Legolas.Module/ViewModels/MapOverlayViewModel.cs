@@ -194,7 +194,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             return _surveyFlow.CurrentState switch
             {
                 SurveyFlowState.AwaitingPosition => "Click anywhere on this map to mark your player position.",
-                SurveyFlowState.Listening when _session.IsAnchorEditable
+                SurveyFlowState.Ready
                     => "Drag the map to fine-tune your position. Use the Surveying skill in-game — pins place automatically.",
                 _ => string.Empty,
             };

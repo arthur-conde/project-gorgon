@@ -98,7 +98,7 @@ public class LegolasWizardViewModelTests
         session.IsInventoryVisible = true;
         session.HasPlayerPosition = true;
         surveyFlow.ConfirmPlayerPosition();
-        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Ready);
 
         wizard.ChangeModeCommand.Execute(null);
 
@@ -106,9 +106,9 @@ public class LegolasWizardViewModelTests
         wizard.CurrentStep.Should().Be(WizardStep.PickMode);
         session.IsMapVisible.Should().BeFalse();
         session.IsInventoryVisible.Should().BeFalse();
-        // FSM Reset preserves player position, so SurveyFlow returns to Listening
+        // FSM Reset preserves player position, so SurveyFlow returns to Ready
         // (per controller semantics — Reset doesn't clear the anchor).
-        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        surveyFlow.CurrentState.Should().Be(SurveyFlowState.Ready);
     }
 
     [Fact]

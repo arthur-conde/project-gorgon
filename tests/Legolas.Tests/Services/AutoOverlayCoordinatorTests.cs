@@ -101,6 +101,8 @@ public class AutoOverlayCoordinatorTests
     {
         var (coordinator, session, settings, flow) = BuildSut();
         EnterListening(flow, session);
+        // Add a pin to advance Ready → Listening (OptimizeRoute requires Listening).
+        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), gridIndex: 0)));
         session.IsInventoryVisible = true;
         coordinator.Initialize();
 
