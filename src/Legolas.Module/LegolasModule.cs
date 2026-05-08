@@ -18,6 +18,7 @@ using Legolas.Sharing;
 using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Legolas;
@@ -151,6 +152,9 @@ public sealed class LegolasModule : IMithrilModule
         // so OverlayController can read its IsInApp state directly.
         services.AddSingleton<ForegroundFocusGate>();
         services.AddHostedService(sp => sp.GetRequiredService<ForegroundFocusGate>());
+        // Issue #133: swap HotkeyService's gate so registrations track in-app focus.
+        services.Replace(ServiceDescriptor.Singleton<IHotkeyGate>(
+            sp => sp.GetRequiredService<ForegroundFocusGate>()));
 
         // Overlay lifecycle
         services.AddHostedService<OverlayController>();

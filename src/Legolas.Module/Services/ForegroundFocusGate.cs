@@ -4,6 +4,7 @@ using System.Windows;
 using Legolas.Domain;
 using Legolas.Interop;
 using Microsoft.Extensions.Hosting;
+using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Modules;
 
 namespace Legolas.Services;
@@ -22,7 +23,7 @@ namespace Legolas.Services;
 /// "ProjectGorgon", "Project Gorgon", "ProjectGorgon64") and lets the user
 /// override via the settings UI without a code change.
 /// </summary>
-public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
+public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged, IHotkeyGate
 {
     private readonly ModuleGates _gates;
     private readonly LegolasSettings _settings;
@@ -52,8 +53,13 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
             if (_isInApp == value) return;
             _isInApp = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInApp)));
+            // Mirror onto IHotkeyGate.CanFire so HotkeyService re-registers
+            // bindings when focus crosses the in-app boundary.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanFire)));
         }
     }
+
+    public bool CanFire => IsInApp;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {

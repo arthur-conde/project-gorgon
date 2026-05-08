@@ -10,6 +10,7 @@ public sealed partial class HotkeyService : IHotkeyService
     private const int WM_HOTKEY = 0x0312;
 
     private readonly HotkeyRegistry _registry;
+    private readonly IHotkeyGate _gate;
     private readonly Dictionary<int, IHotkeyCommand> _byRegistrationId = new();
     private readonly Dictionary<string, int> _byCommandId = new(StringComparer.Ordinal);
     private IReadOnlyList<HotkeyBinding> _lastBindings = Array.Empty<HotkeyBinding>();
@@ -18,7 +19,20 @@ public sealed partial class HotkeyService : IHotkeyService
     private int _nextId = 0xB000;
     private int _captureDepth;
 
-    public HotkeyService(HotkeyRegistry registry) { _registry = registry; }
+    public HotkeyService(HotkeyRegistry registry, IHotkeyGate gate)
+    {
+        _registry = registry;
+        _gate = gate;
+        _gate.PropertyChanged += OnGatePropertyChanged;
+    }
+
+    /// <summary>
+    /// True when <paramref name="command"/> should hold a Win32 registration
+    /// given the current gate state. Extracted from <see cref="RegisterAll"/>
+    /// so unit tests can exercise the rule without a real hwnd.
+    /// </summary>
+    public static bool ShouldRegister(IHotkeyCommand command, bool gateCanFire)
+        => gateCanFire || !command.RespectsFocusGate;
 
     public void Attach(IntPtr hwnd)
     {
@@ -40,11 +54,19 @@ public sealed partial class HotkeyService : IHotkeyService
         UnregisterAll();
         if (_hwnd == IntPtr.Zero || _captureDepth > 0) return report;
 
+        var canFire = _gate.CanFire;
         foreach (var binding in _lastBindings)
         {
             if (!_registry.TryGet(binding.CommandId, out var command))
             {
                 report[binding.CommandId] = "Command no longer exists in this build.";
+                continue;
+            }
+            if (!ShouldRegister(command, canFire))
+            {
+                // Gate is closed and this command respects it; defer until the
+                // gate reopens. Not a failure — leave the report entry null.
+                report[binding.CommandId] = null;
                 continue;
             }
             var id = _nextId++;
@@ -83,6 +105,13 @@ public sealed partial class HotkeyService : IHotkeyService
         if (_captureDepth == 0) RegisterAll();
     }
 
+    private void OnGatePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(IHotkeyGate.CanFire) && !string.IsNullOrEmpty(e.PropertyName)) return;
+        if (_captureDepth > 0) return; // capture session will re-evaluate on end
+        RegisterAll();
+    }
+
     private sealed class CaptureScope : IDisposable
     {
         private readonly HotkeyService _svc;
@@ -106,6 +135,7 @@ public sealed partial class HotkeyService : IHotkeyService
 
     public void Dispose()
     {
+        _gate.PropertyChanged -= OnGatePropertyChanged;
         UnregisterAll();
         _source?.RemoveHook(WndProc);
     }
