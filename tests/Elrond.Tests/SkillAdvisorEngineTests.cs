@@ -172,7 +172,7 @@ public class SkillAdvisorEngineTests
     }
 
     [Fact]
-    public void GetSkillsWithRecipes_ReturnsOnlySkillsWithXpRecipes()
+    public void GetCookbookSections_ReturnsOnlySectionsWithXpRecipes()
     {
         var refData = new FakeRefData();
         refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 40, null, null, null);
@@ -180,9 +180,62 @@ public class SkillAdvisorEngineTests
         refData.AddRecipe("recipe_3", "NoXp", "NoXp", "Alchemy", 1, "Alchemy", 0, 0, null, null, null);
 
         var engine = new SkillAdvisorEngine(refData);
-        var skills = engine.GetSkillsWithRecipes();
+        var sections = engine.GetCookbookSections();
 
-        skills.Should().BeEquivalentTo(["Cooking", "Meditation"]);
+        sections.Should().BeEquivalentTo(["Cooking", "Meditation"]);
+    }
+
+    [Fact]
+    public void GetCookbookSections_PrefersSortSkillOverRewardSkill()
+    {
+        // Fish-based food: rewards Fishing XP but files under Cooking in the in-game cookbook.
+        // GetCookbookSections should surface "Cooking" (the filing), not "Fishing" (the reward).
+        var refData = new FakeRefData();
+        refData.AddRecipe("recipe_stew", "Fish Stew", "FishStew", "Fishing", 30, "Fishing", 60, 240,
+            null, null, null, sortSkill: "Cooking");
+        refData.AddRecipe("recipe_bread", "Bread", "Bread", "Cooking", 1, "Cooking", 20, 80,
+            null, null, null);
+
+        var engine = new SkillAdvisorEngine(refData);
+        engine.GetCookbookSections().Should().BeEquivalentTo(["Cooking"],
+            because: "all recipes file under Cooking — the standalone Fishing recipe is filed there too via SortSkill");
+    }
+
+    [Fact]
+    public void Analyze_FishRecipeFiledUnderCooking_ReportsFishingXpAndCompletions()
+    {
+        // Cookbook view: Fish Stew is filed under Cooking, but its metrics use Fishing.
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", id: 1, combat: false, xpTable: "TestTable", maxBonusLevels: 0);
+        refData.AddSkill("Fishing", id: 2, combat: false, xpTable: "TestTable", maxBonusLevels: 0);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L, 400L, 500L]);
+        refData.AddRecipe("recipe_stew", "Fish Stew", "FishStew", "Fishing", 1, "Fishing", 60, 240,
+            null, null, null, sortSkill: "Cooking");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Cooking"] = new(2, 0, 0, 200),
+                ["Fishing"] = new(3, 0, 50, 300),
+            },
+            recipes: new Dictionary<string, int>
+            {
+                ["FishStew"] = 0, // known but not yet crafted → first-time bonus available
+            });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Cooking", character)!;
+
+        analysis.SkillName.Should().Be("Cooking");
+        analysis.Recipes.Should().ContainSingle();
+        var stew = analysis.Recipes[0];
+        stew.RewardSkill.Should().Be("Fishing", because: "recipe row carries its own RewardSkill for the pill/column");
+        stew.EffectiveXp.Should().Be(60);
+        // Completions-to-level uses Fishing's xpRemaining (300 - 50 = 250), NOT Cooking's
+        // (200 - 0 = 200). One first-time craft delivers 240, a second craft at 60 XP
+        // closes the remaining 10 → 2 completions.
+        stew.CompletionsToLevel.Should().Be(2,
+            because: "completions-to-level uses the recipe's own RewardSkill (Fishing), not the section (Cooking)");
     }
 
     [Fact]
@@ -320,10 +373,12 @@ public class SkillAdvisorEngineTests
 
         public void AddRecipe(string key, string name, string internalName, string skill, int skillLevelReq,
             string rewardSkill, int rewardXp, int rewardXpFirstTime,
-            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null)
+            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null,
+            string? sortSkill = null)
         {
             var entry = new RecipeEntry(key, name, internalName, 0, skill, skillLevelReq,
-                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [], prereqRecipe);
+                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [],
+                prereqRecipe, ProtoResultItems: null, ResultEffects: null, SortSkill: sortSkill);
             _recipes[key] = entry;
             _recipesByName[internalName] = entry;
         }

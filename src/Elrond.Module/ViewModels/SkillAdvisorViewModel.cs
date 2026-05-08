@@ -344,8 +344,10 @@ public sealed partial class SkillAdvisorViewModel
             return;
         }
 
-        // Leaf set: skills the engine knows recipes for AND the character has learned.
-        var leafKeys = _engine.GetSkillsWithRecipes()
+        // Leaf set: cookbook sections (SortSkill ?? RewardSkill) the character has the
+        // section's own skill for. Sections that aren't real character skills
+        // (e.g. Race_Fae) drop out — the engine can't advise on them.
+        var leafKeys = _engine.GetCookbookSections()
             .Where(k => active.Skills.ContainsKey(k))
             .ToList();
 

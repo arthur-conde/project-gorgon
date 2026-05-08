@@ -19,7 +19,11 @@ public sealed record SkillAnalysis(
     int? GoalLevel = null);
 
 /// <summary>
-/// One recipe's analysis for a given skill and character.
+/// One recipe's analysis for a given cookbook section + character. <see cref="RewardSkill"/>
+/// names the skill that actually earns XP when this recipe is crafted; it may differ from
+/// the section the recipe is filed under (a Fish Stew filed in <c>Cooking</c> rewards
+/// <c>Fishing</c> XP), and the row's <see cref="EffectiveXp"/>/<see cref="CompletionsToLevel"/>
+/// reflect that reward skill, not the section.
 /// </summary>
 public sealed record RecipeAnalysis(
     string RecipeKey,
@@ -38,7 +42,8 @@ public sealed record RecipeAnalysis(
     double Complexity,
     double? Efficiency,
     IReadOnlyList<RecipeIngredientDisplay> Ingredients,
-    IReadOnlyList<CraftedGearPreview> CraftedOutputs);
+    IReadOnlyList<CraftedGearPreview> CraftedOutputs,
+    string RewardSkill = "");
 
 /// <summary>Display-ready ingredient for a recipe tooltip.</summary>
 public sealed record RecipeIngredientDisplay(string Name, int IconId, int StackSize, float? ChanceToConsume);

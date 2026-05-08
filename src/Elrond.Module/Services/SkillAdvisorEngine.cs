@@ -18,65 +18,104 @@ public sealed class SkillAdvisorEngine
     }
 
     /// <summary>
-    /// Returns all skill names that have at least one recipe awarding XP,
-    /// sorted alphabetically.
+    /// Returns all cookbook section names — distinct values of
+    /// <c>SortSkill ?? RewardSkill</c> across recipes that award XP, sorted
+    /// alphabetically. A "section" is the in-game cookbook category a recipe
+    /// is filed under: typically the same as <c>RewardSkill</c>, but for some
+    /// recipes (fish-based foods → <c>Cooking</c>) the filing differs from the
+    /// XP-earning skill.
     /// </summary>
-    public IReadOnlyList<string> GetSkillsWithRecipes()
+    public IReadOnlyList<string> GetCookbookSections()
     {
-        var skills = new HashSet<string>(StringComparer.Ordinal);
+        var sections = new HashSet<string>(StringComparer.Ordinal);
         foreach (var recipe in _ref.Recipes.Values)
         {
-            if (!string.IsNullOrEmpty(recipe.RewardSkill) && recipe.RewardSkillXp > 0)
-                skills.Add(recipe.RewardSkill);
+            if (recipe.RewardSkillXp <= 0 && recipe.RewardSkillXpFirstTime <= 0) continue;
+            var section = FilingSkillOf(recipe);
+            if (!string.IsNullOrEmpty(section))
+                sections.Add(section);
         }
-        var list = skills.ToList();
+        var list = sections.ToList();
         list.Sort(StringComparer.Ordinal);
         return list;
     }
 
+    /// <summary>The cookbook section a recipe is filed under: <c>SortSkill</c> if set, else <c>RewardSkill</c>.</summary>
+    internal static string FilingSkillOf(RecipeEntry recipe) =>
+        string.IsNullOrEmpty(recipe.SortSkill) ? recipe.RewardSkill : recipe.SortSkill;
+
     /// <summary>
-    /// Analyze a skill for a given character: available recipes, XP rewards,
-    /// first-time bonuses, and leveling milestones.
-    /// When <paramref name="goalLevel"/> is set, XP remaining and completions-to-level
-    /// reflect the total gap from current progress to that goal.
+    /// Analyze a cookbook section for a given character: every recipe filed under
+    /// <paramref name="sectionKey"/>, with each recipe's metrics (effective XP,
+    /// completions-to-level, first-time bonus) computed against its own
+    /// <c>RewardSkill</c> — which may differ from the section. The section's
+    /// header level/XP read from the character's progress in the section's skill
+    /// (when present); recipes whose RewardSkill differs from the section show
+    /// completions toward their own next level (no goal-aware projection).
     /// </summary>
-    public SkillAnalysis? Analyze(string skillName, CharacterSnapshot character, bool includeZeroXp = false, int? goalLevel = null)
+    public SkillAnalysis? Analyze(string sectionKey, CharacterSnapshot character, bool includeZeroXp = false, int? goalLevel = null)
     {
-        if (!character.Skills.TryGetValue(skillName, out var charSkill))
+        // The section must correspond to a known character skill — exotic filings
+        // (e.g. Race_Fae) that aren't real character skills can't be advised on
+        // because the header progress bar has no data to show. The picker filters
+        // sections by character.Skills.ContainsKey upstream, so this is a guard
+        // for direct callers (deep links to unfamiliar sections, tests).
+        if (!character.Skills.TryGetValue(sectionKey, out var sectionCharSkill))
             return null;
 
-        var currentLevel = charSkill.Level;
-        var currentXp = charSkill.XpTowardNextLevel;
-        var xpNeeded = charSkill.XpNeededForNextLevel;
+        var sectionLevel = sectionCharSkill.Level;
+        var sectionCurrentXp = sectionCharSkill.XpTowardNextLevel;
+        var sectionXpNeeded = sectionCharSkill.XpNeededForNextLevel;
 
-        long xpRemaining;
-        if (goalLevel is { } goal && goal > currentLevel)
-            xpRemaining = ComputeXpToGoal(skillName, currentLevel, currentXp, xpNeeded, goal);
+        long sectionXpRemaining;
+        if (goalLevel is { } goal && goal > sectionLevel)
+            sectionXpRemaining = ComputeXpToGoal(sectionKey, sectionLevel, sectionCurrentXp, sectionXpNeeded, goal);
         else
-            xpRemaining = xpNeeded - currentXp;
+            sectionXpRemaining = sectionXpNeeded - sectionCurrentXp;
+        if (sectionXpRemaining < 0) sectionXpRemaining = 0;
 
-        if (xpRemaining < 0) xpRemaining = 0;
-
-        // Find all recipes that reward this skill
         var recipeAnalyses = new List<RecipeAnalysis>();
         foreach (var recipe in _ref.Recipes.Values)
         {
-            if (!recipe.RewardSkill.Equals(skillName, StringComparison.Ordinal)) continue;
+            if (!FilingSkillOf(recipe).Equals(sectionKey, StringComparison.Ordinal)) continue;
             if (recipe.RewardSkillXp <= 0 && recipe.RewardSkillXpFirstTime <= 0) continue;
             if (!includeZeroXp && recipe.RewardSkillXp <= 0) continue;
+
+            // Per-recipe character context: we need the character's level in this recipe's
+            // RewardSkill to compute drop-off and completions-to-its-own-level. May be null
+            // if the character hasn't learned the reward skill yet.
+            character.Skills.TryGetValue(recipe.RewardSkill, out var rewardCharSkill);
+            var rewardLevel = rewardCharSkill?.Level ?? 0;
 
             var isKnown = character.RecipeCompletions.TryGetValue(recipe.InternalName, out var timesCompleted);
             var firstTimeBonusAvailable = isKnown && timesCompleted == 0 && recipe.RewardSkillXpFirstTime > 0;
 
-            var effectiveXp = ComputeEffectiveXp(recipe, currentLevel);
+            var effectiveXp = ComputeEffectiveXp(recipe, rewardLevel);
+
+            // Goal-awareness: if the recipe rewards the section's skill, share the
+            // section-level goal. Otherwise (mixed-reward recipes filed here) just
+            // show completions to that recipe's own next level.
+            long xpRemainingForThisRecipe;
+            if (rewardCharSkill is null)
+            {
+                xpRemainingForThisRecipe = 0;
+            }
+            else if (recipe.RewardSkill.Equals(sectionKey, StringComparison.Ordinal))
+            {
+                xpRemainingForThisRecipe = sectionXpRemaining;
+            }
+            else
+            {
+                xpRemainingForThisRecipe = rewardCharSkill.XpNeededForNextLevel - rewardCharSkill.XpTowardNextLevel;
+                if (xpRemainingForThisRecipe < 0) xpRemainingForThisRecipe = 0;
+            }
 
             int? completionsToLevel = null;
-            if (effectiveXp > 0 && xpRemaining > 0)
+            if (effectiveXp > 0 && xpRemainingForThisRecipe > 0)
             {
                 if (firstTimeBonusAvailable && recipe.RewardSkillXpFirstTime > 0)
                 {
-                    // First completion uses first-time bonus XP
-                    var afterFirst = xpRemaining - recipe.RewardSkillXpFirstTime;
+                    var afterFirst = xpRemainingForThisRecipe - recipe.RewardSkillXpFirstTime;
                     if (afterFirst <= 0)
                         completionsToLevel = 1;
                     else
@@ -84,7 +123,7 @@ public sealed class SkillAdvisorEngine
                 }
                 else
                 {
-                    completionsToLevel = (int)Math.Ceiling((double)xpRemaining / effectiveXp);
+                    completionsToLevel = (int)Math.Ceiling((double)xpRemainingForThisRecipe / effectiveXp);
                 }
             }
 
@@ -103,17 +142,11 @@ public sealed class SkillAdvisorEngine
 
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _ref);
 
-            // ChanceToConsume weights catalysts (e.g. Butter's 20%-chance bottle)
-            // fractionally — without it, complexity overcounts.
             var complexity = recipe.Ingredients
                 .Sum(i => i.StackSize * (double)(i.ChanceToConsume ?? 1.0f));
-            // What the player actually pockets next craft. First-time bonus is
-            // not subject to the dropoff curve (matches CompletionsToLevel above).
             var nextCraftXp = firstTimeBonusAvailable && recipe.RewardSkillXpFirstTime > 0
                 ? recipe.RewardSkillXpFirstTime
                 : effectiveXp;
-            // 0-XP recipes aren't a math hazard, just noise — null suppresses them
-            // alongside the actual divide-by-zero case (zero-ingredient trainers).
             double? efficiency = nextCraftXp > 0 && complexity > 0
                 ? nextCraftXp / complexity
                 : null;
@@ -135,10 +168,10 @@ public sealed class SkillAdvisorEngine
                 complexity,
                 efficiency,
                 ingredients,
-                craftedOutputs));
+                craftedOutputs,
+                RewardSkill: recipe.RewardSkill));
         }
 
-        // Sort: level required ascending, then effective XP descending
         recipeAnalyses.Sort((a, b) =>
         {
             var cmp = a.LevelRequired.CompareTo(b.LevelRequired);
@@ -146,18 +179,17 @@ public sealed class SkillAdvisorEngine
             return b.EffectiveXp.CompareTo(a.EffectiveXp);
         });
 
-        // Build XP milestones for next ~10 levels
-        var milestones = BuildMilestones(skillName, currentLevel, currentXp, xpNeeded, maxLevels: 10);
+        var milestones = BuildMilestones(sectionKey, sectionLevel, sectionCurrentXp, sectionXpNeeded, maxLevels: 10);
 
         return new SkillAnalysis(
-            skillName,
-            currentLevel,
-            currentXp,
-            xpNeeded,
-            xpRemaining,
+            sectionKey,
+            sectionLevel,
+            sectionCurrentXp,
+            sectionXpNeeded,
+            sectionXpRemaining,
             recipeAnalyses,
             milestones,
-            goalLevel is { } g && g > currentLevel ? goalLevel : null);
+            goalLevel is { } g && g > sectionLevel ? goalLevel : null);
     }
 
     internal int ComputeEffectiveXp(RecipeEntry recipe, int playerLevel)
