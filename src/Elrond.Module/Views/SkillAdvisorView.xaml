@@ -158,49 +158,58 @@
                                 <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#22D4A847"/>
 
                                 <HierarchicalDataTemplate DataType="{x:Type vm:SkillNode}" ItemsSource="{Binding Children}">
-                                    <!-- Each row mirrors the skill-summary panel's visual language:
-                                         display name + level (header font) on the left, XP fraction on
-                                         the right, full-width progress bar beneath. Header-only rows
-                                         collapse the level/XP/bar and render as accent group labels. -->
-                                    <StackPanel Margin="2,3">
-                                        <DockPanel Margin="0,0,0,4">
-                                            <TextBlock DockPanel.Dock="Right"
-                                                       Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                                       VerticalAlignment="Center">
-                                                <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/><Run Text=" / "/><Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
-                                                <Run Text=" XP"/>
-                                            </TextBlock>
-                                            <!-- Leaf row: bold display name + "Level N" suffix in muted secondary -->
-                                            <TextBlock TextTrimming="CharacterEllipsis"
-                                                       Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
-                                                       FontFamily="{DynamicResource AppHeaderFontFamily}"
-                                                       FontSize="{DynamicResource AppFontSizeMedium}">
-                                                <Run Text="{Binding DisplayName, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}"/><Run Text=" Level " Foreground="{StaticResource TextSecondaryBrush}"/><Run Text="{Binding CurrentLevel, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                            </TextBlock>
-                                            <!-- Header row: section name only, smaller + accent -->
-                                            <TextBlock Text="{Binding DisplayName}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Foreground="{StaticResource AccentBrush}"
-                                                       FontWeight="SemiBold"
-                                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                                       Margin="0,4,0,0"
-                                                       Visibility="{Binding IsHeaderOnly, Converter={StaticResource BoolToVisibility}}"/>
-                                        </DockPanel>
-                                        <ProgressBar Height="6"
-                                                     Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}"
-                                                     Foreground="{StaticResource AccentBrush}" Background="#FF333333"
-                                                     BorderThickness="0"
-                                                     Minimum="0"
-                                                     Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
-                                                     Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                    <!-- Mirrors the skill-summary panel's visual language 1:1: same
+                                         header font + size for the name+level line, same right-aligned
+                                         XP fraction, same 8 px progress bar, same "remaining" hint
+                                         beneath. Header-only rows collapse the leaf parts and render
+                                         as a smaller accent group label. -->
+                                    <StackPanel Margin="0,4">
+                                        <!-- Header (group label) — visible only when IsHeaderOnly. -->
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   Visibility="{Binding IsHeaderOnly, Converter={StaticResource BoolToVisibility}}"/>
+                                        <!-- Leaf — visible when IsSelectable. Three rows mirroring the panel:
+                                             title + XP, progress bar, remaining hint. -->
+                                        <StackPanel Visibility="{Binding IsSelectable, Converter={StaticResource BoolToVisibility}}">
+                                            <DockPanel Margin="0,0,0,6">
+                                                <TextBlock DockPanel.Dock="Right"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSize}"
+                                                           VerticalAlignment="Center">
+                                                    <Run Text="{Binding CurrentXp, Mode=OneWay, StringFormat=N0}"/>
+                                                    <Run Text=" / "/>
+                                                    <Run Text="{Binding XpNeededForNextLevel, Mode=OneWay, StringFormat=N0}"/>
+                                                    <Run Text=" XP"/>
+                                                </TextBlock>
+                                                <TextBlock FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                                           FontSize="{DynamicResource AppFontSizeXLarge}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding DisplayName, Mode=OneWay}"/>
+                                                    <Run Text=" Level "/>
+                                                    <Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </DockPanel>
+                                            <ProgressBar Height="8"
+                                                         Foreground="{StaticResource AccentBrush}" Background="#FF333333"
+                                                         BorderThickness="0"
+                                                         Minimum="0"
+                                                         Maximum="{Binding XpNeededForNextLevel, Mode=OneWay, FallbackValue=1}"
+                                                         Value="{Binding CurrentXp, Mode=OneWay, FallbackValue=0}"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </HierarchicalDataTemplate>
                             </TreeView.Resources>
                             <TreeView.ItemContainerStyle>
                                 <Style TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="True"/>
+                                    <!-- Stretch the row content to the full popup width so progress
+                                         bars span the row and the right-side XP text actually sits
+                                         on the right edge instead of butting against the level number. -->
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 </Style>
                             </TreeView.ItemContainerStyle>
                         </TreeView>
