@@ -148,7 +148,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="40" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0" Style="{StaticResource MithrilToolbarButtonStyle}"
                             Command="{Binding BackCommand}" ToolTip="Back one step"
@@ -160,12 +160,19 @@
                                FontSize="32" FontWeight="SemiBold"
                                HorizontalAlignment="Center" TextAlignment="Center"
                                Foreground="{StaticResource TextPrimaryBrush}" />
-                    <Button Grid.Column="2" Style="{StaticResource MithrilToolbarButtonStyle}"
-                            Command="{Binding WizardResetCommand}" ToolTip="Reset this flow (overlays stay open)"
-                            VerticalAlignment="Center" HorizontalAlignment="Right"
-                            Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <icon:PackIconLucide Kind="RotateCcw" Width="14" Height="14" />
-                    </Button>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <Button Style="{StaticResource MithrilToolbarButtonStyle}"
+                                Command="{Binding ToggleOverlaysCommand}"
+                                ToolTip="Show or hide both overlays (map and inventory)"
+                                Margin="0,0,4,0">
+                            <icon:PackIconLucide Kind="Eye" Width="14" Height="14" />
+                        </Button>
+                        <Button Style="{StaticResource MithrilToolbarButtonStyle}"
+                                Command="{Binding WizardResetCommand}" ToolTip="Reset this flow (overlays stay open)">
+                            <icon:PackIconLucide Kind="RotateCcw" Width="14" Height="14" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <!-- Step bodies — one visible at a time, keyed off CurrentStep. -->

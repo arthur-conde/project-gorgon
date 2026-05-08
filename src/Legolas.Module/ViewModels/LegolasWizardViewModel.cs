@@ -73,11 +73,62 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         NudgePad = nudgePad;
 
         _surveyFlow.PropertyChanged += OnSurveyFlowChanged;
+        _surveyFlow.Transitioned += OnSurveyFlowTransitioned;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
         _session.PropertyChanged += OnSessionChanged;
         if (_reportService is not null)
             _reportService.ReportGenerated += OnReportGenerated;
         RecomputeStep();
+    }
+
+    /// <summary>
+    /// FSM-edge-driven overlay management. Two cases:
+    ///   * Done → Ready (session just ended via auto-reset or a manual reset
+    ///     from Done): hide both overlays so the game window is uncluttered
+    ///     between cycles.
+    ///   * Ready → Listening (next cycle starts — a fresh survey landed):
+    ///     re-show both. The user is engaged again; they're either going to
+    ///     keep popping or hit Go.
+    /// Both edges are gated on <see cref="LegolasSettings.HideOverlaysBetweenSessions"/>
+    /// so users who prefer always-visible overlays opt out wholesale.
+    /// Listening↔Ready edges from a manual mid-session reset don't qualify
+    /// — the test "Reset preserves overlay visibility" pins that behaviour.
+    /// </summary>
+    private void OnSurveyFlowTransitioned(SurveyTransition t)
+    {
+        if (!_settings.HideOverlaysBetweenSessions) return;
+
+        if (t.From == SurveyFlowState.Done && t.To == SurveyFlowState.Ready)
+        {
+            _session.IsMapVisible = false;
+            _session.IsInventoryVisible = false;
+        }
+        else if (t.From == SurveyFlowState.Ready && t.To == SurveyFlowState.Listening)
+        {
+            _session.IsMapVisible = true;
+            _session.IsInventoryVisible = true;
+        }
+    }
+
+    /// <summary>
+    /// True when at least one overlay is currently visible. Drives the wizard
+    /// hero row's overlay-toggle button: a click flips both to the opposite
+    /// state, mirroring the <c>ToggleAllOverlaysCommand</c> hotkey shape.
+    /// </summary>
+    public bool AreOverlaysVisible => _session.IsMapVisible || _session.IsInventoryVisible;
+
+    /// <summary>
+    /// Wizard-hero overlay toggle. Sets both <see cref="SessionState.IsMapVisible"/>
+    /// and <see cref="SessionState.IsInventoryVisible"/> to the same target value
+    /// (the opposite of <see cref="AreOverlaysVisible"/>) so the two overlays move
+    /// in lockstep, matching the hotkey-driven <c>ToggleAllOverlaysCommand</c>.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleOverlays()
+    {
+        var target = !AreOverlaysVisible;
+        _session.IsMapVisible = target;
+        _session.IsInventoryVisible = target;
     }
 
     /// <summary>True once the user has clicked Survey or Motherlode in step 0.</summary>
@@ -230,6 +281,13 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         // Hotkey-driven mode flip should re-project the wizard's step.
         if (e.PropertyName == nameof(SessionState.Mode))
             RecomputeStep();
+        // Bubble overlay-visibility changes up to AreOverlaysVisible so the
+        // hero-row toggle button's icon/tooltip stay in sync with the actual
+        // session state (toggled by the button itself, the hotkey, or the
+        // FSM-edge auto-hide/show in OnSurveyFlowTransitioned).
+        else if (e.PropertyName is nameof(SessionState.IsMapVisible)
+                              or nameof(SessionState.IsInventoryVisible))
+            OnPropertyChanged(nameof(AreOverlaysVisible));
     }
 
     /// <summary>

@@ -73,6 +73,10 @@
                     <CheckBox Content="Auto-hide overlays when neither the game nor Mithril has focus"
                               IsChecked="{Binding ControlPanel.AutoHideOverlaysOnGameUnfocused}"
                               ToolTip="Hides the map and inventory overlays while you alt-tab to a browser, Discord, etc., and restores whichever was visible when you return." />
+                    <CheckBox Content="Hide overlays between survey runs"
+                              Margin="0,4,0,0"
+                              IsChecked="{Binding ControlPanel.HideOverlaysBetweenSessions}"
+                              ToolTip="Hide both overlays when a session ends (Done) and re-show them when the next survey lands. Off keeps them visible across runs." />
                     <TextBlock Text="Game process name (case-insensitive substring match — covers ProjectGorgon, ProjectGorgon64, Project Gorgon, etc.):"
                                Foreground="{StaticResource TextTertiaryBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,4" />

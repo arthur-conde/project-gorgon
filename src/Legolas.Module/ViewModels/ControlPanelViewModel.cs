@@ -102,6 +102,17 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         }
     }
 
+    public bool HideOverlaysBetweenSessions
+    {
+        get => _settings.HideOverlaysBetweenSessions;
+        set
+        {
+            if (_settings.HideOverlaysBetweenSessions == value) return;
+            _settings.HideOverlaysBetweenSessions = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool ShowNudgePadOnOverlay
     {
         get => _settings.ShowNudgePadOnOverlay;
