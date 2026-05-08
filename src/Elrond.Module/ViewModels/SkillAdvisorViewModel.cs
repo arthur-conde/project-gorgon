@@ -71,6 +71,12 @@ public sealed partial class SkillAdvisorViewModel
             new("FirstTimeBonusOnly", "First Time Bonus Only", r => r.FirstTimeBonusAvailable, inverted: false, isActive: false),
             new("CraftableOnly",      "Craftable only",        r => Analysis is { } a && r.LevelRequired <= a.CurrentLevel, inverted: false, isActive: true),
             new("HideZeroXp",         "Hide 0 XP",             r => r.EffectiveXp > 0,         inverted: false, isActive: true),
+            // Cookbook view shows recipes filed under a section regardless of which skill they level
+            // (a fish dish in Cooking levels Fishing). Toggling this filter on hides the mixed-reward
+            // recipes — useful when the user wants the classic "what levels skill X" view.
+            new("RewardingSectionOnly", "Only recipes that level this skill",
+                r => Analysis is { } a && r.RewardSkill.Equals(a.SkillName, StringComparison.Ordinal),
+                inverted: false, isActive: false),
         ];
 
         var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_recipes);
@@ -367,33 +373,56 @@ public sealed partial class SkillAdvisorViewModel
                 Children: []));
         }
 
-        // Group by immediate parent (skills.json Parents[0]). Parents that show up
-        // here are header-only — they group children but are themselves never
-        // selectable, even if the parent skill itself happens to have recipes.
-        var rootsList = new List<SkillNode>();
+        // Group leaves by their immediate parent (skills.json Parents[0]).
+        // A leaf with no parent → potential root. A leaf with a parent → goes into
+        // its parent's bucket; the parent will be materialized as a tree node below.
+        var leafByKey = leaves.ToDictionary(l => l.Key, StringComparer.Ordinal);
         var parentBuckets = new Dictionary<string, List<SkillNode>>(StringComparer.Ordinal);
         foreach (var leaf in leaves)
         {
             var parentKey = _referenceData.Skills.TryGetValue(leaf.Key, out var entry)
                 ? entry.Parents.FirstOrDefault()
                 : null;
-            if (string.IsNullOrEmpty(parentKey))
+            if (string.IsNullOrEmpty(parentKey)) continue;
+            if (!parentBuckets.TryGetValue(parentKey, out var bucket))
             {
-                rootsList.Add(leaf);
+                bucket = [];
+                parentBuckets[parentKey] = bucket;
+            }
+            bucket.Add(leaf);
+        }
+
+        // Build roots: every leaf with no parent. A leaf with a parent is nested
+        // either under a sibling-leaf (if its parent is in our set) or under a
+        // pure header node materialized below. If a root leaf has children of
+        // its own, attach them — produces ONE selectable node with nested
+        // children rather than duplicating the leaf alongside a separate header.
+        var rootsList = new List<SkillNode>();
+        foreach (var leaf in leaves)
+        {
+            var parentKey = _referenceData.Skills.TryGetValue(leaf.Key, out var entry)
+                ? entry.Parents.FirstOrDefault()
+                : null;
+            if (!string.IsNullOrEmpty(parentKey)) continue;
+            if (parentBuckets.TryGetValue(leaf.Key, out var ownChildren))
+            {
+                var sortedChildren = ownChildren
+                    .OrderBy(c => c.DisplayName, StringComparer.Ordinal)
+                    .ToList();
+                rootsList.Add(leaf with { Children = sortedChildren });
             }
             else
             {
-                if (!parentBuckets.TryGetValue(parentKey, out var bucket))
-                {
-                    bucket = [];
-                    parentBuckets[parentKey] = bucket;
-                }
-                bucket.Add(leaf);
+                rootsList.Add(leaf);
             }
         }
 
+        // Pure header parents — referenced by children but not themselves a leaf
+        // (e.g. "Augmentation" when none of its child Augment* skills file recipes
+        // directly under Augmentation itself). Materialize as header-only nodes.
         foreach (var (parentKey, children) in parentBuckets)
         {
+            if (leafByKey.ContainsKey(parentKey)) continue;
             var parentDisplay = _referenceData.Skills.TryGetValue(parentKey, out var pe) ? pe.DisplayName : parentKey;
             var sortedChildren = children
                 .OrderBy(c => c.DisplayName, StringComparer.Ordinal)

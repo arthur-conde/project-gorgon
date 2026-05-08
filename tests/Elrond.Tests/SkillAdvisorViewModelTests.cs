@@ -22,6 +22,39 @@ namespace Elrond.Tests;
 public class SkillAdvisorViewModelTests
 {
     [Fact]
+    public void BuildSkillTree_ParentWithOwnRecipes_GetsChildrenNestedNotDuplicated()
+    {
+        // Regression: when a parent skill (Alchemy) has its own recipes AND a
+        // child (Transmutation) also has recipes, we used to emit two nodes —
+        // one selectable Alchemy leaf at root + a separate header-only Alchemy
+        // grouping Transmutation. Now: a single selectable Alchemy node with
+        // Transmutation nested under it.
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill>
+            {
+                ["Alchemy"] = new(26, 0, 100, 200),
+                ["Transmutation"] = new(48, 0, 0, 200),
+            },
+            register: r =>
+            {
+                r.AddSkill("Alchemy", parents: []);
+                r.AddSkill("Transmutation", parents: ["Alchemy"]);
+                r.AddRecipe(rewardSkill: "Alchemy");
+                r.AddRecipe(rewardSkill: "Transmutation");
+            });
+
+        vm.SkillTreeRoots.Should().ContainSingle(
+            because: "Alchemy is the root; Transmutation nests under it");
+        var alchemy = vm.SkillTreeRoots[0];
+        alchemy.Key.Should().Be("Alchemy");
+        alchemy.IsHeaderOnly.Should().BeFalse(because: "Alchemy itself has recipes — it's selectable");
+        alchemy.IsSelectable.Should().BeTrue();
+        alchemy.CurrentLevel.Should().Be(26);
+        alchemy.Children.Should().ContainSingle();
+        alchemy.Children[0].Key.Should().Be("Transmutation");
+    }
+
+    [Fact]
     public void BuildSkillTree_GroupsAugmentationChildren_UnderHeaderOnlyParent()
     {
         // The two AugmentBrewing leaves both list "Augmentation" as their parent —
