@@ -205,8 +205,9 @@ public class SkillAdvisorEngineTests
     public void Analyze_UmbrellaSection_FlagsAnalysisAsUmbrella()
     {
         // Phrenology is the canonical umbrella: XpTable="None", recipes file under it
-        // but reward per-race sub-skills. The view degrades the section header to "—"
-        // placeholders for level/XP/remaining when this flag is set.
+        // but reward per-race sub-skills. The view degrades the section header's
+        // XP fraction / progress bar / remaining-line to "—" when this flag is set;
+        // CurrentLevel and CurrentBonusLevels still come from the export and render.
         var refData = new FakeRefData();
         refData.AddSkill("Phrenology", id: 86, combat: false, xpTable: "None", maxBonusLevels: 125);
         refData.AddSkill("Phrenology_Humans", id: 87, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
@@ -227,6 +228,63 @@ public class SkillAdvisorEngineTests
 
         analysis.IsUmbrellaSection.Should().BeTrue(
             because: "Phrenology has XpTable=None — the section can't be directly leveled");
+    }
+
+    [Fact]
+    public void Analyze_UmbrellaSection_HeaderHasRealLevelFromExport()
+    {
+        // Regression for #150: umbrella sections used to render Level "—" in the
+        // header even though the export carries a real Level (and BonusLevels).
+        // Phrenology with Level=9, BonusLevels=9 (the issue's repro fixture) — the
+        // export's 0/1 sentinel for XpTowardNextLevel/XpNeededForNextLevel still
+        // means the XP fraction is meaningless, but the level number itself isn't.
+        var refData = new FakeRefData();
+        refData.AddSkill("Phrenology", id: 86, combat: false, xpTable: "None", maxBonusLevels: 125);
+        refData.AddSkill("Phrenology_Humans", id: 87, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", [10L, 50L, 50L, 50L, 50L]);
+        refData.AddRecipe("recipe_phren_human", "Human Phrenology Research", "HumanPhrenologyResearch",
+            "Phrenology_Humans", 1, "Phrenology_Humans", 20, 100, null, null, null, sortSkill: "Phrenology");
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Phrenology"] = new(9, 9, 0, 1),
+                ["Phrenology_Humans"] = new(2, 0, 10, 50),
+            },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Phrenology", character)!;
+
+        analysis.CurrentLevel.Should().Be(9,
+            because: "umbrella sections still have a meaningful Level in the export — only the XP curve is missing");
+        analysis.CurrentBonusLevels.Should().Be(9,
+            because: "BonusLevels comes straight from the export and should flow through to the section header");
+    }
+
+    [Fact]
+    public void Analyze_PopulatesCurrentBonusLevelsFromCharacterExport()
+    {
+        // Normal (non-umbrella) section: BonusLevels must still be carried through
+        // SkillAnalysis so the header can render "Alchemy Level 26 (3 from bonuses)".
+        var refData = new FakeRefData();
+        refData.AddSkill("Alchemy", id: 2, combat: false, xpTable: "TypicalNoncombatSkill", maxBonusLevels: 25);
+        refData.AddXpTable("TypicalNoncombatSkill", new long[] { 10L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L,
+            50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L, 50L });
+        refData.AddRecipe("recipe_potion", "Potion", "Potion", "Alchemy", 1, "Alchemy", 10, 40, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Alchemy"] = new(26, 3, 100, 500) },
+            recipes: new Dictionary<string, int>());
+
+        var engine = new SkillAdvisorEngine(refData);
+        var analysis = engine.Analyze("Alchemy", character)!;
+
+        analysis.CurrentLevel.Should().Be(26);
+        analysis.CurrentBonusLevels.Should().Be(3,
+            because: "the engine must denormalise CharacterSkill.BonusLevels onto SkillAnalysis so the VM can render '(N from bonuses)'");
+        analysis.IsUmbrellaSection.Should().BeFalse(
+            because: "Alchemy has a normal XpTable — bonus-level rendering must work for non-umbrella sections too");
     }
 
     [Fact]

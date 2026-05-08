@@ -9,13 +9,15 @@ namespace Elrond.Domain;
 /// <see cref="RecipeAnalysis.CompletionsToLevel"/> reflect the total gap to that goal.
 /// <para/>
 /// <see cref="IsUmbrellaSection"/> is true when the section's host skill has no
-/// XpTable (e.g. Phrenology, Anatomy umbrella categories). The view degrades
-/// the section header to <c>—</c> placeholders for level/XP/remaining since
-/// those values are meaningless for skills that aren't directly levelable.
+/// XpTable (e.g. Phrenology, Anatomy umbrella categories). The view degrades the
+/// XP fraction, remaining-line, and progress bar to placeholders since those
+/// values are meaningless without a curve — but <see cref="CurrentLevel"/> and
+/// <see cref="CurrentBonusLevels"/> remain meaningful and come straight from the export.
 /// </summary>
 public sealed record SkillAnalysis(
     string SkillName,
     int CurrentLevel,
+    int CurrentBonusLevels,
     long CurrentXp,
     long XpNeededForNextLevel,
     long XpRemaining,
