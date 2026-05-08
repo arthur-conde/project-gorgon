@@ -6,6 +6,7 @@
         xmlns:controls="clr-namespace:Legolas.Controls"
         xmlns:converters="clr-namespace:Legolas.Views.Converters"
         xmlns:views="clr-namespace:Legolas.Views"
+        xmlns:rendering="clr-namespace:Legolas.Rendering"
         Title="Map Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -43,6 +44,13 @@
                     MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
                     MouseMove="Viewport_MouseMove"
                     MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
+                <!-- D2D pin / route / wedge layer (step B: validates GPU path
+                     end-to-end with a debug fill in the top-left corner). The
+                     real PinSceneRenderer wires up in step C and replaces the
+                     WPF ItemsControls / Polylines below. Until then, this layer
+                     sits behind the existing WPF visuals; both render. -->
+                <rendering:D2DOverlaySurface x:Name="MapSurface" DebugFill="True" IsHitTestVisible="False" />
+
                 <!-- Bearing-uncertainty wedge layer (behind everything) -->
                 <ItemsControl ItemsSource="{Binding Surveys}" IsHitTestVisible="False">
                     <ItemsControl.ItemsPanel>
