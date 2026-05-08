@@ -69,7 +69,10 @@ public sealed partial class SkillAdvisorViewModel
             // Inverted: predicate r => r.IsKnown applies when IsActive=false; toggling ON reveals unknowns.
             new("ShowUnknown",        "Show unknown",          r => r.IsKnown,                inverted: true,  isActive: false),
             new("FirstTimeBonusOnly", "First Time Bonus Only", r => r.FirstTimeBonusAvailable, inverted: false, isActive: false),
-            new("CraftableOnly",      "Craftable only",        r => Analysis is { } a && r.LevelRequired <= a.CurrentLevel, inverted: false, isActive: true),
+            // CraftableOnly compares against the recipe's *gating* skill, not the section's level.
+            // In umbrella sections (Phrenology files Phrenology_Goblins recipes) those differ —
+            // see SkillAdvisorEngine.Analyze for how GatingSkillCurrentLevel is populated.
+            new("CraftableOnly",      "Craftable only",        r => r.LevelRequired <= r.GatingSkillCurrentLevel, inverted: false, isActive: true),
             new("HideZeroXp",         "Hide 0 XP",             r => r.EffectiveXp > 0,         inverted: false, isActive: true),
             // Cookbook view shows recipes filed under a section regardless of which skill they level
             // (a fish dish in Cooking levels Fishing). Toggling this filter on hides the mixed-reward
@@ -188,7 +191,7 @@ public sealed partial class SkillAdvisorViewModel
 
     partial void OnAnalysisChanged(SkillAnalysis? value)
     {
-        // CraftableOnly closes over Analysis.CurrentLevel — re-run the filter when it shifts.
+        // Filter predicates (RewardingSectionOnly) close over Analysis — re-run them when it shifts.
         RecipesView.Refresh();
         // Section-header text properties are computed from Analysis; nudge the bound
         // TextBlocks to re-evaluate now that the source has changed.
