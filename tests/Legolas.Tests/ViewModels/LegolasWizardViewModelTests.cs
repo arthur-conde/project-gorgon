@@ -26,7 +26,7 @@ public class LegolasWizardViewModelTests
         var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);
         var wizard = new LegolasWizardViewModel(session, surveyFlow, motherlodeFlow,
-            controlPanel, motherlode, mapOverlay, nudgePad);
+            controlPanel, motherlode, mapOverlay, nudgePad, settings);
         return (wizard, session, surveyFlow, motherlodeFlow, settings);
     }
 

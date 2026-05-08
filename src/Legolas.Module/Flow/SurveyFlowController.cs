@@ -32,11 +32,13 @@ public sealed partial class SurveyFlowController : ObservableObject
 {
     private readonly SessionState _session;
     private readonly LegolasSettings _settings;
+    private readonly TimeProvider _clock;
 
-    public SurveyFlowController(SessionState session, LegolasSettings settings)
+    public SurveyFlowController(SessionState session, LegolasSettings settings, TimeProvider? clock = null)
     {
         _session = session;
         _settings = settings;
+        _clock = clock ?? TimeProvider.System;
         _session.AllCollected += OnAllCollected;
         // CanOptimize reads Surveys.Count, but [NotifyPropertyChangedFor] only
         // fires from CurrentState. Without this subscription the Go! button
@@ -87,6 +89,9 @@ public sealed partial class SurveyFlowController : ObservableObject
             _session.LastLogEvent = $"ConfirmPlayerPosition ignored — state is {CurrentState}";
             return;
         }
+        // Stamp the session start when the user actually commits to a run. ClearSurveys
+        // (called from Reset) wipes this so the next session gets a fresh stamp.
+        _session.StartedAt ??= _clock.GetUtcNow();
         TransitionTo(SurveyFlowState.Listening, nameof(ConfirmPlayerPosition));
     }
 

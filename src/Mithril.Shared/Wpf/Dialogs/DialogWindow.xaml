@@ -17,7 +17,8 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6"
+    <Border x:Name="DialogContainer"
+            Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6"
             MinWidth="360" MaxWidth="560">
         <DockPanel>
             <!-- Title bar -->

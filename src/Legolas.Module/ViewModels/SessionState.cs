@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -14,6 +15,23 @@ namespace Legolas.ViewModels;
 public sealed partial class SessionState : ObservableObject
 {
     public ObservableCollection<SurveyItemViewModel> Surveys { get; } = new();
+
+    /// <summary>
+    /// Items the player has actually collected during this session, keyed by item
+    /// display name (parser-canonical, case-insensitive). Surveys map 1:1 to a
+    /// surveyed node, but a node can yield multiple items — the chat parser is the
+    /// only place we see real quantities, so the ingestion service accumulates
+    /// here. Cleared by <see cref="ClearSurveys"/> alongside the survey list.
+    /// </summary>
+    public Dictionary<string, int> CollectedItems { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Wall-clock instant the current session started — set when the FSM transitions
+    /// AwaitingPosition → Listening (i.e. the user confirmed a player anchor and is
+    /// ready to listen for surveys). Null when no session has been started.
+    /// Cleared by <see cref="ClearSurveys"/>.
+    /// </summary>
+    public DateTimeOffset? StartedAt { get; set; }
 
     public SessionState()
     {
@@ -120,6 +138,8 @@ public sealed partial class SessionState : ObservableObject
     public void ClearSurveys()
     {
         Surveys.Clear();
+        CollectedItems.Clear();
+        StartedAt = null;
     }
 }
 

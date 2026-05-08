@@ -27,12 +27,42 @@ public class LogParserTests
     [Theory]
     [InlineData("[Status] Diamond x1 collected!", "Diamond", 1)]
     [InlineData("[Status] Gold Ingot x5 collected!", "Gold Ingot", 5)]
+    [InlineData("[Status] Citrine collected!", "Citrine", 1)]
+    [InlineData("[Status] Expert-Quality Metal Slab collected!", "Expert-Quality Metal Slab", 1)]
     public void Parses_item_collected(string line, string expectedName, int expectedCount)
     {
         var evt = _parser.TryParse(line, FixedTime);
 
-        evt.Should().BeOfType<ItemCollected>()
-            .Which.Should().BeEquivalentTo(new ItemCollected(FixedTime, expectedName, expectedCount));
+        var ic = evt.Should().BeOfType<ItemCollected>().Subject;
+        ic.Name.Should().Be(expectedName);
+        ic.Count.Should().Be(expectedCount);
+        ic.SpeedBonusItem.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("[Status] Garnet collected! Also found Fluorite (speed bonus!)", "Garnet", "Fluorite")]
+    [InlineData("[Status] Simple Metal Slab collected! Also found Simple Metal Slab (speed bonus!)", "Simple Metal Slab", "Simple Metal Slab")]
+    [InlineData("[Status] Carnelian collected! Also found Lapis Lazuli (speed bonus!)", "Carnelian", "Lapis Lazuli")]
+    public void Parses_item_collected_with_speed_bonus(string line, string expectedName, string expectedBonus)
+    {
+        var evt = _parser.TryParse(line, FixedTime);
+
+        var ic = evt.Should().BeOfType<ItemCollected>().Subject;
+        ic.Name.Should().Be(expectedName);
+        ic.SpeedBonusItem.Should().Be(expectedBonus);
+    }
+
+    [Theory]
+    [InlineData("[Status] Citrine x3 added to inventory.", "Citrine", 3)]
+    [InlineData("[Status] Expert-Quality Metal Slab x3 added to inventory.", "Expert-Quality Metal Slab", 3)]
+    [InlineData("[Status] Fluorite added to inventory.", "Fluorite", 1)]
+    [InlineData("[Status] Lump of Coal x10 added to inventory.", "Lump of Coal", 10)]
+    public void Parses_item_added_to_inventory(string line, string expectedName, int expectedCount)
+    {
+        var evt = _parser.TryParse(line, FixedTime);
+
+        evt.Should().BeOfType<ItemAddedToInventory>()
+            .Which.Should().BeEquivalentTo(new ItemAddedToInventory(FixedTime, expectedName, expectedCount));
     }
 
     [Fact]

@@ -12,6 +12,8 @@ namespace Mithril.Shared.Modules;
 ///         <see cref="ICraftListImportTarget"/> (Celebrimbor).</item>
 ///   <item><c>mithril://pippin/&lt;base64url&gt;</c> — hands the payload to
 ///         <see cref="IPippinShareImportTarget"/> (Pippin shared progress).</item>
+///   <item><c>mithril://legolas/&lt;base64url&gt;</c> — hands the payload to
+///         <see cref="ILegolasShareImportTarget"/> (Legolas survey report).</item>
 /// </list>
 /// Each action defines its own payload grammar so item names stay strict while the craft-list
 /// payload can hold a much longer base64url blob. Unknown actions are logged and dropped.
@@ -24,26 +26,32 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
     // we refuse anything that could confuse downstream lookups or smuggle separators.
     private static readonly Regex ItemPayloadPattern = new("^[A-Za-z0-9_]{1,128}$", RegexOptions.Compiled);
 
-    // mithril://list and mithril://pippin both carry a base64url-encoded gzip payload.
+    // mithril://list, pippin, and legolas all carry a base64url-encoded gzip payload.
     // Base64url uses [A-Za-z0-9_-]; cap length well above any plausible compressed payload
     // so we fail fast on anything pathological rather than handing it to the decoder.
     private static readonly Regex ListPayloadPattern = new("^[A-Za-z0-9_-]{1,8192}$", RegexOptions.Compiled);
     private static readonly Regex PippinPayloadPattern = new("^[A-Za-z0-9_-]{1,16384}$", RegexOptions.Compiled);
+    // Legolas payloads are smaller than Pippin's full-catalog progress dumps — a survey
+    // run is at most a couple dozen items + timestamps. 8192 is plenty.
+    private static readonly Regex LegolasPayloadPattern = new("^[A-Za-z0-9_-]{1,8192}$", RegexOptions.Compiled);
 
     private readonly IItemDetailPresenter _itemDetail;
     private readonly ICraftListImportTarget? _listImport;
     private readonly IPippinShareImportTarget? _pippinImport;
+    private readonly ILegolasShareImportTarget? _legolasImport;
     private readonly IDiagnosticsSink? _diag;
 
     public DeepLinkRouter(
         IItemDetailPresenter itemDetail,
         ICraftListImportTarget? listImport = null,
         IPippinShareImportTarget? pippinImport = null,
+        ILegolasShareImportTarget? legolasImport = null,
         IDiagnosticsSink? diag = null)
     {
         _itemDetail = itemDetail;
         _listImport = listImport;
         _pippinImport = pippinImport;
+        _legolasImport = legolasImport;
         _diag = diag;
     }
 
@@ -102,6 +110,20 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
                     return false;
                 }
                 _pippinImport.ImportFromLinkPayload(payload);
+                return true;
+
+            case "legolas":
+                if (!LegolasPayloadPattern.IsMatch(payload))
+                {
+                    _diag?.Info("DeepLink", $"Rejected: legolas payload (len={payload.Length}) failed validation.");
+                    return false;
+                }
+                if (_legolasImport is null)
+                {
+                    _diag?.Info("DeepLink", "Rejected: no legolas import target registered.");
+                    return false;
+                }
+                _legolasImport.ImportFromLinkPayload(payload);
                 return true;
 
             default:

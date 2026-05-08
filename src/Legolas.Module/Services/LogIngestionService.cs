@@ -56,6 +56,18 @@ public sealed class LogIngestionService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Buffer of recent "[Status] X xN added to inventory." adds. PG fires these
+    /// before the matching "[Status] X collected!" line and they're the only
+    /// place real item counts appear. We drain matching entries on each
+    /// <see cref="ItemCollected"/> (primary + speed-bonus item if present) so
+    /// unrelated adds (skinning, crafting, vendor purchases) get discarded
+    /// instead of leaking into the survey report. Capped to bound memory if
+    /// "collected!" never arrives for some buffered entry.
+    /// </summary>
+    private const int PendingAddBufferCap = 32;
+    private readonly List<(string Name, int Count)> _pendingAdds = new();
+
     private void Dispatch(GameEvent evt)
     {
         PostToUi(() =>
@@ -65,6 +77,9 @@ public sealed class LogIngestionService : BackgroundService
             {
                 case SurveyDetected sd:
                     HandleSurveyDetected(sd);
+                    break;
+                case ItemAddedToInventory ia:
+                    HandleItemAddedToInventory(ia);
                     break;
                 case ItemCollected ic:
                     HandleItemCollected(ic);
@@ -79,7 +94,9 @@ public sealed class LogIngestionService : BackgroundService
     private static string Describe(GameEvent evt) => evt switch
     {
         SurveyDetected sd => $"Survey: {sd.Name} ({sd.Offset.East:0}E, {sd.Offset.North:0}N)",
-        ItemCollected ic => $"Collected: {ic.Name} x{ic.Count}",
+        ItemAddedToInventory ia => $"Added: {ia.Name} x{ia.Count}",
+        ItemCollected ic when ic.SpeedBonusItem is not null => $"Collected: {ic.Name} (+ {ic.SpeedBonusItem} speed bonus)",
+        ItemCollected ic => $"Collected: {ic.Name}",
         MotherlodeDistance md => $"Motherlode: {md.DistanceMetres}m",
         UnknownLine ul => $"Unknown: {ul.RawLine}",
         _ => evt.GetType().Name,
@@ -145,8 +162,28 @@ public sealed class LogIngestionService : BackgroundService
         return null;
     }
 
+    private void HandleItemAddedToInventory(ItemAddedToInventory ia)
+    {
+        _pendingAdds.Add((ia.Name, ia.Count));
+        if (_pendingAdds.Count > PendingAddBufferCap)
+            _pendingAdds.RemoveRange(0, _pendingAdds.Count - PendingAddBufferCap);
+    }
+
     private void HandleItemCollected(ItemCollected ic)
     {
+        // Drain pending "added to inventory" entries that match this collection.
+        // Primary item + (optional) speed-bonus item are the only ones that count
+        // toward this survey; everything else in the buffer is unrelated noise
+        // (skinning drops, vendor purchases, etc.) and gets discarded after.
+        var primaryCount = DrainPendingForName(ic.Name);
+        AccumulateCollected(ic.Name, primaryCount);
+        if (!string.IsNullOrEmpty(ic.SpeedBonusItem))
+        {
+            var bonusCount = DrainPendingForName(ic.SpeedBonusItem!);
+            AccumulateCollected(ic.SpeedBonusItem!, bonusCount);
+        }
+        _pendingAdds.Clear();
+
         SurveyItemViewModel? best = null;
         var bestOrder = int.MaxValue;
         foreach (var s in _session.Surveys)
@@ -164,12 +201,37 @@ public sealed class LogIngestionService : BackgroundService
         if (best is not null)
         {
             best.UpdateModel(best.Model with { Collected = true });
-            _session.LastLogEvent = $"Collected: {ic.Name} x{ic.Count} → marked";
+            _session.LastLogEvent = $"Collected: {ic.Name} → marked";
             return;
         }
 
         _session.LastLogEvent = _session.Surveys.Count == 0
-            ? $"Collected: {ic.Name} x{ic.Count} → no surveys tracked"
-            : $"Collected: {ic.Name} x{ic.Count} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
+            ? $"Collected: {ic.Name} → no surveys tracked"
+            : $"Collected: {ic.Name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
+    }
+
+    private int DrainPendingForName(string name)
+    {
+        // Walk back-to-front so we consume the most recent matching adds first
+        // (and so RemoveAt indices stay valid as we shrink the list).
+        var total = 0;
+        for (var i = _pendingAdds.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_pendingAdds[i].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                total += _pendingAdds[i].Count;
+                _pendingAdds.RemoveAt(i);
+            }
+        }
+        // Defensive default: if the chat-log "added to inventory" line never arrived
+        // (unusual, but timing skew can happen), credit at least one item so the
+        // report doesn't drop the collection entirely.
+        return total > 0 ? total : 1;
+    }
+
+    private void AccumulateCollected(string name, int count)
+    {
+        _session.CollectedItems.TryGetValue(name, out var existing);
+        _session.CollectedItems[name] = existing + count;
     }
 }

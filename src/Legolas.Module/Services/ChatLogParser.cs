@@ -10,9 +10,20 @@ public sealed partial class ChatLogParser : IChatLogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex SurveyRegex();
 
-    [GeneratedRegex(@"\[Status\]\s+(?<name>.+?)\s+(?:x(?<count>\d+)\s+)?collected!",
+    // Survey collection. PG moved counts onto the "added to inventory" line, so the
+    // (?:x...)? group is rarely present in real chat — keep it matched so legacy /
+    // edge cases still parse. The optional "Also found Y (speed bonus!)" suffix
+    // captures the second item produced by a survey speed bonus.
+    [GeneratedRegex(@"\[Status\]\s+(?<name>.+?)(?:\s+x(?<count>\d+))?\s+collected!(?:\s+Also found\s+(?<bonus>.+?)\s+\(speed bonus!\))?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex CollectRegex();
+
+    // "[Status] X added to inventory." or "[Status] X xN added to inventory."
+    // Trailing period is matched loosely; we don't anchor end-of-line so any later
+    // chat formatter quirks (e.g. trailing whitespace) still resolve.
+    [GeneratedRegex(@"\[Status\]\s+(?<name>.+?)(?:\s+x(?<count>\d+))?\s+added to inventory\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex InventoryAddRegex();
 
     [GeneratedRegex(@"The treasure is (?<dist>\d+) metres from here",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
@@ -39,6 +50,23 @@ public sealed partial class ChatLogParser : IChatLogParser
                 new MetreOffset(east, north));
         }
 
+        // Try "added to inventory" before "collected!" — the regexes don't overlap
+        // (different anchor phrases), but ordering keeps intent obvious.
+        var addMatch = InventoryAddRegex().Match(line);
+        if (addMatch.Success)
+        {
+            var count = 1;
+            if (addMatch.Groups["count"].Success
+                && int.TryParse(addMatch.Groups["count"].ValueSpan, out var addN))
+            {
+                count = addN;
+            }
+            return new ItemAddedToInventory(
+                timestamp,
+                addMatch.Groups["name"].Value.Trim(),
+                count);
+        }
+
         var collectMatch = CollectRegex().Match(line);
         if (collectMatch.Success)
         {
@@ -48,10 +76,16 @@ public sealed partial class ChatLogParser : IChatLogParser
             {
                 count = n;
             }
+            string? bonus = null;
+            if (collectMatch.Groups["bonus"].Success)
+            {
+                bonus = collectMatch.Groups["bonus"].Value.Trim();
+            }
             return new ItemCollected(
                 timestamp,
                 collectMatch.Groups["name"].Value.Trim(),
-                count);
+                count,
+                bonus);
         }
 
         var motherlodeMatch = MotherlodeRegex().Match(line);

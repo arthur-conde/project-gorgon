@@ -83,6 +83,7 @@ public static class ShellServiceCollectionExtensions
                 sp.GetRequiredService<IItemDetailPresenter>(),
                 sp.GetService<ICraftListImportTarget>(),
                 sp.GetService<IPippinShareImportTarget>(),
+                sp.GetService<ILegolasShareImportTarget>(),
                 sp.GetService<IDiagnosticsSink>()));
 
     public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>
