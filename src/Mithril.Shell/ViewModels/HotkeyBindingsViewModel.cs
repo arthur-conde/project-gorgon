@@ -119,7 +119,20 @@ public sealed partial class HotkeyBindingsViewModel : ObservableObject
         RowsView.SortDescriptions.Add(new SortDescription(nameof(HotkeyRowViewModel.Category), ListSortDirection.Ascending));
         RowsView.SortDescriptions.Add(new SortDescription(nameof(HotkeyRowViewModel.DisplayName), ListSortDirection.Ascending));
         RowsView.Filter = FilterRow;
+        // Toggling DeveloperMode adds/removes IsDeveloperOnly commands from the list;
+        // mirror IMithrilModule's pattern so the UI updates without a restart.
+        _settings.PropertyChanged += OnSettingsPropertyChanged;
         RecheckConflicts();
+    }
+
+    private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ShellSettings.DeveloperMode)) return;
+        // Detach existing rows' handlers, rebuild from registry with the new
+        // filter, then re-apply bindings + conflict checks against the fresh set.
+        foreach (var row in Rows) row.PropertyChanged -= OnRowPropertyChanged;
+        BuildRows();
+        ApplyAndRecheck();
     }
 
     public ObservableCollection<HotkeyRowViewModel> Rows { get; } = new();
@@ -147,6 +160,10 @@ public sealed partial class HotkeyBindingsViewModel : ObservableObject
         Rows.Clear();
         foreach (var cmd in _registry.Commands)
         {
+            // Hide developer-only commands unless dev mode is on. Bindings
+            // already persisted for these commands stay live in the hotkey
+            // service — this only affects what's surfaced in the UI.
+            if (cmd.IsDeveloperOnly && !_settings.DeveloperMode) continue;
             var row = new HotkeyRowViewModel(cmd, _settings, _service, () => Rows.Where(r => r.Binding is not null).Select(r => r.Binding!));
             row.PropertyChanged += OnRowPropertyChanged;
             Rows.Add(row);

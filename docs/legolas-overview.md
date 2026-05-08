@@ -43,7 +43,11 @@ SessionState             [ViewModels/SessionState.cs]   observable shared state 
 CoordinateProjector      [Services/CoordinateProjector.cs]   metres → pixels; 4-DOF refit of origin/scale/rotation
    │
    ▼
-MapOverlayView (XAML)    [Views/MapOverlayView.xaml]   pin layer, route polyline, bearing wedges, anchor thumb
+PinScene + renderer      [Rendering/]                       per-frame snapshot drawn via Direct2D in a D3DImage
+   │
+   ▼
+MapOverlayView (XAML)    [Views/MapOverlayView.xaml]   thin WPF chrome (header, hint banner, nudge pad, resize grips) +
+                                                       a single D2DOverlaySurface element for pins/routes/wedges/anchor
 ```
 
 The user's only inputs to the loop are: clicking the map *once* in `AwaitingPosition` (sets the initial anchor), dragging/nudging existing pins to correct them, and pressing **Optimize Route**. Survey placement is automatic — there is no per-survey click-to-confirm gesture.
@@ -217,7 +221,13 @@ This means the same arrow keys that nudge a selected pin will fall through to th
 | [`ViewModels/MapOverlayViewModel.cs`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) | Click handling, pin placement, route + wedge geometry rebuilds. |
 | [`ViewModels/SurveyItemViewModel.cs`](../src/Legolas.Module/ViewModels/SurveyItemViewModel.cs) | Per-survey VM wrapper. |
 | [`ViewModels/ControlPanelViewModel.cs`](../src/Legolas.Module/ViewModels/ControlPanelViewModel.cs) | Panel-side VM (start/stop, mode switching). |
-| [`Views/MapOverlayView.xaml{,.cs}`](../src/Legolas.Module/Views/MapOverlayView.xaml) | Overlay UI + drag/click handlers. |
+| [`Views/MapOverlayView.xaml{,.cs}`](../src/Legolas.Module/Views/MapOverlayView.xaml) | Overlay UI: WPF chrome + a single D2D surface element for the rendered pin layer. Hosts drag/click handlers. |
+| [`Rendering/D2DOverlaySurface.cs`](../src/Legolas.Module/Rendering/D2DOverlaySurface.cs) | WPF `FrameworkElement` wrapping a `D3DImage`. Drives the render loop via `CompositionTarget.Rendering`, applies per-monitor DPI, fires a `Render` event with the live D2D `RenderTarget`. |
+| [`Rendering/D3DDeviceLifecycle.cs`](../src/Legolas.Module/Rendering/D3DDeviceLifecycle.cs) | D3D11 + D3D9Ex device pair, shared-handle texture that bridges them, D2D render target on top. The "shared-surface dance" that lets `D3DImage` (D3D9-only) present GPU pixels written by D2D 1.1 (D3D11-only). |
+| [`Rendering/PinScene.cs`](../src/Legolas.Module/Rendering/PinScene.cs) | Immutable per-frame snapshot — pin positions, route points, wedges, active treatment, brush colours, dash offset. |
+| [`Rendering/PinSceneRenderer.cs`](../src/Legolas.Module/Rendering/PinSceneRenderer.cs) | Pure draw logic. Routes, active segment (dashed marching ants), bearing wedges, survey pins (outer + centre), active-pin treatments (Halo, Glow, ScaleUp, FillSwap), player anchor. |
+| [`Rendering/D2DBrushCache.cs`](../src/Legolas.Module/Rendering/D2DBrushCache.cs) | ARGB-keyed `ID2D1SolidColorBrush` cache so the renderer doesn't allocate per draw call. Reset on render-target rebuild (resize, DPI change). |
+| [`Rendering/MarchingAntsClock.cs`](../src/Legolas.Module/Rendering/MarchingAntsClock.cs) | Stopwatch-based dash-offset advancer. Replaces the WPF `Storyboard` that used to invalidate continuously. |
 | [`Hotkeys/Commands.cs`](../src/Legolas.Module/Hotkeys/Commands.cs) | All 24 hotkey commands. |
 | [`Controls/ClickThrough.cs`](../src/Legolas.Module/Controls/ClickThrough.cs) | `WS_EX_TRANSPARENT` P/Invoke helpers. |
 | [`Domain/LegolasSettings.cs`](../src/Legolas.Module/Domain/LegolasSettings.cs) | Persisted settings. |
@@ -262,6 +272,13 @@ WPF screen Y grows downward; map north grows upward. `Project` negates the rotat
 
 ### Overlay is strictly 1:1 with the game map
 
-No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the canvas inside renders at exactly 1 device pixel per CSS pixel. The 2×2 player anchor stays crisp via `SnapsToDevicePixels` + `UseLayoutRounding` + `EdgeMode="Aliased"` on the rectangle.
+No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the D2D canvas inside renders at exactly 1 DIP per CSS pixel, and the D3D11 back buffer is sized in device pixels for per-monitor DPI correctness. If you find yourself adding a `RenderTransform` or scaling factor to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.
 
-If you find yourself adding a `RenderTransform` to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.
+### Renderer is Direct2D in a D3DImage, not WPF retained-mode
+
+The pin / route / wedge / anchor layer is drawn immediate-mode by `PinSceneRenderer` on a Direct2D render target presented through a `D3DImage`. WPF chrome (header, hint banner, nudge pad, resize grips) is still vanilla XAML. The window keeps `AllowsTransparency="True"` — `D3DImage` bypasses the software-rendering penalty for its child surface, and the WPF chrome is small enough that its software rendering cost is invisible.
+
+Implications:
+- Hit-testing for pins is via the existing `Viewport_MouseLeftButton*` handlers on the WPF Viewport (the D2D surface is `IsHitTestVisible=False`). Selection comes from the wizard ListBox; no per-pin D2D hit-test exists.
+- Tooltips on hover are not reproduced — WPF's `ToolTip="{Binding Name}"` had no D2D equivalent without a custom popup. If users miss it, the right answer is a separate WPF popup driven by mouse position + a virtual hit-test against the latest `PinScene`, not a re-introduction of WPF pins.
+- No retained-mode layout for pins means the active-pin "shift" bug (issue tracked at the start of the rewrite) is structurally impossible — D2D draws at exact coordinates with no Grid auto-sizing.

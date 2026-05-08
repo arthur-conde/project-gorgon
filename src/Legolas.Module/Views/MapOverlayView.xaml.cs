@@ -4,9 +4,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
-using Legolas.Flow;
-using Legolas.ViewModels;
 using Legolas.Domain;
+using Legolas.Flow;
+using Legolas.Rendering;
+using Legolas.ViewModels;
 
 namespace Legolas.Views;
 
@@ -33,9 +34,17 @@ public partial class MapOverlayView : Window
     private bool _draggingAnchorFromViewport;
     private SurveyItemViewModel? _draggingPinFromViewport;
 
+    private readonly D2DBrushCache _brushCache = new();
+    private readonly MarchingAntsClock _antsClock = new();
+
     public MapOverlayView()
     {
         InitializeComponent();
+        // Wire the D2D pin renderer. Stays attached for the life of the
+        // window; the surface itself manages CompositionTarget.Rendering
+        // subscription based on visibility, so this handler only fires when
+        // there's actually a frame to draw.
+        MapSurface.Render += OnMapSurfaceRender;
     }
 
     public MapOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver, NudgePadViewModel nudgePad) : this()
@@ -59,7 +68,111 @@ public partial class MapOverlayView : Window
             if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
                 ClickThrough.Apply(this, settings.ClickThroughMap);
         };
+        Closed += (_, _) =>
+        {
+            MapSurface.Render -= OnMapSurfaceRender;
+            _brushCache.Dispose();
+            MapSurface.Dispose();
+        };
     }
+
+    private void OnMapSurfaceRender(object? sender, D2DRenderEventArgs e)
+    {
+        if (DataContext is not MapOverlayViewModel vm) return;
+
+        // Bind the brush cache to the current render target — cheap when
+        // unchanged, drops cached brushes when the target rebuilds (resize,
+        // device-lost) so the cache never holds dangling COM pointers.
+        _brushCache.Bind(e.RenderTarget);
+
+        var wedges = new List<WedgeArc>(vm.Surveys.Count);
+        var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var selected = vm.Session.SelectedSurvey;
+        var listening = vm.IsListening;
+        int? activeIndex = null;
+        foreach (var s in vm.Surveys)
+        {
+            if (s.WedgeArc is { } arc) wedges.Add(arc);
+            // IsVisible mirrors the WPF data-template's Visibility binding —
+            // collected pins drop out, anything without a projected pixel too.
+            if (s.IsVisible)
+            {
+                if (listening && ReferenceEquals(s, selected))
+                    activeIndex = pins.Count;
+                pins.Add(s.EffectivePixel!.Value);
+            }
+        }
+
+        ActivePinTreatmentSpec? activeSpec = null;
+        if (activeIndex.HasValue)
+        {
+            var aps = vm.ActivePinStyle;
+            activeSpec = new ActivePinTreatmentSpec(
+                Treatment: aps.Treatment,
+                Color: ParseColor(aps.Color),
+                HaloPaddingPx: aps.HaloPaddingPx,
+                StrokeThickness: aps.HaloThickness,
+                GlowBlurRadius: aps.GlowBlurRadius);
+        }
+
+        var pinStyle = vm.PinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: pinStyle.Outer.Shape,
+            FillColor: ParseColor(pinStyle.Outer.FillColor),
+            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
+            StrokeStyle: pinStyle.Outer.StrokeStyle,
+            StrokeThickness: pinStyle.Outer.StrokeThickness,
+            // Outer Size on survey pins is unused (driven by SurveyPinRadiusMetres);
+            // see LegolasPinStyle docs.
+            Size: 0);
+        var centerStyle = new PinLayerStyle(
+            Shape: pinStyle.Center.Shape,
+            FillColor: ParseColor(pinStyle.Center.FillColor),
+            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
+            StrokeStyle: pinStyle.Center.StrokeStyle,
+            StrokeThickness: pinStyle.Center.StrokeThickness,
+            Size: pinStyle.Center.Size);
+
+        var playerStyle = vm.PlayerPinStyle;
+        var playerOuterStyle = new PinLayerStyle(
+            Shape: playerStyle.Outer.Shape,
+            FillColor: ParseColor(playerStyle.Outer.FillColor),
+            StrokeColor: ParseColor(playerStyle.Outer.StrokeColor),
+            StrokeStyle: playerStyle.Outer.StrokeStyle,
+            StrokeThickness: playerStyle.Outer.StrokeThickness,
+            // Player pin's outer Size IS meaningful — drives the visible
+            // diameter the way SurveyPinRadiusMetres does for survey pins.
+            Size: playerStyle.Outer.Size);
+        var playerCenterStyle = new PinLayerStyle(
+            Shape: playerStyle.Center.Shape,
+            FillColor: ParseColor(playerStyle.Center.FillColor),
+            StrokeColor: ParseColor(playerStyle.Center.StrokeColor),
+            StrokeStyle: playerStyle.Center.StrokeStyle,
+            StrokeThickness: playerStyle.Center.StrokeThickness,
+            Size: playerStyle.Center.Size);
+
+        var scene = new PinScene(
+            RoutePoints: vm.RoutePoints,
+            ActiveSegmentPoints: vm.ActiveSegmentPoints,
+            Wedges: wedges,
+            SurveyPins: pins,
+            ActivePinIndex: activeIndex,
+            ActiveTreatment: activeSpec,
+            SurveyOuter: outerStyle,
+            SurveyCenter: centerStyle,
+            SurveyOuterDiameter: vm.PinDiameter,
+            PlayerPosition: vm.Session.HasPlayerPosition ? vm.PlayerPosition : null,
+            PlayerOuter: playerOuterStyle,
+            PlayerCenter: playerCenterStyle,
+            RouteLineColor: vm.Brushes.RouteLine.Color,
+            WedgeFillColor: vm.Brushes.BearingWedgeFill.Color,
+            WedgeStrokeColor: vm.Brushes.BearingWedgeStroke.Color,
+            ActiveSegmentDashOffset: _antsClock.Advance());
+
+        PinSceneRenderer.Render(scene, e.RenderTarget, e.Factory, _brushCache);
+    }
+
+    private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

@@ -1,4 +1,3 @@
-using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 
@@ -9,8 +8,14 @@ public sealed partial class SurveyItemViewModel : ObservableObject
     [ObservableProperty]
     private Survey _model;
 
+    /// <summary>
+    /// Bearing-uncertainty wedge for Motherlode mode. Raw inputs the D2D
+    /// renderer constructs the arc from each frame; null when no wedge
+    /// should render (Survey mode, corrected pin, collected, etc.).
+    /// Replaces the WPF <c>Geometry?</c> the legacy ItemsControl bound to.
+    /// </summary>
     [ObservableProperty]
-    private Geometry? _wedgeGeometry;
+    private WedgeArc? _wedgeArc;
 
     [ObservableProperty]
     private bool _isActiveTarget;

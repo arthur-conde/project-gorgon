@@ -11,6 +11,13 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="MahApps.Metro" />
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+    <!-- Direct2D pin renderer (Rendering/D2DOverlaySurface). D2D 1.1 needs
+         a D3D11 device (Vortice.Direct3D11), and D3D9Ex is needed for the
+         D3DImage shared-surface dance — Vortice ships D3D11 as a separate
+         package in 3.x, not transitively through Vortice.Direct2D1. -->
+    <PackageReference Include="Vortice.Direct2D1" />
+    <PackageReference Include="Vortice.Direct3D9" />
+    <PackageReference Include="Vortice.Direct3D11" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />

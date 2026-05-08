@@ -287,6 +287,26 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NudgeStepFine)));
         }
     }
+
+    /// <summary>
+    /// Pin count the perf harness commands inject. Lets a developer A/B
+    /// median (~30) vs. tail-of-distribution (~100+) session sizes by changing
+    /// one setting instead of bouncing between separate commands. Clamped to a
+    /// sensible upper bound so a fat-fingered value doesn't lock the UI thread.
+    /// Diagnostic only — the harness itself is gated under developer mode.
+    /// </summary>
+    private int _perfHarnessPinCount = 30;
+    public int PerfHarnessPinCount
+    {
+        get => _perfHarnessPinCount;
+        set
+        {
+            var clamped = Math.Clamp(value, 1, 1000);
+            if (_perfHarnessPinCount == clamped) return;
+            _perfHarnessPinCount = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PerfHarnessPinCount)));
+        }
+    }
 }
 
 public sealed class WindowLayout
