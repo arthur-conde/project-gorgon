@@ -236,9 +236,14 @@ public sealed class SkillAdvisorEngine
         var rate = recipe.RewardSkillXpDropOffRate ?? 1;
         if (rate <= 0) rate = 1;
 
-        // Each 'rate' levels past drop-off reduces by dropOffPct
+        // RewardSkillXpDropOffLevel is the level AT WHICH the first reduction
+        // already applies — not the level after which drop-off begins. So at
+        // playerLevel == dropOffLevel we owe one reduction; the early-out above
+        // covers playerLevel < dropOffLevel. Each additional 'rate' levels past
+        // drop-off compounds another reduction. (Closes #159 — first tier was
+        // silently skipped, making Elrond's effective XP one tier too high.)
         var levelsPast = playerLevel - dropOffLevel;
-        var reductions = levelsPast / rate;
+        var reductions = levelsPast / rate + 1;
         var remaining = 1.0f;
         for (var i = 0; i < reductions; i++)
         {
