@@ -26,6 +26,13 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMithrilGameServices(this IServiceCollection services) =>
         services
             .AddSingleton<IGameClock, GameClock>()
+            // Shift catalog is bundled JSON with a hardcoded fallback —
+            // critical-path for the shell's "next shift" countdown and the
+            // Gandalf shift-alarm scheduler, so we'd rather degrade to stale
+            // data than to no data on a bundled-file failure.
+            .AddSingleton<IShiftCatalog>(sp => new JsonShiftCatalog(
+                bundledDir: null,
+                diag: sp.GetService<IDiagnosticsSink>()))
             .AddSingleton<IPlayerLogStream, PlayerLogStream>()
             .AddSingleton<IChatLogStream, ChatLogStream>()
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(

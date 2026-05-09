@@ -29,9 +29,11 @@ public sealed class ShiftAlarmConfig : INotifyPropertyChanged
 
 /// <summary>
 /// Map of in-game-time-of-day shift slug → per-shift alarm config. Keyed by
-/// the slug from <see cref="Mithril.Shared.Game.TimeOfDayShifts.All"/>.
-/// Persisted globally at <c>%LocalAppData%/Mithril/Gandalf/shifts.json</c>;
-/// shift transitions are character-agnostic.
+/// the slug from <see cref="Mithril.Shared.Game.IShiftCatalog.Shifts"/>;
+/// slugs are the persistence contract — preserve them across catalog
+/// schema versions so user-toggled rows don't orphan on update. Persisted
+/// globally at <c>%LocalAppData%/Mithril/Gandalf/shifts.json</c>; shift
+/// transitions are character-agnostic.
 /// </summary>
 public sealed class GandalfShiftSettings : INotifyPropertyChanged
 {

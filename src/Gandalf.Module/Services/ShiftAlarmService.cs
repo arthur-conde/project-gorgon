@@ -9,9 +9,9 @@ using Mithril.Shared.Wpf;
 namespace Gandalf.Services;
 
 /// <summary>
-/// Fires alarms at Project Gorgon's six published in-game-time-of-day shift
+/// Fires alarms at Project Gorgon's published in-game-time-of-day shift
 /// transitions (Midnight / Dawn / Morning / Afternoon / Dusk / Night;
-/// see <see cref="TimeOfDayShifts"/>). Distinct from the user-curated timer
+/// see <see cref="IShiftCatalog"/>). Distinct from the user-curated timer
 /// pipeline (<see cref="TimerAlarmService"/>) — shifts are global,
 /// character-agnostic, and have no Start/Done lifecycle, so an
 /// <see cref="Domain.ITimerSource"/>-style projection is over-scope. Owns
@@ -21,6 +21,7 @@ namespace Gandalf.Services;
 public sealed class ShiftAlarmService : IDisposable
 {
     private readonly IGameClock _gameClock;
+    private readonly IShiftCatalog _catalog;
     private readonly GandalfSettings _globalSettings;
     private readonly GandalfShiftSettings _shiftSettings;
     private readonly TimeProvider _time;
@@ -32,12 +33,14 @@ public sealed class ShiftAlarmService : IDisposable
 
     public ShiftAlarmService(
         IGameClock gameClock,
+        IShiftCatalog catalog,
         GandalfSettings globalSettings,
         GandalfShiftSettings shiftSettings,
         TimeProvider? time = null,
         Dispatcher? dispatcher = null)
     {
         _gameClock = gameClock;
+        _catalog = catalog;
         _globalSettings = globalSettings;
         _shiftSettings = shiftSettings;
         _time = time ?? TimeProvider.System;
@@ -124,7 +127,7 @@ public sealed class ShiftAlarmService : IDisposable
         if (_disposed) return;
 
         var floor = _time.GetUtcNow();
-        var (at, shift) = TimeOfDayShifts.NextTransition(_gameClock, floor);
+        var (at, shift) = _catalog.NextTransition(_gameClock, floor);
         _scheduledFor = shift;
 
         var delay = at - floor;

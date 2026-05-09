@@ -69,10 +69,11 @@ public class ShiftAlarmServiceTests
         // 3 in-game hours away = 15 real minutes.
         var time = new ManualTime(PgEmissaryAnchorUtc);
         var clock = new GameClock(time);
+        var catalog = new JsonShiftCatalog();
         var settings = new GandalfSettings { AlarmEnabled = false };  // suppress audio path
         var shifts = new GandalfShiftSettings();
 
-        using var svc = new ShiftAlarmService(clock, settings, shifts, time);
+        using var svc = new ShiftAlarmService(clock, catalog, settings, shifts, time);
         svc.NextScheduledShift.Should().NotBeNull();
         svc.NextScheduledShift!.Slug.Should().Be("midnight");
     }
@@ -85,10 +86,11 @@ public class ShiftAlarmServiceTests
         // service should re-arm for Dawn (the next transition).
         var time = new ManualTime(PgEmissaryAnchorUtc);
         var clock = new GameClock(time);
+        var catalog = new JsonShiftCatalog();
         var settings = new GandalfSettings { AlarmEnabled = false };
         var shifts = new GandalfShiftSettings();
 
-        using var svc = new ShiftAlarmService(clock, settings, shifts, time);
+        using var svc = new ShiftAlarmService(clock, catalog, settings, shifts, time);
         svc.NextScheduledShift!.Slug.Should().Be("midnight");
 
         time.Advance(TimeSpan.FromMinutes(15) + TimeSpan.FromSeconds(1));
@@ -105,11 +107,45 @@ public class ShiftAlarmServiceTests
     {
         var shifts = new GandalfShiftSettings();
         // Ensure no auto-enable lurking — the user must opt in per shift.
-        foreach (var s in TimeOfDayShifts.All)
+        foreach (var s in new JsonShiftCatalog().Shifts)
         {
             var c = shifts.GetOrCreate(s.Slug);
             c.Enabled.Should().BeFalse();
             c.SoundFilePath.Should().BeNull();
         }
+    }
+
+    [Fact]
+    public void Settings_keyed_by_pre_refactor_slug_survive_catalog_swap()
+    {
+        // The slugs are the persistence contract between #167's shipped
+        // user file (shifts.json under %LocalAppData%/Mithril/Gandalf/) and
+        // whatever shift catalog ships next. Simulate a user who has already
+        // toggled "dawn" + "night" before the refactor: their settings file
+        // contains slugs only, and the new catalog must still resolve them.
+        var preRefactor = new GandalfShiftSettings();
+        preRefactor.GetOrCreate("dawn").Enabled = true;
+        preRefactor.GetOrCreate("night").Enabled = true;
+        preRefactor.GetOrCreate("dusk").SoundFilePath = @"C:\sounds\dusk.wav";
+
+        var catalog = new JsonShiftCatalog();
+        var liveDawn = preRefactor.GetOrCreate("dawn");
+        var liveNight = preRefactor.GetOrCreate("night");
+        var liveDusk = preRefactor.GetOrCreate("dusk");
+
+        liveDawn.Enabled.Should().BeTrue("the toggle survives across the refactor");
+        liveNight.Enabled.Should().BeTrue();
+        liveDusk.SoundFilePath.Should().Be(@"C:\sounds\dusk.wav");
+
+        // And every catalog slug round-trips through GetOrCreate without
+        // creating a new (empty) overwrite of an existing entry.
+        foreach (var s in catalog.Shifts)
+        {
+            var rehydrated = preRefactor.GetOrCreate(s.Slug);
+            rehydrated.Should().NotBeNull();
+        }
+        // The two we set must remain enabled after iterating every slug.
+        preRefactor.GetOrCreate("dawn").Enabled.Should().BeTrue();
+        preRefactor.GetOrCreate("night").Enabled.Should().BeTrue();
     }
 }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "source": "https://pgemissary.com/static/js/game_clock.js",
+  "snapshotDate": "2026-05-09",
+  "comment": "Project Gorgon's six published in-game-time-of-day shifts. Mirrored from pgemissary's TIME_OF_DAY constant. If pgemissary updates the schedule (re-anchoring a shift's start hour, renaming a label), bump schemaVersion only on a breaking shape change; data-only edits keep version 1.",
+  "shifts": [
+    { "slug": "midnight",  "label": "Midnight",  "emoji": "🌑",     "startHour": 0  },
+    { "slug": "dawn",      "label": "Dawn",      "emoji": "🌅",     "startHour": 5  },
+    { "slug": "morning",   "label": "Morning",   "emoji": "☀️",     "startHour": 8  },
+    { "slug": "afternoon", "label": "Afternoon", "emoji": "🌤️", "startHour": 12 },
+    { "slug": "dusk",      "label": "Dusk",      "emoji": "🌇",     "startHour": 17 },
+    { "slug": "night",     "label": "Night",     "emoji": "🌙",     "startHour": 20 }
+  ]
+}
