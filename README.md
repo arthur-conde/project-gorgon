@@ -197,3 +197,5 @@ App settings persist under `%LocalAppData%\Mithril\` — each module gets its ow
 The Samwise garden module began as a direct C# port of [Goozify/GorgonHelper](https://github.com/Goozify/GorgonHelper), a browser-based garden helper for *Project Gorgon*, and has since evolved on top of that foundation. Thanks to its author for the original log-tailing and garden-state logic that this project is built on.
 
 The Legolas surveying module is inspired by [kaeus/GorgonSurveyTracker](https://github.com/kaeus/GorgonSurveyTracker). Thanks to its author for the original survey-tracking work.
+
+The in-game-clock anchor and time-of-day shift schedule (Midnight / Dawn / Morning / Afternoon / Dusk / Night) are sourced from [pgemissary.com](https://pgemissary.com) — its `/api/game-clocks` endpoint provides the wall-clock anchor consumed by `GameClock`, and the `TIME_OF_DAY` constant in `static/js/game_clock.js` is the source of truth for the bundled shift catalog at [`src/Mithril.Shared/Reference/BundledData/shifts.json`](src/Mithril.Shared/Reference/BundledData/shifts.json). Thanks to pgemissary's author for keeping that data publicly observable.
