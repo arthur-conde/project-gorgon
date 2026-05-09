@@ -83,6 +83,29 @@ public sealed class ElrondSettings : INotifyPropertyChanged
         set => Set(ref _viewMode, value);
     }
 
+    /// <summary>
+    /// Simulator constraint: when true, the leveling simulator may only pick recipes
+    /// already in the input snapshot's RecipeCompletions. Pessimistic — assumes the
+    /// player won't learn anything new mid-grind. Pre-decoupling default: false.
+    /// </summary>
+    private bool _simOnlyAlreadyLearnedRecipes;
+    public bool SimOnlyAlreadyLearnedRecipes
+    {
+        get => _simOnlyAlreadyLearnedRecipes;
+        set => Set(ref _simOnlyAlreadyLearnedRecipes, value);
+    }
+
+    /// <summary>
+    /// Simulator constraint: when true (default), first-time-bonus crafts are
+    /// prioritised. Toggle off to bank bonuses for a future scenario.
+    /// </summary>
+    private bool _simUseFirstTimeBonuses = true;
+    public bool SimUseFirstTimeBonuses
+    {
+        get => _simUseFirstTimeBonuses;
+        set => Set(ref _simUseFirstTimeBonuses, value);
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)

@@ -550,8 +550,69 @@
                     <!-- ── Simulation tab ─────────────────────────────────── -->
                     <TabItem Header="Simulation">
                         <DockPanel Margin="0,8,0,0">
-                            <!-- Sim controls -->
-                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                            <!-- Top control stack: starting-state Expander, constraints, goal/simulate row.
+                                 Starting state is collapsed by default so the zero-click "simulate from
+                                 now to goal" UX stays close to the original tab look. -->
+                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                                <Expander Margin="0,0,0,8" Foreground="{StaticResource TextSecondaryBrush}">
+                                    <Expander.Header>
+                                        <TextBlock VerticalAlignment="Center">
+                                            <Run Text="Starting state — "/>
+                                            <Run Text="{Binding SimulationStartSource, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"/>
+                                        </TextBlock>
+                                    </Expander.Header>
+                                    <Border Background="{StaticResource BgSurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}"
+                                            BorderThickness="1" Padding="10" CornerRadius="3" Margin="0,4,0,0">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <Button Padding="8,4" Margin="0,0,6,0"
+                                                        Command="{Binding CopyFromCurrentCharacterCommand}"
+                                                        ToolTip="Snapshot the active character's current skills + recipes as the simulator's starting point">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <icon:PackIconLucide Kind="Copy" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="Copy from current" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Padding="8,4"
+                                                        Command="{Binding UseResultAsNextStartCommand}"
+                                                        ToolTip="Feed the most recent simulation's terminal state in as the next starting point — chains forecasts">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <icon:PackIconLucide Kind="ChevronsRight" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="Use last result as next start" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Skill:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBlock Text="{Binding SelectedSkillDisplayName, Mode=OneWay, FallbackValue='(none)'}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                                                <TextBlock Text="Level:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBox Width="60" Margin="0,0,16,0"
+                                                         Text="{Binding SimulationStartLevel, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                                                         ToolTip="Override the selected skill's starting level (blank = use snapshot value)"/>
+                                                <TextBlock Text="XP toward next:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBox Width="80"
+                                                         Text="{Binding SimulationStartXpTowardNext, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                                                         ToolTip="Override XP banked toward the next level (blank = use snapshot value)"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Expander>
+
+                                <!-- Constraints: small enough to live inline; no Expander needed. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox Margin="0,0,16,0" VerticalAlignment="Center"
+                                              IsChecked="{Binding OnlyAlreadyLearnedRecipes}"
+                                              ToolTip="Restrict the simulator to recipes already in the character's cookbook (no auto-learning of new recipes mid-grind)">
+                                        <TextBlock Text="Only use already-learned recipes" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </CheckBox>
+                                    <CheckBox VerticalAlignment="Center"
+                                              IsChecked="{Binding UseFirstTimeBonuses}"
+                                              ToolTip="When off, the simulator skips first-time-bonus crafts entirely — useful for banking bonuses for a future scenario">
+                                        <TextBlock Text="Use first-time bonuses" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </CheckBox>
+                                </StackPanel>
+
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="Goal level:" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <TextBox Width="60" Margin="0,0,6,0"
@@ -566,7 +627,7 @@
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
-                            </DockPanel>
+                            </StackPanel>
 
                             <!-- Result or empty state -->
                             <Grid>
