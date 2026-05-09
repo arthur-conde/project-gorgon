@@ -46,8 +46,6 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
         return false;
     }
 
-    public event EventHandler? CatalogChanged;
-    public event EventHandler? ProgressChanged;
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
     public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
@@ -58,14 +56,12 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
         // consistent (catalog, progress) snapshot.
         _progressMap = ProjectProgress(_defs, _progress);
         EmitDeltas();
-        CatalogChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnProgressChanged(object? sender, EventArgs e)
     {
         _progressMap = ProjectProgress(_defs, _progress);
         EmitDeltas();
-        ProgressChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

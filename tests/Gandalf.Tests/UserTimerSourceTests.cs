@@ -126,17 +126,17 @@ public class UserTimerSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefinitionsChanged_raises_CatalogChanged()
+    public void DefinitionsChanged_raises_RowsChanged()
     {
         var (source, defs, progress, _) = BuildServices();
         try
         {
-            var fired = 0;
-            source.CatalogChanged += (_, _) => fired++;
+            var batches = 0;
+            source.RowsChanged += (_, _) => batches++;
 
             defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1) });
 
-            fired.Should().Be(1);
+            batches.Should().Be(1);
         }
         finally
         {

@@ -234,14 +234,14 @@ public class QuestSourceTests : IDisposable
         {
             src.Catalog.Should().BeEmpty();
 
-            var raised = false;
-            src.CatalogChanged += (_, _) => raised = true;
+            var deltas = new List<TimerRowDelta>();
+            src.RowsChanged += (_, e) => deltas.AddRange(e.Deltas);
 
             // Stage new data, then raise the event the way the real service would.
             refData.SetQuests([QuestEntryFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2))]);
             refData.RaiseQuestsUpdated();
 
-            raised.Should().BeTrue();
+            deltas.Should().ContainSingle(d => d.Kind == TimerRowChangeKind.Added);
             src.Catalog.Should().HaveCount(1);
             src.Catalog[0].DisplayName.Should().Be("Late Arrival");
         }

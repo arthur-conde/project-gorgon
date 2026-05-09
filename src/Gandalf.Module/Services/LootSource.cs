@@ -86,8 +86,6 @@ public sealed class LootSource : ITimerSource, IDisposable
         return true;
     }
 
-    public event EventHandler? CatalogChanged;
-    public event EventHandler? ProgressChanged;
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
     public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
@@ -277,7 +275,6 @@ public sealed class LootSource : ITimerSource, IDisposable
             _catalog = BuildCatalog();
         }
         EmitDeltas();
-        CatalogChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private (TimeSpan duration, bool verified) ResolveDefeatDuration(string displayName)
@@ -294,17 +291,13 @@ public sealed class LootSource : ITimerSource, IDisposable
         return (PlaceholderChestDuration, false);
     }
 
-    private void OnDerivedProgressChanged(object? sender, EventArgs e)
-    {
-        EmitDeltas();
-        ProgressChanged?.Invoke(this, EventArgs.Empty);
-    }
+    private void OnDerivedProgressChanged(object? sender, EventArgs e) => EmitDeltas();
 
     /// <summary>
-    /// Diff the current <c>(catalog, progress)</c> against the last snapshot,
-    /// fire <see cref="RowsChanged"/> if there are deltas, and update the
-    /// snapshot. Called from every event-firing site so the new per-key feed
-    /// stays consistent with the legacy coarse events during the rollout.
+    /// Diff the current <c>(catalog, progress)</c> against the last snapshot
+    /// and fire <see cref="RowsChanged"/> if there are deltas. Called from
+    /// every mutation path so consumers see per-key changes without
+    /// re-snapshotting the whole catalog.
     /// </summary>
     private void EmitDeltas()
     {
@@ -374,17 +367,8 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private void EnsureCatalogReprojected()
     {
-        bool raised;
-        lock (_catalogLock)
-        {
-            _catalog = BuildCatalog();
-            raised = true;
-        }
-        if (raised)
-        {
-            EmitDeltas();
-            CatalogChanged?.Invoke(this, EventArgs.Empty);
-        }
+        lock (_catalogLock) _catalog = BuildCatalog();
+        EmitDeltas();
     }
 
     private void FireReady(string key, string displayName, TimeSpan durationOverride, DateTimeOffset atUtc)

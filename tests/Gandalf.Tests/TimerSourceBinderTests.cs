@@ -384,15 +384,11 @@ public class TimerSourceBinderTests
             return false;
         }
 
-        public event EventHandler? CatalogChanged;
-        public event EventHandler? ProgressChanged;
         public event EventHandler<TimerReadyEventArgs>? TimerReady;
         public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
         public RecordingFakeSource(string sourceId) => SourceId = sourceId;
 
-        public void RaiseCatalogChanged() => CatalogChanged?.Invoke(this, EventArgs.Empty);
-        public void RaiseProgressChanged() => ProgressChanged?.Invoke(this, EventArgs.Empty);
         public void RaiseTimerReady(TimerReadyEventArgs e) => TimerReady?.Invoke(this, e);
         public void RaiseRowsChanged(IReadOnlyList<TimerRowDelta> deltas) =>
             RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });

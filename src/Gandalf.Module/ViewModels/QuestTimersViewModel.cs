@@ -53,13 +53,12 @@ public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
         _binder.RefreshRequired += (_, _) => TimersView.Refresh();
         _scheduler.RefreshRequired += (_, _) => TimersView.Refresh();
 
-        // Pending-set changes don't mutate catalog or progress (so they
-        // don't fire RowsChanged with non-empty deltas), but they shift
-        // relevance for every catalog row. Wire the source's coarse
-        // ProgressChanged to a relevance recheck — the small over-fire on
-        // actual progress changes is acceptable until #155 retires this
-        // entire relevance machinery.
-        _source.ProgressChanged += OnSourceProgressChanged;
+        // Pending-set changes don't mutate catalog or progress (no
+        // RowsChanged delta), but they shift relevance for every catalog
+        // row. PendingChanged is the dedicated signal — fires only when
+        // _pending actually changed. Goes away once #155 reshapes
+        // QuestSource's catalog to the active set directly.
+        _source.PendingChanged += OnPendingChanged;
     }
 
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
@@ -119,14 +118,14 @@ public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    private void OnSourceProgressChanged(object? sender, EventArgs e) =>
+    private void OnPendingChanged(object? sender, EventArgs e) =>
         _binder.RecheckRelevance();
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _source.ProgressChanged -= OnSourceProgressChanged;
+        _source.PendingChanged -= OnPendingChanged;
         _binder.Dispose();
         _scheduler.Dispose();
     }

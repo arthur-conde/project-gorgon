@@ -63,10 +63,24 @@ public sealed class QuestSource : ITimerSource, IDisposable
         return true;
     }
 
-    public event EventHandler? CatalogChanged;
-    public event EventHandler? ProgressChanged;
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
     public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
+
+    /// <summary>
+    /// Fires when the journal-pending set mutates. Distinct from
+    /// <see cref="RowsChanged"/> because pending changes don't mutate
+    /// catalog or progress — they only shift the relevance predicate's
+    /// inputs for <see cref="QuestTimersViewModel"/>'s journal-active
+    /// filter. Subscribers respond by re-evaluating which rows they
+    /// materialise.
+    ///
+    /// <para>Will be retired by <see href="https://github.com/arthur-conde/project-gorgon/issues/155">#155</see>:
+    /// once <c>IQuestService</c> owns the active-quest list and
+    /// <see cref="QuestSource"/>'s catalog is the active set, journal
+    /// changes flow through <see cref="RowsChanged"/> as
+    /// <c>Added</c>/<c>Removed</c> deltas naturally.</para>
+    /// </summary>
+    public event EventHandler? PendingChanged;
 
     /// <summary>Snapshot of quests currently loaded in the player's journal (for the Pending filter).</summary>
     public IReadOnlySet<string> PendingInternalNames
@@ -99,15 +113,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
                 foreach (var n in resolved) _pending.Add(n);
             }
         }
-        if (changed)
-        {
-            // Pending-set changes don't mutate catalog or progress, so the
-            // RowsChanged delta will be empty — but the VM still needs to
-            // re-evaluate the journal-membership filter via the legacy
-            // ProgressChanged event until the binder gains a relevance hook.
-            EmitDeltas();
-            ProgressChanged?.Invoke(this, EventArgs.Empty);
-        }
+        if (changed) PendingChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -119,11 +125,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
         if (string.IsNullOrEmpty(questInternalName)) return;
         bool changed;
         lock (_lock) changed = _pending.Add(questInternalName);
-        if (changed)
-        {
-            EmitDeltas();
-            ProgressChanged?.Invoke(this, EventArgs.Empty);
-        }
+        if (changed) PendingChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -167,11 +169,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
         }
     }
 
-    private void OnDerivedProgressChanged(object? sender, EventArgs e)
-    {
-        EmitDeltas();
-        ProgressChanged?.Invoke(this, EventArgs.Empty);
-    }
+    private void OnDerivedProgressChanged(object? sender, EventArgs e) => EmitDeltas();
 
     private void OnReferenceFileUpdated(object? sender, string fileKey)
     {
@@ -185,7 +183,6 @@ public sealed class QuestSource : ITimerSource, IDisposable
         _derived.GarbageCollect(Id, validKeys);
 
         EmitDeltas();
-        CatalogChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

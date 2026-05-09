@@ -45,8 +45,6 @@ public interface ITimerSource
     /// </summary>
     bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress);
 
-    event EventHandler? CatalogChanged;
-    event EventHandler? ProgressChanged;
     event EventHandler<TimerReadyEventArgs>? TimerReady;
 
     /// <summary>
@@ -55,9 +53,6 @@ public interface ITimerSource
     /// event invocation with N deltas — one event per logical mutation, not N —
     /// so consumers can apply all changes and call
     /// <c>ICollectionView.Refresh</c> at most once per batch.
-    /// Fires alongside the legacy <see cref="CatalogChanged"/> /
-    /// <see cref="ProgressChanged"/> events during the rollout; those will be
-    /// removed once every consumer has migrated.
     /// </summary>
     event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 }
