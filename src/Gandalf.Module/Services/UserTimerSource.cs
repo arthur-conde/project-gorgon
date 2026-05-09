@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
 
 namespace Gandalf.Services;
@@ -17,6 +18,8 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
     private readonly TimerProgressService _progress;
     private IReadOnlyList<TimerCatalogEntry> _catalog;
     private IReadOnlyDictionary<string, TimerProgressEntry> _progressMap;
+    private IReadOnlyDictionary<string, TimerCatalogEntry> _lastCatalogByKey;
+    private IReadOnlyDictionary<string, TimerProgressEntry> _lastProgressByKey;
 
     public UserTimerSource(TimerDefinitionsService defs, TimerProgressService progress)
     {
@@ -24,6 +27,8 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
         _progress = progress;
         _catalog = ProjectCatalog(defs);
         _progressMap = ProjectProgress(defs, progress);
+        _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        _lastProgressByKey = _progressMap;
 
         _defs.DefinitionsChanged += OnDefinitionsChanged;
         _progress.ProgressChanged += OnProgressChanged;
@@ -34,9 +39,17 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
     public IReadOnlyList<TimerCatalogEntry> Catalog => _catalog;
     public IReadOnlyDictionary<string, TimerProgressEntry> Progress => _progressMap;
 
+    public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+    {
+        if (_progressMap.TryGetValue(key, out var p)) { progress = p; return true; }
+        progress = null;
+        return false;
+    }
+
     public event EventHandler? CatalogChanged;
     public event EventHandler? ProgressChanged;
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
+    public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
     private void OnDefinitionsChanged(object? sender, EventArgs e)
     {
@@ -44,13 +57,34 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
         // A definition swap can orphan progress entries; reproject so consumers see a
         // consistent (catalog, progress) snapshot.
         _progressMap = ProjectProgress(_defs, _progress);
+        EmitDeltas();
         CatalogChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnProgressChanged(object? sender, EventArgs e)
     {
         _progressMap = ProjectProgress(_defs, _progress);
+        EmitDeltas();
         ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Diff the current <c>(catalog, progress)</c> against the last snapshot,
+    /// fire <see cref="RowsChanged"/> if there are deltas, and update the
+    /// snapshot. Called from every event-firing site so the new per-key feed
+    /// stays consistent with the legacy coarse events during the rollout.
+    /// </summary>
+    private void EmitDeltas()
+    {
+        var newCatalog = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        var newProgress = _progressMap;
+        var deltas = TimerRowDeltaDiffer.Diff(
+            _lastCatalogByKey, newCatalog,
+            _lastProgressByKey, newProgress);
+        _lastCatalogByKey = newCatalog;
+        _lastProgressByKey = newProgress;
+        if (deltas.Count > 0)
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
     }
 
     private void OnTimerExpired(object? sender, TimerExpiredEventArgs e)

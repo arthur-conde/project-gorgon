@@ -467,6 +467,69 @@ public class LootSourceTests : IDisposable
         derivedView.Dispose();
     }
 
+    [Fact]
+    public void OnChestInteraction_emits_RowsChanged_with_added_delta()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
+
+            // EnsureCatalogReprojected (Added with null progress) followed by
+            // _derived.Start (ProgressChanged with the new progress). Two batches
+            // for one logical interaction is acceptable; the binder applies them
+            // sequentially without visible flicker.
+            batches.Should().NotBeEmpty();
+            var addedDelta = batches.SelectMany(b => b)
+                .FirstOrDefault(d => d.Key == LootSource.ChestKey("GoblinStaticChest1")
+                                     && d.Kind == TimerRowChangeKind.Added);
+            addedDelta.Should().NotBeNull();
+            addedDelta!.Catalog.Should().NotBeNull();
+
+            var progressDelta = batches.SelectMany(b => b)
+                .FirstOrDefault(d => d.Key == LootSource.ChestKey("GoblinStaticChest1")
+                                     && d.Kind == TimerRowChangeKind.ProgressChanged);
+            progressDelta.Should().NotBeNull();
+            progressDelta!.Progress.Should().NotBeNull();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OverlayDefeatCalibration_emits_one_batched_RowsChanged()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // Pre-populate the catalog with a few learned defeats so the overlay
+            // refresh produces a meaningful diff.
+            src.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
+            src.OnBossKillCredit("Olugax", time.GetUtcNow().UtcDateTime);
+
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            // Single overlay refresh updates region + duration for both defeats.
+            src.OverlayDefeatCalibration(new[]
+            {
+                new DefeatCatalogEntry("Den Mother", TimeSpan.FromHours(6), "Sun Vale"),
+                new DefeatCatalogEntry("Olugax", TimeSpan.FromHours(6), "Sun Vale"),
+            });
+
+            // The whole calibration applies in a single RowsChanged event with
+            // N deltas (not N events). This is the contract the binder relies on
+            // to call ICollectionView.Refresh once per batch.
+            batches.Should().HaveCount(1);
+            batches[0].Should().HaveCount(2);
+            batches[0].Should().AllSatisfy(d =>
+                d.Kind.Should().Be(TimerRowChangeKind.CatalogChanged));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         private DateTimeOffset _now;

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
@@ -14,9 +15,17 @@ public sealed class DashboardAggregatorTests
         public IReadOnlyDictionary<string, TimerProgressEntry> Progress { get; set; } =
             new Dictionary<string, TimerProgressEntry>(StringComparer.Ordinal);
 
+        public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+        {
+            if (Progress.TryGetValue(key, out var p)) { progress = p; return true; }
+            progress = null;
+            return false;
+        }
+
         public event EventHandler? CatalogChanged;
         public event EventHandler? ProgressChanged;
         public event EventHandler<TimerReadyEventArgs>? TimerReady;
+        public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
         public FakeSource(string sourceId) => SourceId = sourceId;
 
@@ -27,6 +36,8 @@ public sealed class DashboardAggregatorTests
             {
                 SourceId = SourceId, Key = "_", DisplayName = "_", ReadyAt = DateTimeOffset.UtcNow,
             });
+        public void RaiseRowsChanged(IReadOnlyList<TimerRowDelta> deltas) =>
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
     }
 
     private sealed class ManualTime : TimeProvider

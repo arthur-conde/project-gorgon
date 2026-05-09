@@ -305,6 +305,26 @@ public class QuestSourceTests : IDisposable
         finally { src.Dispose(); derived.Dispose(); }
     }
 
+    [Fact]
+    public void OnQuestCompleted_emits_RowsChanged_with_progress_delta_for_that_key()
+    {
+        var quest = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(2));
+        var (src, derived, _, time) = Build(quest);
+        try
+        {
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            src.OnQuestCompleted("Quest_WO_50208", time.GetUtcNow().UtcDateTime);
+
+            batches.SelectMany(b => b)
+                .Should().ContainSingle(d =>
+                    d.Key == QuestSource.QuestKey("Quest_WO_50208")
+                    && d.Kind == TimerRowChangeKind.ProgressChanged);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         private DateTimeOffset _now;

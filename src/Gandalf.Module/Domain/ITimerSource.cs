@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Gandalf.Domain;
 
 /// <summary>
@@ -34,9 +36,30 @@ public interface ITimerSource
     /// </summary>
     IReadOnlyDictionary<string, TimerProgressEntry> Progress { get; }
 
+    /// <summary>
+    /// Per-row progress lookup. Returns <c>true</c> and yields the entry when a row
+    /// has been started (even if dismissed); returns <c>false</c> for rows in
+    /// catalog-but-never-started state. Avoids the
+    /// <see cref="Progress"/> snapshot-dictionary allocation for callers that only
+    /// care about a single key (e.g. binders applying a per-key delta).
+    /// </summary>
+    bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress);
+
     event EventHandler? CatalogChanged;
     event EventHandler? ProgressChanged;
     event EventHandler<TimerReadyEventArgs>? TimerReady;
+
+    /// <summary>
+    /// Per-key batched change feed. Sources coalesce many simultaneous mutations
+    /// (calibration overlay refresh, journal load, character switch) into a single
+    /// event invocation with N deltas — one event per logical mutation, not N —
+    /// so consumers can apply all changes and call
+    /// <c>ICollectionView.Refresh</c> at most once per batch.
+    /// Fires alongside the legacy <see cref="CatalogChanged"/> /
+    /// <see cref="ProgressChanged"/> events during the rollout; those will be
+    /// removed once every consumer has migrated.
+    /// </summary>
+    event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 }
 
 public sealed record TimerCatalogEntry(
