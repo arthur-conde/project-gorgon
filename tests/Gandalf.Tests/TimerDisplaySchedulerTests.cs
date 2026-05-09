@@ -163,6 +163,12 @@ public class TimerDisplaySchedulerTests
         running.PropertyChanged += CountFractionChanges(() => runningNotifications++);
         idle.PropertyChanged += CountFractionChanges(() => idleNotifications++);
 
+        // Advance the clock so the Running row's Fraction actually moves
+        // between scheduler registration and fast-tick. The per-property
+        // diff in TimerItemViewModel only fires Fraction PropertyChanged
+        // when the value materially changes — which is the perf win, but
+        // also means tests that expect a fire must produce a real delta.
+        clock.Advance(TimeSpan.FromMinutes(5));
         sched.TickFastForTests();
 
         runningNotifications.Should().BeGreaterThan(0);
