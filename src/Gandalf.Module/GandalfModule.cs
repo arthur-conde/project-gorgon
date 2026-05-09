@@ -37,9 +37,15 @@ public sealed class GandalfModule : IMithrilModule
         var settingsPath = Path.Combine(gandalfDir, "settings.json");
         var defsPath = Path.Combine(gandalfDir, "definitions.json");
         var lootCatalogPath = Path.Combine(gandalfDir, "loot-catalog.json");
+        var shiftsPath = Path.Combine(gandalfDir, "shifts.json");
 
         // Global user preferences (alarm volume, sound picker, etc) stay app-wide.
         services.AddMithrilSettings<GandalfSettings>(settingsPath, GandalfSettingsJsonContext.Default.GandalfSettings);
+
+        // Per-shift alarm config (enabled + per-shift sound override) for the
+        // six published time-of-day shifts. Character-agnostic — one file
+        // shared across all characters, parallel to GandalfSettings.
+        services.AddMithrilSettings<GandalfShiftSettings>(shiftsPath, GandalfShiftSettingsJsonContext.Default.GandalfShiftSettings);
 
         // Global timer definitions — one file, shared across every character.
         services.AddSingleton<ISettingsStore<GandalfDefinitions>>(_ =>
@@ -114,6 +120,13 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<LootSource>());
         services.AddSingleton<TimerAlarmService>();
 
+        // Time-of-day shift alarms — character-agnostic, runs whenever the
+        // shell is open. Listens to the in-game clock and fires per-shift
+        // alarms based on GandalfShiftSettings. Eager because it owns its
+        // own DispatcherTimer; it must wake on schedule even if the user
+        // never opens the Gandalf tab.
+        services.AddSingleton<ShiftAlarmService>();
+
         // Drives TimerProgressService.CheckExpirations on a one-shot timer
         // scheduled at the soonest known user-timer expiration. Replaces
         // the 1 Hz tick that used to live in TimerListViewModel.Tick. Owns
@@ -144,6 +157,10 @@ public sealed class GandalfModule : IMithrilModule
             // resolves it. This is the same eager-singleton idiom that pulls
             // TimerAlarmService in via TimerListViewModel's factory above.
             _ = sp.GetRequiredService<TimerExpirationScheduler>();
+            // ShiftAlarmService likewise owns a DispatcherTimer for the
+            // time-of-day shift alarm path; eager-resolve here so it starts
+            // running as soon as Gandalf activates (Eager module).
+            _ = sp.GetRequiredService<ShiftAlarmService>();
             return new GandalfShellView
             {
                 DataContext = sp.GetRequiredService<GandalfShellViewModel>(),

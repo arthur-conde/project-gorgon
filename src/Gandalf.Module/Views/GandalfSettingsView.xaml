@@ -49,6 +49,35 @@
                 <TextBox Text="{Binding Settings.SoundFilePath, UpdateSourceTrigger=LostFocus}" Padding="6,4"/>
             </DockPanel>
 
+            <!-- Time-of-day shift alarms -->
+            <TextBlock Text="Time-of-day alarms" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8">
+                Project Gorgon's in-game day has six named periods. Enable a shift to ring an alarm when
+                it begins (every ~2 real hours per shift). Picking a sound here overrides the global
+                default for that shift only; leave it blank to inherit the global default above.
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding ShiftRows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                            <CheckBox DockPanel.Dock="Left" Width="180"
+                                      IsChecked="{Binding Config.Enabled}"
+                                      Content="{Binding Display}"
+                                      Foreground="#FFE8E8E8" VerticalAlignment="Center"/>
+                            <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,4" Margin="6,0,0,0"
+                                    Click="BrowseShift_Click"/>
+                            <Button DockPanel.Dock="Right" Content="Test" Padding="10,4" Margin="6,0,0,0"
+                                    Click="TestShift_Click"/>
+                            <Button DockPanel.Dock="Right" Content="Clear" Padding="8,4" Margin="6,0,0,0"
+                                    Click="ClearShift_Click" ToolTip="Reset to global default sound"/>
+                            <TextBox Text="{Binding Config.SoundFilePath, UpdateSourceTrigger=LostFocus, TargetNullValue=''}"
+                                     Padding="6,4"
+                                     IsEnabled="{Binding Config.Enabled}"/>
+                        </DockPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
             <!-- Danger zone -->
             <Border Margin="0,24,0,0" Padding="0,12,0,0" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0">
                 <StackPanel>
