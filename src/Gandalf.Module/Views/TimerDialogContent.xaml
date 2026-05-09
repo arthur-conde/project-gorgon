@@ -3,7 +3,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls">
     <UserControl.Resources>
-        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+        <ResourceDictionary>
+            <!-- MahApps Controls + Fonts + Dark theme are needed for mah:TimePicker
+                 to render its clock-spinner popup; the rest of the shell deliberately
+                 doesn't merge these globally. Scoped to this dialog so other dialogs
+                 keep their custom styling untouched. App-shared converters (BoolToVis)
+                 come last so any key collisions favor our resource. Same pattern as
+                 Legolas/Sharing/LegolasShareDialog.xaml. -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </UserControl.Resources>
     <StackPanel MinWidth="320">
         <DockPanel Margin="0,0,0,6">
