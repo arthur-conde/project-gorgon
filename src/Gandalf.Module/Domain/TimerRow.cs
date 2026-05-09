@@ -63,4 +63,54 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
             return Math.Clamp((Clock.GetUtcNow() - Progress.StartedAt) / Catalog.Duration, 0.0, 1.0);
         }
     }
+
+    /// <summary>
+    /// Wall-clock instant at which any visible property of this row would next
+    /// flip. <c>null</c> for rows that don't change by time alone (Idle, or a
+    /// dismissed row with no upcoming resurrection). The display scheduler
+    /// orders rows by this value and only refreshes those whose moment has
+    /// arrived, replacing the per-tab 1 Hz tick that previously refreshed every
+    /// row regardless of whether anything changed.
+    /// <list type="bullet">
+    /// <item><b>Running:</b> the soonest of the state-flip moment
+    /// (<c>StartedAt + Duration</c>) and the next minute boundary — <c>"Xh Ym
+    /// remaining"</c> only changes when minutes roll.</item>
+    /// <item><b>Just-Done</b> (&lt; 60 s since completion): when <c>"done!"</c>
+    /// flips to <c>"done 1m ago"</c> at <c>CompletedAt + 60 s</c>.</item>
+    /// <item><b>Old Done:</b> the next minute boundary, when <c>"done Xm ago"</c>
+    /// rolls.</item>
+    /// </list>
+    /// <see cref="Fraction"/> is intentionally <em>not</em> driven by this
+    /// property — sub-minute progress-bar smoothness uses a separate gated
+    /// 1 Hz fast-tick that runs only while at least one Running row is
+    /// visible.
+    /// </summary>
+    public DateTimeOffset? NextDisplayChangeAt
+    {
+        get
+        {
+            if (Progress is null) return null;
+            if (Progress.DismissedAt is not null) return null;
+
+            var now = Clock.GetUtcNow();
+            var stateFlipAt = Progress.StartedAt + Catalog.Duration;
+
+            if (now < stateFlipAt)
+            {
+                var nextMinute = NextMinuteBoundaryAfter(now);
+                return stateFlipAt < nextMinute ? stateFlipAt : nextMinute;
+            }
+
+            var elapsedSinceDone = now - stateFlipAt;
+            return elapsedSinceDone < TimeSpan.FromSeconds(60)
+                ? stateFlipAt + TimeSpan.FromSeconds(60)
+                : NextMinuteBoundaryAfter(now);
+        }
+    }
+
+    private static DateTimeOffset NextMinuteBoundaryAfter(DateTimeOffset t)
+    {
+        var floor = new DateTimeOffset(t.Year, t.Month, t.Day, t.Hour, t.Minute, 0, t.Offset);
+        return floor + TimeSpan.FromMinutes(1);
+    }
 }

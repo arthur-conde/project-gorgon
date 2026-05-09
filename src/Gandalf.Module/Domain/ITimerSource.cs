@@ -59,3 +59,35 @@ public sealed class TimerReadyEventArgs : EventArgs
     public required DateTimeOffset ReadyAt { get; init; }
     public object? SourceMetadata { get; init; }
 }
+
+/// <summary>
+/// One row's worth of change inside a <see cref="TimerRowsChangedEventArgs"/>
+/// batch. <see cref="Catalog"/> is null only for <see cref="TimerRowChangeKind.Removed"/>;
+/// <see cref="Progress"/> is null when the row exists but has never been started
+/// (or was reset to idle).
+/// </summary>
+public sealed record TimerRowDelta(
+    string Key,
+    TimerRowChangeKind Kind,
+    TimerCatalogEntry? Catalog,
+    TimerProgressEntry? Progress);
+
+public enum TimerRowChangeKind
+{
+    Added,
+    CatalogChanged,
+    ProgressChanged,
+    Removed,
+}
+
+/// <summary>
+/// Batched per-key change feed for <see cref="ITimerSource"/>. Sources coalesce
+/// many simultaneous mutations (calibration overlay, character switch, journal
+/// load) into a single event with N deltas — one event invocation, not N — so
+/// consumers can apply all changes and call <c>ICollectionView.Refresh</c> at
+/// most once per batch.
+/// </summary>
+public sealed class TimerRowsChangedEventArgs : EventArgs
+{
+    public required IReadOnlyList<TimerRowDelta> Deltas { get; init; }
+}
