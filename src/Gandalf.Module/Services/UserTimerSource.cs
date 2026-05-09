@@ -114,7 +114,7 @@ public sealed class UserTimerSource : ITimerSource, IDisposable
         {
             var p = progress.GetProgress(def.Id);
             if (p?.StartedAt is null) continue;
-            map[def.Id] = new TimerProgressEntry(def.Id, p.StartedAt.Value, DismissedAt: null);
+            map[def.Id] = new TimerProgressEntry(def.Id, p.StartedAt.Value, DismissedAt: null, FiringAt: p.FiringAt);
         }
         return map;
     }

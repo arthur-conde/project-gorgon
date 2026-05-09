@@ -9,7 +9,7 @@ namespace Gandalf.Domain;
 /// </summary>
 public sealed class GandalfDefinitions
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     public int SchemaVersion { get; set; } = Version;
     public List<GandalfTimerDef> Timers { get; set; } = [];

@@ -64,10 +64,18 @@ public sealed record TimerCatalogEntry(
     TimeSpan Duration,
     object? SourceMetadata);
 
+/// <summary>
+/// <para><see cref="FiringAt"/> is an optional per-row firing instant — used by
+/// the User feed for game-clock alarms whose firing moment isn't <c>StartedAt +
+/// Catalog.Duration</c>. Derived sources (Quest, Loot, Dashboard) leave it null
+/// and consumers fall back to that default arithmetic, so their behavior is
+/// unchanged.</para>
+/// </summary>
 public sealed record TimerProgressEntry(
     string Key,
     DateTimeOffset StartedAt,
-    DateTimeOffset? DismissedAt);
+    DateTimeOffset? DismissedAt,
+    DateTimeOffset? FiringAt = null);
 
 public sealed class TimerReadyEventArgs : EventArgs
 {

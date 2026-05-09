@@ -17,36 +17,47 @@ namespace Gandalf.Services;
 /// </summary>
 public sealed class TimerAlarmService : IDisposable
 {
+    /// <summary>
+    /// How long after a fire to suppress a same-key re-fire. Long enough to
+    /// debounce accidental duplicates (a tick that fires and stamps then a
+    /// rapid follow-up tick before the row is dismissed) but short enough
+    /// not to interfere with recurring game-clock alarms whose natural
+    /// cadence is ~7200 real seconds.
+    /// </summary>
+    private static readonly TimeSpan RefireSuppressionWindow = TimeSpan.FromSeconds(30);
+
     private readonly UserTimerSource _source;
     private readonly GandalfSettings _settings;
-    private readonly HashSet<string> _firedKeys = new(StringComparer.Ordinal);
+    private readonly TimeProvider _time;
+    private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
-    public TimerAlarmService(UserTimerSource source, GandalfSettings settings)
+    public TimerAlarmService(UserTimerSource source, GandalfSettings settings, TimeProvider? time = null)
     {
         _source = source;
         _settings = settings;
+        _time = time ?? TimeProvider.System;
         _source.TimerReady += OnTimerReady;
     }
 
     public void SnoozeAll()
     {
-        var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.SnoozeMinutes);
-        foreach (var key in _firedKeys.ToArray()) _snoozedUntil[key] = until;
-        _firedKeys.Clear();
+        var until = _time.GetUtcNow() + TimeSpan.FromMinutes(_settings.SnoozeMinutes);
+        foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
+        _firedAt.Clear();
         StopAllPlayback();
     }
 
     public void DismissAll()
     {
-        _firedKeys.Clear();
+        _firedAt.Clear();
         StopAllPlayback();
     }
 
     public void Dismiss(string key)
     {
-        _firedKeys.Remove(key);
+        _firedAt.Remove(key);
         if (_playback.Remove(key, out var handle))
             handle.Stop();
     }
@@ -55,10 +66,13 @@ public sealed class TimerAlarmService : IDisposable
     {
         if (!_settings.AlarmEnabled) return;
         var key = e.Key;
-        if (_firedKeys.Contains(key)) return;
-        if (_snoozedUntil.TryGetValue(key, out var until) && until > DateTimeOffset.UtcNow) return;
+        var now = _time.GetUtcNow();
+        // Time-based dedup, not the old "fired once, never again" set —
+        // recurring game-clock alarms reach this path on every cycle.
+        if (_firedAt.TryGetValue(key, out var last) && now - last < RefireSuppressionWindow) return;
+        if (_snoozedUntil.TryGetValue(key, out var until) && until > now) return;
 
-        _firedKeys.Add(key);
+        _firedAt[key] = now;
         Dispatch(() =>
         {
             var handle = AudioPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
