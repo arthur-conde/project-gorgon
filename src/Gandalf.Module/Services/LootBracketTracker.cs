@@ -6,28 +6,45 @@ namespace Gandalf.Services;
 
 /// <summary>
 /// Signal-driven state machine that distinguishes a loot-chest interaction
-/// from a storage-vault or NPC-dialog interaction. Replaces the v1 substring
-/// heuristic that filtered chest prefab names by <c>Contains("StaticChest")</c>
-/// — that filter silently dropped <c>EltibuleSecretChest</c> and would
-/// regress on every game patch that introduces a new chest theme.
+/// from a storage-vault, workstation, NPC-dialog, or summons interaction.
+/// Replaces the v1 substring heuristic that filtered chest prefab names by
+/// <c>Contains("StaticChest")</c> — that filter silently dropped
+/// <c>EltibuleSecretChest</c> and would regress on every game patch that
+/// introduces a new chest theme.
 ///
 /// Bracket shapes (verified against captured Player.log):
 /// <list type="bullet">
 /// <item><b>Loot chest:</b> <c>ProcessStartInteraction → ProcessAddItem(...) → ProcessEnableInteractors([],[id,])</c></item>
-/// <item><b>Storage / NPC:</b> <c>ProcessStartInteraction → ProcessPreTalkScreen → ProcessTalkScreen</c></item>
+/// <item><b>Storage UI:</b> <c>ProcessStartInteraction → ProcessShowStorageVault</c> (or <c>ProcessTalkScreen</c> for catalog-fronted access)</item>
+/// <item><b>Workstation / teleport pad:</b> <c>ProcessStartInteraction → ProcessShowRecipes(&lt;skill&gt;)</c></item>
+/// <item><b>Passcode-gated container:</b> <c>ProcessStartInteraction → ProcessInputBox</c></item>
 /// <item><b>Cooldown rejection:</b> <c>ProcessStartInteraction → ProcessScreenText("You've already looted...")</c></item>
+/// <item><b>Harvest (delay-loop):</b> <c>ProcessStartInteraction → ProcessDoDelayLoop(... IsInteractorDelayLoop) → ProcessAddItem</c></item>
+/// <item><b>Harvest (wait-loop):</b> <c>ProcessStartInteraction → ProcessWaitInteraction(... "verb body") → ProcessAddItem</c></item>
 /// </list>
-/// The tracker maintains a tiny three-state machine and routes confirmed loot
-/// events into <see cref="LootSource"/>; storage / NPC interactions are
-/// silently discarded.
+/// Soft timeout (#174): if a bracket has been <c>InFlight</c> longer than
+/// <see cref="SoftTimeout"/> with no positive signal, a subsequent
+/// <c>ProcessAddItem</c> is treated as out-of-bracket. Backstop for
+/// no-signal leakers like <c>SummonedFlowerN</c> and <c>SummonedHorseApple</c>
+/// that emit only <c>ProcessUpdateDescription</c>.
 /// </summary>
 public sealed partial class LootBracketTracker
 {
+    /// <summary>
+    /// A bracket older than this with no positive signal stops accepting
+    /// <c>ProcessAddItem</c> commits. Captured real-chest brackets always
+    /// fire AddItem within the same log second; 2 s is plenty of headroom
+    /// while still catching the SummonedFlower / SummonedHorseApple /
+    /// GoblinStew leakers where ambient AddItems land seconds later.
+    /// </summary>
+    public static readonly TimeSpan SoftTimeout = TimeSpan.FromSeconds(2);
+
     private readonly LootSource _source;
     private readonly ChestInteractionParser _interactionParser;
     private readonly ChestRejectionParser _rejectionParser;
     private readonly InteractionEndParser _endParser;
     private readonly InteractionDelayLoopParser _delayLoopParser;
+    private readonly InteractionWaitParser _waitParser;
 
     private State _state = State.Idle;
     private string? _bracketName;
@@ -40,22 +57,34 @@ public sealed partial class LootBracketTracker
         ChestInteractionParser interactionParser,
         ChestRejectionParser rejectionParser,
         InteractionEndParser endParser,
-        InteractionDelayLoopParser delayLoopParser)
+        InteractionDelayLoopParser delayLoopParser,
+        InteractionWaitParser waitParser)
     {
         _source = source;
         _interactionParser = interactionParser;
         _rejectionParser = rejectionParser;
         _endParser = endParser;
         _delayLoopParser = delayLoopParser;
+        _waitParser = waitParser;
     }
 
     /// <summary>True iff the tracker is currently inside an interaction bracket.</summary>
     public bool IsInFlight => _state != State.Idle;
 
+    /// <summary>
+    /// Combined "this is a UI dialog, not loot" signal set. <c>TalkScreen</c>
+    /// covers NPCs + catalog-fronted storage; <c>ShowStorageVault</c> covers
+    /// direct storage-chest clicks (the universal storage UI signal carrying
+    /// the storagevaults.json vault id); <c>ShowRecipes</c> covers
+    /// workstations and teleport pads (Cooking / Tanning / Teleportation /
+    /// etc.); <c>InputBox</c> covers passcode-gated containers like
+    /// <c>IvynsChest</c>. Any of these inside an in-flight bracket discards
+    /// the bracket without committing.
+    /// </summary>
     [GeneratedRegex(
-        """LocalPlayer:\s*Process(?:Pre)?TalkScreen\(""",
+        """LocalPlayer:\s*Process(?:(?:Pre)?TalkScreen|ShowStorageVault|ShowRecipes|InputBox)\(""",
         RegexOptions.CultureInvariant)]
-    private static partial Regex TalkScreenRx();
+    private static partial Regex DialogDiscardRx();
 
     [GeneratedRegex(
         """LocalPlayer:\s*ProcessAddItem\(""",
@@ -90,8 +119,9 @@ public sealed partial class LootBracketTracker
         // Below this point, only events relevant when a bracket is in flight.
         if (_state == State.Idle) return;
 
-        // 2. TalkScreen / PreTalkScreen → storage UI / NPC dialog. Discard.
-        if (TalkScreenRx().IsMatch(line))
+        // 2. Any UI dialog signal (TalkScreen / ShowStorageVault / ShowRecipes /
+        // InputBox) → not loot. Discard.
+        if (DialogDiscardRx().IsMatch(line))
         {
             ResetIdle();
             return;
@@ -121,20 +151,42 @@ public sealed partial class LootBracketTracker
             return;
         }
 
-        // 5. AddItem inside bracket → confirmed loot, *unless* a harvest verb has
-        // been stashed for this bracket. No chest in any captured log emits
-        // ProcessDoDelayLoop, so the discriminator is "delay-loop verb present →
-        // not a chest"; the verb itself is captured for diagnostics and so we
-        // can promote to an explicit allowlist if a chest ever shows up with one.
+        // 5. Interactor-bound wait loop with non-empty body → harvest-style
+        // suppression, parallel to the delay-loop branch. Empty-body variant
+        // (the IvynsChest unlock animation) is a no-op — its bracket gets
+        // discarded by the storage-vault signal that follows. Id-matched so
+        // a stray wait from a different interactor can't poison the bracket.
+        if (_state == State.InFlight
+            && _waitParser.TryParse(line, timestamp) is InteractionWaitEvent wait
+            && wait.InteractorId == _bracketInteractorId
+            && !string.IsNullOrEmpty(wait.Body))
+        {
+            _bracketHarvestVerb = "Wait";
+            return;
+        }
+
+        // 6. AddItem inside bracket → confirmed loot, *unless* a harvest verb has
+        // been stashed for this bracket, OR the bracket has been InFlight longer
+        // than SoftTimeout (the AddItem isn't from this bracket; it's an ambient
+        // event that landed on a no-positive-signal leaker like SummonedFlower).
+        // No chest in any captured log emits ProcessDoDelayLoop or
+        // ProcessWaitInteraction, so the discriminator is "harvest verb present
+        // → not a chest"; the verb itself is captured for diagnostics.
         if (_state == State.InFlight && AddItemRx().IsMatch(line) && _bracketName is not null)
         {
+            var elapsed = timestamp - _bracketStartTimestamp;
+            if (elapsed > SoftTimeout)
+            {
+                ResetIdle();
+                return;
+            }
             if (_bracketHarvestVerb is null)
                 _source.OnChestInteraction(_bracketName, _bracketStartTimestamp);
             _state = State.Committed;
             return;
         }
 
-        // 6. EnableInteractors with matching id → bracket close.
+        // 7. EnableInteractors with matching id → bracket close.
         if (EnableInteractorsRx().Match(line) is { Success: true } m
             && long.TryParse(m.Groups["id"].Value, out var closingId)
             && closingId == _bracketInteractorId)
@@ -143,7 +195,7 @@ public sealed partial class LootBracketTracker
             return;
         }
 
-        // 7. EndInteraction with matching id → bracket close (symmetric to
+        // 8. EndInteraction with matching id → bracket close (symmetric to
         // EnableInteractors). Portals close via this signal; without it the
         // bracket would sit InFlight long enough for an unrelated AddItem
         // to commit "Portal" as a chest.

@@ -48,3 +48,16 @@ public sealed record InteractionEndEvent(DateTime Timestamp, long InteractorId)
 /// </summary>
 public sealed record InteractionDelayLoopEvent(DateTime Timestamp, string Verb, bool IsInteractor)
     : LogEvent(Timestamp);
+
+/// <summary>
+/// Interactor-bound progress loop — sibling to <see cref="InteractionDelayLoopEvent"/>
+/// but a different signal entirely. Fires for activities like filling water
+/// bottles at a well, fishing, and (with empty body) the unlock animation
+/// for passcode-gated storage chests. A non-empty <see cref="Body"/> means
+/// the loop is producing items (the body is the user-facing progress
+/// description, e.g. <c>"Filling Water Bottles..."</c>); the bracket tracker
+/// treats that as harvest-style suppression so the subsequent
+/// <c>ProcessAddItem</c> doesn't commit a chest row.
+/// </summary>
+public sealed record InteractionWaitEvent(DateTime Timestamp, long InteractorId, string Body)
+    : LogEvent(Timestamp);
