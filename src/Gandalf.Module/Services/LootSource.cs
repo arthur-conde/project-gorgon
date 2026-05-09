@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
@@ -51,6 +52,8 @@ public sealed class LootSource : ITimerSource, IDisposable
     private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
         new Dictionary<string, DefeatCatalogEntry>(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<TimerCatalogEntry> _catalog;
+    private IReadOnlyDictionary<string, TimerCatalogEntry> _lastCatalogByKey;
+    private IReadOnlyDictionary<string, TimerProgressEntry> _lastProgressByKey;
 
     public LootSource(
         DerivedTimerProgressService derived,
@@ -65,6 +68,8 @@ public sealed class LootSource : ITimerSource, IDisposable
         _time = time ?? TimeProvider.System;
         _diag = diag;
         _catalog = BuildCatalog();
+        _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        _lastProgressByKey = SnapshotProgress();
 
         _derived.ProgressChanged += OnDerivedProgressChanged;
     }
@@ -73,9 +78,16 @@ public sealed class LootSource : ITimerSource, IDisposable
     public IReadOnlyList<TimerCatalogEntry> Catalog => _catalog;
     public IReadOnlyDictionary<string, TimerProgressEntry> Progress => SnapshotProgress();
 
-    public event EventHandler? CatalogChanged;
-    public event EventHandler? ProgressChanged;
+    public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+    {
+        var p = _derived.GetProgress(Id, key);
+        if (p is null) { progress = null; return false; }
+        progress = new TimerProgressEntry(key, p.StartedAt, p.DismissedAt);
+        return true;
+    }
+
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
+    public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
     /// <summary>
     /// Apply a chest interaction observation: stamp a cooldown row anchored on
@@ -262,7 +274,7 @@ public sealed class LootSource : ITimerSource, IDisposable
             _calibrationByDisplayName = byName;
             _catalog = BuildCatalog();
         }
-        CatalogChanged?.Invoke(this, EventArgs.Empty);
+        EmitDeltas();
     }
 
     private (TimeSpan duration, bool verified) ResolveDefeatDuration(string displayName)
@@ -279,8 +291,26 @@ public sealed class LootSource : ITimerSource, IDisposable
         return (PlaceholderChestDuration, false);
     }
 
-    private void OnDerivedProgressChanged(object? sender, EventArgs e) =>
-        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    private void OnDerivedProgressChanged(object? sender, EventArgs e) => EmitDeltas();
+
+    /// <summary>
+    /// Diff the current <c>(catalog, progress)</c> against the last snapshot
+    /// and fire <see cref="RowsChanged"/> if there are deltas. Called from
+    /// every mutation path so consumers see per-key changes without
+    /// re-snapshotting the whole catalog.
+    /// </summary>
+    private void EmitDeltas()
+    {
+        var newCatalog = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        var newProgress = SnapshotProgress();
+        var deltas = TimerRowDeltaDiffer.Diff(
+            _lastCatalogByKey, newCatalog,
+            _lastProgressByKey, newProgress);
+        _lastCatalogByKey = newCatalog;
+        _lastProgressByKey = newProgress;
+        if (deltas.Count > 0)
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
+    }
 
     private IReadOnlyDictionary<string, TimerProgressEntry> SnapshotProgress()
     {
@@ -337,13 +367,8 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private void EnsureCatalogReprojected()
     {
-        bool raised;
-        lock (_catalogLock)
-        {
-            _catalog = BuildCatalog();
-            raised = true;
-        }
-        if (raised) CatalogChanged?.Invoke(this, EventArgs.Empty);
+        lock (_catalogLock) _catalog = BuildCatalog();
+        EmitDeltas();
     }
 
     private void FireReady(string key, string displayName, TimeSpan durationOverride, DateTimeOffset atUtc)

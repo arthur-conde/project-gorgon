@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
 using Mithril.Shared.Reference;
 
@@ -31,6 +32,8 @@ public sealed class QuestSource : ITimerSource, IDisposable
     private readonly object _lock = new();
     private IReadOnlyList<TimerCatalogEntry> _catalog;
     private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, TimerCatalogEntry> _lastCatalogByKey;
+    private IReadOnlyDictionary<string, TimerProgressEntry> _lastProgressByKey;
 
     public QuestSource(
         DerivedTimerProgressService derived,
@@ -41,6 +44,8 @@ public sealed class QuestSource : ITimerSource, IDisposable
         _refData = refData;
         _time = time ?? TimeProvider.System;
         _catalog = BuildCatalog();
+        _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        _lastProgressByKey = SnapshotProgress();
 
         _derived.ProgressChanged += OnDerivedProgressChanged;
         _refData.FileUpdated += OnReferenceFileUpdated;
@@ -50,9 +55,32 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public IReadOnlyList<TimerCatalogEntry> Catalog => _catalog;
     public IReadOnlyDictionary<string, TimerProgressEntry> Progress => SnapshotProgress();
 
-    public event EventHandler? CatalogChanged;
-    public event EventHandler? ProgressChanged;
+    public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+    {
+        var p = _derived.GetProgress(Id, key);
+        if (p is null) { progress = null; return false; }
+        progress = new TimerProgressEntry(key, p.StartedAt, p.DismissedAt);
+        return true;
+    }
+
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
+    public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
+
+    /// <summary>
+    /// Fires when the journal-pending set mutates. Distinct from
+    /// <see cref="RowsChanged"/> because pending changes don't mutate
+    /// catalog or progress — they only shift the relevance predicate's
+    /// inputs for <see cref="QuestTimersViewModel"/>'s journal-active
+    /// filter. Subscribers respond by re-evaluating which rows they
+    /// materialise.
+    ///
+    /// <para>Will be retired by <see href="https://github.com/arthur-conde/project-gorgon/issues/155">#155</see>:
+    /// once <c>IQuestService</c> owns the active-quest list and
+    /// <see cref="QuestSource"/>'s catalog is the active set, journal
+    /// changes flow through <see cref="RowsChanged"/> as
+    /// <c>Added</c>/<c>Removed</c> deltas naturally.</para>
+    /// </summary>
+    public event EventHandler? PendingChanged;
 
     /// <summary>Snapshot of quests currently loaded in the player's journal (for the Pending filter).</summary>
     public IReadOnlySet<string> PendingInternalNames
@@ -85,7 +113,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
                 foreach (var n in resolved) _pending.Add(n);
             }
         }
-        if (changed) ProgressChanged?.Invoke(this, EventArgs.Empty);
+        if (changed) PendingChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -97,7 +125,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
         if (string.IsNullOrEmpty(questInternalName)) return;
         bool changed;
         lock (_lock) changed = _pending.Add(questInternalName);
-        if (changed) ProgressChanged?.Invoke(this, EventArgs.Empty);
+        if (changed) PendingChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -141,8 +169,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
         }
     }
 
-    private void OnDerivedProgressChanged(object? sender, EventArgs e) =>
-        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    private void OnDerivedProgressChanged(object? sender, EventArgs e) => EmitDeltas();
 
     private void OnReferenceFileUpdated(object? sender, string fileKey)
     {
@@ -155,7 +182,26 @@ public sealed class QuestSource : ITimerSource, IDisposable
         var validKeys = newCatalog.Select(c => c.Key).ToArray();
         _derived.GarbageCollect(Id, validKeys);
 
-        CatalogChanged?.Invoke(this, EventArgs.Empty);
+        EmitDeltas();
+    }
+
+    /// <summary>
+    /// Diff the current <c>(catalog, progress)</c> against the last snapshot,
+    /// fire <see cref="RowsChanged"/> if there are deltas, and update the
+    /// snapshot. Called from every event-firing site so the new per-key feed
+    /// stays consistent with the legacy coarse events during the rollout.
+    /// </summary>
+    private void EmitDeltas()
+    {
+        var newCatalog = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
+        var newProgress = SnapshotProgress();
+        var deltas = TimerRowDeltaDiffer.Diff(
+            _lastCatalogByKey, newCatalog,
+            _lastProgressByKey, newProgress);
+        _lastCatalogByKey = newCatalog;
+        _lastProgressByKey = newProgress;
+        if (deltas.Count > 0)
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
     }
 
     private IReadOnlyDictionary<string, TimerProgressEntry> SnapshotProgress()

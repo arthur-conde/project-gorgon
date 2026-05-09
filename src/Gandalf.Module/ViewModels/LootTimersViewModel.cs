@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
@@ -14,12 +13,14 @@ namespace Gandalf.ViewModels;
 /// shared <see cref="LootSource"/> and exposes Kind / State filter chips and
 /// bulk dismiss commands.
 /// </summary>
-public sealed partial class LootTimersViewModel : ObservableObject
+public sealed partial class LootTimersViewModel : ObservableObject, IDisposable
 {
     private readonly LootSource _source;
     private readonly DerivedTimerProgressService _derived;
     private readonly TimeProvider _time;
-    private readonly DispatcherTimer _refreshTimer;
+    private readonly TimerDisplayScheduler _scheduler;
+    private readonly TimerSourceBinder _binder;
+    private bool _disposed;
 
     [ObservableProperty] private LootKindFilter _kindFilter = LootKindFilter.All;
     [ObservableProperty] private LootStateFilter _stateFilter = LootStateFilter.All;
@@ -30,9 +31,6 @@ public sealed partial class LootTimersViewModel : ObservableObject
         _derived = derived;
         _time = time ?? TimeProvider.System;
 
-        _source.CatalogChanged += (_, _) => Sync();
-        _source.ProgressChanged += (_, _) => Sync();
-
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.Filter = ApplyFilter;
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
@@ -40,11 +38,13 @@ public sealed partial class LootTimersViewModel : ObservableObject
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.IsDone), ListSortDirection.Descending));
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.Name), ListSortDirection.Ascending));
 
-        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _refreshTimer.Tick += (_, _) => Tick();
-        _refreshTimer.Start();
+        _scheduler = new TimerDisplayScheduler(_time);
+        _binder = new TimerSourceBinder(_source, Timers, _time, scheduler: _scheduler);
 
-        Sync();
+        // Both signals trigger a single CollectionView refresh — debounced
+        // implicitly by the dispatcher (consecutive Refresh calls collapse).
+        _binder.RefreshRequired += (_, _) => TimersView.Refresh();
+        _scheduler.RefreshRequired += (_, _) => TimersView.Refresh();
     }
 
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
@@ -91,29 +91,12 @@ public sealed partial class LootTimersViewModel : ObservableObject
         return true;
     }
 
-    private void Sync()
+    public void Dispose()
     {
-        Timers.Clear();
-        var progress = _source.Progress;
-        foreach (var entry in _source.Catalog)
-        {
-            progress.TryGetValue(entry.Key, out var p);
-            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time }));
-        }
-        TimersView.Refresh();
-    }
-
-    private void Tick()
-    {
-        var progress = _source.Progress;
-        var catalog = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
-        foreach (var vm in Timers)
-        {
-            if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
-            progress.TryGetValue(vm.Key, out var p);
-            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
-        }
-        TimersView.Refresh();
+        if (_disposed) return;
+        _disposed = true;
+        _binder.Dispose();
+        _scheduler.Dispose();
     }
 }
 

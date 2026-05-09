@@ -126,17 +126,17 @@ public class UserTimerSourceTests : IDisposable
     }
 
     [Fact]
-    public void DefinitionsChanged_raises_CatalogChanged()
+    public void DefinitionsChanged_raises_RowsChanged()
     {
         var (source, defs, progress, _) = BuildServices();
         try
         {
-            var fired = 0;
-            source.CatalogChanged += (_, _) => fired++;
+            var batches = 0;
+            source.RowsChanged += (_, _) => batches++;
 
             defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1) });
 
-            fired.Should().Be(1);
+            batches.Should().Be(1);
         }
         finally
         {
@@ -167,6 +167,62 @@ public class UserTimerSourceTests : IDisposable
             captured[0].Key.Should().Be(id);
             captured[0].DisplayName.Should().Be("Chest");
             captured[0].SourceMetadata.Should().BeOfType<GandalfTimerDef>();
+        }
+        finally
+        {
+            source.Dispose(); progress.Dispose(); defs.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Adding_a_definition_emits_RowsChanged_with_added_delta()
+    {
+        var (source, defs, progress, active) = BuildServices();
+        try
+        {
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            source.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            defs.Add(new GandalfTimerDef
+            {
+                Name = "Chest", Duration = TimeSpan.FromHours(3),
+                Region = "Goblin Dungeon", Map = "Lower",
+            });
+
+            batches.Should().ContainSingle();
+            batches[0].Should().ContainSingle(d => d.Kind == TimerRowChangeKind.Added);
+        }
+        finally
+        {
+            source.Dispose(); progress.Dispose(); defs.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Starting_a_timer_emits_RowsChanged_with_progress_changed_delta()
+    {
+        var (source, defs, progress, active) = BuildServices();
+        try
+        {
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+            defs.Add(new GandalfTimerDef
+            {
+                Name = "Chest", Duration = TimeSpan.FromHours(3),
+                Region = "Goblin Dungeon", Map = "Lower",
+            });
+            var id = defs.Definitions[0].Id;
+
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            source.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            progress.Start(id);
+
+            batches.SelectMany(b => b)
+                .Should().ContainSingle(d =>
+                    d.Key == id && d.Kind == TimerRowChangeKind.ProgressChanged);
         }
         finally
         {

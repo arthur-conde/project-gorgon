@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Gandalf.Domain;
 
 /// <summary>
@@ -34,9 +36,25 @@ public interface ITimerSource
     /// </summary>
     IReadOnlyDictionary<string, TimerProgressEntry> Progress { get; }
 
-    event EventHandler? CatalogChanged;
-    event EventHandler? ProgressChanged;
+    /// <summary>
+    /// Per-row progress lookup. Returns <c>true</c> and yields the entry when a row
+    /// has been started (even if dismissed); returns <c>false</c> for rows in
+    /// catalog-but-never-started state. Avoids the
+    /// <see cref="Progress"/> snapshot-dictionary allocation for callers that only
+    /// care about a single key (e.g. binders applying a per-key delta).
+    /// </summary>
+    bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress);
+
     event EventHandler<TimerReadyEventArgs>? TimerReady;
+
+    /// <summary>
+    /// Per-key batched change feed. Sources coalesce many simultaneous mutations
+    /// (calibration overlay refresh, journal load, character switch) into a single
+    /// event invocation with N deltas — one event per logical mutation, not N —
+    /// so consumers can apply all changes and call
+    /// <c>ICollectionView.Refresh</c> at most once per batch.
+    /// </summary>
+    event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 }
 
 public sealed record TimerCatalogEntry(
@@ -58,4 +76,36 @@ public sealed class TimerReadyEventArgs : EventArgs
     public required string DisplayName { get; init; }
     public required DateTimeOffset ReadyAt { get; init; }
     public object? SourceMetadata { get; init; }
+}
+
+/// <summary>
+/// One row's worth of change inside a <see cref="TimerRowsChangedEventArgs"/>
+/// batch. <see cref="Catalog"/> is null only for <see cref="TimerRowChangeKind.Removed"/>;
+/// <see cref="Progress"/> is null when the row exists but has never been started
+/// (or was reset to idle).
+/// </summary>
+public sealed record TimerRowDelta(
+    string Key,
+    TimerRowChangeKind Kind,
+    TimerCatalogEntry? Catalog,
+    TimerProgressEntry? Progress);
+
+public enum TimerRowChangeKind
+{
+    Added,
+    CatalogChanged,
+    ProgressChanged,
+    Removed,
+}
+
+/// <summary>
+/// Batched per-key change feed for <see cref="ITimerSource"/>. Sources coalesce
+/// many simultaneous mutations (calibration overlay, character switch, journal
+/// load) into a single event with N deltas — one event invocation, not N — so
+/// consumers can apply all changes and call <c>ICollectionView.Refresh</c> at
+/// most once per batch.
+/// </summary>
+public sealed class TimerRowsChangedEventArgs : EventArgs
+{
+    public required IReadOnlyList<TimerRowDelta> Deltas { get; init; }
 }

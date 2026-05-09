@@ -234,14 +234,14 @@ public class QuestSourceTests : IDisposable
         {
             src.Catalog.Should().BeEmpty();
 
-            var raised = false;
-            src.CatalogChanged += (_, _) => raised = true;
+            var deltas = new List<TimerRowDelta>();
+            src.RowsChanged += (_, e) => deltas.AddRange(e.Deltas);
 
             // Stage new data, then raise the event the way the real service would.
             refData.SetQuests([QuestEntryFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2))]);
             refData.RaiseQuestsUpdated();
 
-            raised.Should().BeTrue();
+            deltas.Should().ContainSingle(d => d.Kind == TimerRowChangeKind.Added);
             src.Catalog.Should().HaveCount(1);
             src.Catalog[0].DisplayName.Should().Be("Late Arrival");
         }
@@ -301,6 +301,26 @@ public class QuestSourceTests : IDisposable
         {
             src.OnQuestJournalLoaded([50208, 999999], []);
             src.PendingInternalNames.Should().BeEquivalentTo("Quest_WO_50208");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnQuestCompleted_emits_RowsChanged_with_progress_delta_for_that_key()
+    {
+        var quest = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(2));
+        var (src, derived, _, time) = Build(quest);
+        try
+        {
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            src.OnQuestCompleted("Quest_WO_50208", time.GetUtcNow().UtcDateTime);
+
+            batches.SelectMany(b => b)
+                .Should().ContainSingle(d =>
+                    d.Key == QuestSource.QuestKey("Quest_WO_50208")
+                    && d.Kind == TimerRowChangeKind.ProgressChanged);
         }
         finally { src.Dispose(); derived.Dispose(); }
     }

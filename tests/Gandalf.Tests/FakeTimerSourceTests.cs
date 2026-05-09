@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.ViewModels;
@@ -24,15 +25,21 @@ public class FakeTimerSourceTests
         public IReadOnlyDictionary<string, TimerProgressEntry> Progress { get; set; } =
             new Dictionary<string, TimerProgressEntry>(StringComparer.Ordinal);
 
-        public event EventHandler? CatalogChanged;
-        public event EventHandler? ProgressChanged;
+        public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+        {
+            if (Progress.TryGetValue(key, out var p)) { progress = p; return true; }
+            progress = null;
+            return false;
+        }
+
         public event EventHandler<TimerReadyEventArgs>? TimerReady;
+        public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
         public FakeTimerSource(string sourceId = "tests.fake") => SourceId = sourceId;
 
-        public void RaiseCatalogChanged() => CatalogChanged?.Invoke(this, EventArgs.Empty);
-        public void RaiseProgressChanged() => ProgressChanged?.Invoke(this, EventArgs.Empty);
         public void RaiseTimerReady(TimerReadyEventArgs e) => TimerReady?.Invoke(this, e);
+        public void RaiseRowsChanged(IReadOnlyList<TimerRowDelta> deltas) =>
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
     }
 
     [Fact]

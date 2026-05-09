@@ -158,26 +158,12 @@ public class QuestTimersViewModelTests : IDisposable
         finally { src.Dispose(); derived.Dispose(); }
     }
 
-    [Fact]
-    public void Tick_does_not_refresh_view_when_no_state_changed()
-    {
-        var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(10));
-        var (vm, src, derived, time) = Build(q);
-        try
-        {
-            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
-            var refreshes = 0;
-            ((System.ComponentModel.ICollectionView)vm.TimersView).CollectionChanged += (_, _) => refreshes++;
-
-            // Advance only seconds — still Running.
-            time.Advance(TimeSpan.FromSeconds(5));
-            vm.Tick();
-
-            refreshes.Should().Be(0, "no state transition means no Refresh() — the freeze bug came from doing this every second");
-            vm.Timers[0].State.Should().Be(TimerState.Running);
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
+    // The "Tick does not Refresh on text-only changes" regression test moved
+    // out of this VM with the timer-model redesign — the per-tab tick now
+    // lives in TimerDisplayScheduler. Coverage is preserved via
+    // TimerDisplaySchedulerTests.Slow_tick_does_not_fire_RefreshRequired_for_text_only_changes
+    // and the binder's once-per-batch RefreshRequired guarantee
+    // (TimerSourceBinderTests.RefreshRequired_fires_at_most_once_per_batched_RowsChanged).
 
     private sealed class ManualTime : TimeProvider
     {

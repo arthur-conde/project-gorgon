@@ -113,6 +113,13 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<LootSource>());
         services.AddSingleton<TimerAlarmService>();
 
+        // Drives TimerProgressService.CheckExpirations on a one-shot timer
+        // scheduled at the soonest known user-timer expiration. Replaces
+        // the 1 Hz tick that used to live in TimerListViewModel.Tick. Owns
+        // a DispatcherTimer — kept out of TimerProgressService itself to
+        // keep WPF dependencies away from the per-character data layer.
+        services.AddSingleton<TimerExpirationScheduler>();
+
         // Dashboard aggregator + VM — fans in every registered ITimerSource.
         services.AddSingleton<DashboardAggregator>();
         services.AddSingleton<DashboardViewModel>();
@@ -127,9 +134,19 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<ICharacterPresenceService>()));
 
         services.AddSingleton<GandalfShellViewModel>();
-        services.AddSingleton<GandalfShellView>(sp => new GandalfShellView
+        services.AddSingleton<GandalfShellView>(sp =>
         {
-            DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
+            // Eagerly construct the expiration scheduler when the shell view
+            // is built. The scheduler subscribes to TimerProgressService /
+            // TimerDefinitionsService events in its ctor and owns a
+            // DispatcherTimer for the user-timer alarm path; nothing else
+            // resolves it. This is the same eager-singleton idiom that pulls
+            // TimerAlarmService in via TimerListViewModel's factory above.
+            _ = sp.GetRequiredService<TimerExpirationScheduler>();
+            return new GandalfShellView
+            {
+                DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
+            };
         });
 
         services.AddSingleton<GandalfSettingsViewModel>();

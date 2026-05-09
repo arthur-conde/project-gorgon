@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
@@ -14,19 +15,25 @@ public sealed class DashboardAggregatorTests
         public IReadOnlyDictionary<string, TimerProgressEntry> Progress { get; set; } =
             new Dictionary<string, TimerProgressEntry>(StringComparer.Ordinal);
 
-        public event EventHandler? CatalogChanged;
-        public event EventHandler? ProgressChanged;
+        public bool TryGetProgress(string key, [NotNullWhen(true)] out TimerProgressEntry? progress)
+        {
+            if (Progress.TryGetValue(key, out var p)) { progress = p; return true; }
+            progress = null;
+            return false;
+        }
+
         public event EventHandler<TimerReadyEventArgs>? TimerReady;
+        public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
         public FakeSource(string sourceId) => SourceId = sourceId;
 
-        public void RaiseProgressChanged() => ProgressChanged?.Invoke(this, EventArgs.Empty);
-        public void RaiseCatalogChanged() => CatalogChanged?.Invoke(this, EventArgs.Empty);
         public void RaiseTimerReady() =>
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {
                 SourceId = SourceId, Key = "_", DisplayName = "_", ReadyAt = DateTimeOffset.UtcNow,
             });
+        public void RaiseRowsChanged(IReadOnlyList<TimerRowDelta> deltas) =>
+            RowsChanged?.Invoke(this, new TimerRowsChangedEventArgs { Deltas = deltas });
     }
 
     private sealed class ManualTime : TimeProvider
@@ -135,23 +142,32 @@ public sealed class DashboardAggregatorTests
     }
 
     [Fact]
-    public void Updated_event_fires_when_a_source_raises_ProgressChanged()
+    public void Updated_event_fires_when_a_source_raises_RowsChanged_with_deltas()
     {
-        var src = new FakeSource("gandalf.test");
+        var src = new FakeSource("gandalf.test")
+        {
+            Catalog = [new TimerCatalogEntry("k1", "Daily", "Serbule", TimeSpan.FromHours(1), null)],
+        };
         var time = new ManualTime(Origin);
 
         using var agg = new DashboardAggregator([src], time);
         var fired = 0;
         agg.Updated += (_, _) => fired++;
 
-        src.RaiseProgressChanged();
-        src.RaiseProgressChanged();
+        src.RaiseRowsChanged([
+            new TimerRowDelta("k1", TimerRowChangeKind.ProgressChanged, src.Catalog[0],
+                new TimerProgressEntry("k1", time.GetUtcNow(), null)),
+        ]);
+        src.RaiseRowsChanged([
+            new TimerRowDelta("k1", TimerRowChangeKind.ProgressChanged, src.Catalog[0],
+                new TimerProgressEntry("k1", time.GetUtcNow(), null)),
+        ]);
 
         fired.Should().Be(2);
     }
 
     [Fact]
-    public void Updated_event_fires_when_a_source_raises_CatalogChanged()
+    public void Updated_event_fires_when_a_source_emits_a_catalog_delta()
     {
         var src = new FakeSource("gandalf.test");
         var time = new ManualTime(Origin);
@@ -160,7 +176,11 @@ public sealed class DashboardAggregatorTests
         var fired = 0;
         agg.Updated += (_, _) => fired++;
 
-        src.RaiseCatalogChanged();
+        var newEntry = new TimerCatalogEntry("k1", "Daily", "Serbule", TimeSpan.FromHours(1), null);
+        src.Catalog = [newEntry];
+        src.RaiseRowsChanged([
+            new TimerRowDelta("k1", TimerRowChangeKind.Added, newEntry, null),
+        ]);
 
         fired.Should().Be(1);
     }
@@ -201,7 +221,11 @@ public sealed class DashboardAggregatorTests
         agg.Updated += (_, _) => fired++;
 
         agg.Dispose();
-        src.RaiseProgressChanged();
+        var entry = new TimerCatalogEntry("k1", "Daily", "Serbule", TimeSpan.FromHours(1), null);
+        src.Catalog = [entry];
+        src.RaiseRowsChanged([
+            new TimerRowDelta("k1", TimerRowChangeKind.Added, entry, null),
+        ]);
 
         fired.Should().Be(0);
     }
