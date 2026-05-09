@@ -3,10 +3,19 @@ using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
 using Mithril.Shared.Character;
+using Mithril.TestSupport;
 using Xunit;
 
 namespace Gandalf.Tests;
 
+/// <summary>
+/// Post-#155 QuestSource is a pure projector over <see cref="Mithril.GameState.Quests.IQuestService"/>
+/// + <see cref="DerivedTimerProgressService"/>. Catalog =
+/// <c>ActiveQuests ∪ keys-with-progress</c>; ingestion (the old
+/// <c>OnQuestJournalLoaded</c> / <c>OnQuestAccepted</c> / <c>OnQuestCompleted</c>
+/// entry points) lives in QuestService now and is exercised via
+/// <see cref="FakeQuestService"/> here.
+/// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
 public class QuestSourceTests : IDisposable
@@ -16,7 +25,7 @@ public class QuestSourceTests : IDisposable
 
     public QuestSourceTests()
     {
-        _dir = Mithril.TestSupport.TestPaths.CreateTempDir("gandalf_quest_source");
+        _dir = TestPaths.CreateTempDir("gandalf_quest_source");
         _charactersDir = Path.Combine(_dir, "characters");
         Directory.CreateDirectory(_charactersDir);
     }
@@ -26,7 +35,8 @@ public class QuestSourceTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
     }
 
-    private (QuestSource src, DerivedTimerProgressService derived, FakeReferenceData refData, ManualTime time)
+    private (QuestSource src, DerivedTimerProgressService derived, FakeReferenceData refData,
+             FakeQuestService questSvc, ManualTime time)
         Build(params Mithril.Shared.Reference.QuestEntry[] quests)
     {
         var active = new FakeActiveCharacterService();
@@ -39,14 +49,15 @@ public class QuestSourceTests : IDisposable
         var derived = new DerivedTimerProgressService(derivedView, time);
 
         var refData = new FakeReferenceData(quests);
-        var src = new QuestSource(derived, refData, time);
-        return (src, derived, refData, time);
+        var questSvc = new FakeQuestService();
+        var src = new QuestSource(derived, refData, questSvc, time);
+        return (src, derived, refData, questSvc, time);
     }
 
     [Fact]
     public void SourceId_is_stable()
     {
-        var (src, derived, _, _) = Build();
+        var (src, derived, _, _, _) = Build();
         try
         {
             src.SourceId.Should().Be("gandalf.quest");
@@ -56,13 +67,32 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void Catalog_includes_repeatable_quests_with_reuse_duration()
+    public void Catalog_is_empty_when_no_quests_active_and_no_progress()
+    {
+        // Even with reference data full of repeatable quests, the catalog
+        // projects only ActiveQuests ∪ keys-with-progress — not the universe.
+        // Regression guard for the relevance-predicate wart that #155 retired.
+        var quests = Enumerable.Range(0, 100)
+            .Select(i => QuestEntryFactory.Repeatable($"quest_{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
+            .ToArray();
+        var (src, derived, _, _, _) = Build(quests);
+        try
+        {
+            src.Catalog.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Catalog_includes_active_quests_with_reuse_duration()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily Pet Care", TimeSpan.FromHours(20),
             location: "Serbule");
-        var (src, derived, _, _) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
+            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
+
             src.Catalog.Should().HaveCount(1);
             src.Catalog[0].DisplayName.Should().Be("Daily Pet Care");
             src.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(20));
@@ -73,24 +103,23 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void Catalog_excludes_non_repeatable_quests()
+    public void Catalog_excludes_non_repeatable_quests_even_when_active()
     {
         var nonRep = QuestEntryFactory.NonRepeatable("quest_x", "QX", "One-Off Story Quest");
-        var (src, derived, _, _) = Build(nonRep);
+        var (src, derived, _, questSvc, time) = Build(nonRep);
         try
         {
+            questSvc.RaiseAccepted("QX", time.GetUtcNow().UtcDateTime);
             src.Catalog.Should().BeEmpty();
         }
         finally { src.Dispose(); derived.Dispose(); }
     }
 
     [Fact]
-    public void Catalog_admits_quests_with_any_requirement_type_when_Reuse_is_present()
+    public void Catalog_admits_active_quests_with_any_requirement_type_when_Reuse_is_present()
     {
         // The game is the authoritative gate; QuestSource does not re-evaluate
-        // QuestCompletedRecently / MinDelayAfterFirstCompletion / etc. Any quest
-        // with a Reuse* duration is in the catalog and a future completion
-        // observation will stamp the cooldown row.
+        // QuestCompletedRecently / MinDelayAfterFirstCompletion / etc.
         var recentlyGated = QuestEntryFactory.Repeatable("quest_a", "QA", "Recently-gated daily",
             TimeSpan.FromHours(20),
             requirements: QuestEntryFactory.TimeGate("QuestCompletedRecently"));
@@ -99,9 +128,13 @@ public class QuestSourceTests : IDisposable
             requirements: QuestEntryFactory.TimeGate("MinDelayAfterFirstCompletion_Hours"));
         var plain = QuestEntryFactory.Repeatable("quest_c", "QC", "Plain daily", TimeSpan.FromHours(20));
 
-        var (src, derived, _, _) = Build(recentlyGated, firstDelayGated, plain);
+        var (src, derived, _, questSvc, time) = Build(recentlyGated, firstDelayGated, plain);
         try
         {
+            questSvc.RaiseAccepted("QA", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseAccepted("QB", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseAccepted("QC", time.GetUtcNow().UtcDateTime);
+
             src.Catalog.Should().HaveCount(3);
             src.Catalog.Select(c => c.DisplayName).Should().BeEquivalentTo(
                 "Recently-gated daily", "First-delay-gated daily", "Plain daily");
@@ -110,15 +143,15 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void OnQuestCompleted_anchors_progress_to_log_timestamp()
+    public void Completed_event_anchors_progress_to_log_timestamp()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
             // Quest completed 5 hours ago.
             var fiveHoursAgo = time.GetUtcNow().UtcDateTime - TimeSpan.FromHours(5);
-            src.OnQuestCompleted("Q1", fiveHoursAgo);
+            questSvc.RaiseCompleted("Q1", fiveHoursAgo);
 
             var key = QuestSource.QuestKey("Q1");
             src.Progress.Should().ContainKey(key);
@@ -135,19 +168,20 @@ public class QuestSourceTests : IDisposable
     public void Replay_of_dismissed_quest_completion_preserves_dismissal()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
             var completedAt = time.GetUtcNow().UtcDateTime;
-            src.OnQuestCompleted("Q1", completedAt);
+            questSvc.RaiseCompleted("Q1", completedAt);
 
             var key = QuestSource.QuestKey("Q1");
             derived.Dismiss(QuestSource.Id, key);
             src.Progress[key].DismissedAt.Should().NotBeNull();
 
-            // Same line replays (PlayerLogStream re-feeds the
-            // ProcessCompleteQuest line on next launch). Dismissal must survive.
-            src.OnQuestCompleted("Q1", completedAt);
+            // Same Completed event re-fires (Subscribe replay on a fresh
+            // subscriber, or QuestService dispatching a duplicate). Dismissal
+            // must survive — clearing it would resurrect a row the user X'd.
+            questSvc.RaiseCompleted("Q1", completedAt);
             src.Progress[key].DismissedAt.Should().NotBeNull(
                 "replay of the same StartedAt must not undo the user's dismissal");
         }
@@ -158,17 +192,17 @@ public class QuestSourceTests : IDisposable
     public void Genuine_re_completion_after_dismissal_resurrects_the_row()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
-            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
             var key = QuestSource.QuestKey("Q1");
             derived.Dismiss(QuestSource.Id, key);
 
             // A genuine re-completion after the cooldown — different timestamp,
             // not a replay. The row should resurrect with a fresh clock.
             time.Advance(TimeSpan.FromHours(21));
-            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
 
             src.Progress[key].StartedAt.Should().Be(time.GetUtcNow());
             src.Progress[key].DismissedAt.Should().BeNull();
@@ -177,28 +211,12 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void OnQuestCompleted_drops_quest_from_pending()
+    public void Completed_event_for_unknown_quest_is_a_noop()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build();
         try
         {
-            src.OnQuestAccepted("Q1");
-            src.PendingInternalNames.Should().Contain("Q1");
-
-            src.OnQuestCompleted("Q1", time.GetUtcNow().UtcDateTime);
-            src.PendingInternalNames.Should().NotContain("Q1");
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void OnQuestCompleted_for_unknown_quest_is_a_noop()
-    {
-        var (src, derived, _, time) = Build();
-        try
-        {
-            src.OnQuestCompleted("UnknownQuest", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseCompleted("UnknownQuest", time.GetUtcNow().UtcDateTime);
             src.Progress.Should().BeEmpty();
         }
         finally { src.Dispose(); derived.Dispose(); }
@@ -208,7 +226,7 @@ public class QuestSourceTests : IDisposable
     public void TimerReady_fires_when_completion_is_anchored_past_the_cooldown()
     {
         var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
             var captured = new List<TimerReadyEventArgs>();
@@ -216,7 +234,7 @@ public class QuestSourceTests : IDisposable
 
             // Completed 2 hours ago — already past the 1h cooldown when we observe it.
             var twoHoursAgo = time.GetUtcNow().UtcDateTime - TimeSpan.FromHours(2);
-            src.OnQuestCompleted("Q1", twoHoursAgo);
+            questSvc.RaiseCompleted("Q1", twoHoursAgo);
 
             captured.Should().HaveCount(1);
             captured[0].SourceId.Should().Be("gandalf.quest");
@@ -229,7 +247,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Reference_data_FileUpdated_quests_rebuilds_catalog()
     {
-        var (src, derived, refData, _) = Build();
+        var (src, derived, refData, questSvc, time) = Build();
         try
         {
             src.Catalog.Should().BeEmpty();
@@ -237,11 +255,14 @@ public class QuestSourceTests : IDisposable
             var deltas = new List<TimerRowDelta>();
             src.RowsChanged += (_, e) => deltas.AddRange(e.Deltas);
 
-            // Stage new data, then raise the event the way the real service would.
-            refData.SetQuests([QuestEntryFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2))]);
+            // Stage new reference data and accept a quest backed by it. The
+            // FileUpdated rebuild will then have something to project.
+            var late = QuestEntryFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2));
+            refData.SetQuests([late]);
             refData.RaiseQuestsUpdated();
+            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
 
-            deltas.Should().ContainSingle(d => d.Kind == TimerRowChangeKind.Added);
+            deltas.Should().Contain(d => d.Kind == TimerRowChangeKind.Added && d.Key == QuestSource.QuestKey("Q1"));
             src.Catalog.Should().HaveCount(1);
             src.Catalog[0].DisplayName.Should().Be("Late Arrival");
         }
@@ -249,78 +270,65 @@ public class QuestSourceTests : IDisposable
     }
 
     [Fact]
-    public void Pending_initially_empty()
-    {
-        var (src, derived, _, _) = Build();
-        try
-        {
-            src.PendingInternalNames.Should().BeEmpty();
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void OnQuestAccepted_adds_to_pending()
-    {
-        var (src, derived, _, _) = Build();
-        try
-        {
-            src.OnQuestAccepted("Q1");
-            src.OnQuestAccepted("Q2");
-
-            src.PendingInternalNames.Should().BeEquivalentTo("Q1", "Q2");
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void OnQuestJournalLoaded_replaces_pending_with_resolved_internal_names()
-    {
-        var q1 = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(1));
-        var q2 = QuestEntryFactory.Repeatable("quest_3", "Quest_Reg_3", "Regular 3", TimeSpan.FromHours(1));
-        var (src, derived, _, _) = Build(q1, q2);
-        try
-        {
-            // Pre-seed _pending with a stale name; the bulk-load should clear it.
-            src.OnQuestAccepted("Quest_StaleFromPriorSession");
-            src.PendingInternalNames.Should().Contain("Quest_StaleFromPriorSession");
-
-            src.OnQuestJournalLoaded([50208], [3]);
-
-            src.PendingInternalNames.Should().BeEquivalentTo("Quest_WO_50208", "Quest_Reg_3");
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void OnQuestJournalLoaded_drops_unknown_quest_ids_silently()
-    {
-        var q1 = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(1));
-        var (src, derived, _, _) = Build(q1);
-        try
-        {
-            src.OnQuestJournalLoaded([50208, 999999], []);
-            src.PendingInternalNames.Should().BeEquivalentTo("Quest_WO_50208");
-        }
-        finally { src.Dispose(); derived.Dispose(); }
-    }
-
-    [Fact]
-    public void OnQuestCompleted_emits_RowsChanged_with_progress_delta_for_that_key()
+    public void Accepted_event_emits_RowsChanged_with_an_Added_delta()
     {
         var quest = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(2));
-        var (src, derived, _, time) = Build(quest);
+        var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
             var batches = new List<IReadOnlyList<TimerRowDelta>>();
             src.RowsChanged += (_, e) => batches.Add(e.Deltas);
 
-            src.OnQuestCompleted("Quest_WO_50208", time.GetUtcNow().UtcDateTime);
+            questSvc.RaiseAccepted("Quest_WO_50208", time.GetUtcNow().UtcDateTime);
 
             batches.SelectMany(b => b)
                 .Should().ContainSingle(d =>
                     d.Key == QuestSource.QuestKey("Quest_WO_50208")
-                    && d.Kind == TimerRowChangeKind.ProgressChanged);
+                    && d.Kind == TimerRowChangeKind.Added);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Abandoned_event_for_uncompleted_quest_emits_a_Removed_delta()
+    {
+        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
+        var (src, derived, _, questSvc, time) = Build(quest);
+        try
+        {
+            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            questSvc.RaiseAbandoned("Q1", time.GetUtcNow().UtcDateTime);
+
+            batches.SelectMany(b => b)
+                .Should().ContainSingle(d =>
+                    d.Key == QuestSource.QuestKey("Q1")
+                    && d.Kind == TimerRowChangeKind.Removed);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Completed_event_keeps_row_visible_via_keys_with_progress_after_active_set_drops()
+    {
+        // Catalog = ActiveQuests ∪ keys-with-progress. Completing a quest
+        // drops it from the active set BUT _derived has the cooldown row, so
+        // the union keeps it visible until the user dismisses.
+        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
+        var (src, derived, _, questSvc, time) = Build(quest);
+        try
+        {
+            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
+            src.Catalog.Should().HaveCount(1);
+
+            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
+
+            // Active set dropped Q1 (Completed implies removal), but derived
+            // progress now anchors the cooldown — so Q1 stays in the catalog.
+            src.Catalog.Should().HaveCount(1);
+            src.Catalog[0].DisplayName.Should().Be("Daily");
         }
         finally { src.Dispose(); derived.Dispose(); }
     }

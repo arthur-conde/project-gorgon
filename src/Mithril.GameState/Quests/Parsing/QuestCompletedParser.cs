@@ -4,7 +4,7 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 
-namespace Gandalf.Parsing;
+namespace Mithril.GameState.Quests.Parsing;
 
 /// <summary>
 /// Parses <c>ProcessCompleteQuest(&lt;charEntityId&gt;, &lt;questId&gt;)</c> lines emitted

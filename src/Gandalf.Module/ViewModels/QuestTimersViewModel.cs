@@ -9,16 +9,17 @@ using Gandalf.Services;
 namespace Gandalf.ViewModels;
 
 /// <summary>
-/// ViewModel for the Quests tab. Renders repeatable-quest cooldowns from the
-/// shared <see cref="QuestSource"/> and exposes the State filter chip
+/// ViewModel for the Quests tab. Renders repeatable-quest cooldowns from
+/// <see cref="QuestSource"/> and exposes the State filter chip
 /// (Pending / Cooling / Ready / All) plus bulk dismiss commands.
 ///
-/// Materializes only the rows the player cares about: pending in journal, or
-/// cooling/done. The full catalog is ~2,000 entries — projecting it all into
-/// a non-virtualizing WrapPanel froze the UI thread. Issue #155 retires this
-/// relevance predicate by reshaping QuestSource.Catalog to be the active set
-/// directly; until then, the predicate filters at materialization time and
-/// the source's coarse ProgressChanged event drives RecheckRelevance.
+/// Post-#155 the source's catalog IS the active set
+/// (<c>IQuestService.ActiveQuests ∪ keys-with-progress</c>) — no need for the
+/// VM to re-filter the universe of repeatable quests, so the old
+/// <c>IsRelevant</c> predicate and the <c>PendingChanged</c> subscription are
+/// gone. Pending in the State filter just means <see cref="TimerState.Idle"/>:
+/// a row in the catalog with no progress can only have arrived via
+/// <c>ActiveQuests</c>, so Idle is exactly "in journal, not yet completed."
 /// </summary>
 public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
 {
@@ -45,20 +46,10 @@ public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.Name), ListSortDirection.Ascending));
 
         _scheduler = new TimerDisplayScheduler(_time);
-        _binder = new TimerSourceBinder(
-            _source, Timers, _time,
-            isRelevant: IsRelevant,
-            scheduler: _scheduler);
+        _binder = new TimerSourceBinder(_source, Timers, _time, scheduler: _scheduler);
 
         _binder.RefreshRequired += (_, _) => TimersView.Refresh();
         _scheduler.RefreshRequired += (_, _) => TimersView.Refresh();
-
-        // Pending-set changes don't mutate catalog or progress (no
-        // RowsChanged delta), but they shift relevance for every catalog
-        // row. PendingChanged is the dedicated signal — fires only when
-        // _pending actually changed. Goes away once #155 reshapes
-        // QuestSource's catalog to the active set directly.
-        _source.PendingChanged += OnPendingChanged;
     }
 
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
@@ -94,38 +85,17 @@ public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
         return StateFilter switch
         {
             QuestStateFilter.All => true,
-            QuestStateFilter.Pending => IsPending(vm),
+            QuestStateFilter.Pending => vm.State == TimerState.Idle,
             QuestStateFilter.Cooling => vm.State == TimerState.Running,
             QuestStateFilter.Ready => vm.State == TimerState.Done,
             _ => true,
         };
     }
 
-    private bool IsPending(TimerItemViewModel vm)
-    {
-        if (vm.Catalog.SourceMetadata is not QuestCatalogPayload payload) return false;
-        if (vm.State != TimerState.Idle) return false;
-        return _source.PendingInternalNames.Contains(payload.Quest.InternalName);
-    }
-
-    private bool IsRelevant(TimerCatalogEntry entry, TimerProgressEntry? progress)
-    {
-        // Cooling or Done (any progress not dismissed) is always relevant.
-        if (progress is { DismissedAt: null }) return true;
-        // Otherwise must be in journal.
-        if (entry.SourceMetadata is QuestCatalogPayload payload &&
-            _source.PendingInternalNames.Contains(payload.Quest.InternalName)) return true;
-        return false;
-    }
-
-    private void OnPendingChanged(object? sender, EventArgs e) =>
-        _binder.RecheckRelevance();
-
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _source.PendingChanged -= OnPendingChanged;
         _binder.Dispose();
         _scheduler.Dispose();
     }

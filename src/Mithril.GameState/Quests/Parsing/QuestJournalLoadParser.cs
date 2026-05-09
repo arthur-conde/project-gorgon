@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Mithril.Shared.Logging;
 
-namespace Gandalf.Parsing;
+namespace Mithril.GameState.Quests.Parsing;
 
 /// <summary>
 /// Parses the bulk <c>ProcessLoadQuests</c> (plural) login signal — a single

@@ -1,8 +1,9 @@
 using FluentAssertions;
-using Gandalf.Parsing;
+using Mithril.GameState.Quests.Parsing;
+using Mithril.TestSupport;
 using Xunit;
 
-namespace Gandalf.Tests.Parsing;
+namespace Mithril.GameState.Tests.Quests.Parsing;
 
 public sealed class QuestJournalLoadParserTests
 {

@@ -14,4 +14,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gandalf.Module\Gandalf.Module.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Shared test helpers opted into per-project (see tests/Directory.Build.props). -->
+    <Compile Include="..\TestSupport\FakeReferenceData.cs"
+             Link="TestSupport\FakeReferenceData.cs" />
+    <Compile Include="..\TestSupport\FakeQuestService.cs"
+             Link="TestSupport\FakeQuestService.cs" />
+  </ItemGroup>
 </Project>
