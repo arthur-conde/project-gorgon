@@ -71,12 +71,12 @@ public class UserTimerSourceTests : IDisposable
             defs.Add(new GandalfTimerDef
             {
                 Name = "Chest", Duration = TimeSpan.FromHours(3),
-                Region = "Goblin Dungeon", Map = "Lower",
+                Area = "Goblin Dungeon",
             });
 
             source.Catalog.Should().HaveCount(1);
             source.Catalog[0].DisplayName.Should().Be("Chest");
-            source.Catalog[0].Region.Should().Be("Goblin Dungeon > Lower");
+            source.Catalog[0].Region.Should().Be("Goblin Dungeon");
             source.Catalog[0].Duration.Should().Be(TimeSpan.FromHours(3));
             source.Catalog[0].SourceMetadata.Should().BeOfType<GandalfTimerDef>();
         }
@@ -188,7 +188,7 @@ public class UserTimerSourceTests : IDisposable
             defs.Add(new GandalfTimerDef
             {
                 Name = "Chest", Duration = TimeSpan.FromHours(3),
-                Region = "Goblin Dungeon", Map = "Lower",
+                Area = "Goblin Dungeon",
             });
 
             batches.Should().ContainSingle();
@@ -211,7 +211,7 @@ public class UserTimerSourceTests : IDisposable
             defs.Add(new GandalfTimerDef
             {
                 Name = "Chest", Duration = TimeSpan.FromHours(3),
-                Region = "Goblin Dungeon", Map = "Lower",
+                Area = "Goblin Dungeon",
             });
             var id = defs.Definitions[0].Id;
 

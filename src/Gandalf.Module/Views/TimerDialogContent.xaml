@@ -88,14 +88,9 @@
         </DockPanel>
 
         <DockPanel Margin="0,0,0,6">
-            <TextBlock Text="Region" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
-            <ComboBox IsEditable="True" Text="{Binding Region, UpdateSourceTrigger=PropertyChanged}"
-                      ItemsSource="{Binding KnownRegions}" Padding="4,2"/>
-        </DockPanel>
-        <DockPanel Margin="0,0,0,6">
-            <TextBlock Text="Map" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
-            <ComboBox IsEditable="True" Text="{Binding Map, UpdateSourceTrigger=PropertyChanged}"
-                      ItemsSource="{Binding KnownMaps}" Padding="4,2"/>
+            <TextBlock Text="Area" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+            <ComboBox IsEditable="True" Text="{Binding Area, UpdateSourceTrigger=PropertyChanged}"
+                      ItemsSource="{Binding KnownAreas}" Padding="4,2"/>
         </DockPanel>
 
         <!--

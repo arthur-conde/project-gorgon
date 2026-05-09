@@ -5,6 +5,7 @@ using System.Text.Json.Serialization.Metadata;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
@@ -28,6 +29,7 @@ public sealed class GandalfSplitMigration : IHostedService
     private readonly ISettingsStore<GandalfDefinitions> _defStore;
     private readonly PerCharacterStore<GandalfProgress> _progressStore;
     private readonly PerCharacterView<GandalfProgress> _progressView;
+    private readonly IReferenceDataService _refData;
     private readonly IDiagnosticsSink? _diag;
 
     public GandalfSplitMigration(
@@ -35,12 +37,14 @@ public sealed class GandalfSplitMigration : IHostedService
         ISettingsStore<GandalfDefinitions> defStore,
         PerCharacterStore<GandalfProgress> progressStore,
         PerCharacterView<GandalfProgress> progressView,
+        IReferenceDataService refData,
         IDiagnosticsSink? diag = null)
     {
         _charactersRootDir = options.CharactersRootDir;
         _defStore = defStore;
         _progressStore = progressStore;
         _progressView = progressView;
+        _refData = refData;
         _diag = diag;
     }
 
@@ -69,6 +73,9 @@ public sealed class GandalfSplitMigration : IHostedService
         }
 
         // Step 1: union every v1 blob's timers into a global GandalfDefinitions.
+        // Schema v3 uses Area+AreaKey instead of v1's Region+Map, so resolve as we go
+        // — same logic GandalfAreaFlattenMigration applies for v2-on-disk users.
+        var areaLookup = GandalfAreaResolver.BuildLookup(_refData);
         var defs = _defStore.Load();
         var byId = defs.Timers.ToDictionary(d => d.Id, StringComparer.Ordinal);
         foreach (var candidate in candidates.Where(c => !c.IsV2).OrderByDescending(c => c.LastWriteUtc))
@@ -76,7 +83,7 @@ public sealed class GandalfSplitMigration : IHostedService
             if (candidate.Legacy is null) continue;
             foreach (var timer in candidate.Legacy.Timers)
             {
-                if (!byId.TryAdd(timer.Id, LegacyToDef(timer)))
+                if (!byId.TryAdd(timer.Id, LegacyToDef(timer, areaLookup)))
                 {
                     // Earlier iteration already owns this id (newer mtime wins). Log if names
                     // or durations disagree so the user can tidy up later.
@@ -180,14 +187,20 @@ public sealed class GandalfSplitMigration : IHostedService
         }
     }
 
-    private static GandalfTimerDef LegacyToDef(LegacyGandalfTimerV1 legacy) => new()
+    private static GandalfTimerDef LegacyToDef(
+        LegacyGandalfTimerV1 legacy,
+        IReadOnlyDictionary<string, AreaEntry> areaLookup)
     {
-        Id = legacy.Id,
-        Name = legacy.Name,
-        Duration = legacy.Duration,
-        Region = legacy.Region,
-        Map = legacy.Map,
-    };
+        var (area, areaKey) = GandalfAreaResolver.FlattenLegacy(legacy.Region, legacy.Map, areaLookup);
+        return new GandalfTimerDef
+        {
+            Id = legacy.Id,
+            Name = legacy.Name,
+            Duration = legacy.Duration,
+            Area = area,
+            AreaKey = areaKey,
+        };
+    }
 
     private sealed record Candidate(
         string Character,

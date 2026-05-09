@@ -63,20 +63,20 @@ public class TimerViewTests
     }
 
     [Fact]
-    public void GroupKey_includes_region_and_map()
+    public void GroupKey_returns_area()
     {
         var view = new TimerView(
-            new GandalfTimerDef { Region = "Serbule", Map = "Serbule Sewers" },
+            new GandalfTimerDef { Area = "Serbule", AreaKey = "AreaSerbule" },
             new TimerProgress());
-        view.GroupKey.Should().Be("Serbule > Serbule Sewers");
+        view.GroupKey.Should().Be("Serbule");
     }
 
     [Fact]
-    public void GroupKey_region_only_when_map_blank()
+    public void GroupKey_returns_empty_when_area_blank()
     {
         var view = new TimerView(
-            new GandalfTimerDef { Region = "Serbule", Map = "" },
+            new GandalfTimerDef { Area = "" },
             new TimerProgress());
-        view.GroupKey.Should().Be("Serbule");
+        view.GroupKey.Should().BeEmpty();
     }
 }

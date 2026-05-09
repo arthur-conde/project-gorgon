@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
+using Gandalf.Services;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf.Dialogs;
 
@@ -63,8 +65,11 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     [ObservableProperty] private DateTime? _selectedGameDateTime;
     [ObservableProperty] private bool _recurring;
 
-    [ObservableProperty] private string _region = "";
-    [ObservableProperty] private string _map = "";
+    /// <summary>
+    /// Free-form area label as displayed/typed by the user. Resolved at save time
+    /// against <see cref="_areaLookup"/> to populate <see cref="ResultAreaKey"/>.
+    /// </summary>
+    [ObservableProperty] private string _area = "";
 
     /// <summary>
     /// Per-timer sound override. Null means "use the global default from
@@ -73,8 +78,18 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     /// </summary>
     [ObservableProperty] private string? _soundFilePath;
 
-    public ObservableCollection<string> KnownRegions { get; } = [];
-    public ObservableCollection<string> KnownMaps { get; } = [];
+    /// <summary>
+    /// Suggestion pool for the Area combobox. Caller pre-populates with the union of
+    /// areas.json FriendlyNames and the user's existing Area values.
+    /// </summary>
+    public ObservableCollection<string> KnownAreas { get; } = [];
+
+    /// <summary>
+    /// Case-insensitive FriendlyName → AreaEntry index used to canonicalize the
+    /// typed area string at save time. Empty when the dialog is constructed without
+    /// reference data (test scenarios) — in that case AreaKey will always be null.
+    /// </summary>
+    private readonly IReadOnlyDictionary<string, AreaEntry> _areaLookup;
 
     /// <summary>
     /// Trigger / duration / game-time inputs are gated to idle-only on the
@@ -100,21 +115,20 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     public TimerDialogViewModel(
         GandalfTimerDef? existing,
         bool isIdleOnActive,
-        IReadOnlyList<string> knownRegions,
-        IReadOnlyList<string> knownMaps,
+        IReadOnlyList<string> knownAreas,
+        IReadOnlyDictionary<string, AreaEntry> areaLookup,
         UserPreferences preferences)
     {
         PickerCulture = preferences.Use24HourClock ? TwentyFourHourCulture : TwelveHourCulture;
-        foreach (var r in knownRegions) KnownRegions.Add(r);
-        foreach (var m in knownMaps) KnownMaps.Add(m);
+        _areaLookup = areaLookup;
+        foreach (var a in knownAreas) KnownAreas.Add(a);
 
         if (existing is not null)
         {
             _isEditing = true;
             _areInputsEditable = isIdleOnActive;
             _name = existing.Name;
-            _region = existing.Region;
-            _map = existing.Map;
+            _area = existing.Area;
             _soundFilePath = existing.SoundFilePath;
 
             if (existing.Kind == GandalfTriggerKind.GameTimeOfDay)
@@ -175,14 +189,19 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
 
     public bool ResultRecurring => Recurring;
 
-    public string ResultRegion => Region.Trim();
-    public string ResultMap => Map.Trim();
+    /// <summary>
+    /// Save-time canonicalized area string. When the typed text matches a known
+    /// FriendlyName from <c>areas.json</c> (case-insensitive), the canonical-cased
+    /// FriendlyName is used so reopening the dialog displays the reference spelling.
+    /// </summary>
+    public string ResultArea => GandalfAreaResolver.Resolve(Area, _areaLookup).Area;
+
+    /// <summary>
+    /// Canonical PG area key (e.g. <c>"AreaSerbule"</c>) when the typed text resolves
+    /// to a known area, else <c>null</c>. Side-channel — never shown to the user.
+    /// </summary>
+    public string? ResultAreaKey => GandalfAreaResolver.Resolve(Area, _areaLookup).AreaKey;
+
     public string? ResultSoundFilePath =>
         string.IsNullOrWhiteSpace(SoundFilePath) ? null : SoundFilePath.Trim();
-
-    partial void OnRegionChanged(string value)
-    {
-        KnownMaps.Clear();
-        // Maps will be filtered by the caller if needed — keep it simple for now.
-    }
 }

@@ -96,6 +96,16 @@ public sealed class GandalfModule : IMithrilModule
         services.AddHostedService<DefeatCalibrationBridge>();
         services.AddSingleton<LootTimersViewModel>();
 
+        // One-shot v2→v3 file rewrite: collapse legacy Region+Map on each timer into a
+        // single Area + canonical AreaKey resolved from areas.json. Must run BEFORE
+        // GandalfSplitMigration: the split reads/writes definitions.json through the
+        // typed model, which has already dropped Region/Map — so without this first
+        // pass any pre-existing v2 timers would lose their location data.
+        services.AddHostedService(sp => new GandalfAreaFlattenMigration(
+            defsPath,
+            sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
+            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+
         // One-shot startup fanout: split the old combined per-char gandalf.json into the
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
@@ -146,7 +156,8 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<IDialogService>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<ICharacterPresenceService>(),
-            sp.GetRequiredService<Mithril.Shared.Settings.UserPreferences>()));
+            sp.GetRequiredService<Mithril.Shared.Settings.UserPreferences>(),
+            sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>()));
 
         services.AddSingleton<GandalfShellViewModel>();
         services.AddSingleton<GandalfShellView>(sp =>

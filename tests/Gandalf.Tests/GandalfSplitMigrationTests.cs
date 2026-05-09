@@ -51,10 +51,13 @@ public class GandalfSplitMigrationTests : IDisposable
             GandalfProgressJsonContext.Default.GandalfProgress);
         var active = new FakeActiveCharacterService();
         var view = new PerCharacterView<GandalfProgress>(active, progressStore);
+        // Seeded so the legacy Region="Serbule" used by V1Blob() resolves to a real
+        // AreaKey via GandalfAreaResolver — exercises the full v1→v3 path.
+        var refData = new FakeRefData(("AreaSerbule", "Serbule"));
 
         var migration = new GandalfSplitMigration(
             new PerCharacterStoreOptions { CharactersRootDir = _charactersDir },
-            defStore, progressStore, view);
+            defStore, progressStore, view, refData);
 
         await migration.StartAsync(CancellationToken.None);
         view.Dispose();
