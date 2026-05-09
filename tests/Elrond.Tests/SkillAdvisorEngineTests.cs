@@ -498,6 +498,120 @@ public class SkillAdvisorEngineTests
         withNull.XpRemaining.Should().Be(150); // 200 - 50
     }
 
+    // ── Drop-off regression (#159) ───────────────────────────────────────
+    // Pins the three real-world numbers from Arthur's character that exposed
+    // the off-by-one in ComputeEffectiveXp: RewardSkillXpDropOffLevel is the
+    // level AT WHICH the first reduction already applies (not the level after
+    // which drop-off starts). The boundary case nails the single-reduction
+    // tier at playerLevel == dropOffLevel.
+
+    [Fact]
+    public void ComputeEffectiveXp_RoughLeatherPracticeAtLevel15_AppliesTwoReductions()
+    {
+        // Repro from #159: Leatherworking 15, base XP 20, dropOff 10, rate 5, pct 0.1.
+        // (15-10)/5 + 1 = 2 reductions → 20 × 0.9² = 16.2 → 16. Game tooltip shows 16.
+        var refData = new FakeRefData();
+        refData.AddSkill("Leatherworking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L]);
+        refData.AddRecipe("recipe_11002", "Rough Leather Practice", "RoughLeatherPractice",
+            "Leatherworking", 1, "Leatherworking", 20, 0, dropOffLevel: 10, dropOffPct: 0.1f, dropOffRate: 5);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Leatherworking"] = new(15, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["RoughLeatherPractice"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var result = engine.Analyze("Leatherworking", character)!;
+
+        result.Recipes.Single(r => r.InternalName == "RoughLeatherPractice").EffectiveXp.Should().Be(16);
+    }
+
+    [Fact]
+    public void ComputeEffectiveXp_QuarterHoopAtLevel25_AppliesThreeReductions()
+    {
+        // Repro from #159: Blacksmithing 25, base XP 10, dropOff 11, rate 5, pct 0.1.
+        // (25-11)/5 + 1 = 3 reductions → 10 × 0.9³ = 7.29 → 7. Game tooltip shows 7.
+        var refData = new FakeRefData();
+        refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L]);
+        refData.AddRecipe("recipe_19016", "Quarter Hoop", "QuarterHoop",
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1f, dropOffRate: 5);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(25, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["QuarterHoop"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var result = engine.Analyze("Blacksmithing", character)!;
+
+        result.Recipes.Single(r => r.InternalName == "QuarterHoop").EffectiveXp.Should().Be(7);
+    }
+
+    [Fact]
+    public void ComputeEffectiveXp_RoughCowShoesAtLevel25_AppliesOneReduction()
+    {
+        // Repro from #159: Blacksmithing 25, base XP 52, dropOff 23, rate 5, pct 0.1.
+        // (25-23)/5 + 1 = 1 reduction → 52 × 0.9 = 46.8 → 46. Game tooltip shows 46.
+        var refData = new FakeRefData();
+        refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L]);
+        refData.AddRecipe("recipe_19102", "Rough Cow Shoes", "CraftedCowShoes2",
+            "Blacksmithing", 1, "Blacksmithing", 52, 0, dropOffLevel: 23, dropOffPct: 0.1f, dropOffRate: 5);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(25, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["CraftedCowShoes2"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var result = engine.Analyze("Blacksmithing", character)!;
+
+        result.Recipes.Single(r => r.InternalName == "CraftedCowShoes2").EffectiveXp.Should().Be(46);
+    }
+
+    [Fact]
+    public void ComputeEffectiveXp_AtDropOffLevelBoundary_AppliesOneReduction()
+    {
+        // Boundary: playerLevel == dropOffLevel. Old code returned full XP here
+        // (0/5 = 0 reductions); the spec says one reduction already applies at
+        // the threshold. (10-10)/5 + 1 = 1 → 10 × 0.9 = 9.
+        var refData = new FakeRefData();
+        refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L]);
+        refData.AddRecipe("recipe_at_threshold", "At Threshold", "AtThreshold",
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 10, dropOffPct: 0.1f, dropOffRate: 5);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(10, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["AtThreshold"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var result = engine.Analyze("Blacksmithing", character)!;
+
+        result.Recipes.Single(r => r.InternalName == "AtThreshold").EffectiveXp.Should().Be(9);
+    }
+
+    [Fact]
+    public void ComputeEffectiveXp_BelowDropOffLevel_ReturnsFullXp()
+    {
+        // Negative-control: playerLevel < dropOffLevel still returns full XP
+        // (the early-out wasn't touched by the fix, but pin it so a future
+        // refactor can't silently regress it).
+        var refData = new FakeRefData();
+        refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100L, 200L, 300L]);
+        refData.AddRecipe("recipe_below", "Below Threshold", "BelowThreshold",
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1f, dropOffRate: 5);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(10, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["BelowThreshold"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var result = engine.Analyze("Blacksmithing", character)!;
+
+        result.Recipes.Single(r => r.InternalName == "BelowThreshold").EffectiveXp.Should().Be(10);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static CharacterSnapshot MakeCharacter(
