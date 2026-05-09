@@ -92,10 +92,29 @@
             <ComboBox IsEditable="True" Text="{Binding Region, UpdateSourceTrigger=PropertyChanged}"
                       ItemsSource="{Binding KnownRegions}" Padding="4,2"/>
         </DockPanel>
-        <DockPanel Margin="0,0,0,0">
+        <DockPanel Margin="0,0,0,6">
             <TextBlock Text="Map" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
             <ComboBox IsEditable="True" Text="{Binding Map, UpdateSourceTrigger=PropertyChanged}"
                       ItemsSource="{Binding KnownMaps}" Padding="4,2"/>
+        </DockPanel>
+
+        <!--
+            Per-timer alarm sound. Empty path = inherit global default from
+            GandalfSettings.SoundFilePath. Same Browse/Test/Clear pattern as the
+            settings view (GandalfSettingsView.xaml). Watermark makes the
+            "default" case readable without a separate label.
+        -->
+        <DockPanel Margin="0,0,0,0" LastChildFill="True">
+            <TextBlock Text="Sound" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+            <Button DockPanel.Dock="Right" Content="Browse..." Padding="10,4" Margin="6,0,0,0"
+                    Click="BrowseSound_Click"/>
+            <Button DockPanel.Dock="Right" Content="Test" Padding="10,4" Margin="6,0,0,0"
+                    Click="TestSound_Click"/>
+            <Button DockPanel.Dock="Right" Content="Clear" Padding="8,4" Margin="6,0,0,0"
+                    Click="ClearSound_Click" ToolTip="Reset to global default sound"/>
+            <TextBox Text="{Binding SoundFilePath, UpdateSourceTrigger=LostFocus, TargetNullValue=''}"
+                     Padding="6,4"
+                     mah:TextBoxHelper.Watermark="(uses global default)"/>
         </DockPanel>
     </StackPanel>
 </UserControl>
