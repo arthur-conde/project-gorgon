@@ -51,7 +51,8 @@ public class LootBracketTrackerTests : IDisposable
             new ChestInteractionParser(),
             new ChestRejectionParser(),
             new InteractionEndParser(),
-            new InteractionDelayLoopParser());
+            new InteractionDelayLoopParser(),
+            new InteractionWaitParser());
 
         return (src, tracker, derived);
     }
@@ -86,28 +87,264 @@ public class LootBracketTrackerTests : IDisposable
     }
 
     /// <summary>
-    /// Storage chest bracket — opens a TalkScreen UI dialog, no AddItem, no
-    /// row should be created. This is the case the substring filter handled
-    /// accidentally; the signal-driven tracker handles it intentionally.
+    /// Storage Box ("StorageCatalog") — the in-town all-vault selector. Opens
+    /// with a <c>TalkScreen</c> describing the catalog, then issues
+    /// <c>ProcessShowStorageVault</c> calls under the same interactor id when
+    /// the player picks a vault. The TalkScreen discards the bracket; the
+    /// later vault-pick events fire with the bracket already idle.
+    ///
+    /// Live capture (#174): #174 confirms StorageCatalog reuses interactor id
+    /// (-28 below) for vault hopping — no new ProcessStartInteraction per pick.
     /// </summary>
     [Fact]
-    public void Storage_chest_with_TalkScreen_creates_no_row()
+    public void StorageCatalog_with_TalkScreen_then_vault_picks_creates_no_row()
     {
         var (src, tracker, derived) = Build();
         try
         {
-            // Even with a duration cached, a TalkScreen-discriminated bracket
-            // must not produce a chest interaction event.
-            src.OnChestCooldownObserved("SerbuleCommunityChest", TimeSpan.FromHours(3));
-            // (the cache write itself populates the catalog, but no progress row)
-            src.Progress.Should().BeEmpty();
-
-            tracker.Observe("LocalPlayer: ProcessStartInteraction(31190, 7, 0, False, \"SerbuleCommunityChest\")", EventTime);
-            tracker.Observe("LocalPlayer: ProcessPreTalkScreen(31190, PreTalkScreenInfo)", EventTime);
-            tracker.Observe("LocalPlayer: ProcessTalkScreen(31190, \"Serbule Dynamic Safebox\", \"...\", \"\", [-1701,1,10,], System.String[], 0, Generic)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-28, 5, 0, False, \"StorageCatalog\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessPreTalkScreen(-28, PreTalkScreenInfo)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessTalkScreen(-28, \"Storage\", \"<i>[This provides quick access to the unlocked storage of any villager or container in town.]</i>\", \"\", [101,102,103,104,105,106,107,], System.String[], 0, Generic)", EventTime);
+            // Catalog already discarded the bracket; vault-pick fires don't reopen one.
+            tracker.IsInFlight.Should().BeFalse();
+            tracker.Observe("LocalPlayer: ProcessShowStorageVault(-28, 303, \"Storage\", \"\", 32, System.Collections.Generic.List`1[Item], System.String[], \"\", [101,102,103,104,105,106,107,], System.String[], 1)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessShowStorageVault(-28, 304, \"Storage\", \"\", 36, System.Collections.Generic.List`1[Item], System.String[], \"\", [101,102,103,104,105,106,107,], System.String[], 1)", EventTime);
 
             src.Progress.Should().BeEmpty();
             tracker.IsInFlight.Should().BeFalse();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Direct storage chest click — fires <c>ProcessShowStorageVault</c>
+    /// without a preceding TalkScreen. Captured shape (#174):
+    /// IvynsChest after the player enters the correct passcode.
+    ///
+    /// <code>
+    /// ProcessStartInteraction(-45, 5, 0, False, "IvynsChest")
+    /// ProcessInputBox(-45, EnterNumber, "Ivyn's Chest", ...)
+    /// ProcessWaitInteraction(-45, 500, "", "")
+    /// ProcessShowStorageVault(-45, 303, "Ivyn's Storage Chest", ...)
+    /// </code>
+    /// </summary>
+    [Fact]
+    public void Direct_storage_chest_with_ShowStorageVault_creates_no_row()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-45, 5, 0, False, \"IvynsChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessInputBox(-45, EnterNumber, \"Ivyn's Chest\", \"There's a magical lock on Ivyn's chest. It seems to want a five-digit number.\", \"Enter Code\", \"\", \"\", 5, 5, [], System.String[], 0)", EventTime);
+            // InputBox already discards the bracket; the rest are no-ops, but
+            // verify we don't accidentally reopen one or commit anything.
+            tracker.IsInFlight.Should().BeFalse();
+            tracker.Observe("LocalPlayer: ProcessWaitInteraction(-45, 500, \"\", \"\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessShowStorageVault(-45, 303, \"Ivyn's Storage Chest\", \"\", 32, System.Collections.Generic.List`1[Item], System.String[], \"\", [], System.String[], 0)", EventTime);
+
+            src.Progress.Should().BeEmpty();
+            tracker.IsInFlight.Should().BeFalse();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Storage chest that doesn't go through a TalkScreen or InputBox at all
+    /// — fires <c>ProcessShowStorageVault</c> directly. Covers the
+    /// <c>StorageCrate</c> / <c>GlobalStorageMachine</c> /
+    /// <c>SerbuleSharedAccountStorage</c> false-positive class from #174.
+    /// </summary>
+    [Fact]
+    public void Storage_chest_with_only_ShowStorageVault_creates_no_row()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-100, 5, 0, False, \"GlobalStorageMachine\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessShowStorageVault(-100, 301, \"Storage\", \"\", 34, System.Collections.Generic.List`1[Item], System.String[], \"\", [], System.String[], 0)", EventTime);
+
+            src.Progress.Should().BeEmpty();
+            tracker.IsInFlight.Should().BeFalse();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Workstations and teleport pads emit <c>ProcessShowRecipes(&lt;skill&gt;)</c>
+    /// to open the recipe-list / destination-list UI. Captured shapes (#174):
+    /// <list type="bullet">
+    /// <item><c>Fireplace → ProcessShowRecipes(Cooking)</c></item>
+    /// <item><c>TanningRack → ProcessShowRecipes(Tanning)</c></item>
+    /// <item><c>TeleportationPlatform → ProcessShowRecipes(Teleportation)</c></item>
+    /// </list>
+    /// </summary>
+    [Theory]
+    [InlineData("Fireplace", "Cooking")]
+    [InlineData("TanningRack", "Tanning")]
+    [InlineData("TeleportationPlatform", "Teleportation")]
+    public void Workstation_with_ShowRecipes_creates_no_row(string entity, string skill)
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe($"LocalPlayer: ProcessStartInteraction(-16, 5, 0, False, \"{entity}\")", EventTime);
+            tracker.Observe($"LocalPlayer: ProcessShowRecipes({skill})", EventTime);
+            // No close signal will follow — the bracket must already be idle so
+            // any later ambient AddItem can't commit the workstation as a chest.
+            tracker.IsInFlight.Should().BeFalse();
+
+            tracker.Observe("LocalPlayer: ProcessAddItem(SomeAmbientItem(1234), -1, True)", EventTime);
+            src.Progress.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Passcode-gated container — emits <c>ProcessInputBox</c> for the code
+    /// prompt. If the player cancels without entering the code, no further
+    /// signals fire for this interactor. The InputBox itself must discard
+    /// the bracket so a later ambient <c>ProcessAddItem</c> can't commit.
+    /// </summary>
+    [Fact]
+    public void InputBox_then_cancel_creates_no_row_on_subsequent_ambient_AddItem()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-45, 5, 0, False, \"IvynsChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessInputBox(-45, EnterNumber, \"Ivyn's Chest\", \"There's a magical lock on Ivyn's chest. It seems to want a five-digit number.\", \"Enter Code\", \"\", \"\", 5, 5, [], System.String[], 0)", EventTime);
+            tracker.IsInFlight.Should().BeFalse();
+
+            // Player cancels; later, an ambient AddItem from elsewhere fires.
+            tracker.Observe("LocalPlayer: ProcessAddItem(QuestReward(9999), -1, True)", EventTime);
+            src.Progress.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// <c>ProcessWaitInteraction</c> with a non-empty body is the harvest
+    /// signal for activities like filling water bottles at a well or fishing
+    /// — semantically equivalent to <c>ProcessDoDelayLoop ...
+    /// IsInteractorDelayLoop</c> but a different log signal entirely.
+    /// Captured shape (#174):
+    /// <code>
+    /// ProcessStartInteraction(-2, 7, 0, False, "WaterWell")
+    /// ProcessWaitInteraction(-2, 500, "Filling Water Bottles...", "Empty Bottles: 8...")
+    /// ProcessAddItem(BottleOfWater(...))
+    /// </code>
+    /// </summary>
+    [Fact]
+    public void Wait_interaction_with_body_suppresses_chest_commit()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-2, 7, 0, False, \"WaterWell\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessWaitInteraction(-2, 500, \"Filling Water Bottles...\", \"Empty Bottles: 8 Bottles of Water: 0\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(BottleOfWater(123488261), -1, True)", EventTime);
+
+            src.Progress.Should().BeEmpty();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Empty-body <c>ProcessWaitInteraction</c> (the IvynsChest unlock
+    /// animation) is NOT a harvest signal. Verifies that an unrelated
+    /// chest interaction sandwiched after one still commits — i.e. the
+    /// empty-body wait doesn't accidentally stash a harvest verb that
+    /// would suppress a later real chest's AddItem.
+    /// </summary>
+    [Fact]
+    public void Empty_body_wait_interaction_does_not_suppress_subsequent_real_chest()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+
+            // Empty-body wait fires for a fully-discarded storage bracket.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-45, 5, 0, False, \"IvynsChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessShowStorageVault(-45, 303, \"Ivyn's Storage Chest\", \"\", 32, System.Collections.Generic.List`1[Item], System.String[], \"\", [], System.String[], 0)", EventTime);
+            tracker.IsInFlight.Should().BeFalse();
+
+            // Real chest interaction next — must commit normally.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(PowerPotion2(1), -1, True)", EventTime);
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("EltibuleSecretChest"));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Stray <c>ProcessWaitInteraction</c> from a different interactor id
+    /// must not stash a harvest verb on the in-flight bracket.
+    /// </summary>
+    [Fact]
+    public void Wait_interaction_with_non_matching_id_does_not_poison_bracket()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            // Stray wait for a different interactor id — must be ignored.
+            tracker.Observe("LocalPlayer: ProcessWaitInteraction(-999, 500, \"Filling Water Bottles...\", \"...\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(PowerPotion2(1), -1, True)", EventTime);
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("EltibuleSecretChest"));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Soft timeout backstop (#174): a bracket that's been InFlight longer
+    /// than <see cref="LootBracketTracker.SoftTimeout"/> with no positive
+    /// signal must not commit a subsequent <c>ProcessAddItem</c>. Backstop
+    /// for no-signal leakers like <c>SummonedFlowerN</c> and
+    /// <c>SummonedHorseApple</c> that emit only <c>ProcessUpdateDescription</c>.
+    /// </summary>
+    [Fact]
+    public void Bracket_older_than_soft_timeout_does_not_commit_subsequent_AddItem()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(16189159, 7, 0, False, \"SummonedHorseApple\")", EventTime);
+            tracker.Observe("ProcessUpdateDescription(16189159, \"Growing Horse Apple Bush\", \"This horse apple bush is growing nicely.\", \"Check Horse Apple Bush\", UseItem, \"AppleTree(Scale=0.14)\", 0)", EventTime);
+
+            // Ambient AddItem 5 seconds later — past the soft timeout.
+            var late = EventTime + TimeSpan.FromSeconds(5);
+            tracker.Observe("LocalPlayer: ProcessAddItem(QuestReward(9999), -1, True)", late);
+
+            src.Progress.Should().BeEmpty();
+            tracker.IsInFlight.Should().BeFalse();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Soft-timeout boundary check: an AddItem that arrives exactly at the
+    /// timeout still commits. Real chests fire AddItem in the same log
+    /// second, so the test of the boundary is purely defensive.
+    /// </summary>
+    [Fact]
+    public void AddItem_at_soft_timeout_boundary_still_commits()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            // AddItem at exactly the timeout — boundary inclusive.
+            var atBoundary = EventTime + LootBracketTracker.SoftTimeout;
+            tracker.Observe("LocalPlayer: ProcessAddItem(PowerPotion2(1), -1, True)", atBoundary);
+
+            src.Progress.Should().ContainKey(LootSource.ChestKey("EltibuleSecretChest"));
         }
         finally { src.Dispose(); derived.Dispose(); }
     }
