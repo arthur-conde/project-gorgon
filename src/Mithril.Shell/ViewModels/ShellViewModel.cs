@@ -52,6 +52,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IUpdateApplier _updateApplier;
     private readonly IAttentionAggregator _attention;
     private readonly IGameClock _gameClock;
+    private readonly IShiftCatalog _shiftCatalog;
     private readonly IReadOnlyList<IMithrilModule> _allModules;
 
     private readonly ModuleGates _gates;
@@ -67,7 +68,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IUpdateStatusService updateStatus,
         IUpdateApplier updateApplier,
         IAttentionAggregator attention,
-        IGameClock gameClock)
+        IGameClock gameClock,
+        IShiftCatalog shiftCatalog)
     {
         _services = services;
         _settings = settings;
@@ -78,6 +80,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _updateApplier = updateApplier;
         _attention = attention;
         _gameClock = gameClock;
+        _shiftCatalog = shiftCatalog;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -104,6 +107,23 @@ public sealed partial class ShellViewModel : ObservableObject
     private void RefreshGameTime()
     {
         GameTimeText = _gameClock.GetCurrent().Format(_preferences.Use24HourClock);
+        NextShiftCountdownText = BuildNextShiftCountdown();
+    }
+
+    /// <summary>
+    /// "Next: &lt;Label&gt; in &lt;duration&gt;" beside the in-game-clock chip.
+    /// Returns an empty string if the catalog is empty (the chip's row hides
+    /// via NullOrEmptyToVis), so a degraded/missing shift table doesn't bleed
+    /// into the shell's clock area. Formatting math lives in
+    /// <see cref="JsonShiftCatalog.FormatRemaining"/> so the test project can
+    /// pin the boundary cases without driving the shell view.
+    /// </summary>
+    private string BuildNextShiftCountdown()
+    {
+        if (_shiftCatalog.Shifts.Count == 0) return "";
+        var floor = DateTimeOffset.UtcNow;
+        var (at, shift) = _shiftCatalog.NextTransition(_gameClock, floor);
+        return $"Next: {shift.Label} in {JsonShiftCatalog.FormatRemaining(at - floor)}";
     }
 
     private void OnPreferencesChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -194,6 +214,7 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty] private string _attentionTooltip = "Mithril";
 
     [ObservableProperty] private string _gameTimeText = "";
+    [ObservableProperty] private string _nextShiftCountdownText = "";
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();

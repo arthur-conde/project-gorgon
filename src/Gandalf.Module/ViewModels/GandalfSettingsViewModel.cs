@@ -66,12 +66,13 @@ public sealed partial class GandalfSettingsViewModel : ObservableObject
         TimerDefinitionsService defs,
         TimerProgressService progress,
         GandalfShiftSettings shiftSettings,
+        IShiftCatalog shiftCatalog,
         UserPreferences preferences)
     {
         Settings = settings;
         _defs = defs;
         _progress = progress;
-        ShiftRows = TimeOfDayShifts.All
+        ShiftRows = shiftCatalog.Shifts
             .Select(s => new ShiftAlarmRow(s, shiftSettings.GetOrCreate(s.Slug), preferences))
             .ToArray();
     }
