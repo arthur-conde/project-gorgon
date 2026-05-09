@@ -11,4 +11,10 @@
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport\TestPaths.cs"
              Link="TestSupport\TestPaths.cs" />
   </ItemGroup>
+
+  <!-- Heavier test helpers (FakeReferenceData, FakeQuestService) opt in
+       per-project via <Compile Include /> in the test csproj. They depend on
+       Mithril.Shared / Mithril.GameState, which not every test project
+       references — broadcasting them via Directory.Build.props would break
+       Mithril.Reference.Tests, RefreshAndValidate.Tests, and similar. -->
 </Project>

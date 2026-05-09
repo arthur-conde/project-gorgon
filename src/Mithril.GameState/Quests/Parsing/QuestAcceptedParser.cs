@@ -4,7 +4,7 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 
-namespace Gandalf.Parsing;
+namespace Mithril.GameState.Quests.Parsing;
 
 /// <summary>
 /// Parses the per-accept <c>ProcessBook("New Quest: &lt;&lt;&lt;quest_NNNNN_Name&gt;&gt;&gt;", ...)</c>
@@ -13,8 +13,8 @@ namespace Gandalf.Parsing;
 /// <c>ProcessAddQuest</c> is needed.
 ///
 /// Resolves the integer quest id to the quest's InternalName via
-/// <see cref="IReferenceDataService.Quests"/> so the downstream
-/// <see cref="Services.QuestSource"/> can mutate <c>_pending</c> by name.
+/// <see cref="IReferenceDataService.Quests"/> so downstream consumers
+/// (e.g. <c>QuestService</c>) can track the journal by stable name.
 ///
 /// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#processaddquest--quest-accepted
 /// </summary>

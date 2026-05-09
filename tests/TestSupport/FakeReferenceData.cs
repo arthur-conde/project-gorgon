@@ -1,6 +1,6 @@
 using Mithril.Shared.Reference;
 
-namespace Gandalf.Tests;
+namespace Mithril.TestSupport;
 
 /// <summary>
 /// Minimal <see cref="IReferenceDataService"/> fake for Quest source tests —

@@ -6,6 +6,9 @@ using Gandalf.ViewModels;
 using Gandalf.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
+// Mithril.GameState now owns the quest parsers + IQuestService; Gandalf only
+// consumes IQuestService via QuestSource. The parser singletons + the old
+// QuestIngestionService no longer need to be registered here.
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
@@ -91,14 +94,12 @@ public sealed class GandalfModule : IMithrilModule
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
 
-        // Quest source — repeatable-quest cooldowns derived from QuestEntry.Reuse*
-        // and the captured quest signal flow (ProcessLoadQuests bulk login,
-        // ProcessBook "New Quest:" per-accept, ProcessCompleteQuest turn-in).
-        services.AddSingleton<QuestJournalLoadParser>();
-        services.AddSingleton<QuestAcceptedParser>();
-        services.AddSingleton<QuestCompletedParser>();
+        // Quest source — projects QuestEntry.Reuse* timers from
+        // IQuestService.ActiveQuests ∪ keys-with-progress. Ingestion and
+        // per-character journal persistence live in Mithril.GameState; this
+        // source is purely a Gandalf-side projector that anchors cooldowns
+        // via DerivedTimerProgressService.
         services.AddSingleton<QuestSource>();
-        services.AddHostedService<QuestIngestionService>();
         services.AddSingleton<QuestTimersViewModel>();
 
         services.AddSingleton<TimerDefinitionsService>();

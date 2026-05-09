@@ -14,4 +14,12 @@
     <ProjectReference Include="..\..\src\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Shared test helpers opted into per-project (see tests/Directory.Build.props
+         for why these aren't broadcast to every test project). -->
+    <Compile Include="..\TestSupport\FakeReferenceData.cs"
+             Link="TestSupport\FakeReferenceData.cs" />
+    <Compile Include="..\TestSupport\FakeQuestService.cs"
+             Link="TestSupport\FakeQuestService.cs" />
+  </ItemGroup>
 </Project>
