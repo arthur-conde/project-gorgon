@@ -39,6 +39,17 @@ public readonly record struct GameTimeOfDay(int Hour, int Minute)
         var ampm = Hour < 12 ? "AM" : "PM";
         return $"{h12}:{Minute:D2} {ampm}";
     }
+
+    public string ToString24Hour() => $"{Hour:D2}:{Minute:D2}";
+
+    /// <summary>
+    /// Format this time-of-day according to the user's
+    /// <see cref="Settings.UserPreferences.Use24HourClock"/> preference.
+    /// Centralized here so every consumer (shell label, picker preview,
+    /// settings rows) routes through the same logic.
+    /// </summary>
+    public string Format(bool use24Hour) =>
+        use24Hour ? ToString24Hour() : ToString12Hour();
 }
 
 public sealed class GameClock : IGameClock

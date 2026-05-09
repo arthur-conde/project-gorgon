@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
 using Gandalf.Services;
 using Mithril.Shared.Game;
+using Mithril.Shared.Settings;
 
 namespace Gandalf.ViewModels;
 
@@ -12,20 +14,41 @@ namespace Gandalf.ViewModels;
 /// <see cref="ShiftDefinition"/> (display data) with the live
 /// <see cref="ShiftAlarmConfig"/> (Enabled + SoundFilePath, INPC).
 /// The XAML <c>ItemsControl</c> binds to one of these per shift.
+/// <see cref="Display"/> re-fires INPC when the user flips the
+/// 12/24h preference, so the rows reformat live in the open settings panel.
 /// </summary>
-public sealed class ShiftAlarmRow
+public sealed class ShiftAlarmRow : INotifyPropertyChanged
 {
-    public ShiftAlarmRow(ShiftDefinition shift, ShiftAlarmConfig config)
+    private readonly UserPreferences _preferences;
+
+    public ShiftAlarmRow(ShiftDefinition shift, ShiftAlarmConfig config, UserPreferences preferences)
     {
         Shift = shift;
         Config = config;
+        _preferences = preferences;
+        _preferences.PropertyChanged += OnPreferencesChanged;
     }
 
     public ShiftDefinition Shift { get; }
     public ShiftAlarmConfig Config { get; }
 
     public string Slug => Shift.Slug;
-    public string Display => $"{Shift.Emoji}  {Shift.Label}  ({Shift.StartHour}:00 in-game)";
+    public string Display
+    {
+        get
+        {
+            var formatted = new GameTimeOfDay(Shift.StartHour, 0).Format(_preferences.Use24HourClock);
+            return $"{Shift.Emoji}  {Shift.Label}  ({formatted} in-game)";
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPreferencesChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(UserPreferences.Use24HourClock))
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Display)));
+    }
 }
 
 /// <summary>
@@ -42,13 +65,14 @@ public sealed partial class GandalfSettingsViewModel : ObservableObject
         GandalfSettings settings,
         TimerDefinitionsService defs,
         TimerProgressService progress,
-        GandalfShiftSettings shiftSettings)
+        GandalfShiftSettings shiftSettings,
+        UserPreferences preferences)
     {
         Settings = settings;
         _defs = defs;
         _progress = progress;
         ShiftRows = TimeOfDayShifts.All
-            .Select(s => new ShiftAlarmRow(s, shiftSettings.GetOrCreate(s.Slug)))
+            .Select(s => new ShiftAlarmRow(s, shiftSettings.GetOrCreate(s.Slug), preferences))
             .ToArray();
     }
 

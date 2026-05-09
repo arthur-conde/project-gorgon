@@ -61,6 +61,27 @@ public class GameClockTests
         new GameTimeOfDay(hour, minute).ToString12Hour().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(0, 0, "00:00")]
+    [InlineData(0, 5, "00:05")]
+    [InlineData(8, 7, "08:07")]
+    [InlineData(13, 30, "13:30")]
+    [InlineData(23, 59, "23:59")]
+    public void ToString24Hour_FormatsCorrectly(int hour, int minute, string expected)
+    {
+        new GameTimeOfDay(hour, minute).ToString24Hour().Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(false, 13, 30, "1:30 PM")]
+    [InlineData(true, 13, 30, "13:30")]
+    [InlineData(false, 0, 0, "12:00 AM")]
+    [InlineData(true, 0, 0, "00:00")]
+    public void Format_routes_through_the_correct_format(bool use24Hour, int hour, int minute, string expected)
+    {
+        new GameTimeOfDay(hour, minute).Format(use24Hour).Should().Be(expected);
+    }
+
     [Fact]
     public void NextOccurrence_TargetEqualsCurrent_AdvancesFullCycle()
     {

@@ -68,7 +68,7 @@
                 arithmetic are unaffected.
             -->
             <mah:TimePicker SelectedDateTime="{Binding SelectedGameDateTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            Culture="{x:Static vm:TimerDialogViewModel.PickerCulture}"
+                            Culture="{Binding PickerCulture}"
                             PickerVisibility="HourMinute"
                             HandVisibility="HourMinute"
                             HoursItemStringFormat="{}{0:D2}"

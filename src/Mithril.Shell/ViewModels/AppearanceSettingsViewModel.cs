@@ -1,16 +1,19 @@
 using System.Collections.ObjectModel;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Mithril.Shared.Settings;
 
 namespace Mithril.Shell.ViewModels;
 
 public sealed partial class AppearanceSettingsViewModel : ObservableObject
 {
     public ShellSettings Settings { get; }
+    public UserPreferences Preferences { get; }
 
-    public AppearanceSettingsViewModel(ShellSettings settings)
+    public AppearanceSettingsViewModel(ShellSettings settings, UserPreferences preferences)
     {
         Settings = settings;
+        Preferences = preferences;
         AvailableFonts = new ObservableCollection<string>(
             Fonts.SystemFontFamilies
                 .Select(f => f.Source)

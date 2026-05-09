@@ -8,6 +8,7 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.Views;
 using Mithril.Shared.Character;
+using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
@@ -21,6 +22,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
     private readonly IDialogService? _dialogService;
     private readonly IActiveCharacterService? _active;
     private readonly ICharacterPresenceService? _presence;
+    private readonly UserPreferences? _preferences;
     private readonly TimeProvider _time;
     private readonly TimerDisplayScheduler _scheduler;
     private readonly TimerSourceBinder _binder;
@@ -34,6 +36,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         IDialogService? dialogService = null,
         IActiveCharacterService? active = null,
         ICharacterPresenceService? presence = null,
+        UserPreferences? preferences = null,
         TimeProvider? time = null)
     {
         _source = source;
@@ -43,6 +46,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         _dialogService = dialogService;
         _active = active;
         _presence = presence;
+        _preferences = preferences;
         _time = time ?? TimeProvider.System;
 
         TimersView = CollectionViewSource.GetDefaultView(Timers);
@@ -79,7 +83,8 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
     private void AddTimer()
     {
         if (_defs is null || _dialogService is null) return;
-        var vm = new TimerDialogViewModel(existing: null, isIdleOnActive: true, KnownRegions, KnownMaps);
+        var vm = new TimerDialogViewModel(existing: null, isIdleOnActive: true, KnownRegions, KnownMaps,
+            _preferences ?? new UserPreferences());
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;
@@ -105,7 +110,8 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         if (item.Catalog.SourceMetadata is not GandalfTimerDef existing) return;
 
         var isIdleOnActive = item.State == TimerState.Idle;
-        var vm = new TimerDialogViewModel(existing, isIdleOnActive, KnownRegions, KnownMaps);
+        var vm = new TimerDialogViewModel(existing, isIdleOnActive, KnownRegions, KnownMaps,
+            _preferences ?? new UserPreferences());
         var content = new TimerDialogContent();
 
         if (_dialogService.ShowDialog(vm, content) != true) return;

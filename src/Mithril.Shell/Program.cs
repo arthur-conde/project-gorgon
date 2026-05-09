@@ -129,7 +129,15 @@ public static class Program
             var builder = Host.CreateApplicationBuilder(args);
             var audioSettings = new AudioSettings { ConcurrentAlarms = shellSettings.ConcurrentAlarms };
 
+            // Cross-cutting user preferences (12/24h clock, future display
+            // toggles). Lives in Mithril.Shared so modules can read it
+            // without depending on Mithril.Shell. Persisted to
+            // %LocalAppData%/Mithril/preferences.json — top-level so it's
+            // shared across modules, not nested under Shell/.
+            var preferencesPath = Path.Combine(localApp, "Mithril", "preferences.json");
+
             builder.Services
+                .AddMithrilSettings<UserPreferences>(preferencesPath, UserPreferencesJsonContext.Default.UserPreferences)
                 .AddSingleton<ISettingsStore<ShellSettings>>(shellStore)
                 .AddSingleton(shellSettings)
                 .AddSingleton<IActiveCharacterPersistence>(shellSettings)
