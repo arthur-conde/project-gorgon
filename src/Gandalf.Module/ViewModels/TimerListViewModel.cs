@@ -8,6 +8,7 @@ using Gandalf.Domain;
 using Gandalf.Services;
 using Gandalf.Views;
 using Mithril.Shared.Character;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf.Dialogs;
 
@@ -23,9 +24,20 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
     private readonly IActiveCharacterService? _active;
     private readonly ICharacterPresenceService? _presence;
     private readonly UserPreferences? _preferences;
+    private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
     private readonly TimerDisplayScheduler _scheduler;
     private readonly TimerSourceBinder _binder;
+
+    /// <summary>
+    /// Cached case-insensitive FriendlyName → AreaEntry index from
+    /// <see cref="IReferenceDataService.Areas"/>. Built once on construction; used by
+    /// the dialog to resolve typed text → canonical AreaKey at save time, and by
+    /// <see cref="RefreshAutocomplete"/> to seed the suggestion pool. Empty when
+    /// <c>_refData</c> is null (test scenarios).
+    /// </summary>
+    private IReadOnlyDictionary<string, AreaEntry> _areaLookup =
+        new Dictionary<string, AreaEntry>(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     public TimerListViewModel(
@@ -37,6 +49,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         IActiveCharacterService? active = null,
         ICharacterPresenceService? presence = null,
         UserPreferences? preferences = null,
+        IReferenceDataService? refData = null,
         TimeProvider? time = null)
     {
         _source = source;
@@ -47,6 +60,8 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         _active = active;
         _presence = presence;
         _preferences = preferences;
+        _refData = refData;
+        if (_refData is not null) _areaLookup = GandalfAreaResolver.BuildLookup(_refData);
         _time = time ?? TimeProvider.System;
 
         TimersView = CollectionViewSource.GetDefaultView(Timers);
@@ -76,14 +91,19 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
     public ICollectionView TimersView { get; }
 
-    public ObservableCollection<string> KnownRegions { get; } = [];
-    public ObservableCollection<string> KnownMaps { get; } = [];
+    /// <summary>
+    /// Autocomplete pool for the timer dialog's "Area" field. Union of canonical
+    /// PG area FriendlyNames (from <c>areas.json</c>) and the user's distinct
+    /// existing <see cref="GandalfTimerDef.Area"/> values. Sorted, case-insensitive
+    /// dedup. Refreshed on def-list mutations via <see cref="RefreshAutocomplete"/>.
+    /// </summary>
+    public ObservableCollection<string> KnownAreas { get; } = [];
 
     [RelayCommand]
     private void AddTimer()
     {
         if (_defs is null || _dialogService is null) return;
-        var vm = new TimerDialogViewModel(existing: null, isIdleOnActive: true, KnownRegions, KnownMaps,
+        var vm = new TimerDialogViewModel(existing: null, isIdleOnActive: true, KnownAreas, _areaLookup,
             _preferences ?? new UserPreferences());
         var content = new TimerDialogContent();
 
@@ -97,8 +117,8 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
             GameHour = vm.ResultGameHour,
             GameMinute = vm.ResultGameMinute,
             Recurring = vm.ResultRecurring,
-            Region = vm.ResultRegion,
-            Map = vm.ResultMap,
+            Area = vm.ResultArea,
+            AreaKey = vm.ResultAreaKey,
             SoundFilePath = vm.ResultSoundFilePath,
         });
     }
@@ -110,7 +130,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         if (item.Catalog.SourceMetadata is not GandalfTimerDef existing) return;
 
         var isIdleOnActive = item.State == TimerState.Idle;
-        var vm = new TimerDialogViewModel(existing, isIdleOnActive, KnownRegions, KnownMaps,
+        var vm = new TimerDialogViewModel(existing, isIdleOnActive, KnownAreas, _areaLookup,
             _preferences ?? new UserPreferences());
         var content = new TimerDialogContent();
 
@@ -118,8 +138,8 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         _defs.Update(item.Key, d =>
         {
             d.Name = vm.ResultName;
-            d.Region = vm.ResultRegion;
-            d.Map = vm.ResultMap;
+            d.Area = vm.ResultArea;
+            d.AreaKey = vm.ResultAreaKey;
             d.SoundFilePath = vm.ResultSoundFilePath;
             if (isIdleOnActive)
             {
@@ -245,26 +265,27 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
 
     private void RefreshAutocomplete()
     {
-        // Autocomplete still reads the user-specific def list (Region+Map are user-only fields).
+        // Pool = (areas.json FriendlyNames) ∪ (distinct user-entered Area values),
+        // case-insensitive dedup, sorted alphabetically. Reference data covers PG's
+        // canonical regions; the user pool covers sub-locations and freeform labels
+        // ("Hogan's Keep", "My Hideout") that aren't in areas.json.
         if (_defs is null) return;
 
-        var regions = _defs.Definitions
-            .Select(d => d.Region)
-            .Where(r => !string.IsNullOrWhiteSpace(r))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(r => r);
+        var pool = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _areaLookup.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.FriendlyName))
+                pool.Add(entry.FriendlyName);
+        }
+        foreach (var d in _defs.Definitions)
+        {
+            if (!string.IsNullOrWhiteSpace(d.Area))
+                pool.Add(d.Area);
+        }
 
-        KnownRegions.Clear();
-        foreach (var r in regions) KnownRegions.Add(r);
-
-        var maps = _defs.Definitions
-            .Select(d => d.Map)
-            .Where(m => !string.IsNullOrWhiteSpace(m))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(m => m);
-
-        KnownMaps.Clear();
-        foreach (var m in maps) KnownMaps.Add(m);
+        KnownAreas.Clear();
+        foreach (var a in pool.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+            KnownAreas.Add(a);
     }
 
     public void Dispose()

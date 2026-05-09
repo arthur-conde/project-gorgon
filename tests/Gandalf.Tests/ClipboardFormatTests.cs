@@ -13,8 +13,8 @@ public class ClipboardFormatTests
         {
             Name = "Mushroom Substrate",
             Duration = TimeSpan.FromHours(4) + TimeSpan.FromMinutes(30),
-            Region = "Serbule",
-            Map = "Serbule Sewers",
+            Area = "Serbule",
+            AreaKey = "AreaSerbule",
         };
 
         var json = TimerClipboard.Serialize([def]);
@@ -23,8 +23,8 @@ public class ClipboardFormatTests
         entries.Should().NotBeNull();
         entries.Should().HaveCount(1);
         entries![0].Name.Should().Be("Mushroom Substrate");
-        entries[0].Region.Should().Be("Serbule");
-        entries[0].Map.Should().Be("Serbule Sewers");
+        entries[0].Area.Should().Be("Serbule");
+        entries[0].AreaKey.Should().Be("AreaSerbule");
         TimeSpan.TryParse(entries[0].Duration, out var dur).Should().BeTrue();
         dur.Should().Be(TimeSpan.FromHours(4) + TimeSpan.FromMinutes(30));
     }
@@ -32,7 +32,7 @@ public class ClipboardFormatTests
     [Fact]
     public void Deserialize_single_object()
     {
-        var json = """{"name":"Test","duration":"1:00:00","region":"R","map":"M"}""";
+        var json = """{"name":"Test","duration":"1:00:00","area":"Serbule","areaKey":"AreaSerbule"}""";
         var entries = TimerClipboard.TryDeserialize(json);
 
         entries.Should().NotBeNull();
@@ -43,7 +43,7 @@ public class ClipboardFormatTests
     [Fact]
     public void Deserialize_array()
     {
-        var json = """[{"name":"A","duration":"0:30:00","region":"R1","map":"M1"},{"name":"B","duration":"1:00:00","region":"R2","map":"M2"}]""";
+        var json = """[{"name":"A","duration":"0:30:00","area":"Serbule","areaKey":"AreaSerbule"},{"name":"B","duration":"1:00:00","area":"My Hideout","areaKey":null}]""";
         var entries = TimerClipboard.TryDeserialize(json);
 
         entries.Should().NotBeNull();
@@ -60,7 +60,7 @@ public class ClipboardFormatTests
     [Fact]
     public void ToDef_rejects_zero_duration()
     {
-        var entry = new TimerClipboardEntry { Name = "X", Duration = "0:00:00", Region = "R", Map = "M" };
+        var entry = new TimerClipboardEntry { Name = "X", Duration = "0:00:00", Area = "Serbule" };
         TimerClipboard.ToDef(entry).Should().BeNull();
     }
 
@@ -71,8 +71,8 @@ public class ClipboardFormatTests
         {
             Name = "Leather Tanning",
             Duration = "2:30:00",
-            Region = "Eltibule",
-            Map = "Eltibule Keep",
+            Area = "Eltibule",
+            AreaKey = "AreaEltibule",
         };
 
         var def = TimerClipboard.ToDef(entry);
@@ -80,8 +80,8 @@ public class ClipboardFormatTests
         def.Should().NotBeNull();
         def!.Name.Should().Be("Leather Tanning");
         def.Duration.Should().Be(TimeSpan.FromHours(2) + TimeSpan.FromMinutes(30));
-        def.Region.Should().Be("Eltibule");
-        def.Map.Should().Be("Eltibule Keep");
+        def.Area.Should().Be("Eltibule");
+        def.AreaKey.Should().Be("AreaEltibule");
         def.Id.Should().NotBeNullOrEmpty();
     }
 }

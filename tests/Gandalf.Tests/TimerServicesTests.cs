@@ -54,7 +54,7 @@ public class TimerServicesTests : IDisposable
         var (defs, progress, view, active) = BuildServices();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
 
-        defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1), Region = "Serbule", Map = "Serbule" });
+        defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1), Area = "Serbule", AreaKey = "AreaSerbule" });
         var id = defs.Definitions[0].Id;
         progress.Start(id);
         defs.Dispose(); // flush definitions
@@ -80,7 +80,7 @@ public class TimerServicesTests : IDisposable
         var (defs, progress, view, active) = BuildServices();
 
         active.SetActiveCharacter("Arthur", "Kwatoxi");
-        defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1), Region = "Serbule", Map = "Serbule" });
+        defs.Add(new GandalfTimerDef { Name = "Chest", Duration = TimeSpan.FromHours(1), Area = "Serbule", AreaKey = "AreaSerbule" });
         var id = defs.Definitions[0].Id;
         progress.Start(id);
         progress.GetProgress(id).Should().NotBeNull();

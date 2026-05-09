@@ -7,8 +7,8 @@ public sealed class TimerClipboardEntry
 {
     public string Name { get; set; } = "";
     public string Duration { get; set; } = "";
-    public string Region { get; set; } = "";
-    public string Map { get; set; } = "";
+    public string Area { get; set; } = "";
+    public string? AreaKey { get; set; }
     public string? SoundFilePath { get; set; }
 }
 
@@ -25,8 +25,8 @@ public static class TimerClipboard
         {
             Name = d.Name,
             Duration = d.Duration.ToString(),
-            Region = d.Region,
-            Map = d.Map,
+            Area = d.Area,
+            AreaKey = d.AreaKey,
             SoundFilePath = d.SoundFilePath,
         }).ToList();
         return JsonSerializer.Serialize(entries, TimerClipboardJsonContext.Default.ListTimerClipboardEntry);
@@ -60,8 +60,8 @@ public static class TimerClipboard
         {
             Name = entry.Name,
             Duration = dur,
-            Region = entry.Region,
-            Map = entry.Map,
+            Area = entry.Area,
+            AreaKey = string.IsNullOrWhiteSpace(entry.AreaKey) ? null : entry.AreaKey,
             SoundFilePath = string.IsNullOrWhiteSpace(entry.SoundFilePath) ? null : entry.SoundFilePath,
         };
     }

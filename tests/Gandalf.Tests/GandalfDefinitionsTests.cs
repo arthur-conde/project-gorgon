@@ -19,16 +19,16 @@ public class GandalfDefinitionsTests
                     Id = "abc123",
                     Name = "Chest",
                     Duration = TimeSpan.FromHours(1),
-                    Region = "Serbule",
-                    Map = "Serbule",
+                    Area = "Serbule",
+                    AreaKey = "AreaSerbule",
                 },
                 new GandalfTimerDef
                 {
                     Id = "def456",
                     Name = "Crypt",
                     Duration = TimeSpan.FromMinutes(30),
-                    Region = "Eltibule",
-                    Map = "",
+                    Area = "Eltibule",
+                    AreaKey = null,
                 },
             ],
         };
@@ -44,7 +44,11 @@ public class GandalfDefinitionsTests
         restored.Timers[0].Id.Should().Be("abc123");
         restored.Timers[0].Name.Should().Be("Chest");
         restored.Timers[0].Duration.Should().Be(TimeSpan.FromHours(1));
-        restored.Timers[0].GroupKey.Should().Be("Serbule > Serbule");
+        restored.Timers[0].Area.Should().Be("Serbule");
+        restored.Timers[0].AreaKey.Should().Be("AreaSerbule");
+        restored.Timers[0].GroupKey.Should().Be("Serbule");
+        restored.Timers[1].Area.Should().Be("Eltibule");
+        restored.Timers[1].AreaKey.Should().BeNull();
         restored.Timers[1].GroupKey.Should().Be("Eltibule");
     }
 

@@ -92,8 +92,8 @@ public class PerTimerSoundTests
         {
             Name = "Sounded",
             Duration = TimeSpan.FromMinutes(15),
-            Region = "Serbule",
-            Map = "Serbule",
+            Area = "Serbule",
+            AreaKey = "AreaSerbule",
             SoundFilePath = @"C:\custom\chime.wav",
         };
 
