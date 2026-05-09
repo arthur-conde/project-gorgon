@@ -1,7 +1,8 @@
 <UserControl x:Class="Gandalf.Views.TimerDialogContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls">
+             xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+             xmlns:vm="clr-namespace:Gandalf.ViewModels">
     <UserControl.Resources>
         <ResourceDictionary>
             <!-- MahApps Controls + Fonts + Dark theme are needed for mah:TimePicker
@@ -58,16 +59,20 @@
                    Visibility="{Binding IsGameTimeOfDay, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="In-game" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
             <!--
-                Culture="en-US" forces 12-hour AM/PM display regardless of the
-                user's system locale, matching the shell's GameTimeOfDay
-                renderer (which is hard-coded to 12h via ToString12Hour). The
-                underlying SelectedTime is still a 24h TimeSpan, so storage
-                and IGameClock arithmetic are unaffected.
+                PickerCulture is a customized en-US that forces 12-hour
+                "hh:mm tt" (zero-padded, no seconds) for the read-only
+                display. HoursItemStringFormat / MinutesItemStringFormat
+                zero-pad the dropdown items themselves so the popup reads
+                "06" / "00" instead of "6" / "0". The underlying
+                SelectedDateTime is still 24h, so storage and IGameClock
+                arithmetic are unaffected.
             -->
             <mah:TimePicker SelectedDateTime="{Binding SelectedGameDateTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            Culture="en-US"
+                            Culture="{x:Static vm:TimerDialogViewModel.PickerCulture}"
                             PickerVisibility="HourMinute"
                             HandVisibility="HourMinute"
+                            HoursItemStringFormat="{}{0:D2}"
+                            MinutesItemStringFormat="{}{0:D2}"
                             IsEnabled="{Binding AreInputsEditable}"
                             HorizontalAlignment="Left"
                             Width="170" Padding="6,4"/>

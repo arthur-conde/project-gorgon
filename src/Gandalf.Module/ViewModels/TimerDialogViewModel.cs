@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
 using Mithril.Shared.Wpf.Dialogs;
@@ -7,6 +8,23 @@ namespace Gandalf.ViewModels;
 
 public sealed partial class TimerDialogViewModel : DialogViewModelBase
 {
+    /// <summary>
+    /// Locked-down culture for the in-game-time picker. Forces zero-padded
+    /// 12-hour format (<c>hh:mm tt</c>) regardless of the user's system
+    /// locale. Vanilla <c>en-US</c> uses <c>h:mm:ss tt</c> — single-digit
+    /// hour and a stray seconds component the picker can't actually edit
+    /// (we hide the seconds spinner via <c>PickerVisibility="HourMinute"</c>).
+    /// </summary>
+    public static CultureInfo PickerCulture { get; } = BuildPickerCulture();
+
+    private static CultureInfo BuildPickerCulture()
+    {
+        var c = (CultureInfo)CultureInfo.GetCultureInfo("en-US").Clone();
+        c.DateTimeFormat.ShortTimePattern = "hh:mm tt";
+        c.DateTimeFormat.LongTimePattern = "hh:mm tt";
+        return c;
+    }
+
     private readonly bool _isEditing;
     private readonly bool _areInputsEditable;
 
