@@ -144,13 +144,20 @@
                 <Border DockPanel.Dock="Top" Margin="10,6,10,0" Padding="10,4"
                         Background="#FF252525" CornerRadius="3"
                         ToolTip="In-game time · 1 in-game hour = 5 real minutes">
-                    <StackPanel Orientation="Horizontal">
-                        <icon:PackIconLucide Kind="Clock" Width="14" Height="14"
-                                             VerticalAlignment="Center" Margin="0,0,8,0"
-                                             Foreground="#FFD4A847"/>
-                        <TextBlock Text="{Binding GameTimeText}"
-                                   FontSize="{DynamicResource AppFontSizeMedium}"
-                                   Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Vertical">
+                        <StackPanel Orientation="Horizontal">
+                            <icon:PackIconLucide Kind="Clock" Width="14" Height="14"
+                                                 VerticalAlignment="Center" Margin="0,0,8,0"
+                                                 Foreground="#FFD4A847"/>
+                            <TextBlock Text="{Binding GameTimeText}"
+                                       FontSize="{DynamicResource AppFontSizeMedium}"
+                                       Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding NextShiftCountdownText}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   Foreground="#88FFFFFF" Margin="22,2,0,0"
+                                   Visibility="{Binding NextShiftCountdownText,
+                                       Converter={StaticResource NullOrEmptyToVis}}"/>
                     </StackPanel>
                 </Border>
 
