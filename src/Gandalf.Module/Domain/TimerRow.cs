@@ -23,13 +23,26 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
     public TimeSpan Duration => Catalog.Duration;
     public string GroupKey => Catalog.Region ?? "";
 
+    /// <summary>
+    /// Wall-clock instant this Running timer fires. For sources that stamp a
+    /// per-row firing instant (User feed's game-clock alarms), this comes from
+    /// <see cref="TimerProgressEntry.FiringAt"/>. Falls back to
+    /// <c>StartedAt + Duration</c> for derived sources (Quest/Loot) whose firing
+    /// moment is always exactly that — they leave the field null and inherit
+    /// today's behavior verbatim.
+    /// </summary>
+    public DateTimeOffset? FiringAt =>
+        Progress is null
+            ? null
+            : Progress.FiringAt ?? Progress.StartedAt + Catalog.Duration;
+
     public TimerState State
     {
         get
         {
             if (Progress is null) return TimerState.Idle;
             if (Progress.DismissedAt is not null) return TimerState.Idle;
-            if (Clock.GetUtcNow() - Progress.StartedAt >= Catalog.Duration) return TimerState.Done;
+            if (FiringAt is { } at && Clock.GetUtcNow() >= at) return TimerState.Done;
             return TimerState.Running;
         }
     }
@@ -38,8 +51,8 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
     {
         get
         {
-            if (Progress is null) return Catalog.Duration;
-            var left = Catalog.Duration - (Clock.GetUtcNow() - Progress.StartedAt);
+            if (FiringAt is not { } at) return Catalog.Duration;
+            var left = at - Clock.GetUtcNow();
             return left < TimeSpan.Zero ? TimeSpan.Zero : left;
         }
     }
@@ -48,9 +61,8 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
     {
         get
         {
-            if (Progress is null) return null;
-            var stamped = Progress.StartedAt + Catalog.Duration;
-            return Clock.GetUtcNow() >= stamped ? stamped : null;
+            if (FiringAt is not { } at) return null;
+            return Clock.GetUtcNow() >= at ? at : null;
         }
     }
 
@@ -58,9 +70,10 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
     {
         get
         {
-            if (Progress is null) return 0.0;
-            if (Catalog.Duration <= TimeSpan.Zero) return 1.0;
-            return Math.Clamp((Clock.GetUtcNow() - Progress.StartedAt) / Catalog.Duration, 0.0, 1.0);
+            if (Progress is null || FiringAt is not { } at) return 0.0;
+            var total = at - Progress.StartedAt;
+            if (total <= TimeSpan.Zero) return 1.0;
+            return Math.Clamp((Clock.GetUtcNow() - Progress.StartedAt) / total, 0.0, 1.0);
         }
     }
 
@@ -93,7 +106,7 @@ public sealed record TimerRow(TimerCatalogEntry Catalog, TimerProgressEntry? Pro
             if (Progress.DismissedAt is not null) return null;
 
             var now = Clock.GetUtcNow();
-            var stateFlipAt = Progress.StartedAt + Catalog.Duration;
+            if (FiringAt is not { } stateFlipAt) return null;
 
             if (now < stateFlipAt)
             {

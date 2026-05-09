@@ -11,25 +11,29 @@ public class ElapsedWhileAwayClassifierTests
     [Fact]
     public void Elapsed_while_away_when_started_before_last_active_and_finished_after()
     {
-        // Started 2h ago, duration 1h30m → theoretical done at (Now - 30m).
+        // Started 2h ago, duration 1h30m → firing instant at (Now - 30m).
         // LastActive 1h ago — so the timer finished 30m after the user switched away.
-        var progress = new TimerProgress { StartedAt = Now - TimeSpan.FromHours(2) };
+        var started = Now - TimeSpan.FromHours(2);
+        var progress = new TimerProgress { StartedAt = started };
+        var firingAt = started + TimeSpan.FromMinutes(90);
         var lastActive = Now - TimeSpan.FromHours(1);
 
         ElapsedWhileAwayClassifier
-            .IsElapsedWhileAway(progress, TimeSpan.FromMinutes(90), lastActive, Now)
+            .IsElapsedWhileAway(progress, firingAt, lastActive, Now)
             .Should().BeTrue();
     }
 
     [Fact]
     public void Not_elapsed_if_still_running_past_last_active()
     {
-        // Started 10m ago, duration 1h → theoretical done in ~50m (future). LastActive 5m ago.
-        var progress = new TimerProgress { StartedAt = Now - TimeSpan.FromMinutes(10) };
+        // Started 10m ago, duration 1h → firing in ~50m (future). LastActive 5m ago.
+        var started = Now - TimeSpan.FromMinutes(10);
+        var progress = new TimerProgress { StartedAt = started };
+        var firingAt = started + TimeSpan.FromHours(1);
         var lastActive = Now - TimeSpan.FromMinutes(5);
 
         ElapsedWhileAwayClassifier
-            .IsElapsedWhileAway(progress, TimeSpan.FromHours(1), lastActive, Now)
+            .IsElapsedWhileAway(progress, firingAt, lastActive, Now)
             .Should().BeFalse("timer hasn't finished yet");
     }
 
@@ -38,11 +42,13 @@ public class ElapsedWhileAwayClassifierTests
     {
         // User returned to this character, restarted a timer, then switched again.
         // Timer started after the LastActive stamp — they saw the start, not a catch-up.
-        var progress = new TimerProgress { StartedAt = Now - TimeSpan.FromMinutes(10) };
+        var started = Now - TimeSpan.FromMinutes(10);
+        var progress = new TimerProgress { StartedAt = started };
+        var firingAt = started + TimeSpan.FromMinutes(5);
         var lastActive = Now - TimeSpan.FromMinutes(30);
 
         ElapsedWhileAwayClassifier
-            .IsElapsedWhileAway(progress, TimeSpan.FromMinutes(5), lastActive, Now)
+            .IsElapsedWhileAway(progress, firingAt, lastActive, Now)
             .Should().BeFalse("timer started after the last active session");
     }
 
@@ -50,10 +56,11 @@ public class ElapsedWhileAwayClassifierTests
     public void Not_elapsed_if_last_active_is_null()
     {
         // First-ever session on this character: no noise.
-        var progress = new TimerProgress { StartedAt = Now - TimeSpan.FromHours(5) };
+        var started = Now - TimeSpan.FromHours(5);
+        var progress = new TimerProgress { StartedAt = started };
 
         ElapsedWhileAwayClassifier
-            .IsElapsedWhileAway(progress, TimeSpan.FromMinutes(5), lastActiveAt: null, Now)
+            .IsElapsedWhileAway(progress, started + TimeSpan.FromMinutes(5), lastActiveAt: null, Now)
             .Should().BeFalse();
     }
 
@@ -62,7 +69,26 @@ public class ElapsedWhileAwayClassifierTests
     {
         var progress = new TimerProgress();  // StartedAt null
         ElapsedWhileAwayClassifier
-            .IsElapsedWhileAway(progress, TimeSpan.FromMinutes(5), Now - TimeSpan.FromHours(1), Now)
+            .IsElapsedWhileAway(progress, Now, Now - TimeSpan.FromHours(1), Now)
             .Should().BeFalse();
+    }
+
+    [Fact]
+    public void Game_clock_alarm_fires_at_an_instant_decoupled_from_StartedAt_plus_Duration()
+    {
+        // A game-clock-of-day alarm started at LastActive - 30m, configured to
+        // fire at "next 6 PM in-game". The classifier doesn't know about
+        // GameTimeOfDay arithmetic — the caller resolves a per-row firing
+        // instant (here: between LastActive and Now) and hands it in. Verifies
+        // the v1 fix where Catalog.Duration would have produced the wrong
+        // theoretical-done for game-clock timers.
+        var started = Now - TimeSpan.FromMinutes(30);
+        var progress = new TimerProgress { StartedAt = started };
+        var firingAt = Now - TimeSpan.FromMinutes(10);  // Not started + any obvious duration
+        var lastActive = Now - TimeSpan.FromMinutes(20);
+
+        ElapsedWhileAwayClassifier
+            .IsElapsedWhileAway(progress, firingAt, lastActive, Now)
+            .Should().BeTrue("firing instant fell between LastActive and Now");
     }
 }

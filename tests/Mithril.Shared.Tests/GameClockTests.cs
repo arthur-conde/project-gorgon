@@ -62,6 +62,78 @@ public class GameClockTests
     }
 
     [Fact]
+    public void NextOccurrence_TargetEqualsCurrent_AdvancesFullCycle()
+    {
+        // At the anchor, in-game time is 9:00 PM. Asking for the next 9:00 PM
+        // should jump one full real cycle (7200 s) forward — the alternative
+        // would silently fire-on-arm for a 9:00 PM alarm started at 9:00 PM.
+        var floor = new DateTimeOffset(PgEmissaryAnchorUtc, TimeSpan.Zero);
+        var clock = new GameClock(new FixedTimeProvider(PgEmissaryAnchorUtc));
+        var next = clock.NextOccurrence(new GameTimeOfDay(21, 0), floor);
+        (next - floor).Should().Be(TimeSpan.FromSeconds(7200));
+    }
+
+    [Fact]
+    public void NextOccurrence_TargetSoonAfterCurrent_RoundTripsThroughGetCurrent()
+    {
+        // 5 real minutes after anchor → in-game 10:00 PM. Asking for next
+        // 11:00 PM should land 5 real minutes further on (= 10 min after anchor),
+        // and a clock fixed at that instant should report exactly 11:00 PM.
+        var floor = new DateTimeOffset(PgEmissaryAnchorUtc.AddMinutes(5), TimeSpan.Zero);
+        var clock = new GameClock(new FixedTimeProvider(floor.UtcDateTime));
+        var next = clock.NextOccurrence(new GameTimeOfDay(23, 0), floor);
+        (next - floor).Should().Be(TimeSpan.FromMinutes(5));
+        new GameClock(new FixedTimeProvider(next.UtcDateTime))
+            .GetCurrent().Should().Be(new GameTimeOfDay(23, 0));
+    }
+
+    [Fact]
+    public void NextOccurrence_TargetJustPassed_ReturnsNearlyFullCycle()
+    {
+        // Floor is one tick after the anchor's 9:00 PM moment → "next 9:00 PM"
+        // should be almost a full real cycle out (7200 s minus one tick).
+        var floor = new DateTimeOffset(PgEmissaryAnchorUtc, TimeSpan.Zero) + TimeSpan.FromTicks(1);
+        var clock = new GameClock(new FixedTimeProvider(floor.UtcDateTime));
+        var next = clock.NextOccurrence(new GameTimeOfDay(21, 0), floor);
+        (next - floor).Should().Be(TimeSpan.FromSeconds(7200) - TimeSpan.FromTicks(1));
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(6, 0)]
+    [InlineData(12, 0)]
+    [InlineData(18, 0)]
+    [InlineData(3, 27)]
+    [InlineData(20, 59)]
+    public void NextOccurrence_RoundTrip_ManyTargets(int hour, int minute)
+    {
+        // For an arbitrary floor strictly after anchor, the returned instant
+        // must satisfy GetCurrent(returned) == target — modulo the 1-minute
+        // resolution of GameTimeOfDay.
+        var floor = new DateTimeOffset(PgEmissaryAnchorUtc, TimeSpan.Zero).AddMinutes(17.3);
+        var clock = new GameClock(new FixedTimeProvider(floor.UtcDateTime));
+        var target = new GameTimeOfDay(hour, minute);
+        var next = clock.NextOccurrence(target, floor);
+
+        next.Should().BeOnOrAfter(floor);
+        new GameClock(new FixedTimeProvider(next.UtcDateTime))
+            .GetCurrent().Should().Be(target);
+    }
+
+    [Fact]
+    public void NextOccurrence_FloorBeforeAnchor_HandlesNegativeElapsed()
+    {
+        // Inverse formula must cope with floors that pre-date the anchor — same
+        // negative-modulo case GetCurrent handles.
+        var floor = new DateTimeOffset(PgEmissaryAnchorUtc.AddHours(-3), TimeSpan.Zero);
+        var clock = new GameClock(new FixedTimeProvider(floor.UtcDateTime));
+        var next = clock.NextOccurrence(new GameTimeOfDay(0, 0), floor);
+        next.Should().BeOnOrAfter(floor);
+        new GameClock(new FixedTimeProvider(next.UtcDateTime))
+            .GetCurrent().Should().Be(new GameTimeOfDay(0, 0));
+    }
+
+    [Fact]
     public void OurTickFlipObservation_AgreesWithinSeconds()
     {
         // On 2026-05-04T21:00:08.78Z we observed the in-game clock flip to 12:00 PM.

@@ -12,6 +12,18 @@ public sealed class TimerProgress
 {
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+
+    /// <summary>
+    /// Cached wall-clock instant when the running timer fires. For
+    /// <see cref="GandalfTriggerKind.Countdown"/> this is just <c>StartedAt + Duration</c>;
+    /// for <see cref="GandalfTriggerKind.GameTimeOfDay"/> it's the next real-time
+    /// occurrence of the target in-game time, computed at Start/Restart time.
+    /// Not persisted: re-anchoring <c>GameClock</c> after a future Project Gorgon
+    /// patch would otherwise leave stale game-clock firing instants in the file.
+    /// Rehydrated on character switch.
+    /// </summary>
+    [JsonIgnore]
+    public DateTimeOffset? FiringAt { get; set; }
 }
 
 /// <summary>

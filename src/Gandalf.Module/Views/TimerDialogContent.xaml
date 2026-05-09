@@ -1,25 +1,92 @@
 <UserControl x:Class="Gandalf.Views.TimerDialogContent"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+             xmlns:vm="clr-namespace:Gandalf.ViewModels">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- MahApps Controls + Fonts + Dark theme are needed for mah:TimePicker
+                 to render its clock-spinner popup; the rest of the shell deliberately
+                 doesn't merge these globally. Scoped to this dialog so other dialogs
+                 keep their custom styling untouched. App-shared converters (BoolToVis)
+                 come last so any key collisions favor our resource. Same pattern as
+                 Legolas/Sharing/LegolasShareDialog.xaml. -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <StackPanel MinWidth="320">
         <DockPanel Margin="0,0,0,6">
             <TextBlock Text="Name" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
             <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"/>
         </DockPanel>
+
         <DockPanel Margin="0,0,0,6">
+            <TextBlock Text="Trigger" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Content="Countdown" GroupName="TimerKind"
+                             IsChecked="{Binding IsCountdown, Mode=TwoWay}"
+                             IsEnabled="{Binding AreInputsEditable}"
+                             Foreground="#FFE8E8E8" Margin="0,0,16,0"/>
+                <RadioButton Content="In-game time" GroupName="TimerKind"
+                             IsChecked="{Binding IsGameTimeOfDay, Mode=TwoWay}"
+                             IsEnabled="{Binding AreInputsEditable}"
+                             Foreground="#FFE8E8E8"/>
+            </StackPanel>
+        </DockPanel>
+
+        <DockPanel Margin="0,0,0,6"
+                   Visibility="{Binding IsCountdown, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="Duration" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
             <StackPanel Orientation="Horizontal">
                 <TextBox Width="50" Text="{Binding Hours, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
-                         IsEnabled="{Binding IsDurationEditable}"/>
+                         IsEnabled="{Binding AreInputsEditable}"/>
                 <TextBlock Text="h" VerticalAlignment="Center" Foreground="#88FFFFFF" Margin="4,0,12,0"/>
                 <TextBox Width="50" Text="{Binding Minutes, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
-                         IsEnabled="{Binding IsDurationEditable}"/>
+                         IsEnabled="{Binding AreInputsEditable}"/>
                 <TextBlock Text="m" VerticalAlignment="Center" Foreground="#88FFFFFF" Margin="4,0,12,0"/>
                 <TextBox Width="50" Text="{Binding Seconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
-                         IsEnabled="{Binding IsDurationEditable}"/>
+                         IsEnabled="{Binding AreInputsEditable}"/>
                 <TextBlock Text="s" VerticalAlignment="Center" Foreground="#88FFFFFF" Margin="4,0,0,0"/>
             </StackPanel>
         </DockPanel>
+
+        <DockPanel Margin="0,0,0,6"
+                   Visibility="{Binding IsGameTimeOfDay, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="In-game" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
+            <!--
+                PickerCulture is a customized en-US that forces 12-hour
+                "hh:mm tt" (zero-padded, no seconds) for the read-only
+                display. HoursItemStringFormat / MinutesItemStringFormat
+                zero-pad the dropdown items themselves so the popup reads
+                "06" / "00" instead of "6" / "0". The underlying
+                SelectedDateTime is still 24h, so storage and IGameClock
+                arithmetic are unaffected.
+            -->
+            <mah:TimePicker SelectedDateTime="{Binding SelectedGameDateTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Culture="{x:Static vm:TimerDialogViewModel.PickerCulture}"
+                            PickerVisibility="HourMinute"
+                            HandVisibility="HourMinute"
+                            HoursItemStringFormat="{}{0:D2}"
+                            MinutesItemStringFormat="{}{0:D2}"
+                            IsEnabled="{Binding AreInputsEditable}"
+                            HorizontalAlignment="Left"
+                            Width="170" Padding="6,4"/>
+        </DockPanel>
+
+        <DockPanel Margin="0,0,0,6"
+                   Visibility="{Binding IsGameTimeOfDay, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="" Width="70"/>
+            <CheckBox Content="Re-arm each in-game day"
+                      IsChecked="{Binding Recurring, Mode=TwoWay}"
+                      IsEnabled="{Binding AreInputsEditable}"
+                      Foreground="#FFE8E8E8"/>
+        </DockPanel>
+
         <DockPanel Margin="0,0,0,6">
             <TextBlock Text="Region" Width="70" VerticalAlignment="Center" Foreground="#FFE8E8E8"/>
             <ComboBox IsEditable="True" Text="{Binding Region, UpdateSourceTrigger=PropertyChanged}"

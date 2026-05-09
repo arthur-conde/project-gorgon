@@ -114,7 +114,11 @@ public sealed class TimerExpirationScheduler : IDisposable
             var p = _progress.GetProgress(def.Id);
             if (p?.StartedAt is null) continue;
             if (p.CompletedAt is not null) continue;  // already stamped — no further expiration to fire
-            var expiresAt = p.StartedAt.Value + def.Duration;
+            // FiringAt is the canonical firing instant (StartedAt + Duration for
+            // countdowns, or the next in-game-time occurrence for game-clock
+            // timers). Falls back to the legacy arithmetic when a TimerProgress
+            // wasn't stamped by the service (e.g. mid-rollout test fixtures).
+            var expiresAt = p.FiringAt ?? p.StartedAt.Value + def.Duration;
             if (soonest is null || expiresAt < soonest) soonest = expiresAt;
         }
         return soonest;

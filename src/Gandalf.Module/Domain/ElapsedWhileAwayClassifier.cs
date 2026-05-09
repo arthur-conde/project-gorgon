@@ -14,13 +14,17 @@ public static class ElapsedWhileAwayClassifier
     /// flag everything as catch-up noise).
     /// </summary>
     /// <remarks>
-    /// Uses theoretical completion (<c>StartedAt + Duration</c>), not <c>CompletedAt</c>.
-    /// <c>CompletedAt</c> is stamped by the tick loop which may not have run on the
-    /// newly-active character yet — theoretical completion is tick-order-independent.
+    /// Uses the row's pre-computed firing instant (<paramref name="firingAt"/>),
+    /// not <c>CompletedAt</c>. <c>CompletedAt</c> is stamped by the tick loop
+    /// which may not have run on the newly-active character yet — the firing
+    /// instant is tick-order-independent. Game-clock alarms have a firing
+    /// instant that isn't <c>StartedAt + Duration</c>, which is why this took
+    /// a <c>TimeSpan duration</c> parameter historically and now takes the
+    /// instant directly.
     /// </remarks>
     public static bool IsElapsedWhileAway(
         TimerProgress progress,
-        TimeSpan duration,
+        DateTimeOffset firingAt,
         DateTimeOffset? lastActiveAt,
         DateTimeOffset now)
     {
@@ -28,9 +32,8 @@ public static class ElapsedWhileAwayClassifier
         if (progress.StartedAt is null) return false;
 
         var started = progress.StartedAt.Value;
-        var theoreticalDone = started + duration;
         return started <= lastActiveAt.Value
-            && theoreticalDone > lastActiveAt.Value
-            && theoreticalDone <= now;
+            && firingAt > lastActiveAt.Value
+            && firingAt <= now;
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
 using Mithril.Shared.Wpf.Dialogs;
@@ -7,23 +8,72 @@ namespace Gandalf.ViewModels;
 
 public sealed partial class TimerDialogViewModel : DialogViewModelBase
 {
+    /// <summary>
+    /// Locked-down culture for the in-game-time picker. Forces zero-padded
+    /// 12-hour format (<c>hh:mm tt</c>) regardless of the user's system
+    /// locale. Vanilla <c>en-US</c> uses <c>h:mm:ss tt</c> — single-digit
+    /// hour and a stray seconds component the picker can't actually edit
+    /// (we hide the seconds spinner via <c>PickerVisibility="HourMinute"</c>).
+    /// </summary>
+    public static CultureInfo PickerCulture { get; } = BuildPickerCulture();
+
+    private static CultureInfo BuildPickerCulture()
+    {
+        var c = (CultureInfo)CultureInfo.GetCultureInfo("en-US").Clone();
+        c.DateTimeFormat.ShortTimePattern = "hh:mm tt";
+        c.DateTimeFormat.LongTimePattern = "hh:mm tt";
+        return c;
+    }
+
     private readonly bool _isEditing;
-    private readonly bool _isDurationEditable;
+    private readonly bool _areInputsEditable;
 
     [ObservableProperty] private string _name = "";
+
+    [ObservableProperty] private bool _isCountdown = true;
+    [ObservableProperty] private bool _isGameTimeOfDay;
+
     [ObservableProperty] private string _hours = "";
     [ObservableProperty] private string _minutes = "";
     [ObservableProperty] private string _seconds = "";
+
+    /// <summary>
+    /// Bound to the MahApps <c>TimePicker.SelectedDateTime</c>. The picker only
+    /// exposes a <see cref="DateTime"/>-typed property — we ignore the date
+    /// component and read <c>Hour</c>/<c>Minute</c>. Null means the user hasn't
+    /// picked an in-game time yet (required when <see cref="IsGameTimeOfDay"/>
+    /// is set). The picker enforces 0–23h / 0–59m structurally, so no
+    /// per-component range validation is needed in <see cref="OnPrimaryAction"/>.
+    /// </summary>
+    [ObservableProperty] private DateTime? _selectedGameDateTime;
+    [ObservableProperty] private bool _recurring;
+
     [ObservableProperty] private string _region = "";
     [ObservableProperty] private string _map = "";
 
     public ObservableCollection<string> KnownRegions { get; } = [];
     public ObservableCollection<string> KnownMaps { get; } = [];
 
-    public bool IsDurationEditable => _isDurationEditable;
+    /// <summary>
+    /// Trigger / duration / game-time inputs are gated to idle-only on the
+    /// active character, matching the pre-existing rule for Duration: changing
+    /// the firing semantics mid-run would reinterpret remaining time on every
+    /// other character with in-flight progress for the same def.
+    /// </summary>
+    public bool AreInputsEditable => _areInputsEditable;
 
     public override string Title => _isEditing ? "Edit Timer" : "Add Timer";
     public override string PrimaryButtonText => _isEditing ? "Update" : "Save";
+
+    partial void OnIsCountdownChanged(bool value)
+    {
+        if (value) IsGameTimeOfDay = false;
+    }
+
+    partial void OnIsGameTimeOfDayChanged(bool value)
+    {
+        if (value) IsCountdown = false;
+    }
 
     public TimerDialogViewModel(
         GandalfTimerDef? existing,
@@ -37,40 +87,52 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
         if (existing is not null)
         {
             _isEditing = true;
-            // Duration is editable only when the active character's progress is idle —
-            // changing Duration mid-run would reinterpret remaining time. Other characters
-            // with in-flight progress for the same def accept the new duration on their
-            // next render (rare corner case; users can Restart).
-            _isDurationEditable = isIdleOnActive;
+            _areInputsEditable = isIdleOnActive;
             _name = existing.Name;
-            _hours = existing.Duration.Hours > 0 || existing.Duration.Days > 0
-                ? ((int)existing.Duration.TotalHours).ToString() : "";
-            _minutes = existing.Duration.Minutes > 0 ? existing.Duration.Minutes.ToString() : "";
-            _seconds = existing.Duration.Seconds > 0 ? existing.Duration.Seconds.ToString() : "";
             _region = existing.Region;
             _map = existing.Map;
+
+            if (existing.Kind == GandalfTriggerKind.GameTimeOfDay)
+            {
+                _isCountdown = false;
+                _isGameTimeOfDay = true;
+                _selectedGameDateTime = DateTime.Today.AddHours(existing.GameHour ?? 0).AddMinutes(existing.GameMinute ?? 0);
+                _recurring = existing.Recurring;
+            }
+            else
+            {
+                _hours = existing.Duration.Hours > 0 || existing.Duration.Days > 0
+                    ? ((int)existing.Duration.TotalHours).ToString() : "";
+                _minutes = existing.Duration.Minutes > 0 ? existing.Duration.Minutes.ToString() : "";
+                _seconds = existing.Duration.Seconds > 0 ? existing.Duration.Seconds.ToString() : "";
+            }
         }
         else
         {
-            _isDurationEditable = true;
+            _areInputsEditable = true;
         }
     }
 
     public override bool OnPrimaryAction()
     {
-        if (!_isEditing)
-        {
-            int.TryParse(Hours, out var h);
-            int.TryParse(Minutes, out var m);
-            int.TryParse(Seconds, out var s);
-            if (new TimeSpan(h, m, s) <= TimeSpan.Zero)
-                return false;
-        }
+        // Edit mode skips re-validation: when the inputs are gated to idle and
+        // the user can't change them, accept any state. When they can, the per-
+        // kind validation below applies symmetrically with Add mode.
+        if (_isEditing && !_areInputsEditable) return true;
 
-        return true;
+        if (IsGameTimeOfDay) return SelectedGameDateTime is not null;
+
+        // Countdown: positive duration required.
+        int.TryParse(Hours, out var hr);
+        int.TryParse(Minutes, out var mi);
+        int.TryParse(Seconds, out var se);
+        return new TimeSpan(hr, mi, se) > TimeSpan.Zero;
     }
 
     public string ResultName => string.IsNullOrWhiteSpace(Name) ? "Timer" : Name.Trim();
+
+    public GandalfTriggerKind ResultKind =>
+        IsGameTimeOfDay ? GandalfTriggerKind.GameTimeOfDay : GandalfTriggerKind.Countdown;
 
     public TimeSpan ResultDuration
     {
@@ -82,6 +144,11 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
             return new TimeSpan(h, m, s);
         }
     }
+
+    public int? ResultGameHour => SelectedGameDateTime?.Hour;
+    public int? ResultGameMinute => SelectedGameDateTime?.Minute;
+
+    public bool ResultRecurring => Recurring;
 
     public string ResultRegion => Region.Trim();
     public string ResultMap => Map.Trim();

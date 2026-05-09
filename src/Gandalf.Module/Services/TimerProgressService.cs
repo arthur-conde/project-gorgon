@@ -2,6 +2,7 @@ using System.IO;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Game;
 
 namespace Gandalf.Services;
 
@@ -33,6 +34,8 @@ public sealed class TimerProgressService : IDisposable
     private readonly TimerDefinitionsService _defs;
     private readonly PerCharacterStoreOptions _storeOptions;
     private readonly IDiagnosticsSink? _diag;
+    private readonly IGameClock _gameClock;
+    private readonly TimeProvider _time;
     private readonly System.Timers.Timer _debounce;
     private readonly Lock _flushLock = new();
     private readonly HashSet<string> _expiredNotified = new(StringComparer.Ordinal);
@@ -42,15 +45,24 @@ public sealed class TimerProgressService : IDisposable
         PerCharacterView<GandalfProgress> view,
         TimerDefinitionsService defs,
         PerCharacterStoreOptions storeOptions,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        IGameClock? gameClock = null,
+        TimeProvider? time = null)
     {
         _view = view;
         _defs = defs;
         _storeOptions = storeOptions;
         _diag = diag;
+        _time = time ?? TimeProvider.System;
+        _gameClock = gameClock ?? new GameClock(_time);
         _view.CurrentChanged += OnCurrentChanged;
         _debounce = new System.Timers.Timer(500) { AutoReset = false };
         _debounce.Elapsed += (_, _) => Flush();
+        // Initial rehydrate — covers the case where a character was already
+        // active when the service was constructed (no CurrentChanged fires
+        // for that). Without this, a Running game-clock timer loaded from
+        // disk would have FiringAt=null until the user switched characters.
+        RehydrateFiringAt();
     }
 
     /// <summary>Progress for a specific timer id on the active character, or null if none.</summary>
@@ -78,8 +90,10 @@ public sealed class TimerProgressService : IDisposable
         var view = new TimerView(def, progress);
         if (view.State != TimerState.Idle) return;
 
-        progress.StartedAt = DateTimeOffset.UtcNow;
+        var startedAt = _time.GetUtcNow();
+        progress.StartedAt = startedAt;
         progress.CompletedAt = null;
+        progress.FiringAt = ComputeFiringAt(def, startedAt, _gameClock);
         _expiredNotified.Remove(id);
         SaveNow();
         ProgressChanged?.Invoke(this, EventArgs.Empty);
@@ -96,8 +110,10 @@ public sealed class TimerProgressService : IDisposable
         var view = new TimerView(def, progress);
         if (view.State != TimerState.Done) return;
 
-        progress.StartedAt = DateTimeOffset.UtcNow;
+        var startedAt = _time.GetUtcNow();
+        progress.StartedAt = startedAt;
         progress.CompletedAt = null;
+        progress.FiringAt = ComputeFiringAt(def, startedAt, _gameClock);
         _expiredNotified.Remove(id);
         SaveNow();
         ProgressChanged?.Invoke(this, EventArgs.Empty);
@@ -112,6 +128,7 @@ public sealed class TimerProgressService : IDisposable
         if (progress.StartedAt is null && progress.CompletedAt is null) return;
         progress.StartedAt = null;
         progress.CompletedAt = null;
+        progress.FiringAt = null;
         _expiredNotified.Remove(id);
         MarkDirty();
         ProgressChanged?.Invoke(this, EventArgs.Empty);
@@ -184,6 +201,7 @@ public sealed class TimerProgressService : IDisposable
 
             progress.StartedAt = null;
             progress.CompletedAt = null;
+            progress.FiringAt = null;
             _expiredNotified.Remove(id);
             changed = true;
         }
@@ -196,34 +214,105 @@ public sealed class TimerProgressService : IDisposable
     /// <summary>
     /// Scan the active character's progress; stamp <c>CompletedAt</c> and fire
     /// <see cref="TimerExpired"/> for any running-but-past-due timers. Idempotent within
-    /// the same lifecycle — each id fires at most once per run cycle.
+    /// the same lifecycle — each id fires at most once per run cycle. For
+    /// <see cref="GandalfTriggerKind.GameTimeOfDay"/> timers with
+    /// <see cref="GandalfTimerDef.Recurring"/>, the row is re-armed to the next
+    /// in-game day instead of latching <c>CompletedAt</c> — the alarm event still
+    /// fires so consumers (TimerAlarmService) ring on each cycle.
     /// </summary>
     public void CheckExpirations()
     {
         var current = _view.Current;
         if (current is null) return;
 
+        var now = _time.GetUtcNow();
         foreach (var (id, progress) in current.ByTimerId)
         {
             var def = _defs.Definitions.FirstOrDefault(d => d.Id == id);
             if (def is null) continue;
-
-            var view = new TimerView(def, progress);
             if (progress.StartedAt is null || progress.CompletedAt is not null) continue;
-            if (view.State != TimerState.Done) continue;
 
-            progress.CompletedAt = DateTimeOffset.UtcNow;
-            MarkDirty();
+            var firingAt = progress.FiringAt ?? progress.StartedAt.Value + def.Duration;
+            if (now < firingAt) continue;
 
-            if (_expiredNotified.Add(id))
-                TimerExpired?.Invoke(this, new TimerExpiredEventArgs(def, progress));
+            var firstFire = _expiredNotified.Add(id);
+
+            if (def.Kind == GandalfTriggerKind.GameTimeOfDay && def.Recurring)
+            {
+                // Fire the alarm event for the just-completed run *before* mutating
+                // — handlers run synchronously and read the pre-rearm state. Then
+                // re-arm in place: anchor at now (so the next cycle is computed
+                // against current real time, skipping any cycles missed while the
+                // app was suspended), and reset _expiredNotified so the *next*
+                // fire is allowed. Forgetting that reset silently swallows the
+                // second fire, which is the regression test in the recurring path.
+                if (firstFire)
+                    TimerExpired?.Invoke(this, new TimerExpiredEventArgs(def, progress));
+
+                progress.StartedAt = now;
+                progress.CompletedAt = null;
+                progress.FiringAt = ComputeFiringAt(def, now, _gameClock);
+                _expiredNotified.Remove(id);
+                MarkDirty();
+            }
+            else
+            {
+                progress.CompletedAt = now;
+                MarkDirty();
+
+                if (firstFire)
+                    TimerExpired?.Invoke(this, new TimerExpiredEventArgs(def, progress));
+            }
         }
+    }
+
+    /// <summary>
+    /// Recompute <see cref="TimerProgress.FiringAt"/> for every Running entry on
+    /// the active character. Called on construction and on character-switch.
+    /// FiringAt is <c>[JsonIgnore]</c> so it isn't carried across app restarts —
+    /// rehydrating here is what restores it.
+    /// </summary>
+    private void RehydrateFiringAt()
+    {
+        var current = _view.Current;
+        if (current is null) return;
+
+        foreach (var (id, progress) in current.ByTimerId)
+        {
+            if (progress.StartedAt is null || progress.CompletedAt is not null) continue;
+            var def = _defs.Definitions.FirstOrDefault(d => d.Id == id);
+            if (def is null) continue;
+            progress.FiringAt = ComputeFiringAt(def, progress.StartedAt.Value, _gameClock);
+        }
+    }
+
+    /// <summary>
+    /// Wall-clock instant at which a Running timer of this <paramref name="def"/>
+    /// fires, given when it started. Single dispatch point for the
+    /// <see cref="GandalfTriggerKind.Countdown"/>/<see cref="GandalfTriggerKind.GameTimeOfDay"/>
+    /// branch — every other code path reads the cached
+    /// <see cref="TimerProgress.FiringAt"/>.
+    /// </summary>
+    public static DateTimeOffset ComputeFiringAt(
+        GandalfTimerDef def, DateTimeOffset startedAt, IGameClock gameClock)
+    {
+        return def.Kind switch
+        {
+            GandalfTriggerKind.GameTimeOfDay => gameClock.NextOccurrence(
+                new GameTimeOfDay(def.GameHour ?? 0, def.GameMinute ?? 0),
+                startedAt),
+            _ => startedAt + def.Duration,
+        };
     }
 
     private void OnCurrentChanged(object? sender, EventArgs e)
     {
         // Each character has its own notification ledger — clear on switch.
         _expiredNotified.Clear();
+        // Restore FiringAt for the new active character's running timers — it
+        // isn't persisted, and downstream consumers (scheduler, TimerView, row
+        // render) all dispatch off it.
+        RehydrateFiringAt();
         ProgressChanged?.Invoke(this, EventArgs.Empty);
     }
 

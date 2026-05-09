@@ -87,7 +87,11 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         _defs.Add(new GandalfTimerDef
         {
             Name = vm.ResultName,
+            Kind = vm.ResultKind,
             Duration = vm.ResultDuration,
+            GameHour = vm.ResultGameHour,
+            GameMinute = vm.ResultGameMinute,
+            Recurring = vm.ResultRecurring,
             Region = vm.ResultRegion,
             Map = vm.ResultMap,
         });
@@ -111,9 +115,19 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
             d.Map = vm.ResultMap;
             if (isIdleOnActive)
             {
-                var duration = vm.ResultDuration;
-                if (duration > TimeSpan.Zero)
-                    d.Duration = duration;
+                d.Kind = vm.ResultKind;
+                d.Recurring = vm.ResultRecurring;
+                if (vm.ResultKind == GandalfTriggerKind.GameTimeOfDay)
+                {
+                    d.GameHour = vm.ResultGameHour;
+                    d.GameMinute = vm.ResultGameMinute;
+                }
+                else
+                {
+                    var duration = vm.ResultDuration;
+                    if (duration > TimeSpan.Zero)
+                        d.Duration = duration;
+                }
             }
         });
     }
@@ -213,9 +227,10 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
         foreach (var vm in Timers)
         {
             if (vm.Row.Progress is null) continue;
+            if (vm.Row.FiringAt is not { } firingAt) continue;
             // Bridge the source-shape progress into the classifier's TimerProgress shape.
             var progress = new TimerProgress { StartedAt = vm.Row.Progress.StartedAt };
-            if (ElapsedWhileAwayClassifier.IsElapsedWhileAway(progress, vm.Row.Duration, lastActive, now))
+            if (ElapsedWhileAwayClassifier.IsElapsedWhileAway(progress, firingAt, lastActive, now))
                 vm.ElapsedWhileAway = true;
         }
     }
