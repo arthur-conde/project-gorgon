@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
-using Mithril.Shared.Game;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
@@ -20,14 +19,15 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     [ObservableProperty] private string _minutes = "";
     [ObservableProperty] private string _seconds = "";
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(GameTimePreview))]
-    private string _gameHour = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(GameTimePreview))]
-    private string _gameMinute = "";
-
+    /// <summary>
+    /// Bound to the MahApps <c>TimePicker.SelectedDateTime</c>. The picker only
+    /// exposes a <see cref="DateTime"/>-typed property — we ignore the date
+    /// component and read <c>Hour</c>/<c>Minute</c>. Null means the user hasn't
+    /// picked an in-game time yet (required when <see cref="IsGameTimeOfDay"/>
+    /// is set). The picker enforces 0–23h / 0–59m structurally, so no
+    /// per-component range validation is needed in <see cref="OnPrimaryAction"/>.
+    /// </summary>
+    [ObservableProperty] private DateTime? _selectedGameDateTime;
     [ObservableProperty] private bool _recurring;
 
     [ObservableProperty] private string _region = "";
@@ -43,17 +43,6 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     /// other character with in-flight progress for the same def.
     /// </summary>
     public bool AreInputsEditable => _areInputsEditable;
-
-    /// <summary>12-hour preview that mirrors the shell's in-game-clock display.</summary>
-    public string GameTimePreview
-    {
-        get
-        {
-            if (!int.TryParse(GameHour, out var h) || h < 0 || h > 23) return "";
-            if (!int.TryParse(GameMinute, out var m) || m < 0 || m > 59) return "";
-            return new GameTimeOfDay(h, m).ToString12Hour() + " in-game";
-        }
-    }
 
     public override string Title => _isEditing ? "Edit Timer" : "Add Timer";
     public override string PrimaryButtonText => _isEditing ? "Update" : "Save";
@@ -89,8 +78,7 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
             {
                 _isCountdown = false;
                 _isGameTimeOfDay = true;
-                _gameHour = (existing.GameHour ?? 0).ToString();
-                _gameMinute = (existing.GameMinute ?? 0).ToString("D2");
+                _selectedGameDateTime = DateTime.Today.AddHours(existing.GameHour ?? 0).AddMinutes(existing.GameMinute ?? 0);
                 _recurring = existing.Recurring;
             }
             else
@@ -114,12 +102,7 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
         // kind validation below applies symmetrically with Add mode.
         if (_isEditing && !_areInputsEditable) return true;
 
-        if (IsGameTimeOfDay)
-        {
-            if (!int.TryParse(GameHour, out var h) || h < 0 || h > 23) return false;
-            if (!int.TryParse(GameMinute, out var m) || m < 0 || m > 59) return false;
-            return true;
-        }
+        if (IsGameTimeOfDay) return SelectedGameDateTime is not null;
 
         // Countdown: positive duration required.
         int.TryParse(Hours, out var hr);
@@ -144,11 +127,8 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
         }
     }
 
-    public int? ResultGameHour =>
-        int.TryParse(GameHour, out var h) ? h : null;
-
-    public int? ResultGameMinute =>
-        int.TryParse(GameMinute, out var m) ? m : null;
+    public int? ResultGameHour => SelectedGameDateTime?.Hour;
+    public int? ResultGameMinute => SelectedGameDateTime?.Minute;
 
     public bool ResultRecurring => Recurring;
 
