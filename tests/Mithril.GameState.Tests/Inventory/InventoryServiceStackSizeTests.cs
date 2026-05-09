@@ -1,11 +1,11 @@
 using System.Threading.Channels;
 using FluentAssertions;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Xunit;
 
-namespace Mithril.Shared.Tests.Inventory;
+namespace Mithril.GameState.Tests.Inventory;
 
 /// <summary>
 /// Stack-size tracking added in the live-tracker change. Test scenarios are drawn

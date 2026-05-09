@@ -296,7 +296,7 @@
       "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+x(?<count>\\d+)\\s+added to inventory\\.",
       "source": "chat",
       "module": "shared",
-      "csharp": { "type": "Mithril.Shared.Inventory.InventoryStatusChatParser", "method": "CountedRx" },
+      "csharp": { "type": "Mithril.GameState.Inventory.InventoryStatusChatParser", "method": "CountedRx" },
       "eventType": "shared.InventoryAdded",
       "notes": "Counted form must be tried before SingleRx so 'Guava x42 added to inventory.' doesn't match with name='Guava x42'.",
       "fields": [
@@ -308,7 +308,7 @@
       "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+added to inventory\\.",
       "source": "chat",
       "module": "shared",
-      "csharp": { "type": "Mithril.Shared.Inventory.InventoryStatusChatParser", "method": "SingleRx" },
+      "csharp": { "type": "Mithril.GameState.Inventory.InventoryStatusChatParser", "method": "SingleRx" },
       "eventType": "shared.InventoryAdded",
       "notes": "Implicit count = 1.",
       "fields": [

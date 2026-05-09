@@ -1,13 +1,13 @@
 using System.IO;
 using System.Threading.Channels;
 using FluentAssertions;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Game;
-using Mithril.Shared.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Xunit;
 
-namespace Mithril.Shared.Tests;
+namespace Mithril.GameState.Tests;
 
 public sealed class InventoryServiceTests
 {

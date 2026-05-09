@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Mithril.Shared.Inventory;
+namespace Mithril.GameState.Inventory;
 
 /// <summary>
 /// Parses the chat <c>[Status]</c> channel for inventory-addition announcements.

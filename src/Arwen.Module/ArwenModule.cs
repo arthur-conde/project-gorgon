@@ -7,7 +7,7 @@ using Arwen.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;

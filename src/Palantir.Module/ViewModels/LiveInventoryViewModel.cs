@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
 
 namespace Palantir.ViewModels;

@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
 using FluentAssertions;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
 using Xunit;
 

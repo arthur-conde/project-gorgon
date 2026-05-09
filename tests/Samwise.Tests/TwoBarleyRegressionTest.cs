@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using FluentAssertions;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Samwise.Config;

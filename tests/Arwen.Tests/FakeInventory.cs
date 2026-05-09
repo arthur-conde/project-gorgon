@@ -1,4 +1,4 @@
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 
 namespace Arwen.Tests;
 
