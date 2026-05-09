@@ -1,3 +1,4 @@
+using Elrond.Domain;
 using Elrond.Services;
 using FluentAssertions;
 using Mithril.Shared.Character;
@@ -244,6 +245,193 @@ public class LevelingSimulatorTests
 
         result.TotalCompletions.Should().Be(0);
         result.Steps.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Simulate_DefaultConstraints_BehaviourIdenticalToLegacyOverload()
+    {
+        // Regression guard: the 3-arg overload should produce the same result as
+        // calling the 4-arg overload with SimulationConstraints.Default. Use a
+        // setup with bonuses + grind so both phases of the simulator run.
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100, 200, 300]);
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 80, null, null, null);
+        refData.AddRecipe("recipe_2", "Bread", "Bread", "Cooking", 1, "Cooking", 10, 0, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(1, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["Butter"] = 0, ["Bread"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var legacy = simulator.Simulate("Cooking", character, 2)!;
+        var explicitDefault = simulator.Simulate("Cooking", character, 2, SimulationConstraints.Default)!;
+
+        explicitDefault.TotalCompletions.Should().Be(legacy.TotalCompletions);
+        explicitDefault.Steps.Select(s => (s.RecipeKey, s.Completions, s.UsesFirstTimeBonus))
+            .Should().Equal(legacy.Steps.Select(s => (s.RecipeKey, s.Completions, s.UsesFirstTimeBonus)));
+    }
+
+    [Fact]
+    public void Simulate_OnlyAlreadyLearnedRecipes_RejectsUnknownRecipes()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100, 100, 100, 100, 100]);
+        // Butter is known (in RecipeCompletions). Steak is NOT — would otherwise be
+        // the better pick at level 2 thanks to its first-time bonus.
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 0, null, null, null);
+        refData.AddRecipe("recipe_2", "Steak", "Steak", "Cooking", 2, "Cooking", 100, 500, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(1, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["Butter"] = 5 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var constraints = new SimulationConstraints(OnlyAlreadyLearnedRecipes: true);
+        var result = simulator.Simulate("Cooking", character, 5, constraints)!;
+
+        result.Should().NotBeNull();
+        result.Steps.Should().NotBeEmpty();
+        result.Steps.Should().OnlyContain(s => s.RecipeName == "Butter",
+            because: "Steak is not in RecipeCompletions and OnlyAlreadyLearnedRecipes is set");
+    }
+
+    [Fact]
+    public void Simulate_NoFirstTimeBonuses_SkipsBonusCrafts()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100, 100]);
+        // Recipe with a sizeable first-time bonus that the default sim would consume.
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 80, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(1, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["Butter"] = 0 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var constraints = new SimulationConstraints(UseFirstTimeBonuses: false);
+        var result = simulator.Simulate("Cooking", character, 2, constraints)!;
+
+        result.Steps.Should().NotBeEmpty();
+        result.Steps.Should().OnlyContain(s => !s.UsesFirstTimeBonus);
+        // 100 XP needed, 10 per craft → 10 grind completions, no bonus shortcut.
+        result.TotalCompletions.Should().Be(10);
+    }
+
+    [Fact]
+    public void Simulate_FinalState_ReflectsTerminalLevelAndCompletions()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100, 100]);
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 10, 50, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(1, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["Butter"] = 0 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var result = simulator.Simulate("Cooking", character, 2)!;
+
+        result.FinalState.Should().NotBeNull();
+        result.FinalState.Skills["Cooking"].Level.Should().Be(2);
+
+        // Bonus craft (1) + grind crafts to fill the rest of level 1's XP.
+        // 100 needed - 50 from bonus = 50 remaining, /10 = 5 grind. Total 6 completions.
+        result.FinalState.RecipeCompletions.Should().ContainKey("Butter");
+        result.FinalState.RecipeCompletions["Butter"].Should().Be(6);
+    }
+
+    [Fact]
+    public void Simulate_FinalStatePreservesUntouchedSkillsAndCompletions()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100]);
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 50, 0, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Cooking"] = new(1, 0, 0, 100),
+                ["Mycology"] = new(7, 2, 30, 200),
+            },
+            recipes: new Dictionary<string, int> { ["Butter"] = 5, ["Mushroom Soup"] = 3 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var result = simulator.Simulate("Cooking", character, 2)!;
+
+        // Mycology untouched — same level/bonus/xp as input.
+        result.FinalState.Skills["Mycology"].Should().Be(character.Skills["Mycology"]);
+        // Mushroom Soup completion count unchanged.
+        result.FinalState.RecipeCompletions["Mushroom Soup"].Should().Be(3);
+        // Butter delta applied on top of the original 5.
+        result.FinalState.RecipeCompletions["Butter"].Should().BeGreaterThan(5);
+    }
+
+    [Fact]
+    public void Simulate_ChainingViaFinalState_MatchesDirectSimulation()
+    {
+        // A: Lv 1 → 3. B: feed FinalState as input, Lv 3 → 5. Compare to direct
+        // C: Lv 1 → 5. Total XP and per-recipe completion counts must reconcile.
+        // First-time bonuses make the comparison interesting — the chained run has
+        // the bonuses already consumed at the boundary, so it must NOT re-claim them.
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", [100, 100, 100, 100]);
+        refData.AddRecipe("recipe_1", "Butter", "Butter", "Cooking", 1, "Cooking", 50, 0, null, null, null);
+        refData.AddRecipe("recipe_2", "Bread", "Bread", "Cooking", 2, "Cooking", 50, 250, null, null, null);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(1, 0, 0, 100) },
+            recipes: new Dictionary<string, int> { ["Butter"] = 5, ["Bread"] = 0 });
+
+        var engine = new SkillAdvisorEngine(refData);
+        var simulator = new LevelingSimulator(refData, engine);
+
+        var direct = simulator.Simulate("Cooking", character, 5)!;
+
+        var first = simulator.Simulate("Cooking", character, 3)!;
+        var second = simulator.Simulate("Cooking", first.FinalState, 5)!;
+
+        // Terminal level matches.
+        second.FinalState.Skills["Cooking"].Level.Should().Be(direct.FinalState.Skills["Cooking"].Level);
+
+        // The chained run's terminal recipe-completion counts equal the direct run's
+        // — chaining must not double-count or skip any completions.
+        var directButter = direct.FinalState.RecipeCompletions.GetValueOrDefault("Butter");
+        var chainedButter = second.FinalState.RecipeCompletions.GetValueOrDefault("Butter");
+        chainedButter.Should().Be(directButter);
+
+        var directBread = direct.FinalState.RecipeCompletions.GetValueOrDefault("Bread");
+        var chainedBread = second.FinalState.RecipeCompletions.GetValueOrDefault("Bread");
+        chainedBread.Should().Be(directBread);
+
+        // Bread's first-time bonus should be claimed exactly once across both runs
+        // (whichever leg crossed the level-2 boundary). Across direct + chained, the
+        // total count of bonus-using steps for Bread should match.
+        var chainedBreadBonusSteps = first.Steps.Concat(second.Steps)
+            .Count(s => s.RecipeName == "Bread" && s.UsesFirstTimeBonus);
+        var directBreadBonusSteps = direct.Steps.Count(s => s.RecipeName == "Bread" && s.UsesFirstTimeBonus);
+        chainedBreadBonusSteps.Should().Be(directBreadBonusSteps);
+
+        // Total crafts performed across the chain equals the direct run's. (XP
+        // totals are NOT additive: first.TotalXpNeeded is the gap at the start of
+        // first, and overshooting the boundary makes second's gap smaller — but
+        // the actual *completions* still reconcile.)
+        (first.TotalCompletions + second.TotalCompletions).Should().Be(direct.TotalCompletions);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

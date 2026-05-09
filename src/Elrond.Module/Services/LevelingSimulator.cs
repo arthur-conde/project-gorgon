@@ -21,11 +21,23 @@ public sealed class LevelingSimulator
     }
 
     /// <summary>
-    /// Simulate the optimal crafting path from the character's current level/XP
-    /// to <paramref name="goalLevel"/> for the given skill.
-    /// Returns <c>null</c> if the skill or character data is missing.
+    /// Simulate the optimal crafting path from <paramref name="character"/>'s level/XP
+    /// to <paramref name="goalLevel"/> for the given skill, using the default
+    /// (most-permissive) constraints.
     /// </summary>
     public SimulationResult? Simulate(string skillName, CharacterSnapshot character, int goalLevel)
+        => Simulate(skillName, character, goalLevel, SimulationConstraints.Default);
+
+    /// <summary>
+    /// Simulate the optimal crafting path from <paramref name="character"/>'s level/XP
+    /// to <paramref name="goalLevel"/> for the given skill, honouring <paramref name="constraints"/>.
+    /// Returns <c>null</c> if the skill or character data is missing.
+    /// </summary>
+    public SimulationResult? Simulate(
+        string skillName,
+        CharacterSnapshot character,
+        int goalLevel,
+        SimulationConstraints constraints)
     {
         if (!character.Skills.TryGetValue(skillName, out var charSkill))
             return null;
@@ -33,7 +45,7 @@ public sealed class LevelingSimulator
         var xpAmounts = _engine.ResolveXpTable(skillName);
         if (xpAmounts is null) return null;
 
-        if (goalLevel <= charSkill.Level) return MakeEmptyResult(skillName, charSkill.Level, goalLevel);
+        if (goalLevel <= charSkill.Level) return MakeEmptyResult(skillName, charSkill, goalLevel, character);
 
         // Gather all recipes that award XP for this skill
         var skillRecipes = _ref.Recipes.Values
@@ -45,13 +57,16 @@ public sealed class LevelingSimulator
 
         // Track which first-time bonuses are available.
         // Recipes already learned with 0 completions have the bonus ready.
-        // Recipes not yet learned are assumed learnable once level req + prereq are met.
+        // Recipes not yet learned are assumed learnable once level req + prereq are met
+        // — unless OnlyAlreadyLearnedRecipes is set, in which case we only consider
+        // recipes already in RecipeCompletions.
         var unusedBonuses = new HashSet<string>(StringComparer.Ordinal);
         // Track recipes already completed (bonus consumed)
         var completedRecipes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var recipe in skillRecipes)
         {
             if (recipe.RewardSkillXpFirstTime <= 0) continue;
+            if (!constraints.UseFirstTimeBonuses) continue;
 
             if (character.RecipeCompletions.TryGetValue(recipe.InternalName, out var count))
             {
@@ -60,7 +75,7 @@ public sealed class LevelingSimulator
                 else
                     completedRecipes.Add(recipe.InternalName);
             }
-            else
+            else if (!constraints.OnlyAlreadyLearnedRecipes)
             {
                 // Not yet learned — will become available when prereqs are met
                 unusedBonuses.Add(recipe.Key);
@@ -81,6 +96,10 @@ public sealed class LevelingSimulator
         var totalXpNeeded = _engine.ComputeXpToGoal(skillName, level, xp, xpForLevel, goalLevel);
         var steps = new List<SimulationStep>();
 
+        // Per-recipe completion deltas built up during the run, merged into FinalState at the end.
+        // Keyed on RecipeEntry.InternalName (matching CharacterSnapshot.RecipeCompletions).
+        var deltaCompletions = new Dictionary<string, int>(StringComparer.Ordinal);
+
         while (level < goalLevel)
         {
             var xpToNextLevel = xpForLevel - xp;
@@ -93,10 +112,13 @@ public sealed class LevelingSimulator
             }
 
             // Get recipes available at this level, with effective XP.
-            // A recipe is available if level req is met AND prereq recipe (if any) has been completed.
+            // A recipe is available if level req is met AND prereq recipe (if any) has been completed,
+            // AND — when OnlyAlreadyLearnedRecipes is set — it's already in the input snapshot.
             var available = skillRecipes
                 .Where(r => r.SkillLevelReq <= level &&
-                            (r.PrereqRecipe is null || completedRecipes.Contains(r.PrereqRecipe)))
+                            (r.PrereqRecipe is null || completedRecipes.Contains(r.PrereqRecipe)) &&
+                            (!constraints.OnlyAlreadyLearnedRecipes
+                                || character.RecipeCompletions.ContainsKey(r.InternalName)))
                 .Select(r => (recipe: r, effXp: _engine.ComputeEffectiveXp(r, level)))
                 .Where(x => x.effXp > 0 || unusedBonuses.Contains(x.recipe.Key))
                 .ToList();
@@ -104,10 +126,12 @@ public sealed class LevelingSimulator
             if (available.Count == 0) break; // stuck, no usable recipes
 
             // Phase 1: Use first-time bonuses (highest bonus XP first)
-            var bonusRecipes = available
-                .Where(x => unusedBonuses.Contains(x.recipe.Key))
-                .OrderByDescending(x => x.recipe.RewardSkillXpFirstTime)
-                .ToList();
+            var bonusRecipes = constraints.UseFirstTimeBonuses
+                ? available
+                    .Where(x => unusedBonuses.Contains(x.recipe.Key))
+                    .OrderByDescending(x => x.recipe.RewardSkillXpFirstTime)
+                    .ToList()
+                : [];
 
             var usedBonus = false;
             foreach (var (recipe, effXp) in bonusRecipes)
@@ -120,6 +144,7 @@ public sealed class LevelingSimulator
                 xp += bonusXp;
                 unusedBonuses.Remove(recipe.Key);
                 completedRecipes.Add(recipe.InternalName);
+                AddDelta(deltaCompletions, recipe.InternalName, 1);
 
                 // Handle level-ups from this single bonus craft
                 var levelAfter = level;
@@ -166,6 +191,7 @@ public sealed class LevelingSimulator
             var totalGrindXp = (long)completions * grindEffXp;
             xp += totalGrindXp;
             completedRecipes.Add(best.recipe.InternalName);
+            AddDelta(deltaCompletions, best.recipe.InternalName, completions);
 
             // Handle level-ups
             while (xp >= xpForLevel && level < goalLevel)
@@ -194,13 +220,16 @@ public sealed class LevelingSimulator
         // Merge consecutive steps for the same recipe (non-bonus) to keep the list clean
         var merged = MergeConsecutiveSteps(steps);
 
+        var finalState = BuildFinalState(character, skillName, charSkill, level, xp, xpForLevel, deltaCompletions);
+
         return new SimulationResult(
             skillName,
             startLevel,
             goalLevel,
             totalXpNeeded,
             merged.Sum(s => s.Completions),
-            merged);
+            merged,
+            finalState);
     }
 
     private static bool TryLevelUp(IReadOnlyList<long> xpAmounts, ref int level, ref long xp, ref long xpForLevel)
@@ -213,6 +242,47 @@ public sealed class LevelingSimulator
             return true;
         }
         return false;
+    }
+
+    private static void AddDelta(Dictionary<string, int> deltas, string internalName, int amount)
+    {
+        if (deltas.TryGetValue(internalName, out var existing))
+            deltas[internalName] = existing + amount;
+        else
+            deltas[internalName] = amount;
+    }
+
+    private static CharacterSnapshot BuildFinalState(
+        CharacterSnapshot input,
+        string skillName,
+        CharacterSkill startSkill,
+        int finalLevel,
+        long finalXp,
+        long finalXpForLevel,
+        Dictionary<string, int> deltaCompletions)
+    {
+        // Skills: copy and overwrite the simulated skill. BonusLevels is unchanged —
+        // those come from non-XP rewards (favor, quests) the simulator doesn't model.
+        var newSkills = new Dictionary<string, CharacterSkill>(input.Skills, StringComparer.Ordinal)
+        {
+            [skillName] = new CharacterSkill(finalLevel, startSkill.BonusLevels, finalXp, finalXpForLevel),
+        };
+
+        // RecipeCompletions: copy + add per-recipe deltas.
+        var newCompletions = new Dictionary<string, int>(input.RecipeCompletions, StringComparer.Ordinal);
+        foreach (var (internalName, delta) in deltaCompletions)
+        {
+            newCompletions.TryGetValue(internalName, out var existing);
+            newCompletions[internalName] = existing + delta;
+        }
+
+        return new CharacterSnapshot(
+            input.Name,
+            input.Server,
+            input.ExportedAt,
+            newSkills,
+            newCompletions,
+            input.NpcFavor);
     }
 
     private static List<SimulationStep> MergeConsecutiveSteps(List<SimulationStep> steps)
@@ -245,6 +315,8 @@ public sealed class LevelingSimulator
         return merged;
     }
 
-    private static SimulationResult MakeEmptyResult(string skillName, int currentLevel, int goalLevel) =>
-        new(skillName, currentLevel, goalLevel, TotalXpNeeded: 0, TotalCompletions: 0, Steps: []);
+    private static SimulationResult MakeEmptyResult(
+        string skillName, CharacterSkill startSkill, int goalLevel, CharacterSnapshot input) =>
+        new(skillName, startSkill.Level, goalLevel,
+            TotalXpNeeded: 0, TotalCompletions: 0, Steps: [], FinalState: input);
 }

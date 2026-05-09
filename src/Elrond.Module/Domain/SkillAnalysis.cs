@@ -1,3 +1,4 @@
+using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 
 namespace Elrond.Domain;
@@ -102,6 +103,11 @@ public sealed record SimulationStep(
 
 /// <summary>
 /// Full result of the leveling simulation/optimization.
+/// <para/>
+/// <see cref="FinalState"/> is the snapshot the simulation arrives at: <see cref="CharacterSnapshot.Skills"/>
+/// reflects the terminal level/XP for the simulated skill, and <see cref="CharacterSnapshot.RecipeCompletions"/>
+/// is incremented for every recipe touched (first-time bonuses move the count from absent/0 → 1, plus any
+/// grind completions on top). Feeding it back into <c>Simulate</c> as the input snapshot chains forecasts.
 /// </summary>
 public sealed record SimulationResult(
     string SkillName,
@@ -109,4 +115,18 @@ public sealed record SimulationResult(
     int GoalLevel,
     long TotalXpNeeded,
     int TotalCompletions,
-    IReadOnlyList<SimulationStep> Steps);
+    IReadOnlyList<SimulationStep> Steps,
+    CharacterSnapshot FinalState);
+
+/// <summary>
+/// Knobs that bend the simulator's behaviour without changing the input snapshot.
+/// Default reproduces the simulator's pre-decoupling behaviour: any recipe whose
+/// level/prereq is met may be picked (treated as auto-learned mid-grind) and
+/// first-time bonuses are consumed.
+/// </summary>
+public sealed record SimulationConstraints(
+    bool OnlyAlreadyLearnedRecipes = false,
+    bool UseFirstTimeBonuses = true)
+{
+    public static SimulationConstraints Default { get; } = new();
+}
