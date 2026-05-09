@@ -303,6 +303,57 @@ public class TimerSourceBinderTests
     }
 
     [Fact]
+    public void Binder_registers_added_rows_with_scheduler()
+    {
+        var clock = new ManualTime(Anchor);
+        var source = new RecordingFakeSource("test");
+        var target = new ObservableCollection<TimerItemViewModel>();
+        using var scheduler = new TimerDisplayScheduler(clock);
+
+        using var binder = new TimerSourceBinder(source, target, clock, scheduler: scheduler);
+
+        // Initial sync — empty catalog, nothing scheduled.
+        scheduler.NextSlowTickAt.Should().BeNull();
+
+        // Adding a Running row through a delta must register with the scheduler.
+        var entry = Entry("k", duration: TimeSpan.FromMinutes(30));
+        source.Catalog = [entry];
+        source.RaiseRowsChanged([
+            new TimerRowDelta("k", TimerRowChangeKind.Added, entry, Started("k", Anchor)),
+        ]);
+
+        scheduler.NextSlowTickAt.Should().NotBeNull();
+        scheduler.AnyRunningWithProgressBar.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Binder_unregisters_removed_rows_from_scheduler()
+    {
+        var clock = new ManualTime(Anchor);
+        var entry = Entry("k", duration: TimeSpan.FromMinutes(30));
+        var source = new RecordingFakeSource("test")
+        {
+            Catalog = [entry],
+            Progress = new Dictionary<string, TimerProgressEntry>(StringComparer.Ordinal)
+            {
+                ["k"] = Started("k", Anchor),
+            },
+        };
+        var target = new ObservableCollection<TimerItemViewModel>();
+        using var scheduler = new TimerDisplayScheduler(clock);
+        using var binder = new TimerSourceBinder(source, target, clock, scheduler: scheduler);
+
+        scheduler.AnyRunningWithProgressBar.Should().BeTrue();
+
+        source.RaiseRowsChanged([
+            new TimerRowDelta("k", TimerRowChangeKind.Removed, null, null),
+        ]);
+
+        scheduler.NextSlowTickAt.Should().BeNull();
+        scheduler.AnyRunningWithProgressBar.Should().BeFalse();
+    }
+
+    [Fact]
     public void Disposed_binder_stops_applying_deltas()
     {
         var entry = Entry("k");

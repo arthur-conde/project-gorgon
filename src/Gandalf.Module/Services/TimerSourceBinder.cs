@@ -45,6 +45,7 @@ public sealed class TimerSourceBinder : IDisposable
     private readonly TimeProvider _clock;
     private readonly Func<TimerCatalogEntry, TimerProgressEntry?, bool> _isRelevant;
     private readonly Dispatcher _dispatcher;
+    private readonly TimerDisplayScheduler? _scheduler;
     private readonly Dictionary<string, TimerItemViewModel> _byKey =
         new(StringComparer.Ordinal);
     private bool _disposed;
@@ -54,13 +55,15 @@ public sealed class TimerSourceBinder : IDisposable
         ObservableCollection<TimerItemViewModel> target,
         TimeProvider clock,
         Func<TimerCatalogEntry, TimerProgressEntry?, bool>? isRelevant = null,
-        Dispatcher? dispatcher = null)
+        Dispatcher? dispatcher = null,
+        TimerDisplayScheduler? scheduler = null)
     {
         _source = source;
         _target = target;
         _clock = clock;
         _isRelevant = isRelevant ?? ((_, _) => true);
         _dispatcher = dispatcher ?? Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+        _scheduler = scheduler;
 
         // Initial sync runs on whichever thread constructed the binder —
         // typically the UI thread (host VM ctor). Subsequent deltas marshal
@@ -192,6 +195,7 @@ public sealed class TimerSourceBinder : IDisposable
             var fresh = new TimerItemViewModel(new TimerRow(entry, progress) { Clock = _clock });
             _byKey[key] = fresh;
             _target.Add(fresh);
+            _scheduler?.Register(fresh);
             return true;
         }
 
@@ -200,6 +204,9 @@ public sealed class TimerSourceBinder : IDisposable
         var oldGroupKey = vm!.GroupKey;
         var oldState = vm.State;
         vm.UpdateRow(new TimerRow(entry, progress) { Clock = _clock });
+        // Tell the scheduler the row's NextDisplayChangeAt may have shifted
+        // (e.g. progress just started → state-flip moment now relevant).
+        _scheduler?.Refresh(vm);
         return vm.GroupKey != oldGroupKey || vm.State != oldState;
     }
 
@@ -207,6 +214,7 @@ public sealed class TimerSourceBinder : IDisposable
     {
         if (!_byKey.Remove(key, out var vm)) return;
         _target.Remove(vm);
+        _scheduler?.Unregister(vm);
     }
 
     private void RaiseRefreshRequired() =>
