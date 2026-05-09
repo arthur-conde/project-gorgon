@@ -71,6 +71,20 @@ Module DLLs are copied into `src/Mithril.Shell/{Configuration}/modules/` automat
 
 The script whitelists exactly two paths — `tests\.tmp\` inside this repo and `%TEMP%\mithril-tests-fallback` (the fallback used when `TestPaths` can't locate the repo). Nothing broader: no repo-wide exclusion, no `dotnet.exe` process exclusion. Without it, expect the FileIO-category tests under `Mithril.Shared.Tests` and a few file-IO heavy tests in `Samwise.Tests` / `Gandalf.Tests` to flake intermittently when run as part of the full suite; in isolation they still pass.
 
+### Force-quit hotkey
+
+When Mithril or the machine is bogged down enough that finding the tray icon, right-clicking it, and clicking **Exit** is painful — but the dispatcher is still pumping messages — a single global keypress can land faster than the mouse round-trip. The `Force quit Mithril` command is that fallback: it triggers the same shutdown path as the tray's Exit (host stops, settings save, mutex releases) and ships **unbound**, so you have to assign a combo before you can use it.
+
+To bind it:
+
+1. Settings → Appearance → enable **Developer mode**.
+2. Open the **Hotkeys** page (gear icon in the sidebar).
+3. Find **Force quit Mithril** under *Shell · Diagnostics*, click the chip, press the combo you want.
+
+The binding survives turning Developer mode back off — that flag only gates whether the row is visible in the Hotkeys UI, not whether the hotkey fires.
+
+**What this is not:** if the UI thread is fully wedged (deadlocked lock, infinite loop, modal sync-wait), `WM_HOTKEY` sits in the queue and the hotkey never delivers — the same freeze that locked the UI locks the rescue. Task Manager is the only way out of that case; `Process.Kill` from inside Mithril wouldn't help either, since we can't run code the dispatcher won't dispatch.
+
 ## Repository layout
 
 ```

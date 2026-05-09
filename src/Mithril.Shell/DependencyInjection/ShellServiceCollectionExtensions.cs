@@ -1,8 +1,10 @@
 using System.IO;
 using System.Reflection;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf;
+using Mithril.Shell.Hotkeys;
 using Mithril.Shell.Updates;
 using Mithril.Shell.ViewModels;
 using Mithril.Shell.Views;
@@ -89,6 +91,9 @@ public static class ShellServiceCollectionExtensions
 
     public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>
         services.AddSingleton<IIngredientSourcesPresenter, IngredientSourcesPresenter>();
+
+    public static IServiceCollection AddMithrilShellCommands(this IServiceCollection services) =>
+        services.AddSingleton<IHotkeyCommand, ForceQuitCommand>();
 
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>
         services
