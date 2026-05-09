@@ -31,6 +31,13 @@ public sealed class GandalfTimerDef
     public string Region { get; set; } = "";
     public string Map { get; set; } = "";
 
+    /// <summary>
+    /// Per-timer alarm sound path. <c>null</c> falls back to the global default
+    /// in <see cref="GandalfSettings.SoundFilePath"/>. Volume + flash-window
+    /// stay global by design — per-timer customization there is over-scope.
+    /// </summary>
+    public string? SoundFilePath { get; set; }
+
     [JsonIgnore]
     public string GroupKey => string.IsNullOrWhiteSpace(Map)
         ? Region

@@ -51,6 +51,13 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
     [ObservableProperty] private string _region = "";
     [ObservableProperty] private string _map = "";
 
+    /// <summary>
+    /// Per-timer sound override. Null means "use the global default from
+    /// <see cref="GandalfSettings.SoundFilePath"/>". Set via the Browse
+    /// button in <c>TimerDialogContent.xaml.cs</c>; cleared via Reset.
+    /// </summary>
+    [ObservableProperty] private string? _soundFilePath;
+
     public ObservableCollection<string> KnownRegions { get; } = [];
     public ObservableCollection<string> KnownMaps { get; } = [];
 
@@ -91,6 +98,7 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
             _name = existing.Name;
             _region = existing.Region;
             _map = existing.Map;
+            _soundFilePath = existing.SoundFilePath;
 
             if (existing.Kind == GandalfTriggerKind.GameTimeOfDay)
             {
@@ -152,6 +160,8 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
 
     public string ResultRegion => Region.Trim();
     public string ResultMap => Map.Trim();
+    public string? ResultSoundFilePath =>
+        string.IsNullOrWhiteSpace(SoundFilePath) ? null : SoundFilePath.Trim();
 
     partial void OnRegionChanged(string value)
     {

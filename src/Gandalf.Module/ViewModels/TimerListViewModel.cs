@@ -94,6 +94,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
             Recurring = vm.ResultRecurring,
             Region = vm.ResultRegion,
             Map = vm.ResultMap,
+            SoundFilePath = vm.ResultSoundFilePath,
         });
     }
 
@@ -113,6 +114,7 @@ public sealed partial class TimerListViewModel : ObservableObject, IDisposable
             d.Name = vm.ResultName;
             d.Region = vm.ResultRegion;
             d.Map = vm.ResultMap;
+            d.SoundFilePath = vm.ResultSoundFilePath;
             if (isIdleOnActive)
             {
                 d.Kind = vm.ResultKind;

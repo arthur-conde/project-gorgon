@@ -73,9 +73,10 @@ public sealed class TimerAlarmService : IDisposable
         if (_snoozedUntil.TryGetValue(key, out var until) && until > now) return;
 
         _firedAt[key] = now;
+        var soundPath = ResolveSoundPath(e, _settings);
         Dispatch(() =>
         {
-            var handle = AudioPlayer.Play(_settings.SoundFilePath, (float)_settings.AlarmVolume, "gandalf");
+            var handle = AudioPlayer.Play(soundPath, (float)_settings.AlarmVolume, "gandalf");
             _playback[key] = handle;
             if (_settings.FlashWindow)
             {
@@ -84,6 +85,15 @@ public sealed class TimerAlarmService : IDisposable
             }
         });
     }
+
+    /// <summary>
+    /// Per-timer <see cref="GandalfTimerDef.SoundFilePath"/> wins; null falls
+    /// back to the global <see cref="GandalfSettings.SoundFilePath"/>. Extracted
+    /// as a static for testability — the rest of the alarm pipeline goes
+    /// through <c>AudioPlayer.Play</c> which is hard to mock.
+    /// </summary>
+    internal static string? ResolveSoundPath(TimerReadyEventArgs e, GandalfSettings settings) =>
+        (e.SourceMetadata as GandalfTimerDef)?.SoundFilePath ?? settings.SoundFilePath;
 
     private static void Dispatch(Action a)
     {

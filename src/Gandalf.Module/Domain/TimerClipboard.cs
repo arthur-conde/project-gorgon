@@ -9,6 +9,7 @@ public sealed class TimerClipboardEntry
     public string Duration { get; set; } = "";
     public string Region { get; set; } = "";
     public string Map { get; set; } = "";
+    public string? SoundFilePath { get; set; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
@@ -26,6 +27,7 @@ public static class TimerClipboard
             Duration = d.Duration.ToString(),
             Region = d.Region,
             Map = d.Map,
+            SoundFilePath = d.SoundFilePath,
         }).ToList();
         return JsonSerializer.Serialize(entries, TimerClipboardJsonContext.Default.ListTimerClipboardEntry);
     }
@@ -60,6 +62,7 @@ public static class TimerClipboard
             Duration = dur,
             Region = entry.Region,
             Map = entry.Map,
+            SoundFilePath = string.IsNullOrWhiteSpace(entry.SoundFilePath) ? null : entry.SoundFilePath,
         };
     }
 }
