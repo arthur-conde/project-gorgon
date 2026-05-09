@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Gandalf.Domain;
+using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
@@ -9,21 +10,35 @@ namespace Gandalf.ViewModels;
 public sealed partial class TimerDialogViewModel : DialogViewModelBase
 {
     /// <summary>
-    /// Locked-down culture for the in-game-time picker. Forces zero-padded
-    /// 12-hour format (<c>hh:mm tt</c>) regardless of the user's system
-    /// locale. Vanilla <c>en-US</c> uses <c>h:mm:ss tt</c> — single-digit
-    /// hour and a stray seconds component the picker can't actually edit
-    /// (we hide the seconds spinner via <c>PickerVisibility="HourMinute"</c>).
+    /// Locked-down 12-hour culture for the picker — zero-padded
+    /// <c>hh:mm tt</c>. Vanilla <c>en-US</c> uses <c>h:mm:ss tt</c>
+    /// (single-digit hour, plus a stray seconds component the picker
+    /// can't actually edit since we hide the seconds spinner).
     /// </summary>
-    public static CultureInfo PickerCulture { get; } = BuildPickerCulture();
+    private static readonly CultureInfo TwelveHourCulture = BuildCulture("hh:mm tt");
 
-    private static CultureInfo BuildPickerCulture()
+    /// <summary>
+    /// Zero-padded 24-hour culture for the picker. Built from the same
+    /// <c>en-US</c> base so the date layout is unchanged — only the time
+    /// pattern flips.
+    /// </summary>
+    private static readonly CultureInfo TwentyFourHourCulture = BuildCulture("HH:mm");
+
+    private static CultureInfo BuildCulture(string timePattern)
     {
         var c = (CultureInfo)CultureInfo.GetCultureInfo("en-US").Clone();
-        c.DateTimeFormat.ShortTimePattern = "hh:mm tt";
-        c.DateTimeFormat.LongTimePattern = "hh:mm tt";
+        c.DateTimeFormat.ShortTimePattern = timePattern;
+        c.DateTimeFormat.LongTimePattern = timePattern;
         return c;
     }
+
+    /// <summary>
+    /// Picker culture for *this* dialog. Latched at construction from the
+    /// user's <see cref="UserPreferences.Use24HourClock"/> preference. The
+    /// dialog is short-lived; toggling the global preference while a
+    /// dialog is open is an edge case we don't try to live-react to.
+    /// </summary>
+    public CultureInfo PickerCulture { get; }
 
     private readonly bool _isEditing;
     private readonly bool _areInputsEditable;
@@ -86,8 +101,10 @@ public sealed partial class TimerDialogViewModel : DialogViewModelBase
         GandalfTimerDef? existing,
         bool isIdleOnActive,
         IReadOnlyList<string> knownRegions,
-        IReadOnlyList<string> knownMaps)
+        IReadOnlyList<string> knownMaps,
+        UserPreferences preferences)
     {
+        PickerCulture = preferences.Use24HourClock ? TwentyFourHourCulture : TwelveHourCulture;
         foreach (var r in knownRegions) KnownRegions.Add(r);
         foreach (var m in knownMaps) KnownMaps.Add(m);
 

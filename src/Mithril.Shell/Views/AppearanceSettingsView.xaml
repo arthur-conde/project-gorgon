@@ -36,6 +36,13 @@
                         VerticalAlignment="Center"/>
             </DockPanel>
 
+            <TextBlock Text="In-game clock format" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                       Text="How in-game time-of-day is displayed across the app — the shell's clock, Gandalf's in-game-time picker, and the time-of-day shift labels."/>
+            <CheckBox Content="Use 24-hour format (HH:mm) instead of 12-hour (h:mm AM/PM)"
+                      IsChecked="{Binding Preferences.Use24HourClock, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8"/>
+
             <TextBlock Text="Developer mode" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
                        Text="Show developer/diagnostic modules in the sidebar (e.g. live inventory inspector). Off by default."/>

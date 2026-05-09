@@ -145,7 +145,8 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<TimerAlarmService>(),
             sp.GetRequiredService<IDialogService>(),
             sp.GetRequiredService<IActiveCharacterService>(),
-            sp.GetRequiredService<ICharacterPresenceService>()));
+            sp.GetRequiredService<ICharacterPresenceService>(),
+            sp.GetRequiredService<Mithril.Shared.Settings.UserPreferences>()));
 
         services.AddSingleton<GandalfShellViewModel>();
         services.AddSingleton<GandalfShellView>(sp =>

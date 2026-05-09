@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
 using Mithril.Shared.Game;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Settings;
 using Mithril.Shell.Updates;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,7 @@ public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly IServiceProvider _services;
     private readonly ShellSettings _settings;
+    private readonly UserPreferences _preferences;
     private readonly IActiveCharacterService _activeChar;
     private readonly IUpdateStatusService _updateStatus;
     private readonly IUpdateApplier _updateApplier;
@@ -59,6 +61,7 @@ public sealed partial class ShellViewModel : ObservableObject
         IServiceProvider services,
         IEnumerable<IMithrilModule> modules,
         ShellSettings settings,
+        UserPreferences preferences,
         ModuleGates gates,
         IActiveCharacterService activeChar,
         IUpdateStatusService updateStatus,
@@ -68,6 +71,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         _services = services;
         _settings = settings;
+        _preferences = preferences;
         _gates = gates;
         _activeChar = activeChar;
         _updateStatus = updateStatus;
@@ -84,6 +88,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
         _updateStatus.StateChanged += (_, _) => RefreshUpdateStatus();
         _settings.PropertyChanged += OnSettingsChanged;
+        _preferences.PropertyChanged += OnPreferencesChanged;
         _attention.AttentionChanged += OnAttentionChanged;
         RefreshCharacter();
         RefreshUpdateStatus();
@@ -98,7 +103,19 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private void RefreshGameTime()
     {
-        GameTimeText = _gameClock.GetCurrent().ToString12Hour();
+        GameTimeText = _gameClock.GetCurrent().Format(_preferences.Use24HourClock);
+    }
+
+    private void OnPreferencesChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // The 12/24h toggle should preview live — re-render the label as soon as
+        // the user flips it, instead of waiting up to 5 s for the next tick.
+        if (e.PropertyName == nameof(UserPreferences.Use24HourClock))
+        {
+            var d = System.Windows.Application.Current?.Dispatcher;
+            if (d is null || d.CheckAccess()) RefreshGameTime();
+            else d.InvokeAsync(RefreshGameTime);
+        }
     }
 
     private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
