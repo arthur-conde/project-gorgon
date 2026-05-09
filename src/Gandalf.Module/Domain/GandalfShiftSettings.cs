@@ -1,30 +1,22 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Mithril.Shared.Settings;
 
 namespace Gandalf.Domain;
 
 /// <summary>
 /// Per-shift alarm configuration. Both fields default to "no alarm, no
 /// override" — disabled by default and inheriting the global sound when
-/// enabled. INPC so the WPF settings view re-renders rows on toggle.
+/// enabled. Inherits <see cref="SettingsNode"/> so toggle mutations bubble
+/// through the parent <see cref="GandalfShiftSettings"/> to the autosaver
+/// at the root.
 /// </summary>
-public sealed class ShiftAlarmConfig : INotifyPropertyChanged
+public sealed class ShiftAlarmConfig : SettingsNode
 {
     private bool _enabled;
     private string? _soundFilePath;
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return;
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
 }
 
 /// <summary>
@@ -34,8 +26,15 @@ public sealed class ShiftAlarmConfig : INotifyPropertyChanged
 /// schema versions so user-toggled rows don't orphan on update. Persisted
 /// globally at <c>%LocalAppData%/Mithril/Gandalf/shifts.json</c>; shift
 /// transitions are character-agnostic.
+///
+/// <para>Implements <see cref="IPostLoadInit"/> because STJ source-gen
+/// populates <see cref="ByShiftSlug"/> without going through
+/// <see cref="GetOrCreate"/> — without re-wiring bubbling on the
+/// freshly-loaded children, toggling an existing shift's <c>Enabled</c>
+/// would fire on the child only and the autosaver would never see it
+/// (the regression that motivated <see cref="SettingsNode"/>).</para>
 /// </summary>
-public sealed class GandalfShiftSettings : INotifyPropertyChanged
+public sealed class GandalfShiftSettings : SettingsNode, IPostLoadInit
 {
     public Dictionary<string, ShiftAlarmConfig> ByShiftSlug { get; set; } =
         new(StringComparer.Ordinal);
@@ -44,7 +43,8 @@ public sealed class GandalfShiftSettings : INotifyPropertyChanged
     /// Lookup-or-create. Used by the settings view and by
     /// <c>ShiftAlarmService</c> at fire time. Newly-minted entries inherit
     /// the disabled default, so reading a previously-untouched shift does
-    /// not silently enable an alarm.
+    /// not silently enable an alarm. Bubbling is wired on the new child so
+    /// later <c>Enabled</c> / <c>SoundFilePath</c> mutations propagate.
     /// </summary>
     public ShiftAlarmConfig GetOrCreate(string slug)
     {
@@ -52,13 +52,23 @@ public sealed class GandalfShiftSettings : INotifyPropertyChanged
         {
             config = new ShiftAlarmConfig();
             ByShiftSlug[slug] = config;
-            // Re-fire change so subscribers re-render the row.
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ByShiftSlug)));
+            Bubble(config);
+            // Re-fire so the settings view re-renders the row list.
+            RaisePropertyChanged(nameof(ByShiftSlug));
         }
         return config;
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+    public void PostLoadInit()
+    {
+        // Idempotent — Unbubble is a no-op for unsubscribed children, so a
+        // double-PostLoadInit (tests, hot-reload) won't double-wire.
+        foreach (var child in ByShiftSlug.Values)
+        {
+            Unbubble(child);
+            Bubble(child);
+        }
+    }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]

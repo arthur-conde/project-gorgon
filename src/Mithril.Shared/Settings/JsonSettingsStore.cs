@@ -18,18 +18,29 @@ public sealed class JsonSettingsStore<T> : ISettingsStore<T> where T : class, ne
 
     public T Load()
     {
-        if (!File.Exists(FilePath)) return new T();
+        if (!File.Exists(FilePath)) return PostInit(new T());
         using var stream = File.OpenRead(FilePath);
         var result = JsonSerializer.Deserialize(stream, _typeInfo);
-        return result ?? new T();
+        return PostInit(result ?? new T());
     }
 
     public async Task<T> LoadAsync(CancellationToken ct = default)
     {
-        if (!File.Exists(FilePath)) return new T();
+        if (!File.Exists(FilePath)) return PostInit(new T());
         await using var stream = File.OpenRead(FilePath);
         var result = await JsonSerializer.DeserializeAsync(stream, _typeInfo, ct);
-        return result ?? new T();
+        return PostInit(result ?? new T());
+    }
+
+    // STJ source-gen populates property values without running ctors that
+    // would have wired SettingsNode.Bubble subscriptions on nested children.
+    // IPostLoadInit lets the loaded type re-wire after deserialize. A
+    // freshly-constructed `new T()` has no children, so the call is a
+    // safe no-op there — the symmetry keeps the load contract simple.
+    private static T PostInit(T value)
+    {
+        (value as IPostLoadInit)?.PostLoadInit();
+        return value;
     }
 
     public Task SaveAsync(T value, CancellationToken ct = default)
