@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Data;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
@@ -13,7 +12,7 @@ using Mithril.Shared.Wpf.Dialogs;
 
 namespace Gandalf.ViewModels;
 
-public sealed partial class TimerListViewModel : ObservableObject
+public sealed partial class TimerListViewModel : ObservableObject, IDisposable
 {
     private readonly ITimerSource _source;
     private readonly TimerDefinitionsService? _defs;
@@ -23,7 +22,9 @@ public sealed partial class TimerListViewModel : ObservableObject
     private readonly IActiveCharacterService? _active;
     private readonly ICharacterPresenceService? _presence;
     private readonly TimeProvider _time;
-    private readonly DispatcherTimer _refreshTimer;
+    private readonly TimerDisplayScheduler _scheduler;
+    private readonly TimerSourceBinder _binder;
+    private bool _disposed;
 
     public TimerListViewModel(
         ITimerSource source,
@@ -44,20 +45,27 @@ public sealed partial class TimerListViewModel : ObservableObject
         _presence = presence;
         _time = time ?? TimeProvider.System;
 
-        _source.CatalogChanged += (_, _) => { SyncFromState(); RefreshAutocomplete(); };
-        _source.ProgressChanged += (_, _) => SyncFromState();
-
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.GroupKey), ListSortDirection.Ascending));
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.IsIdle), ListSortDirection.Descending));
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.IsDone), ListSortDirection.Ascending));
 
-        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _refreshTimer.Tick += (_, _) => Tick();
-        _refreshTimer.Start();
+        _scheduler = new TimerDisplayScheduler(_time);
+        _binder = new TimerSourceBinder(_source, Timers, _time, scheduler: _scheduler);
 
-        SyncFromState();
+        _binder.RefreshRequired += OnBinderRefreshRequired;
+        _scheduler.RefreshRequired += (_, _) => TimersView.Refresh();
+
+        // ElapsedWhileAway depends on (Active character × LastActiveAt × row
+        // progress). Recompute on character switch — character export
+        // refresh isn't relevant, only "we're now looking at a different
+        // character." The binder will replay rows for the new character via
+        // the PerCharacterView swap fired from TimerProgressService, so
+        // re-applying after the active-character change naturally aligns.
+        if (_active is not null) _active.ActiveCharacterChanged += OnActiveCharacterChanged;
+
+        ApplyElapsedWhileAwayBadges();
         RefreshAutocomplete();
     }
 
@@ -173,19 +181,16 @@ public sealed partial class TimerListViewModel : ObservableObject
     [RelayCommand]
     private void DismissAll() => _alarmService?.DismissAll();
 
-    private void SyncFromState()
+    private void OnBinderRefreshRequired(object? sender, EventArgs e)
     {
-        Timers.Clear();
-        var progress = _source.Progress;
-        foreach (var entry in _source.Catalog)
-        {
-            progress.TryGetValue(entry.Key, out var p);
-            Timers.Add(new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time }));
-        }
-
-        ApplyElapsedWhileAwayBadges();
+        // Catalog mutations may have introduced new defs; refresh the
+        // autocomplete suggestions so the next dialog open sees them.
+        RefreshAutocomplete();
         TimersView.Refresh();
     }
+
+    private void OnActiveCharacterChanged(object? sender, EventArgs e) =>
+        ApplyElapsedWhileAwayBadges();
 
     /// <summary>
     /// Mark timers whose theoretical completion (StartedAt + Duration) fell between the
@@ -239,17 +244,13 @@ public sealed partial class TimerListViewModel : ObservableObject
         foreach (var m in maps) KnownMaps.Add(m);
     }
 
-    private void Tick()
+    public void Dispose()
     {
-        _progress?.CheckExpirations();
-        // Re-join with latest progress in case CheckExpirations stamped a CompletedAt.
-        var progress = _source.Progress;
-        var catalog = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
-        foreach (var vm in Timers)
-        {
-            if (!catalog.TryGetValue(vm.Key, out var entry)) continue;
-            progress.TryGetValue(vm.Key, out var p);
-            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
-        }
+        if (_disposed) return;
+        _disposed = true;
+        if (_active is not null) _active.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _binder.RefreshRequired -= OnBinderRefreshRequired;
+        _binder.Dispose();
+        _scheduler.Dispose();
     }
 }

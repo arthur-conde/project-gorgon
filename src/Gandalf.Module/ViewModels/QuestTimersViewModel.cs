@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Data;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gandalf.Domain;
@@ -16,16 +15,19 @@ namespace Gandalf.ViewModels;
 ///
 /// Materializes only the rows the player cares about: pending in journal, or
 /// cooling/done. The full catalog is ~2,000 entries — projecting it all into
-/// a non-virtualizing WrapPanel froze the UI thread.
+/// a non-virtualizing WrapPanel froze the UI thread. Issue #155 retires this
+/// relevance predicate by reshaping QuestSource.Catalog to be the active set
+/// directly; until then, the predicate filters at materialization time and
+/// the source's coarse ProgressChanged event drives RecheckRelevance.
 /// </summary>
-public sealed partial class QuestTimersViewModel : ObservableObject
+public sealed partial class QuestTimersViewModel : ObservableObject, IDisposable
 {
     private readonly QuestSource _source;
     private readonly DerivedTimerProgressService _derived;
     private readonly TimeProvider _time;
-    private readonly DispatcherTimer _refreshTimer;
-    private readonly Dictionary<string, TimerItemViewModel> _byKey = new(StringComparer.Ordinal);
-    private Dictionary<string, TimerCatalogEntry> _catalogByKey = new(StringComparer.Ordinal);
+    private readonly TimerDisplayScheduler _scheduler;
+    private readonly TimerSourceBinder _binder;
+    private bool _disposed;
 
     [ObservableProperty] private QuestStateFilter _stateFilter = QuestStateFilter.All;
 
@@ -35,9 +37,6 @@ public sealed partial class QuestTimersViewModel : ObservableObject
         _derived = derived;
         _time = time ?? TimeProvider.System;
 
-        _source.CatalogChanged += (_, _) => Sync();
-        _source.ProgressChanged += (_, _) => Sync();
-
         TimersView = CollectionViewSource.GetDefaultView(Timers);
         TimersView.Filter = ApplyFilter;
         TimersView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(TimerItemViewModel.GroupKey)));
@@ -45,11 +44,22 @@ public sealed partial class QuestTimersViewModel : ObservableObject
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.IsDone), ListSortDirection.Descending));
         TimersView.SortDescriptions.Add(new SortDescription(nameof(TimerItemViewModel.Name), ListSortDirection.Ascending));
 
-        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _refreshTimer.Tick += (_, _) => Tick();
-        _refreshTimer.Start();
+        _scheduler = new TimerDisplayScheduler(_time);
+        _binder = new TimerSourceBinder(
+            _source, Timers, _time,
+            isRelevant: IsRelevant,
+            scheduler: _scheduler);
 
-        Sync();
+        _binder.RefreshRequired += (_, _) => TimersView.Refresh();
+        _scheduler.RefreshRequired += (_, _) => TimersView.Refresh();
+
+        // Pending-set changes don't mutate catalog or progress (so they
+        // don't fire RowsChanged with non-empty deltas), but they shift
+        // relevance for every catalog row. Wire the source's coarse
+        // ProgressChanged to a relevance recheck — the small over-fire on
+        // actual progress changes is acceptable until #155 retires this
+        // entire relevance machinery.
+        _source.ProgressChanged += OnSourceProgressChanged;
     }
 
     public ObservableCollection<TimerItemViewModel> Timers { get; } = [];
@@ -99,76 +109,26 @@ public sealed partial class QuestTimersViewModel : ObservableObject
         return _source.PendingInternalNames.Contains(payload.Quest.InternalName);
     }
 
-    private static bool IsRelevant(TimerCatalogEntry entry, TimerProgressEntry? progress, IReadOnlySet<string> pending)
+    private bool IsRelevant(TimerCatalogEntry entry, TimerProgressEntry? progress)
     {
+        // Cooling or Done (any progress not dismissed) is always relevant.
         if (progress is { DismissedAt: null }) return true;
+        // Otherwise must be in journal.
         if (entry.SourceMetadata is QuestCatalogPayload payload &&
-            pending.Contains(payload.Quest.InternalName)) return true;
+            _source.PendingInternalNames.Contains(payload.Quest.InternalName)) return true;
         return false;
     }
 
-    /// <summary>
-    /// Reconcile <see cref="Timers"/> against the source's relevant set. Diffs
-    /// in place — adds new rows, updates existing rows, removes gone rows —
-    /// instead of clearing the collection, which would thrash WPF's grouping.
-    /// </summary>
-    private void Sync()
+    private void OnSourceProgressChanged(object? sender, EventArgs e) =>
+        _binder.RecheckRelevance();
+
+    public void Dispose()
     {
-        _catalogByKey = _source.Catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
-        var progress = _source.Progress;
-        var pending = _source.PendingInternalNames;
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in _source.Catalog)
-        {
-            progress.TryGetValue(entry.Key, out var p);
-            if (!IsRelevant(entry, p, pending)) continue;
-
-            seen.Add(entry.Key);
-            if (_byKey.TryGetValue(entry.Key, out var vm))
-            {
-                vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
-            }
-            else
-            {
-                vm = new TimerItemViewModel(new TimerRow(entry, p) { Clock = _time });
-                _byKey[entry.Key] = vm;
-                Timers.Add(vm);
-            }
-        }
-
-        for (var i = Timers.Count - 1; i >= 0; i--)
-        {
-            var vm = Timers[i];
-            if (seen.Contains(vm.Key)) continue;
-            Timers.RemoveAt(i);
-            _byKey.Remove(vm.Key);
-        }
-
-        TimersView.Refresh();
-    }
-
-    /// <summary>
-    /// Per-second update of progress fractions and time labels. Per-item
-    /// <c>OnPropertyChanged</c> handles the bindings; only call
-    /// <see cref="ICollectionView.Refresh"/> when an item's <c>State</c>
-    /// transitioned (Running &harr; Done) — that changes filter / sort keys.
-    /// </summary>
-    internal void Tick()
-    {
-        var progress = _source.Progress;
-        var stateChanged = false;
-
-        foreach (var vm in _byKey.Values)
-        {
-            if (!_catalogByKey.TryGetValue(vm.Key, out var entry)) continue;
-            progress.TryGetValue(vm.Key, out var p);
-            var prior = vm.State;
-            vm.UpdateRow(new TimerRow(entry, p) { Clock = _time });
-            if (vm.State != prior) stateChanged = true;
-        }
-
-        if (stateChanged) TimersView.Refresh();
+        if (_disposed) return;
+        _disposed = true;
+        _source.ProgressChanged -= OnSourceProgressChanged;
+        _binder.Dispose();
+        _scheduler.Dispose();
     }
 }
 
