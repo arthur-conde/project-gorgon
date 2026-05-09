@@ -148,7 +148,8 @@ public static class Program
                 .AddMithrilShellUpdates()
                 .AddMithrilShellViews()
                 .AddMithrilItemDetail()
-                .AddMithrilIngredientSources();
+                .AddMithrilIngredientSources()
+                .AddMithrilShellCommands();
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();
