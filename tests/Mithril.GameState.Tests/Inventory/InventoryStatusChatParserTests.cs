@@ -1,8 +1,8 @@
 using FluentAssertions;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Xunit;
 
-namespace Mithril.Shared.Tests.Inventory;
+namespace Mithril.GameState.Tests.Inventory;
 
 public class InventoryStatusChatParserTests
 {

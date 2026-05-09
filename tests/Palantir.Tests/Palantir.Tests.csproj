@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Palantir.Module\Palantir.Module.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
 </Project>

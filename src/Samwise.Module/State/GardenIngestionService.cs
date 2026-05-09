@@ -1,6 +1,6 @@
 using System.Windows;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;

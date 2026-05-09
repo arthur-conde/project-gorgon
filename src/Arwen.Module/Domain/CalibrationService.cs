@@ -4,7 +4,7 @@ using System.IO;
 using System.Text.Json;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 

@@ -1,4 +1,4 @@
-namespace Mithril.Shared.Inventory;
+namespace Mithril.GameState.Inventory;
 
 /// <summary>
 /// A live inventory transition. <paramref name="InstanceId"/> is the per-item

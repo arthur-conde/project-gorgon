@@ -27,6 +27,7 @@ public class LogPatternCatalogParityTests
         TouchAssemblyForType("Saruman.Parsing.WordOfPowerChatParser");
         TouchAssemblyForType("Saruman.Parsing.WordOfPowerDiscoveredParser");
         TouchAssemblyForType("Legolas.Services.ChatLogParser");
+        TouchAssemblyForType("Mithril.GameState.Inventory.InventoryStatusChatParser");
 
         foreach (var (key, entry) in LogPatternCatalog.Current.Regexes)
         {
@@ -83,6 +84,7 @@ public class LogPatternCatalogParityTests
         var t when t.StartsWith("Pippin.", StringComparison.Ordinal) => "Pippin.Module",
         var t when t.StartsWith("Saruman.", StringComparison.Ordinal) => "Saruman.Module",
         var t when t.StartsWith("Legolas.", StringComparison.Ordinal) => "Legolas.Module",
+        var t when t.StartsWith("Mithril.GameState.", StringComparison.Ordinal) => "Mithril.GameState",
         _ => "Mithril.Shared",
     };
 

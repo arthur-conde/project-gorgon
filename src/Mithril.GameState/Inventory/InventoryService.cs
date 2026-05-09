@@ -8,7 +8,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 using Microsoft.Extensions.Hosting;
 
-namespace Mithril.Shared.Inventory;
+namespace Mithril.GameState.Inventory;
 
 /// <summary>
 /// Eagerly subscribes to <see cref="IPlayerLogStream"/> at shell startup and

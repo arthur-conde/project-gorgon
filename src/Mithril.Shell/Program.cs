@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Interop;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
+using Mithril.GameState.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
@@ -136,6 +137,7 @@ public static class Program
                 .AddSingleton(gameConfig)
                 .AddMithrilDiagnostics(logDir)
                 .AddMithrilGameServices()
+                .AddMithrilGameState()
                 .AddMithrilPerCharacterStorage(charactersRootDir)
                 .AddMithrilReferenceData(referenceCacheDir)
                 .AddMithrilCommunityCalibration(communityCalibrationCacheDir)

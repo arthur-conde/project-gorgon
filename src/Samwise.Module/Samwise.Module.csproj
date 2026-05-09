@@ -12,6 +12,7 @@
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>

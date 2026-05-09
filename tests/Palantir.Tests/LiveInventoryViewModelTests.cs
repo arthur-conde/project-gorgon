@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Mithril.Shared.Inventory;
+using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
 using Palantir.ViewModels;
 using Xunit;

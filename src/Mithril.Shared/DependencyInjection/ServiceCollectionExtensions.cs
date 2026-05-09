@@ -6,7 +6,6 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
-using Mithril.Shared.Inventory;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -33,10 +32,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<Game.GameConfig>(),
                 sp.GetRequiredService<IActiveCharacterPersistence>(),
                 sp.GetRequiredService<IDiagnosticsSink>()))
-            .AddHostedService<ActiveCharacterLogSynchronizer>()
-            .AddSingleton<InventoryService>()
-            .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())
-            .AddHostedService(sp => sp.GetRequiredService<InventoryService>());
+            .AddHostedService<ActiveCharacterLogSynchronizer>();
 
     /// <summary>
     /// Register the root directory for per-character storage (typically
