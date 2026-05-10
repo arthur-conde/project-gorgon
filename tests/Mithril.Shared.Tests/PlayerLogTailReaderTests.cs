@@ -26,70 +26,64 @@ public sealed class PlayerLogTailReaderTests : IDisposable
     [Fact]
     public void ReadNew_RecoversAbsoluteTimestampFromBracketedPrefix()
     {
-        // Anchors the regression: PlayerLogTailReader used to stamp every line
-        // with wall-clock-now, breaking past-anchored cooldown rows. After the
-        // fix, each line's [HH:MM:SS] is folded over the file's mtime date so
-        // a quest completed an hour before launch anchors at the right wall
-        // clock — not at "now."
+        // Anchors the contract: the [HH:MM:SS] prefix is in UTC (PG writes
+        // UTC into Player.log; verified against the file's own mtime and
+        // against ChatLog's "Timezone Offset" login banner). The sequencer
+        // folds the tod over file-mtime-UTC to produce an absolute UTC stamp.
         File.WriteAllText(_logPath,
             "[14:30:00] LocalPlayer: ProcessAddPlayer(1, 2, \"desc\", \"TestChar\")\n" +
             "[15:30:00] LocalPlayer: ProcessCompleteQuest(17415332, 28505)\n");
-        var mtime = new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
         lines.Should().HaveCount(2);
-        lines[0].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Local));
-        lines[1].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Local));
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]
     public void ReadNew_AcrossMidnight_FoldsDateForward()
     {
-        // Marathon session crossing midnight. The pre-midnight line's [HH:MM:SS]
-        // (23:55) is greater than the post-midnight line's (00:05); the >12h
-        // backward gap is the rollover signal, so the post-midnight line gets
-        // tagged with the next calendar day.
+        // Marathon session crossing UTC midnight. The pre-midnight line's
+        // [HH:MM:SS] (23:55) is greater than the post-midnight line's
+        // (00:05); the >12h backward gap is the rollover signal, so the
+        // post-midnight line gets tagged with the next calendar day.
         File.WriteAllText(_logPath,
             "[23:55:00] line-pre-midnight\n" +
             "[00:05:00] line-post-midnight\n");
-        var mtime = new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
         lines.Should().HaveCount(2);
-        lines[0].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
-        lines[1].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local));
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
     }
 
     [Fact]
-    public void ReadNew_BackwardJumpUnder12h_StaysInSameDay()
+    public void ReadNew_SmallBackwardJump_DoesNotTriggerRollover()
     {
-        // A DST fall-back creates a 1h backward overlap (e.g. 02:30 → 01:35).
-        // The rollover heuristic requires a >12h backward gap, so the second
-        // line stays on the same calendar date — we don't push it 24h forward.
+        // Sub-12h backward jumps (e.g. out-of-order flushes within the same
+        // hour, or any pathological non-monotonic write the client could
+        // produce) must not be misread as midnight rollovers. Only a >12h
+        // backward gap counts as a real rollover. The threshold used to
+        // exist to tolerate a 1h DST fall-back overlap; now that the
+        // prefix is UTC (DST-free) the slack is purely defense against
+        // out-of-order writes.
         File.WriteAllText(_logPath,
-            "[02:30:00] line-before-fallback\n" +
-            "[01:35:00] line-after-fallback\n");
-        var mtime = new DateTime(2026, 11, 1, 1, 35, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+            "[02:30:00] line-earlier-tod\n" +
+            "[02:25:00] line-later-but-tod-rewound\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 2, 30, 0, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
         lines.Should().HaveCount(2);
-        lines[0].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 11, 1, 2, 30, 0, DateTimeKind.Local));
-        lines[1].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 11, 1, 1, 35, 0, DateTimeKind.Local));
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 2, 30, 0, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 10, 2, 25, 0, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -103,18 +97,15 @@ public sealed class PlayerLogTailReaderTests : IDisposable
             "[10:00:00] LocalPlayer: ProcessAddPlayer(1, 2, \"desc\", \"TestChar\")\n" +
             "NullReferenceException: Object reference not set to an instance of an object.\n" +
             "[10:00:05] LocalPlayer: next gameplay line\n");
-        var mtime = new DateTime(2026, 5, 10, 10, 0, 5, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 5, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
         lines.Should().HaveCount(3);
-        lines[0].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Local));
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
         lines[1].Timestamp.Should().Be(lines[0].Timestamp);  // inherited
-        lines[2].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 10, 0, 5, DateTimeKind.Local));
+        lines[2].Timestamp.Should().Be(new DateTime(2026, 5, 10, 10, 0, 5, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -127,8 +118,7 @@ public sealed class PlayerLogTailReaderTests : IDisposable
             "Initialize engine version: 6000.3.11f1\n" +
             "[Physics::Module] Initialized fallback backend.\n" +
             "[10:00:00] LocalPlayer: first gameplay line\n");
-        var mtime = new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
 
         var fixedNow = new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc);
         var time = new FixedTimeProvider(fixedNow);
@@ -139,54 +129,47 @@ public sealed class PlayerLogTailReaderTests : IDisposable
         lines.Should().HaveCount(3);
         lines[0].Timestamp.Should().Be(fixedNow);
         lines[1].Timestamp.Should().Be(fixedNow);  // inherited from line 0's fallback
-        lines[2].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Local));
+        lines[2].Timestamp.Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
     }
 
     [Fact]
     public void ReadNew_AcrossBatches_PreservesRolloverState()
     {
-        // First batch ends just before midnight, second batch starts just
-        // after. The reader must carry _currentLocalDate + _prevLocalTimeOfDay
+        // First batch ends just before UTC midnight, second batch starts just
+        // after. The reader must carry _currentUtcDate + _prevUtcTimeOfDay
         // across the batch boundary so the post-midnight line gets the next
         // day — not the same day as the pre-midnight line.
         File.WriteAllText(_logPath, "[23:55:00] pre-midnight\n");
-        File.SetLastWriteTime(_logPath,
-            new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var first = reader.ReadNew();
         first.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         File.AppendAllText(_logPath, "[00:05:00] post-midnight\n");
-        File.SetLastWriteTime(_logPath,
-            new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
 
         var second = reader.ReadNew();
         second.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
     }
 
     [Fact]
     public void ReadNew_LastLineTodPastMtimeTimeOfDay_BacksAnchorUpOneDay()
     {
         // Late-night session: the final [HH:MM:SS] is at 23:59 but the file's
-        // mtime ticked over to 00:01 the next calendar day (write-buffer flush
+        // mtime ticked over to 00:01 the next UTC day (write-buffer flush
         // happens after midnight). The line was actually written yesterday;
         // the anchor must back up one day so we don't tag it with tomorrow.
         File.WriteAllText(_logPath, "[23:59:00] last-line\n");
-        var mtime = new DateTime(2026, 5, 11, 0, 1, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(_logPath, mtime);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 0, 1, 0, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
         lines.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 23, 59, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 59, 0, DateTimeKind.Utc));
     }
 
     private sealed class FixedTimeProvider : TimeProvider

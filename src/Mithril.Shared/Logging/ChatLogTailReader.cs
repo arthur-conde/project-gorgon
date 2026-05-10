@@ -82,7 +82,7 @@ public sealed class ChatLogTailReader
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length == 0) return Array.Empty<RawLogLine>();
 
-        state.Sequencer.EnsureAnchored(lines, () => File.GetLastWriteTime(path));
+        state.Sequencer.EnsureAnchored(lines, () => File.GetLastWriteTimeUtc(path));
 
         var result = new List<RawLogLine>(lines.Length);
         foreach (var line in lines)
