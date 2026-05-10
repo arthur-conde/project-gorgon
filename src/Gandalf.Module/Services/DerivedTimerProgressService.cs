@@ -107,6 +107,22 @@ public sealed class DerivedTimerProgressService : IDisposable
     }
 
     /// <summary>
+    /// Hard-delete the progress row outright (vs. <see cref="Dismiss"/> which
+    /// only stamps <c>DismissedAt</c>). Used by sources that hard-delete a
+    /// catalog entry — the progress row goes with it so a later re-discovery
+    /// of the same key starts from a clean slate.
+    /// </summary>
+    public void Remove(string sourceId, string key)
+    {
+        var current = _view.Current;
+        if (current is null) return;
+        if (!current.BySource.TryGetValue(sourceId, out var inner)) return;
+        if (!inner.Remove(key)) return;
+        SaveNow();
+        ProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// Drop progress entries whose key is no longer in the live catalog. Called by
     /// each source on <c>CatalogChanged</c> so removed quests/chests don't leak
     /// progress rows forever.

@@ -132,6 +132,48 @@ public class DerivedTimerProgressServiceTests : IDisposable
     }
 
     [Fact]
+    public void Remove_drops_row_outright_unlike_Dismiss()
+    {
+        var (svc, view, active, time) = BuildService();
+        try
+        {
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+            svc.Start("gandalf.loot", "k1", time.GetUtcNow() - TimeSpan.FromHours(1));
+            svc.GetProgress("gandalf.loot", "k1").Should().NotBeNull();
+
+            svc.Remove("gandalf.loot", "k1");
+
+            // Hard-delete: row gone from storage, not just stamped DismissedAt.
+            svc.GetProgress("gandalf.loot", "k1").Should().BeNull();
+        }
+        finally
+        {
+            svc.Dispose(); view.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Remove_of_unknown_key_is_noop()
+    {
+        var (svc, view, active, time) = BuildService();
+        try
+        {
+            active.SetActiveCharacter("Arthur", "Kwatoxi");
+
+            // No throw, no event fire.
+            var fired = 0;
+            svc.ProgressChanged += (_, _) => fired++;
+            svc.Remove("gandalf.loot", "never-existed");
+            fired.Should().Be(0);
+        }
+        finally
+        {
+            svc.Dispose(); view.Dispose();
+        }
+    }
+
+    [Fact]
     public void Dismiss_uses_TimeProvider_clock_not_DateTimeOffset_UtcNow()
     {
         var (svc, view, active, time) = BuildService();

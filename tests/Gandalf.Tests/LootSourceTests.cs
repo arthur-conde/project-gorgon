@@ -468,6 +468,144 @@ public class LootSourceTests : IDisposable
     }
 
     [Fact]
+    public void Forget_chest_drops_catalog_progress_and_cache_entries()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
+            src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
+
+            var key = LootSource.ChestKey("GoblinStaticChest1");
+            src.Catalog.Should().Contain(c => c.Key == key);
+            src.Progress.Should().ContainKey(key);
+
+            src.Forget(key);
+
+            src.Catalog.Should().NotContain(c => c.Key == key,
+                "Forget drops the catalog row entirely, not just hides it");
+            src.Progress.Should().NotContainKey(key,
+                "Forget removes the progress row outright (vs. Dismiss which only stamps DismissedAt)");
+
+            // Both cache dictionaries are cleared so the row doesn't resurrect on restart.
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests.Should().NotContainKey("GoblinStaticChest1");
+            cache.ChestDurationByInternalName.Should().NotContainKey("GoblinStaticChest1");
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Forget_defeat_drops_learned_entry_and_progress()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
+
+            var key = LootSource.DefeatKey("Den Mother");
+            src.Catalog.Should().Contain(c => c.Key == key);
+            src.Progress.Should().ContainKey(key);
+
+            src.Forget(key);
+
+            src.Catalog.Should().NotContain(c => c.Key == key);
+            src.Progress.Should().NotContainKey(key);
+
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedDefeats.Should().NotContainKey("Den Mother");
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Forget_emits_single_Removed_delta()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnChestInteraction("Chair", time.GetUtcNow().UtcDateTime);
+            var key = LootSource.ChestKey("Chair");
+
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            src.Forget(key);
+
+            // Single Removed delta — the catalog re-projection drops the row;
+            // the subsequent progress Remove fires ProgressChanged but produces
+            // no delta because the differ only tracks rows present in the
+            // (now-empty) new catalog.
+            var removedDeltas = batches.SelectMany(b => b)
+                .Where(d => d.Key == key && d.Kind == TimerRowChangeKind.Removed)
+                .ToList();
+            removedDeltas.Should().HaveCount(1);
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Forget_then_re_observe_resurrects_cleanly()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // User wipes a false-positive entry. If the parser later re-emits
+            // the same key (i.e. there's a regression), the row should come
+            // back — that's the deliberate non-blocklist design: re-discovery
+            // is a useful regression signal.
+            src.OnChestInteraction("Portal", time.GetUtcNow().UtcDateTime);
+            src.Forget(LootSource.ChestKey("Portal"));
+            src.Catalog.Should().BeEmpty();
+
+            time.Advance(TimeSpan.FromMinutes(10));
+            var newLoot = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("Portal", newLoot);
+
+            src.Catalog.Should().ContainSingle()
+                .Which.Key.Should().Be(LootSource.ChestKey("Portal"));
+            src.Progress[LootSource.ChestKey("Portal")].StartedAt
+                .Should().Be(new DateTimeOffset(newLoot, TimeSpan.Zero));
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
+    public void Forget_of_unknown_key_is_noop()
+    {
+        var (src, derived, _, _) = Build();
+        try
+        {
+            var batches = new List<IReadOnlyList<TimerRowDelta>>();
+            src.RowsChanged += (_, e) => batches.Add(e.Deltas);
+
+            src.Forget(LootSource.ChestKey("NeverExisted"));
+            src.Forget(LootSource.DefeatKey("NeverExisted"));
+            src.Forget("malformed-key");
+
+            batches.Should().BeEmpty();
+        }
+        finally
+        {
+            src.Dispose(); derived.Dispose();
+        }
+    }
+
+    [Fact]
     public void OnChestInteraction_emits_RowsChanged_with_added_delta()
     {
         var (src, derived, _, time) = Build();

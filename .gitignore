@@ -13,6 +13,8 @@ tests/.tmp/
 src/temp
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/tmp/
+.claude/worktrees/
 
 # Legacy browser-based garden helper (superseded by Samwise module)
 garden/
