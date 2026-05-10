@@ -3,21 +3,30 @@ namespace Mithril.Shared.Logging;
 /// <summary>
 /// Recovers absolute UTC timestamps for log lines whose only embedded time
 /// information is a <c>[HH:MM:SS]</c> prefix (PG's gameplay log format).
-/// State is per-file: the date is anchored on file mtime for the first
-/// content batch and folded forward across rollovers in subsequent batches.
-/// Lines without the prefix inherit the previous line's stamp, or fall
-/// through to <see cref="TimeProvider.GetUtcNow"/> if nothing has been seen
-/// yet.
+/// The prefix is in <b>UTC</b> — verified against the same file's mtime
+/// (Player.log mtime minus the player's TZ offset matches the prefix's
+/// time-of-day) and against the ChatLog login banner's reported
+/// <c>Timezone Offset</c>, which equals the offset between Player.log
+/// prefixes and ChatLog lines. State is per-file: the date is anchored on
+/// file mtime (UTC) for the first content batch and folded forward across
+/// rollovers in subsequent batches. Lines without the prefix inherit the
+/// previous line's stamp, or fall through to <see cref="TimeProvider.GetUtcNow"/>
+/// if nothing has been seen yet.
 ///
 /// Shared by <see cref="PlayerLogTailReader"/> (single-file Player.log)
 /// and <see cref="ChatLogTailReader"/> (per-channel chat logs); each chat
 /// file gets its own sequencer instance so dates fold independently.
+/// Note: real chat-log lines don't carry the <c>[HH:MM:SS]</c> prefix
+/// (their format is <c>yy-MM-dd HH:MM:SS\t...</c> in <i>local</i> time),
+/// so chat lines fall through the prefix parse and rely on the inherited
+/// stamp or wall-clock-now. A future chat-content parser that wants
+/// absolute past-anchored stamps needs its own extraction path.
 /// </summary>
 internal sealed class LogLineTimestampSequencer
 {
     private readonly TimeProvider _time;
-    private DateOnly? _currentLocalDate;
-    private TimeSpan? _prevLocalTimeOfDay;
+    private DateOnly? _currentUtcDate;
+    private TimeSpan? _prevUtcTimeOfDay;
     private DateTime _lastEmittedUtc;
 
     public LogLineTimestampSequencer(TimeProvider time)
@@ -30,14 +39,17 @@ internal sealed class LogLineTimestampSequencer
     /// for <c>[HH:MM:SS]</c> prefixes, counts midnight rollovers in the
     /// batch, and walks the start back so the LAST timestamped line lines
     /// up with file mtime (or mtime - 1 day if its tod is past mtime's
-    /// tod, which happens when the file ticks over to the next calendar
-    /// day shortly after the line was written). No-op once anchored, and
+    /// tod, which happens when the file ticks over to the next UTC day
+    /// shortly after the line was written). Caller passes a UTC mtime —
+    /// both <see cref="PlayerLogTailReader"/> and <see cref="ChatLogTailReader"/>
+    /// use <see cref="File.GetLastWriteTimeUtc"/> so the comparison
+    /// against the UTC prefix is in one frame. No-op once anchored, and
     /// no-op for batches with no prefixed lines (defers init to a later
     /// batch that has at least one).
     /// </summary>
-    public void EnsureAnchored(IReadOnlyList<string> lines, Func<DateTime> mtimeAccessor)
+    public void EnsureAnchored(IReadOnlyList<string> lines, Func<DateTime> mtimeUtcAccessor)
     {
-        if (_currentLocalDate is not null) return;
+        if (_currentUtcDate is not null) return;
 
         var rollovers = 0;
         TimeSpan? prev = null;
@@ -53,42 +65,45 @@ internal sealed class LogLineTimestampSequencer
 
         if (lastSeen is null) return;
 
-        DateTime mtime;
-        try { mtime = mtimeAccessor(); }
-        catch { mtime = _time.GetUtcNow().LocalDateTime; }
-        var anchorDate = DateOnly.FromDateTime(mtime);
-        if (lastSeen.Value > mtime.TimeOfDay) anchorDate = anchorDate.AddDays(-1);
+        DateTime mtimeUtc;
+        try { mtimeUtc = mtimeUtcAccessor(); }
+        catch { mtimeUtc = _time.GetUtcNow().UtcDateTime; }
+        var anchorDate = DateOnly.FromDateTime(mtimeUtc);
+        if (lastSeen.Value > mtimeUtc.TimeOfDay) anchorDate = anchorDate.AddDays(-1);
 
-        _currentLocalDate = anchorDate.AddDays(-rollovers);
+        _currentUtcDate = anchorDate.AddDays(-rollovers);
     }
 
     /// <summary>
     /// Compute the UTC stamp for a single log line. Parses the
-    /// <c>[HH:MM:SS]</c> prefix and folds it over the current date,
-    /// detecting midnight rollovers (HH wraps backward by &gt;12h).
-    /// Lines without the prefix inherit the prior stamp; a leading run
-    /// of unprefixed lines falls through to <see cref="TimeProvider.GetUtcNow"/>.
+    /// <c>[HH:MM:SS]</c> prefix (interpreted as UTC) and folds it over
+    /// the current date, detecting midnight rollovers (HH wraps backward
+    /// by &gt;12h). Lines without the prefix inherit the prior stamp; a
+    /// leading run of unprefixed lines falls through to
+    /// <see cref="TimeProvider.GetUtcNow"/>.
     /// </summary>
     public DateTime StampForLine(string line)
     {
-        if (TryParseTimestampPrefix(line, out var tod) && _currentLocalDate.HasValue)
+        if (TryParseTimestampPrefix(line, out var tod) && _currentUtcDate.HasValue)
         {
-            // Smaller backward jumps (the 1-hour DST fall-back overlap,
-            // out-of-order writes within the same minute) keep the same
-            // calendar date; only a >12h backward gap signals a real
-            // midnight rollover.
-            if (_prevLocalTimeOfDay.HasValue
-                && tod < _prevLocalTimeOfDay.Value
-                && (_prevLocalTimeOfDay.Value - tod) > TimeSpan.FromHours(12))
+            // Small backward jumps (out-of-order writes within the same
+            // second, sub-second flush ordering) keep the same calendar
+            // date; only a >12h backward gap signals a real midnight
+            // rollover. UTC doesn't observe DST, so this threshold no
+            // longer has to tolerate a 1h fall-back overlap — the slack
+            // is kept as defense against pathological out-of-order log
+            // writes the client could plausibly produce.
+            if (_prevUtcTimeOfDay.HasValue
+                && tod < _prevUtcTimeOfDay.Value
+                && (_prevUtcTimeOfDay.Value - tod) > TimeSpan.FromHours(12))
             {
-                _currentLocalDate = _currentLocalDate.Value.AddDays(1);
+                _currentUtcDate = _currentUtcDate.Value.AddDays(1);
             }
-            _prevLocalTimeOfDay = tod;
+            _prevUtcTimeOfDay = tod;
 
-            var date = _currentLocalDate.Value;
-            var local = new DateTime(date.Year, date.Month, date.Day,
-                tod.Hours, tod.Minutes, tod.Seconds, DateTimeKind.Local);
-            _lastEmittedUtc = local.ToUniversalTime();
+            var date = _currentUtcDate.Value;
+            _lastEmittedUtc = new DateTime(date.Year, date.Month, date.Day,
+                tod.Hours, tod.Minutes, tod.Seconds, DateTimeKind.Utc);
         }
         else if (_lastEmittedUtc == default)
         {

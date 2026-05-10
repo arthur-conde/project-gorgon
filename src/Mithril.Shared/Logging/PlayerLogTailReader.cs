@@ -104,7 +104,7 @@ public sealed class PlayerLogTailReader
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length == 0) return Array.Empty<RawLogLine>();
 
-        _sequencer.EnsureAnchored(lines, () => File.GetLastWriteTime(_path));
+        _sequencer.EnsureAnchored(lines, () => File.GetLastWriteTimeUtc(_path));
 
         var result = new List<RawLogLine>(lines.Length);
         foreach (var line in lines)

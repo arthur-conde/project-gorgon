@@ -24,21 +24,23 @@ public sealed class ChatLogTailReaderTests : IDisposable
     [Fact]
     public void ReadNew_RecoversAbsoluteTimestampFromBracketedPrefix()
     {
+        // The shared sequencer treats [HH:MM:SS] as UTC. Real chat-log lines
+        // don't carry this prefix (their format is "yy-MM-dd HH:MM:SS\t..."
+        // in local time, parsed elsewhere), but the chat reader still routes
+        // through the same sequencer plumbing — these tests exercise that
+        // plumbing using synthetic prefix-shaped input.
         var path = Path.Combine(_dir, "Chat.Global.log");
         File.WriteAllText(path,
             "[14:30:00] [Global] Alice: hi\n" +
             "[15:30:00] [Global] Bob: hey\n");
-        var mtime = new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Local);
-        File.SetLastWriteTime(path, mtime);
+        File.SetLastWriteTimeUtc(path, new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
 
         var reader = new ChatLogTailReader();
         var lines = reader.ReadNew(path);
 
         lines.Should().HaveCount(2);
-        lines[0].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Local));
-        lines[1].Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Local));
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -52,24 +54,20 @@ public sealed class ChatLogTailReaderTests : IDisposable
         var partyPath = Path.Combine(_dir, "Chat.Party.log");
 
         File.WriteAllText(globalPath, "[23:55:00] global pre-midnight\n");
-        File.SetLastWriteTime(globalPath,
-            new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(globalPath, new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         File.WriteAllText(partyPath, "[10:00:00] party morning\n");
-        File.SetLastWriteTime(partyPath,
-            new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(partyPath, new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
 
         var reader = new ChatLogTailReader();
         var globalLines = reader.ReadNew(globalPath);
         var partyLines = reader.ReadNew(partyPath);
 
         globalLines.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         partyLines.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -80,22 +78,18 @@ public sealed class ChatLogTailReaderTests : IDisposable
         // ReadNew calls so the post-midnight line gets the next day.
         var path = Path.Combine(_dir, "Chat.Global.log");
         File.WriteAllText(path, "[23:55:00] pre-midnight\n");
-        File.SetLastWriteTime(path,
-            new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(path, new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         var reader = new ChatLogTailReader();
         var first = reader.ReadNew(path);
         first.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 55, 0, DateTimeKind.Utc));
 
         File.AppendAllText(path, "[00:05:00] post-midnight\n");
-        File.SetLastWriteTime(path,
-            new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local));
+        File.SetLastWriteTimeUtc(path, new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
 
         var second = reader.ReadNew(path);
         second.Should().ContainSingle()
-            .Which.Timestamp.ToLocalTime()
-            .Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Local));
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 11, 0, 5, 0, DateTimeKind.Utc));
     }
 }
