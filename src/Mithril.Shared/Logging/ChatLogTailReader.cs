@@ -7,6 +7,11 @@ namespace Mithril.Shared.Logging;
 /// Directory-based tail. Keeps a byte offset per file so we can pick up
 /// where we left off, and buffers partial lines as residual bytes across
 /// reads in case a line is flushed mid-write.
+///
+/// Each file gets its own <see cref="LogLineTimestampSequencer"/> so the
+/// per-channel chat logs (which can rotate independently and interleave at
+/// different rates) fold dates over their own mtimes. See
+/// <see cref="PlayerLogTailReader"/> for the same fix on the gameplay log.
 /// </summary>
 public sealed class ChatLogTailReader
 {
@@ -29,7 +34,11 @@ public sealed class ChatLogTailReader
         {
             try
             {
-                _files[path] = new FileState { Offset = new FileInfo(path).Length };
+                _files[path] = new FileState
+                {
+                    Offset = new FileInfo(path).Length,
+                    Sequencer = new LogLineTimestampSequencer(_time),
+                };
             }
             catch (IOException) { }
         }
@@ -41,7 +50,7 @@ public sealed class ChatLogTailReader
 
         if (!_files.TryGetValue(path, out var state))
         {
-            state = new FileState();
+            state = new FileState { Sequencer = new LogLineTimestampSequencer(_time) };
             _files[path] = state;
         }
 
@@ -70,13 +79,17 @@ public sealed class ChatLogTailReader
         state.Residual = buf[(lastNl + 1)..total];
         state.Offset += read;
 
-        var ts = _time.GetUtcNow().UtcDateTime;
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0) return Array.Empty<RawLogLine>();
+
+        state.Sequencer.EnsureAnchored(lines, () => File.GetLastWriteTime(path));
+
         var result = new List<RawLogLine>(lines.Length);
         foreach (var line in lines)
         {
             var trimmed = line.EndsWith('\r') ? line[..^1] : line;
-            if (trimmed.Length > 0) result.Add(new RawLogLine(ts, trimmed));
+            if (trimmed.Length == 0) continue;
+            result.Add(new RawLogLine(state.Sequencer.StampForLine(trimmed), trimmed));
         }
         return result;
     }
@@ -85,5 +98,6 @@ public sealed class ChatLogTailReader
     {
         public long Offset { get; set; }
         public byte[] Residual { get; set; } = Array.Empty<byte>();
+        public required LogLineTimestampSequencer Sequencer { get; init; }
     }
 }
