@@ -8,6 +8,14 @@ namespace Mithril.Shared.Logging;
 /// _find_session_start: scans the last 10 MB for the most recent
 /// ProcessAddPlayer( occurrence so the consumer always receives the
 /// login event regardless of how long ago the session began.
+///
+/// Each emitted <see cref="RawLogLine"/> carries the absolute UTC of the
+/// log line itself (recovered from the <c>[HH:MM:SS]</c> prefix every PG
+/// gameplay line carries) rather than wall-clock-at-read. Past-anchored
+/// cooldown sources (Gandalf Quest/Loot) rely on this to correctly anchor
+/// rows when Mithril launches mid-session and the seed replay surfaces
+/// hours-old completions. See <see cref="LogLineTimestampSequencer"/> for
+/// the date-folding logic.
 /// </summary>
 public sealed class PlayerLogTailReader
 {
@@ -16,6 +24,7 @@ public sealed class PlayerLogTailReader
 
     private readonly string _path;
     private readonly TimeProvider _time;
+    private readonly LogLineTimestampSequencer _sequencer;
     private long _offset;
     private byte[] _residual = Array.Empty<byte>();
 
@@ -23,6 +32,7 @@ public sealed class PlayerLogTailReader
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
         _time = time ?? TimeProvider.System;
+        _sequencer = new LogLineTimestampSequencer(_time);
     }
 
     public void SeedToSessionStart()
@@ -91,13 +101,17 @@ public sealed class PlayerLogTailReader
         _residual = buf[(lastNl + 1)..total];
         _offset += read;
 
-        var ts = _time.GetUtcNow().UtcDateTime;
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0) return Array.Empty<RawLogLine>();
+
+        _sequencer.EnsureAnchored(lines, () => File.GetLastWriteTime(_path));
+
         var result = new List<RawLogLine>(lines.Length);
         foreach (var line in lines)
         {
             var trimmed = line.EndsWith('\r') ? line[..^1] : line;
-            if (trimmed.Length > 0) result.Add(new RawLogLine(ts, trimmed));
+            if (trimmed.Length == 0) continue;
+            result.Add(new RawLogLine(_sequencer.StampForLine(trimmed), trimmed));
         }
         return result;
     }
