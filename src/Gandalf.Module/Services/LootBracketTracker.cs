@@ -42,6 +42,7 @@ public sealed partial class LootBracketTracker
     private readonly LootSource _source;
     private readonly ChestInteractionParser _interactionParser;
     private readonly ChestRejectionParser _rejectionParser;
+    private readonly MilkingRejectionParser _milkingRejectionParser;
     private readonly InteractionEndParser _endParser;
     private readonly InteractionDelayLoopParser _delayLoopParser;
     private readonly InteractionWaitParser _waitParser;
@@ -56,6 +57,7 @@ public sealed partial class LootBracketTracker
         LootSource source,
         ChestInteractionParser interactionParser,
         ChestRejectionParser rejectionParser,
+        MilkingRejectionParser milkingRejectionParser,
         InteractionEndParser endParser,
         InteractionDelayLoopParser delayLoopParser,
         InteractionWaitParser waitParser)
@@ -63,6 +65,7 @@ public sealed partial class LootBracketTracker
         _source = source;
         _interactionParser = interactionParser;
         _rejectionParser = rejectionParser;
+        _milkingRejectionParser = milkingRejectionParser;
         _endParser = endParser;
         _delayLoopParser = delayLoopParser;
         _waitParser = waitParser;
@@ -133,6 +136,24 @@ public sealed partial class LootBracketTracker
             && _bracketName is not null)
         {
             _source.OnChestCooldownObserved(_bracketName, rejection.Duration);
+            ResetIdle();
+            return;
+        }
+
+        // 3b. Cow milking cooldown rejection — different log channel
+        // (ErrorMessage vs GeneralInfo) and different grammar (relative-past
+        // "in the past hour" vs forward-looking "will refill N hours after").
+        // Same downstream contract as the chest rejection: cache the duration
+        // by the bracket's internal name, close the bracket. Gated by the
+        // "Cow_" name prefix so a stray ErrorMessage from a non-cow bracket
+        // (e.g. "You're too encumbered!" inside an unrelated chest bracket)
+        // doesn't poison the chest's cooldown by 1 hour. Wiki: #181.
+        if (_state == State.InFlight
+            && _bracketName is not null
+            && _bracketName.StartsWith("Cow_", StringComparison.Ordinal)
+            && _milkingRejectionParser.TryParse(line, timestamp) is ChestCooldownObservedEvent milkRejection)
+        {
+            _source.OnChestCooldownObserved(_bracketName, milkRejection.Duration);
             ResetIdle();
             return;
         }

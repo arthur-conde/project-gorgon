@@ -81,6 +81,7 @@ public sealed class GandalfModule : IMithrilModule
         // bosses.
         services.AddSingleton<ChestInteractionParser>();
         services.AddSingleton<ChestRejectionParser>();
+        services.AddSingleton<MilkingRejectionParser>();
         services.AddSingleton<InteractionEndParser>();
         services.AddSingleton<InteractionDelayLoopParser>();
         services.AddSingleton<InteractionWaitParser>();
