@@ -1,7 +1,8 @@
 using Gandalf.Parsing;
-using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Game;
+using Mithril.Shared.Logging;
 
 namespace Gandalf.Services;
 
@@ -16,6 +17,12 @@ namespace Gandalf.Services;
 /// anchor (the <see cref="DefeatCooldownParser"/> rejection text remains as
 /// a diagnostic-only "cooldown still active" observation).
 ///
+/// Also feeds <see cref="PlayerAreaTracker"/> so chest commits stamp the
+/// player's current area on <c>LearnedChest.Area</c> (#178). The tracker is
+/// reverse-scan-seeded at startup to close the gap where
+/// <c>PlayerLogStream.SeedToSessionStart</c> lands ~9 s after the
+/// <c>LOADING LEVEL</c> line for the current area.
+///
 /// No <c>ModuleGate</c> wait — Gandalf is eager; derived-source log replay
 /// must run as soon as the host starts.
 /// </summary>
@@ -25,7 +32,9 @@ public sealed class LootIngestionService : BackgroundService
     private readonly LootBracketTracker _bracket;
     private readonly BossKillCreditParser _bossKill;
     private readonly DefeatCooldownParser _defeatCooldown;
+    private readonly PlayerAreaTracker _areaTracker;
     private readonly LootSource _source;
+    private readonly GameConfig _config;
     private readonly IDiagnosticsSink? _diag;
     private bool _firstObservationLogged;
 
@@ -34,19 +43,33 @@ public sealed class LootIngestionService : BackgroundService
         LootBracketTracker bracket,
         BossKillCreditParser bossKill,
         DefeatCooldownParser defeatCooldown,
+        PlayerAreaTracker areaTracker,
         LootSource source,
+        GameConfig config,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _bracket = bracket;
         _bossKill = bossKill;
         _defeatCooldown = defeatCooldown;
+        _areaTracker = areaTracker;
         _source = source;
+        _config = config;
         _diag = diag;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // One-shot reverse-scan for the most recent LOADING LEVEL Area* line
+        // before the live tail kicks in. PlayerLogStream's SessionMarker
+        // (ProcessAddPlayer) lands ~9 s after the area-load line, so the
+        // live replay window misses it; this seed closes the gap. Best-
+        // effort — failures don't block ingestion.
+        if (!string.IsNullOrEmpty(_config.PlayerLogPath))
+        {
+            _areaTracker.SeedFromLog(_config.PlayerLogPath);
+        }
+
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
             try { Dispatch(raw); }
@@ -56,6 +79,10 @@ public sealed class LootIngestionService : BackgroundService
 
     private void Dispatch(RawLogLine raw)
     {
+        // Area transitions update the tracker BEFORE the bracket sees the
+        // line, so any subsequent chest interaction in the same dispatch
+        // batch reads the correct CurrentArea.
+        _areaTracker.Observe(raw);
         _bracket.Observe(raw);
 
         if (_bossKill.TryParse(raw.Line, raw.Timestamp) is BossKillCreditEvent kill)

@@ -1,8 +1,10 @@
 using System.IO;
 using FluentAssertions;
 using Gandalf.Domain;
+using Gandalf.Parsing;
 using Gandalf.Services;
 using Mithril.Shared.Character;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Xunit;
 
@@ -30,7 +32,7 @@ public class LootSourceTests : IDisposable
     }
 
     private (LootSource src, DerivedTimerProgressService derived, FakeActiveCharacterService active, ManualTime time)
-        Build()
+        Build(PlayerAreaTracker? areaTracker = null, IReferenceDataService? refData = null)
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -44,7 +46,8 @@ public class LootSourceTests : IDisposable
         var cacheStore = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
-        var src = new LootSource(derived, cacheStore, cache, time);
+        var src = new LootSource(derived, cacheStore, cache,
+            areaTracker: areaTracker, refData: refData, time: time);
 
         return (src, derived, active, time);
     }
@@ -449,7 +452,7 @@ public class LootSourceTests : IDisposable
         var cacheStore1 = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache1 = cacheStore1.Load();
-        var src1 = new LootSource(derived1, cacheStore1, cache1, time);
+        var src1 = new LootSource(derived1, cacheStore1, cache1, time: time);
         src1.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
         src1.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
         src1.Dispose();
@@ -675,4 +678,295 @@ public class LootSourceTests : IDisposable
         public override DateTimeOffset GetUtcNow() => _now;
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
+
+    // ── #178: chest area capture, friendly-name resolution, rejection-anchored rows ──
+
+    [Fact]
+    public void OnChestInteraction_stamps_current_area_on_LearnedChest()
+    {
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+
+        var (src, derived, _, time) = Build(areaTracker);
+        try
+        {
+            src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
+
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests.Should().ContainKey("EltibuleSecretChest");
+            cache.LearnedChests["EltibuleSecretChest"].Area.Should().Be("AreaSerbule");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnChestInteraction_with_unknown_area_persists_null()
+    {
+        // No area tracker injected → CurrentArea is null path.
+        var (src, derived, _, time) = Build();
+        try
+        {
+            src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
+
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests["EltibuleSecretChest"].Area.Should().BeNull();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnChestInteraction_area_is_sticky_once_known()
+    {
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        var (src, derived, _, time) = Build(areaTracker);
+        try
+        {
+            // First commit while in AreaSerbule.
+            areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+            src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
+
+            // Player ports to AreaTomb1, then loots a same-named chest. Sticky:
+            // first commit's area wins so the cache doesn't ping-pong.
+            areaTracker.Observe("LOADING LEVEL AreaTomb1", DateTime.UtcNow);
+            time.Advance(TimeSpan.FromMinutes(5));
+            src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
+
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests["LootChest1"].Area.Should().Be("AreaSerbule");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void OnChestInteraction_stamps_area_late_when_first_commit_was_unknown()
+    {
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        var (src, derived, _, time) = Build(areaTracker);
+        try
+        {
+            // First commit happens before any LOADING LEVEL → Area is null.
+            src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
+
+            // Player transitions, then re-loots the same chest. Sticky-once-known
+            // means we DON'T overwrite known Area, but we DO populate from null.
+            areaTracker.Observe("LOADING LEVEL AreaEltibule", DateTime.UtcNow);
+            time.Advance(TimeSpan.FromHours(4));
+            src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
+
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests["EltibuleSecretChest"].Area.Should().Be("AreaEltibule");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildCatalog_resolves_area_scoped_friendly_name_from_strings_all()
+    {
+        var refData = new Mithril.TestSupport.FakeReferenceData();
+        refData.StringsRaw["npc_AreaSerbule/Cow_Moolanda_Name"] = "Wanda";
+        refData.StringsRaw["npc_AreaSerbule/Cow_Bessie_Name"] = "Bessie";
+
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+
+        var (src, derived, _, time) = Build(areaTracker, refData);
+        try
+        {
+            src.OnChestInteraction("Cow_Moolanda", time.GetUtcNow().UtcDateTime);
+            src.OnChestInteraction("Cow_Bessie", time.GetUtcNow().UtcDateTime);
+
+            var moolanda = src.Catalog.Single(c => c.Key == LootSource.ChestKey("Cow_Moolanda"));
+            var bessie = src.Catalog.Single(c => c.Key == LootSource.ChestKey("Cow_Bessie"));
+
+            moolanda.DisplayName.Should().Be("Wanda");
+            bessie.DisplayName.Should().Be("Bessie");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildCatalog_falls_back_to_no_area_form_when_area_scoped_missing()
+    {
+        var refData = new Mithril.TestSupport.FakeReferenceData();
+        refData.StringsRaw["npc_LootBackpack1_Name"] = "Adventurer's Pack";
+        // No npc_AreaSerbule/LootBackpack1_Name entry — global prefab.
+
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+
+        var (src, derived, _, time) = Build(areaTracker, refData);
+        try
+        {
+            src.OnChestInteraction("LootBackpack1", time.GetUtcNow().UtcDateTime);
+            var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("LootBackpack1"));
+            entry.DisplayName.Should().Be("Adventurer's Pack");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildCatalog_falls_back_to_internal_name_when_strings_all_misses_entirely()
+    {
+        var refData = new Mithril.TestSupport.FakeReferenceData(); // empty Strings
+        var (src, derived, _, time) = Build(refData: refData);
+        try
+        {
+            src.OnChestInteraction("UnknownChest1", time.GetUtcNow().UtcDateTime);
+            var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("UnknownChest1"));
+            entry.DisplayName.Should().Be("UnknownChest1");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void BuildCatalog_uses_area_friendly_name_for_region()
+    {
+        var refData = new Mithril.TestSupport.FakeReferenceData();
+        refData.AreasRaw["AreaSerbule"] = new AreaEntry("AreaSerbule", "Serbule", "Serbule");
+
+        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+
+        var (src, derived, _, time) = Build(areaTracker, refData);
+        try
+        {
+            src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
+            var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("EltibuleSecretChest"));
+            entry.Region.Should().Be("Serbule");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Cow_rejection_with_no_prior_row_anchors_at_rejection_time()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            var rejectionAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestCooldownObserved(
+                "Cow_Elsie", TimeSpan.FromHours(1),
+                rejectionAt, anchorFromRejection: true);
+
+            // Row created at rejection time → countdown is full duration ahead.
+            src.Progress.Should().ContainKey(LootSource.ChestKey("Cow_Elsie"));
+            src.Progress[LootSource.ChestKey("Cow_Elsie")].StartedAt
+                .Should().Be(new DateTimeOffset(rejectionAt, TimeSpan.Zero));
+
+            // LearnedChests entry persists so the row survives restart.
+            var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
+                LootCatalogCacheJsonContext.Default.LootCatalogCache).Load();
+            cache.LearnedChests.Should().ContainKey("Cow_Elsie");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Cow_rejection_leaves_active_prior_row_alone()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // Successful milking 10 min ago.
+            var milkAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("Cow_Bessie", milkAt);
+            time.Advance(TimeSpan.FromMinutes(10));
+
+            // Rejection arrives. Cooldown is 1 h, so row is still in flight
+            // (FiringAt = milkAt + 1 h, which is still 50 min in the future).
+            // Anchor must NOT be refreshed.
+            var rejectionAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestCooldownObserved(
+                "Cow_Bessie", TimeSpan.FromHours(1),
+                rejectionAt, anchorFromRejection: true);
+
+            src.Progress[LootSource.ChestKey("Cow_Bessie")].StartedAt
+                .Should().Be(new DateTimeOffset(milkAt, TimeSpan.Zero),
+                    "active row's anchor must not be refreshed by rejection");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Cow_rejection_refreshes_stale_prior_anchor_to_rejection_time()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // Milking 2 h ago — cooldown of 1 h would have made the row Done at +1 h.
+            var milkAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("Cow_Bessie", milkAt);
+            // Pre-seed the verified duration so prior+duration is 1 h after milkAt.
+            src.OnChestCooldownObserved("Cow_Bessie", TimeSpan.FromHours(1));
+            time.Advance(TimeSpan.FromHours(2));
+
+            // Rejection now — row's FiringAt = milkAt + 1 h is 1 h in the past
+            // (stale). Refresh anchor to rejection time so the user sees a
+            // fresh 1 h countdown rather than a stale "Done" badge.
+            var rejectionAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestCooldownObserved(
+                "Cow_Bessie", TimeSpan.FromHours(1),
+                rejectionAt, anchorFromRejection: true);
+
+            src.Progress[LootSource.ChestKey("Cow_Bessie")].StartedAt
+                .Should().Be(new DateTimeOffset(rejectionAt, TimeSpan.Zero));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Cow_rejection_replays_idempotently_when_row_still_active()
+    {
+        var (src, derived, _, time) = Build();
+        try
+        {
+            // Milking 10 min ago, 1 h cooldown — row is still in flight.
+            var milkAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("Cow_Bessie", milkAt);
+            time.Advance(TimeSpan.FromMinutes(10));
+
+            // Rejection at the same timestamp (replay scenario) — idempotency
+            // via the active-row branch (anchor unchanged).
+            var rejectionAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestCooldownObserved(
+                "Cow_Bessie", TimeSpan.FromHours(1),
+                rejectionAt, anchorFromRejection: true);
+            src.OnChestCooldownObserved(
+                "Cow_Bessie", TimeSpan.FromHours(1),
+                rejectionAt, anchorFromRejection: true);
+
+            src.Progress[LootSource.ChestKey("Cow_Bessie")].StartedAt
+                .Should().Be(new DateTimeOffset(milkAt, TimeSpan.Zero));
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    [Fact]
+    public void Chest_rejection_default_does_not_refresh_anchor()
+    {
+        // Forward-looking chest grammar gives us absolute info — the row's
+        // existing StartedAt is more accurate than the rejection timestamp.
+        // Default anchorFromRejection=false preserves today's behaviour.
+        var (src, derived, _, time) = Build();
+        try
+        {
+            var lootAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestInteraction("EltibuleSecretChest", lootAt);
+            time.Advance(TimeSpan.FromHours(4));
+
+            var rejectionAt = time.GetUtcNow().UtcDateTime;
+            src.OnChestCooldownObserved(
+                "EltibuleSecretChest", TimeSpan.FromHours(3), rejectionAt);
+
+            src.Progress[LootSource.ChestKey("EltibuleSecretChest")].StartedAt
+                .Should().Be(new DateTimeOffset(lootAt, TimeSpan.Zero),
+                    "chest grammar: rejection only updates duration, never the anchor");
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
 }

@@ -45,7 +45,7 @@ public class LootBracketTrackerTests : IDisposable
         var cacheStore = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
-        var src = new LootSource(derived, cacheStore, cache, time);
+        var src = new LootSource(derived, cacheStore, cache, time: time);
         var tracker = new LootBracketTracker(
             src,
             new ChestInteractionParser(),

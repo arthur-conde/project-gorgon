@@ -85,6 +85,8 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<InteractionEndParser>();
         services.AddSingleton<InteractionDelayLoopParser>();
         services.AddSingleton<InteractionWaitParser>();
+        services.AddSingleton<AreaTransitionParser>();
+        services.AddSingleton<PlayerAreaTracker>();
         services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
@@ -92,6 +94,8 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
+            areaTracker: sp.GetService<PlayerAreaTracker>(),
+            refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
         services.AddHostedService<LootIngestionService>();
