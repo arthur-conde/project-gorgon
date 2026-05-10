@@ -81,6 +81,17 @@ public interface IReferenceDataService
     /// <summary>InternalName → <see cref="QuestEntry"/> lookup. Matches Quest sources in <c>sources_items.json</c>.</summary>
     IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; }
 
+    /// <summary>
+    /// All localizable strings from <c>strings_all.json</c>, keyed by their
+    /// dotted/slashed string ID. Primary use today is friendly-name resolution
+    /// for chest / NPC / cow / tree prefabs via the
+    /// <c>npc_&lt;Area&gt;/&lt;InternalName&gt;_Name</c> convention (with
+    /// <c>npc_&lt;InternalName&gt;_Name</c> fallback for area-agnostic
+    /// prefabs). See [Player-Log-Signals#display-name-resolution-strings_all]
+    /// in the wiki.
+    /// </summary>
+    IReadOnlyDictionary<string, string> Strings { get; }
+
     ReferenceFileSnapshot GetSnapshot(string key);
 
     Task RefreshAsync(string key, CancellationToken ct = default);

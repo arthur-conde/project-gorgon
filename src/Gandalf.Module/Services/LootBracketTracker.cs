@@ -135,7 +135,7 @@ public sealed partial class LootBracketTracker
             && _rejectionParser.TryParse(line, timestamp) is ChestCooldownObservedEvent rejection
             && _bracketName is not null)
         {
-            _source.OnChestCooldownObserved(_bracketName, rejection.Duration);
+            _source.OnChestCooldownObserved(_bracketName, rejection.Duration, rejection.Timestamp);
             ResetIdle();
             return;
         }
@@ -143,8 +143,12 @@ public sealed partial class LootBracketTracker
         // 3b. Cow milking cooldown rejection — different log channel
         // (ErrorMessage vs GeneralInfo) and different grammar (relative-past
         // "in the past hour" vs forward-looking "will refill N hours after").
-        // Same downstream contract as the chest rejection: cache the duration
-        // by the bracket's internal name, close the bracket. Gated by the
+        // Same downstream contract as the chest rejection EXCEPT for the
+        // anchor handling: the cow grammar gives us no info about when the
+        // last successful milking happened (only that it's within the
+        // cooldown window), so we pass anchorFromRejection=true to let
+        // LootSource conservatively anchor at rejectionTime when no row
+        // exists or the existing anchor is stale (#178). Gated by the
         // "Cow_" name prefix so a stray ErrorMessage from a non-cow bracket
         // (e.g. "You're too encumbered!" inside an unrelated chest bracket)
         // doesn't poison the chest's cooldown by 1 hour. Wiki: #181.
@@ -153,7 +157,11 @@ public sealed partial class LootBracketTracker
             && _bracketName.StartsWith("Cow_", StringComparison.Ordinal)
             && _milkingRejectionParser.TryParse(line, timestamp) is ChestCooldownObservedEvent milkRejection)
         {
-            _source.OnChestCooldownObserved(_bracketName, milkRejection.Duration);
+            _source.OnChestCooldownObserved(
+                _bracketName,
+                milkRejection.Duration,
+                milkRejection.Timestamp,
+                anchorFromRejection: true);
             ResetIdle();
             return;
         }

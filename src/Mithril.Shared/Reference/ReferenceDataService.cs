@@ -106,6 +106,12 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, QuestEntry>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _questsSnapshot;
 
+    // strings_all.json — flat dictionary of localizable string IDs → display
+    // text. Used for friendly-name resolution of chest / cow / tree prefabs
+    // (see #178 / Player-Log-Signals wiki).
+    private IReadOnlyDictionary<string, string> _strings = new Dictionary<string, string>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _stringsSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
@@ -129,6 +135,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _questsSnapshot = new ReferenceFileSnapshot("quests", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _stringsSnapshot = new ReferenceFileSnapshot("strings_all", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -141,9 +148,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadAttributes();
         LoadPowers();
         LoadProfiles();
+        LoadStrings();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles", "quests"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
 
     public IReadOnlyDictionary<long, ItemEntry> Items => _items;
     public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
@@ -160,6 +168,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
     public IReadOnlyDictionary<string, QuestEntry> Quests => _quests;
     public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName => _questsByInternalName;
+    public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
     {
@@ -174,6 +183,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysclientinfo" => _powersSnapshot,
         "tsysprofiles" => _profilesSnapshot,
         "quests" => _questsSnapshot,
+        "strings_all" => _stringsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -192,6 +202,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers, ct),
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
         "quests" => RefreshFileAsync("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests, ct),
+        "strings_all" => RefreshFileAsync("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -208,6 +219,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("tsysclientinfo", ct);
         await RefreshAsync("tsysprofiles", ct);
         await RefreshAsync("quests", ct);
+        await RefreshAsync("strings_all", ct);
     }
 
     public void BeginBackgroundRefresh()
@@ -370,6 +382,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers);
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
     private void LoadQuests() => LoadFile("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests);
+    private void LoadStrings() => LoadFile("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -628,6 +641,15 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _areas = byKey;
         _areasSnapshot = new ReferenceFileSnapshot("areas", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private void ParseAndSwapStrings(IReadOnlyDictionary<string, string> raw, ReferenceFileMetadata meta)
+    {
+        // Parsed dictionary is already string→string; just take a defensive
+        // copy with Ordinal comparer to match the rest of the service's
+        // dictionary conventions and freeze it as IReadOnlyDictionary.
+        _strings = new Dictionary<string, string>(raw, StringComparer.Ordinal);
+        _stringsSnapshot = new ReferenceFileSnapshot("strings_all", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _strings.Count);
     }
 
     /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>

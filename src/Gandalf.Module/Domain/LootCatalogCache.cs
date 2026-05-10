@@ -58,11 +58,21 @@ public sealed class LootCatalogCache
 /// <see cref="LearnedDefeat"/>; the chest's duration lives in
 /// <see cref="LootCatalogCache.ChestDurationByInternalName"/> only once a
 /// rejection has confirmed it.
+///
+/// <para><see cref="Area"/> records the player's current area at the moment
+/// the chest was first committed (#178). Used both for grouping in the UI
+/// and for friendly-name resolution via
+/// <c>strings_all.json[npc_&lt;Area&gt;/&lt;InternalName&gt;_Name]</c>.
+/// Sticky-once-known: once stamped, later commits don't overwrite — handles
+/// the rare case where a chest internal name lives in multiple zones.
+/// Older cache entries serialised before #178 deserialise with
+/// <see cref="Area"/> = <c>null</c> and self-heal on the next loot.</para>
 /// </summary>
 public sealed class LearnedChest
 {
     public DateTime FirstObservedAt { get; set; }
     public DateTime LastObservedAt { get; set; }
+    public string? Area { get; set; }
 }
 
 /// <summary>

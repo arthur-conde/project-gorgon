@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
 namespace Gandalf.Services;
@@ -46,6 +47,8 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
+    private readonly PlayerAreaTracker? _areaTracker;
+    private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly object _catalogLock = new();
@@ -59,12 +62,16 @@ public sealed class LootSource : ITimerSource, IDisposable
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
+        PlayerAreaTracker? areaTracker = null,
+        IReferenceDataService? refData = null,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
         _derived = derived;
         _cacheStore = cacheStore;
         _cache = cache;
+        _areaTracker = areaTracker;
+        _refData = refData;
         _time = time ?? TimeProvider.System;
         _diag = diag;
         _catalog = BuildCatalog();
@@ -109,7 +116,10 @@ public sealed class LootSource : ITimerSource, IDisposable
 
         // Persist the discovery so the row survives across sessions even if
         // the rejection screen never fires (placeholder behaviour mirrors the
-        // defeat-cooldown auto-learn path).
+        // defeat-cooldown auto-learn path). Area is stamped sticky-once-known
+        // (#178) — first commit wins so the same internal name in two zones
+        // doesn't ping-pong its area attribution.
+        var currentArea = _areaTracker?.CurrentArea;
         var learnedChanged = false;
         lock (_catalogLock)
         {
@@ -119,13 +129,22 @@ public sealed class LootSource : ITimerSource, IDisposable
                 {
                     FirstObservedAt = timestampUtc,
                     LastObservedAt = timestampUtc,
+                    Area = currentArea,
                 };
                 learnedChanged = true;
             }
-            else if (timestampUtc > entry.LastObservedAt)
+            else
             {
-                entry.LastObservedAt = timestampUtc;
-                learnedChanged = true;
+                if (timestampUtc > entry.LastObservedAt)
+                {
+                    entry.LastObservedAt = timestampUtc;
+                    learnedChanged = true;
+                }
+                if (entry.Area is null && currentArea is not null)
+                {
+                    entry.Area = currentArea;
+                    learnedChanged = true;
+                }
             }
         }
         if (learnedChanged)
@@ -145,46 +164,126 @@ public sealed class LootSource : ITimerSource, IDisposable
     }
 
     /// <summary>
-    /// Apply a chest rejection observation: cache the discovered duration
-    /// against the chest template name. Future loots of any chest of this
-    /// template will start with the verified duration.
+    /// Apply a cooldown-rejection observation: cache the discovered duration
+    /// and (optionally) anchor a row from the rejection timestamp.
     ///
-    /// If a placeholder row is already in flight from an earlier loot, the
-    /// row's <c>StartedAt</c> is preserved (it's anchored on the original
-    /// <c>ProcessStartInteraction</c> timestamp). The catalog re-projection
-    /// upgrades the duration and flips <c>IsDurationVerified</c> to <c>true</c>;
-    /// if the new ready time has already elapsed,
-    /// <see cref="TimerReady"/> fires so downstream listeners notice.
+    /// <para><b>Default (chest grammar — forward-looking).</b> The
+    /// rejection text says <c>"It will refill N hours after you looted
+    /// it."</c>, so the cooldown is anchored at the loot time the row's
+    /// existing <c>StartedAt</c> already records. Just update the duration;
+    /// re-fire <see cref="TimerReady"/> if the new FiringAt has already
+    /// elapsed. Today's behaviour preserved.</para>
+    ///
+    /// <para><b><paramref name="anchorFromRejection"/> = true (cow / other
+    /// relative-past grammars).</b> The rejection text says
+    /// <c>"in the past hour"</c> — the actual cooldown anchor is unknown
+    /// (somewhere in <c>(rejectionTime - duration, rejectionTime]</c>) and
+    /// the existing row's <c>StartedAt</c> may not be trustworthy. Three
+    /// states (#178):
+    /// <list type="bullet">
+    ///   <item><b>No prior row</b> — create one anchored at the rejection
+    ///   timestamp. Conservative: overstates remaining time by up to
+    ///   <paramref name="duration"/> but won't fire <c>Ready</c> early.
+    ///   Self-corrects on the next successful loot.</item>
+    ///   <item><b>Prior row, still in flight</b> (StartedAt + duration &gt; now)
+    ///   — leave anchor alone.</item>
+    ///   <item><b>Prior row, already past FiringAt but rejection says
+    ///   cooldown is still active</b> (stale anchor) — refresh
+    ///   <c>StartedAt</c> to the rejection timestamp. Trust the rejection
+    ///   over a recorded loot Mithril may have missed.</item>
+    /// </list>
+    /// </para>
     /// </summary>
     public void OnChestCooldownObserved(string chestInternalName, TimeSpan duration)
+        => OnChestCooldownObserved(chestInternalName, duration, _time.GetUtcNow().UtcDateTime);
+
+    public void OnChestCooldownObserved(
+        string chestInternalName,
+        TimeSpan duration,
+        DateTime rejectionTimestampUtc,
+        bool anchorFromRejection = false)
     {
         if (string.IsNullOrEmpty(chestInternalName) || duration <= TimeSpan.Zero) return;
-        var changed = false;
+
+        // 1. Cache the duration so future first-time loots stamp with the
+        // verified value.
+        var durationChanged = false;
         lock (_catalogLock)
         {
             if (!_cache.ChestDurationByInternalName.TryGetValue(chestInternalName, out var existing)
                 || existing != duration)
             {
                 _cache.ChestDurationByInternalName[chestInternalName] = duration;
-                changed = true;
+                durationChanged = true;
             }
         }
-        if (changed)
+
+        var key = ChestKey(chestInternalName);
+        var prior = _derived.GetProgress(Id, key);
+        var rejectionAt = new DateTimeOffset(rejectionTimestampUtc, TimeSpan.Zero);
+        var rowChanged = false;
+        var learnedAreaStamped = false;
+
+        // 2. Anchor / refresh the row from the rejection timestamp — only
+        // for relative-past grammars where the loot time isn't recoverable
+        // from the rejection text. For forward-looking grammars (chest),
+        // the existing StartedAt is more accurate so we leave it alone.
+        if (anchorFromRejection)
+        {
+            if (prior is null)
+            {
+                var currentArea = _areaTracker?.CurrentArea;
+                lock (_catalogLock)
+                {
+                    if (!_cache.LearnedChests.TryGetValue(chestInternalName, out var entry))
+                    {
+                        _cache.LearnedChests[chestInternalName] = new LearnedChest
+                        {
+                            FirstObservedAt = rejectionTimestampUtc,
+                            LastObservedAt = rejectionTimestampUtc,
+                            Area = currentArea,
+                        };
+                        learnedAreaStamped = true;
+                    }
+                    else if (entry.Area is null && currentArea is not null)
+                    {
+                        entry.Area = currentArea;
+                        learnedAreaStamped = true;
+                    }
+                }
+                _derived.Start(Id, key, rejectionAt);
+                rowChanged = true;
+            }
+            else if (prior.DismissedAt is null && prior.StartedAt + duration <= _time.GetUtcNow())
+            {
+                // Stale anchor — recorded loot is older than this rejection
+                // implies. Refresh the anchor; the rejection guarantees the
+                // cooldown is active right now.
+                if (prior.StartedAt != rejectionAt)
+                {
+                    _derived.Start(Id, key, rejectionAt);
+                    rowChanged = true;
+                }
+            }
+            // else: prior row still in flight — leave alone.
+        }
+
+        if (durationChanged || learnedAreaStamped || rowChanged)
         {
             try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
             EnsureCatalogReprojected();
+        }
 
-            // Re-fire ready for an in-flight row whose anchor + new duration
-            // has already elapsed. StartedAt stays put — only the duration
-            // upgrade matters.
-            var key = ChestKey(chestInternalName);
-            var prior = _derived.GetProgress(Id, key);
-            if (prior is not null && prior.DismissedAt is null)
-            {
-                FireReady(key, chestInternalName,
-                    durationOverride: duration,
-                    atUtc: prior.StartedAt + duration);
-            }
+        // 3. Re-fire ready for any in-flight row whose new effective
+        // FiringAt has already elapsed. Covers both the chest "duration
+        // upgrade unmasks a past anchor" case and the cow "newly-anchored
+        // row already past" case.
+        var current = _derived.GetProgress(Id, key);
+        if (current is not null && current.DismissedAt is null)
+        {
+            FireReady(key, chestInternalName,
+                durationOverride: duration,
+                atUtc: current.StartedAt + duration);
         }
     }
 
@@ -334,6 +433,57 @@ public sealed class LootSource : ITimerSource, IDisposable
         return (PlaceholderChestDuration, false);
     }
 
+    /// <summary>
+    /// Resolve a chest's user-facing display name from <c>strings_all.json</c>
+    /// (#178). Lookup order:
+    /// <list type="number">
+    ///   <item><c>npc_&lt;Area&gt;/&lt;InternalName&gt;_Name</c> — area-scoped
+    ///   form. Required for prefabs whose friendly name varies by zone, e.g.
+    ///   <c>LootChest1</c> in <c>AreaCave1</c> (<i>"Goblin Storage Chest"</i>)
+    ///   vs <c>AreaTomb1</c> (<i>"Old Storage Chest"</i>).</item>
+    ///   <item><c>npc_&lt;InternalName&gt;_Name</c> — no-area fallback. Used
+    ///   for area-agnostic prefabs (the <c>LootBackpackN</c> family) and for
+    ///   chests we haven't yet learned the area for.</item>
+    ///   <item>The internal name itself — final fallback so an unknown
+    ///   entity still renders a legible string.</item>
+    /// </list>
+    /// </summary>
+    private string ResolveChestDisplayName(string internalName, string? area)
+    {
+        if (_refData is not null)
+        {
+            if (!string.IsNullOrEmpty(area)
+                && _refData.Strings.TryGetValue($"npc_{area}/{internalName}_Name", out var areaScoped)
+                && !string.IsNullOrEmpty(areaScoped))
+            {
+                return areaScoped;
+            }
+            if (_refData.Strings.TryGetValue($"npc_{internalName}_Name", out var bare)
+                && !string.IsNullOrEmpty(bare))
+            {
+                return bare;
+            }
+        }
+        return internalName;
+    }
+
+    /// <summary>
+    /// Map a chest's recorded <see cref="LearnedChest.Area"/> to a UI region
+    /// label. Area code resolves to its friendly name via
+    /// <see cref="IReferenceDataService.Areas"/>; falls back to the raw area
+    /// code and ultimately to <c>"Chests"</c> when no area is known yet.
+    /// </summary>
+    private string ResolveRegion(string? area)
+    {
+        if (string.IsNullOrEmpty(area)) return "Chests";
+        if (_refData?.Areas.TryGetValue(area, out var entry) == true
+            && !string.IsNullOrEmpty(entry.FriendlyName))
+        {
+            return entry.FriendlyName;
+        }
+        return area;
+    }
+
     private void OnDerivedProgressChanged(object? sender, EventArgs e) => EmitDeltas();
 
     /// <summary>
@@ -381,13 +531,17 @@ public sealed class LootSource : ITimerSource, IDisposable
         foreach (var internalName in chestNames)
         {
             var (duration, verified) = ResolveChestDuration(internalName);
+            _cache.LearnedChests.TryGetValue(internalName, out var learned);
+            var area = learned?.Area;
+            var displayName = ResolveChestDisplayName(internalName, area);
+            var region = ResolveRegion(area);
             list.Add(new TimerCatalogEntry(
                 Key: ChestKey(internalName),
-                DisplayName: internalName,
-                Region: "Chests",
+                DisplayName: displayName,
+                Region: region,
                 Duration: duration,
                 SourceMetadata: new LootCatalogPayload(
-                    LootKind.Chest, internalName, Region: null, IsDurationVerified: verified)));
+                    LootKind.Chest, internalName, Region: area, IsDurationVerified: verified)));
         }
 
         foreach (var displayName in _cache.LearnedDefeats.Keys)

@@ -34,13 +34,19 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
     public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
     public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
-    public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
+    /// <summary>Mutable in tests that need area-friendly-name resolution.</summary>
+    public Dictionary<string, AreaEntry> AreasRaw { get; } = new(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, AreaEntry> Areas => AreasRaw;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
     public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
     public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
     public IReadOnlyDictionary<string, QuestEntry> Quests => _quests;
     public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName => _byInternalName;
+
+    /// <summary>Mutable for tests that need friendly-name resolution coverage.</summary>
+    public Dictionary<string, string> StringsRaw { get; } = new(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> Strings => StringsRaw;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
     public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
