@@ -50,6 +50,7 @@ public class LootBracketTrackerTests : IDisposable
             src,
             new ChestInteractionParser(),
             new ChestRejectionParser(),
+            new MilkingRejectionParser(),
             new InteractionEndParser(),
             new InteractionDelayLoopParser(),
             new InteractionWaitParser());
@@ -322,6 +323,132 @@ public class LootBracketTrackerTests : IDisposable
 
             src.Progress.Should().BeEmpty();
             tracker.IsInFlight.Should().BeFalse();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Cow milking on cooldown: the rejection rides on a different log
+    /// channel (<c>ErrorMessage</c>) and a different grammar than chests
+    /// (<c>"You've already milked Bessie in the past hour."</c>). Captured
+    /// shape (#181 wiki):
+    /// <code>
+    /// ProcessStartInteraction(5298, 7, 0, False, "Cow_Bessie")
+    /// ProcessScreenText(ErrorMessage, "You've already milked Bessie in the past hour.")
+    /// </code>
+    /// </summary>
+    [Fact]
+    public void Cow_milking_rejection_caches_one_hour_duration()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(5298, 7, 0, False, \"Cow_Bessie\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessScreenText(ErrorMessage, \"You've already milked Bessie in the past hour.\")", EventTime);
+
+            tracker.IsInFlight.Should().BeFalse();
+
+            var catalogEntry = src.Catalog.Should().ContainSingle(c => c.DisplayName == "Cow_Bessie").Subject;
+            catalogEntry.Duration.Should().Be(TimeSpan.FromHours(1));
+            catalogEntry.SourceMetadata.Should().BeOfType<Gandalf.Domain.LootCatalogPayload>()
+                .Which.IsDurationVerified.Should().BeTrue();
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Numeric form of the cow rejection (<c>"in the past 30 minutes"</c>)
+    /// — defensive against the verification-owed question in #181: live
+    /// captures so far have only the singular `"in the past hour"` form;
+    /// the parser must handle the numeric variant if it shows up too.
+    /// </summary>
+    [Theory]
+    [InlineData("\"You've already milked Bessie in the past 30 minutes.\"", 30, "minutes")]
+    [InlineData("\"You've already milked Moolanda in the past 5 minutes.\"", 5, "minutes")]
+    [InlineData("\"You've already milked Bessie in the past 2 hours.\"", 2, "hours")]
+    public void Cow_milking_rejection_numeric_form_caches_correct_duration(string body, int value, string unit)
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            var entityName = body.Contains("Moolanda") ? "Cow_Moolanda" : "Cow_Bessie";
+            tracker.Observe($"LocalPlayer: ProcessStartInteraction(5298, 7, 0, False, \"{entityName}\")", EventTime);
+            tracker.Observe($"LocalPlayer: ProcessScreenText(ErrorMessage, {body})", EventTime);
+
+            var expected = unit.StartsWith("minute") ? TimeSpan.FromMinutes(value) : TimeSpan.FromHours(value);
+            var catalogEntry = src.Catalog.Should().ContainSingle(c => c.DisplayName == entityName).Subject;
+            catalogEntry.Duration.Should().Be(expected);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// First milking → placeholder row. Second milking inside cooldown →
+    /// rejection upgrades duration to 1 h, <c>IsDurationVerified</c> flips
+    /// to true, original <c>StartedAt</c> from the first milking is
+    /// preserved (the chest path's invariant — the rejection only adjusts
+    /// duration, not anchor).
+    /// </summary>
+    [Fact]
+    public void Cow_milk_then_rejection_upgrades_unverified_placeholder()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            // First milking: bare AddItem inside cow bracket → placeholder commit.
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(5298, 7, 0, False, \"Cow_Bessie\")", EventTime);
+            tracker.Observe("LocalPlayer: ProcessUpdateItemCode(124320276, 524289, True)", EventTime);
+            tracker.Observe("LocalPlayer: ProcessAddItem(BottleOfMilk(125046910), -1, True)", EventTime);
+
+            var initialEntry = src.Catalog.Should().ContainSingle(c => c.DisplayName == "Cow_Bessie").Subject;
+            initialEntry.Duration.Should().Be(LootSource.PlaceholderChestDuration);
+            initialEntry.SourceMetadata.Should().BeOfType<Gandalf.Domain.LootCatalogPayload>()
+                .Which.IsDurationVerified.Should().BeFalse();
+
+            var firstMilkAt = src.Progress[LootSource.ChestKey("Cow_Bessie")].StartedAt;
+
+            // Second milking 10 minutes later: rejection arrives.
+            var laterTime = EventTime + TimeSpan.FromMinutes(10);
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(5298, 7, 0, False, \"Cow_Bessie\")", laterTime);
+            tracker.Observe("LocalPlayer: ProcessScreenText(ErrorMessage, \"You've already milked Bessie in the past hour.\")", laterTime);
+
+            // Duration upgrades, verified flips, anchor preserved.
+            var upgradedEntry = src.Catalog.Should().ContainSingle(c => c.DisplayName == "Cow_Bessie").Subject;
+            upgradedEntry.Duration.Should().Be(TimeSpan.FromHours(1));
+            upgradedEntry.SourceMetadata.Should().BeOfType<Gandalf.Domain.LootCatalogPayload>()
+                .Which.IsDurationVerified.Should().BeTrue();
+            src.Progress[LootSource.ChestKey("Cow_Bessie")].StartedAt.Should().Be(firstMilkAt);
+        }
+        finally { src.Dispose(); derived.Dispose(); }
+    }
+
+    /// <summary>
+    /// Defensive: a milking-rejection grammar appearing inside a non-cow
+    /// bracket (e.g., a stray ErrorMessage that happens to match the
+    /// pattern, or a future game-text quirk) must NOT apply the 1 h
+    /// duration to the open bracket. Name-prefix gating guards against
+    /// poisoning unrelated chest cooldowns.
+    /// </summary>
+    [Fact]
+    public void Milking_rejection_inside_non_cow_bracket_does_not_apply_duration()
+    {
+        var (src, tracker, derived) = Build();
+        try
+        {
+            // Pre-seed a real chest's duration so we can detect any unwanted overwrite.
+            src.OnChestCooldownObserved("EltibuleSecretChest", TimeSpan.FromHours(3));
+
+            tracker.Observe("LocalPlayer: ProcessStartInteraction(-147, 5, 0, False, \"EltibuleSecretChest\")", EventTime);
+            // Hypothetical: a milking-shaped ErrorMessage fires inside a chest bracket.
+            tracker.Observe("LocalPlayer: ProcessScreenText(ErrorMessage, \"You've already milked Bessie in the past hour.\")", EventTime);
+
+            // Chest bracket must remain InFlight — the milking grammar should
+            // not have consumed the bracket via the cow-rejection branch.
+            tracker.IsInFlight.Should().BeTrue();
+
+            // Chest's cached duration must remain 3 h, NOT overwritten to 1 h.
+            var chestEntry = src.Catalog.Should().ContainSingle(c => c.DisplayName == "EltibuleSecretChest").Subject;
+            chestEntry.Duration.Should().Be(TimeSpan.FromHours(3));
         }
         finally { src.Dispose(); derived.Dispose(); }
     }
