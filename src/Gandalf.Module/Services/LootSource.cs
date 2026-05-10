@@ -259,6 +259,49 @@ public sealed class LootSource : ITimerSource, IDisposable
     }
 
     /// <summary>
+    /// Hard-delete a row from the catalog and progress. Used by the UI to
+    /// clean up false-positive entries the bracket tracker accreted before
+    /// its discrimination signals were complete (e.g. <c>Chair</c>,
+    /// <c>NPC_Otis</c>, <c>AppleTree</c>). Unlike <see cref="DerivedTimerProgressService.Dismiss"/>,
+    /// which only stamps <c>DismissedAt</c> and lets the next observation
+    /// resurrect the row, <c>Forget</c> drops the catalog cache entry too —
+    /// the row will only return if a new observation re-discovers it.
+    ///
+    /// Intentionally no blocklist: re-discovery is a useful signal that the
+    /// parser regressed, and a silent suppression list would mask that.
+    /// </summary>
+    public void Forget(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return;
+
+        var changed = false;
+        lock (_catalogLock)
+        {
+            if (key.StartsWith("chest:", StringComparison.Ordinal))
+            {
+                var internalName = key["chest:".Length..];
+                if (_cache.LearnedChests.Remove(internalName)) changed = true;
+                if (_cache.ChestDurationByInternalName.Remove(internalName)) changed = true;
+            }
+            else if (key.StartsWith("defeat:", StringComparison.Ordinal))
+            {
+                var displayName = key["defeat:".Length..];
+                if (_cache.LearnedDefeats.Remove(displayName)) changed = true;
+            }
+        }
+
+        if (!changed) return;
+        try { _cacheStore.Save(_cache); } catch { /* best-effort */ }
+
+        // Order: re-project first so the catalog drops the key and the diff
+        // emits a single Removed delta. The subsequent progress Remove fires
+        // ProgressChanged but produces no delta because the differ only
+        // tracks rows present in the (now-empty) new catalog.
+        EnsureCatalogReprojected();
+        _derived.Remove(Id, key);
+    }
+
+    /// <summary>
     /// Replace the calibration overlay (durations + region for known bosses).
     /// Intended for the Gandalf calibration bridge that subscribes to
     /// <see cref="Mithril.Shared.Reference.ICommunityCalibrationService"/> and

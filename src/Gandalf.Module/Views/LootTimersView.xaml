@@ -112,13 +112,24 @@
                                                        Visibility="{Binding IsDurationVerified, Converter={StaticResource InverseBoolToVis}}"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Width="20" Height="20" Padding="0"
-                                            Background="Transparent" BorderThickness="0"
-                                            Cursor="Hand" ToolTip="Dismiss this cooldown"
-                                            Command="{Binding DataContext.DismissOneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}">
-                                        <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#66FFFFFF"/>
-                                    </Button>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Button Width="20" Height="20" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Cursor="Hand"
+                                                ToolTip="Remove permanently — drops the catalog entry. Use for false-positive rows the parser shouldn't have created (e.g. NPCs, workstations)."
+                                                Command="{Binding DataContext.RemoveOneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <icon:PackIconLucide Kind="Trash2" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                        </Button>
+                                        <Button Width="20" Height="20" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Cursor="Hand"
+                                                ToolTip="Dismiss this cooldown — clears it from view. The row will return on next observation with a fresh cooldown."
+                                                Command="{Binding DataContext.DismissOneCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <icon:PackIconLucide Kind="X" Width="11" Height="11" Foreground="#66FFFFFF"/>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
 
                                 <TextBlock Margin="0,6,0,0">

@@ -71,6 +71,20 @@ public sealed partial class LootTimersViewModel : ObservableObject, IDisposable
         _derived.Dismiss(_source.SourceId, vm.Key);
     }
 
+    /// <summary>
+    /// Hard-delete: drop the catalog cache entry and the progress row outright.
+    /// Distinct from <see cref="DismissOne"/>, which only stamps
+    /// <c>DismissedAt</c> and lets re-observation resurrect the row.
+    /// Intended for false-positive entries the bracket tracker accreted before
+    /// its discrimination signals were complete.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveOne(TimerItemViewModel? vm)
+    {
+        if (vm is null) return;
+        _source.Forget(vm.Key);
+    }
+
     partial void OnKindFilterChanged(LootKindFilter value) => TimersView.Refresh();
     partial void OnStateFilterChanged(LootStateFilter value) => TimersView.Refresh();
 
