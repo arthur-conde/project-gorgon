@@ -52,7 +52,9 @@ public static class ReferenceDeserializer
 
     /// <summary>
     /// Deserializes the contents of <c>recipes.json</c> into a dictionary of
-    /// <see cref="Recipe"/> POCOs keyed by the JSON envelope's recipe_id strings.
+    /// <see cref="Recipe"/> POCOs keyed by the JSON envelope's recipe_id strings
+    /// (e.g. <c>"recipe_1234"</c>). The envelope key is lifted onto
+    /// <see cref="Recipe.Key"/> for every entry.
     /// </summary>
     public static IReadOnlyDictionary<string, Recipe> ParseRecipes(string json)
     {
@@ -62,7 +64,14 @@ public static class ReferenceDeserializer
         settings.Converters.Add(new SingleOrArrayConverter<string>());
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Recipe>>(json, settings);
-        return result ?? new Dictionary<string, Recipe>();
+        if (result is null) return new Dictionary<string, Recipe>();
+
+        // Lift the envelope key (e.g. "recipe_1234") onto Recipe.Key. The value
+        // isn't present on the JSON entry itself; same pattern as Item.Id.
+        foreach (var pair in result)
+            pair.Value.Key = pair.Key;
+
+        return result;
     }
 
     /// <summary>

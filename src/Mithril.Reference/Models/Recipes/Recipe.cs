@@ -4,16 +4,35 @@ namespace Mithril.Reference.Models.Recipes;
 
 /// <summary>
 /// One recipe entry from <c>recipes.json</c>. Property names match the JSON
-/// exactly. <see cref="ResultEffects"/> and <see cref="ResultEffectsThatCanFail"/>
+/// exactly except for two deliberate deviations (<see cref="Ingredients"/> tightened
+/// non-nullable) and one lift (<see cref="Key"/>) documented in
+/// <c>docs/mithril-reference-shape-quirks.md</c>.
+/// <see cref="ResultEffects"/> and <see cref="ResultEffectsThatCanFail"/>
 /// hold procedural strings (e.g. <c>"TSysCraftedEquipment(...)"</c>) — parse
 /// those at consumption time using <c>Mithril.Shared.Reference.ResultEffectsParser</c>.
 /// </summary>
 public sealed class Recipe
 {
     // ─── Always-present fields (per the bundled JSON: 4427/4427 entries) ──
+
+    /// <summary>
+    /// JSON envelope key (e.g. <c>"recipe_1234"</c>). Lifted from the dictionary
+    /// key by the deserializer — the value isn't present on the JSON entry itself.
+    /// <c>IReferenceDataService.Recipes</c> keys on this. See design notebook for
+    /// context.
+    /// </summary>
+    public string Key { get; set; } = "";
+
     public string? Description { get; set; }
     public int IconId { get; set; }
-    public IReadOnlyList<RecipeIngredient>? Ingredients { get; set; }
+
+    /// <summary>
+    /// Ingredient slots. Always present in the bundled JSON (4427/4427 entries
+    /// carry an <c>Ingredients</c> field, 11 with an empty list). Tightened to
+    /// non-nullable. See design notebook for the deviation from "JSON shape exactly".
+    /// </summary>
+    public IReadOnlyList<RecipeIngredient> Ingredients { get; set; } = [];
+
     public string? InternalName { get; set; }
     public string? Name { get; set; }
     public IReadOnlyList<RecipeResultItem>? ResultItems { get; set; }
