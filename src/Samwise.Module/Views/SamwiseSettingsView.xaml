@@ -136,10 +136,15 @@
                                     <TextBlock Text="Channel:" Foreground="#FFE8E8E8" VerticalAlignment="Center" Width="80"/>
                                     <ComboBox Width="200" Margin="6,0"
                                               ItemsSource="{Binding DataContext.Alarms.Channels, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                              DisplayMemberPath="Name"
                                               SelectedValuePath="Id"
                                               SelectedValue="{Binding Value.ChannelId}"
-                                              IsEnabled="{Binding Value.Enabled}"/>
+                                              IsEnabled="{Binding Value.Enabled}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Name}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </DockPanel>
                             </StackPanel>
                         </Border>
