@@ -7,7 +7,7 @@ namespace Mithril.Shared.Reference;
 /// </summary>
 /// <remarks>
 /// <see cref="MinLevel"/> / <see cref="MaxLevel"/> bracket the gear levels this tier can roll on:
-/// a tier rolls when <c>MinLevel ≤ <see cref="ItemEntry.CraftingTargetLevel"/> ≤ MaxLevel</c>.
+/// a tier rolls when <c>MinLevel ≤ <see cref="Item.CraftingTargetLevel"/> ≤ MaxLevel</c>.
 /// <see cref="MinRarity"/> gates by gear rarity; <see cref="SkillLevelPrereq"/> is the wearer
 /// skill level required for the rolled buff to actually take effect once equipped.
 /// </remarks>

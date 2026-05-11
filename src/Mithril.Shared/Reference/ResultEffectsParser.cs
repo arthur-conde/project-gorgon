@@ -195,7 +195,7 @@ public static class ResultEffectsParser
     /// already produced by <see cref="ParseCraftedGear"/> for the same
     /// <c>TSysCraftedEquipment</c> entry. The chip preview and the pool preview are
     /// independent; both are surfaced when the underlying template has a non-empty
-    /// <see cref="ItemEntry.TSysProfile"/>.
+    /// <see cref="Item.TSysProfile"/>.
     /// </remarks>
     public static IReadOnlyList<AugmentPoolPreview> ParseAugmentPools(
         IReadOnlyList<string>? effects, IReferenceDataService refData)
@@ -347,7 +347,7 @@ public static class ResultEffectsParser
     ///   <c>GiveNonMagicalLootProfile(profile)</c> (1-arg).</item>
     /// </list>
     /// Each preview falls back to a humanised display name when the args don't
-    /// resolve to a known <see cref="ItemEntry"/>; the icon is only populated on
+    /// resolve to a known <see cref="Item"/>; the icon is only populated on
     /// successful resolution.
     /// </summary>
     public static IReadOnlyList<ItemProducingPreview> ParseItemProducing(

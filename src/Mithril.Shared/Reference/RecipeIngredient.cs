@@ -4,7 +4,7 @@ namespace Mithril.Shared.Reference;
 /// Base type for a single ingredient slot on a recipe. Two concrete shapes:
 /// <see cref="RecipeItemIngredient"/> names a specific item by code, while
 /// <see cref="RecipeKeywordIngredient"/> names a keyword set (any item whose
-/// <see cref="ItemEntry.Keywords"/> includes every listed tag satisfies the slot).
+/// <see cref="Item.Keywords"/> includes every listed tag satisfies the slot).
 /// </summary>
 public abstract record RecipeIngredient(int StackSize, float? ChanceToConsume);
 

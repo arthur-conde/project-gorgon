@@ -336,7 +336,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     }
 
     /// <summary>
-    /// Resolve an InternalName to its <see cref="ItemEntry.MaxStackSize"/> via reference data.
+    /// Resolve an InternalName to its <see cref="Item.MaxStackSize"/> via reference data.
     /// Used by <see cref="HandleAddItem"/> to short-circuit chat correlation for items that
     /// can never stack (equipment, unique consumables) — for those, the AddItem alone is
     /// authoritative for size = 1.
