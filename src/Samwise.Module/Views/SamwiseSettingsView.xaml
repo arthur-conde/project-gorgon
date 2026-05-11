@@ -113,8 +113,12 @@
                                     <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0"
                                             Click="BrowseSound_Click" Tag="{Binding Value}"/>
                                     <Button DockPanel.Dock="Right" Padding="10,4" Margin="6,0,0,0"
-                                            Click="TestSound_Click" Tag="{Binding Value}" ToolTip="Play this stage's sound">
+                                            Click="TestSound_Click" Tag="{Binding Key}" ToolTip="Preview this stage's sound through its channel">
                                         <icon:PackIconLucide Kind="Play" Width="12" Height="12"/>
+                                    </Button>
+                                    <Button DockPanel.Dock="Right" Padding="10,4" Margin="6,0,0,0"
+                                            Click="StopPreview_Click" Tag="{Binding Key}" ToolTip="Stop preview">
+                                        <icon:PackIconLucide Kind="Square" Width="12" Height="12"/>
                                     </Button>
                                     <Button DockPanel.Dock="Right" Padding="8,4"
                                             Click="ClearSound_Click" Tag="{Binding Value}" ToolTip="Reset to system default">

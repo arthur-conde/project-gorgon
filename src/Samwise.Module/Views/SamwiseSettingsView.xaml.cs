@@ -3,6 +3,7 @@ using System.Windows;
 using Mithril.Shared.Audio;
 using Microsoft.Win32;
 using Samwise.Alarms;
+using Samwise.State;
 
 namespace Samwise.Views;
 
@@ -25,8 +26,14 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
 
     private void TestSound_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule)
-            Alarms?.PreviewStage(rule);
+        if (sender is FrameworkElement fe && fe.Tag is PlotStage stage)
+            Alarms?.PreviewStage(stage);
+    }
+
+    private void StopPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.Tag is PlotStage stage)
+            Alarms?.StopPreview(stage);
     }
 
     private void ClearSound_Click(object sender, RoutedEventArgs e)

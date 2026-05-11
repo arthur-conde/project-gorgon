@@ -226,14 +226,41 @@ public class AlarmServiceTests
     public void PreviewStage_RoutesThroughChannel_AndPropagatesLoop()
     {
         var s = BuildSut(AlarmCollisionBehavior.Mix);
-        var ripe = s.Settings.Alarms.Rules[PlotStage.Ripe];
-        ripe.Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
 
-        s.Service.PreviewStage(ripe);
+        s.Service.PreviewStage(PlotStage.Ripe);
 
         s.Sink.Plays.Should().HaveCount(1);
         s.Sink.Plays[0].Loop.Should().BeTrue();
         s.Sink.Plays[0].CallerId.Should().Be("samwise");
+    }
+
+    [Fact]
+    public void StopPreview_StopsThePreviewOwnedByThisStage()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Service.PreviewStage(PlotStage.Ripe);
+        var handle = s.Sink.Plays[0].Handle;
+        handle.IsPlaying.Should().BeTrue();
+
+        s.Service.StopPreview(PlotStage.Ripe);
+
+        handle.IsPlaying.Should().BeFalse();
+    }
+
+    [Fact]
+    public void StopPreview_DoesNotAffectRealAlarmsOnSameChannel()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        RipenPlot(s, "1", "Carrot");        // real alarm
+        s.Service.PreviewStage(PlotStage.Ripe);  // preview on same channel
+        var realHandle = s.Sink.Plays[0].Handle;
+        var previewHandle = s.Sink.Plays[1].Handle;
+
+        s.Service.StopPreview(PlotStage.Ripe);
+
+        previewHandle.IsPlaying.Should().BeFalse();
+        realHandle.IsPlaying.Should().BeTrue();
     }
 
     [Fact]
@@ -244,7 +271,7 @@ public class AlarmServiceTests
         s.Sink.Plays.Should().HaveCount(1);
 
         // Preview should hit the same channel and get suppressed.
-        s.Service.PreviewStage(s.Settings.Alarms.Rules[PlotStage.Ripe]);
+        s.Service.PreviewStage(PlotStage.Ripe);
 
         s.Sink.Plays.Should().HaveCount(1);
     }
@@ -256,7 +283,7 @@ public class AlarmServiceTests
         RipenPlot(s, "1", "Carrot");
         var firstHandle = s.Sink.Plays[0].Handle;
 
-        s.Service.PreviewStage(s.Settings.Alarms.Rules[PlotStage.Ripe]);
+        s.Service.PreviewStage(PlotStage.Ripe);
 
         firstHandle.IsPlaying.Should().BeFalse();
         s.Sink.Plays.Should().HaveCount(2);

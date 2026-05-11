@@ -142,11 +142,34 @@ public sealed class AlarmService : IDisposable
     /// the channel's playback slot. Used by the settings view's per-stage
     /// preview button so what the user hears matches what they'll get in-game.
     /// </summary>
-    public void PreviewStage(StageAlarmRule rule)
+    public void PreviewStage(PlotStage stage)
     {
-        var previewKey = $"preview|{Guid.NewGuid():N}";
-        Dispatch(() => TryRouteToChannel(rule, previewKey, out _));
+        if (!_settings.Alarms.Rules.TryGetValue(stage, out var rule)) return;
+        Dispatch(() => TryRouteToChannel(rule, PreviewKey(stage), out _));
     }
+
+    /// <summary>
+    /// Stop a preview started by <see cref="PreviewStage"/> for this stage.
+    /// No-op if no preview owner exists for the stage.
+    /// </summary>
+    public void StopPreview(PlotStage stage)
+    {
+        var ownerKey = PreviewKey(stage);
+        Dispatch(() =>
+        {
+            foreach (var owners in _channelPlayback.Values)
+            {
+                for (int i = owners.Count - 1; i >= 0; i--)
+                {
+                    if (owners[i].AlarmKey != ownerKey) continue;
+                    owners[i].Handle.Stop();
+                    owners.RemoveAt(i);
+                }
+            }
+        });
+    }
+
+    private static string PreviewKey(PlotStage stage) => $"preview|{stage}";
 
     /// <summary>
     /// Routes a play request through the rule's channel. Applies the channel's
