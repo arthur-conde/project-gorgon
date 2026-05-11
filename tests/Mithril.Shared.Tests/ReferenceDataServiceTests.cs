@@ -100,6 +100,50 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshAsync_DoesNotPostContinuationsToCallerSyncContext()
+    {
+        // Issue #197: When RefreshAsync runs under a captured SynchronizationContext
+        // (the WPF dispatcher, in the real Settings → Refresh All path), the post-fetch
+        // continuations — Encoding.UTF8.GetString + JSON parse + dictionary swap +
+        // unknown-discriminator walk — must NOT Post back to that context. On the
+        // 15 MB strings_all.json payload each of those steps takes 500–1380 ms, and
+        // landing them on the UI thread is what produced the ~14 s startup stall
+        // captured in perf-20260511-094631.jsonl.
+        WriteBundled("""{}""", version: "v100");
+        var rootHtml = """<html><meta http-equiv="refresh" content="2; URL=/v500/data/index.html"></html>""";
+        var freshJson = """{ "item_99": { "Name": "Fresh", "InternalName": "FreshSeeds" } }""";
+        var handler = new RoutingHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path is "/" or "") return Respond(rootHtml, "text/html");
+            if (path == "/v500/data/items.json") return Respond(freshJson, "application/json");
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        var svc = new ReferenceDataService(_cacheDir, new HttpClient(handler), bundledDir: _bundledDir);
+
+        var ctx = new CountingSynchronizationContext();
+        var saved = SynchronizationContext.Current;
+        Task refresh;
+        SynchronizationContext.SetSynchronizationContext(ctx);
+        try
+        {
+            // Kick off under ctx so any captured continuations would Post here.
+            refresh = svc.RefreshAsync("items");
+        }
+        finally
+        {
+            // Uninstall before awaiting so the test's own await doesn't capture ctx.
+            SynchronizationContext.SetSynchronizationContext(saved);
+        }
+        await refresh;
+
+        ctx.PostCount.Should().Be(0,
+            "every Post would land on the UI dispatcher and contribute to the #197 stall");
+        svc.Items.Should().ContainKey(99L,
+            "the parse + swap must still have happened — just on the thread pool");
+    }
+
+    [Fact]
     public async Task FailedRefresh_KeepsExistingData()
     {
         WriteBundled("""{ "item_1": { "Name": "Bundled", "InternalName": "BundledSeeds" } }""", version: "v100");
@@ -564,5 +608,23 @@ public class ReferenceDataServiceTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => Task.FromResult(route(request));
+    }
+
+    private sealed class CountingSynchronizationContext : SynchronizationContext
+    {
+        private int _posts;
+        public int PostCount => Volatile.Read(ref _posts);
+
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            Interlocked.Increment(ref _posts);
+            ThreadPool.QueueUserWorkItem(_ => d(state));
+        }
+
+        public override void Send(SendOrPostCallback d, object? state)
+        {
+            Interlocked.Increment(ref _posts);
+            d(state);
+        }
     }
 }
