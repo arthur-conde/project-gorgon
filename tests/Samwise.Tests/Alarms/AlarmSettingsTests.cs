@@ -108,4 +108,29 @@ public class AlarmSettingsTests
         loaded.Alarms.Channels[1].Name.Should().Be("Extra");
         loaded.Alarms.Channels[1].Collision.Should().Be(AlarmCollisionBehavior.Suppress);
     }
+
+    [Fact]
+    public void MembershipSummary_AfterPostLoadInit_ListsAssignedStages()
+    {
+        var s = new SamwiseSettings();
+        (s as Mithril.Shared.Settings.IPostLoadInit)?.PostLoadInit();
+
+        s.Alarms.Channels[0].MembershipSummary.Should().Contain("Ripe");
+        s.Alarms.Channels[0].MembershipSummary.Should().Contain("Thirsty");
+        s.Alarms.Channels[0].MembershipSummary.Should().Contain("NeedsFertilizer");
+    }
+
+    [Fact]
+    public void MembershipSummary_RecomputesWhenRuleChannelIdChanges()
+    {
+        var s = new SamwiseSettings();
+        var extra = new AlarmChannel { Name = "Extra", Collision = AlarmCollisionBehavior.Suppress };
+        s.Alarms.Channels.Add(extra);
+        (s as Mithril.Shared.Settings.IPostLoadInit)?.PostLoadInit();
+
+        s.Alarms.Rules[PlotStage.Ripe].ChannelId = extra.Id;
+
+        extra.MembershipSummary.Should().Contain("Ripe");
+        s.Alarms.Channels[0].MembershipSummary.Should().NotContain("Ripe");
+    }
 }

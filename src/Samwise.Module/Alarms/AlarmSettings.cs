@@ -109,7 +109,23 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
     }
 
     private void OnRuleChanged(object? sender, PropertyChangedEventArgs e)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+    {
+        if (e.PropertyName == nameof(StageAlarmRule.ChannelId))
+            RecomputeMembershipSummaries();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+    }
+
+    private void RecomputeMembershipSummaries()
+    {
+        foreach (var channel in _channels)
+        {
+            var members = _rules
+                .Where(kvp => kvp.Value.ChannelId == channel.Id)
+                .Select(kvp => kvp.Key.ToString())
+                .ToList();
+            channel.MembershipSummary = members.Count == 0 ? "(empty)" : string.Join(" · ", members);
+        }
+    }
 
     private void AttachChannelEvents(List<AlarmChannel> channels)
     {
@@ -151,6 +167,8 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
             if (!validIds.Contains(rule.ChannelId))
                 rule.ChannelId = _channels[0].Id;
         }
+
+        RecomputeMembershipSummaries();
     }
 
     private static Dictionary<PlotStage, StageAlarmRule> DefaultRules() => new()
