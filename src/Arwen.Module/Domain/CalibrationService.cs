@@ -918,6 +918,112 @@ public sealed class CalibrationService
         return added;
     }
 
-    private static string ObservationKey(GiftObservation o) =>
+    internal static string ObservationKey(GiftObservation o) =>
         $"{o.NpcKey}|{o.ItemInternalName}|{o.FavorDelta}|{o.Timestamp:O}";
+
+    /// <summary>
+    /// Max stack size for the item by <c>InternalName</c>, clamped to a floor of 1 so callers
+    /// can use it as the upper bound of a Quantity edit without special-casing non-stackables
+    /// (whose reference-data <c>MaxStackSize</c> may be 0 or 1).
+    /// Returns 1 if the item is no longer in reference data.
+    /// </summary>
+    public int GetMaxStackSize(string itemInternalName) =>
+        _refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item)
+            ? Math.Max(1, item.MaxStackSize)
+            : 1;
+
+    /// <summary>
+    /// CDN icon id for the item by <c>InternalName</c>. Returns 0 if the item is no longer
+    /// in reference data; the icon control treats 0 as "no icon" and renders a placeholder.
+    /// </summary>
+    public int GetIconId(string itemInternalName) =>
+        _refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item)
+            ? item.IconId
+            : 0;
+
+    /// <summary>
+    /// Display name for the item (e.g. "Rubbery Tongue"), falling back to <paramref name="itemInternalName"/>
+    /// when the item has dropped out of reference data. Matches the fallback pattern used elsewhere
+    /// in <c>CalibrationService</c> (see <see cref="PendingGiftObservation.DisplayName"/> construction).
+    /// </summary>
+    public string GetItemDisplayName(string itemInternalName) =>
+        _refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item) && !string.IsNullOrEmpty(item.Name)
+            ? item.Name
+            : itemInternalName;
+
+    /// <summary>
+    /// Display name for an NPC. Looks up <see cref="NpcEntry.Name"/> by key; if the NPC is no
+    /// longer in reference data, falls back to a key-formatted name (strip <c>NPC_</c> prefix,
+    /// underscores → spaces).
+    /// </summary>
+    public string GetNpcDisplayName(string npcKey)
+    {
+        if (_refData.Npcs.TryGetValue(npcKey, out var npc) && !string.IsNullOrEmpty(npc.Name))
+            return npc.Name;
+        var stripped = npcKey.StartsWith("NPC_", StringComparison.Ordinal) ? npcKey[4..] : npcKey;
+        return stripped.Replace('_', ' ');
+    }
+
+    // ── Edits / Deletes ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Delete a single confirmed observation by its <see cref="ObservationKey"/>.
+    /// Returns false if the key isn't present. On success, rebuilds aggregates,
+    /// persists both files, and fires <see cref="DataChanged"/> — same path
+    /// <see cref="PersistObservation"/> takes after recording a new gift.
+    /// </summary>
+    public bool DeleteObservation(string observationKey)
+    {
+        var idx = _data.Observations.FindIndex(o => ObservationKey(o) == observationKey);
+        if (idx < 0) return false;
+        var removed = _data.Observations[idx];
+        _data.Observations.RemoveAt(idx);
+        RecomputeRates();
+        Save();
+        _diag?.Info("Arwen.Calibration",
+            $"Deleted observation: {removed.ItemInternalName} → {removed.NpcKey} (+{removed.FavorDelta} favor, {removed.Timestamp:O})");
+        DataChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>
+    /// Update <see cref="GiftObservation.Quantity"/> on a confirmed observation. Returns
+    /// false if the key isn't present, the item is no longer in reference data, the
+    /// quantity is outside <c>[1, MaxStackSize]</c>, or the value is unchanged. On
+    /// success, rebuilds aggregates, persists, and fires <see cref="DataChanged"/>.
+    /// </summary>
+    public bool UpdateObservationQuantity(string observationKey, int quantity)
+    {
+        var idx = _data.Observations.FindIndex(o => ObservationKey(o) == observationKey);
+        if (idx < 0) return false;
+        var obs = _data.Observations[idx];
+        if (!_refData.ItemsByInternalName.TryGetValue(obs.ItemInternalName, out var item)) return false;
+        var maxStack = Math.Max(1, item.MaxStackSize);
+        if (quantity < 1 || quantity > maxStack) return false;
+        if (obs.Quantity == quantity) return false;
+        var oldQuantity = obs.Quantity;
+        obs.Quantity = quantity;
+        RecomputeRates();
+        Save();
+        _diag?.Info("Arwen.Calibration",
+            $"Updated quantity: {obs.ItemInternalName} → {obs.NpcKey} qty {oldQuantity} → {quantity}");
+        DataChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>
+    /// Delete every confirmed observation matching <paramref name="predicate"/>. Returns
+    /// the count of removed observations. Only triggers recompute/save/DataChanged when
+    /// at least one observation was removed.
+    /// </summary>
+    public int DeleteObservationsByPredicate(Func<GiftObservation, bool> predicate)
+    {
+        var removed = _data.Observations.RemoveAll(o => predicate(o));
+        if (removed == 0) return 0;
+        RecomputeRates();
+        Save();
+        _diag?.Info("Arwen.Calibration", $"Bulk-deleted {removed} observation(s)");
+        DataChanged?.Invoke(this, EventArgs.Empty);
+        return removed;
+    }
 }

@@ -12,4 +12,16 @@ public sealed class DialogService : IDialogService
         };
         return window.ShowDialog();
     }
+
+    public bool Confirm(string title, string message)
+    {
+        var result = MessageBox.Show(
+            Application.Current.MainWindow,
+            message,
+            title,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        return result == MessageBoxResult.Yes;
+    }
 }

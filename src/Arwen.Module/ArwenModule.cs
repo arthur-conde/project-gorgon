@@ -101,8 +101,12 @@ public sealed class ArwenModule : IMithrilModule
             view.AddTab("Item Lookup", new ItemLookupTab { DataContext = sp.GetRequiredService<ItemLookupViewModel>() });
             view.AddTab("Storage Gifts", new StorageGiftsTab { DataContext = sp.GetRequiredService<StorageGiftsViewModel>() });
             var calibrationVm = sp.GetRequiredService<CalibrationViewModel>();
-            var calibrationTab = view.AddTab("Calibration", new CalibrationTab { DataContext = calibrationVm });
-            calibrationTab.SetBinding(TabBadge.CountProperty,
+            view.AddTab("Calibration", new CalibrationTab { DataContext = calibrationVm });
+            // Editor shares the same VM — every change recomputes rates via the VM's Refresh()
+            // wired to CalibrationService.DataChanged, so both tabs stay in sync automatically.
+            // Pending observations live here too, so the PendingCount badge follows.
+            var editorTab = view.AddTab("Edit Observations", new ObservationsEditorTab { DataContext = calibrationVm });
+            editorTab.SetBinding(TabBadge.CountProperty,
                 new System.Windows.Data.Binding(nameof(CalibrationViewModel.PendingCount)) { Source = calibrationVm });
             sp.GetRequiredService<FavorViewNavigatorHolder>().Inner = view;
             return view;

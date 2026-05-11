@@ -1097,4 +1097,157 @@ public sealed class CalibrationServiceTests
             SafeDeleteDir(dir);
         }
     }
+
+    [Fact]
+    public void DeleteObservation_RemovesAndRecomputesRates()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            for (var i = 0; i < 3; i++)
+            {
+                inv.Add(2000 + i, "Moonstone");
+                svc.OnStartInteraction("NPC_Sanja");
+                svc.OnItemDeleted(2000 + i);
+                svc.OnDeltaFavor("NPC_Sanja", 22.5);
+            }
+            svc.Data.Observations.Should().HaveCount(3);
+            var itemKey = CalibrationService.ItemRateKey("NPC_Sanja", "Moonstone");
+            svc.Data.ItemRates[itemKey].SampleCount.Should().Be(3);
+
+            var key = CalibrationService.ObservationKey(svc.Data.Observations[1]);
+            var dataChangedCount = 0;
+            svc.DataChanged += (_, _) => dataChangedCount++;
+
+            svc.DeleteObservation(key).Should().BeTrue();
+
+            svc.Data.Observations.Should().HaveCount(2);
+            svc.Data.ItemRates[itemKey].SampleCount.Should().Be(2);
+            dataChangedCount.Should().Be(1);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void DeleteObservation_ReturnsFalseForUnknownKey()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            inv.Add(3000, "Moonstone");
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(3000);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5);
+
+            svc.DeleteObservation("bogus|key|0|0").Should().BeFalse();
+            svc.Data.Observations.Should().HaveCount(1);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void UpdateObservationQuantity_RecomputesDerivedRate()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            // Phlogiston1 is stackable (MaxStackSize=10); seed inventory with stackSize=1
+            // so the observation lands confirmed, then bump quantity to 5.
+            inv.Add(4000, "Phlogiston1", stackSize: 1);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(4000);
+            svc.OnDeltaFavor("NPC_Sanja", 10.0);
+            svc.Data.Observations.Should().HaveCount(1, "stack size known → no pending path");
+            var obs = svc.Data.Observations[0];
+            obs.Quantity.Should().Be(1);
+            var originalRate = obs.DerivedRate;
+
+            var key = CalibrationService.ObservationKey(obs);
+            svc.UpdateObservationQuantity(key, 5).Should().BeTrue();
+
+            obs.Quantity.Should().Be(5);
+            obs.DerivedRate.Should().BeApproximately(originalRate / 5.0, 1e-9,
+                "DerivedRate = FavorDelta / (Pref × Value × Quantity)");
+            var itemKey = CalibrationService.ItemRateKey("NPC_Sanja", "Phlogiston1");
+            svc.Data.ItemRates[itemKey].Rate.Should().BeApproximately(obs.DerivedRate, 1e-9,
+                "single-observation group rate equals the observation's derived rate");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void UpdateObservationQuantity_RejectsOutOfRange()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            inv.Add(5000, "Phlogiston1", stackSize: 3);
+            svc.OnStartInteraction("NPC_Sanja");
+            svc.OnItemDeleted(5000);
+            svc.OnDeltaFavor("NPC_Sanja", 10.0);
+            var obs = svc.Data.Observations[0];
+            var key = CalibrationService.ObservationKey(obs);
+
+            svc.UpdateObservationQuantity(key, 0).Should().BeFalse("quantity < 1");
+            svc.UpdateObservationQuantity(key, 99).Should().BeFalse("quantity > MaxStackSize (10)");
+            svc.UpdateObservationQuantity(key, 3).Should().BeFalse("unchanged value");
+
+            obs.Quantity.Should().Be(3, "rejected updates must not mutate");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void DeleteObservationsByPredicate_ReportsCount()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var (svc, _, inv) = BuildService(dir);
+            // 3 gifts to Sanja, 2 gifts to Test
+            for (var i = 0; i < 3; i++)
+            {
+                inv.Add(6000 + i, "Moonstone");
+                svc.OnStartInteraction("NPC_Sanja");
+                svc.OnItemDeleted(6000 + i);
+                svc.OnDeltaFavor("NPC_Sanja", 22.5);
+            }
+            for (var i = 0; i < 2; i++)
+            {
+                inv.Add(7000 + i, "Apple");
+                svc.OnStartInteraction("NPC_Test");
+                svc.OnItemDeleted(7000 + i);
+                svc.OnDeltaFavor("NPC_Test", 8.0);
+            }
+            svc.Data.Observations.Should().HaveCount(5);
+
+            var removed = svc.DeleteObservationsByPredicate(o => o.NpcKey == "NPC_Sanja");
+            removed.Should().Be(3);
+            svc.Data.Observations.Should().HaveCount(2);
+            svc.Data.Observations.Should().OnlyContain(o => o.NpcKey == "NPC_Test");
+
+            var noopRemoved = svc.DeleteObservationsByPredicate(o => o.NpcKey == "NPC_NoSuchOne");
+            noopRemoved.Should().Be(0);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
 }
