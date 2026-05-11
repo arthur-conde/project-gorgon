@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Pippin.Domain;
@@ -7,14 +8,14 @@ namespace Pippin.Tests;
 
 public class FoodCatalogTests
 {
-    private static IReferenceDataService CreateRefData(params ItemEntry[] items)
+    private static IReferenceDataService CreateRefData(params Item[] items)
     {
-        var dict = new Dictionary<long, ItemEntry>();
+        var dict = new Dictionary<long, Item>();
         foreach (var item in items) dict[item.Id] = item;
         return new StubReferenceDataService(dict);
     }
 
-    private static ItemEntry MakeFood(long id, string name, string foodDesc,
+    private static Item MakeFood(long id, string name, string foodDesc,
         Dictionary<string, int>? skillReqs = null, params string[] keywords)
     {
         var kws = keywords.Select(k =>
@@ -25,9 +26,14 @@ public class FoodCatalogTests
                 : new ItemKeyword(k, 0);
         }).ToList();
 
-        return new ItemEntry(id, name, name, 1, 0, kws,
-            FoodDesc: foodDesc,
-            SkillReqs: skillReqs);
+        return new Item
+        {
+            Id = id, Name = name, InternalName = name,
+            MaxStackSize = 1, IconId = 0,
+            Keywords = kws,
+            FoodDesc = foodDesc,
+            SkillReqs = skillReqs,
+        };
     }
 
     [Fact]
@@ -89,7 +95,7 @@ public class FoodCatalogTests
     [Fact]
     public void Excludes_non_food_items()
     {
-        var nonFood = new ItemEntry(1, "Sword", "Sword", 1, 0, []);
+        var nonFood = new Item { Id = 1, Name = "Sword", InternalName = "Sword", MaxStackSize = 1, IconId = 0, Keywords = [] };
         var food = MakeFood(2, "Bread", "Level 5 Meal");
         var catalog = new FoodCatalog(CreateRefData(nonFood, food));
 
@@ -99,14 +105,14 @@ public class FoodCatalogTests
 
     private sealed class StubReferenceDataService : IReferenceDataService
     {
-        public StubReferenceDataService(Dictionary<long, ItemEntry> items)
+        public StubReferenceDataService(Dictionary<long, Item> items)
         {
             Items = items;
         }
 
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

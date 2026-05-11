@@ -1,23 +1,26 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Arwen.Tests;
 
 internal sealed class FakeRefData : IReferenceDataService
 {
-    private readonly Dictionary<long, ItemEntry> _items;
-    private readonly Dictionary<string, ItemEntry> _byName;
+    private readonly Dictionary<long, Item> _items;
+    private readonly Dictionary<string, Item> _byName;
     private readonly Dictionary<string, NpcEntry> _npcs;
 
-    public FakeRefData(Dictionary<long, ItemEntry> items, Dictionary<string, NpcEntry> npcs)
+    public FakeRefData(Dictionary<long, Item> items, Dictionary<string, NpcEntry> npcs)
     {
         _items = items;
         _npcs = npcs;
-        _byName = items.Values.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
+        _byName = items.Values
+            .Where(i => !string.IsNullOrEmpty(i.InternalName))
+            .ToDictionary(i => i.InternalName!, StringComparer.Ordinal);
     }
 
     public IReadOnlyList<string> Keys { get; } = ["items", "npcs"];
-    public IReadOnlyDictionary<long, ItemEntry> Items => _items;
-    public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+    public IReadOnlyDictionary<long, Item> Items => _items;
+    public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
     public ItemKeywordIndex KeywordIndex => new(_items);
     public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
     public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

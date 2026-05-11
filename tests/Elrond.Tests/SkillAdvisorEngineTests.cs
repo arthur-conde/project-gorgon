@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Elrond.Services;
 using FluentAssertions;
 using Mithril.Shared.Character;
@@ -627,8 +628,8 @@ public class SkillAdvisorEngineTests
         private readonly Dictionary<string, XpTableEntry> _xpTables = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables"];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;

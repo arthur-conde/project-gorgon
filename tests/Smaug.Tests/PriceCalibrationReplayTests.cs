@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using System.IO;
 using FluentAssertions;
 using Mithril.GameState.Sessions;
@@ -154,9 +155,9 @@ public sealed class PriceCalibrationReplayTests
     private sealed class FakeRefData : IReferenceDataService
     {
         public IReadOnlyList<string> Keys { get; } = ["items"];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
-        public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, ItemEntry>());
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
+        public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
@@ -173,12 +174,15 @@ public sealed class PriceCalibrationReplayTests
 
         public FakeRefData()
         {
-            var water = new ItemEntry(
-                1, "BottleOfWater", "Bottle of Water", MaxStackSize: 10, IconId: 0,
-                [new ItemKeyword("Drink", 0)],
-                Value: 11m);
-            Items = new Dictionary<long, ItemEntry> { [1] = water };
-            ItemsByInternalName = new Dictionary<string, ItemEntry>(StringComparer.Ordinal) { ["BottleOfWater"] = water };
+            var water = new Item
+            {
+                Id = 1, Name = "BottleOfWater", InternalName = "Bottle of Water",
+                MaxStackSize = 10, IconId = 0,
+                Keywords = [new ItemKeyword("Drink", 0)],
+                Value = 11m,
+            };
+            Items = new Dictionary<long, Item> { [1] = water };
+            ItemsByInternalName = new Dictionary<string, Item>(StringComparer.Ordinal) { ["BottleOfWater"] = water };
         }
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new("items", ReferenceFileSource.Bundled, "test", null, 1);

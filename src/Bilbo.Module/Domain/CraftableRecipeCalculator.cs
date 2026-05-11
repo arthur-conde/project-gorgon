@@ -40,7 +40,7 @@ public static class CraftableRecipeCalculator
                 {
                     case RecipeItemIngredient byItem:
                         itemName = refData.Items.TryGetValue(byItem.ItemCode, out var entry)
-                            ? entry.Name
+                            ? entry.Name ?? $"#{byItem.ItemCode}"
                             : $"#{byItem.ItemCode}";
                         have.TryGetValue(byItem.ItemCode, out available);
                         break;
@@ -101,7 +101,9 @@ public static class CraftableRecipeCalculator
         if (recipe.ResultItems.Count == 0)
             return ("(no result)", 0);
         var first = recipe.ResultItems[0];
-        var name = refData.Items.TryGetValue(first.ItemCode, out var entry) ? entry.Name : $"#{first.ItemCode}";
+        var name = refData.Items.TryGetValue(first.ItemCode, out var entry)
+            ? entry.Name ?? $"#{first.ItemCode}"
+            : $"#{first.ItemCode}";
         return (name, first.StackSize);
     }
 

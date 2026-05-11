@@ -336,7 +336,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     }
 
     /// <summary>
-    /// Resolve an InternalName to its <see cref="ItemEntry.MaxStackSize"/> via reference data.
+    /// Resolve an InternalName to its <see cref="Item.MaxStackSize"/> via reference data.
     /// Used by <see cref="HandleAddItem"/> to short-circuit chat correlation for items that
     /// can never stack (equipment, unique consumables) — for those, the AddItem alone is
     /// authoritative for size = 1.
@@ -577,9 +577,10 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             if (!item.IsInInventory) continue;
             if (!_refData.Items.TryGetValue(item.TypeID, out var entry)) continue;
             if (entry.MaxStackSize <= 1) continue;
+            if (string.IsNullOrEmpty(entry.InternalName)) continue;
 
-            counts[entry.InternalName] = counts.TryGetValue(entry.InternalName, out var c) ? c + 1 : 1;
-            sizes[entry.InternalName] = item.StackSize;
+            counts[entry.InternalName!] = counts.TryGetValue(entry.InternalName!, out var c) ? c + 1 : 1;
+            sizes[entry.InternalName!] = item.StackSize;
         }
 
         lock (_subLock)
@@ -706,9 +707,10 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         if (_refData is null) { internalName = ""; return false; }
         foreach (var item in _refData.ItemsByInternalName.Values)
         {
-            if (string.Equals(item.Name, displayName, StringComparison.Ordinal))
+            if (string.Equals(item.Name, displayName, StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(item.InternalName))
             {
-                internalName = item.InternalName;
+                internalName = item.InternalName!;
                 return true;
             }
         }

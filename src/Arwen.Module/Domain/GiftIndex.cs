@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Arwen.Domain;
@@ -28,8 +29,8 @@ public sealed class GiftIndex
     private IReadOnlyDictionary<string, IReadOnlyList<GiftMatch>> _npcGifts =
         new Dictionary<string, IReadOnlyList<GiftMatch>>(StringComparer.Ordinal);
 
-    private IReadOnlyDictionary<long, ItemEntry> _items =
-        new Dictionary<long, ItemEntry>();
+    private IReadOnlyDictionary<long, Item> _items =
+        new Dictionary<long, Item>();
 
     // Per-NPC, per-item: all preferences that matched (not just the best).
     // Used by calibration to record multi-preference matches for rate modeling.
@@ -38,16 +39,18 @@ public sealed class GiftIndex
 
     public event EventHandler? Rebuilt;
 
-    public void Build(IReadOnlyDictionary<long, ItemEntry> items, IReadOnlyDictionary<string, NpcEntry> npcs)
+    public void Build(IReadOnlyDictionary<long, Item> items, IReadOnlyDictionary<string, NpcEntry> npcs)
     {
-        // Step 1: Build per-item keyword tag set and quality lookup for fast matching
+        // Step 1: Build per-item keyword tag set and quality lookup for fast matching.
+        // Use the synthesis enrichment so virtual filter tags (SkillPrereq:, MinRarity:, etc.)
+        // referenced by NPC preferences resolve correctly.
         var itemKeywordSets = new Dictionary<long, HashSet<string>>(items.Count);
         var itemKeywordQuality = new Dictionary<long, Dictionary<string, int>>(items.Count);
         foreach (var (id, item) in items)
         {
-            var tags = new HashSet<string>(item.Keywords.Count, StringComparer.Ordinal);
+            var tags = new HashSet<string>(StringComparer.Ordinal);
             var quals = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (var kw in item.Keywords)
+            foreach (var kw in ItemKeywordSynthesis.Enrich(item))
             {
                 tags.Add(kw.Tag);
                 if (kw.Quality > 0 && (!quals.TryGetValue(kw.Tag, out var existing) || kw.Quality > existing))
@@ -88,7 +91,7 @@ public sealed class GiftIndex
                     if (!bestPerItem.TryGetValue(itemId, out var existing) || relativeScore > existing.RelativeScore)
                     {
                         bestPerItem[itemId] = new GiftMatch(
-                            itemId, item.Name, item.IconId, pref.Desire, pref.Pref, itemValue, relativeScore,
+                            itemId, item.Name ?? "", item.IconId, pref.Desire, pref.Pref, itemValue, relativeScore,
                             pref.RequiredFavorTier, matchedKw);
                     }
 
@@ -167,7 +170,7 @@ public sealed class GiftIndex
     }
 
     /// <summary>Look up item entry by ID.</summary>
-    public ItemEntry? GetItem(long itemId) =>
+    public Item? GetItem(long itemId) =>
         _items.TryGetValue(itemId, out var entry) ? entry : null;
 }
 

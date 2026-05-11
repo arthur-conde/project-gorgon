@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using System.IO;
 using System.Threading.Channels;
 using FluentAssertions;
@@ -678,13 +679,18 @@ public sealed class InventoryServiceTests
     private sealed class BarleyOnlyRefData : IReferenceDataService
     {
         public IReadOnlyList<string> Keys { get; } = ["items"];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>
+        private static readonly Item _barley = new()
         {
-            [10251L] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
+            Id = 10251, Name = "Barley Seeds", InternalName = "BarleySeeds",
+            MaxStackSize = 100, IconId = 0, Keywords = [],
         };
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>(StringComparer.Ordinal)
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>
         {
-            ["BarleySeeds"] = new(10251, "Barley Seeds", "BarleySeeds", 100, 0, []),
+            [10251L] = _barley,
+        };
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>(StringComparer.Ordinal)
+        {
+            ["BarleySeeds"] = _barley,
         };
         public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();

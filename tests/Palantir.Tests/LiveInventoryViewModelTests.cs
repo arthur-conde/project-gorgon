@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
@@ -28,7 +29,7 @@ public sealed class LiveInventoryViewModelTests
     public void Added_AppendsRow_WithDisplayMetadata()
     {
         var refData = new FakeRefData(
-            new ItemEntry(0, "Moonstone Crystal", "Moonstone", MaxStackSize: 100, IconId: 4242, Keywords: []));
+            new Item { Id = 0, Name = "Moonstone Crystal", InternalName = "Moonstone", MaxStackSize = 100, IconId = 4242, Keywords = [] });
         var inv = new FakeInventoryService();
         using var vm = NewVm(inv, refData);
 
@@ -150,16 +151,18 @@ public sealed class LiveInventoryViewModelTests
 
     private sealed class FakeRefData : IReferenceDataService
     {
-        private readonly Dictionary<string, ItemEntry> _byName;
+        private readonly Dictionary<string, Item> _byName;
 
-        public FakeRefData(params ItemEntry[] items)
+        public FakeRefData(params Item[] items)
         {
-            _byName = items.ToDictionary(i => i.InternalName, i => i, StringComparer.Ordinal);
+            _byName = items
+                .Where(i => !string.IsNullOrEmpty(i.InternalName))
+                .ToDictionary(i => i.InternalName!, i => i, StringComparer.Ordinal);
         }
 
         public IReadOnlyList<string> Keys { get; } = ["items"];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

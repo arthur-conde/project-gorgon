@@ -4,7 +4,7 @@ namespace Mithril.GameState.Inventory;
 /// A live inventory transition. <paramref name="InstanceId"/> is the per-item
 /// unique id emitted by <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c>.
 /// <paramref name="InternalName"/> maps to
-/// <see cref="Mithril.Shared.Reference.ItemEntry.InternalName"/>.
+/// <see cref="Mithril.Reference.Models.Items.Item.InternalName"/>.
 /// <paramref name="Timestamp"/> is the source log line's timestamp (UTC), not
 /// wall-clock — consumers with time-window logic (e.g. Samwise's plant-resolve
 /// window) need the in-game timeline.

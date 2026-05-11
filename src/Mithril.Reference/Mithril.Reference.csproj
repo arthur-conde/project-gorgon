@@ -1,11 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!--
-      Models target netstandard2.0 so the eventual Mithril.Reference.Models split is
-      framework-portable without a refactor. The Serialization folder also targets
-      netstandard2.0 today; if it ever needs net10-only features we'll multi-target.
-    -->
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Mithril.Reference</RootNamespace>
   </PropertyGroup>
 
@@ -16,9 +11,7 @@
       get copied into Mithril.Shell/bin alongside Mithril.Reference.dll —
       ParserRegistry.Discover reflects over types that reference these
       assemblies and would otherwise crash with FileNotFoundException at
-      startup. Hiding them at compile time without breaking runtime requires
-      the future Mithril.Reference.Models split; until then the discipline is
-      "don't import Newtonsoft outside Serialization/".
+      startup. Discipline: don't import Newtonsoft outside Serialization/.
     -->
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="JsonSubTypes" />

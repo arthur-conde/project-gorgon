@@ -6,9 +6,9 @@ using Mithril.Reference;
 using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Diagnostics.Performance;
+using Item = Mithril.Reference.Models.Items.Item;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
-using PocoItem = Mithril.Reference.Models.Items.Item;
 using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
@@ -54,9 +54,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     private const int MaxUnknownReportsPerFile = 5;
 
     // Items
-    private IReadOnlyDictionary<long, ItemEntry> _items = new Dictionary<long, ItemEntry>();
-    private IReadOnlyDictionary<string, ItemEntry> _itemsByInternalName =
-        new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<long, Item> _items = new Dictionary<long, Item>();
+    private IReadOnlyDictionary<string, Item> _itemsByInternalName =
+        new Dictionary<string, Item>(StringComparer.Ordinal);
     private ItemKeywordIndex _keywordIndex = ItemKeywordIndex.Empty;
     private ReferenceFileSnapshot _itemsSnapshot;
 
@@ -156,8 +156,8 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
 
-    public IReadOnlyDictionary<long, ItemEntry> Items => _items;
-    public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByInternalName;
+    public IReadOnlyDictionary<long, Item> Items => _items;
+    public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
     public ItemKeywordIndex KeywordIndex => _keywordIndex;
     public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
     public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByInternalName;
@@ -403,98 +403,28 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
-    private void ParseAndSwapItems(IReadOnlyDictionary<string, PocoItem> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapItems(IReadOnlyDictionary<string, Item> raw, ReferenceFileMetadata meta)
     {
-        var byId = new Dictionary<long, ItemEntry>(raw.Count);
-        var byName = new Dictionary<string, ItemEntry>(raw.Count, StringComparer.Ordinal);
-        foreach (var (key, v) in raw)
+        var byId = new Dictionary<long, Item>(raw.Count);
+        var byName = new Dictionary<string, Item>(raw.Count, StringComparer.Ordinal);
+        foreach (var pair in raw)
         {
-            var underscore = key.IndexOf('_');
-            if (underscore < 0) continue;
-            if (!long.TryParse(key.AsSpan(underscore + 1), out var id)) continue;
-            var skillPrereqs = v.SkillReqs?.Keys.ToList();
-            var keywords = ParseKeywords(v.Keywords, v.EquipSlot, skillPrereqs, v.Value);
-            var entry = new ItemEntry(
-                id,
-                v.Name ?? "",
-                v.InternalName ?? "",
-                v.MaxStackSize,
-                v.IconId,
-                keywords,
-                v.EquipSlot,
-                skillPrereqs,
-                (decimal)v.Value,
-                v.FoodDesc,
-                v.SkillReqs,
-                v.EffectDescs,
-                v.Description,
-                string.IsNullOrEmpty(v.TSysProfile) ? null : v.TSysProfile,
-                v.CraftingTargetLevel);
-            byId[id] = entry;
-            if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
+            var v = pair.Value;
+            // ParseItems already lifts the numeric id from "item_5010" → v.Id.
+            // Skip entries with no resolvable id (keys not shaped as "<prefix>_<n>").
+            if (v.Id == 0) continue;
+
+            // Normalise away null/empty TSysProfile so consumers can treat present
+            // strings as load-bearing — matches the slim path's behaviour.
+            if (string.IsNullOrEmpty(v.TSysProfile)) v.TSysProfile = null;
+
+            byId[v.Id] = v;
+            if (!string.IsNullOrEmpty(v.InternalName)) byName[v.InternalName!] = v;
         }
         _items = byId;
         _itemsByInternalName = byName;
         _keywordIndex = new ItemKeywordIndex(byId);
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
-    }
-
-    /// <summary>
-    /// Parses raw keyword strings and synthesizes virtual keywords from item metadata.
-    /// NPC preferences use filter keywords like "SkillPrereq:Archery", "EquipmentSlot:Head",
-    /// "MinRarity:Rare", "MinValue:1000" that don't appear in item keyword arrays directly.
-    /// We synthesize these as additional ItemKeyword entries so the GiftIndex can match them.
-    /// </summary>
-    private static IReadOnlyList<ItemKeyword> ParseKeywords(
-        IReadOnlyList<string>? raw, string? equipSlot, List<string>? skillPrereqs, double value)
-    {
-        var result = new List<ItemKeyword>((raw?.Count ?? 0) + 4);
-
-        if (raw is not null)
-        {
-            foreach (var s in raw)
-            {
-                var eq = s.IndexOf('=');
-                if (eq > 0 && int.TryParse(s.AsSpan(eq + 1), out var quality))
-                    result.Add(new ItemKeyword(s[..eq], quality));
-                else
-                    result.Add(new ItemKeyword(s, 0));
-            }
-        }
-
-        // Synthesize "EquipmentSlot:{slot}" virtual keyword
-        if (!string.IsNullOrEmpty(equipSlot))
-            result.Add(new ItemKeyword($"EquipmentSlot:{equipSlot}", 0));
-
-        // Synthesize "SkillPrereq:{skill}" virtual keywords
-        if (skillPrereqs is not null)
-        {
-            foreach (var skill in skillPrereqs)
-                result.Add(new ItemKeyword($"SkillPrereq:{skill}", 0));
-        }
-
-        // Synthesize "MinValue:{threshold}" virtual keywords for common thresholds
-        var v = (int)value;
-        if (v >= 1000) result.Add(new ItemKeyword("MinValue:1000", 0));
-        if (v >= 500) result.Add(new ItemKeyword("MinValue:500", 0));
-
-        // Synthesize rarity virtual keywords from the keyword list.
-        // "Loot" items can drop at any rarity; "Stock" items are always Common.
-        var hasLoot = raw?.Contains("Loot") == true;
-        var hasEquipment = raw?.Contains("Equipment") == true;
-        if (hasLoot)
-        {
-            // Loot items can be any rarity — match all MinRarity filters
-            result.Add(new ItemKeyword("MinRarity:Uncommon", 0));
-            result.Add(new ItemKeyword("MinRarity:Rare", 0));
-            result.Add(new ItemKeyword("MinRarity:Epic", 0));
-        }
-        else if (hasEquipment)
-        {
-            result.Add(new ItemKeyword("Rarity:Common", 0));
-        }
-
-        return result;
     }
 
     private void ParseAndSwapRecipes(IReadOnlyDictionary<string, PocoRecipe> raw, ReferenceFileMetadata meta)
@@ -707,7 +637,7 @@ public sealed class ReferenceDataService : IReferenceDataService
                 projected.Add(new ItemSource(r.type, ExtractNpc(r), ResolveSourceContext(r)));
             }
             if (projected.Count > 0)
-                byInternalName[item.InternalName] = projected;
+                byInternalName[item.InternalName!] = projected;
         }
         _itemSources = byInternalName;
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);

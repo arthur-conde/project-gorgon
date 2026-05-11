@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace Mithril.Shared.Reference;
 
 /// <summary>
-/// Pure projection of raw <see cref="ItemEntry.EffectDescs"/> strings into display-ready
+/// Pure projection of raw <see cref="Item.EffectDescs"/> strings into display-ready
 /// <see cref="EffectLine"/> rows. Resolves <c>{TOKEN}{value}</c> placeholders via the
 /// supplied <see cref="AttributeEntry"/> registry (attributes.json) and applies the
 /// per-attribute <c>DisplayRule</c> / <c>DisplayType</c> semantics.

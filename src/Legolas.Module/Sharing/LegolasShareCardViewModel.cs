@@ -51,7 +51,7 @@ public sealed class LegolasShareCardViewModel
             BitmapImage? icon = null;
             if (refData is not null && refData.ItemsByInternalName.TryGetValue(internalName, out var entry))
             {
-                display = entry.Name;
+                display = entry.Name ?? internalName;
                 if (iconCache is not null && entry.IconId > 0)
                     icon = iconCache.GetOrLoadIcon(entry.IconId);
             }

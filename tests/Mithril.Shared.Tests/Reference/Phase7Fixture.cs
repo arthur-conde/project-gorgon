@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Tests.Reference;
@@ -9,8 +10,8 @@ namespace Mithril.Shared.Tests.Reference;
 /// </summary>
 internal sealed class Phase7Fixture : IReferenceDataService
 {
-    public required IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; init; }
-    public required IReadOnlyDictionary<long, ItemEntry> Items { get; init; }
+    public required IReadOnlyDictionary<string, Item> ItemsByInternalName { get; init; }
+    public required IReadOnlyDictionary<long, Item> Items { get; init; }
     public required IReadOnlyDictionary<string, PowerEntry> Powers { get; init; }
     public required IReadOnlyDictionary<string, AttributeEntry> Attributes { get; init; }
     public required IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; init; }
@@ -36,7 +37,7 @@ internal sealed class Phase7Fixture : IReferenceDataService
     public event EventHandler<string>? FileUpdated { add { } remove { } }
 
     public static Phase7Fixture Build(
-        IEnumerable<ItemEntry>? items = null,
+        IEnumerable<Item>? items = null,
         IEnumerable<PowerEntry>? powers = null,
         IEnumerable<AttributeEntry>? attributes = null,
         IEnumerable<RecipeEntry>? recipes = null,
@@ -49,7 +50,9 @@ internal sealed class Phase7Fixture : IReferenceDataService
         return new Phase7Fixture
         {
             Items = itemList.ToDictionary(i => i.Id),
-            ItemsByInternalName = itemList.ToDictionary(i => i.InternalName, StringComparer.Ordinal),
+            ItemsByInternalName = itemList
+                .Where(i => !string.IsNullOrEmpty(i.InternalName))
+                .ToDictionary(i => i.InternalName!, StringComparer.Ordinal),
             Powers = powerList.ToDictionary(p => p.InternalName, StringComparer.Ordinal),
             Attributes = attributeList.ToDictionary(a => a.Token, StringComparer.Ordinal),
             RecipesByInternalName = recipeList.ToDictionary(r => r.InternalName, StringComparer.Ordinal),
@@ -59,7 +62,7 @@ internal sealed class Phase7Fixture : IReferenceDataService
         };
     }
 
-    public static ItemEntry Item(
+    public static Item Item(
         long id,
         string internalName,
         string displayName,
@@ -67,11 +70,15 @@ internal sealed class Phase7Fixture : IReferenceDataService
         IReadOnlyDictionary<string, int>? skillReqs = null,
         int? craftingTargetLevel = null,
         string? equipSlot = null)
-        => new(Id: id, Name: displayName, InternalName: internalName, MaxStackSize: 50, IconId: 0, Keywords: [],
-               SkillReqs: skillReqs,
-               TSysProfile: tsysProfile,
-               CraftingTargetLevel: craftingTargetLevel,
-               EquipSlot: equipSlot);
+        => new()
+        {
+            Id = id, Name = displayName, InternalName = internalName,
+            MaxStackSize = 50, IconId = 0, Keywords = [],
+            SkillReqs = skillReqs,
+            TSysProfile = tsysProfile,
+            CraftingTargetLevel = craftingTargetLevel,
+            EquipSlot = equipSlot,
+        };
 
     public static PowerEntry Power(string internalName, string skill, string? suffix = null, params PowerTier[] tiers)
         => new(internalName, skill, Slots: [], Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));

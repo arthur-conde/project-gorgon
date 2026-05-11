@@ -1,4 +1,5 @@
 using Arwen.Domain;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using FluentAssertions;
 using Xunit;
@@ -7,12 +8,12 @@ namespace Arwen.Tests;
 
 public sealed class GiftIndexTests
 {
-    private static IReadOnlyDictionary<long, ItemEntry> BuildItems(params (long Id, string Name, string[] Keywords)[] items)
+    private static IReadOnlyDictionary<long, Item> BuildItems(params (long Id, string Name, string[] Keywords)[] items)
         => BuildItemsWithValues(items.Select(i => (i.Id, i.Name, i.Keywords, 0m)).ToArray());
 
-    private static IReadOnlyDictionary<long, ItemEntry> BuildItemsWithValues(params (long Id, string Name, string[] Keywords, decimal Value)[] items)
+    private static IReadOnlyDictionary<long, Item> BuildItemsWithValues(params (long Id, string Name, string[] Keywords, decimal Value)[] items)
     {
-        var dict = new Dictionary<long, ItemEntry>();
+        var dict = new Dictionary<long, Item>();
         foreach (var (id, name, keywords, value) in items)
         {
             var kws = keywords.Select(k =>
@@ -22,7 +23,12 @@ public sealed class GiftIndexTests
                     ? new ItemKeyword(k[..eq], q)
                     : new ItemKeyword(k, 0);
             }).ToList();
-            dict[id] = new ItemEntry(id, name, name, 1, 0, kws, Value: value);
+            dict[id] = new Item
+            {
+                Id = id, Name = name, InternalName = name,
+                MaxStackSize = 1, IconId = 0,
+                Keywords = kws, Value = value,
+            };
         }
         return dict;
     }
@@ -97,7 +103,7 @@ public sealed class GiftIndexTests
     public void UnknownNpc_ReturnsEmpty()
     {
         var index = new GiftIndex();
-        index.Build(new Dictionary<long, ItemEntry>(), new Dictionary<string, NpcEntry>());
+        index.Build(new Dictionary<long, Item>(), new Dictionary<string, NpcEntry>());
         index.GetGiftsForNpc("NPC_Unknown").Should().BeEmpty();
     }
 
@@ -166,7 +172,7 @@ public sealed class GiftIndexTests
         var raised = false;
         index.Rebuilt += (_, _) => raised = true;
 
-        index.Build(new Dictionary<long, ItemEntry>(), new Dictionary<string, NpcEntry>());
+        index.Build(new Dictionary<long, Item>(), new Dictionary<string, NpcEntry>());
         raised.Should().BeTrue();
     }
 }

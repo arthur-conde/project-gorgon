@@ -141,7 +141,7 @@ public sealed class SkillAdvisorEngine
                 .Select(i => i switch
                 {
                     RecipeItemIngredient byItem => _ref.Items.TryGetValue(byItem.ItemCode, out var item)
-                        ? new RecipeIngredientDisplay(item.Name, item.IconId, byItem.StackSize, byItem.ChanceToConsume)
+                        ? new RecipeIngredientDisplay(item.Name ?? $"Item #{byItem.ItemCode}", item.IconId, byItem.StackSize, byItem.ChanceToConsume)
                         : new RecipeIngredientDisplay($"Item #{byItem.ItemCode}", 0, byItem.StackSize, byItem.ChanceToConsume),
                     RecipeKeywordIngredient kw => new RecipeIngredientDisplay(
                         kw.Desc ?? $"Any {ItemKeywordIndex.Humanise(kw.ItemKeys)}",

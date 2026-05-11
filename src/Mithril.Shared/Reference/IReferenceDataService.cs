@@ -1,3 +1,5 @@
+using Mithril.Reference.Models.Items;
+
 namespace Mithril.Shared.Reference;
 
 /// <summary>
@@ -10,10 +12,10 @@ public interface IReferenceDataService
 {
     IReadOnlyList<string> Keys { get; }
 
-    IReadOnlyDictionary<long, ItemEntry> Items { get; }
+    IReadOnlyDictionary<long, Item> Items { get; }
 
-    /// <summary>InternalName → ItemEntry lookup. Useful when the log gives an InternalName but no item id.</summary>
-    IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+    /// <summary>InternalName → <see cref="Item"/> lookup. Useful when the log gives an InternalName but no item id.</summary>
+    IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
 
     /// <summary>
     /// Catalog-side keyword → items index. Powers keyword-matched recipe ingredients
@@ -55,7 +57,7 @@ public interface IReferenceDataService
 
     /// <summary>
     /// Placeholder token (e.g. <c>"MAX_ARMOR"</c>) → <see cref="AttributeEntry"/> with the
-    /// human-readable label and formatting hints used to render <see cref="ItemEntry.EffectDescs"/>.
+    /// human-readable label and formatting hints used to render <see cref="Item.EffectDescs"/>.
     /// Pulled from <c>attributes.json</c>.
     /// </summary>
     IReadOnlyDictionary<string, AttributeEntry> Attributes { get; }
@@ -69,7 +71,7 @@ public interface IReferenceDataService
 
     /// <summary>
     /// Random-roll profile name (e.g. <c>"All"</c>, <c>"Sword"</c>, <c>"MainHandAugment"</c>) →
-    /// list of power InternalNames eligible to roll on items carrying that <see cref="ItemEntry.TSysProfile"/>.
+    /// list of power InternalNames eligible to roll on items carrying that <see cref="Item.TSysProfile"/>.
     /// Pulled from <c>tsysprofiles.json</c>; consumed by <c>ExtractTSysPower</c> and
     /// <c>TSysCraftedEquipment</c> "Possible augments" previews.
     /// </summary>

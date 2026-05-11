@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -110,7 +111,7 @@ public class AugmentParserTests
     public void MixedEffects_ParseCraftedGearAndParseAugmentsPartitionOutput()
     {
         var refData = Fake(
-            items: [Item(1, "CraftedLongsword3", "Longsword")],
+            items: [MakeItem(1, "CraftedLongsword3", "Longsword")],
             powers: [Power("WeaponBoost", "Sword", suffix: "of Sharpness",
                 tiers: [Tier(2, ["{MAX_ARMOR}{5}"])])],
             attributes: [new AttributeEntry("MAX_ARMOR", "Max Armor", "AsInt", "Always", null, [101])]);
@@ -205,14 +206,16 @@ public class AugmentParserTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static ItemEntry Item(long id, string internalName, string displayName, int icon = 0)
-        => new(
-            Id: id,
-            Name: displayName,
-            InternalName: internalName,
-            MaxStackSize: 50,
-            IconId: icon,
-            Keywords: []);
+    private static Item MakeItem(long id, string internalName, string displayName, int icon = 0)
+        => new()
+        {
+            Id = id,
+            Name = displayName,
+            InternalName = internalName,
+            MaxStackSize = 50,
+            IconId = icon,
+            Keywords = [],
+        };
 
     private static PowerTier Tier(int tier, string[] effectDescs, int maxLevel = 0)
         => new(tier, effectDescs, maxLevel);
@@ -222,24 +225,26 @@ public class AugmentParserTests
             Tiers: tiers.ToDictionary(t => t.Tier));
 
     private static IReferenceDataService Fake(
-        ItemEntry[]? items = null,
+        Item[]? items = null,
         PowerEntry[]? powers = null,
         AttributeEntry[]? attributes = null)
         => new MinimalRefData(items ?? [], powers ?? [], attributes ?? []);
 
     private sealed class MinimalRefData : IReferenceDataService
     {
-        public MinimalRefData(IEnumerable<ItemEntry> items, IEnumerable<PowerEntry> powers, IEnumerable<AttributeEntry> attributes)
+        public MinimalRefData(IEnumerable<Item> items, IEnumerable<PowerEntry> powers, IEnumerable<AttributeEntry> attributes)
         {
             Items = items.ToDictionary(i => i.Id);
-            ItemsByInternalName = items.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
+            ItemsByInternalName = items
+                .Where(i => !string.IsNullOrEmpty(i.InternalName))
+                .ToDictionary(i => i.InternalName!, StringComparer.Ordinal);
             Powers = powers.ToDictionary(p => p.InternalName, StringComparer.Ordinal);
             Attributes = attributes.ToDictionary(a => a.Token, StringComparer.Ordinal);
         }
 
         public IReadOnlyList<string> Keys => [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

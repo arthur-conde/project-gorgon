@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Legolas.Flow;
 using Legolas.ViewModels;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 
@@ -19,7 +20,7 @@ namespace Legolas.Sharing;
 /// before the auto-reset branch runs, so the data is still intact.
 ///
 /// The session collects items by display name (the chat parser only sees prose);
-/// we resolve to <see cref="ItemEntry.InternalName"/> at snapshot time via
+/// we resolve to <see cref="Item.InternalName"/> at snapshot time via
 /// <see cref="IReferenceDataService"/> so the wire payload is CDN-version- and
 /// locale-stable. Items that don't resolve fall through to
 /// <see cref="LegolasSharePayload.UnknownByName"/> rather than being dropped.
@@ -30,7 +31,7 @@ public sealed class LegolasReportService
     private readonly IActiveCharacterService? _activeChar;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _clock;
-    private Dictionary<string, ItemEntry>? _byDisplayName;
+    private Dictionary<string, Item>? _byDisplayName;
 
     public LegolasReportService(
         SurveyFlowController flow,
@@ -63,10 +64,11 @@ public sealed class LegolasReportService
 
         foreach (var (displayName, count) in _session.CollectedItems)
         {
-            if (TryResolveByDisplayName(displayName, out var entry))
+            if (TryResolveByDisplayName(displayName, out var entry) && !string.IsNullOrEmpty(entry.InternalName))
             {
-                resolved.TryGetValue(entry.InternalName, out var existing);
-                resolved[entry.InternalName] = existing + count;
+                var key = entry.InternalName!;
+                resolved.TryGetValue(key, out var existing);
+                resolved[key] = existing + count;
             }
             else
             {
@@ -88,7 +90,7 @@ public sealed class LegolasReportService
         };
     }
 
-    private bool TryResolveByDisplayName(string displayName, out ItemEntry entry)
+    private bool TryResolveByDisplayName(string displayName, out Item entry)
     {
         entry = null!;
         if (_refData is null) return false;
@@ -97,13 +99,14 @@ public sealed class LegolasReportService
         // keeps repeated lookups O(1) within a single payload build.
         if (_byDisplayName is null)
         {
-            var index = new Dictionary<string, ItemEntry>(StringComparer.OrdinalIgnoreCase);
+            var index = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in _refData.Items.Values)
             {
+                if (string.IsNullOrEmpty(item.Name)) continue;
                 // First-match-wins: ambiguous display names (rare for survey items)
                 // resolve to whichever one we see first, which is a presentational
                 // best-effort. Recipients re-resolve from their own catalog anyway.
-                index.TryAdd(item.Name, item);
+                index.TryAdd(item.Name!, item);
             }
             _byDisplayName = index;
         }
@@ -154,7 +157,7 @@ public sealed class LegolasReportService
         foreach (var (internalName, count) in payload.CollectedItemsByInternalName)
         {
             var display = (refData is not null && refData.ItemsByInternalName.TryGetValue(internalName, out var entry))
-                ? entry.Name
+                ? entry.Name ?? internalName
                 : internalName;
             lines.Add((display, count));
         }

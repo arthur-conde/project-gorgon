@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
@@ -511,19 +512,19 @@ public sealed class InventoryServiceStackSizeTests
     /// </summary>
     private sealed class FakeRefData : IReferenceDataService
     {
-        private readonly Dictionary<string, ItemEntry> _byName;
+        private readonly Dictionary<string, Item> _byName;
 
         public FakeRefData(params (string InternalName, string DisplayName)[] items)
         {
             _byName = items.ToDictionary(
                 t => t.InternalName,
-                t => new ItemEntry(0, t.DisplayName, t.InternalName, MaxStackSize: 100, IconId: 0, Keywords: []),
+                t => new Item { Id = 0, Name = t.DisplayName, InternalName = t.InternalName, MaxStackSize = 100, IconId = 0, Keywords = [] },
                 StringComparer.Ordinal);
         }
 
         public IReadOnlyList<string> Keys { get; } = ["items"];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

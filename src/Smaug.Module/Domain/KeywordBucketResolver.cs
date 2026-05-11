@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Smaug.Domain;
@@ -27,12 +28,13 @@ public static class KeywordBucketResolver
 
     /// <summary>
     /// Returns the first keyword from <see cref="PriorityOrder"/> present on the item,
-    /// else the item's first keyword, else <c>"Uncategorized"</c>.
-    /// Ignores virtual keywords synthesized by ReferenceDataService (they contain a colon).
+    /// else the item's first keyword, else <c>"Uncategorized"</c>. Operates on the
+    /// raw parsed keywords only; virtual synthesized tags (containing <c>:</c>) are
+    /// filtered out so cross-instance bucketing is stable.
     /// </summary>
-    public static string Resolve(ItemEntry item)
+    public static string Resolve(Item item)
     {
-        if (item.Keywords.Count == 0) return "Uncategorized";
+        if (item.Keywords is null || item.Keywords.Count == 0) return "Uncategorized";
 
         var tags = item.Keywords
             .Select(k => k.Tag)

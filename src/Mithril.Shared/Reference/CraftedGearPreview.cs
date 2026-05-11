@@ -3,7 +3,7 @@ namespace Mithril.Shared.Reference;
 /// <summary>
 /// Parsed projection of a <c>TSysCraftedEquipment</c> entry in <see cref="RecipeEntry.ResultEffects"/>.
 /// The recipe authoring format is <c>TSysCraftedEquipment(templateInternalName[,tier[,subtype]])</c>;
-/// the template always resolves to an <see cref="ItemEntry"/> in items.json, which is where
+/// the template always resolves to an <see cref="Item"/> in items.json, which is where
 /// <see cref="DisplayName"/> and <see cref="IconId"/> come from.
 /// </summary>
 public sealed record CraftedGearPreview(

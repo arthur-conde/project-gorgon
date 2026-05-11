@@ -32,7 +32,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     internal static IngredientChip? ProjectIngredientChip(RecipeIngredient ingredient, IReferenceDataService refData) => ingredient switch
     {
         RecipeItemIngredient byItem => refData.Items.TryGetValue(byItem.ItemCode, out var item)
-            ? new IngredientChip(item.Name, item.IconId, byItem.StackSize, byItem.ChanceToConsume, item.InternalName)
+            ? new IngredientChip(item.Name ?? "", item.IconId, byItem.StackSize, byItem.ChanceToConsume, item.InternalName)
             : null,
         RecipeKeywordIngredient kw => new IngredientChip(
             Name: kw.Desc ?? ItemKeywordIndex.Humanise(kw.ItemKeys),
@@ -83,7 +83,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     {
         var primary = recipe.ResultItems
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
-                ? new IngredientChip(item.Name, item.IconId, r.StackSize, null, item.InternalName)
+                ? new IngredientChip(item.Name ?? "", item.IconId, r.StackSize, null, item.InternalName)
                 : null)
             .Where(c => c is not null).Select(c => c!)
             .ToList();
@@ -92,7 +92,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
         // Crafted-equipment recipes stash their output in ProtoResultItems.
         var proto = (recipe.ProtoResultItems ?? [])
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
-                ? new IngredientChip(item.Name, item.IconId, r.StackSize, null, item.InternalName)
+                ? new IngredientChip(item.Name ?? "", item.IconId, r.StackSize, null, item.InternalName)
                 : null)
             .Where(c => c is not null).Select(c => c!)
             .ToList();

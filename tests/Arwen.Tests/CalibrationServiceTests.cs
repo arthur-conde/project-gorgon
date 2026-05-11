@@ -4,6 +4,7 @@ using Arwen.Domain;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Sessions;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -15,34 +16,27 @@ public sealed class CalibrationServiceTests
 {
     private static IReferenceDataService BuildRefData()
     {
-        var items = new Dictionary<long, ItemEntry>
+        var items = new Dictionary<long, Item>
         {
-            [1] = new(1, "Moonstone", "Moonstone", 1, 0,
-                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)],
-                Value: 100m),
-            [2] = new(2, "Apple", "Apple", 1, 0,
-                [new ItemKeyword("Fruit", 0)],
-                Value: 5m),
+            [1] = MakeItem(1, "Moonstone", "Moonstone", 1,
+                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)], 100m),
+            [2] = MakeItem(2, "Apple", "Apple", 1,
+                [new ItemKeyword("Fruit", 0)], 5m),
             // Ring items sharing a "Ring" + "MinRarity:Rare" signature with Makara
-            [3] = new(3, "StafflordsRing", "StafflordsRing", 1, 0,
-                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)],
-                Value: 150m),
-            [4] = new(4, "Mindroot", "Mindroot", 1, 0,
-                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)],
-                Value: 105m),
+            [3] = MakeItem(3, "StafflordsRing", "StafflordsRing", 1,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)], 150m),
+            [4] = MakeItem(4, "Mindroot", "Mindroot", 1,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("Jewelry", 0), new ItemKeyword("Ring", 0), new ItemKeyword("MinRarity:Rare", 0)], 105m),
             // A rare item with no extra distinctive keywords (baseline rare signature)
-            [5] = new(5, "PlainRareThing", "PlainRareThing", 1, 0,
-                [new ItemKeyword("Equipment", 0), new ItemKeyword("MinRarity:Rare", 0)],
-                Value: 90m),
+            [5] = MakeItem(5, "PlainRareThing", "PlainRareThing", 1,
+                [new ItemKeyword("Equipment", 0), new ItemKeyword("MinRarity:Rare", 0)], 90m),
             // For dislike-test: a common necklace that Yetta likes (Amulet) but also dislikes (TestDislike)
-            [6] = new(6, "TestDislikedNecklace", "TestDislikedNecklace", 1, 0,
-                [new ItemKeyword("Amulet", 0), new ItemKeyword("TestDislike", 0)],
-                Value: 100m),
+            [6] = MakeItem(6, "TestDislikedNecklace", "TestDislikedNecklace", 1,
+                [new ItemKeyword("Amulet", 0), new ItemKeyword("TestDislike", 0)], 100m),
             // Stackable test item — exercises the v3 stackable-skip guard and migration partition.
             // Sanja loves Phlogiston (re-uses the same Crystal/Moonstone love tier for test simplicity).
-            [7] = new(7, "Phlogiston1", "Phlogiston1", MaxStackSize: 10, IconId: 0,
-                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)],
-                Value: 5m),
+            [7] = MakeItem(7, "Phlogiston1", "Phlogiston1", 10,
+                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)], 5m),
         };
         var npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal)
         {
@@ -87,6 +81,19 @@ public sealed class CalibrationServiceTests
         if (!Directory.Exists(dir)) return;
         try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
     }
+
+    private static Item MakeItem(long id, string name, string internalName, int maxStackSize,
+        IReadOnlyList<ItemKeyword> keywords, decimal value) =>
+        new Item
+        {
+            Id = id,
+            Name = name,
+            InternalName = internalName,
+            MaxStackSize = maxStackSize,
+            IconId = 0,
+            Keywords = keywords,
+            Value = value,
+        };
 
     [Fact]
     public void DetectsGiftAndRecordsFullKeywords()

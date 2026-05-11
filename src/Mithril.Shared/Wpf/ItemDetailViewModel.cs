@@ -1,10 +1,11 @@
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Wpf;
 
 /// <summary>
-/// Read-only projection of an <see cref="ItemEntry"/> for <see cref="ItemDetailWindow"/>.
+/// Read-only projection of an <see cref="Item"/> for <see cref="ItemDetailWindow"/>.
 /// Item data is immutable within a window instance — open a new window to inspect a
 /// different item rather than mutating this view-model.
 /// </summary>
@@ -12,18 +13,18 @@ public sealed partial class ItemDetailViewModel
 {
     private readonly IAugmentPoolPresenter? _poolPresenter;
 
-    public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData)
+    public ItemDetailViewModel(Item item, IReferenceDataService refData)
         : this(item, refData, ItemDetailContext.Empty, poolPresenter: null)
     {
     }
 
-    public ItemDetailViewModel(ItemEntry item, IReferenceDataService refData, IReadOnlyList<AugmentPreview>? augments)
+    public ItemDetailViewModel(Item item, IReferenceDataService refData, IReadOnlyList<AugmentPreview>? augments)
         : this(item, refData, new ItemDetailContext(Augments: augments), poolPresenter: null)
     {
     }
 
     public ItemDetailViewModel(
-        ItemEntry item,
+        Item item,
         IReferenceDataService refData,
         ItemDetailContext context,
         IAugmentPoolPresenter? poolPresenter = null)
@@ -54,9 +55,9 @@ public sealed partial class ItemDetailViewModel
         _poolPresenter = poolPresenter;
     }
 
-    public ItemEntry Item { get; }
-    public string DisplayName => Item.Name;
-    public string InternalName => Item.InternalName;
+    public Item Item { get; }
+    public string DisplayName => Item.Name ?? "";
+    public string InternalName => Item.InternalName ?? "";
     public int IconId => Item.IconId;
     public string? EquipSlot => Item.EquipSlot;
     public string? Description => Item.Description;
@@ -90,6 +91,6 @@ public sealed partial class ItemDetailViewModel
     private void BrowsePool(AugmentPoolPreview? pool)
     {
         if (pool is null || _poolPresenter is null) return;
-        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank, pool.SourceEquipSlot, Item.Name);
+        _poolPresenter.Show(pool.SourceLabel, pool.ProfileName, pool.MinTier, pool.MaxTier, pool.RecommendedSkill, pool.CraftingTargetLevel, pool.RolledRarityRank, pool.SourceEquipSlot, Item.Name ?? "");
     }
 }

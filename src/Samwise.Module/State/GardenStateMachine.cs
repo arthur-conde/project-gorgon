@@ -85,10 +85,11 @@ public sealed class GardenStateMachine
         {
             foreach (var (internalName, entry) in _referenceData.ItemsByInternalName)
             {
+                if (entry.Keywords is null) continue;
                 foreach (var kw in entry.Keywords)
                 {
                     if (!SeedKeywordTags.Contains(kw.Tag)) continue;
-                    map[internalName] = TrimSeedSuffix(entry.Name);
+                    map[internalName] = TrimSeedSuffix(entry.Name ?? internalName);
                     break;
                 }
             }
@@ -199,7 +200,7 @@ public sealed class GardenStateMachine
             {
                 if (!string.Equals(entry.Name, displayName, StringComparison.Ordinal)) continue;
                 if (_seedToCrop.TryGetValue(internalName, out var crop)) return crop;
-                return TrimSeedSuffix(entry.Name);
+                return TrimSeedSuffix(entry.Name ?? displayName);
             }
         }
         // Fallback: try stripping seed suffixes from the display name itself.
@@ -455,7 +456,7 @@ public sealed class GardenStateMachine
         if (_referenceData is not null
             && _referenceData.ItemsByInternalName.TryGetValue(itemName, out var entry))
         {
-            return TrimSeedSuffix(entry.Name);
+            return TrimSeedSuffix(entry.Name ?? itemName);
         }
 
         // 3) Last-resort prefix match against crops.json. Covers cases where

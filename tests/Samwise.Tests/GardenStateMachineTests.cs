@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Samwise.Config;
@@ -432,13 +433,13 @@ public class GardenStateMachineTests
 
     private sealed class FakeReferenceData : IReferenceDataService
     {
-        private readonly Dictionary<long, ItemEntry> _items = new();
-        private readonly Dictionary<string, ItemEntry> _byName = new(StringComparer.Ordinal);
+        private readonly Dictionary<long, Item> _items = new();
+        private readonly Dictionary<string, Item> _byName = new(StringComparer.Ordinal);
         private long _nextId = 1;
 
         public IReadOnlyList<string> Keys { get; } = ["items"];
-        public IReadOnlyDictionary<long, ItemEntry> Items => _items;
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _byName;
+        public IReadOnlyDictionary<long, Item> Items => _items;
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
         public ItemKeywordIndex KeywordIndex => new(_items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
@@ -462,7 +463,7 @@ public class GardenStateMachineTests
 
         public void Add(string internalName, string displayName)
         {
-            var entry = new ItemEntry(_nextId++, displayName, internalName, 1, 0, []);
+            var entry = new Item { Id = _nextId++, Name = displayName, InternalName = internalName, MaxStackSize = 1, IconId = 0, Keywords = [] };
             _items[entry.Id] = entry;
             _byName[internalName] = entry;
             FileUpdated?.Invoke(this, "items");

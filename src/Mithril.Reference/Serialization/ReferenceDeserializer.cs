@@ -68,15 +68,35 @@ public static class ReferenceDeserializer
     /// <summary>
     /// Deserializes the contents of <c>items.json</c> into a dictionary of
     /// <see cref="Item"/> POCOs keyed by the JSON envelope's item_id strings
-    /// (e.g. <c>"item_5010"</c>).
+    /// (e.g. <c>"item_5010"</c>). The numeric id is lifted from the key onto
+    /// <see cref="Item.Id"/> for every entry whose key parses as
+    /// <c>"&lt;prefix&gt;_&lt;number&gt;"</c>.
     /// </summary>
     public static IReadOnlyDictionary<string, Item> ParseItems(string json)
     {
         var settings = SerializerSettings.Build();
+        // ItemKeywordListConverter must precede the generic string-array converter
+        // so it claims the IReadOnlyList<ItemKeyword>? property on Item before
+        // SingleOrArrayConverter<string> is offered the type.
+        settings.Converters.Add(new ItemKeywordListConverter());
         settings.Converters.Add(new SingleOrArrayConverter<string>());
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Item>>(json, settings);
-        return result ?? new Dictionary<string, Item>();
+        if (result is null) return new Dictionary<string, Item>();
+
+        // Lift the numeric id from "item_5010" → 5010 onto Item.Id. Entries with
+        // non-conformant keys keep Id = 0 — the deserializer is shape-faithful
+        // and leaves projection-time culling to the caller.
+        foreach (var pair in result)
+        {
+            var key = pair.Key;
+            var underscore = key.IndexOf('_');
+            if (underscore < 0) continue;
+            if (long.TryParse(key.Substring(underscore + 1), out var id))
+                pair.Value.Id = id;
+        }
+
+        return result;
     }
 
     /// <summary>

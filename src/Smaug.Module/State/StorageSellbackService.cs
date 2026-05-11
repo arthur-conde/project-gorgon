@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
@@ -89,12 +90,14 @@ public sealed class StorageSellbackService
         }
 
         // Build a keyword set per storage item, indexed by TypeId.
-        var itemKeywords = new Dictionary<int, (ItemEntry Entry, HashSet<string> Keywords)>(report.Items.Count);
+        var itemKeywords = new Dictionary<int, (Item Entry, HashSet<string> Keywords)>(report.Items.Count);
         foreach (var stockItem in report.Items)
         {
             if (itemKeywords.ContainsKey(stockItem.TypeID)) continue;
             if (!_refData.Items.TryGetValue(stockItem.TypeID, out var entry)) continue;
-            var kws = new HashSet<string>(entry.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
+            var kws = entry.Keywords is null
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : new HashSet<string>(entry.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
             itemKeywords[stockItem.TypeID] = (entry, kws);
         }
 
@@ -124,7 +127,7 @@ public sealed class StorageSellbackService
 
                 buyableItems.Add(new StorageSellbackItem(
                     TypeId: stockItem.TypeID,
-                    ItemName: ctx.Entry.Name,
+                    ItemName: ctx.Entry.Name ?? "",
                     IconId: ctx.Entry.IconId,
                     StackSize: stockItem.StackSize,
                     UnitValue: ctx.Entry.Value,

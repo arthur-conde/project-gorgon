@@ -1,4 +1,5 @@
 using System.Windows;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
@@ -49,7 +50,7 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
             dispatcher.InvokeAsync(() => Open(item, context));
     }
 
-    private void Open(ItemEntry item, ItemDetailContext context)
+    private void Open(Item item, ItemDetailContext context)
     {
         var vm = new ItemDetailViewModel(item, _refData, context, _poolPresenter);
         var window = new ItemDetailWindow(vm)

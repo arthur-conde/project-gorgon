@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Pippin.Domain;
@@ -13,9 +14,9 @@ public class GourmandStateMachineTests
 
     private static FoodCatalog CreateCatalog(params (long Id, string InternalName, string Name)[] foods)
     {
-        var dict = new Dictionary<long, ItemEntry>();
+        var dict = new Dictionary<long, Item>();
         foreach (var (id, internalName, name) in foods)
-            dict[id] = new ItemEntry(id, name, internalName, 1, 0, [], FoodDesc: "Level 0 Snack");
+            dict[id] = new Item { Id = id, Name = name, InternalName = internalName, MaxStackSize = 1, IconId = 0, Keywords = [], FoodDesc = "Level 0 Snack" };
         return new FoodCatalog(new StubReferenceDataService(dict));
     }
 
@@ -124,9 +125,9 @@ public class GourmandStateMachineTests
     [Fact]
     public void ReconcileUnknowns_promotes_entries_when_catalog_catches_up()
     {
-        var stub = new StubReferenceDataService(new Dictionary<long, ItemEntry>
+        var stub = new StubReferenceDataService(new Dictionary<long, Item>
         {
-            [1] = new(1, "Bacon", "FoodBacon", 1, 0, [], FoodDesc: "Level 0 Snack"),
+            [1] = new() { Id = 1, Name = "Bacon", InternalName = "FoodBacon", MaxStackSize = 1, IconId = 0, Keywords = [], FoodDesc = "Level 0 Snack" },
         });
         var catalog = new FoodCatalog(stub);
         var sm = new GourmandStateMachine(catalog);
@@ -139,7 +140,7 @@ public class GourmandStateMachineTests
         sm.UnknownByName.Should().HaveCount(1);
 
         // CDN refresh adds the food to the catalog and rebuilds.
-        stub.Add(new ItemEntry(2, "Mystery Stew", "FoodMysteryStew", 1, 0, [], FoodDesc: "Level 5 Meal"));
+        stub.Add(new Item { Id = 2, Name = "Mystery Stew", InternalName = "FoodMysteryStew", MaxStackSize = 1, IconId = 0, Keywords = [], FoodDesc = "Level 5 Meal" });
         stub.RaiseFileUpdated();
 
         sm.ReconcileUnknowns().Should().BeTrue();
@@ -150,19 +151,19 @@ public class GourmandStateMachineTests
     /// <summary>Minimal stub so FoodCatalog can be constructed with controllable contents.</summary>
     private sealed class StubReferenceDataService : IReferenceDataService
     {
-        private readonly Dictionary<long, ItemEntry> _items;
+        private readonly Dictionary<long, Item> _items;
 
-        public StubReferenceDataService(Dictionary<long, ItemEntry> items)
+        public StubReferenceDataService(Dictionary<long, Item> items)
         {
             _items = items;
         }
 
-        public void Add(ItemEntry item) => _items[item.Id] = item;
+        public void Add(Item item) => _items[item.Id] = item;
         public void RaiseFileUpdated() => FileUpdated?.Invoke(this, "items");
 
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items => _items;
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items => _items;
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

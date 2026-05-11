@@ -35,7 +35,8 @@ public sealed class OnHandInventoryQuery
         foreach (var item in report.Items)
         {
             if (!_refData.Items.TryGetValue(item.TypeID, out var itemEntry)) continue;
-            var key = itemEntry.InternalName;
+            if (string.IsNullOrEmpty(itemEntry.InternalName)) continue;
+            var key = itemEntry.InternalName!;
 
             counts[key] = counts.TryGetValue(key, out var existing) ? existing + item.StackSize : item.StackSize;
 
@@ -50,13 +51,16 @@ public sealed class OnHandInventoryQuery
             if (existingLoc >= 0)
                 list[existingLoc] = list[existingLoc] with { Quantity = list[existingLoc].Quantity + item.StackSize };
             else
-                list.Add(new IngredientLocation(label, item.StackSize, key, itemEntry.Name, itemEntry.IconId));
+                list.Add(new IngredientLocation(label, item.StackSize, key, itemEntry.Name ?? key, itemEntry.IconId));
 
-            foreach (var kw in itemEntry.Keywords)
+            if (itemEntry.Keywords is not null)
             {
-                if (!ownedByKeyword.TryGetValue(kw.Tag, out var set))
-                    ownedByKeyword[kw.Tag] = set = new HashSet<string>(StringComparer.Ordinal);
-                set.Add(key);
+                foreach (var kw in itemEntry.Keywords)
+                {
+                    if (!ownedByKeyword.TryGetValue(kw.Tag, out var set))
+                        ownedByKeyword[kw.Tag] = set = new HashSet<string>(StringComparer.Ordinal);
+                    set.Add(key);
+                }
             }
         }
 
