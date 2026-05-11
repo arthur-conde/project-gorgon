@@ -4,24 +4,44 @@ namespace Mithril.Reference.Models.Items;
 
 /// <summary>
 /// One item entry from <c>items.json</c>. Property names match the JSON
-/// exactly. <see cref="EffectDescs"/> holds a mix of procedural placeholder
-/// strings (e.g. <c>"{MAX_ARMOR}{49}"</c>) and human-readable prose
-/// ("Equipping this armor teaches you…"); resolve placeholders via
-/// <c>attributes.json</c> at consumption time.
+/// exactly except for two deliberate deviations (<see cref="Keywords"/>,
+/// <see cref="Value"/>) and one lift (<see cref="Id"/>) documented in
+/// <c>docs/mithril-reference-shape-quirks.md</c>. <see cref="EffectDescs"/>
+/// holds a mix of procedural placeholder strings (e.g. <c>"{MAX_ARMOR}{49}"</c>)
+/// and human-readable prose ("Equipping this armor teaches you…"); resolve
+/// placeholders via <c>attributes.json</c> at consumption time.
 /// </summary>
 public sealed class Item
 {
     // ─── Always-present fields (per the bundled JSON: 10730/10730 entries) ──
+
+    /// <summary>
+    /// Numeric item id. Lifted from the JSON envelope key (<c>"item_5010"</c> →
+    /// <c>5010</c>) by the deserializer — the value isn't present on the JSON
+    /// entry itself. Lookup tables key on this. See design notebook for context.
+    /// </summary>
+    public long Id { get; set; }
+
     public string? Description { get; set; }
     public int IconId { get; set; }
     public string? InternalName { get; set; }
     public int MaxStackSize { get; set; }
     public string? Name { get; set; }
 
-    /// <summary>Vendor sale value. Int in 10624 entries, float in 106; modelled as double for tolerance.</summary>
-    public double Value { get; set; }
+    /// <summary>
+    /// Vendor sale value. JSON ships int for 10624 entries and float for 106;
+    /// modelled as <see cref="decimal"/> for monetary correctness. See design
+    /// notebook for the deviation from "JSON shape exactly".
+    /// </summary>
+    public decimal Value { get; set; }
 
-    public IReadOnlyList<string>? Keywords { get; set; }
+    /// <summary>
+    /// Parsed keywords. JSON ships these as a flat list of strings shaped like
+    /// <c>"VegetarianDish=84"</c> or just <c>"Loot"</c>; the deserializer splits
+    /// each entry into an <see cref="ItemKeyword"/>. See design notebook for the
+    /// deviation from "JSON shape exactly".
+    /// </summary>
+    public IReadOnlyList<ItemKeyword>? Keywords { get; set; }
     public IReadOnlyList<ItemBehavior>? Behaviors { get; set; }
     public int? NumUses { get; set; }
     public IReadOnlyDictionary<string, int>? SkillReqs { get; set; }
