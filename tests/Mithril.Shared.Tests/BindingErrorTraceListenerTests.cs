@@ -60,7 +60,7 @@ public class BindingErrorTraceListenerTests
         public void StopSession() { }
         public PerfScope Scope(string name, object? tags = null) => default;
         public void EmitFrameSummary(int count, double meanMs, double p50Ms, double p95Ms, double maxMs, int stallCount) { }
-        public void EmitFrame(double intervalMs, bool stall, string? currentOp) { }
+        public void EmitFrame(double intervalMs, bool stall, string? currentOp, string? attribution) { }
         public void EmitDispatcher(string priority, double waitMs, double runMs, int queueDepthAtStart) { }
         public void EmitCounter(long workingSetMB, int gen0, int gen1, int gen2, int threads, int handles, int dispatcherQueueDepth) { }
         public void EmitGc(int generation, double durationMs) { }

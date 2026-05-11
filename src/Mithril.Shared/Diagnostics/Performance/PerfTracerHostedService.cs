@@ -43,6 +43,13 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     private int _queueDepth;
     private readonly Dictionary<DispatcherOperation, (long startTicks, int depthAtStart)> _opStarts = new();
 
+    // Rolling 200ms window of recent dispatcher op completions, used to attribute
+    // stalls. Both Rendering and OperationCompleted run on the UI dispatcher so a
+    // plain Queue is safe without locking — no cross-thread interleaving.
+    private readonly Queue<(long ticks, double runMs)> _recentOps = new();
+    private static readonly long StallWindowTicks =
+        (long)(Stopwatch.Frequency * (StallAttribution.WindowMs / 1000.0));
+
     // Input latency: stamp on PreProcessInput, close on next Rendering
     private long _pendingInputTicks;
     private string? _pendingInputKind;
@@ -189,6 +196,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             FlushFrameWindow();
 
             _opStarts.Clear();
+            _recentOps.Clear();
             _queueDepth = 0;
             _pendingInputTicks = 0;
             _pendingInputKind = null;
@@ -220,11 +228,12 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
 
             if (stall)
             {
-                _tracer.EmitFrame(intervalMs, stall: true, currentOp: null);
+                var attribution = StallAttribution.Classify(SumRecentOpRunMs(now));
+                _tracer.EmitFrame(intervalMs, stall: true, currentOp: null, attribution: attribution);
             }
             else if (_verboseFrameEvents())
             {
-                _tracer.EmitFrame(intervalMs, stall: false, currentOp: null);
+                _tracer.EmitFrame(intervalMs, stall: false, currentOp: null, attribution: null);
             }
 
             _frameWindow.Add(intervalMs);
@@ -264,7 +273,16 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         if (!_opStarts.Remove(e.Operation, out var start)) return;
         Interlocked.Decrement(ref _queueDepth);
 
-        var runMs = (Stopwatch.GetTimestamp() - start.startTicks) * 1000.0 / Stopwatch.Frequency;
+        var now = Stopwatch.GetTimestamp();
+        var runMs = (now - start.startTicks) * 1000.0 / Stopwatch.Frequency;
+
+        // Feed the stall-attribution ring. Both the producer (this method) and
+        // the consumer (OnRendering) run on the UI dispatcher — no lock needed.
+        _recentOps.Enqueue((now, runMs));
+        var cutoff = now - StallWindowTicks;
+        while (_recentOps.Count > 0 && _recentOps.Peek().ticks < cutoff)
+            _recentOps.Dequeue();
+
         // We don't have a "queued at" timestamp from the public hooks API, so
         // wait time is reported as 0 — analysts can infer it from queueDepthAtStart.
         _tracer.EmitDispatcher(
@@ -272,6 +290,21 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             waitMs: 0.0,
             runMs: runMs,
             queueDepthAtStart: start.depthAtStart);
+    }
+
+    /// <summary>
+    /// Sum the <c>runMs</c> of dispatcher ops that completed within the last
+    /// <see cref="StallAttribution.WindowMs"/> milliseconds. Called from the
+    /// stall emit path to decide whether the UI thread was busy during the
+    /// bad frame interval.
+    /// </summary>
+    private double SumRecentOpRunMs(long nowTicks)
+    {
+        var cutoff = nowTicks - StallWindowTicks;
+        double sum = 0;
+        foreach (var (ticks, runMs) in _recentOps)
+            if (ticks >= cutoff) sum += runMs;
+        return sum;
     }
 
     // ── Input ─────────────────────────────────────────────────────────────
@@ -349,6 +382,17 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             catch { }
         }
 
+        // RenderCapability.Tier encodes the tier in the upper 16 bits. 0 = software,
+        // 1 = partial hardware accel, 2 = full. Combined with RenderOptions.ProcessRenderMode
+        // (Default vs SoftwareOnly) and SystemParameters.IsRemoteSession (TS/RDP forces software),
+        // this is enough to disambiguate "stall on a GPU-less machine — expected, any
+        // composition load will hitch" from "real transient GPU/driver event worth chasing."
+        // Different bugs, different fixes; without this trio every stall-with-idle-dispatcher
+        // reads the same.
+        var renderTier = System.Windows.Media.RenderCapability.Tier >> 16;
+        var renderMode = System.Windows.Media.RenderOptions.ProcessRenderMode.ToString();
+        var isRemote = System.Windows.SystemParameters.IsRemoteSession;
+
         return new SessionHeader(
             Build: build,
             Os: os,
@@ -357,7 +401,10 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             Dpi: dpi,
             ActiveCharacter: _activeChar.ActiveCharacterName,
             ActiveServer: _activeChar.ActiveServer,
-            LoadedModules: _modules.Select(m => m.Id).ToList());
+            LoadedModules: _modules.Select(m => m.Id).ToList(),
+            RenderTier: renderTier,
+            RenderMode: renderMode,
+            IsRemoteSession: isRemote);
     }
 
     public void Dispose() => StopInternal();

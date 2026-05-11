@@ -32,7 +32,13 @@ public interface IPerfTracer
     PerfScope Scope(string name, object? tags = null);
 
     void EmitFrameSummary(int count, double meanMs, double p50Ms, double p95Ms, double maxMs, int stallCount);
-    void EmitFrame(double intervalMs, bool stall, string? currentOp);
+
+    /// <summary>
+    /// Emit a single frame event. <paramref name="attribution"/> is only meaningful when
+    /// <paramref name="stall"/> is true — for non-stall frames pass null and the property
+    /// is omitted from the JSON so verbose-frame mode doesn't bloat every record.
+    /// </summary>
+    void EmitFrame(double intervalMs, bool stall, string? currentOp, string? attribution);
     void EmitDispatcher(string priority, double waitMs, double runMs, int queueDepthAtStart);
     void EmitCounter(long workingSetMB, int gen0, int gen1, int gen2, int threads, int handles, int dispatcherQueueDepth);
     void EmitGc(int generation, double durationMs);

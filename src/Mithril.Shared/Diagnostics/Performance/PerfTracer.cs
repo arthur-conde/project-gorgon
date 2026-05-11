@@ -126,14 +126,24 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
             PerfEventKinds.FrameSummary, count, meanMs, p50Ms, p95Ms, maxMs, stallCount);
     }
 
-    public void EmitFrame(double intervalMs, bool stall, string? currentOp)
+    public void EmitFrame(double intervalMs, bool stall, string? currentOp, string? attribution)
     {
         var log = Volatile.Read(ref _logger);
         if (log is null) return;
-        var kind = stall ? PerfEventKinds.Stall : PerfEventKinds.Frame;
-        log.Information(
-            "{Kind} interval={IntervalMs:F2}ms stall={Stall} op={CurrentOp}",
-            kind, intervalMs, stall, currentOp ?? "");
+        // Two templates so non-stall frames don't carry an empty Attribution slot —
+        // verbose-frame mode emits these at ~60 Hz and the field would bloat the file.
+        if (stall)
+        {
+            log.Information(
+                "{Kind} interval={IntervalMs:F2}ms stall={Stall} op={CurrentOp} attribution={Attribution}",
+                PerfEventKinds.Stall, intervalMs, true, currentOp ?? "", attribution ?? StallAttribution.NonDispatcher);
+        }
+        else
+        {
+            log.Information(
+                "{Kind} interval={IntervalMs:F2}ms stall={Stall} op={CurrentOp}",
+                PerfEventKinds.Frame, intervalMs, false, currentOp ?? "");
+        }
     }
 
     public void EmitDispatcher(string priority, double waitMs, double runMs, int queueDepthAtStart)
@@ -202,10 +212,11 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
         var log = Volatile.Read(ref _logger);
         if (log is null) return;
         log.Information(
-            "{Kind} build={Build} os={Os} gpu={Gpu} refresh={RefreshRateHz}Hz dpi={Dpi:F0} character={Character} server={Server} modules={@Modules}",
+            "{Kind} build={Build} os={Os} gpu={Gpu} refresh={RefreshRateHz}Hz dpi={Dpi:F0} character={Character} server={Server} modules={@Modules} renderTier={RenderTier} renderMode={RenderMode} remote={IsRemoteSession}",
             PerfEventKinds.SessionHeader,
             header.Build, header.Os, header.Gpu, header.RefreshRateHz, header.Dpi,
-            header.ActiveCharacter ?? "", header.ActiveServer ?? "", header.LoadedModules);
+            header.ActiveCharacter ?? "", header.ActiveServer ?? "", header.LoadedModules,
+            header.RenderTier, header.RenderMode, header.IsRemoteSession);
     }
 
     /// <summary>

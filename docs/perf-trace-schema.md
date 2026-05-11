@@ -63,6 +63,9 @@ First line of every trace file. Identifies the recording machine and build so a 
 | `Dpi` | Effective DPI of the main window (96 = unscaled). Layout cost scales with this. |
 | `ActiveCharacter` / `ActiveServer` | Last-selected character at session start. |
 | `Modules` | Array of module ids loaded at session start (e.g. `["samwise","pippin",…]`). |
+| `RenderTier` | `RenderCapability.Tier >> 16`. `0` = software rendering (no GPU accel — any composition load *will* stall, that's the machine), `1` = partial hardware, `2` = full hardware. Read this first when stalls don't correlate with dispatcher activity. |
+| `RenderMode` | `RenderOptions.ProcessRenderMode` — `"Default"` (use whatever the machine offers) or `"SoftwareOnly"` (forced software). The latter overrides `RenderTier` — even tier-2 will render in software. |
+| `IsRemoteSession` | `SystemParameters.IsRemoteSession`. TS/RDP forces software composition independent of GPU capability, so a tier-2 machine over RDP behaves like tier-0. |
 
 ### `frame_summary`
 
@@ -85,6 +88,9 @@ Per-frame event emitted when a single render takes longer than 33 ms. The same s
 | `IntervalMs` | Frame interval that triggered the event. |
 | `Stall` | `true` for the >33 ms emit path; `false` only with verbose. |
 | `CurrentOp` | Reserved for the in-flight dispatcher op label; currently empty string. |
+| `Attribution` | Only present on stall events. `"dispatcher"` if cumulative `dispatcher.RunMs` over the 200 ms preceding the stall ≥ 20 ms (UI thread was busy — go look at the surrounding `dispatcher` events). `"non-dispatcher"` otherwise (UI thread was idle — the cause is elsewhere: GC, GPU/DWM, blocked native call, swap-chain hitch). Pair this with `session_header.RenderTier` to distinguish "no GPU" from "real transient render event." |
+
+The 20 ms threshold and 200 ms window are defined in [`StallAttribution`](../src/Mithril.Shared/Diagnostics/Performance/StallAttribution.cs) — ops totaling less than ~20 ms can't realistically *cause* a >33 ms stall on their own, so anything below is classified as non-dispatcher.
 
 ### `dispatcher`
 
@@ -208,7 +214,21 @@ Get-Content $Path | jq -c 'select(.Kind=="frame_summary") | {t:."@t", p95:.P95Ms
 ### How many stalls and when
 
 ```powershell
-Get-Content $Path | jq -c 'select(.Kind=="stall" or (.Kind=="frame" and .Stall==true)) | {t:."@t", ms:.IntervalMs}'
+Get-Content $Path | jq -c 'select(.Kind=="stall" or (.Kind=="frame" and .Stall==true)) | {t:."@t", ms:.IntervalMs, attr:.Attribution}'
+```
+
+### Stalls broken down by attribution
+
+```powershell
+Get-Content $Path | jq -r 'select(.Kind=="stall") | .Attribution' | Group-Object | Sort-Object Count -Descending
+```
+
+If `non-dispatcher` dominates, also check `session_header.RenderTier` — on tier-0/RDP machines that's the expected baseline, not a bug.
+
+### Render-environment sanity check (read this first on any new trace)
+
+```powershell
+Get-Content $Path -TotalCount 1 | jq '{tier:.RenderTier, mode:.RenderMode, remote:.IsRemoteSession, refresh:.RefreshRateHz, dpi:.Dpi}'
 ```
 
 ### Which module is slowest to first-activate
@@ -248,7 +268,13 @@ A handful of distinct messages each emitting once a second indicates a persisten
 
 A few signatures that have been useful in practice. Most failure modes have a characteristic combination — looking at one event kind in isolation is rarely enough.
 
-**Gen-2 GC pause masquerading as "the app froze."** Look for a `gc` with `Generation=2` adjacent (≤1 s) to a `stall` event. Working-set in the surrounding `counter` events will usually be at its session-high right before. Action: profile allocations on the hot path; the trace doesn't name the offender but `counter.WorkingSetMB` over time narrows the suspect window.
+**Stall on a software-rendered machine.** Read `session_header.RenderTier` *first* — if it's `0`, or `RenderMode == "SoftwareOnly"`, or `IsRemoteSession == true`, that user has no GPU acceleration. Any meaningful composition load *will* hitch and there's no fix on the app side; the answer is "this is the machine, not the build." Distinguishing this from a real transient GPU event used to require knowing the user's hardware; the three header fields now make it a one-line jq.
+
+**Stall with `Attribution = "dispatcher"`.** UI thread was the cause. Filter `dispatcher` events around the stall timestamp and find the long-running op by `RunMs`. Look for `Priority=Render` or `DataBind` ops with high `RunMs` — that's where the time went.
+
+**Stall with `Attribution = "non-dispatcher"`.** UI thread was idle (cumulative `dispatcher.RunMs` < 20 ms over the preceding 200 ms). Cause lives elsewhere: GC pause (look for a `gc` event with `Generation=2` within ~1 s), GPU/DWM hitch (especially on tier-0 or `IsRemoteSession`), blocked native call, or a swap-chain stutter. The trace doesn't name the offender but rules out the dispatcher cleanly so you stop digging in the wrong place.
+
+**Gen-2 GC pause masquerading as "the app froze."** Look for a `gc` with `Generation=2` adjacent (≤1 s) to a `stall` event — and the stall should carry `Attribution = "non-dispatcher"` (GC pauses block the UI thread but don't show as dispatcher work). Working-set in the surrounding `counter` events will usually be at its session-high right before. Action: profile allocations on the hot path; the trace doesn't name the offender but `counter.WorkingSetMB` over time narrows the suspect window.
 
 **UI thread saturated.** `counter.DispatcherQueueDepth` stays > 0 across many samples and `dispatcher.RunMs` p95 is elevated. Usually a hosted service is dispatching too eagerly to the UI thread, or a `RelayCommand` is doing work it shouldn't. Filter `dispatcher` by `Priority` to find which queue is backed up.
 

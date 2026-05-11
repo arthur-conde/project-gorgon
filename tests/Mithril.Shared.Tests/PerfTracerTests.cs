@@ -16,7 +16,8 @@ public class PerfTracerTests
 
     private static SessionHeader SampleHeader() =>
         new(Build: "test", Os: "test-os", Gpu: "", RefreshRateHz: 0, Dpi: 96.0,
-            ActiveCharacter: null, ActiveServer: null, LoadedModules: ["samwise", "pippin"]);
+            ActiveCharacter: null, ActiveServer: null, LoadedModules: ["samwise", "pippin"],
+            RenderTier: 2, RenderMode: "Default", IsRemoteSession: false);
 
     [Fact]
     public void Inactive_state_is_a_noop()
