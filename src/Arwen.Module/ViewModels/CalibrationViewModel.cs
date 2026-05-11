@@ -40,18 +40,71 @@ public sealed class NpcBaselineRow
     public required double MaxRate { get; init; }
 }
 
-/// <summary>Row for the raw observations grid.</summary>
-public sealed class ObservationRow
+/// <summary>
+/// Row for the raw observations grid and the editable observations tab. Display fields
+/// (NpcName/ItemName/Signature/ItemValue/EffectivePref/FavorDelta/DerivedRate/Timestamp)
+/// are init-only — they're built from the underlying <see cref="GiftObservation"/> on every
+/// <see cref="CalibrationViewModel.Refresh"/>. Only <see cref="Quantity"/> is observable so
+/// the editor TextBox can two-way bind; the canonical Quantity lives on the underlying
+/// observation and only changes when <see cref="CalibrationService.UpdateObservationQuantity"/>
+/// succeeds. <see cref="OriginalQuantity"/> is the value we revert to if the commit fails.
+/// </summary>
+public sealed partial class ObservationRow : ObservableObject
 {
+    public required string ObservationKey { get; init; }
     public required string NpcName { get; init; }
     public required string ItemName { get; init; }
-    public required int Quantity { get; init; }
+    public required int IconId { get; init; }
     public required string Signature { get; init; }
+    public required IReadOnlyList<MatchedPreference> MatchedPreferences { get; init; }
     public required double ItemValue { get; init; }
     public required double EffectivePref { get; init; }
     public required double FavorDelta { get; init; }
     public required double DerivedRate { get; init; }
     public required DateTimeOffset Timestamp { get; init; }
+    public required int MaxStackSize { get; init; }
+    public required int OriginalQuantity { get; init; }
+    public required ObservationFlag Flag { get; init; }
+    public required string? FlagTooltip { get; init; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsQuantityValid))]
+    [NotifyPropertyChangedFor(nameof(IsQuantityEdited))]
+    [NotifyPropertyChangedFor(nameof(PreviewedRate))]
+    [NotifyPropertyChangedFor(nameof(TotalValue))]
+    private int _quantity;
+
+    public bool IsQuantityValid => Quantity >= 1 && Quantity <= MaxStackSize;
+
+    public bool IsQuantityEditable => MaxStackSize > 1;
+
+    public bool IsFlagged => Flag != ObservationFlag.None;
+
+    /// <summary>True when the user has typed a different Quantity than what's persisted.</summary>
+    public bool IsQuantityEdited => Quantity != OriginalQuantity;
+
+    /// <summary>
+    /// Total gold worth of the gifted stack: <see cref="ItemValue"/> × <see cref="Quantity"/>.
+    /// Live: follows the in-progress edit so the preview moves while the user adjusts Quantity.
+    /// Note this is the stack's market value, not the calibration "score" — Arwen's GiftScanner
+    /// "Score" column (<see cref="Arwen.Domain.GiftMatch.RelativeScore"/>) is <c>Pref × ItemValue</c>;
+    /// the rate-denominator factor (<c>EffectivePref × ItemValue × Quantity</c>) isn't surfaced
+    /// directly because the headline Rate already conveys it.
+    /// </summary>
+    public double TotalValue => ItemValue * Quantity;
+
+    /// <summary>
+    /// Live preview of <see cref="DerivedRate"/> using the current edit-in-progress
+    /// <see cref="Quantity"/>. Equals <see cref="DerivedRate"/> when nothing's been edited.
+    /// Same formula as <see cref="GiftObservation.DerivedRate"/>:
+    /// <c>FavorDelta / (EffectivePref × ItemValue × Quantity)</c>.
+    /// </summary>
+    public double PreviewedRate =>
+        EffectivePref == 0 || ItemValue == 0 || Quantity == 0
+            ? 0
+            : FavorDelta / (EffectivePref * ItemValue * Quantity);
+
+    public void RevertQuantity() => Quantity = OriginalQuantity;
 }
 
 /// <summary>
@@ -151,6 +204,27 @@ public sealed partial class CalibrationViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<ObservationRow> _observations = [];
 
+    /// <summary>
+    /// Subset of <see cref="Observations"/> matching <see cref="ObservationsFilter"/>.
+    /// Drives the editable observations tab. When the filter is empty this is a copy of
+    /// <see cref="Observations"/>; <see cref="BulkDeleteFilteredCommand"/> operates on
+    /// exactly this set so what-you-see is what-gets-deleted.
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<ObservationRow> _filteredObservations = [];
+
+    /// <summary>Case-insensitive substring filter matched against NpcName and ItemName.</summary>
+    [ObservableProperty]
+    private string _observationsFilter = "";
+
+    [ObservableProperty]
+    private int _flaggedCount;
+
+    [ObservableProperty]
+    private int _filteredCount;
+
+    partial void OnObservationsFilterChanged(string value) => RebuildFilteredObservations();
+
     public ObservableCollection<PendingObservationRow> PendingRows { get; } = [];
 
     [ObservableProperty]
@@ -174,6 +248,85 @@ public sealed partial class CalibrationViewModel : ObservableObject
     {
         if (row is null) return;
         _calibration.DiscardPending(row.Id);
+    }
+
+    [RelayCommand]
+    private void DeleteObservation(ObservationRow? row)
+    {
+        if (row is null) return;
+        if (_calibration.DeleteObservation(row.ObservationKey))
+        {
+            StatusMessage = $"Deleted observation: {row.ItemName} → {row.NpcName}";
+        }
+        else
+        {
+            StatusMessage = "Observation no longer present — nothing to delete.";
+        }
+    }
+
+    /// <summary>
+    /// Called when the Quantity TextBox loses focus on the editor tab. Pushes the row's
+    /// edited Quantity into the canonical observation. On failure (out-of-range, item
+    /// missing from reference data, unchanged value), reverts the row to its original
+    /// quantity so the UI doesn't display a value that wasn't accepted.
+    /// </summary>
+    [RelayCommand]
+    private void CommitQuantity(ObservationRow? row)
+    {
+        if (row is null) return;
+        if (row.Quantity == row.OriginalQuantity) return;
+        if (!row.IsQuantityValid)
+        {
+            row.Quantity = row.OriginalQuantity;
+            StatusMessage = $"Quantity must be between 1 and {row.MaxStackSize}; reverted.";
+            return;
+        }
+        if (_calibration.UpdateObservationQuantity(row.ObservationKey, row.Quantity))
+        {
+            // Successful update fires DataChanged → Refresh() rebuilds every row from the
+            // canonical observation list, so OriginalQuantity on the new row will reflect
+            // the change. Set a status message before that rebuild discards this row.
+            StatusMessage = $"Updated quantity: {row.ItemName} → {row.NpcName} = {row.Quantity}";
+        }
+        else
+        {
+            row.Quantity = row.OriginalQuantity;
+            StatusMessage = "Quantity update rejected — observation may have changed; reverted.";
+        }
+    }
+
+    [RelayCommand]
+    private void BulkDeleteFiltered()
+    {
+        var filter = (ObservationsFilter ?? "").Trim();
+        if (filter.Length == 0)
+        {
+            StatusMessage = "Type a filter first; bulk delete only operates on filtered rows.";
+            return;
+        }
+
+        var targets = FilteredObservations.ToList();
+        if (targets.Count == 0)
+        {
+            StatusMessage = "No observations match the current filter.";
+            return;
+        }
+
+        // Confirmation is required for destructive bulk action. When _dialogService is null
+        // (test path) we proceed — tests construct the VM directly and assert via the
+        // CalibrationService API rather than driving the bulk-delete flow end-to-end.
+        if (_dialogService is not null)
+        {
+            var confirmed = _dialogService.Confirm(
+                title: "Delete observations",
+                message: $"Delete {targets.Count} observation(s) matching \"{filter}\"?\n\nThis cannot be undone.");
+            if (!confirmed) return;
+        }
+
+        var keys = new HashSet<string>(targets.Select(r => r.ObservationKey), StringComparer.Ordinal);
+        var removed = _calibration.DeleteObservationsByPredicate(
+            o => keys.Contains(CalibrationService.ObservationKey(o)));
+        StatusMessage = $"Deleted {removed} observation(s) matching \"{filter}\".";
     }
 
     [RelayCommand]
@@ -250,28 +403,73 @@ public sealed partial class CalibrationViewModel : ObservableObject
             .OrderByDescending(r => r.SampleCount)
             .ThenBy(r => r.NpcName, StringComparer.OrdinalIgnoreCase));
 
+        var flags = ObservationFlagDetector.Detect(data.Observations);
+
         Observations = new(data.Observations
             .OrderByDescending(o => o.Timestamp)
-            .Select(o => new ObservationRow
+            .Select(o =>
             {
-                NpcName = FormatNpcName(o.NpcKey),
-                ItemName = o.ItemInternalName,
-                Quantity = o.Quantity,
-                Signature = string.IsNullOrEmpty(o.Signature) ? "(none)" : o.Signature,
-                ItemValue = o.ItemValue,
-                EffectivePref = o.EffectivePref,
-                FavorDelta = o.FavorDelta,
-                DerivedRate = o.DerivedRate,
-                Timestamp = o.Timestamp,
+                var key = CalibrationService.ObservationKey(o);
+                var flag = flags.TryGetValue(key, out var info) ? info : null;
+                var row = new ObservationRow
+                {
+                    ObservationKey = key,
+                    NpcName = _calibration.GetNpcDisplayName(o.NpcKey),
+                    ItemName = _calibration.GetItemDisplayName(o.ItemInternalName),
+                    IconId = _calibration.GetIconId(o.ItemInternalName),
+                    Signature = string.IsNullOrEmpty(o.Signature) ? "(none)" : o.Signature,
+                    MatchedPreferences = o.MatchedPreferences,
+                    ItemValue = o.ItemValue,
+                    EffectivePref = o.EffectivePref,
+                    FavorDelta = o.FavorDelta,
+                    DerivedRate = o.DerivedRate,
+                    Timestamp = o.Timestamp,
+                    MaxStackSize = _calibration.GetMaxStackSize(o.ItemInternalName),
+                    OriginalQuantity = o.Quantity,
+                    Flag = flag?.Flag ?? ObservationFlag.None,
+                    FlagTooltip = flag is null ? null : BuildFlagTooltip(o.DerivedRate, flag),
+                };
+                row.Quantity = o.Quantity;
+                return row;
             }));
+
+        FlaggedCount = Observations.Count(r => r.IsFlagged);
+
+        RebuildFilteredObservations();
 
         StatusMessage =
             $"{data.Observations.Count} observation(s) · " +
             $"{data.ItemRates.Count} item rate(s) · " +
             $"{data.SignatureRates.Count} signature rate(s) · " +
-            $"{data.NpcRates.Count} NPC baseline(s)";
+            $"{data.NpcRates.Count} NPC baseline(s)" +
+            (FlaggedCount > 0 ? $" · {FlaggedCount} flagged" : "");
 
         UpdateCommunitySummary();
+    }
+
+    private void RebuildFilteredObservations()
+    {
+        var filter = (ObservationsFilter ?? "").Trim();
+        if (filter.Length == 0)
+        {
+            FilteredObservations = new(Observations);
+        }
+        else
+        {
+            FilteredObservations = new(Observations.Where(r => MatchesFilter(r, filter)));
+        }
+        FilteredCount = FilteredObservations.Count;
+    }
+
+    private static bool MatchesFilter(ObservationRow row, string filter) =>
+        row.NpcName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        row.ItemName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildFlagTooltip(double observedRate, ObservationFlagInfo info)
+    {
+        var direction = observedRate > info.GroupMean ? "above" : "below";
+        return $"Rate {observedRate:F4} is {info.SigmasFromMean:F1}σ {direction} mean " +
+               $"{info.GroupMean:F4} (group of {info.GroupSampleCount}, σ={info.GroupStdDev:F4}).";
     }
 
     private void RefreshPending()
