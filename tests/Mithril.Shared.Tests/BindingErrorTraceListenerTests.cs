@@ -54,6 +54,7 @@ public class BindingErrorTraceListenerTests
         public bool IsActive { get; set; }
         public string? CurrentSessionPath => null;
         public List<string> BindingErrors { get; } = new();
+        public event EventHandler? IsActiveChanged { add { } remove { } }
 
         public void StartSession(SessionHeader header) { }
         public void StopSession() { }

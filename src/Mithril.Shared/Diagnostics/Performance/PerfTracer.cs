@@ -36,8 +36,11 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
 
     public string? CurrentSessionPath => Volatile.Read(ref _currentSessionPath);
 
+    public event EventHandler? IsActiveChanged;
+
     public void StartSession(SessionHeader header)
     {
+        var notify = false;
         lock (_lock)
         {
             if (_logger is not null) return;
@@ -68,6 +71,7 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
                 _diag?.Info("PerfTrace", $"Session started: {sessionPath}");
 
                 EmitSessionHeader(header);
+                notify = true;
             }
             catch (Exception ex)
             {
@@ -76,6 +80,7 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
                 _currentSessionPath = null;
             }
         }
+        if (notify) IsActiveChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void StopSession()
@@ -91,7 +96,10 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
         }
         toDispose?.Dispose();
         if (finishedPath is not null)
+        {
             _diag?.Info("PerfTrace", $"Session stopped: {finishedPath}");
+            IsActiveChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public PerfScope Scope(string name, object? tags = null)

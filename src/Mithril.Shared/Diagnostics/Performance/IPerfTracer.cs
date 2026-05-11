@@ -23,6 +23,11 @@ public interface IPerfTracer
     /// <summary>Stop the current session and flush. Idempotent.</summary>
     void StopSession();
 
+    /// <summary>Fires whenever <see cref="IsActive"/> flips. Consumers should
+    /// re-read <see cref="IsActive"/> rather than tracking a payload — keeps
+    /// state-of-the-world unambiguous when start/stop fire close together.</summary>
+    event EventHandler? IsActiveChanged;
+
     /// <summary>Begin a timing scope. Returns a default (no-op) struct when inactive.</summary>
     PerfScope Scope(string name, object? tags = null);
 

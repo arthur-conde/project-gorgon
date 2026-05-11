@@ -97,6 +97,8 @@ public sealed partial class ShellViewModel : ObservableObject
         _settings.PropertyChanged += OnSettingsChanged;
         _preferences.PropertyChanged += OnPreferencesChanged;
         _attention.AttentionChanged += OnAttentionChanged;
+        _perf.IsActiveChanged += OnPerfTraceStateChanged;
+        RefreshPerfTraceState();
         RefreshCharacter();
         RefreshUpdateStatus();
         RefreshAttentionSurface();
@@ -140,6 +142,24 @@ public sealed partial class ShellViewModel : ObservableObject
             if (d is null || d.CheckAccess()) RefreshGameTime();
             else d.InvokeAsync(RefreshGameTime);
         }
+    }
+
+    private void OnPerfTraceStateChanged(object? sender, EventArgs e)
+    {
+        // The tracer fires from whichever thread called Start/Stop. ObservableProperty
+        // setters touch INotifyPropertyChanged → bound XAML, so marshal to the UI dispatcher.
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshPerfTraceState();
+        else d.InvokeAsync(RefreshPerfTraceState);
+    }
+
+    private void RefreshPerfTraceState()
+    {
+        IsPerfTraceRecording = _perf.IsActive;
+        var path = _perf.CurrentSessionPath;
+        PerfTraceTooltip = IsPerfTraceRecording
+            ? (string.IsNullOrEmpty(path) ? "Perf-trace recording" : $"Recording → {path}")
+            : "Perf-trace not recording";
     }
 
     private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
@@ -219,6 +239,9 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private string _gameTimeText = "";
     [ObservableProperty] private string _nextShiftCountdownText = "";
+
+    [ObservableProperty] private bool _isPerfTraceRecording;
+    [ObservableProperty] private string _perfTraceTooltip = "Perf-trace recording";
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();

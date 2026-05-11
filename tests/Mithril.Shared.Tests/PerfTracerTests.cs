@@ -106,6 +106,26 @@ public class PerfTracerTests
     }
 
     [Fact]
+    public void IsActiveChanged_fires_on_Start_and_Stop()
+    {
+        var dir = FreshTempDir();
+        try
+        {
+            using var tracer = new PerfTracer(dir);
+            var transitions = new List<bool>();
+            tracer.IsActiveChanged += (_, _) => transitions.Add(tracer.IsActive);
+
+            tracer.StartSession(SampleHeader());
+            tracer.StopSession();
+
+            transitions.Should().HaveCount(2, "consumers depend on observing both start and stop transitions");
+            transitions[0].Should().BeTrue();
+            transitions[1].Should().BeFalse();
+        }
+        finally { TryCleanup(dir); }
+    }
+
+    [Fact]
     public void PruneOldSessions_keeps_only_N_newest()
     {
         var dir = FreshTempDir();

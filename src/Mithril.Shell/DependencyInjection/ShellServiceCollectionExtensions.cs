@@ -108,6 +108,7 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<ReferenceDataViewModel>()
             .AddSingleton<AppearanceSettingsViewModel>()
             .AddSingleton<AboutSettingsViewModel>()
+            .AddSingleton<DiagnosticsSettingsViewModel>()
             .AddSingleton<SettingsHostViewModel>()
             // Views
             .AddSingleton<ShellWindow>()
@@ -138,6 +139,10 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<AboutSettingsView>(sp => new AboutSettingsView
             {
                 DataContext = sp.GetRequiredService<AboutSettingsViewModel>(),
+            })
+            .AddSingleton<DiagnosticsSettingsView>(sp => new DiagnosticsSettingsView
+            {
+                DataContext = sp.GetRequiredService<DiagnosticsSettingsViewModel>(),
             })
             .AddSingleton<SettingsHostView>(sp => new SettingsHostView
             {
