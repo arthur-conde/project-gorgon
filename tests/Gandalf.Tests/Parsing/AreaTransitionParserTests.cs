@@ -14,6 +14,10 @@ public sealed class AreaTransitionParserTests
     [InlineData("LOADING LEVEL AreaTomb1", "AreaTomb1")]
     [InlineData("LOADING LEVEL AreaCave1", "AreaCave1")]
     [InlineData("LOADING LEVEL AreaCasino", "AreaCasino")]
+    // PlayerLogTailReader emits raw lines with the [HH:MM:SS] prefix intact —
+    // it parses the prefix for sequencing but does not strip it. #199.
+    [InlineData("[10:35:44] LOADING LEVEL AreaSerbule", "AreaSerbule")]
+    [InlineData("[17:28:06] LOADING LEVEL AreaEltibule", "AreaEltibule")]
     public void Parses_real_area_keys(string line, string expectedArea)
     {
         var evt = (AreaTransitionEvent?)_parser.TryParse(line, DateTime.UtcNow);
@@ -21,29 +25,35 @@ public sealed class AreaTransitionParserTests
         evt!.AreaKey.Should().Be(expectedArea);
     }
 
-    [Fact]
-    public void Parses_ChooseCharacter_as_null_area()
+    [Theory]
+    [InlineData("LOADING LEVEL ChooseCharacter")]
+    [InlineData("[19:13:54] LOADING LEVEL ChooseCharacter")]
+    public void Parses_ChooseCharacter_as_null_area(string line)
     {
-        var evt = (AreaTransitionEvent?)_parser.TryParse("LOADING LEVEL ChooseCharacter", DateTime.UtcNow);
+        var evt = (AreaTransitionEvent?)_parser.TryParse(line, DateTime.UtcNow);
         evt.Should().NotBeNull();
         evt!.AreaKey.Should().BeNull();
     }
 
-    [Fact]
-    public void Parses_empty_body_as_null_area()
+    [Theory]
+    [InlineData("LOADING LEVEL ")]
+    [InlineData("[18:30:35] LOADING LEVEL ")]
+    public void Parses_empty_body_as_null_area(string line)
     {
         // Disconnect emits "LOADING LEVEL " with empty body — captured 2026-05-09.
-        var evt = (AreaTransitionEvent?)_parser.TryParse("LOADING LEVEL ", DateTime.UtcNow);
+        var evt = (AreaTransitionEvent?)_parser.TryParse(line, DateTime.UtcNow);
         evt.Should().NotBeNull();
         evt!.AreaKey.Should().BeNull();
     }
 
-    [Fact]
-    public void Parses_unknown_non_area_level_as_null()
+    [Theory]
+    [InlineData("LOADING LEVEL StartupMenu")]
+    [InlineData("[04:50:05] LOADING LEVEL ReconnectToServer")]
+    public void Parses_unknown_non_area_level_as_null(string line)
     {
         // Defensive — anything that doesn't start with "Area" isn't a real
-        // game area for our purposes (e.g. menu / loading screens).
-        var evt = (AreaTransitionEvent?)_parser.TryParse("LOADING LEVEL StartupMenu", DateTime.UtcNow);
+        // game area for our purposes (e.g. menu / loading / reconnect screens).
+        var evt = (AreaTransitionEvent?)_parser.TryParse(line, DateTime.UtcNow);
         evt.Should().NotBeNull();
         evt!.AreaKey.Should().BeNull();
     }
@@ -51,8 +61,8 @@ public sealed class AreaTransitionParserTests
     [Fact]
     public void Parses_with_leading_whitespace()
     {
-        // PlayerLogTailReader strips the [HH:MM:SS] prefix; defensive against
-        // any leading whitespace that might survive.
+        // Defensive against any leading whitespace, e.g. if PG ever indents
+        // the line or a future reader change normalises the prefix.
         var evt = (AreaTransitionEvent?)_parser.TryParse("  LOADING LEVEL AreaSerbule", DateTime.UtcNow);
         evt.Should().NotBeNull();
         evt!.AreaKey.Should().Be("AreaSerbule");
