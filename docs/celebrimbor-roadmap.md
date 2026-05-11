@@ -119,7 +119,7 @@ The location-pin tooltip on shopping-list rows used to render `Locations` as a f
 
 `IngredientLocation` ([Mithril.Shared/Storage/IngredientLocation.cs](../src/Mithril.Shared/Storage/IngredientLocation.cs)) carries per-item identity (`ItemInternalName`, `DisplayName`, `IconId`) so the window can group by location with a per-item breakdown sorted by quantity. The window has two tabs — **On hand** (default when stock exists) and **Sources** — populated by [`IngredientSourcesViewModel.Build`](../src/Mithril.Shared/Wpf/IngredientSourcesViewModel.cs) from a module-agnostic `IngredientSourcesInput`.
 
-**Title-bar use-gate hint:** `ItemEntry.SkillReqs` is rendered as a sub-line under the item title (`Requires Gardening 10 to use`, or comma-joined for multi-skill `Requires Alchemy 35, Werewolf 35 to use`). Distinct from acquisition gates because it filters *use* (planting a seedling, casting a scroll), not *purchase*. Skipped for keyword rows (no single item to gate).
+**Title-bar use-gate hint:** `Item.SkillReqs` is rendered as a sub-line under the item title (`Requires Gardening 10 to use`, or comma-joined for multi-skill `Requires Alchemy 35, Werewolf 35 to use`). Distinct from acquisition gates because it filters *use* (planting a seedling, casting a scroll), not *purchase*. Skipped for keyword rows (no single item to gate).
 
 **Sources tab — `IReferenceDataService.ItemSources` resolution with gate enrichment:**
 

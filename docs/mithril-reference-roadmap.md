@@ -177,8 +177,10 @@ POCOs needed).
 
 `ReferenceDataService` now consumes `Mithril.Reference` POCOs instead of
 `RawQuest`/`RawItem`/etc. The public `IReferenceDataService` surface (the
-projection records `ItemEntry`, `RecipeEntry`, `QuestEntry`, etc.) stayed
-unchanged — modules don't notice the swap.
+projection records `RecipeEntry`, `QuestEntry`, etc.) stayed unchanged —
+modules don't notice the swap. (Items were later unified directly to
+`Mithril.Reference.Models.Items.Item` in #209; the slim `ItemEntry`
+projection is gone.)
 
 Internal changes:
 
