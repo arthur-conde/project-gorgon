@@ -289,6 +289,20 @@ public class AlarmServiceTests
     }
 
     [Fact]
+    public void StopAllPlayback_SilencesAllOwners_ButPreservesFiredAtDedup()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");
+        s.Service.ActiveKeys.Should().HaveCount(2);
+
+        s.Service.StopAllPlayback();
+
+        s.Sink.Plays.Should().AllSatisfy(p => p.Handle.IsPlaying.Should().BeFalse());
+        s.Service.ActiveKeys.Should().HaveCount(2);   // dedup untouched
+    }
+
+    [Fact]
     public void StopPreview_DoesNotAffectRealAlarmsOnSameChannel()
     {
         var s = BuildSut(AlarmCollisionBehavior.Mix);

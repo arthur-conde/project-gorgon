@@ -31,7 +31,16 @@
             </TextBlock>
 
             <!-- Alarms: master toggles -->
-            <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <DockPanel LastChildFill="False" Margin="0,0,0,6">
+                <TextBlock DockPanel.Dock="Left" Text="Alarms" Foreground="#88FFFFFF" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Click="StopAllSounds_Click" Padding="10,4"
+                        ToolTip="Stop every currently-playing Samwise alarm sound (does not affect dedup or future alarms).">
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="Square" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Stop all alarm sounds"/>
+                    </StackPanel>
+                </Button>
+            </DockPanel>
             <CheckBox Content="Enabled" IsChecked="{Binding Alarms.Enabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <CheckBox Content="Flash the Mithril window when firing" IsChecked="{Binding Alarms.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
