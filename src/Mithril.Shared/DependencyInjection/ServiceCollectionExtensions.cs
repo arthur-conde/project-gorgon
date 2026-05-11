@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json.Serialization.Metadata;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
@@ -22,6 +23,35 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMithrilDiagnostics(this IServiceCollection services, string logDirectory) =>
         services.AddSingleton<IDiagnosticsSink>(_ =>
             new SerilogDiagnosticsSink(new DiagnosticsSink(), logDirectory));
+
+    /// <summary>
+    /// Register the opt-in perf-trace harness: an <see cref="IPerfTracer"/>
+    /// singleton (writes per-session JSON-lines files to <paramref name="perfDirectory"/>)
+    /// plus a <see cref="PerfTracerHostedService"/> that owns the WPF hooks
+    /// (CompositionTarget, Dispatcher.Hooks, InputManager, GC polling, counters,
+    /// binding errors) and toggles them on/off in sync with session state.
+    ///
+    /// <paramref name="verboseFrameEventsAccessor"/> is a late-bound read of the
+    /// shell setting so flipping <c>ShellSettings.VerboseFrameEvents</c> takes
+    /// effect mid-session without a restart.
+    /// </summary>
+    public static IServiceCollection AddMithrilPerfTrace(
+        this IServiceCollection services,
+        string perfDirectory,
+        Func<IServiceProvider, Func<bool>> verboseFrameEventsAccessor)
+    {
+        services.AddSingleton<IPerfTracer>(sp => new PerfTracer(
+            perfDirectory,
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<PerfTracerHostedService>(sp => new PerfTracerHostedService(
+            sp.GetRequiredService<IPerfTracer>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetServices<Mithril.Shared.Modules.IMithrilModule>(),
+            verboseFrameEventsAccessor(sp),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddHostedService(sp => sp.GetRequiredService<PerfTracerHostedService>());
+        return services;
+    }
 
     public static IServiceCollection AddMithrilGameServices(this IServiceCollection services) =>
         services
@@ -101,7 +131,8 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IReferenceDataService>(sp => new ReferenceDataService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IDiagnosticsSink>()));
+                sp.GetRequiredService<IDiagnosticsSink>(),
+                perf: sp.GetService<IPerfTracer>()));
 
     public static IServiceCollection AddMithrilCommunityCalibration(this IServiceCollection services, string cacheDirectory) =>
         services

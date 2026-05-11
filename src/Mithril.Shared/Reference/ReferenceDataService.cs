@@ -5,6 +5,7 @@ using System.Text.Json;
 using Mithril.Reference;
 using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Diagnostics.Performance;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
 using PocoItem = Mithril.Reference.Models.Items.Item;
@@ -34,6 +35,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly string _bundledDir;
     private readonly HttpClient _http;
     private readonly IDiagnosticsSink? _diag;
+    private readonly IPerfTracer? _perf;
 
     /// <summary>
     /// Map from bundled-file base name (e.g. <c>"quests"</c>) to the
@@ -112,11 +114,12 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, string> _strings = new Dictionary<string, string>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _stringsSnapshot;
 
-    public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null)
+    public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
         _http = http;
         _diag = diag;
+        _perf = perf;
         _bundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
 
         _specsByBaseName = ParserRegistry.Discover()
@@ -295,6 +298,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _diag?.Info("Reference", $"Refreshing {fileName} from {url}.");
 
         byte[] body;
+        var fetchSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var resp = await _http.GetAsync(url, ct);
@@ -304,8 +308,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         catch (Exception ex)
         {
             _diag?.Warn("Reference", $"{fileName}.json fetch failed ({ex.Message}); keeping existing data.");
+            _perf?.EmitRefFetch(fileName, cacheHit: false, durationMs: fetchSw.Elapsed.TotalMilliseconds, bytes: 0);
             return;
         }
+        _perf?.EmitRefFetch(fileName, cacheHit: false, durationMs: fetchSw.Elapsed.TotalMilliseconds, bytes: body.LongLength);
 
         var meta = new ReferenceFileMetadata
         {

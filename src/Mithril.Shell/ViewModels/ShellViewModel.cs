@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Game;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
@@ -57,6 +58,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private readonly ModuleGates _gates;
     private readonly DispatcherTimer _gameClockTimer;
+    private readonly IPerfTracer _perf;
 
     public ShellViewModel(
         IServiceProvider services,
@@ -69,7 +71,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IUpdateApplier updateApplier,
         IAttentionAggregator attention,
         IGameClock gameClock,
-        IShiftCatalog shiftCatalog)
+        IShiftCatalog shiftCatalog,
+        IPerfTracer perf)
     {
         _services = services;
         _settings = settings;
@@ -81,6 +84,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _attention = attention;
         _gameClock = gameClock;
         _shiftCatalog = shiftCatalog;
+        _perf = perf;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
         var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
@@ -329,11 +333,15 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private void ActivateModule(ModuleEntry entry)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
         SelectedModule = entry;
         _gates.For(entry.Module.Id).Open();          // Lazy modules wake up here
         var view = (System.Windows.Controls.Control)_services.GetRequiredService(entry.Module.ViewType);
         ActiveContent = view;
         _settings.ActiveModuleId = entry.Module.Id;
         StatusText = entry.Module.DisplayName;
+
+        _perf.EmitModuleActivated(entry.Module.Id, sw.Elapsed.TotalMilliseconds);
     }
 }

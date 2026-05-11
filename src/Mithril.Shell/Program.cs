@@ -121,6 +121,7 @@ public static class Program
 
             // Build host
             var logDir = Path.Combine(shellDir, "logs");
+            var perfDir = Path.Combine(shellDir, "perf");
             var referenceCacheDir = Path.Combine(localApp, "Mithril", "Reference");
             var communityCalibrationCacheDir = Path.Combine(localApp, "Mithril", "Reference", "CommunityCalibration");
             var iconCacheDir = Path.Combine(localApp, "Mithril", "Icons");
@@ -144,6 +145,7 @@ public static class Program
                 .AddSingleton(audioSettings)
                 .AddSingleton(gameConfig)
                 .AddMithrilDiagnostics(logDir)
+                .AddMithrilPerfTrace(perfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
                 .AddMithrilGameServices()
                 .AddMithrilGameState()
                 .AddMithrilPerCharacterStorage(charactersRootDir)

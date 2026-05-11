@@ -26,6 +26,17 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _developerMode;
     public bool DeveloperMode { get => _developerMode; set => Set(ref _developerMode, value); }
 
+    /// <summary>Master toggle for the perf-trace harness. When false, the hotkey
+    /// is a no-op and no WPF hooks are attached, so the feature costs nothing.</summary>
+    private bool _enablePerfTrace;
+    public bool EnablePerfTrace { get => _enablePerfTrace; set => Set(ref _enablePerfTrace, value); }
+
+    /// <summary>When true, emit a <c>frame</c> event per render rather than
+    /// aggregating to <c>frame_summary</c>. Use for short captures where
+    /// per-frame fidelity matters; otherwise leave off to keep trace files small.</summary>
+    private bool _verboseFrameEvents;
+    public bool VerboseFrameEvents { get => _verboseFrameEvents; set => Set(ref _verboseFrameEvents, value); }
+
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
 

@@ -93,7 +93,9 @@ public static class ShellServiceCollectionExtensions
         services.AddSingleton<IIngredientSourcesPresenter, IngredientSourcesPresenter>();
 
     public static IServiceCollection AddMithrilShellCommands(this IServiceCollection services) =>
-        services.AddSingleton<IHotkeyCommand, ForceQuitCommand>();
+        services
+            .AddSingleton<IHotkeyCommand, ForceQuitCommand>()
+            .AddSingleton<IHotkeyCommand, StartPerfTraceHotkey>();
 
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>
         services
