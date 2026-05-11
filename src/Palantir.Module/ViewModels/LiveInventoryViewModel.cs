@@ -119,7 +119,7 @@ public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposab
     private (string Display, int IconId) ResolveDisplay(string internalName)
     {
         if (_refData is not null && _refData.ItemsByInternalName.TryGetValue(internalName, out var item))
-            return (item.Name, item.IconId);
+            return (item.Name ?? internalName, item.IconId);
         return (internalName, 0);
     }
 

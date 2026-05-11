@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Arwen.ViewModels;
@@ -43,10 +44,10 @@ public sealed partial class ItemLookupViewModel : ObservableObject
     private string _itemSearchText = "";
 
     [ObservableProperty]
-    private ObservableCollection<ItemEntry> _matchingItems = [];
+    private ObservableCollection<Item> _matchingItems = [];
 
     [ObservableProperty]
-    private ItemEntry? _selectedItem;
+    private Item? _selectedItem;
 
     [ObservableProperty]
     private ObservableCollection<NpcWantsRow> _results = [];
@@ -59,7 +60,7 @@ public sealed partial class ItemLookupViewModel : ObservableObject
 
     partial void OnItemSearchTextChanged(string value) => SearchItems();
 
-    partial void OnSelectedItemChanged(ItemEntry? value) => LookupNpcs();
+    partial void OnSelectedItemChanged(Item? value) => LookupNpcs();
 
     partial void OnShowAllNpcsChanged(bool value) => LookupNpcs();
 
@@ -73,11 +74,11 @@ public sealed partial class ItemLookupViewModel : ObservableObject
 
         var q = ItemSearchText;
         var matches = _refData.Items.Values
-            .Where(i => i.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Where(i => i.Name is not null && i.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
             .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
             .Take(100)
             .ToList();
-        MatchingItems = new ObservableCollection<ItemEntry>(matches);
+        MatchingItems = new ObservableCollection<Item>(matches);
     }
 
     private void LookupNpcs()

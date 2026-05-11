@@ -120,7 +120,7 @@ public sealed class PriceCalibrationService
         {
             NpcKey = npcKey,
             InternalName = internalName,
-            ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
+            ItemKeywords = item.Keywords is null ? [] : [.. item.Keywords.Select(k => k.Tag)],
             KeywordBucket = keywordBucket,
             BaseValue = item.Value,
             PricePaid = pricePaid,

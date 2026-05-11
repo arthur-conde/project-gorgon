@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Pippin.Domain;
@@ -67,20 +68,22 @@ public sealed partial class FoodCatalog
             if (item.SkillReqs is not null && item.SkillReqs.TryGetValue("Gourmand", out var req))
                 gourmandReq = req;
 
+            if (string.IsNullOrEmpty(item.InternalName) || string.IsNullOrEmpty(item.Name)) continue;
             var dietaryTags = ExtractDietaryTags(item.Keywords);
 
-            var entry = new FoodEntry(item.Id, item.InternalName, item.Name, item.IconId, foodType, foodLevel, gourmandReq, dietaryTags);
-            byName[item.Name] = entry;
-            byInternal[item.InternalName] = entry;
+            var entry = new FoodEntry(item.Id, item.InternalName!, item.Name!, item.IconId, foodType, foodLevel, gourmandReq, dietaryTags);
+            byName[item.Name!] = entry;
+            byInternal[item.InternalName!] = entry;
         }
 
         _byName = byName;
         _byInternalName = byInternal;
     }
 
-    private static IReadOnlyList<string> ExtractDietaryTags(IReadOnlyList<ItemKeyword> keywords)
+    private static IReadOnlyList<string> ExtractDietaryTags(IReadOnlyList<ItemKeyword>? keywords)
     {
         var tags = new List<string>();
+        if (keywords is null) return tags;
         foreach (var kw in keywords)
         {
             switch (kw.Tag)

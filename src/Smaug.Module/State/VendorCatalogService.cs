@@ -65,7 +65,9 @@ public sealed class VendorCatalogService
         foreach (var (internalName, sources) in _refData.ItemSources)
         {
             if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item)) continue;
-            var itemKeywords = new HashSet<string>(item.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
+            var itemKeywords = item.Keywords is null
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : new HashSet<string>(item.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
 
             foreach (var src in sources)
             {
@@ -92,7 +94,7 @@ public sealed class VendorCatalogService
 
                 entries.Add(new VendorCatalogEntry(
                     ItemInternalName: internalName,
-                    ItemName: item.Name,
+                    ItemName: item.Name ?? internalName,
                     ItemIconId: item.IconId,
                     ItemBaseValue: item.Value,
                     NpcKey: src.Npc,

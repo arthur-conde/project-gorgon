@@ -1,4 +1,5 @@
 using Celebrimbor.Domain;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 
@@ -14,7 +15,7 @@ public sealed class RecipeAggregator
     /// <summary>
     /// Synthetic <see cref="AggregatedIngredient.ItemInternalName"/> prefix used for
     /// rows that represent a keyword-matched ingredient slot (any item whose
-    /// <see cref="ItemEntry.Keywords"/> includes every listed tag). The remainder of
+    /// <see cref="Item.Keywords"/> includes every listed tag). The remainder of
     /// the key is the comma-joined ordinal-sorted keyword list.
     /// </summary>
     private const string KeywordKeyPrefix = "#keys:";
@@ -47,11 +48,12 @@ public sealed class RecipeAggregator
             // expansion/projection like any other row. Raw ingredients only appear when
             // expansionDepth > 0 pulls them in.
             var output = FindPrimaryOutput(recipe, refData);
-            if (output is null) continue;
-            demand[output.InternalName] = demand.TryGetValue(output.InternalName, out var existing)
+            if (output is null || string.IsNullOrEmpty(output.InternalName)) continue;
+            var outInternal = output.InternalName!;
+            demand[outInternal] = demand.TryGetValue(outInternal, out var existing)
                 ? existing + entry.Quantity
                 : entry.Quantity;
-            seeds.Add(output.InternalName);
+            seeds.Add(outInternal);
         }
 
         var producers = BuildProducerLookup(refData);
@@ -91,14 +93,14 @@ public sealed class RecipeAggregator
             var detected = onHandByInternalName is not null && onHandByInternalName.TryGetValue(itemName, out var on) ? on : 0;
             int? overrideCount = overridesByInternalName is not null && overridesByInternalName.TryGetValue(itemName, out var ov) ? ov : null;
             var locations = locationsByInternalName is not null && locationsByInternalName.TryGetValue(itemName, out var locs) ? locs : [];
-            var primaryTag = item.Keywords.FirstOrDefault()?.Tag ?? "Misc";
+            var primaryTag = item.Keywords?.FirstOrDefault()?.Tag ?? "Misc";
             var isAlsoRecipe = producers.ContainsKey(itemName);
             var depth = ComputeDepth(itemName, producers, refData, depthCache, new HashSet<string>(StringComparer.Ordinal));
 
             rows.Add(new AggregatedIngredient(
                 ItemInternalName: itemName,
                 ItemId: item.Id,
-                DisplayName: item.Name,
+                DisplayName: item.Name ?? itemName,
                 IconId: item.IconId,
                 PrimaryTag: primaryTag,
                 TotalNeeded: totalNeeded,
@@ -216,7 +218,8 @@ public sealed class RecipeAggregator
                     {
                         case RecipeItemIngredient item2:
                             if (!refData.Items.TryGetValue(item2.ItemCode, out var ing)) continue;
-                            if (chain.Add(ing.InternalName)) next.Add(ing.InternalName);
+                            if (string.IsNullOrEmpty(ing.InternalName)) continue;
+                            if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
                             break;
                         case RecipeKeywordIngredient kw:
                             var key = MakeKeywordKey(kw.ItemKeys);
@@ -255,9 +258,10 @@ public sealed class RecipeAggregator
         foreach (var ingredient in recipe.Ingredients)
         {
             if (ingredient is RecipeItemIngredient byItem
-                && refData.Items.TryGetValue(byItem.ItemCode, out var item))
+                && refData.Items.TryGetValue(byItem.ItemCode, out var item)
+                && !string.IsNullOrEmpty(item.InternalName))
             {
-                maxIngredientDepth = Math.Max(maxIngredientDepth, ComputeDepth(item.InternalName, producers, refData, cache, onPath));
+                maxIngredientDepth = Math.Max(maxIngredientDepth, ComputeDepth(item.InternalName!, producers, refData, cache, onPath));
             }
             // RecipeKeywordIngredient: depth 0 leaves, no contribution.
         }
@@ -282,7 +286,8 @@ public sealed class RecipeAggregator
             {
                 case RecipeItemIngredient byItem:
                     if (!refData.Items.TryGetValue(byItem.ItemCode, out var item)) continue;
-                    demandKey = item.InternalName;
+                    if (string.IsNullOrEmpty(item.InternalName)) continue;
+                    demandKey = item.InternalName!;
                     break;
                 case RecipeKeywordIngredient kw:
                     demandKey = MakeKeywordKey(kw.ItemKeys);
@@ -382,13 +387,14 @@ public sealed class RecipeAggregator
         foreach (var result in results)
         {
             if (!refData.Items.TryGetValue(result.ItemCode, out var item)) continue;
+            if (string.IsNullOrEmpty(item.InternalName)) continue;
             // First recipe wins. If multiple recipes produce the same item, the
             // aggregator picks deterministically by enumeration order — stable across runs.
-            map.TryAdd(item.InternalName, recipe);
+            map.TryAdd(item.InternalName!, recipe);
         }
     }
 
-    private static ItemEntry? FindPrimaryOutput(RecipeEntry recipe, IReferenceDataService refData)
+    private static Item? FindPrimaryOutput(RecipeEntry recipe, IReferenceDataService refData)
     {
         foreach (var result in recipe.ResultItems)
             if (refData.Items.TryGetValue(result.ItemCode, out var item)) return item;

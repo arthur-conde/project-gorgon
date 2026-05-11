@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
@@ -83,7 +84,9 @@ public sealed class SellPlannerService
         if (!_refData.ItemsByInternalName.TryGetValue(item.InternalName, out var itemEntry))
             return [];
 
-        var itemKeywords = new HashSet<string>(itemEntry.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
+        var itemKeywords = itemEntry.Keywords is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(itemEntry.Keywords.Select(k => k.Tag), StringComparer.Ordinal);
         var rows = new List<SellPlannerVendorRow>();
 
         foreach (var (npcKey, npc) in _refData.Npcs)
@@ -140,7 +143,7 @@ public sealed class SellPlannerService
 
         // Fold stacks across vaults: one row per TypeId with summed stack count,
         // but surface the richest location info we have.
-        var byTypeId = new Dictionary<int, (int Count, string Location, ItemEntry? Entry)>(report.Items.Count);
+        var byTypeId = new Dictionary<int, (int Count, string Location, Item? Entry)>(report.Items.Count);
         foreach (var stockItem in report.Items)
         {
             if (!_refData.Items.TryGetValue(stockItem.TypeID, out var entry)) continue;
@@ -159,10 +162,11 @@ public sealed class SellPlannerService
         foreach (var (typeId, data) in byTypeId)
         {
             if (data.Entry is null) continue;
+            if (string.IsNullOrEmpty(data.Entry.InternalName)) continue;
             items.Add(new SellPlannerItem(
                 TypeId: typeId,
-                InternalName: data.Entry.InternalName,
-                DisplayName: data.Entry.Name,
+                InternalName: data.Entry.InternalName!,
+                DisplayName: data.Entry.Name ?? data.Entry.InternalName!,
                 IconId: data.Entry.IconId,
                 UnitValue: data.Entry.Value,
                 StackCount: data.Count,

@@ -16,7 +16,7 @@ public static class StorageRowMapper
             var location = StorageReportLoader.NormalizeLocation(item.StorageVault, item.IsInInventory);
             var hasRef = refData.Items.TryGetValue(item.TypeID, out var entry);
             var iconId = hasRef ? entry!.IconId : 0;
-            var internalName = hasRef ? entry!.InternalName : "";
+            var internalName = (hasRef ? entry!.InternalName : null) ?? "";
             rows.Add(new StorageItemRow(
                 item.Name,
                 location,

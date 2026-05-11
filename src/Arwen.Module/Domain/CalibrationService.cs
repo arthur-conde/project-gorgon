@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
@@ -277,13 +278,13 @@ public sealed class CalibrationService
                 NpcKey = npcKey,
                 InstanceId = instanceId,
                 InternalName = internalName,
-                DisplayName = string.IsNullOrEmpty(item.Name) ? internalName : item.Name,
+                DisplayName = string.IsNullOrEmpty(item.Name) ? internalName : item.Name!,
                 IconId = item.IconId,
                 FavorDelta = delta,
                 ItemValue = (double)item.Value,
                 MaxStackSize = item.MaxStackSize,
                 MatchedPreferences = [.. matchedPrefs],
-                ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
+                ItemKeywords = ExtractKeywordTags(item),
                 Timestamp = timestamp,
                 SessionId = sessionId,
             };
@@ -300,7 +301,7 @@ public sealed class CalibrationService
         string npcKey,
         long instanceId,
         string internalName,
-        ItemEntry item,
+        Item item,
         IReadOnlyList<MatchedPreference> matchedPrefs,
         double delta,
         int quantity,
@@ -311,7 +312,7 @@ public sealed class CalibrationService
         {
             NpcKey = npcKey,
             ItemInternalName = internalName,
-            ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
+            ItemKeywords = ExtractKeywordTags(item),
             MatchedPreferences = [.. matchedPrefs],
             ItemValue = (double)item.Value,
             FavorDelta = delta,
@@ -798,7 +799,7 @@ public sealed class CalibrationService
                 continue;
             }
 
-            obs.ItemKeywords = [.. item.Keywords.Select(k => k.Tag)];
+            obs.ItemKeywords = ExtractKeywordTags(item);
             obs.MatchedPreferences = [.. matchedPrefs];
             // ItemValue / FavorDelta / Timestamp already present from v1.
             kept.Add(obs);
@@ -1048,7 +1049,7 @@ public sealed class CalibrationService
     /// </summary>
     public string GetItemDisplayName(string itemInternalName) =>
         _refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item) && !string.IsNullOrEmpty(item.Name)
-            ? item.Name
+            ? item.Name!
             : itemInternalName;
 
     /// <summary>
@@ -1128,5 +1129,18 @@ public sealed class CalibrationService
         _diag?.Info("Arwen.Calibration", $"Bulk-deleted {removed} observation(s)");
         DataChanged?.Invoke(this, EventArgs.Empty);
         return removed;
+    }
+
+    /// <summary>
+    /// Flatten an item's raw <see cref="Item.Keywords"/> to a tag-only list for
+    /// observation persistence. Tolerates null Keywords (the JSON shape allows
+    /// missing-keywords items even though all bundled entries currently have them).
+    /// </summary>
+    private static List<string> ExtractKeywordTags(Item item)
+    {
+        if (item.Keywords is null) return [];
+        var result = new List<string>(item.Keywords.Count);
+        foreach (var kw in item.Keywords) result.Add(kw.Tag);
+        return result;
     }
 }
