@@ -10,7 +10,7 @@ public class TaughtRecipeParserTests
     public void WellFormedEntry_ResolvesRecipeAndReturnsPreview()
     {
         var refData = Phase7Fixture.Build(
-            recipes: [Phase7Fixture.Recipe("QualityMindFocus", "Glassblowing", 70, "Quality Mind Focus")]);
+            recipes: [Phase7Fixture.MakeRecipe("QualityMindFocus", "Glassblowing", 70, "Quality Mind Focus")]);
 
         var previews = ResultEffectsParser.ParseTaughtRecipes(
             ["BestowRecipeIfNotKnown(QualityMindFocus)"], refData);
@@ -48,7 +48,7 @@ public class TaughtRecipeParserTests
     public void OtherPrefixes_AreLeftToOtherParsers()
     {
         var refData = Phase7Fixture.Build(
-            recipes: [Phase7Fixture.Recipe("Some", "Anatomy", 5, "Some Recipe")]);
+            recipes: [Phase7Fixture.MakeRecipe("Some", "Anatomy", 5, "Some Recipe")]);
 
         var previews = ResultEffectsParser.ParseTaughtRecipes(
             ["AddItemTSysPower(Foo,1)", "TSysCraftedEquipment(CraftedFoo,1)", "BestowRecipeIfNotKnown(Some)"], refData);

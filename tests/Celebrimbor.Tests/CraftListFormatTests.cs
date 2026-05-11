@@ -15,8 +15,8 @@ public class CraftListFormatTests
         ],
         [
             FakeReferenceData.Recipe("Butter", "Cheesemaking", 0,
-                ingredients: [new RecipeItemIngredient(10, 2, null)],
-                results: [new RecipeItemRef(11, 1, null)]),
+                ingredients: [FakeReferenceData.ItemIngredient(10, 2)],
+                results: [FakeReferenceData.Result(11, 1)]),
         ]);
 
     [Fact]

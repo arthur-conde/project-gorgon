@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Elrond.Domain;
 using Elrond.Services;
 using FluentAssertions;
@@ -444,8 +445,8 @@ public class LevelingSimulatorTests
 
     private sealed class FakeRefData : IReferenceDataService
     {
-        private readonly Dictionary<string, RecipeEntry> _recipes = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, RecipeEntry> _recipesByName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipesByName = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
         private readonly Dictionary<string, XpTableEntry> _xpTables = new(StringComparer.Ordinal);
 
@@ -453,8 +454,8 @@ public class LevelingSimulatorTests
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
-        public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;
+        public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByName;
         public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
@@ -474,10 +475,24 @@ public class LevelingSimulatorTests
 
         public void AddRecipe(string key, string name, string internalName, string skill, int skillLevelReq,
             string rewardSkill, int rewardXp, int rewardXpFirstTime,
-            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null)
+            int? dropOffLevel, double? dropOffPct, int? dropOffRate, string? prereqRecipe = null)
         {
-            var entry = new RecipeEntry(key, name, internalName, 0, skill, skillLevelReq,
-                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [], prereqRecipe);
+            var entry = new Recipe
+            {
+                Key = key,
+                Name = name,
+                InternalName = internalName,
+                IconId = 0,
+                Skill = skill,
+                SkillLevelReq = skillLevelReq,
+                RewardSkill = rewardSkill,
+                RewardSkillXp = rewardXp,
+                RewardSkillXpFirstTime = rewardXpFirstTime,
+                RewardSkillXpDropOffLevel = dropOffLevel,
+                RewardSkillXpDropOffPct = dropOffPct,
+                RewardSkillXpDropOffRate = dropOffRate,
+                PrereqRecipe = prereqRecipe,
+            };
             _recipes[key] = entry;
             _recipesByName[internalName] = entry;
         }

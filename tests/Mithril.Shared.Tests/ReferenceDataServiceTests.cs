@@ -219,10 +219,11 @@ public class ReferenceDataServiceTests : IDisposable
         var recipe = svc.Recipes["recipe_1"];
         recipe.Ingredients.Should().HaveCount(2);
 
-        recipe.Ingredients[0].Should().BeOfType<RecipeItemIngredient>()
-            .Which.ItemCode.Should().Be(100);
+        recipe.Ingredients[0].ItemCode.Should().Be(100);
+        recipe.Ingredients[0].ItemKeys.Should().BeNull();
 
-        var keyword = recipe.Ingredients[1].Should().BeOfType<RecipeKeywordIngredient>().Subject;
+        var keyword = recipe.Ingredients[1];
+        keyword.ItemCode.Should().BeNull();
         keyword.ItemKeys.Should().Equal(["Crystal"]);
         keyword.Desc.Should().Be("Auxiliary Crystal");
         keyword.StackSize.Should().Be(1);

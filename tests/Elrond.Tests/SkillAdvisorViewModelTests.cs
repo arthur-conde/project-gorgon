@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using System.Linq;
 using Elrond.Domain;
 using Elrond.Services;
@@ -189,8 +190,8 @@ public class SkillAdvisorViewModelTests
 
     private sealed class FakeRefData : IReferenceDataService
     {
-        private readonly Dictionary<string, RecipeEntry> _recipes = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, RecipeEntry> _recipesByName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipesByName = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
         private readonly Dictionary<string, XpTableEntry> _xpTables = new(StringComparer.Ordinal);
 
@@ -198,8 +199,8 @@ public class SkillAdvisorViewModelTests
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
-        public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;
+        public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByName;
         public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
@@ -229,12 +230,20 @@ public class SkillAdvisorViewModelTests
             var id = ++_recipeSerial;
             var key = $"recipe_{id}";
             var name = $"Test Recipe {id}";
-            var entry = new RecipeEntry(
-                Key: key, Name: name, InternalName: name, IconId: 0,
-                Skill: rewardSkill, SkillLevelReq: 1,
-                RewardSkill: rewardSkill, RewardSkillXp: 10, RewardSkillXpFirstTime: 20,
-                RewardSkillXpDropOffLevel: null, RewardSkillXpDropOffPct: null, RewardSkillXpDropOffRate: null,
-                Ingredients: [], ResultItems: []);
+            var entry = new Recipe
+            {
+                Key = key,
+                Name = name,
+                InternalName = name,
+                IconId = 0,
+                Skill = rewardSkill,
+                SkillLevelReq = 1,
+                RewardSkill = rewardSkill,
+                RewardSkillXp = 10,
+                RewardSkillXpFirstTime = 20,
+                Ingredients = [],
+                ResultItems = [],
+            };
             _recipes[key] = entry;
             _recipesByName[name] = entry;
         }

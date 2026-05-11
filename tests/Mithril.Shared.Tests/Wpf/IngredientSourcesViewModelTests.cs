@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
@@ -159,21 +160,20 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Recipe_source_renders_label_and_skill_gate()
     {
-        var recipe = new RecipeEntry(
-            Key: "recipe_101",
-            Name: "Tin Bar",
-            InternalName: "TinBar",
-            IconId: 0,
-            Skill: "Smelting",
-            SkillLevelReq: 5,
-            RewardSkill: "Smelting",
-            RewardSkillXp: 10,
-            RewardSkillXpFirstTime: 0,
-            RewardSkillXpDropOffLevel: null,
-            RewardSkillXpDropOffPct: null,
-            RewardSkillXpDropOffRate: null,
-            Ingredients: [],
-            ResultItems: []);
+        var recipe = new Recipe
+        {
+            Key = "recipe_101",
+            Name = "Tin Bar",
+            InternalName = "TinBar",
+            IconId = 0,
+            Skill = "Smelting",
+            SkillLevelReq = 5,
+            RewardSkill = "Smelting",
+            RewardSkillXp = 10,
+            RewardSkillXpFirstTime = 0,
+            Ingredients = [],
+            ResultItems = [],
+        };
 
         var refData = new StubRefData(
             sources: new() { ["TinBar"] = [new ItemSource("Recipe", null, "TinBar")] },
@@ -192,10 +192,21 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Recipe_source_with_PrereqRecipe_surfaces_it_as_Detail()
     {
-        var recipe = new RecipeEntry(
-            "recipe_500", "Advanced Bread", "AdvancedBread", 0,
-            "Cooking", 30, "Cooking", 50, 0, null, null, null,
-            Ingredients: [], ResultItems: [], PrereqRecipe: "BasicBread");
+        var recipe = new Recipe
+        {
+            Key = "recipe_500",
+            Name = "Advanced Bread",
+            InternalName = "AdvancedBread",
+            IconId = 0,
+            Skill = "Cooking",
+            SkillLevelReq = 30,
+            RewardSkill = "Cooking",
+            RewardSkillXp = 50,
+            RewardSkillXpFirstTime = 0,
+            Ingredients = [],
+            ResultItems = [],
+            PrereqRecipe = "BasicBread",
+        };
 
         var refData = new StubRefData(
             sources: new() { ["AdvancedBread"] = [new ItemSource("Recipe", null, "AdvancedBread")] },
@@ -336,13 +347,13 @@ public class IngredientSourcesViewModelTests
             Dictionary<string, IReadOnlyList<ItemSource>>? sources = null,
             Dictionary<string, NpcEntry>? npcs = null,
             Dictionary<string, AreaEntry>? areas = null,
-            Dictionary<string, RecipeEntry>? recipesByInternalName = null,
+            Dictionary<string, Recipe>? recipesByInternalName = null,
             Dictionary<string, Item>? itemsByInternalName = null)
         {
             ItemSources = sources ?? new Dictionary<string, IReadOnlyList<ItemSource>>();
             Npcs = npcs ?? new Dictionary<string, NpcEntry>();
             Areas = areas ?? new Dictionary<string, AreaEntry>();
-            RecipesByInternalName = recipesByInternalName ?? new Dictionary<string, RecipeEntry>();
+            RecipesByInternalName = recipesByInternalName ?? new Dictionary<string, Recipe>();
             ItemsByInternalName = itemsByInternalName ?? new Dictionary<string, Item>();
         }
 
@@ -350,8 +361,8 @@ public class IngredientSourcesViewModelTests
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
-        public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; }
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; }

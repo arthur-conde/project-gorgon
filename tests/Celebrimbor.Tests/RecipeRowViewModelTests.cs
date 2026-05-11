@@ -18,7 +18,7 @@ public class RecipeRowViewModelTests
             skill: "Armorsmithing",
             skillLevelReq: 70,
             ingredients: [],
-            results: [new RecipeItemRef(batch.Id, 1, null)],
+            results: [FakeReferenceData.Result(batch.Id, 1)],
             resultEffects: ["TSysCraftedEquipment(CraftedWerewolfChest6,0,Werewolf)"]);
         var refData = new FakeReferenceData([chestTemplate, batch], [recipe]);
 

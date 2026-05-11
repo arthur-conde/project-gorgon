@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Elrond.Services;
 using FluentAssertions;
 using Mithril.Shared.Character;
@@ -515,7 +516,7 @@ public class SkillAdvisorEngineTests
         refData.AddSkill("Leatherworking", 1, false, "TestTable", 25);
         refData.AddXpTable("TestTable", [100L, 200L, 300L]);
         refData.AddRecipe("recipe_11002", "Rough Leather Practice", "RoughLeatherPractice",
-            "Leatherworking", 1, "Leatherworking", 20, 0, dropOffLevel: 10, dropOffPct: 0.1f, dropOffRate: 5);
+            "Leatherworking", 1, "Leatherworking", 20, 0, dropOffLevel: 10, dropOffPct: 0.1, dropOffRate: 5);
 
         var character = MakeCharacter(
             skills: new Dictionary<string, CharacterSkill> { ["Leatherworking"] = new(15, 0, 0, 100) },
@@ -536,7 +537,7 @@ public class SkillAdvisorEngineTests
         refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
         refData.AddXpTable("TestTable", [100L, 200L, 300L]);
         refData.AddRecipe("recipe_19016", "Quarter Hoop", "QuarterHoop",
-            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1f, dropOffRate: 5);
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1, dropOffRate: 5);
 
         var character = MakeCharacter(
             skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(25, 0, 0, 100) },
@@ -557,7 +558,7 @@ public class SkillAdvisorEngineTests
         refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
         refData.AddXpTable("TestTable", [100L, 200L, 300L]);
         refData.AddRecipe("recipe_19102", "Rough Cow Shoes", "CraftedCowShoes2",
-            "Blacksmithing", 1, "Blacksmithing", 52, 0, dropOffLevel: 23, dropOffPct: 0.1f, dropOffRate: 5);
+            "Blacksmithing", 1, "Blacksmithing", 52, 0, dropOffLevel: 23, dropOffPct: 0.1, dropOffRate: 5);
 
         var character = MakeCharacter(
             skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(25, 0, 0, 100) },
@@ -579,7 +580,7 @@ public class SkillAdvisorEngineTests
         refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
         refData.AddXpTable("TestTable", [100L, 200L, 300L]);
         refData.AddRecipe("recipe_at_threshold", "At Threshold", "AtThreshold",
-            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 10, dropOffPct: 0.1f, dropOffRate: 5);
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 10, dropOffPct: 0.1, dropOffRate: 5);
 
         var character = MakeCharacter(
             skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(10, 0, 0, 100) },
@@ -601,7 +602,7 @@ public class SkillAdvisorEngineTests
         refData.AddSkill("Blacksmithing", 1, false, "TestTable", 25);
         refData.AddXpTable("TestTable", [100L, 200L, 300L]);
         refData.AddRecipe("recipe_below", "Below Threshold", "BelowThreshold",
-            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1f, dropOffRate: 5);
+            "Blacksmithing", 1, "Blacksmithing", 10, 0, dropOffLevel: 11, dropOffPct: 0.1, dropOffRate: 5);
 
         var character = MakeCharacter(
             skills: new Dictionary<string, CharacterSkill> { ["Blacksmithing"] = new(10, 0, 0, 100) },
@@ -622,8 +623,8 @@ public class SkillAdvisorEngineTests
 
     private sealed class FakeRefData : IReferenceDataService
     {
-        private readonly Dictionary<string, RecipeEntry> _recipes = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, RecipeEntry> _recipesByName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipesByName = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
         private readonly Dictionary<string, XpTableEntry> _xpTables = new(StringComparer.Ordinal);
 
@@ -631,8 +632,8 @@ public class SkillAdvisorEngineTests
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
-        public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;
+        public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByName;
         public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
@@ -652,12 +653,26 @@ public class SkillAdvisorEngineTests
 
         public void AddRecipe(string key, string name, string internalName, string skill, int skillLevelReq,
             string rewardSkill, int rewardXp, int rewardXpFirstTime,
-            int? dropOffLevel, float? dropOffPct, int? dropOffRate, string? prereqRecipe = null,
+            int? dropOffLevel, double? dropOffPct, int? dropOffRate, string? prereqRecipe = null,
             string? sortSkill = null)
         {
-            var entry = new RecipeEntry(key, name, internalName, 0, skill, skillLevelReq,
-                rewardSkill, rewardXp, rewardXpFirstTime, dropOffLevel, dropOffPct, dropOffRate, [], [],
-                prereqRecipe, ProtoResultItems: null, ResultEffects: null, SortSkill: sortSkill);
+            var entry = new Recipe
+            {
+                Key = key,
+                Name = name,
+                InternalName = internalName,
+                IconId = 0,
+                Skill = skill,
+                SkillLevelReq = skillLevelReq,
+                RewardSkill = rewardSkill,
+                RewardSkillXp = rewardXp,
+                RewardSkillXpFirstTime = rewardXpFirstTime,
+                RewardSkillXpDropOffLevel = dropOffLevel,
+                RewardSkillXpDropOffPct = dropOffPct,
+                RewardSkillXpDropOffRate = dropOffRate,
+                PrereqRecipe = prereqRecipe,
+                SortSkill = sortSkill,
+            };
             _recipes[key] = entry;
             _recipesByName[internalName] = entry;
         }
