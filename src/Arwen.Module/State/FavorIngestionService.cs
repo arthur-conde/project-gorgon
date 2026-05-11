@@ -54,11 +54,15 @@ public sealed class FavorIngestionService : BackgroundService
             var evt = _parser.TryParse(raw.Line, raw.Timestamp);
             if (evt is null) continue;
 
+            // raw.Timestamp is the log-line UTC (post-#183 + #201 session anchor),
+            // stable across Mithril restarts. Plumb it through so replay produces
+            // the same persisted GiftObservation.Timestamp and dedup short-circuits.
+            var ts = new DateTimeOffset(raw.Timestamp, TimeSpan.Zero);
             switch (evt)
             {
                 case FavorUpdate update:
                     _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
-                    _calibration.OnStartInteraction(update.NpcKey);
+                    _calibration.OnStartInteraction(update.NpcKey, ts);
                     Dispatch(() =>
                     {
                         var favor = _favorView.Current;
@@ -70,12 +74,12 @@ public sealed class FavorIngestionService : BackgroundService
                     break;
 
                 case ItemDeleted deleted:
-                    _calibration.OnItemDeleted(deleted.InstanceId);
+                    _calibration.OnItemDeleted(deleted.InstanceId, ts);
                     break;
 
                 case FavorDelta delta:
                     _diag?.Trace("Arwen.Parse", $"FavorDelta npc={delta.NpcKey} delta={delta.Delta:F1}");
-                    _calibration.OnDeltaFavor(delta.NpcKey, delta.Delta);
+                    _calibration.OnDeltaFavor(delta.NpcKey, delta.Delta, ts);
                     break;
             }
         }

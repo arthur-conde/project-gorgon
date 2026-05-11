@@ -32,6 +32,23 @@ public sealed class GiftObservation
     /// </summary>
     public int Quantity { get; set; } = 1;
 
+    /// <summary>
+    /// PG session identity at the moment the gift was observed, sourced from the
+    /// login banner via <c>IGameSessionService</c>. Combined with
+    /// <see cref="InstanceId"/> it forms the dedup key that lets log-replay-on-
+    /// relaunch short-circuit without writing a second copy of the same gift.
+    /// Empty for legacy (pre-v4) observations migrated forward — they keep their
+    /// wall-clock-stamped key shape.
+    /// </summary>
+    public string SessionId { get; set; } = "";
+
+    /// <summary>
+    /// In-session game-side item id of the gifted instance (the value the game
+    /// emits in <c>ProcessDeleteItem(N)</c>). Unique within a PG session by
+    /// construction. Zero for legacy (pre-v4) observations.
+    /// </summary>
+    public long InstanceId { get; set; }
+
     public DateTimeOffset Timestamp { get; set; }
 
     [JsonIgnore]
@@ -93,7 +110,7 @@ public sealed class CategoryRate
 /// </summary>
 public sealed class CalibrationData
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public string? ContributorNote { get; set; }
     public DateTimeOffset ExportedAt { get; set; }
     public List<GiftObservation> Observations { get; set; } = [];
@@ -121,7 +138,7 @@ public sealed class CalibrationData
 /// </summary>
 public sealed class AggregatesData
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public DateTimeOffset ExportedAt { get; set; }
     public Dictionary<string, CategoryRate> ItemRates { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, CategoryRate> SignatureRates { get; set; } = new(StringComparer.Ordinal);
@@ -136,7 +153,7 @@ public sealed class AggregatesData
 /// </summary>
 public sealed class ObservationLog
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public List<GiftObservation> Observations { get; set; } = [];
 }
 

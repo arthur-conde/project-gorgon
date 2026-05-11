@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -21,7 +22,7 @@ public sealed record PriceEstimateResult(double Price, string Tier, int SampleCo
 public sealed class PriceCalibrationService
 {
     /// <summary>Local schema version: shape of <see cref="PriceObservation"/> records on disk.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>
     /// Wire schema version stamped into <see cref="VendorRatesPayload.SchemaVersion"/> when
@@ -34,11 +35,15 @@ public sealed class PriceCalibrationService
     public const int CommunityWireSchemaVersion = 1;
 
     private readonly IReferenceDataService _refData;
+    private readonly IGameSessionService? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
     private readonly string _dataPath;
     private readonly string _observationsPath;
+    // Fast-path dedup set: rebuilt on Load, updated on every persist. Replays
+    // produce identical keys → short-circuit fires before touching Observations.
+    private readonly HashSet<string> _observationKeys = new(StringComparer.Ordinal);
 
     private PriceCalibrationData _data = new();
 
@@ -56,9 +61,11 @@ public sealed class PriceCalibrationService
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        IGameSessionService? session = null)
     {
         _refData = refData;
+        _session = session;
         _community = community;
         _calibrationSettings = calibrationSettings;
         _diag = diag;
@@ -120,7 +127,17 @@ public sealed class PriceCalibrationService
             FavorTier = favorTier,
             CivicPrideLevel = civicPrideLevel,
             Timestamp = timestamp,
+            SessionId = _session?.Current?.SessionId ?? "",
         };
+
+        var key = ObservationKey(observation);
+        if (!_observationKeys.Add(key))
+        {
+            // Replay-on-relaunch: same session, same log-line timestamp, same
+            // npc/item/price. Drop silently so SampleCount stays clean.
+            _diag?.Trace("Smaug.Calibration", $"Skipped replay of observation {key}");
+            return;
+        }
 
         _data.Observations.Add(observation);
         RecomputeRates();
@@ -311,6 +328,19 @@ public sealed class PriceCalibrationService
             _data.Observations = mergedObservations;
             _data.Version = loadedVersion;
 
+            // v1 → v2: metadata-only migration. Existing records get
+            // SessionId="" (the legacy default). They keep their original
+            // (wall-clock-stamped) Timestamp so ObservationKey collapses to
+            // a stable identity for them; new records get session-keyed ones.
+            if (_data.Version < 2)
+            {
+                foreach (var obs in _data.Observations) obs.SessionId ??= "";
+                _diag?.Info("Smaug.Calibration",
+                    $"Migrating calibration v{_data.Version} → v2: {_data.Observations.Count} observations carried forward (legacy session field defaults).");
+                _data.Version = 2;
+            }
+
+            RebuildObservationKeySet();
             RecomputeRates();
 
             if (legacyHadObservations)
@@ -470,15 +500,21 @@ public sealed class PriceCalibrationService
     }
 
     /// <summary>
-    /// Stable identifier used to dedup observations when both files carry data
-    /// (the downgrade-then-upgrade case). PriceObservation has no Quantity or
-    /// sequence id; two genuine consecutive sells of the same item to the same
-    /// NPC at the same price within the same OS clock tick (~15.6ms on Windows)
-    /// will collide on this key. Acceptable: aggregates barely move from one
-    /// dropped duplicate, and the alternative is a schema bump for a sequence id.
+    /// Stable observation identity. Includes <see cref="PriceObservation.SessionId"/>
+    /// so log-replay-on-relaunch within the same PG session produces the same key
+    /// and dedup short-circuits in <see cref="RecordObservation"/>. Legacy v1
+    /// records (no SessionId on disk) get <c>SessionId = ""</c> from migration —
+    /// they keep their wall-clock-stamped key shape, identical to the pre-#201
+    /// import-dedup form, so existing community exports still merge correctly.
     /// </summary>
     private static string ObservationKey(PriceObservation o) =>
-        $"{o.NpcKey}|{o.InternalName}|{o.PricePaid}|{o.Timestamp:O}";
+        $"{o.SessionId}|{o.NpcKey}|{o.InternalName}|{o.PricePaid}|{o.Timestamp:O}";
+
+    private void RebuildObservationKeySet()
+    {
+        _observationKeys.Clear();
+        foreach (var obs in _data.Observations) _observationKeys.Add(ObservationKey(obs));
+    }
 
     // ── Community export ────────────────────────────────────────────────
 

@@ -8,6 +8,7 @@ using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -76,7 +77,8 @@ public sealed class ArwenModule : IMithrilModule
                 settings.Calibration,
                 sp.GetService<IDiagnosticsSink>(),
                 pendingTtl: settings.PendingObservationTtl,
-                dispatch: UiDispatch);
+                dispatch: UiDispatch,
+                session: sp.GetService<IGameSessionService>());
         });
         services.AddSingleton<IAttentionSource, ArwenAttentionSource>();
 

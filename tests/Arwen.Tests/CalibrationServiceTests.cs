@@ -3,6 +3,7 @@ using System.Text.Json;
 using Arwen.Domain;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -540,12 +541,16 @@ public sealed class CalibrationServiceTests
             survivor.ItemInternalName.Should().Be("Moonstone");
             survivor.Quantity.Should().Be(1);
 
-            // File rewritten at v3.
-            svc.Data.Version.Should().Be(3);
+            // Migration chain runs v2 → v3 → v4. Survivor has its v4 metadata
+            // (SessionId, InstanceId) default-initialised — legacy records keep
+            // their original key shape but coexist with future session-keyed ones.
+            svc.Data.Version.Should().Be(4);
+            survivor.SessionId.Should().Be("");
+            survivor.InstanceId.Should().Be(0);
             using var doc = JsonDocument.Parse(File.ReadAllBytes(v2Path));
-            doc.RootElement.GetProperty("version").GetInt32().Should().Be(3);
+            doc.RootElement.GetProperty("version").GetInt32().Should().Be(4);
 
-            // Pre-migration backup exists.
+            // Pre-migration backup exists (one-shot snapshot before the migration ladder ran).
             File.Exists(v2Path + ".v2.bak").Should().BeTrue();
         }
         finally
@@ -1249,5 +1254,208 @@ public sealed class CalibrationServiceTests
         {
             SafeDeleteDir(dir);
         }
+    }
+
+    // ── Session-keyed dedup (#201) ──────────────────────────────────────
+
+    private static (CalibrationService svc, GiftIndex index, FakeInventory inv) BuildServiceWithSession(
+        string dataDir, FakeSession session)
+    {
+        var refData = BuildRefData();
+        var index = new GiftIndex();
+        index.Build(refData.Items, refData.Npcs);
+        var inv = new FakeInventory();
+        var svc = new CalibrationService(refData, index, inv, dataDir, session: session);
+        return (svc, index, inv);
+    }
+
+    [Fact]
+    public void Replay_OfSameGiftInSameSession_DedupsToOneObservation()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var (svc, _, inv) = BuildServiceWithSession(dir, session);
+            inv.Add(12345, "Moonstone");
+
+            // Simulate the live ingestion of one gift, then a replay of the
+            // same sequence (Mithril relaunched mid-PG-session and the seed
+            // buffer re-emits the same lines).
+            var ts = new DateTimeOffset(2026, 5, 11, 12, 30, 0, TimeSpan.Zero);
+            svc.OnStartInteraction("NPC_Sanja", ts);
+            svc.OnItemDeleted(12345, ts);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5, ts);
+
+            svc.OnStartInteraction("NPC_Sanja", ts);
+            svc.OnItemDeleted(12345, ts);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5, ts);
+
+            svc.Data.Observations.Should().HaveCount(1,
+                "second triplet is a replay — session id + instance id collide on the key");
+            var obs = svc.Data.Observations[0];
+            obs.SessionId.Should().Be(session.Current!.SessionId);
+            obs.InstanceId.Should().Be(12345);
+            obs.Timestamp.Should().Be(ts);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void NewSession_AfterRelogin_RecordsSeparateObservation()
+    {
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var (svc, _, inv) = BuildServiceWithSession(dir, session);
+            inv.Add(12345, "Moonstone");
+
+            var ts1 = new DateTimeOffset(2026, 5, 11, 12, 30, 0, TimeSpan.Zero);
+            svc.OnStartInteraction("NPC_Sanja", ts1);
+            svc.OnItemDeleted(12345, ts1);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5, ts1);
+
+            // PG re-login: same instance id will appear again (PG reuses ids per
+            // session). A new session must produce a distinct observation.
+            session.Set("char|2026-05-11T14:00:00Z");
+
+            var ts2 = new DateTimeOffset(2026, 5, 11, 14, 10, 0, TimeSpan.Zero);
+            inv.Add(12345, "Moonstone");
+            svc.OnStartInteraction("NPC_Sanja", ts2);
+            svc.OnItemDeleted(12345, ts2);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5, ts2);
+
+            svc.Data.Observations.Should().HaveCount(2,
+                "different session id — same instance/npc/delta is a genuinely new gift");
+            svc.Data.Observations[0].SessionId.Should().NotBe(svc.Data.Observations[1].SessionId);
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void Replay_AfterPersistAndReload_StillDedups()
+    {
+        // End-to-end: gift → relaunch → seed replays the same triplet. The
+        // restarted CalibrationService loads from disk, rebuilds the dedup
+        // set, and the replayed triplet collides on key load → no duplicate.
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var refData = BuildRefData();
+            var index = new GiftIndex();
+            index.Build(refData.Items, refData.Npcs);
+            var inv = new FakeInventory();
+            inv.Add(12345, "Moonstone");
+
+            var ts = new DateTimeOffset(2026, 5, 11, 12, 30, 0, TimeSpan.Zero);
+            var first = new CalibrationService(refData, index, inv, dir, session: session);
+            first.OnStartInteraction("NPC_Sanja", ts);
+            first.OnItemDeleted(12345, ts);
+            first.OnDeltaFavor("NPC_Sanja", 22.5, ts);
+            first.Data.Observations.Should().HaveCount(1);
+
+            // Simulate Mithril relaunch: new CalibrationService instance reads
+            // from the same dataDir, then the seed replay re-fires the events.
+            var second = new CalibrationService(refData, index, inv, dir, session: session);
+            second.Data.Observations.Should().HaveCount(1, "loaded from disk");
+            second.OnStartInteraction("NPC_Sanja", ts);
+            second.OnItemDeleted(12345, ts);
+            second.OnDeltaFavor("NPC_Sanja", 22.5, ts);
+            second.Data.Observations.Should().HaveCount(1, "replay short-circuited on key collision");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    [Fact]
+    public void LegacyV3Observation_DoesNotCollideWithV4SessionKeyedObservation()
+    {
+        // A pre-v4 record on disk carries SessionId="" InstanceId=0. A
+        // freshly-recorded v4 observation for the same npc/item/delta MUST
+        // produce a distinct key (it's genuinely a new gift in a session).
+        var dir = Mithril.TestSupport.TestPaths.CreateTempDir("arwen_test");
+        try
+        {
+            // Seed a v3-shape file (the migration ladder fills the v4 fields with defaults).
+            var path = Path.Combine(dir, "calibration.json");
+            var v3Json = """
+                {
+                  "version": 3,
+                  "observations": [
+                    {
+                      "npcKey": "NPC_Sanja",
+                      "itemInternalName": "Moonstone",
+                      "itemKeywords": ["Crystal", "Moonstone"],
+                      "matchedPreferences": [
+                        { "name": "Moonstones", "desire": "Love", "pref": 1.5, "keywords": ["Moonstone"] }
+                      ],
+                      "itemValue": 100,
+                      "favorDelta": 22.5,
+                      "quantity": 1,
+                      "timestamp": "2026-04-20T00:00:00+00:00"
+                    }
+                  ]
+                }
+                """;
+            File.WriteAllText(path, v3Json);
+
+            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var (svc, _, inv) = BuildServiceWithSession(dir, session);
+            svc.Data.Observations.Should().HaveCount(1, "loaded the v3 record");
+            svc.Data.Observations[0].SessionId.Should().Be("");
+
+            // Record a genuinely new gift in a v4 session. Same npc/item/delta
+            // but in-session InstanceId is non-zero → distinct key.
+            inv.Add(12345, "Moonstone");
+            var ts = new DateTimeOffset(2026, 5, 11, 12, 30, 0, TimeSpan.Zero);
+            svc.OnStartInteraction("NPC_Sanja", ts);
+            svc.OnItemDeleted(12345, ts);
+            svc.OnDeltaFavor("NPC_Sanja", 22.5, ts);
+
+            svc.Data.Observations.Should().HaveCount(2, "v3 legacy + v4 new — different keys");
+        }
+        finally
+        {
+            SafeDeleteDir(dir);
+        }
+    }
+
+    /// <summary>
+    /// In-memory <see cref="IGameSessionService"/> stub: holds a single
+    /// <see cref="GameSession"/> and lets tests flip to a new one via
+    /// <see cref="Set"/>. Subscribe is implemented for shape but not used
+    /// by CalibrationService today (it just reads <c>Current</c>).
+    /// </summary>
+    private sealed class FakeSession : IGameSessionService
+    {
+        public GameSession? Current { get; private set; }
+        public event EventHandler<GameSession>? SessionStarted;
+        public FakeSession(string sessionId)
+        {
+            Set(sessionId);
+        }
+        public void Set(string sessionId)
+        {
+            // Synthesize a plausible login instant from the id for shape; only
+            // SessionId matters for the dedup key.
+            Current = new GameSession(sessionId, "char", new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc), TimeSpan.Zero);
+            SessionStarted?.Invoke(this, Current);
+        }
+        public IDisposable Subscribe(Action<GameSession> handler)
+        {
+            if (Current is not null) handler(Current);
+            return new Sub();
+        }
+        private sealed class Sub : IDisposable { public void Dispose() { } }
     }
 }

@@ -13,7 +13,7 @@ namespace Smaug.Domain;
 /// </summary>
 public sealed class PriceCalibrationData
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public DateTimeOffset? ExportedAt { get; set; }
     public string? ContributorNote { get; set; }
 
@@ -34,7 +34,7 @@ public sealed class PriceCalibrationData
 /// </summary>
 public sealed class SmaugAggregatesData
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public DateTimeOffset? ExportedAt { get; set; }
     public Dictionary<string, PriceRate> AbsoluteRates { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, RatioRate> RatioRates { get; set; } = new(StringComparer.Ordinal);
@@ -45,7 +45,7 @@ public sealed class SmaugAggregatesData
 /// </summary>
 public sealed class SmaugObservationLog
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public List<PriceObservation> Observations { get; set; } = [];
 }
 
@@ -66,6 +66,15 @@ public sealed class PriceObservation
     public string FavorTier { get; set; } = "";
     public int CivicPrideLevel { get; set; }
     public DateTimeOffset Timestamp { get; set; }
+
+    /// <summary>
+    /// PG session identity at the moment the sell was observed (sourced from
+    /// <c>IGameSessionService.Current</c>). Used by <c>ObservationKey</c> to
+    /// dedup replays of the same vendor sell across Mithril restarts within
+    /// the same PG session. Empty for legacy (pre-v2) observations migrated
+    /// forward — they keep their wall-clock-stamped key shape.
+    /// </summary>
+    public string SessionId { get; set; } = "";
 
     /// <summary>Ratio of price paid to base Value; undefined when Value is zero.</summary>
     [JsonIgnore]

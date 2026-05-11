@@ -1,4 +1,5 @@
 using System.IO;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
@@ -42,7 +43,8 @@ public sealed class SmaugModule : IMithrilModule
             Path.Combine(localApp, "Mithril", "Smaug"),
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<SmaugSettings>().Calibration,
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetService<IDiagnosticsSink>(),
+            sp.GetService<IGameSessionService>()));
 
         services.AddSingleton<VendorCatalogViewModel>();
         services.AddSingleton<VendorShopViewModel>();
