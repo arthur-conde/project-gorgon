@@ -17,8 +17,7 @@ using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
 using PocoQuest = Mithril.Reference.Models.Quests.Quest;
 using PocoQuestObjective = Mithril.Reference.Models.Quests.QuestObjective;
 using PocoQuestRequirement = Mithril.Reference.Models.Quests.QuestRequirement;
-using PocoRecipe = Mithril.Reference.Models.Recipes.Recipe;
-using PocoRecipeIngredient = Mithril.Reference.Models.Recipes.RecipeIngredient;
+using Recipe = Mithril.Reference.Models.Recipes.Recipe;
 using PocoSkill = Mithril.Reference.Models.Misc.Skill;
 using PocoSourceEnvelope = Mithril.Reference.Models.Sources.SourceEnvelope;
 using PocoXpTable = Mithril.Reference.Models.Misc.XpTable;
@@ -61,9 +60,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     private ReferenceFileSnapshot _itemsSnapshot;
 
     // Recipes
-    private IReadOnlyDictionary<string, RecipeEntry> _recipes = new Dictionary<string, RecipeEntry>(StringComparer.Ordinal);
-    private IReadOnlyDictionary<string, RecipeEntry> _recipesByInternalName =
-        new Dictionary<string, RecipeEntry>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Recipe> _recipes = new Dictionary<string, Recipe>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Recipe> _recipesByInternalName =
+        new Dictionary<string, Recipe>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _recipesSnapshot;
 
     // Skills
@@ -159,8 +158,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
     public ItemKeywordIndex KeywordIndex => _keywordIndex;
-    public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
-    public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByInternalName;
+    public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+    public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByInternalName;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
@@ -427,67 +426,19 @@ public sealed class ReferenceDataService : IReferenceDataService
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
     }
 
-    private void ParseAndSwapRecipes(IReadOnlyDictionary<string, PocoRecipe> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapRecipes(IReadOnlyDictionary<string, Recipe> raw, ReferenceFileMetadata meta)
     {
-        var byKey = new Dictionary<string, RecipeEntry>(raw.Count, StringComparer.Ordinal);
-        var byName = new Dictionary<string, RecipeEntry>(raw.Count, StringComparer.Ordinal);
+        var byKey = new Dictionary<string, Recipe>(raw.Count, StringComparer.Ordinal);
+        var byName = new Dictionary<string, Recipe>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var ingredients = v.Ingredients?
-                .Select(ProjectIngredient)
-                .Where(x => x is not null)
-                .Select(x => x!)
-                .ToList()
-                ?? (IReadOnlyList<RecipeIngredient>)[];
-
-            var results = v.ResultItems?
-                .Where(i => i.ItemCode != 0)
-                .Select(i => new RecipeItemRef(i.ItemCode, i.StackSize, null))
-                .ToList()
-                ?? (IReadOnlyList<RecipeItemRef>)[];
-
-            var protoResults = v.ProtoResultItems?
-                .Where(i => i.ItemCode != 0)
-                .Select(i => new RecipeItemRef(i.ItemCode, i.StackSize, null))
-                .ToList()
-                ?? (IReadOnlyList<RecipeItemRef>)[];
-
-            var resultEffects = v.ResultEffects ?? (IReadOnlyList<string>)[];
-
-            var entry = new RecipeEntry(
-                key,
-                v.Name ?? "",
-                v.InternalName ?? "",
-                v.IconId,
-                v.Skill ?? "",
-                v.SkillLevelReq,
-                v.RewardSkill ?? "",
-                v.RewardSkillXp,
-                v.RewardSkillXpFirstTime,
-                v.RewardSkillXpDropOffLevel,
-                (float?)v.RewardSkillXpDropOffPct,
-                v.RewardSkillXpDropOffRate,
-                ingredients,
-                results,
-                v.PrereqRecipe,
-                protoResults,
-                resultEffects,
-                SortSkill: v.SortSkill);
-            byKey[key] = entry;
-            if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
+            // ParseRecipes already lifts the envelope key onto Recipe.Key.
+            byKey[key] = v;
+            if (!string.IsNullOrEmpty(v.InternalName)) byName[v.InternalName!] = v;
         }
         _recipes = byKey;
         _recipesByInternalName = byName;
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
-    }
-
-    private static RecipeIngredient? ProjectIngredient(PocoRecipeIngredient i)
-    {
-        if (i.ItemCode is { } itemCode)
-            return new RecipeItemIngredient(itemCode, i.StackSize, (float?)i.ChanceToConsume);
-        if (i.ItemKeys is { Count: > 0 } keys)
-            return new RecipeKeywordIngredient(keys, i.Desc, i.StackSize, (float?)i.ChanceToConsume);
-        return null;
     }
 
     private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)
