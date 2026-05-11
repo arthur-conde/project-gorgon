@@ -60,6 +60,8 @@
     <Resource Include="Resources\appearance.jpg" />
     <Resource Include="Resources\about.ico" />
     <Resource Include="Resources\about.jpg" />
+    <Resource Include="Resources\perf-trace.ico" />
+    <Resource Include="Resources\perf-trace.jpg" />
     <Resource Include="Resources\attention-overlay.ico" />
     <Resource Include="Resources\mithril-attention.ico" />
   </ItemGroup>
