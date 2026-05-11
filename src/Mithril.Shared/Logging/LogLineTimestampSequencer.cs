@@ -7,11 +7,28 @@ namespace Mithril.Shared.Logging;
 /// (Player.log mtime minus the player's TZ offset matches the prefix's
 /// time-of-day) and against the ChatLog login banner's reported
 /// <c>Timezone Offset</c>, which equals the offset between Player.log
-/// prefixes and ChatLog lines. State is per-file: the date is anchored on
-/// file mtime (UTC) for the first content batch and folded forward across
-/// rollovers in subsequent batches. Lines without the prefix inherit the
-/// previous line's stamp, or fall through to <see cref="TimeProvider.GetUtcNow"/>
-/// if nothing has been seen yet.
+/// prefixes and ChatLog lines.
+///
+/// <para><b>Date anchoring.</b> Two anchor strategies, picked dynamically:</para>
+/// <list type="bullet">
+///   <item><b>Session anchor (preferred).</b> If an <see cref="ISessionAnchor"/>
+///   has observed a <c>Logged in as character … Time UTC=…</c> banner, the
+///   sequencer pins <c>_currentUtcDate</c> to <c>LoggedInUtc.Date</c> and
+///   primes <c>_prevUtcTimeOfDay</c> with the login time-of-day. The login
+///   instant is the earliest known point in the relevant window, so
+///   <see cref="StampForLine"/>'s existing forward-rollover detection
+///   (HH-wraps-backward &gt; 12h ⇒ +1 day) carries the date across every
+///   subsequent midnight without further intervention. On
+///   <see cref="ISessionAnchor.AnchorChanged"/> (PG re-login), the sequencer
+///   re-anchors to the new banner's date. Self-describing from inside the
+///   file — robust to copies, runs spanning midnight, and clock drift.</item>
+///   <item><b>mtime anchor (fallback).</b> No session known: walk the date
+///   <i>backward</i> from the LAST timestamped line in the first batch,
+///   subtracting in-batch rollover count, so the last line lines up with
+///   the file's mtime (or mtime - 1 day if the line's tod is past mtime's
+///   tod). Preserves pre-<c>ISessionAnchor</c> behaviour for pre-banner
+///   lines (engine boot) and for chat logs that never emit a banner.</item>
+/// </list>
 ///
 /// Shared by <see cref="PlayerLogTailReader"/> (single-file Player.log)
 /// and <see cref="ChatLogTailReader"/> (per-channel chat logs); each chat
@@ -25,31 +42,76 @@ namespace Mithril.Shared.Logging;
 internal sealed class LogLineTimestampSequencer
 {
     private readonly TimeProvider _time;
+    private readonly ISessionAnchor? _sessionAnchor;
     private DateOnly? _currentUtcDate;
     private TimeSpan? _prevUtcTimeOfDay;
     private DateTime _lastEmittedUtc;
+    // Tracks the session-anchor instant we've already aligned with so an
+    // AnchorChanged event for a transition we've already absorbed doesn't
+    // re-anchor mid-stream. Null when running under the mtime fallback.
+    private DateTime? _appliedSessionAnchor;
 
-    public LogLineTimestampSequencer(TimeProvider time)
+    public LogLineTimestampSequencer(TimeProvider time, ISessionAnchor? sessionAnchor = null)
     {
         _time = time;
+        _sessionAnchor = sessionAnchor;
+        if (_sessionAnchor is not null)
+            _sessionAnchor.AnchorChanged += OnAnchorChanged;
+    }
+
+    private void OnAnchorChanged(object? sender, EventArgs e)
+    {
+        // Drop the current anchor; the next StampForLine / EnsureAnchored
+        // call will re-pick from the (now updated) session anchor.
+        var anchor = _sessionAnchor?.LoggedInUtc;
+        if (anchor is null) return;
+        if (_appliedSessionAnchor == anchor) return;
+
+        _currentUtcDate = DateOnly.FromDateTime(anchor.Value);
+        _prevUtcTimeOfDay = anchor.Value.TimeOfDay;
+        _appliedSessionAnchor = anchor;
     }
 
     /// <summary>
-    /// Anchor the date for the first content batch. Pre-scans <paramref name="lines"/>
-    /// for <c>[HH:MM:SS]</c> prefixes, counts midnight rollovers in the
-    /// batch, and walks the start back so the LAST timestamped line lines
-    /// up with file mtime (or mtime - 1 day if its tod is past mtime's
-    /// tod, which happens when the file ticks over to the next UTC day
-    /// shortly after the line was written). Caller passes a UTC mtime —
-    /// both <see cref="PlayerLogTailReader"/> and <see cref="ChatLogTailReader"/>
-    /// use <see cref="File.GetLastWriteTimeUtc"/> so the comparison
-    /// against the UTC prefix is in one frame. No-op once anchored, and
-    /// no-op for batches with no prefixed lines (defers init to a later
-    /// batch that has at least one).
+    /// Anchor the date for the first content batch. Two strategies:
+    ///
+    /// <para><b>Session anchor.</b> If an <see cref="ISessionAnchor"/> has
+    /// already observed the <c>Logged in as character</c> banner, pin the
+    /// date to <c>LoggedInUtc.Date</c> directly. The banner is the
+    /// authoritative earliest known instant in the session, so no
+    /// back-walk is needed and pre-banner lines in the same batch
+    /// (engine boot) inherit <c>LoggedInUtc.Date</c> too — slight
+    /// imprecision on pre-session lines is benign because no ingestion
+    /// service consumes them.</para>
+    ///
+    /// <para><b>mtime fallback.</b> No session known: pre-scan
+    /// <paramref name="lines"/> for <c>[HH:MM:SS]</c> prefixes, count
+    /// midnight rollovers in the batch, and walk the start back so the
+    /// LAST timestamped line lines up with file mtime (or mtime - 1 day
+    /// if its tod is past mtime's tod). Preserves pre-session-anchor
+    /// behaviour for chat logs and for any state where the banner
+    /// hasn't been parsed yet.</para>
+    ///
+    /// No-op once anchored, and no-op for batches with no prefixed lines
+    /// (defers init to a later batch that has at least one).
     /// </summary>
     public void EnsureAnchored(IReadOnlyList<string> lines, Func<DateTime> mtimeUtcAccessor)
     {
         if (_currentUtcDate is not null) return;
+
+        // Prefer session anchor when available. EnsureAnchored runs at the
+        // first batch from the tail reader; the session service's seed-replay
+        // subscription typically lands the banner immediately, but if not we
+        // fall through to the mtime path and OnAnchorChanged retros the date
+        // when the banner does land.
+        var anchor = _sessionAnchor?.LoggedInUtc;
+        if (anchor is not null)
+        {
+            _currentUtcDate = DateOnly.FromDateTime(anchor.Value);
+            _prevUtcTimeOfDay = anchor.Value.TimeOfDay;
+            _appliedSessionAnchor = anchor;
+            return;
+        }
 
         var rollovers = 0;
         TimeSpan? prev = null;

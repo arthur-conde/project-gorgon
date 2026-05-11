@@ -1,7 +1,9 @@
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -19,6 +21,12 @@ public static class GameStateServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddMithrilGameState(this IServiceCollection services)
     {
+        services
+            .AddSingleton<GameSessionService>()
+            .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())
+            .AddSingleton<ISessionAnchor>(sp => sp.GetRequiredService<GameSessionService>())
+            .AddHostedService(sp => sp.GetRequiredService<GameSessionService>());
+
         services
             .AddSingleton<InventoryService>()
             .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())

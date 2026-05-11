@@ -16,11 +16,13 @@ namespace Mithril.Shared.Logging;
 public sealed class ChatLogTailReader
 {
     private readonly TimeProvider _time;
+    private readonly ISessionAnchor? _sessionAnchor;
     private readonly Dictionary<string, FileState> _files = new(StringComparer.OrdinalIgnoreCase);
 
-    public ChatLogTailReader(TimeProvider? time = null)
+    public ChatLogTailReader(TimeProvider? time = null, ISessionAnchor? sessionAnchor = null)
     {
         _time = time ?? TimeProvider.System;
+        _sessionAnchor = sessionAnchor;
     }
 
     /// <summary>
@@ -37,7 +39,7 @@ public sealed class ChatLogTailReader
                 _files[path] = new FileState
                 {
                     Offset = new FileInfo(path).Length,
-                    Sequencer = new LogLineTimestampSequencer(_time),
+                    Sequencer = new LogLineTimestampSequencer(_time, _sessionAnchor),
                 };
             }
             catch (IOException) { }
@@ -50,7 +52,7 @@ public sealed class ChatLogTailReader
 
         if (!_files.TryGetValue(path, out var state))
         {
-            state = new FileState { Sequencer = new LogLineTimestampSequencer(_time) };
+            state = new FileState { Sequencer = new LogLineTimestampSequencer(_time, _sessionAnchor) };
             _files[path] = state;
         }
 
