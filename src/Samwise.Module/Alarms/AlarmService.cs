@@ -121,31 +121,9 @@ public sealed class AlarmService : IDisposable
     {
         Dispatch(() =>
         {
-            var channel = ResolveChannel(rule.ChannelId);
-            var owners = OwnersOf(channel.Id);
-            PruneStopped(owners);
-
-            bool willPlaySound;
-            switch (channel.Collision)
+            if (TryRouteToChannel(rule, alarm.Key, out _))
             {
-                case AlarmCollisionBehavior.Suppress:
-                    willPlaySound = owners.Count == 0;
-                    break;
-                case AlarmCollisionBehavior.Replace:
-                    foreach (var o in owners) o.Handle.Stop();
-                    owners.Clear();
-                    willPlaySound = true;
-                    break;
-                case AlarmCollisionBehavior.Mix:
-                default:
-                    willPlaySound = true;
-                    break;
-            }
-
-            if (willPlaySound)
-            {
-                var handle = _audio.Play(rule.SoundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise", loop: rule.Loop);
-                owners.Add(new ChannelOwner(alarm.Key, handle));
+                // sound dispatched
             }
 
             if (_settings.Alarms.FlashWindow)
@@ -156,6 +134,55 @@ public sealed class AlarmService : IDisposable
 
             AlarmTriggered?.Invoke(this, alarm);
         });
+    }
+
+    /// <summary>
+    /// Play a stage's sound through its configured channel just like a real
+    /// alarm would — honouring Loop, the channel's collision behaviour, and
+    /// the channel's playback slot. Used by the settings view's per-stage
+    /// preview button so what the user hears matches what they'll get in-game.
+    /// </summary>
+    public void PreviewStage(StageAlarmRule rule)
+    {
+        var previewKey = $"preview|{Guid.NewGuid():N}";
+        Dispatch(() => TryRouteToChannel(rule, previewKey, out _));
+    }
+
+    /// <summary>
+    /// Routes a play request through the rule's channel. Applies the channel's
+    /// collision policy: Replace stops and clears existing owners; Suppress
+    /// drops the new sound if any owner is still playing; Mix appends.
+    /// Returns true and emits the new handle when a sound was actually started.
+    /// </summary>
+    private bool TryRouteToChannel(StageAlarmRule rule, string ownerKey, out IPlaybackHandle? handle)
+    {
+        handle = null;
+        var channel = ResolveChannel(rule.ChannelId);
+        var owners = OwnersOf(channel.Id);
+        PruneStopped(owners);
+
+        bool willPlaySound;
+        switch (channel.Collision)
+        {
+            case AlarmCollisionBehavior.Suppress:
+                willPlaySound = owners.Count == 0;
+                break;
+            case AlarmCollisionBehavior.Replace:
+                foreach (var o in owners) o.Handle.Stop();
+                owners.Clear();
+                willPlaySound = true;
+                break;
+            case AlarmCollisionBehavior.Mix:
+            default:
+                willPlaySound = true;
+                break;
+        }
+
+        if (!willPlaySound) return false;
+
+        handle = _audio.Play(rule.SoundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise", loop: rule.Loop);
+        owners.Add(new ChannelOwner(ownerKey, handle));
+        return true;
     }
 
     private static void Dispatch(Action a)

@@ -221,4 +221,45 @@ public class AlarmServiceTests
         ripeHandle.IsPlaying.Should().BeFalse();
         plot2Handle.IsPlaying.Should().BeTrue();
     }
+
+    [Fact]
+    public void PreviewStage_RoutesThroughChannel_AndPropagatesLoop()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        var ripe = s.Settings.Alarms.Rules[PlotStage.Ripe];
+        ripe.Loop = true;
+
+        s.Service.PreviewStage(ripe);
+
+        s.Sink.Plays.Should().HaveCount(1);
+        s.Sink.Plays[0].Loop.Should().BeTrue();
+        s.Sink.Plays[0].CallerId.Should().Be("samwise");
+    }
+
+    [Fact]
+    public void PreviewStage_SuppressChannel_DroppedWhileAnotherAlarmPlays()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Suppress);
+        RipenPlot(s, "1", "Carrot");
+        s.Sink.Plays.Should().HaveCount(1);
+
+        // Preview should hit the same channel and get suppressed.
+        s.Service.PreviewStage(s.Settings.Alarms.Rules[PlotStage.Ripe]);
+
+        s.Sink.Plays.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void PreviewStage_ReplaceChannel_StopsPriorAlarm()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Replace);
+        RipenPlot(s, "1", "Carrot");
+        var firstHandle = s.Sink.Plays[0].Handle;
+
+        s.Service.PreviewStage(s.Settings.Alarms.Rules[PlotStage.Ripe]);
+
+        firstHandle.IsPlaying.Should().BeFalse();
+        s.Sink.Plays.Should().HaveCount(2);
+        s.Sink.Plays[1].Handle.IsPlaying.Should().BeTrue();
+    }
 }

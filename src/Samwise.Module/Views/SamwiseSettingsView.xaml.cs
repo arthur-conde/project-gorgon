@@ -8,9 +8,9 @@ namespace Samwise.Views;
 
 public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
 {
-    private IPlaybackHandle? _testHandle;
-
     public SamwiseSettingsView() { InitializeComponent(); }
+
+    public AlarmService? Alarms { get; set; }
 
     private void BrowseSound_Click(object sender, RoutedEventArgs e)
     {
@@ -25,12 +25,8 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
 
     private void TestSound_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule
-            && DataContext is SamwiseSettings s)
-        {
-            _testHandle?.Stop();
-            _testHandle = AudioPlayer.Play(rule.SoundFilePath, (float)s.Alarms.AlarmVolume, "samwise");
-        }
+        if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule)
+            Alarms?.PreviewStage(rule);
     }
 
     private void ClearSound_Click(object sender, RoutedEventArgs e)
