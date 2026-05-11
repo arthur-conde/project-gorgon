@@ -237,7 +237,7 @@ public class ReferenceDataServiceTests : IDisposable
     public void Recipe_item_source_resolves_recipeId_to_recipe_InternalName()
     {
         // sources_items.json carries recipeId numerically; the parser should look up
-        // the matching RecipeEntry and store its InternalName in ItemSource.Context.
+        // the matching Recipe and store its InternalName in ItemSource.Context.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
             {
               "item_500": { "Name": "Tin Bar", "InternalName": "TinBar" }
