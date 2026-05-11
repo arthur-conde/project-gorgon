@@ -148,12 +148,12 @@ new POCO. The class-level summary comment names the three exceptions
 explicitly, and `Item.Keywords` / `Item.Value` carry deviation notes on
 their individual property doc-comments.
 
-### Three deliberate deviations on `Recipe` from "JSON shape exactly"
+### Two deliberate deviations on `Recipe` from "JSON shape exactly"
 
 **Where:** [Models/Recipes/Recipe.cs](../src/Mithril.Reference/Models/Recipes/Recipe.cs).
 Companion to `Item` — every gameplay module that reads recipes also pays
 the same lifting tax, so we collapsed the slim `RecipeEntry` projection
-into the canonical POCO (#216). Three deviations from the literal JSON
+into the canonical POCO (#216). Two deviations from the literal JSON
 shape:
 
 1. **`Key` (string)** — *lifted from the JSON envelope key.* `recipes.json`
@@ -166,16 +166,20 @@ shape:
    4427/4427 entries carry an `Ingredients` field (11 with empty list,
    4416 non-empty, 0 missing). Slim already exposed it as non-nullable;
    the full POCO now matches.
-3. **Slim `RecipeIngredient` polymorphic hierarchy folded into the flat
-   POCO.** The slim path projected each JSON ingredient into one of
-   `RecipeItemIngredient` (with non-nullable `ItemCode`) or
-   `RecipeKeywordIngredient` (with non-nullable `ItemKeys`). The full POCO
-   keeps the raw JSON shape — a flat class with mutually-exclusive
-   nullable `ItemCode` / `ItemKeys`. Consumers branch on field presence
-   (`if (ingredient.ItemCode is { } itemCode)`) instead of type-pattern
-   matching. The flat shape is the source of truth; the polymorphic
-   projection was a slim-side convenience the consumers paid for in
-   exhaustive switch arms.
+
+The polymorphic `RecipeIngredient` hierarchy (abstract base +
+`RecipeItemIngredient` / `RecipeKeywordIngredient` subclasses)
+**carries through unchanged from slim to the full POCO** — this is *not*
+a deviation; it's the type-safe encoding of the JSON's mutually-exclusive
+`ItemCode` / `ItemKeys` field-presence discriminator. The JSON has no
+explicit `T`-style tag so a bespoke
+[RecipeIngredientConverter](../src/Mithril.Reference/Serialization/Converters/RecipeIngredientConverter.cs)
+picks the concrete subclass at deserialize time. Consumers pattern-match
+on subclass; illegal states (both fields set, neither set) are not
+representable. An interim refactor folded the hierarchy into a flat
+class with nullable `ItemCode`/`ItemKeys`; the resulting field-presence
+branching at every call site was strictly worse type-safety than the
+slim shape, so we restored the hierarchy in a corrective follow-up.
 
 The `ResultItems` / `ProtoResultItems` migration from the slim
 `RecipeItemRef(long ItemCode, int StackSize, float? ChanceToConsume)`
@@ -188,11 +192,10 @@ an extra `PercentChance` field that the full JSON shape provides for
 probabilistic result slots — the slim path silently dropped it.
 
 **Why these and not others:** same "every consumer was paying the tax"
-rule as `Item`. Every call site looked up the key via `recipe.Key`,
-asserted `Ingredients` was non-null before iterating, and switch-cased
-the ingredient subtype. Lifting all three at the parse seam eliminated
-~30 lines of boilerplate per consumer across Celebrimbor / Bilbo /
-Elrond / Mithril.Shared.Wpf.
+rule as `Item`. Every call site looked up the key via `recipe.Key` and
+asserted `Ingredients` was non-null before iterating. Lifting both at
+the parse seam eliminated boilerplate per consumer across Celebrimbor /
+Bilbo / Elrond / Mithril.Shared.Wpf without sacrificing type safety.
 
 **Risk:** the `RewardSkillXpDropOffPct` field was `float?` on slim and
 `double?` on the full POCO. Float→double widening introduces precision
