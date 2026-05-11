@@ -19,7 +19,7 @@ public static class AudioPlayer
     /// <summary>
     /// When true, <see cref="Play"/> does not stop existing playback first.
     /// </summary>
-    public static bool ConcurrentPlayback { get; set; }
+    public static bool ConcurrentPlayback { get; set; } = true;
 
     public static IReadOnlyList<string> SupportedExtensions { get; } = new[]
     {
@@ -30,7 +30,7 @@ public static class AudioPlayer
         "Audio files|*.wav;*.mp3;*.wma;*.aac;*.m4a;*.flac;*.ogg|"
         + "WAV|*.wav|MP3|*.mp3|All files|*.*";
 
-    public static IPlaybackHandle Play(string? path, float volume = 1.0f, string? callerId = null)
+    public static IPlaybackHandle Play(string? path, float volume = 1.0f, string? callerId = null, bool loop = false)
     {
         try
         {
@@ -43,7 +43,8 @@ public static class AudioPlayer
                 return PlaybackHandle.Empty;
             }
 
-            var reader = OpenReader(path);
+            WaveStream reader = OpenReader(path);
+            if (loop) reader = new LoopStream(reader);
             var sampleProvider = reader.ToSampleProvider();
             var volumeProvider = new VolumeSampleProvider(sampleProvider)
             {
@@ -189,5 +190,46 @@ public static class AudioPlayer
         }
 
         public void Dispose() => Stop();
+    }
+
+    /// <summary>
+    /// Wraps a <see cref="WaveStream"/> so it loops seamlessly at EOF.
+    /// Used by <see cref="Play"/> when <c>loop: true</c> is requested.
+    /// </summary>
+    private sealed class LoopStream : WaveStream
+    {
+        private readonly WaveStream _inner;
+        public LoopStream(WaveStream inner) => _inner = inner;
+
+        public override WaveFormat WaveFormat => _inner.WaveFormat;
+        public override long Length => _inner.Length;
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int totalRead = 0;
+            while (totalRead < count)
+            {
+                int read = _inner.Read(buffer, offset + totalRead, count - totalRead);
+                if (read == 0)
+                {
+                    if (_inner.Position == 0) break; // can't seek; degenerate stream
+                    _inner.Position = 0;
+                    continue;
+                }
+                totalRead += read;
+            }
+            return totalRead;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }
