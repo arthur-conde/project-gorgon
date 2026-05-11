@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -44,7 +46,7 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
     private double _snoozeMinutes = 5;
     private double _alarmVolume = 0.8;
     private Dictionary<PlotStage, StageAlarmRule> _rules = DefaultRules();
-    private List<AlarmChannel> _channels = DefaultChannels();
+    private ObservableCollection<AlarmChannel> _channels = DefaultChannels();
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public bool BalloonNotification { get => _balloonNotification; set => Set(ref _balloonNotification, value); }
@@ -67,15 +69,17 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
     }
 
     /// <summary>Named alarm channels with collision policies. Persisted.</summary>
-    public List<AlarmChannel> Channels
+    public ObservableCollection<AlarmChannel> Channels
     {
         get => _channels;
         set
         {
             if (ReferenceEquals(_channels, value)) return;
             DetachChannelEvents(_channels);
+            _channels.CollectionChanged -= OnChannelsCollectionChanged;
             _channels = value ?? DefaultChannels();
             AttachChannelEvents(_channels);
+            _channels.CollectionChanged += OnChannelsCollectionChanged;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
         }
     }
@@ -87,6 +91,7 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
     {
         AttachRuleEvents(_rules);
         AttachChannelEvents(_channels);
+        _channels.CollectionChanged += OnChannelsCollectionChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -127,18 +132,28 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
         }
     }
 
-    private void AttachChannelEvents(List<AlarmChannel> channels)
+    private void AttachChannelEvents(IList<AlarmChannel> channels)
     {
         foreach (var c in channels) c.PropertyChanged += OnChannelChanged;
     }
 
-    private void DetachChannelEvents(List<AlarmChannel> channels)
+    private void DetachChannelEvents(IList<AlarmChannel> channels)
     {
         foreach (var c in channels) c.PropertyChanged -= OnChannelChanged;
     }
 
     private void OnChannelChanged(object? sender, PropertyChangedEventArgs e)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
+
+    private void OnChannelsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (AlarmChannel c in e.NewItems) c.PropertyChanged += OnChannelChanged;
+        if (e.OldItems is not null)
+            foreach (AlarmChannel c in e.OldItems) c.PropertyChanged -= OnChannelChanged;
+        RecomputeMembershipSummaries();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
+    }
 
     public void PostLoadInit()
     {
@@ -147,15 +162,18 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
         // The explicit empty check covers both "missing property" and "explicit []".
         if (_channels == null || _channels.Count == 0)
         {
-            DetachChannelEvents(_channels ?? new());
+            DetachChannelEvents(_channels ?? new ObservableCollection<AlarmChannel>());
             _channels = DefaultChannels();
             AttachChannelEvents(_channels);
+            _channels.CollectionChanged += OnChannelsCollectionChanged;
         }
 
         // Re-attach event handlers on freshly-loaded children (STJ source-gen sets
         // the field without invoking AttachChannelEvents). Idempotent: detach first.
         DetachChannelEvents(_channels);
         AttachChannelEvents(_channels);
+        _channels.CollectionChanged -= OnChannelsCollectionChanged;
+        _channels.CollectionChanged += OnChannelsCollectionChanged;
         DetachRuleEvents(_rules);
         AttachRuleEvents(_rules);
 
@@ -178,7 +196,7 @@ public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Setti
         [PlotStage.NeedsFertilizer] = new() { Enabled = false },
     };
 
-    private static List<AlarmChannel> DefaultChannels() => new()
+    private static ObservableCollection<AlarmChannel> DefaultChannels() => new()
     {
         new AlarmChannel { Id = "default", Name = "Default", Collision = AlarmCollisionBehavior.Replace },
     };
@@ -263,5 +281,5 @@ public sealed class SamwiseSettings : INotifyPropertyChanged, Mithril.Shared.Set
 [JsonSerializable(typeof(SamwiseSettings))]
 [JsonSerializable(typeof(CalibrationSettings))]
 [JsonSerializable(typeof(AlarmChannel))]
-[JsonSerializable(typeof(List<AlarmChannel>))]
+[JsonSerializable(typeof(ObservableCollection<AlarmChannel>))]
 public partial class SamwiseSettingsJsonContext : JsonSerializerContext { }

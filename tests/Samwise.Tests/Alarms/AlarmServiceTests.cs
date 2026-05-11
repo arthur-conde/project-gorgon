@@ -51,7 +51,6 @@ public class AlarmServiceTests
             s.Time.Now.UtcDateTime, plotId, cropType, "ripe", "Harvest " + cropType, 1.0));
     }
 
-    // Used by Task 9 tests (HandleHarvested across multiple stages on a Mix channel).
     /// <summary>
     /// Drive a plot into Thirsty by emitting the Water-Crop action.
     /// </summary>
