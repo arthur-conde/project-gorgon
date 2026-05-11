@@ -5,7 +5,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="clr-namespace:Celebrimbor.Views"
-             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              mc:Ignorable="d"
              Background="#FF1A1A1A">
     <UserControl.Resources>

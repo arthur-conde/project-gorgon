@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\..\src\Mithril.GameState\Mithril.GameState.csproj" />
     <!-- Module references support both LogPatternCatalogParityTests (reflects over
          [GeneratedRegex] attributes in module-level parsers) and

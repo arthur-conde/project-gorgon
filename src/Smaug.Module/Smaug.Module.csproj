@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
   </ItemGroup>
   <ItemGroup>

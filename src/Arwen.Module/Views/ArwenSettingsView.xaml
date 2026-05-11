@@ -4,7 +4,7 @@
              xmlns:local="clr-namespace:Arwen.Views"
              Background="#FF1A1A1A">
     <UserControl.Resources>
-        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Converters.xaml"/>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">

@@ -67,6 +67,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
     <ProjectReference Include="..\Legolas.Module\Legolas.Module.csproj" />
