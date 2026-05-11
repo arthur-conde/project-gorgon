@@ -17,9 +17,14 @@ public sealed class StageAlarmRule : INotifyPropertyChanged
     private string? _soundFilePath;
     private bool _stopOnInteraction = true;
 
+    private bool _loop;
+    private string _channelId = "default";
+
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
     public bool StopOnInteraction { get => _stopOnInteraction; set => Set(ref _stopOnInteraction, value); }
+    public bool Loop { get => _loop; set => Set(ref _loop, value); }
+    public string ChannelId { get => _channelId; set => Set(ref _channelId, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
