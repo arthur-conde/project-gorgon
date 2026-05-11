@@ -3,7 +3,6 @@ using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Modules;
-using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,7 +45,10 @@ public sealed class SamwiseModule : IMithrilModule
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>()));
-        services.AddSingleton<AlarmService>();
+        services.AddSingleton<AlarmService>(sp => new AlarmService(
+            sp.GetRequiredService<GardenStateMachine>(),
+            sp.GetRequiredService<SamwiseSettings>(),
+            sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);
@@ -86,7 +88,7 @@ public sealed class SamwiseModule : IMithrilModule
         services.AddSingleton<SamwiseSettingsView>(sp => new SamwiseSettingsView
         {
             DataContext = sp.GetRequiredService<SamwiseSettings>(),
-            Audio = sp.GetRequiredService<AudioSettings>(),
+            Alarms = sp.GetRequiredService<AlarmService>(),
         });
 
         services.AddSingleton<IHotkeyCommand, SnoozeAllAlarmsCommand>();

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Serialization.Metadata;
+using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Diagnostics.Performance;
@@ -219,6 +220,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IconSettings>()));
         return services;
     }
+
+    public static IServiceCollection AddMithrilAudio(this IServiceCollection services) =>
+        services.AddSingleton<IAudioPlaybackSink, StaticAudioPlayerSink>();
 
     public static IServiceCollection AddMithrilHotkeys(this IServiceCollection services)
     {

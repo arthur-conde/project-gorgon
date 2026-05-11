@@ -2,7 +2,6 @@ using System.Windows;
 using Gandalf.Domain;
 using Gandalf.ViewModels;
 using Mithril.Shared.Audio;
-using Mithril.Shared.Settings;
 using Microsoft.Win32;
 
 namespace Gandalf.Views;
@@ -12,8 +11,6 @@ public partial class GandalfSettingsView : System.Windows.Controls.UserControl
     private IPlaybackHandle? _testHandle;
 
     public GandalfSettingsView() { InitializeComponent(); }
-
-    public AudioSettings? Audio { get; set; }
 
     private GandalfSettings? CurrentSettings => (DataContext as GandalfSettingsViewModel)?.Settings;
 

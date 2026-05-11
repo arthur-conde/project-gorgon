@@ -12,16 +12,24 @@ public sealed class AlarmService : IDisposable
 {
     private readonly GardenStateMachine _state;
     private readonly SamwiseSettings _settings;
+    private readonly IAudioPlaybackSink _audio;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
+
+    // AlarmKey identifies which alarm "owns" the handle so StopOwner can stop the
+    // exact (plot, stage) alarm rather than whichever sound currently plays on the channel.
+    // Stage carries the plot stage that produced the owner so the per-stage
+    // SuppressIfStagePlaying check can find prior owners for the same stage.
+    private sealed record ChannelOwner(string AlarmKey, PlotStage Stage, IPlaybackHandle Handle);
+    private readonly Dictionary<string, List<ChannelOwner>> _channelPlayback = new(StringComparer.Ordinal);
 
     public event EventHandler<ActiveAlarm>? AlarmTriggered;
 
-    public AlarmService(GardenStateMachine state, SamwiseSettings settings)
+    public AlarmService(GardenStateMachine state, SamwiseSettings settings, IAudioPlaybackSink audio)
     {
         _state = state;
         _settings = settings;
+        _audio = audio;
         _state.PlotChanged += OnPlotChanged;
     }
 
@@ -32,13 +40,13 @@ public sealed class AlarmService : IDisposable
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
-        StopAllPlayback();
+        StopAllChannelPlayback();
     }
 
     public void DismissAll()
     {
         _firedAt.Clear();
-        StopAllPlayback();
+        StopAllChannelPlayback();
     }
 
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
@@ -50,7 +58,7 @@ public sealed class AlarmService : IDisposable
                 && _settings.Alarms.Rules.TryGetValue(e.OldStage.Value, out var oldRule)
                 && oldRule.StopOnInteraction)
             {
-                StopPlayback(resolvedKey);
+                StopOwner(oldRule.ChannelId, resolvedKey);
             }
         }
 
@@ -70,16 +78,52 @@ public sealed class AlarmService : IDisposable
         if (_firedAt.ContainsKey(key)) return;
 
         _firedAt[key] = DateTimeOffset.UtcNow;
-        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), rule.SoundFilePath);
+        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), e.NewStage, rule);
     }
 
-    private void Fire(ActiveAlarm alarm, string? soundFilePath)
+    private AlarmChannel ResolveChannel(string id)
+        => _settings.Alarms.Channels.FirstOrDefault(c => c.Id == id)
+           ?? _settings.Alarms.Channels[0];
+
+    private static void PruneStopped(List<ChannelOwner> owners)
+    {
+        for (int i = owners.Count - 1; i >= 0; i--)
+            if (!owners[i].Handle.IsPlaying) owners.RemoveAt(i);
+    }
+
+    private List<ChannelOwner> OwnersOf(string channelId)
+    {
+        if (!_channelPlayback.TryGetValue(channelId, out var list))
+            _channelPlayback[channelId] = list = new();
+        return list;
+    }
+
+    private void StopOwner(string channelId, string alarmKey)
+    {
+        var resolved = ResolveChannel(channelId).Id;
+        if (!_channelPlayback.TryGetValue(resolved, out var owners)) return;
+        var mine = owners.FirstOrDefault(o => o.AlarmKey == alarmKey);
+        if (mine is not null)
+        {
+            mine.Handle.Stop();
+            owners.Remove(mine);
+        }
+    }
+
+    private void StopAllChannelPlayback()
+    {
+        foreach (var owners in _channelPlayback.Values)
+        {
+            foreach (var o in owners) o.Handle.Stop();
+            owners.Clear();
+        }
+    }
+
+    private void Fire(ActiveAlarm alarm, PlotStage stage, StageAlarmRule rule)
     {
         Dispatch(() =>
         {
-            StopPlayback(alarm.Key);
-            var handle = AudioPlayer.Play(soundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise");
-            _playback[alarm.Key] = handle;
+            TryRouteToChannel(stage, rule, alarm.Key, out _);
 
             if (_settings.Alarms.FlashWindow)
             {
@@ -89,6 +133,83 @@ public sealed class AlarmService : IDisposable
 
             AlarmTriggered?.Invoke(this, alarm);
         });
+    }
+
+    /// <summary>
+    /// Play a stage's sound through its configured channel just like a real
+    /// alarm would — honouring Loop, the channel's collision behaviour, and
+    /// the channel's playback slot. Used by the settings view's per-stage
+    /// preview button so what the user hears matches what they'll get in-game.
+    /// </summary>
+    public void PreviewStage(PlotStage stage)
+    {
+        if (!_settings.Alarms.Rules.TryGetValue(stage, out var rule)) return;
+        Dispatch(() => TryRouteToChannel(stage, rule, PreviewKey(stage), out _));
+    }
+
+    /// <summary>
+    /// Stop a preview started by <see cref="PreviewStage"/> for this stage.
+    /// No-op if no preview owner exists for the stage.
+    /// </summary>
+    public void StopPreview(PlotStage stage)
+    {
+        var ownerKey = PreviewKey(stage);
+        Dispatch(() =>
+        {
+            foreach (var owners in _channelPlayback.Values)
+            {
+                for (int i = owners.Count - 1; i >= 0; i--)
+                {
+                    if (owners[i].AlarmKey != ownerKey) continue;
+                    owners[i].Handle.Stop();
+                    owners.RemoveAt(i);
+                }
+            }
+        });
+    }
+
+    private static string PreviewKey(PlotStage stage) => $"preview|{stage}";
+
+    /// <summary>
+    /// Routes a play request through the rule's channel. Applies the channel's
+    /// collision policy: Replace stops and clears existing owners; Suppress
+    /// drops the new sound if any owner is still playing; Mix appends.
+    /// Returns true and emits the new handle when a sound was actually started.
+    /// </summary>
+    private bool TryRouteToChannel(PlotStage stage, StageAlarmRule rule, string ownerKey, out IPlaybackHandle? handle)
+    {
+        handle = null;
+        var channel = ResolveChannel(rule.ChannelId);
+        var owners = OwnersOf(channel.Id);
+        PruneStopped(owners);
+
+        // Per-stage gate: drop the new alarm if the same stage is already sounding
+        // on this channel, regardless of the channel's collision behaviour.
+        if (rule.SuppressIfStagePlaying && owners.Any(o => o.Stage == stage))
+            return false;
+
+        bool willPlaySound;
+        switch (channel.Collision)
+        {
+            case AlarmCollisionBehavior.Suppress:
+                willPlaySound = owners.Count == 0;
+                break;
+            case AlarmCollisionBehavior.Replace:
+                foreach (var o in owners) o.Handle.Stop();
+                owners.Clear();
+                willPlaySound = true;
+                break;
+            case AlarmCollisionBehavior.Mix:
+            default:
+                willPlaySound = true;
+                break;
+        }
+
+        if (!willPlaySound) return false;
+
+        handle = _audio.Play(rule.SoundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise", loop: rule.Loop);
+        owners.Add(new ChannelOwner(ownerKey, stage, handle));
+        return true;
     }
 
     private static void Dispatch(Action a)
@@ -108,27 +229,16 @@ public sealed class AlarmService : IDisposable
                 && _settings.Alarms.Rules.TryGetValue(stage, out var rule)
                 && rule.StopOnInteraction)
             {
-                StopPlayback(k);
+                StopOwner(rule.ChannelId, k);
             }
         }
-        foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _snoozedUntil.Remove(k);
+        foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray())
+            _snoozedUntil.Remove(k);
     }
 
     public void Dispose()
     {
         _state.PlotChanged -= OnPlotChanged;
-        StopAllPlayback();
-    }
-
-    private void StopPlayback(string key)
-    {
-        if (_playback.Remove(key, out var handle))
-            handle.Stop();
-    }
-
-    private void StopAllPlayback()
-    {
-        foreach (var h in _playback.Values) h.Stop();
-        _playback.Clear();
+        StopAllChannelPlayback();
     }
 }

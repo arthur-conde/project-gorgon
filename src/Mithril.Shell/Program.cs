@@ -130,7 +130,6 @@ public static class Program
             var charactersRootDir = Path.Combine(localApp, "Mithril", "characters");
 
             var builder = Host.CreateApplicationBuilder(args);
-            var audioSettings = new AudioSettings { ConcurrentAlarms = shellSettings.ConcurrentAlarms };
 
             // Cross-cutting user preferences (12/24h clock, future display
             // toggles). Lives in Mithril.Shared so modules can read it
@@ -144,7 +143,6 @@ public static class Program
                 .AddSingleton<ISettingsStore<ShellSettings>>(shellStore)
                 .AddSingleton(shellSettings)
                 .AddSingleton<IActiveCharacterPersistence>(shellSettings)
-                .AddSingleton(audioSettings)
                 .AddSingleton(gameConfig)
                 .AddMithrilDiagnostics(logDir)
                 .AddMithrilPerfTrace(perfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
@@ -154,6 +152,7 @@ public static class Program
                 .AddMithrilReferenceData(referenceCacheDir)
                 .AddMithrilCommunityCalibration(communityCalibrationCacheDir)
                 .AddMithrilIcons(iconCacheDir)
+                .AddMithrilAudio()
                 .AddMithrilHotkeys()
                 .AddMithrilDialogs()
                 .AddMithrilModuleGates()
@@ -251,16 +250,6 @@ public static class Program
             var hk = host.Services.GetRequiredService<IHotkeyService>();
             hk.Attach(hwnd);
             hk.ReloadFromBindings(shellSettings.HotkeyBindings.Values);
-
-            AudioPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
-            audioSettings.PropertyChanged += (_, ev) =>
-            {
-                if (ev.PropertyName == nameof(AudioSettings.ConcurrentAlarms))
-                {
-                    AudioPlayer.ConcurrentPlayback = audioSettings.ConcurrentAlarms;
-                    shellSettings.ConcurrentAlarms = audioSettings.ConcurrentAlarms;
-                }
-            };
 
             Boot("=== startup done ===");
 

@@ -1,4 +1,7 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using Mithril.Shared.Reference;
@@ -17,9 +20,22 @@ public sealed class StageAlarmRule : INotifyPropertyChanged
     private string? _soundFilePath;
     private bool _stopOnInteraction = true;
 
+    private bool _loop;
+    private bool _suppressIfStagePlaying;
+    private string _channelId = "default";
+
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
     public bool StopOnInteraction { get => _stopOnInteraction; set => Set(ref _stopOnInteraction, value); }
+    public bool Loop { get => _loop; set => Set(ref _loop, value); }
+    /// <summary>
+    /// When true, a fire for this stage is dropped if another alarm for the
+    /// same stage is already playing on the channel. Lets clusters of crops
+    /// entering the same stage produce a single sound while other stages still
+    /// layer/replace per the channel's collision policy.
+    /// </summary>
+    public bool SuppressIfStagePlaying { get => _suppressIfStagePlaying; set => Set(ref _suppressIfStagePlaying, value); }
+    public string ChannelId { get => _channelId; set => Set(ref _channelId, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
@@ -30,7 +46,7 @@ public sealed class StageAlarmRule : INotifyPropertyChanged
     }
 }
 
-public sealed class AlarmSettings : INotifyPropertyChanged
+public sealed class AlarmSettings : INotifyPropertyChanged, Mithril.Shared.Settings.IPostLoadInit
 {
     private bool _enabled = true;
     private bool _balloonNotification = true;
@@ -38,6 +54,7 @@ public sealed class AlarmSettings : INotifyPropertyChanged
     private double _snoozeMinutes = 5;
     private double _alarmVolume = 0.8;
     private Dictionary<PlotStage, StageAlarmRule> _rules = DefaultRules();
+    private ObservableCollection<AlarmChannel> _channels = DefaultChannels();
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public bool BalloonNotification { get => _balloonNotification; set => Set(ref _balloonNotification, value); }
@@ -59,10 +76,31 @@ public sealed class AlarmSettings : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Named alarm channels with collision policies. Persisted.</summary>
+    public ObservableCollection<AlarmChannel> Channels
+    {
+        get => _channels;
+        set
+        {
+            if (ReferenceEquals(_channels, value)) return;
+            DetachChannelEvents(_channels);
+            _channels.CollectionChanged -= OnChannelsCollectionChanged;
+            _channels = value ?? DefaultChannels();
+            AttachChannelEvents(_channels);
+            _channels.CollectionChanged += OnChannelsCollectionChanged;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
+        }
+    }
+
     public HashSet<string> MutedCrops { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> MutedCharacters { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public AlarmSettings() { AttachRuleEvents(_rules); }
+    public AlarmSettings()
+    {
+        AttachRuleEvents(_rules);
+        AttachChannelEvents(_channels);
+        _channels.CollectionChanged += OnChannelsCollectionChanged;
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -84,7 +122,80 @@ public sealed class AlarmSettings : INotifyPropertyChanged
     }
 
     private void OnRuleChanged(object? sender, PropertyChangedEventArgs e)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+    {
+        if (e.PropertyName == nameof(StageAlarmRule.ChannelId))
+            RecomputeMembershipSummaries();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rules)));
+    }
+
+    private void RecomputeMembershipSummaries()
+    {
+        foreach (var channel in _channels)
+        {
+            var members = _rules
+                .Where(kvp => kvp.Value.ChannelId == channel.Id)
+                .Select(kvp => kvp.Key.ToString())
+                .ToList();
+            channel.MembershipSummary = members.Count == 0 ? "(empty)" : string.Join(" · ", members);
+        }
+    }
+
+    private void AttachChannelEvents(IList<AlarmChannel> channels)
+    {
+        foreach (var c in channels) c.PropertyChanged += OnChannelChanged;
+    }
+
+    private void DetachChannelEvents(IList<AlarmChannel> channels)
+    {
+        foreach (var c in channels) c.PropertyChanged -= OnChannelChanged;
+    }
+
+    private void OnChannelChanged(object? sender, PropertyChangedEventArgs e)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
+
+    private void OnChannelsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (AlarmChannel c in e.NewItems) c.PropertyChanged += OnChannelChanged;
+        if (e.OldItems is not null)
+            foreach (AlarmChannel c in e.OldItems) c.PropertyChanged -= OnChannelChanged;
+        RecomputeMembershipSummaries();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Channels)));
+    }
+
+    public void PostLoadInit()
+    {
+        // STJ source-gen overwrites _channels from JSON if present; if the JSON
+        // lacked the property the field initializer's DefaultChannels() stands.
+        // The explicit empty check covers both "missing property" and "explicit []".
+        if (_channels == null || _channels.Count == 0)
+        {
+            DetachChannelEvents(_channels ?? new ObservableCollection<AlarmChannel>());
+            _channels = DefaultChannels();
+            AttachChannelEvents(_channels);
+            _channels.CollectionChanged += OnChannelsCollectionChanged;
+        }
+
+        // Re-attach event handlers on freshly-loaded children (STJ source-gen sets
+        // the field without invoking AttachChannelEvents). Idempotent: detach first.
+        DetachChannelEvents(_channels);
+        AttachChannelEvents(_channels);
+        _channels.CollectionChanged -= OnChannelsCollectionChanged;
+        _channels.CollectionChanged += OnChannelsCollectionChanged;
+        DetachRuleEvents(_rules);
+        AttachRuleEvents(_rules);
+
+        // Dangling-ChannelId fixup: point any rule whose ChannelId doesn't
+        // match a real channel at the first available channel.
+        var validIds = new HashSet<string>(_channels.Select(c => c.Id), StringComparer.Ordinal);
+        foreach (var rule in _rules.Values)
+        {
+            if (!validIds.Contains(rule.ChannelId))
+                rule.ChannelId = _channels[0].Id;
+        }
+
+        RecomputeMembershipSummaries();
+    }
 
     private static Dictionary<PlotStage, StageAlarmRule> DefaultRules() => new()
     {
@@ -92,9 +203,14 @@ public sealed class AlarmSettings : INotifyPropertyChanged
         [PlotStage.Thirsty]         = new() { Enabled = false },
         [PlotStage.NeedsFertilizer] = new() { Enabled = false },
     };
+
+    private static ObservableCollection<AlarmChannel> DefaultChannels() => new()
+    {
+        new AlarmChannel { Id = "default", Name = "Default", Collision = AlarmCollisionBehavior.Replace },
+    };
 }
 
-public sealed class SamwiseSettings : INotifyPropertyChanged
+public sealed class SamwiseSettings : INotifyPropertyChanged, Mithril.Shared.Settings.IPostLoadInit
 {
     private AlarmSettings _alarms = new();
     public AlarmSettings Alarms
@@ -155,10 +271,23 @@ public sealed class SamwiseSettings : INotifyPropertyChanged
     private void OnCalibrationChanged(object? sender, PropertyChangedEventArgs e)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Calibration)));
 
+    public void PostLoadInit()
+    {
+        // Re-wire first so any PropertyChanged events fired during _alarms.PostLoadInit()
+        // (e.g. via dangling-id fixup) bubble through OnAlarmsChanged.
+        _alarms.PropertyChanged -= OnAlarmsChanged;
+        _alarms.PropertyChanged += OnAlarmsChanged;
+        _calibration.PropertyChanged -= OnCalibrationChanged;
+        _calibration.PropertyChanged += OnCalibrationChanged;
+        _alarms.PostLoadInit();
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(SamwiseSettings))]
 [JsonSerializable(typeof(CalibrationSettings))]
+[JsonSerializable(typeof(AlarmChannel))]
+[JsonSerializable(typeof(ObservableCollection<AlarmChannel>))]
 public partial class SamwiseSettingsJsonContext : JsonSerializerContext { }

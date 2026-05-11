@@ -189,7 +189,6 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<GandalfSettingsView>(sp => new GandalfSettingsView
         {
             DataContext = sp.GetRequiredService<GandalfSettingsViewModel>(),
-            Audio = sp.GetRequiredService<AudioSettings>(),
         });
     }
 }
