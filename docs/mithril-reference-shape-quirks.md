@@ -108,6 +108,46 @@ the data verifies.
 
 ## Design notes
 
+### Three deliberate deviations on `Item` from "JSON shape exactly"
+
+**Where:** [Models/Items/Item.cs](../src/Mithril.Reference/Models/Items/Item.cs).
+`items.json` is the highest-traffic file in the Mithril codebase — every
+gameplay module reads it. Three properties deviate from the literal JSON
+shape because every consumer wanted the lifted form:
+
+1. **`Id` (long)** — *lifted from the JSON envelope key.* `items.json`
+   ships entries keyed by `"item_5010"` with no `Id` field on the entry
+   itself. `IReferenceDataService.Items` is keyed by the numeric id, and
+   GiftMatch / PriceObservation persist the id, so the deserializer parses
+   it out of the key at load time and writes it onto the POCO.
+2. **`Value: decimal` (was `double` in the raw shape)** — *flipped for
+   monetary correctness.* Vendor sale value. JSON ships int for 10624
+   entries and float for 106; `decimal` is .NET's monetary type and matches
+   what Smaug's `PriceObservation.BaseValue` already used. The handful of
+   `(double)item.Value` cast sites compile unchanged.
+3. **`Keywords: IReadOnlyList<ItemKeyword>?` (was `IReadOnlyList<string>?`)** —
+   *parsed at deserialize.* JSON ships each entry as a flat string shaped
+   like `"VegetarianDish=84"` (tag=quality) or just `"Loot"`.
+   `ItemKeywordListConverter` does the split once at parse time. The
+   matching-machinery virtuals (`EquipmentSlot:`, `SkillPrereq:`,
+   `MinValue:`, `MinRarity:*`) are *not* on the Item — they live in
+   `Mithril.Shared.Reference.ItemKeywordSynthesis` since they're not a
+   property of the JSON shape, they're matching logic layered on top.
+
+**Why these and not others:** the rule is "match JSON exactly unless every
+consumer pays a tax to undo the shape." For these three, every consumer
+*was* paying the tax (every call site cast `(double)item.Value` to decimal
+for monetary math; every call site parsed `"Tag=N"` into a tuple; every
+lookup constructed the id by parsing the envelope key). Lifting them once
+at the parse seam — verified by the JSON converter — eliminates ~50 lines
+of boilerplate per consumer.
+
+**Risk:** a future contributor reading `Item.cs` might assume the
+remaining properties match JSON literally and copy that assumption into a
+new POCO. The class-level summary comment names the three exceptions
+explicitly, and `Item.Keywords` / `Item.Value` carry deviation notes on
+their individual property doc-comments.
+
 ### `RecipeRequirement` is a separate hierarchy from `QuestRequirement`
 
 **Where:** [Models/Quests/QuestRequirement.cs](../src/Mithril.Reference/Models/Quests/QuestRequirement.cs)
