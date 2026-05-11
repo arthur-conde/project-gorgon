@@ -20,6 +20,7 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     private readonly GameConfig _config;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
+    private readonly ISessionAnchor? _sessionAnchor;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
     // Accumulated lines from session start to "now". Null until RunAsync has
@@ -31,11 +32,16 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     private Task? _runTask;
     private string? _activePath;
 
-    public PlayerLogStream(GameConfig config, IDiagnosticsSink? diag = null, TimeProvider? time = null)
+    public PlayerLogStream(
+        GameConfig config,
+        IDiagnosticsSink? diag = null,
+        TimeProvider? time = null,
+        ISessionAnchor? sessionAnchor = null)
     {
         _config = config;
         _diag = diag;
         _time = time ?? TimeProvider.System;
+        _sessionAnchor = sessionAnchor;
         _config.PropertyChanged += OnConfigChanged;
     }
 
@@ -122,7 +128,7 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     private async Task RunAsync(string path, CancellationToken ct)
     {
         _diag?.Info("PlayerLog", $"Subscribing to {path}");
-        var reader = new PlayerLogTailReader(path, _time);
+        var reader = new PlayerLogTailReader(path, _time, _sessionAnchor);
         reader.SeedToSessionStart();
 
         // Initial flush (catch up from session start)

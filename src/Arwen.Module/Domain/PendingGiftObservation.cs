@@ -25,5 +25,13 @@ public sealed partial class PendingGiftObservation : ObservableObject
     public required IReadOnlyList<string> ItemKeywords { get; init; }
     public required DateTimeOffset Timestamp { get; init; }
 
+    /// <summary>
+    /// PG session id captured at the moment the pending observation was parked
+    /// (sourced from <c>IGameSessionService.Current</c>). Empty when no session
+    /// was active. Propagates to the persisted <c>GiftObservation</c> on confirm
+    /// so dedup behaves identically to live-recorded observations.
+    /// </summary>
+    public required string SessionId { get; init; }
+
     [ObservableProperty] private int _quantity = 1;
 }

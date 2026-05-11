@@ -172,10 +172,201 @@ public sealed class PlayerLogTailReaderTests : IDisposable
             .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 59, 0, DateTimeKind.Utc));
     }
 
+    // ── Session-anchor scenarios ────────────────────────────────────
+
+    [Fact]
+    public void ReadNew_WithSessionAnchor_PinsDateToLoggedInUtcInsteadOfMtime()
+    {
+        // The session banner pins 2026-05-11. Even if the file's mtime is a
+        // year off, the session anchor wins. Catches the mtime-drift case
+        // (copied file, system clock skew, stale on-disk metadata).
+        File.WriteAllText(_logPath,
+            "[12:25:04] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")\n" +
+            "[12:30:00] LocalPlayer: ProcessCompleteQuest(1, 1)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var anchor = new FakeSessionAnchor(new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc));
+        var reader = new PlayerLogTailReader(_logPath, sessionAnchor: anchor);
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(2);
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 11, 12, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ReadNew_WithSessionAnchor_CrossesMidnightInLiveStream()
+    {
+        // Login at 22:00; live stream at 23:59:55 then 00:00:05. Verifies
+        // the forward-rollover detection still fires under session anchoring,
+        // and that priming _prevUtcTimeOfDay with the login tod doesn't
+        // mis-fire a rollover on the first stamped line.
+        File.WriteAllText(_logPath, "[22:00:00] LocalPlayer: login moment\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 22, 0, 0, DateTimeKind.Utc));
+
+        var anchor = new FakeSessionAnchor(new DateTime(2026, 5, 10, 22, 0, 0, DateTimeKind.Utc));
+        var reader = new PlayerLogTailReader(_logPath, sessionAnchor: anchor);
+        reader.ReadNew();
+
+        File.AppendAllText(_logPath, "[23:59:55] just-before-midnight\n[00:00:05] just-after-midnight\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 0, 0, 5, DateTimeKind.Utc));
+
+        var second = reader.ReadNew();
+        second.Should().HaveCount(2);
+        second[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 23, 59, 55, DateTimeKind.Utc));
+        second[1].Timestamp.Should().Be(new DateTime(2026, 5, 11, 0, 0, 5, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ReadNew_AnchorChanged_ReAnchorsToNewSession()
+    {
+        // First batch under session A. Then a second login (PG re-login)
+        // raises AnchorChanged with a different LoggedInUtc — possibly on a
+        // different calendar day. Subsequent lines must stamp against the
+        // new date.
+        File.WriteAllText(_logPath, "[12:00:00] LocalPlayer: line-one\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 12, 0, 0, DateTimeKind.Utc));
+
+        var anchor = new FakeSessionAnchor(new DateTime(2026, 5, 10, 11, 0, 0, DateTimeKind.Utc));
+        var reader = new PlayerLogTailReader(_logPath, sessionAnchor: anchor);
+        var first = reader.ReadNew();
+        first.Should().ContainSingle()
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 12, 0, 0, DateTimeKind.Utc));
+
+        // Simulate PG re-login on the next UTC day.
+        anchor.Set(new DateTime(2026, 5, 11, 10, 0, 0, DateTimeKind.Utc));
+
+        File.AppendAllText(_logPath, "[10:30:00] LocalPlayer: post-relogin\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 10, 30, 0, DateTimeKind.Utc));
+
+        var second = reader.ReadNew();
+        second.Should().ContainSingle()
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 11, 10, 30, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ReadNew_WithSessionAnchor_DoesNotMisFireRolloverOnFirstStampedLine()
+    {
+        // First gameplay line's tod is *earlier* than the login tod (e.g. the
+        // engine emits a quick scripted line at 12:25:03 right after the
+        // 12:25:04 banner). The seed `_prevUtcTimeOfDay = LoggedInUtc.tod`
+        // means the next StampForLine sees `tod < prev` — but the delta is
+        // ~1 second, far below the 12h threshold, so no rollover should
+        // fire. The line stays on the same calendar day as the login.
+        File.WriteAllText(_logPath, "[12:25:03] LocalPlayer: scripted-before-login-stamp\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 12, 25, 3, DateTimeKind.Utc));
+
+        var anchor = new FakeSessionAnchor(new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc));
+        var reader = new PlayerLogTailReader(_logPath, sessionAnchor: anchor);
+        var lines = reader.ReadNew();
+
+        lines.Should().ContainSingle()
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 11, 12, 25, 3, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void ReadNew_WithoutSessionAnchor_FallsBackToMtimeAnchoring()
+    {
+        // Same setup as the pre-existing mtime tests, but constructed with
+        // sessionAnchor: null explicitly to pin the contract. mtime path
+        // remains the fallback for pre-banner lines and the no-session case.
+        File.WriteAllText(_logPath, "[14:30:00] LocalPlayer: line\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath, sessionAnchor: null);
+        var lines = reader.ReadNew();
+
+        lines.Should().ContainSingle()
+            .Which.Timestamp.Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
+    }
+
+    // ── Seed-marker scenarios ───────────────────────────────────────
+
+    [Fact]
+    public void SeedToSessionStart_PrefersEarlierOfBannerAndProcessAddPlayer()
+    {
+        // Banner emitted first, ProcessAddPlayer a moment later. The seed
+        // anchors at the BANNER so GameSessionService can parse it from the
+        // replay; ProcessAddPlayer is still in the replay because it comes
+        // after.
+        File.WriteAllText(_logPath,
+            "[00:00:00] stale-pre-session-noise\n" +
+            "[12:25:04] Logged in as character Emraell. Time UTC=05/11/2026 12:25:04. Timezone Offset 01:00:00\n" +
+            "[12:25:05] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")\n" +
+            "[12:25:10] LocalPlayer: ProcessCompleteQuest(1, 1)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 12, 25, 10, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        reader.SeedToSessionStart();
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(3);
+        lines[0].Line.Should().Contain("Logged in as character");
+        lines[1].Line.Should().Contain("ProcessAddPlayer");
+        lines[2].Line.Should().Contain("ProcessCompleteQuest");
+    }
+
+    [Fact]
+    public void SeedToSessionStart_FallsBackToProcessAddPlayerWhenBannerMissing()
+    {
+        // Pre-banner clients or pathological log states with no banner still
+        // anchor on ProcessAddPlayer. Pre-existing behaviour preserved.
+        File.WriteAllText(_logPath,
+            "[00:00:00] stale-pre-session-noise\n" +
+            "[12:25:05] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")\n" +
+            "[12:25:10] LocalPlayer: ProcessCompleteQuest(1, 1)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 12, 25, 10, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        reader.SeedToSessionStart();
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(2);
+        lines[0].Line.Should().Contain("ProcessAddPlayer");
+        lines[1].Line.Should().Contain("ProcessCompleteQuest");
+    }
+
+    [Fact]
+    public void SeedToSessionStart_WithProcessAddPlayerBeforeBanner_StillStartsAtTheEarlierOne()
+    {
+        // Defensive: if some PG client variant emits ProcessAddPlayer FIRST
+        // and the banner later, picking the earlier marker keeps both in
+        // the replay regardless. (Today's expected ordering has the banner
+        // first, but the seed is order-agnostic.)
+        File.WriteAllText(_logPath,
+            "[00:00:00] stale-pre-session-noise\n" +
+            "[12:25:03] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")\n" +
+            "[12:25:04] Logged in as character Emraell. Time UTC=05/11/2026 12:25:04. Timezone Offset 01:00:00\n" +
+            "[12:25:10] LocalPlayer: ProcessCompleteQuest(1, 1)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 12, 25, 10, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        reader.SeedToSessionStart();
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(3);
+        lines[0].Line.Should().Contain("ProcessAddPlayer");
+        lines[1].Line.Should().Contain("Logged in as character");
+        lines[2].Line.Should().Contain("ProcessCompleteQuest");
+    }
+
     private sealed class FixedTimeProvider : TimeProvider
     {
         private readonly DateTimeOffset _now;
         public FixedTimeProvider(DateTime utc) => _now = new DateTimeOffset(utc, TimeSpan.Zero);
         public override DateTimeOffset GetUtcNow() => _now;
+    }
+
+    private sealed class FakeSessionAnchor : ISessionAnchor
+    {
+        private DateTime? _loggedInUtc;
+        public FakeSessionAnchor(DateTime? loggedInUtc) { _loggedInUtc = loggedInUtc; }
+        public DateTime? LoggedInUtc => _loggedInUtc;
+        public event EventHandler? AnchorChanged;
+        public void Set(DateTime? loggedInUtc)
+        {
+            _loggedInUtc = loggedInUtc;
+            AnchorChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

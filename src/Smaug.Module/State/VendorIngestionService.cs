@@ -90,7 +90,10 @@ public sealed class VendorIngestionService : BackgroundService
                         sold.Price,
                         _context.ActiveFavorTier!,
                         _context.CivicPrideLevel,
-                        DateTimeOffset.UtcNow);
+                        // Use the log-line timestamp (post-#183 + #201 session anchor) so
+                        // replay-on-relaunch produces the same persisted Timestamp and
+                        // dedup short-circuits. UtcNow at record time would diverge.
+                        new DateTimeOffset(raw.Timestamp, TimeSpan.Zero));
                     break;
             }
         }

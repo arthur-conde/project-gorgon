@@ -18,16 +18,22 @@ public sealed class ChatLogStream : IChatLogStream, IDisposable
     private readonly GameConfig _config;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
+    private readonly ISessionAnchor? _sessionAnchor;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
     private CancellationTokenSource? _runCts;
     private Task? _runTask;
 
-    public ChatLogStream(GameConfig config, IDiagnosticsSink? diag = null, TimeProvider? time = null)
+    public ChatLogStream(
+        GameConfig config,
+        IDiagnosticsSink? diag = null,
+        TimeProvider? time = null,
+        ISessionAnchor? sessionAnchor = null)
     {
         _config = config;
         _diag = diag;
         _time = time ?? TimeProvider.System;
+        _sessionAnchor = sessionAnchor;
         _config.PropertyChanged += OnConfigChanged;
     }
 
@@ -95,7 +101,7 @@ public sealed class ChatLogStream : IChatLogStream, IDisposable
     private async Task RunAsync(string directory, CancellationToken ct)
     {
         _diag?.Info("ChatLog", $"Subscribing to {directory}");
-        var reader = new ChatLogTailReader(_time);
+        var reader = new ChatLogTailReader(_time, _sessionAnchor);
         reader.SeedDirectoryToCurrentEnd(directory);
 
         FileSystemWatcher? watcher = null;

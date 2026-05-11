@@ -5,6 +5,7 @@ using System.Text.Json;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Sessions;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -26,7 +27,7 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 public sealed class CalibrationService
 {
     /// <summary>Local schema version: shape of <see cref="GiftObservation"/> records on disk.</summary>
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     /// <summary>
     /// Wire schema version stamped into <see cref="GiftRatesPayload.SchemaVersion"/> when
@@ -40,12 +41,18 @@ public sealed class CalibrationService
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
     private readonly IInventoryService _inventory;
+    private readonly IGameSessionService? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
+    private readonly TimeProvider _time;
     private readonly string _dataPath;
     private readonly string _observationsPath;
     private readonly TtlObservableCollection<PendingGiftObservation> _pending;
+    // Fast-path dedup set: rebuilt on Load and updated incrementally on every
+    // persist / delete. Replay-on-relaunch produces the same key shape, so the
+    // short-circuit fires without scanning Observations.
+    private readonly HashSet<string> _observationKeys = new(StringComparer.Ordinal);
 
     // Resolved (local ⊕ community) lookup tables. EstimateFavor reads from these.
     // Rebuilt after RecomputeRates, on community FileUpdated, on settings Source change.
@@ -58,10 +65,14 @@ public sealed class CalibrationService
     // The game emits DeleteItem and DeltaFavor in EITHER order:
     //   Order A: DeleteItem → DeltaFavor  (item removed first)
     //   Order B: DeltaFavor → DeleteItem  (favor delta first)
-    // We handle both by tracking a pending item OR a pending delta.
+    // We handle both by tracking a pending item OR a pending delta. Each
+    // transient also carries the log-line timestamp so the persisted
+    // GiftObservation.Timestamp is anchored on log truth, not on
+    // DateTimeOffset.UtcNow at record time (which would diverge across
+    // replays and defeat the dedup key).
     private string? _activeNpcKey;
-    private (long InstanceId, string InternalName)? _pendingDeletedItem;
-    private (string NpcKey, double Delta)? _pendingDelta;
+    private (long InstanceId, string InternalName, DateTimeOffset Timestamp)? _pendingDeletedItem;
+    private (string NpcKey, double Delta, DateTimeOffset Timestamp)? _pendingDelta;
 
     private CalibrationData _data = new();
 
@@ -99,14 +110,17 @@ public sealed class CalibrationService
         IDiagnosticsSink? diag = null,
         TimeSpan? pendingTtl = null,
         Action<Action>? dispatch = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        IGameSessionService? session = null)
     {
         _refData = refData;
         _giftIndex = giftIndex;
         _inventory = inventory;
+        _session = session;
         _community = community;
         _calibrationSettings = calibrationSettings;
         _diag = diag;
+        _time = time ?? TimeProvider.System;
         _dataPath = Path.Combine(dataDir, "calibration.json");
         _observationsPath = Path.Combine(dataDir, "observations.json");
 
@@ -142,14 +156,30 @@ public sealed class CalibrationService
 
     // ── Log event handlers (called by FavorIngestionService) ─────────
 
+    /// <summary>
+    /// Test-friendly entry point that stamps observations with the current
+    /// wall clock. Production code paths use the timestamp-aware overloads
+    /// below; the no-timestamp form preserves the pre-#201 contract for
+    /// existing test suites that don't care about replay idempotency.
+    /// </summary>
     public void OnStartInteraction(string npcKey)
+        => OnStartInteraction(npcKey, _time.GetUtcNow());
+
+    public void OnStartInteraction(string npcKey, DateTimeOffset _)
     {
+        // Timestamp on StartInteraction is informational only — the actual
+        // observation Timestamp is taken from the DeltaFavor event (the
+        // log line that carries the favor change). Accepted here so callers
+        // can plumb a single timestamp from raw.Timestamp without branching.
         _activeNpcKey = npcKey;
         _pendingDeletedItem = null;
         _pendingDelta = null;
     }
 
     public void OnItemDeleted(long instanceId)
+        => OnItemDeleted(instanceId, _time.GetUtcNow());
+
+    public void OnItemDeleted(long instanceId, DateTimeOffset timestamp)
     {
         if (_activeNpcKey is null) return;
         if (!_inventory.TryResolve(instanceId, out var internalName))
@@ -158,33 +188,37 @@ public sealed class CalibrationService
             return;
         }
 
-        if (_pendingDelta is var (npcKey, delta))
+        if (_pendingDelta is var (npcKey, delta, deltaTs))
         {
             _pendingDelta = null;
-            RecordObservation(npcKey, instanceId, internalName, delta);
+            // DeltaFavor's timestamp is the canonical stamp for the gift.
+            RecordObservation(npcKey, instanceId, internalName, delta, deltaTs);
             return;
         }
 
-        _pendingDeletedItem = (instanceId, internalName);
+        _pendingDeletedItem = (instanceId, internalName, timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)
+        => OnDeltaFavor(npcKey, delta, _time.GetUtcNow());
+
+    public void OnDeltaFavor(string npcKey, double delta, DateTimeOffset timestamp)
     {
         if (delta <= 0) return;
         if (_activeNpcKey != npcKey) return;
 
-        if (_pendingDeletedItem is var (instanceId, internalName))
+        if (_pendingDeletedItem is var (instanceId, internalName, _))
         {
             _pendingDeletedItem = null;
             _pendingDelta = null;
-            RecordObservation(npcKey, instanceId, internalName, delta);
+            RecordObservation(npcKey, instanceId, internalName, delta, timestamp);
             return;
         }
 
-        _pendingDelta = (npcKey, delta);
+        _pendingDelta = (npcKey, delta, timestamp);
     }
 
-    private void RecordObservation(string npcKey, long instanceId, string internalName, double delta)
+    private void RecordObservation(string npcKey, long instanceId, string internalName, double delta, DateTimeOffset timestamp)
     {
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
@@ -233,6 +267,8 @@ public sealed class CalibrationService
             return;
         }
 
+        var sessionId = _session?.Current?.SessionId ?? "";
+
         if (isPending)
         {
             var pending = new PendingGiftObservation
@@ -248,7 +284,8 @@ public sealed class CalibrationService
                 MaxStackSize = item.MaxStackSize,
                 MatchedPreferences = [.. matchedPrefs],
                 ItemKeywords = [.. item.Keywords.Select(k => k.Tag)],
-                Timestamp = DateTimeOffset.UtcNow,
+                Timestamp = timestamp,
+                SessionId = sessionId,
             };
             _pending.Add(pending);
             _diag?.Info("Arwen.Calibration",
@@ -256,16 +293,19 @@ public sealed class CalibrationService
             return;
         }
 
-        PersistObservation(npcKey, internalName, item, matchedPrefs, delta, quantity);
+        PersistObservation(npcKey, instanceId, internalName, item, matchedPrefs, delta, quantity, timestamp, sessionId);
     }
 
     private void PersistObservation(
         string npcKey,
+        long instanceId,
         string internalName,
         ItemEntry item,
         IReadOnlyList<MatchedPreference> matchedPrefs,
         double delta,
-        int quantity)
+        int quantity,
+        DateTimeOffset timestamp,
+        string sessionId)
     {
         var observation = new GiftObservation
         {
@@ -276,8 +316,22 @@ public sealed class CalibrationService
             ItemValue = (double)item.Value,
             FavorDelta = delta,
             Quantity = quantity,
-            Timestamp = DateTimeOffset.UtcNow,
+            Timestamp = timestamp,
+            SessionId = sessionId,
+            InstanceId = instanceId,
         };
+
+        var key = ObservationKey(observation);
+        if (!_observationKeys.Add(key))
+        {
+            // Replay-on-relaunch: PG re-emits the same DeleteItem + DeltaFavor
+            // pair on every Mithril attach within the same session. The first
+            // pass persisted this observation; the second pass produces an
+            // identical key (same SessionId + InstanceId + log-line ts). Drop
+            // silently so SampleCount stays clean.
+            _diag?.Trace("Arwen.Calibration", $"Skipped replay of observation {key}");
+            return;
+        }
 
         _data.Observations.Add(observation);
         RecomputeRates();
@@ -312,7 +366,8 @@ public sealed class CalibrationService
         }
 
         _pending.Remove(p => p.Id == id);
-        PersistObservation(entry.NpcKey, entry.InternalName, item, entry.MatchedPreferences, entry.FavorDelta, quantity);
+        PersistObservation(entry.NpcKey, entry.InstanceId, entry.InternalName, item, entry.MatchedPreferences,
+            entry.FavorDelta, quantity, entry.Timestamp, entry.SessionId);
         return true;
     }
 
@@ -323,6 +378,18 @@ public sealed class CalibrationService
     public bool DiscardPending(Guid id)
     {
         return _pending.Remove(p => p.Id == id) > 0;
+    }
+
+    /// <summary>
+    /// Rebuild <see cref="_observationKeys"/> from <see cref="_data"/>.
+    /// Called on every <see cref="Load"/> and on import/merge paths so the
+    /// fast-path dedup set in <see cref="PersistObservation"/> stays in sync
+    /// with on-disk state.
+    /// </summary>
+    private void RebuildObservationKeySet()
+    {
+        _observationKeys.Clear();
+        foreach (var obs in _data.Observations) _observationKeys.Add(ObservationKey(obs));
     }
 
     // ── Rate computation ────────────────────────────────────────────
@@ -531,8 +598,27 @@ public sealed class CalibrationService
                     _data.Observations = kept;
                     _data.Version = 3;
                 }
+
+                if (_data.Version < 4)
+                {
+                    // v3 → v4 introduces SessionId + InstanceId on GiftObservation.
+                    // Legacy records get SessionId="" and InstanceId=0 — they keep
+                    // their (wall-clock-stamped) Timestamp so ObservationKey still
+                    // collapses to a stable identity for them. We accept the bloat
+                    // pre-fix: existing duplicates stay on disk; future replays
+                    // dedup correctly under the new v4 key shape.
+                    foreach (var obs in _data.Observations)
+                    {
+                        obs.SessionId ??= "";
+                        // InstanceId defaults to 0 on the property — no-op for clarity.
+                    }
+                    _diag?.Info("Arwen.Calibration",
+                        $"Migrating calibration v{_data.Version} → v4: {_data.Observations.Count} observations carried forward (legacy session/instance fields default).");
+                    _data.Version = 4;
+                }
             }
 
+            RebuildObservationKeySet();
             RecomputeRates();
 
             if (legacyHadObservations)
@@ -889,18 +975,17 @@ public sealed class CalibrationService
         {
             var count = incoming.Observations.Count;
             _data = incoming;
+            RebuildObservationKeySet();
             RecomputeRates();
             Save();
             DataChanged?.Invoke(this, EventArgs.Empty);
             return count;
         }
 
-        var existingKeys = new HashSet<string>(
-            _data.Observations.Select(ObservationKey));
         var added = 0;
         foreach (var obs in incoming.Observations)
         {
-            if (existingKeys.Add(ObservationKey(obs)))
+            if (_observationKeys.Add(ObservationKey(obs)))
             {
                 _data.Observations.Add(obs);
                 added++;
@@ -918,8 +1003,23 @@ public sealed class CalibrationService
         return added;
     }
 
+    /// <summary>
+    /// Stable observation identity. Includes <see cref="GiftObservation.SessionId"/>
+    /// and <see cref="GiftObservation.InstanceId"/> alongside the legacy
+    /// <c>NpcKey|Item|FavorDelta|Timestamp:O</c> shape:
+    /// <list type="bullet">
+    ///   <item><b>v4 records</b> (<c>SessionId</c> non-empty) dedup on
+    ///   session + instance — replay-on-relaunch within the same PG session
+    ///   collapses to the original key.</item>
+    ///   <item><b>v3 legacy records</b> (<c>SessionId</c> empty,
+    ///   <c>InstanceId</c> 0) keep their original key shape — the leading
+    ///   <c>|</c>s plus zero are stable, and the trailing
+    ///   <c>NpcKey|Item|FavorDelta|Timestamp:O</c> is identical to the
+    ///   pre-#201 key, so import-dedup against older exports still works.</item>
+    /// </list>
+    /// </summary>
     internal static string ObservationKey(GiftObservation o) =>
-        $"{o.NpcKey}|{o.ItemInternalName}|{o.FavorDelta}|{o.Timestamp:O}";
+        $"{o.SessionId}|{o.InstanceId}|{o.NpcKey}|{o.ItemInternalName}|{o.FavorDelta}|{o.Timestamp:O}";
 
     /// <summary>
     /// Max stack size for the item by <c>InternalName</c>, clamped to a floor of 1 so callers
@@ -978,6 +1078,7 @@ public sealed class CalibrationService
         if (idx < 0) return false;
         var removed = _data.Observations[idx];
         _data.Observations.RemoveAt(idx);
+        _observationKeys.Remove(observationKey);
         RecomputeRates();
         Save();
         _diag?.Info("Arwen.Calibration",
@@ -1003,6 +1104,7 @@ public sealed class CalibrationService
         if (obs.Quantity == quantity) return false;
         var oldQuantity = obs.Quantity;
         obs.Quantity = quantity;
+        // Quantity isn't part of ObservationKey, so the key set doesn't change.
         RecomputeRates();
         Save();
         _diag?.Info("Arwen.Calibration",
@@ -1020,6 +1122,7 @@ public sealed class CalibrationService
     {
         var removed = _data.Observations.RemoveAll(o => predicate(o));
         if (removed == 0) return 0;
+        RebuildObservationKeySet();
         RecomputeRates();
         Save();
         _diag?.Info("Arwen.Calibration", $"Bulk-deleted {removed} observation(s)");

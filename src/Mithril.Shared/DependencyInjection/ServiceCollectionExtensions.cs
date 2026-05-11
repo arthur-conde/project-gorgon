@@ -63,6 +63,12 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IShiftCatalog>(sp => new JsonShiftCatalog(
                 bundledDir: null,
                 diag: sp.GetService<IDiagnosticsSink>()))
+            // SessionAnchor is a leaf so PlayerLogStream / ChatLogStream can
+            // resolve ISessionAnchor without forming a cycle with the higher-
+            // level GameSessionService (which CONSUMES the stream and PUSHES
+            // to the anchor — see SessionAnchor.cs).
+            .AddSingleton<SessionAnchor>()
+            .AddSingleton<ISessionAnchor>(sp => sp.GetRequiredService<SessionAnchor>())
             .AddSingleton<IPlayerLogStream, PlayerLogStream>()
             .AddSingleton<IChatLogStream, ChatLogStream>()
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(
