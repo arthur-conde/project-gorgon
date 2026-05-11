@@ -16,6 +16,7 @@ public sealed class AlarmService : IDisposable
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
 
+    // AlarmKey is consumed by Task 9 (StopOnInteraction + HandleHarvested per-owner targeting).
     private sealed record ChannelOwner(string AlarmKey, IPlaybackHandle Handle);
     private readonly Dictionary<string, List<ChannelOwner>> _channelPlayback = new(StringComparer.Ordinal);
 
