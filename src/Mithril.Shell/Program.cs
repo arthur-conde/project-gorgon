@@ -163,6 +163,7 @@ public static class Program
                 .AddMithrilShellViews()
                 .AddMithrilItemDetail()
                 .AddMithrilIngredientSources()
+                .AddSingleton<IReferenceNavigator, NoOpReferenceNavigator>()
                 .AddMithrilShellCommands();
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
