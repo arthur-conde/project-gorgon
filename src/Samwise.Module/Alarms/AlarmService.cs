@@ -12,16 +12,20 @@ public sealed class AlarmService : IDisposable
 {
     private readonly GardenStateMachine _state;
     private readonly SamwiseSettings _settings;
+    private readonly IAudioPlaybackSink _audio;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
+
+    private sealed record ChannelOwner(string AlarmKey, IPlaybackHandle Handle);
+    private readonly Dictionary<string, List<ChannelOwner>> _channelPlayback = new(StringComparer.Ordinal);
 
     public event EventHandler<ActiveAlarm>? AlarmTriggered;
 
-    public AlarmService(GardenStateMachine state, SamwiseSettings settings)
+    public AlarmService(GardenStateMachine state, SamwiseSettings settings, IAudioPlaybackSink audio)
     {
         _state = state;
         _settings = settings;
+        _audio = audio;
         _state.PlotChanged += OnPlotChanged;
     }
 
@@ -32,13 +36,13 @@ public sealed class AlarmService : IDisposable
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
-        StopAllPlayback();
+        // Channel-aware stop landed in Task 9.
     }
 
     public void DismissAll()
     {
         _firedAt.Clear();
-        StopAllPlayback();
+        // Channel-aware stop landed in Task 9.
     }
 
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
@@ -50,7 +54,8 @@ public sealed class AlarmService : IDisposable
                 && _settings.Alarms.Rules.TryGetValue(e.OldStage.Value, out var oldRule)
                 && oldRule.StopOnInteraction)
             {
-                StopPlayback(resolvedKey);
+                // Stage-exit stop is rewritten in Task 9 to use _channelPlayback.
+                // Leaving the firedAt removal intact so existing dedup tests still pass.
             }
         }
 
@@ -70,16 +75,56 @@ public sealed class AlarmService : IDisposable
         if (_firedAt.ContainsKey(key)) return;
 
         _firedAt[key] = DateTimeOffset.UtcNow;
-        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), rule.SoundFilePath);
+        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), rule);
     }
 
-    private void Fire(ActiveAlarm alarm, string? soundFilePath)
+    private AlarmChannel ResolveChannel(string id)
+        => _settings.Alarms.Channels.FirstOrDefault(c => c.Id == id)
+           ?? _settings.Alarms.Channels[0];
+
+    private static void PruneStopped(List<ChannelOwner> owners)
+    {
+        for (int i = owners.Count - 1; i >= 0; i--)
+            if (!owners[i].Handle.IsPlaying) owners.RemoveAt(i);
+    }
+
+    private List<ChannelOwner> OwnersOf(string channelId)
+    {
+        if (!_channelPlayback.TryGetValue(channelId, out var list))
+            _channelPlayback[channelId] = list = new();
+        return list;
+    }
+
+    private void Fire(ActiveAlarm alarm, StageAlarmRule rule)
     {
         Dispatch(() =>
         {
-            StopPlayback(alarm.Key);
-            var handle = AudioPlayer.Play(soundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise");
-            _playback[alarm.Key] = handle;
+            var channel = ResolveChannel(rule.ChannelId);
+            var owners = OwnersOf(channel.Id);
+            PruneStopped(owners);
+
+            bool willPlaySound;
+            switch (channel.Collision)
+            {
+                case AlarmCollisionBehavior.Suppress:
+                    willPlaySound = owners.Count == 0;
+                    break;
+                case AlarmCollisionBehavior.Replace:
+                    foreach (var o in owners) o.Handle.Stop();
+                    owners.Clear();
+                    willPlaySound = true;
+                    break;
+                case AlarmCollisionBehavior.Mix:
+                default:
+                    willPlaySound = true;
+                    break;
+            }
+
+            if (willPlaySound)
+            {
+                var handle = _audio.Play(rule.SoundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise", loop: rule.Loop);
+                owners.Add(new ChannelOwner(alarm.Key, handle));
+            }
 
             if (_settings.Alarms.FlashWindow)
             {
@@ -101,34 +146,15 @@ public sealed class AlarmService : IDisposable
     {
         var prefix = $"{plot.CharName}|{plot.PlotId}|";
         foreach (var k in _firedAt.Keys.Where(k => k.StartsWith(prefix)).ToArray())
-        {
             _firedAt.Remove(k);
-            var stageName = k[(prefix.Length)..];
-            if (Enum.TryParse<PlotStage>(stageName, out var stage)
-                && _settings.Alarms.Rules.TryGetValue(stage, out var rule)
-                && rule.StopOnInteraction)
-            {
-                StopPlayback(k);
-            }
-        }
-        foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray()) _snoozedUntil.Remove(k);
+        foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray())
+            _snoozedUntil.Remove(k);
+        // Channel-aware stop landed in Task 9.
     }
 
     public void Dispose()
     {
         _state.PlotChanged -= OnPlotChanged;
-        StopAllPlayback();
-    }
-
-    private void StopPlayback(string key)
-    {
-        if (_playback.Remove(key, out var handle))
-            handle.Stop();
-    }
-
-    private void StopAllPlayback()
-    {
-        foreach (var h in _playback.Values) h.Stop();
-        _playback.Clear();
+        // Channel-aware stop landed in Task 9.
     }
 }

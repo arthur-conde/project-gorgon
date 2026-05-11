@@ -45,7 +45,10 @@ public sealed class SamwiseModule : IMithrilModule
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>()));
-        services.AddSingleton<AlarmService>();
+        services.AddSingleton<AlarmService>(sp => new AlarmService(
+            sp.GetRequiredService<GardenStateMachine>(),
+            sp.GetRequiredService<SamwiseSettings>(),
+            sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);
