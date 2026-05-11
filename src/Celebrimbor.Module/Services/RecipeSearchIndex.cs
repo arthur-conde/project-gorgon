@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Services;
@@ -9,7 +10,7 @@ namespace Celebrimbor.Services;
 public sealed class RecipeSearchIndex
 {
     private readonly IReferenceDataService _refData;
-    private IReadOnlyList<RecipeEntry> _all;
+    private IReadOnlyList<Recipe> _all;
 
     public RecipeSearchIndex(IReferenceDataService refData)
     {
@@ -18,15 +19,15 @@ public sealed class RecipeSearchIndex
         refData.FileUpdated += OnFileUpdated;
     }
 
-    public IReadOnlyList<RecipeEntry> AllRecipes => _all;
+    public IReadOnlyList<Recipe> AllRecipes => _all;
 
-    public IEnumerable<RecipeEntry> Search(string? query)
+    public IEnumerable<Recipe> Search(string? query)
     {
         if (string.IsNullOrWhiteSpace(query)) return _all;
         return _all.Where(r =>
-            r.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            r.InternalName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            r.Skill.Contains(query, StringComparison.OrdinalIgnoreCase));
+            (r.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (r.InternalName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (r.Skill?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
     private void OnFileUpdated(object? sender, string key)
@@ -35,9 +36,9 @@ public sealed class RecipeSearchIndex
         _all = Snapshot(_refData);
     }
 
-    private static IReadOnlyList<RecipeEntry> Snapshot(IReferenceDataService refData)
+    private static IReadOnlyList<Recipe> Snapshot(IReferenceDataService refData)
         => refData.Recipes.Values
-            .OrderBy(r => r.Skill, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(r => r.Skill ?? "", StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Name ?? "", StringComparer.OrdinalIgnoreCase)
             .ToList();
 }

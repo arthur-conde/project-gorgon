@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
@@ -9,7 +10,7 @@ public sealed partial class RecipeRowViewModel : ObservableObject
 {
     private readonly IItemDetailPresenter _itemDetail;
 
-    public RecipeRowViewModel(RecipeEntry recipe, IReferenceDataService refData, IItemDetailPresenter itemDetail)
+    public RecipeRowViewModel(Recipe recipe, IReferenceDataService refData, IItemDetailPresenter itemDetail)
     {
         _itemDetail = itemDetail;
         Recipe = recipe;
@@ -29,20 +30,26 @@ public sealed partial class RecipeRowViewModel : ObservableObject
         InspectableItems = BuildInspectable(CraftedOutputs, Results);
     }
 
-    internal static IngredientChip? ProjectIngredientChip(RecipeIngredient ingredient, IReferenceDataService refData) => ingredient switch
+    internal static IngredientChip? ProjectIngredientChip(RecipeIngredient ingredient, IReferenceDataService refData)
     {
-        RecipeItemIngredient byItem => refData.Items.TryGetValue(byItem.ItemCode, out var item)
-            ? new IngredientChip(item.Name ?? "", item.IconId, byItem.StackSize, byItem.ChanceToConsume, item.InternalName)
-            : null,
-        RecipeKeywordIngredient kw => new IngredientChip(
-            Name: kw.Desc ?? ItemKeywordIndex.Humanise(kw.ItemKeys),
-            IconId: 0,
-            StackSize: kw.StackSize,
-            ChanceToConsume: kw.ChanceToConsume,
-            InternalName: null,
-            KeywordsLabel: $"any {ItemKeywordIndex.Humanise(kw.ItemKeys)}"),
-        _ => null,
-    };
+        switch (ingredient)
+        {
+            case RecipeItemIngredient itemIng:
+                return refData.Items.TryGetValue(itemIng.ItemCode, out var item)
+                    ? new IngredientChip(item.Name ?? "", item.IconId, ingredient.StackSize, (float?)ingredient.ChanceToConsume, item.InternalName)
+                    : null;
+            case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                return new IngredientChip(
+                    Name: kwIng.Desc ?? ItemKeywordIndex.Humanise(kwIng.ItemKeys),
+                    IconId: 0,
+                    StackSize: ingredient.StackSize,
+                    ChanceToConsume: (float?)ingredient.ChanceToConsume,
+                    InternalName: null,
+                    KeywordsLabel: $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}");
+            default:
+                return null;
+        }
+    }
 
     private static IReadOnlyList<IngredientChip> BuildInspectable(
         IReadOnlyList<CraftedGearPreview> craftedOutputs, IReadOnlyList<IngredientChip> results)
@@ -79,9 +86,9 @@ public sealed partial class RecipeRowViewModel : ObservableObject
             AugmentPools: AugmentPools, TaughtRecipes: TaughtRecipes, EffectTags: EffectTags);
 
     private static IReadOnlyList<IngredientChip> ProjectResults(
-        RecipeEntry recipe, IReferenceDataService refData, int previewCount)
+        Recipe recipe, IReferenceDataService refData, int previewCount)
     {
-        var primary = recipe.ResultItems
+        var primary = (recipe.ResultItems ?? [])
             .Select(r => refData.Items.TryGetValue(r.ItemCode, out var item)
                 ? new IngredientChip(item.Name ?? "", item.IconId, r.StackSize, null, item.InternalName)
                 : null)
@@ -102,10 +109,10 @@ public sealed partial class RecipeRowViewModel : ObservableObject
         if (previewCount > 0) return [];
 
         // Last-resort: the recipe's own name/icon so the Yields section never renders blank.
-        return [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
+        return [new IngredientChip(recipe.Name ?? "", recipe.IconId, 1, null)];
     }
 
-    public RecipeEntry Recipe { get; }
+    public Recipe Recipe { get; }
     public IReadOnlyList<IngredientChip> Ingredients { get; }
     public IReadOnlyList<IngredientChip> Results { get; }
     public IReadOnlyList<CraftedGearPreview> CraftedOutputs { get; }
@@ -126,12 +133,12 @@ public sealed partial class RecipeRowViewModel : ObservableObject
     public bool HasInspectableItem => InspectableItems.Count > 0;
     public bool HasMultipleInspectableItems => InspectableItems.Count > 1;
 
-    public string Name => Recipe.Name;
-    public string InternalName => Recipe.InternalName;
+    public string Name => Recipe.Name ?? "";
+    public string InternalName => Recipe.InternalName ?? "";
     public int IconId => Recipe.IconId;
-    public string Skill => Recipe.Skill;
+    public string Skill => Recipe.Skill ?? "";
     public int SkillLevelReq => Recipe.SkillLevelReq;
-    public string SkillLabel => $"{Recipe.Skill} {Recipe.SkillLevelReq}";
+    public string SkillLabel => $"{Skill} {SkillLevelReq}";
 
     [ObservableProperty]
     private int _quantity;

@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Tests;
@@ -8,15 +9,15 @@ internal sealed class FakeReferenceData : IReferenceDataService
 {
     private readonly Dictionary<long, Item> _items;
     private readonly Dictionary<string, Item> _itemsByName;
-    private readonly Dictionary<string, RecipeEntry> _recipes;
-    private readonly Dictionary<string, RecipeEntry> _recipesByName;
+    private readonly Dictionary<string, Recipe> _recipes;
+    private readonly Dictionary<string, Recipe> _recipesByName;
     private readonly Dictionary<string, PowerEntry> _powers;
     private readonly Dictionary<string, AttributeEntry> _attributes;
     private readonly Dictionary<string, IReadOnlyList<string>> _profiles;
 
     public FakeReferenceData(
         IEnumerable<Item> items,
-        IEnumerable<RecipeEntry> recipes,
+        IEnumerable<Recipe> recipes,
         IEnumerable<PowerEntry>? powers = null,
         IEnumerable<AttributeEntry>? attributes = null,
         IDictionary<string, IReadOnlyList<string>>? profiles = null)
@@ -27,7 +28,9 @@ internal sealed class FakeReferenceData : IReferenceDataService
             .ToDictionary(i => i.InternalName!, StringComparer.Ordinal);
         _keywordIndex = new ItemKeywordIndex(_items);
         _recipes = recipes.ToDictionary(r => r.Key, StringComparer.Ordinal);
-        _recipesByName = _recipes.Values.ToDictionary(r => r.InternalName, StringComparer.Ordinal);
+        _recipesByName = _recipes.Values
+            .Where(r => !string.IsNullOrEmpty(r.InternalName))
+            .ToDictionary(r => r.InternalName!, StringComparer.Ordinal);
         _powers = (powers ?? []).ToDictionary(p => p.InternalName, StringComparer.Ordinal);
         _attributes = (attributes ?? []).ToDictionary(a => a.Token, StringComparer.Ordinal);
         _profiles = profiles is null
@@ -40,8 +43,8 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByName;
     public ItemKeywordIndex KeywordIndex => _keywordIndex;
     private readonly ItemKeywordIndex _keywordIndex;
-    public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
-    public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName => _recipesByName;
+    public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+    public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByName;
     public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
     public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
     public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
@@ -107,33 +110,38 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public static KeyValuePair<string, IReadOnlyList<string>> Profile(string name, params string[] powers)
         => new(name, powers);
 
-    public static RecipeKeywordIngredient Keyword(int stack, params string[] keys)
-        => new(keys, Desc: null, StackSize: stack, ChanceToConsume: null);
+    public static RecipeIngredient ItemIngredient(long itemCode, int stack, double? chanceToConsume = null)
+        => new RecipeItemIngredient { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
 
-    public static RecipeKeywordIngredient KeywordWithDesc(int stack, string desc, params string[] keys)
-        => new(keys, Desc: desc, StackSize: stack, ChanceToConsume: null);
+    public static RecipeIngredient Keyword(int stack, params string[] keys)
+        => new RecipeKeywordIngredient { ItemKeys = keys, StackSize = stack };
 
-    public static RecipeEntry Recipe(
+    public static RecipeIngredient KeywordWithDesc(int stack, string desc, params string[] keys)
+        => new RecipeKeywordIngredient { ItemKeys = keys, Desc = desc, StackSize = stack };
+
+    public static RecipeResultItem Result(long itemCode, int stack)
+        => new() { ItemCode = itemCode, StackSize = stack };
+
+    public static Recipe Recipe(
         string name,
         string skill,
         int skillLevelReq,
         IReadOnlyList<RecipeIngredient> ingredients,
-        IReadOnlyList<RecipeItemRef> results,
+        IReadOnlyList<RecipeResultItem> results,
         IReadOnlyList<string>? resultEffects = null)
-        => new(
-            Key: "recipe_" + name.ToLowerInvariant(),
-            Name: name,
-            InternalName: name,
-            IconId: 0,
-            Skill: skill,
-            SkillLevelReq: skillLevelReq,
-            RewardSkill: skill,
-            RewardSkillXp: 0,
-            RewardSkillXpFirstTime: 0,
-            RewardSkillXpDropOffLevel: null,
-            RewardSkillXpDropOffPct: null,
-            RewardSkillXpDropOffRate: null,
-            Ingredients: ingredients,
-            ResultItems: results,
-            ResultEffects: resultEffects);
+        => new()
+        {
+            Key = "recipe_" + name.ToLowerInvariant(),
+            Name = name,
+            InternalName = name,
+            IconId = 0,
+            Skill = skill,
+            SkillLevelReq = skillLevelReq,
+            RewardSkill = skill,
+            RewardSkillXp = 0,
+            RewardSkillXpFirstTime = 0,
+            Ingredients = ingredients,
+            ResultItems = results,
+            ResultEffects = resultEffects,
+        };
 }

@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of an <c>AddItemTSysPowerWax(powerName, tier, durability)</c>
-/// entry in <see cref="RecipeEntry.ResultEffects"/>. Sibling of
+/// entry in <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Sibling of
 /// <see cref="AugmentPreview"/> for finite-use applications: the recipe attaches
 /// a power tier to a target item that wears off after <see cref="Durability"/>
 /// uses, rather than producing a wax item template (which is what

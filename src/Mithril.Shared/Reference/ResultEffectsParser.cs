@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Mithril.Shared.Reference;
 
 /// <summary>
-/// Projects the raw strings in <see cref="RecipeEntry.ResultEffects"/> into typed previews
+/// Projects the raw strings in <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/> into typed previews
 /// that UI code can render. Models the prefixes documented under <c>BundledData/INDEX.md</c>:
 /// <list type="bullet">
 ///   <item><c>TSysCraftedEquipment(template[,tier[,subtype]])</c>, <c>GiveTSysItem(template)</c>,
@@ -535,7 +535,7 @@ public static class ResultEffectsParser
         if (!refData.RecipesByInternalName.TryGetValue(recipeInternalName, out var recipe)) return false;
 
         var displayName = string.IsNullOrEmpty(recipe.Name) ? recipeInternalName : recipe.Name;
-        preview = new TaughtRecipePreview(recipeInternalName, displayName, recipe.Skill, recipe.SkillLevelReq);
+        preview = new TaughtRecipePreview(recipeInternalName, displayName, recipe.Skill ?? "", recipe.SkillLevelReq);
         return true;
     }
 

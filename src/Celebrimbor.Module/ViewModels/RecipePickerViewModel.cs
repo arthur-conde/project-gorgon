@@ -249,10 +249,11 @@ public sealed partial class RecipePickerViewModel : ObservableObject
         var dict = new Dictionary<string, RecipeRowViewModel>(StringComparer.Ordinal);
         foreach (var recipe in _search.AllRecipes)
         {
+            if (string.IsNullOrEmpty(recipe.InternalName)) continue;
             var row = new RecipeRowViewModel(recipe, _refData, _itemDetail);
             row.PropertyChanged += OnRowPropertyChanged;
             AllRows.Add(row);
-            dict[recipe.InternalName] = row;
+            dict[recipe.InternalName!] = row;
         }
         _rowByName = dict;
         RefreshCharacterFlags();
@@ -353,7 +354,9 @@ public sealed partial class RecipePickerViewModel : ObservableObject
                 && n > 0;
 
             var effective = 0;
-            if (character is not null && character.Skills.TryGetValue(row.Recipe.Skill, out var skill))
+            if (character is not null
+                && !string.IsNullOrEmpty(row.Recipe.Skill)
+                && character.Skills.TryGetValue(row.Recipe.Skill, out var skill))
                 effective = skill.Level + skill.BonusLevels;
             row.MeetsSkill = effective >= row.Recipe.SkillLevelReq;
         }

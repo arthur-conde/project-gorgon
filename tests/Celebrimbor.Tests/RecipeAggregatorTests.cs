@@ -1,6 +1,7 @@
 using Celebrimbor.Domain;
 using Celebrimbor.Services;
 using FluentAssertions;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -8,11 +9,11 @@ namespace Celebrimbor.Tests;
 
 public class RecipeAggregatorTests
 {
-    private static RecipeItemRef Ref(long id, int stack, float? chance = null)
-        => new(id, stack, chance);
+    private static RecipeResultItem Ref(long id, int stack)
+        => new() { ItemCode = id, StackSize = stack };
 
-    private static RecipeItemIngredient Ing(long id, int stack, float? chance = null)
-        => new(id, stack, chance);
+    private static RecipeIngredient Ing(long id, int stack, double? chance = null)
+        => new RecipeItemIngredient { ItemCode = id, StackSize = stack, ChanceToConsume = chance };
 
     private static FakeReferenceData MakeStandardData()
     {

@@ -3,7 +3,7 @@ namespace Mithril.Shared.Reference;
 /// <summary>
 /// Parsed projection of the <c>CraftingEnhance*</c>, <c>RepairItemDurability</c>,
 /// <c>CraftingResetItem</c>, and <c>TransmogItemAppearance</c> entries in
-/// <see cref="RecipeEntry.ResultEffects"/>. Each describes an effect the crafted
+/// <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Each describes an effect the crafted
 /// recipe applies to an existing item: a stat boost, a durability repair, a
 /// transmog, or a reset to stock shape.
 /// <para>

@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 
 namespace Mithril.Shared.Reference;
 
@@ -24,11 +25,11 @@ public interface IReferenceDataService
     /// </summary>
     ItemKeywordIndex KeywordIndex { get; }
 
-    /// <summary>recipe key (e.g. "recipe_1234") → RecipeEntry.</summary>
-    IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
+    /// <summary>recipe key (e.g. "recipe_1234") → <see cref="Recipe"/>.</summary>
+    IReadOnlyDictionary<string, Recipe> Recipes { get; }
 
-    /// <summary>InternalName → RecipeEntry lookup. Matches RecipeCompletions keys from character exports.</summary>
-    IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }
+    /// <summary>InternalName → <see cref="Recipe"/> lookup. Matches RecipeCompletions keys from character exports.</summary>
+    IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; }
 
     /// <summary>Skill key (e.g. "Meditation", "AncillaryArmorAugmentBrewing") → SkillEntry.
     /// Keys are id-shaped (ASCII identifier-safe) and match recipes' RewardSkill field.

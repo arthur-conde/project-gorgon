@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of a <c>CraftWaxItem(waxItemTemplate, powerName, tier, durability)</c>
-/// entry in <see cref="RecipeEntry.ResultEffects"/>. Reuses the same per-tier
+/// entry in <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Reuses the same per-tier
 /// <c>EffectDescs</c> rendering pipeline as <see cref="AugmentPreview"/>, but the wax
 /// item itself has a finite use count rather than being a permanent enchantment.
 /// </summary>

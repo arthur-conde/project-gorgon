@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of a "this recipe creates a specific in-game item" entry in
-/// <see cref="RecipeEntry.ResultEffects"/>. Six prefix families flow through this
+/// <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Six prefix families flow through this
 /// shared shape: <c>BrewItem</c>, <c>SummonPlant</c>, the Mining/Geology survey
 /// creators, the regional treasure-map creators, <c>CreateNecroFuel</c>, and
 /// <c>GiveNonMagicalLootProfile</c>.

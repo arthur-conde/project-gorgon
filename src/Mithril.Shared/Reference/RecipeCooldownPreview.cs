@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of an <c>AdjustRecipeReuseTime(deltaSeconds, condition)</c>
-/// entry in <see cref="RecipeEntry.ResultEffects"/>. The crafted item or recipe
+/// entry in <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. The crafted item or recipe
 /// shifts the cooldown of *another* recipe by <see cref="DeltaSeconds"/>,
 /// optionally only under <see cref="Condition"/> (e.g. <c>QuarterMoon</c>).
 /// <para>

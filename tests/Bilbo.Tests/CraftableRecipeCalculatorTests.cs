@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Bilbo.Domain;
 using FluentAssertions;
 using Mithril.Shared.Character;
@@ -23,14 +24,24 @@ public class CraftableRecipeCalculatorTests
         Keywords = keywords.Select(k => new ItemKeyword(k, 0)).ToList(),
     };
 
-    private static RecipeEntry Recipe(string key, string name, IReadOnlyList<RecipeIngredient> ingredients, IReadOnlyList<RecipeItemRef>? results = null, string skill = "Cooking", int skillReq = 0, string internalName = "r_default") =>
-        new(
-            Key: key, Name: name, InternalName: internalName, IconId: 0,
-            Skill: skill, SkillLevelReq: skillReq,
-            RewardSkill: "", RewardSkillXp: 0, RewardSkillXpFirstTime: 0,
-            RewardSkillXpDropOffLevel: null, RewardSkillXpDropOffPct: null, RewardSkillXpDropOffRate: null,
-            Ingredients: ingredients,
-            ResultItems: results ?? []);
+    private static Recipe MakeRecipe(string key, string name, IReadOnlyList<RecipeIngredient> ingredients, IReadOnlyList<RecipeResultItem>? results = null, string skill = "Cooking", int skillReq = 0, string internalName = "r_default") =>
+        new()
+        {
+            Key = key, Name = name, InternalName = internalName, IconId = 0,
+            Skill = skill, SkillLevelReq = skillReq,
+            RewardSkill = "", RewardSkillXp = 0, RewardSkillXpFirstTime = 0,
+            Ingredients = ingredients,
+            ResultItems = results ?? [],
+        };
+
+    private static RecipeIngredient ItemIng(long itemCode, int stack, double? chanceToConsume = null)
+        => new RecipeItemIngredient { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
+
+    private static RecipeIngredient KeywordIng(IReadOnlyList<string> keys, string? desc, int stack)
+        => new RecipeKeywordIngredient { ItemKeys = keys, Desc = desc, StackSize = stack };
+
+    private static RecipeResultItem ResultItem(long itemCode, int stack)
+        => new() { ItemCode = itemCode, StackSize = stack };
 
     [Fact]
     public void Happy_Path_Computes_Max_Craftable()
@@ -44,13 +55,13 @@ public class CraftableRecipeCalculatorTests
             },
             recipes: new()
             {
-                ["recipe_stew"] = Recipe("recipe_stew", "Stew",
+                ["recipe_stew"] = MakeRecipe("recipe_stew", "Stew",
                     ingredients:
                     [
-                        new RecipeItemIngredient(100, 2, null),
-                        new RecipeItemIngredient(200, 1, null),
+                        ItemIng(100, 2),
+                        ItemIng(200, 1),
                     ],
-                    results: [new(900, 1, null)]),
+                    results: [ResultItem(900, 1)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute(
@@ -77,8 +88,8 @@ public class CraftableRecipeCalculatorTests
             },
             recipes: new()
             {
-                ["recipe_peppered_onion"] = Recipe("recipe_peppered_onion", "Peppered Onion",
-                    ingredients: [new RecipeItemIngredient(100, 2, null), new RecipeItemIngredient(300, 1, null)]),
+                ["recipe_peppered_onion"] = MakeRecipe("recipe_peppered_onion", "Peppered Onion",
+                    ingredients: [ItemIng(100, 2), ItemIng(300, 1)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute(
@@ -97,7 +108,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "OnionSoup", ingredients: [new RecipeItemIngredient(100, 1, null)]),
+                ["r"] = MakeRecipe("r", "OnionSoup", ingredients: [ItemIng(100, 1)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute(
@@ -117,7 +128,7 @@ public class CraftableRecipeCalculatorTests
             items: new(), // empty — no lookup succeeds
             recipes: new()
             {
-                ["r"] = Recipe("r", "Mystery", ingredients: [new RecipeItemIngredient(12345, 1, null)]),
+                ["r"] = MakeRecipe("r", "Mystery", ingredients: [ItemIng(12345, 1)]),
             });
 
         var rows = CraftableRecipeCalculator.Compute([], refData, character: null, ConfidenceLevel.P95);
@@ -134,7 +145,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
+                ["r"] = MakeRecipe("r", "Stew", ingredients: [ItemIng(100, 1)],
                     skill: "Cooking", skillReq: 30, internalName: "recipe_stew"),
             });
 
@@ -162,7 +173,7 @@ public class CraftableRecipeCalculatorTests
             items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
-                ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
+                ["r"] = MakeRecipe("r", "Stew", ingredients: [ItemIng(100, 1)],
                     skill: "Cooking", skillReq: 30),
             });
 
@@ -191,9 +202,9 @@ public class CraftableRecipeCalculatorTests
             },
             recipes: new()
             {
-                ["r"] = Recipe("r", "EnchantGear",
-                    ingredients: [new RecipeKeywordIngredient(["Crystal"], "Auxiliary Crystal", 1, null)],
-                    results: [new(200, 1, null)]),
+                ["r"] = MakeRecipe("r", "EnchantGear",
+                    ingredients: [KeywordIng(["Crystal"], "Auxiliary Crystal", 1)],
+                    results: [ResultItem(200, 1)]),
             });
 
         var row = CraftableRecipeCalculator
@@ -217,9 +228,9 @@ public class CraftableRecipeCalculatorTests
             },
             recipes: new()
             {
-                ["r"] = Recipe("r", "EnchantGear",
-                    ingredients: [new RecipeKeywordIngredient(["Crystal"], null, 1, null)],
-                    results: [new(200, 1, null)]),
+                ["r"] = MakeRecipe("r", "EnchantGear",
+                    ingredients: [KeywordIng(["Crystal"], null, 1)],
+                    results: [ResultItem(200, 1)]),
             });
 
         // No crystals owned at all.
@@ -242,8 +253,8 @@ public class CraftableRecipeCalculatorTests
             },
             recipes: new()
             {
-                ["r"] = Recipe("r", "Stew",
-                    ingredients: [new RecipeItemIngredient(100, 1, null), new RecipeItemIngredient(500, 1, 0.5f)]),
+                ["r"] = MakeRecipe("r", "Stew",
+                    ingredients: [ItemIng(100, 1), ItemIng(500, 1, 0.5)]),
             });
 
         var row = CraftableRecipeCalculator
@@ -255,7 +266,7 @@ public class CraftableRecipeCalculatorTests
 
     private sealed class TestRefData : IReferenceDataService
     {
-        public TestRefData(Dictionary<long, Item> items, Dictionary<string, RecipeEntry> recipes)
+        public TestRefData(Dictionary<long, Item> items, Dictionary<string, Recipe> recipes)
         {
             Items = items;
             Recipes = recipes;
@@ -265,8 +276,8 @@ public class CraftableRecipeCalculatorTests
         public IReadOnlyDictionary<long, Item> Items { get; }
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => new(Items);
-        public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
-        public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; }
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();

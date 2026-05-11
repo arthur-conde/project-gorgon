@@ -219,10 +219,10 @@ public class ReferenceDataServiceTests : IDisposable
         var recipe = svc.Recipes["recipe_1"];
         recipe.Ingredients.Should().HaveCount(2);
 
-        recipe.Ingredients[0].Should().BeOfType<RecipeItemIngredient>()
-            .Which.ItemCode.Should().Be(100);
+        var itemSlot = recipe.Ingredients[0].Should().BeOfType<Mithril.Reference.Models.Recipes.RecipeItemIngredient>().Subject;
+        itemSlot.ItemCode.Should().Be(100);
 
-        var keyword = recipe.Ingredients[1].Should().BeOfType<RecipeKeywordIngredient>().Subject;
+        var keyword = recipe.Ingredients[1].Should().BeOfType<Mithril.Reference.Models.Recipes.RecipeKeywordIngredient>().Subject;
         keyword.ItemKeys.Should().Equal(["Crystal"]);
         keyword.Desc.Should().Be("Auxiliary Crystal");
         keyword.StackSize.Should().Be(1);
@@ -236,7 +236,7 @@ public class ReferenceDataServiceTests : IDisposable
     public void Recipe_item_source_resolves_recipeId_to_recipe_InternalName()
     {
         // sources_items.json carries recipeId numerically; the parser should look up
-        // the matching RecipeEntry and store its InternalName in ItemSource.Context.
+        // the matching Recipe and store its InternalName in ItemSource.Context.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
             {
               "item_500": { "Name": "Tin Bar", "InternalName": "TinBar" }
