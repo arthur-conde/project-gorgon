@@ -30,6 +30,24 @@ Every line is a CompactJson record from Serilog. The base fields are:
 
 The discriminator is **`Kind`** — one of the constants in [`PerfEventKinds`](../src/Mithril.Shared/Diagnostics/Performance/PerfEventKinds.cs). All filtering should key off `Kind`.
 
+## What's instrumented today
+
+Not every event kind has a producer yet — the schema defines the vocabulary; the codebase decides what gets emitted. Current state (PR [#196](https://github.com/arthur-conde/project-gorgon/pull/196)):
+
+| Kind | Producer | Status |
+|---|---|---|
+| `session_header` | [`PerfTracer.EmitSessionHeader`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracer.cs) | Always emitted on session start |
+| `frame_summary` / `frame` / `stall` | [`PerfTracerHostedService` + `CompositionTarget.Rendering`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracerHostedService.cs) | Attached while session active |
+| `dispatcher` | `PerfTracerHostedService` + `Dispatcher.Hooks` | Attached while session active |
+| `counter` / `gc` | `PerfTracerHostedService` + `System.Threading.Timer` (1Hz) | Running while session active |
+| `binding_error` | [`BindingErrorTraceListener`](../src/Mithril.Shared/Diagnostics/Performance/BindingErrorTraceListener.cs) | Attached while session active |
+| `input_latency` | `PerfTracerHostedService` + `InputManager.PreProcessInput` | Attached while session active |
+| `module_activated` | [`ShellViewModel.ActivateModule`](../src/Mithril.Shell/ViewModels/ShellViewModel.cs) | Fires on every activation (initial + tab clicks) |
+| `ref_fetch` | [`ReferenceDataService.RefreshFileAsync`](../src/Mithril.Shared/Reference/ReferenceDataService.cs) | Fires per CDN fetch attempt; cache-hit path not yet wrapped |
+| `scope` | _none_ | **No producers yet.** The `IPerfTracer.Scope(name, tags)` API exists for modules to adopt at suspected hot paths; the deferred candidate list (log-line dispatch, `TtlObservableCollection.Reconcile`, etc.) hasn't been wired. A trace with **zero `scope` events is the expected default**, not a wiring bug. |
+
+If you read a trace and a kind you expected is missing, check the producer column first — `scope` and `cache-hit ref_fetch` are the two known gaps today.
+
 ## Event kinds
 
 ### `session_header`
@@ -131,6 +149,8 @@ Manual timing scope — emitted on `using var s = perf.Scope("name", new { tag =
 | `DurationMs` | Wall-clock from `Scope()` call to dispose. |
 | `Tags` | Whatever anonymous object the caller passed (or null). |
 
+> **No producers today.** See [What's instrumented today](#whats-instrumented-today). A trace with zero `scope` events is expected on a stock build.
+
 ### `module_activated`
 
 Cost of the first activation of a module — the `_gates.For(...).Open()` plus the view-type DI resolution in `ShellViewModel.ActivateModule`.
@@ -158,6 +178,19 @@ Every example below assumes the file is at `$Path`. On Windows PowerShell:
 ```powershell
 $Path = "$env:LocalAppData\Mithril\Shell\perf\perf-20260511-143301.jsonl"
 ```
+
+### Common false-negative traps
+
+Before concluding "kind X is missing, the wiring is broken," rule out these analysis-side traps. Most "zero events" findings turn out to be one of them:
+
+- **Capital-K `Kind`.** Serilog's CompactJsonFormatter preserves the case of the template placeholder. The trace JSON has `"Kind":"…"`, `"ModuleId":"…"`, `"DurationMs":…` — capital first letter on every property. A filter like `jq 'select(.kind=="module_activated")'` (lowercase `kind`) returns zero results even when events exist. Use `.Kind`. Same for all other properties.
+- **The kind isn't instrumented yet.** Check [What's instrumented today](#whats-instrumented-today). `scope` has no producers today; `ref_fetch` only fires on the HTTP path, not on cache hits.
+- **The session didn't cover the event-generating window.** Hotkey-toggled sessions start *after* the shell is up — the initial `module_activated` fires during `ShellViewModel` construction and is therefore missed. Only subsequent tab clicks produce `module_activated` in that mode. Use `autoStartPerfTrace=true` if you want the first activation captured.
+- **Autostart silently didn't fire.** If `enablePerfTrace=true` and `autoStartPerfTrace=true` aren't both in `shell.json` *before* the process starts, the autostart check at [`Program.cs`](../src/Mithril.Shell/Program.cs) skips. The regular diagnostics log will tell you — grep `%LocalAppData%\Mithril\Shell\logs\mithril-*.json` for `Session started:` dated to that run.
+- **Sanity-check the file with a literal grep first.** Before reaching for jq, run a case-sensitive plain-text search for the kind string. If the literal string appears, the events exist and your jq filter has a bug. If it doesn't appear, the event isn't being produced (or wasn't produced during your session window).
+  ```powershell
+  Select-String -Path $Path -Pattern '"Kind":"module_activated"' -CaseSensitive
+  ```
 
 ### What machine produced this trace?
 
