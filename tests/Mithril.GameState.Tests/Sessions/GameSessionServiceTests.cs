@@ -18,10 +18,11 @@ public sealed class GameSessionServiceTests
         "[14:00:00] Logged in as character Frodo. Time UTC=05/11/2026 14:00:00. Timezone Offset 01:00:00";
 
     [Fact]
-    public async Task First_banner_populates_Current_and_raises_SessionStarted()
+    public async Task First_banner_populates_Current_and_raises_SessionStarted_and_pushes_to_anchor()
     {
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new GameSessionService(stream);
+        var anchor = new SessionAnchor();
+        var svc = new GameSessionService(stream, anchor);
         try
         {
             GameSession? captured = null;
@@ -32,7 +33,9 @@ public sealed class GameSessionServiceTests
 
             svc.Current.Should().NotBeNull();
             svc.Current!.CharacterName.Should().Be("Emraell");
-            svc.LoggedInUtc.Should().Be(new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc));
+            // Shared anchor was pushed-to so the sequencer (Mithril.Shared) can
+            // re-anchor without depending on GameSessionService directly.
+            anchor.LoggedInUtc.Should().Be(new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc));
             captured.Should().NotBeNull();
             captured!.SessionId.Should().Be(svc.Current.SessionId);
         }
@@ -43,13 +46,14 @@ public sealed class GameSessionServiceTests
     public async Task Replaying_same_banner_does_not_re_fire()
     {
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new GameSessionService(stream);
+        var anchor = new SessionAnchor();
+        var svc = new GameSessionService(stream, anchor);
         try
         {
             var startedCount = 0;
             var anchorChangedCount = 0;
             svc.SessionStarted += (_, _) => startedCount++;
-            svc.AnchorChanged += (_, _) => anchorChangedCount++;
+            anchor.AnchorChanged += (_, _) => anchorChangedCount++;
 
             stream.Push(BannerEmraell);
             stream.Push(BannerEmraell);

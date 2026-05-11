@@ -8,12 +8,14 @@ namespace Mithril.Shared.Logging;
 /// (which drifts on copies, runs across midnight, and depends on system clock
 /// state).
 ///
-/// Lives in <c>Mithril.Shared</c> rather than <c>Mithril.GameState</c> so the
-/// sequencer can depend on it without inverting the project graph. The
-/// implementation (a <c>GameSessionService</c> sibling of
-/// <c>IInventoryService</c> / <c>IQuestService</c>) ships in
-/// <c>Mithril.GameState.Sessions</c> and is registered as both this interface
-/// and the richer <c>IGameSessionService</c>.
+/// <para>The concrete implementation is the leaf class <see cref="SessionAnchor"/>
+/// in <c>Mithril.Shared</c> — kept here rather than in <c>Mithril.GameState</c>
+/// so <see cref="LogLineTimestampSequencer"/> and <c>PlayerLogStream</c>
+/// (also Mithril.Shared) can depend on it without inverting the project
+/// graph or forming a DI cycle. <c>GameSessionService</c> in
+/// <c>Mithril.GameState.Sessions</c> consumes the same concrete anchor and
+/// calls <see cref="SessionAnchor.SetLoggedInUtc(DateTime)"/> on every parsed
+/// banner — pushing state in rather than implementing the interface itself.</para>
 /// </summary>
 public interface ISessionAnchor
 {

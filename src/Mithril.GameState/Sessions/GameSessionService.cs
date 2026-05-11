@@ -5,33 +5,45 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Sessions;
 
 /// <summary>
-/// Hosted-service implementation of <see cref="IGameSessionService"/> and
-/// <see cref="ISessionAnchor"/>. Tails <see cref="IPlayerLogStream"/>, parses
-/// the login banner via <see cref="LoginBannerParser"/>, and publishes session
-/// transitions to subscribers + the anchor consumer.
+/// Hosted-service implementation of <see cref="IGameSessionService"/>. Tails
+/// <see cref="IPlayerLogStream"/>, parses the login banner via
+/// <see cref="LoginBannerParser"/>, and publishes session transitions to
+/// subscribers + the shared <see cref="SessionAnchor"/> consumer.
 ///
-/// Threading: ingestion runs on the hosted-service loop thread; subscriber
+/// <para>The anchor is pushed-to, not implemented-by, to avoid a DI cycle:
+/// the streams that consume the anchor are in <c>Mithril.Shared</c>, and
+/// this service consumes the streams — wiring the anchor through the service
+/// would form stream → anchor → service → stream. <see cref="SessionAnchor"/>
+/// is a Mithril.Shared leaf that both depend on; only this service writes to
+/// it.</para>
+///
+/// <para>Threading: ingestion runs on the hosted-service loop thread; subscriber
 /// dispatch happens under <c>_lock</c> both during replay (on the subscriber's
 /// thread) and during live publish (on the ingestion thread). Subscribers
-/// doing non-trivial work should dispatch off-thread immediately.
+/// doing non-trivial work should dispatch off-thread immediately.</para>
 ///
-/// Idempotency: a banner whose parsed <see cref="GameSession.SessionId"/>
+/// <para>Idempotency: a banner whose parsed <see cref="GameSession.SessionId"/>
 /// equals the current one (replay-on-relaunch within the same PG session) is
-/// dropped at this layer — neither <see cref="SessionStarted"/> nor
-/// <see cref="ISessionAnchor.AnchorChanged"/> re-fires.
+/// dropped at this layer — neither <see cref="SessionStarted"/> nor the
+/// anchor's <c>AnchorChanged</c> re-fires.</para>
 /// </summary>
-public sealed class GameSessionService : BackgroundService, IGameSessionService, ISessionAnchor
+public sealed class GameSessionService : BackgroundService, IGameSessionService
 {
     private readonly IPlayerLogStream _stream;
+    private readonly SessionAnchor? _anchor;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
     private readonly List<Action<GameSession>> _handlers = [];
     private GameSession? _current;
 
-    public GameSessionService(IPlayerLogStream stream, IDiagnosticsSink? diag = null)
+    public GameSessionService(
+        IPlayerLogStream stream,
+        SessionAnchor? anchor = null,
+        IDiagnosticsSink? diag = null)
     {
         _stream = stream;
+        _anchor = anchor;
         _diag = diag;
     }
 
@@ -40,13 +52,7 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService,
         get { lock (_lock) return _current; }
     }
 
-    public DateTime? LoggedInUtc
-    {
-        get { lock (_lock) return _current?.LoggedInUtc; }
-    }
-
     public event EventHandler<GameSession>? SessionStarted;
-    public event EventHandler? AnchorChanged;
 
     public IDisposable Subscribe(Action<GameSession> handler)
     {
@@ -76,7 +82,6 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService,
     {
         Action<GameSession>[] toFire;
         EventHandler<GameSession>? sessionStartedSnapshot;
-        EventHandler? anchorChangedSnapshot;
         lock (_lock)
         {
             if (_current is not null && _current.SessionId == session.SessionId)
@@ -89,14 +94,17 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService,
             _current = session;
             toFire = _handlers.ToArray();
             sessionStartedSnapshot = SessionStarted;
-            anchorChangedSnapshot = AnchorChanged;
             _diag?.Info("Session",
                 $"Login observed: {session.CharacterName} at {session.LoggedInUtc:O} (offset {session.TimezoneOffset})");
         }
 
+        // Push to the shared anchor so the sequencer re-anchors the date for
+        // subsequent log lines. SessionAnchor.SetLoggedInUtc is no-op when the
+        // value is unchanged, so we don't need to gate it here.
+        _anchor?.SetLoggedInUtc(session.LoggedInUtc);
+
         foreach (var h in toFire) Invoke(h, session);
         sessionStartedSnapshot?.Invoke(this, session);
-        anchorChangedSnapshot?.Invoke(this, EventArgs.Empty);
     }
 
     private void Invoke(Action<GameSession> handler, GameSession session)
