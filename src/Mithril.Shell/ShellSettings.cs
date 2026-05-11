@@ -37,6 +37,16 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _verboseFrameEvents;
     public bool VerboseFrameEvents { get => _verboseFrameEvents; set => Set(ref _verboseFrameEvents, value); }
 
+    /// <summary>When true (and <see cref="EnablePerfTrace"/> is true), starts a
+    /// perf-trace session automatically right after the WPF Application is
+    /// created in <c>Program.Main</c> — before the shell view-model resolves,
+    /// so the initial <c>module_activated</c> event, first-frame render, and
+    /// dispatcher-queue ramp during startup all land in the trace. Use this
+    /// when investigating slow launches; otherwise leave off and toggle
+    /// sessions via the hotkey for targeted captures.</summary>
+    private bool _autoStartPerfTrace;
+    public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
+
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
 
