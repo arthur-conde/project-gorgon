@@ -29,15 +29,18 @@ namespace Gandalf.Parsing;
 /// [19:13:54] LOADING LEVEL ChooseCharacter
 /// </code>
 ///
-/// The line is unprefixed (no <c>LocalPlayer:</c>) and may or may not carry
-/// the <c>[HH:MM:SS]</c> timestamp prefix that <see cref="PlayerLogTailReader"/>
-/// strips before passing to parsers. The regex is permissive about leading
-/// whitespace.
+/// The line carries the <c>[HH:MM:SS]</c> timestamp prefix that
+/// <see cref="PlayerLogTailReader"/> uses for sequencing but does not strip
+/// from <see cref="RawLogLine.Line"/>. The regex is unanchored — same
+/// convention as every other <c>Player.log</c> parser in the codebase
+/// (<c>GardenLogParser</c>, <c>FavorLogParser</c>, <c>VendorLogParser</c>,
+/// …) — and matches the <c>LOADING LEVEL</c> token wherever it appears,
+/// pinning the area body to end-of-line so trailing junk can't slip in.
 /// </summary>
 public sealed partial class AreaTransitionParser : ILogParser
 {
     [GeneratedRegex(
-        """^\s*LOADING LEVEL\s*(?<area>\S*)\s*$""",
+        """LOADING LEVEL\s*(?<area>\S*)\s*$""",
         RegexOptions.CultureInvariant)]
     private static partial Regex AreaRx();
 
