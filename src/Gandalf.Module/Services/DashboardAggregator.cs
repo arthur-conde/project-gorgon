@@ -1,3 +1,5 @@
+using System.Windows;
+using System.Windows.Threading;
 using Gandalf.Domain;
 
 namespace Gandalf.Services;
@@ -15,19 +17,39 @@ namespace Gandalf.Services;
 /// Driving that tick from a <see cref="Domain.TimerRow.NextDisplayChangeAt"/>-style
 /// schedule on the aggregator is a clean follow-up; out of scope for the
 /// timer-model PR.</para>
+///
+/// <para>Threading: source <see cref="ITimerSource.RowsChanged"/> events
+/// fire on whichever thread the source happened to mutate on — for
+/// QuestSource/LootSource that's the log-tail background thread when a
+/// completion is observed live. <see cref="Updated"/> consumers
+/// (<c>DashboardViewModel.Refresh</c>) mutate WPF-bound
+/// <c>ObservableCollection</c>s, which require the UI thread. We capture
+/// a <see cref="Dispatcher"/> in the ctor and marshal the entire delta
+/// application + <see cref="Updated"/> fire through it. Without this,
+/// CollectionView throws <c>"...does not support changes...from a
+/// thread different from the Dispatcher thread"</c>, and worse — that
+/// throw aborts the multicast invocation, so subsequent
+/// <see cref="ITimerSource.RowsChanged"/> subscribers (the per-tab
+/// <see cref="TimerSourceBinder"/>) never run and tab rows go stale
+/// (issue #191; see <c>memory/wpf_crossthread_collection_mutations.md</c>).</para>
 /// </summary>
 public sealed class DashboardAggregator : IDisposable
 {
     private readonly IReadOnlyList<ITimerSource> _sources;
     private readonly TimeProvider _time;
+    private readonly Dispatcher _dispatcher;
     private readonly object _lock = new();
     private readonly Dictionary<(string SourceId, string Key), TimerSummary> _byKey = [];
     private IReadOnlyList<TimerSummary> _summaries = [];
 
-    public DashboardAggregator(IEnumerable<ITimerSource> sources, TimeProvider? time = null)
+    public DashboardAggregator(
+        IEnumerable<ITimerSource> sources,
+        TimeProvider? time = null,
+        Dispatcher? dispatcher = null)
     {
         _sources = sources.ToArray();
         _time = time ?? TimeProvider.System;
+        _dispatcher = dispatcher ?? Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
         var now = _time.GetUtcNow();
         foreach (var source in _sources)
@@ -82,11 +104,20 @@ public sealed class DashboardAggregator : IDisposable
     {
         if (sender is not ITimerSource source) return;
 
+        // Snapshot deltas before dispatch — the source may mutate further
+        // before the dispatcher pump gets to the work item. Mirrors the
+        // TimerSourceBinder pattern.
+        var deltas = e.Deltas;
+        Dispatch(() => ApplyDeltas(source, deltas));
+    }
+
+    private void ApplyDeltas(ITimerSource source, IReadOnlyList<TimerRowDelta> deltas)
+    {
         var any = false;
         var now = _time.GetUtcNow();
         lock (_lock)
         {
-            foreach (var delta in e.Deltas)
+            foreach (var delta in deltas)
             {
                 var compositeKey = (source.SourceId, delta.Key);
                 if (delta.Kind == TimerRowChangeKind.Removed)
@@ -102,6 +133,12 @@ public sealed class DashboardAggregator : IDisposable
             if (any) SnapshotSummaries();
         }
         if (any) Updated?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Dispatch(Action action)
+    {
+        if (_dispatcher.CheckAccess()) action();
+        else _dispatcher.BeginInvoke(action);
     }
 
     private void SnapshotSummaries() => _summaries = _byKey.Values.ToArray();
