@@ -160,7 +160,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
                 .Select(r => RecipeRowViewModel.ProjectIngredientChip(r, _refData))
                 .Where(c => c is not null).Select(c => c!)
                 .ToList();
-            var results = recipe.ResultItems
+            var results = (recipe.ResultItems ?? [])
                 .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
                     ? new IngredientChip(item.Name ?? "", item.IconId, r.StackSize, null, item.InternalName)
                     : null)
@@ -185,13 +185,13 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             var totalPreviewCount = craftedOutputs.Count + augments.Count + waxItems.Count + waxAugments.Count
                                   + augmentPools.Count + taughtRecipes.Count + effectTags.Count;
             if (results.Count == 0 && totalPreviewCount == 0)
-                results = [new IngredientChip(recipe.Name, recipe.IconId, 1, null)];
+                results = [new IngredientChip(recipe.Name ?? "", recipe.IconId, 1, null)];
             making.Add(new CraftListItemViewModel(
-                recipe.InternalName,
-                recipe.Name,
+                recipe.InternalName ?? "",
+                recipe.Name ?? "",
                 recipe.IconId,
                 entry.Quantity,
-                recipe.Skill,
+                recipe.Skill ?? "",
                 recipe.SkillLevelReq,
                 ingredients,
                 results,

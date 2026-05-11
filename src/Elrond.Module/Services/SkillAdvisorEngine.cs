@@ -1,4 +1,5 @@
 using Elrond.Domain;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 
@@ -41,8 +42,30 @@ public sealed class SkillAdvisorEngine
     }
 
     /// <summary>The cookbook section a recipe is filed under: <c>SortSkill</c> if set, else <c>RewardSkill</c>.</summary>
-    internal static string FilingSkillOf(RecipeEntry recipe) =>
-        string.IsNullOrEmpty(recipe.SortSkill) ? recipe.RewardSkill : recipe.SortSkill;
+    internal static string FilingSkillOf(Recipe recipe) =>
+        string.IsNullOrEmpty(recipe.SortSkill) ? recipe.RewardSkill ?? "" : recipe.SortSkill!;
+
+    /// <summary>
+    /// Project a flat <see cref="RecipeIngredient"/> to a display-ready
+    /// <see cref="RecipeIngredientDisplay"/>. Item-coded slots resolve via the
+    /// items catalog; keyword slots show <c>Desc</c> or a humanised keyword list.
+    /// </summary>
+    private static RecipeIngredientDisplay ProjectIngredientDisplay(RecipeIngredient i, IReferenceDataService refData)
+    {
+        if (i.ItemCode is { } itemCode)
+        {
+            return refData.Items.TryGetValue(itemCode, out var item)
+                ? new RecipeIngredientDisplay(item.Name ?? $"Item #{itemCode}", item.IconId, i.StackSize, (float?)i.ChanceToConsume)
+                : new RecipeIngredientDisplay($"Item #{itemCode}", 0, i.StackSize, (float?)i.ChanceToConsume);
+        }
+        if (i.ItemKeys is { Count: > 0 } itemKeys)
+        {
+            return new RecipeIngredientDisplay(
+                i.Desc ?? $"Any {ItemKeywordIndex.Humanise(itemKeys)}",
+                IconId: 0, i.StackSize, (float?)i.ChanceToConsume);
+        }
+        return new RecipeIngredientDisplay("(unknown ingredient)", 0, i.StackSize, (float?)i.ChanceToConsume);
+    }
 
     /// <summary>
     /// Analyze a cookbook section for a given character: every recipe filed under
@@ -85,7 +108,8 @@ public sealed class SkillAdvisorEngine
             // Per-recipe character context: we need the character's level in this recipe's
             // RewardSkill to compute drop-off and completions-to-its-own-level. May be null
             // if the character hasn't learned the reward skill yet.
-            character.Skills.TryGetValue(recipe.RewardSkill, out var rewardCharSkill);
+            var rewardSkill = recipe.RewardSkill ?? "";
+            character.Skills.TryGetValue(rewardSkill, out var rewardCharSkill);
             var rewardLevel = rewardCharSkill?.Level ?? 0;
 
             // Gating skill = recipe.Skill (paired with SkillLevelReq). For most recipes this
@@ -93,11 +117,14 @@ public sealed class SkillAdvisorEngine
             // Cooking files Fishing-rewarding fish stew) the gate sits on a different skill.
             // Read the player's level there so the "Craftable only" filter compares apples to apples.
             var gatingSkillLevel = !string.IsNullOrEmpty(recipe.Skill)
-                && character.Skills.TryGetValue(recipe.Skill, out var gatingCharSkill)
+                && character.Skills.TryGetValue(recipe.Skill!, out var gatingCharSkill)
                     ? gatingCharSkill.Level
                     : 0;
 
-            var isKnown = character.RecipeCompletions.TryGetValue(recipe.InternalName, out var timesCompleted);
+            var internalName = recipe.InternalName ?? "";
+            var timesCompleted = 0;
+            var isKnown = !string.IsNullOrEmpty(internalName)
+                && character.RecipeCompletions.TryGetValue(internalName, out timesCompleted);
             var firstTimeBonusAvailable = isKnown && timesCompleted == 0 && recipe.RewardSkillXpFirstTime > 0;
 
             var effectiveXp = ComputeEffectiveXp(recipe, rewardLevel);
@@ -110,7 +137,7 @@ public sealed class SkillAdvisorEngine
             {
                 xpRemainingForThisRecipe = 0;
             }
-            else if (recipe.RewardSkill.Equals(sectionKey, StringComparison.Ordinal))
+            else if (rewardSkill.Equals(sectionKey, StringComparison.Ordinal))
             {
                 xpRemainingForThisRecipe = sectionXpRemaining;
             }
@@ -138,16 +165,7 @@ public sealed class SkillAdvisorEngine
             }
 
             var ingredients = recipe.Ingredients
-                .Select(i => i switch
-                {
-                    RecipeItemIngredient byItem => _ref.Items.TryGetValue(byItem.ItemCode, out var item)
-                        ? new RecipeIngredientDisplay(item.Name ?? $"Item #{byItem.ItemCode}", item.IconId, byItem.StackSize, byItem.ChanceToConsume)
-                        : new RecipeIngredientDisplay($"Item #{byItem.ItemCode}", 0, byItem.StackSize, byItem.ChanceToConsume),
-                    RecipeKeywordIngredient kw => new RecipeIngredientDisplay(
-                        kw.Desc ?? $"Any {ItemKeywordIndex.Humanise(kw.ItemKeys)}",
-                        IconId: 0, kw.StackSize, kw.ChanceToConsume),
-                    _ => new RecipeIngredientDisplay("(unknown ingredient)", 0, i.StackSize, i.ChanceToConsume),
-                })
+                .Select(i => ProjectIngredientDisplay(i, _ref))
                 .ToList();
 
             var craftedOutputs = ResultEffectsParser.ParseCraftedGear(recipe.ResultEffects, _ref);
@@ -161,15 +179,15 @@ public sealed class SkillAdvisorEngine
                 ? nextCraftXp / complexity
                 : null;
 
-            var rewardSkillDisplayName = _ref.Skills.TryGetValue(recipe.RewardSkill, out var rewardSkillEntry)
+            var rewardSkillDisplayName = _ref.Skills.TryGetValue(rewardSkill, out var rewardSkillEntry)
                 ? rewardSkillEntry.DisplayName
-                : recipe.RewardSkill;
-            var rewardDiffersFromSection = !recipe.RewardSkill.Equals(sectionKey, StringComparison.Ordinal);
+                : rewardSkill;
+            var rewardDiffersFromSection = !rewardSkill.Equals(sectionKey, StringComparison.Ordinal);
 
             recipeAnalyses.Add(new RecipeAnalysis(
                 recipe.Key,
-                recipe.Name,
-                recipe.InternalName,
+                recipe.Name ?? "",
+                internalName,
                 recipe.IconId,
                 recipe.SkillLevelReq,
                 recipe.RewardSkillXp,
@@ -184,7 +202,7 @@ public sealed class SkillAdvisorEngine
                 efficiency,
                 ingredients,
                 craftedOutputs,
-                RewardSkill: recipe.RewardSkill,
+                RewardSkill: rewardSkill,
                 RewardSkillDisplayName: rewardSkillDisplayName,
                 RewardSkillCurrentLevel: rewardCharSkill?.Level ?? 0,
                 RewardSkillCurrentXp: rewardCharSkill?.XpTowardNextLevel ?? 0,
@@ -226,7 +244,7 @@ public sealed class SkillAdvisorEngine
             IsUmbrellaSection: isUmbrellaSection);
     }
 
-    internal int ComputeEffectiveXp(RecipeEntry recipe, int playerLevel)
+    internal int ComputeEffectiveXp(Recipe recipe, int playerLevel)
     {
         if (recipe.RewardSkillXpDropOffLevel is not { } dropOffLevel) return recipe.RewardSkillXp;
         if (recipe.RewardSkillXpDropOffPct is not { } dropOffPct) return recipe.RewardSkillXp;
@@ -244,10 +262,10 @@ public sealed class SkillAdvisorEngine
         // silently skipped, making Elrond's effective XP one tier too high.)
         var levelsPast = playerLevel - dropOffLevel;
         var reductions = levelsPast / rate + 1;
-        var remaining = 1.0f;
+        var remaining = 1.0;
         for (var i = 0; i < reductions; i++)
         {
-            remaining *= (1.0f - dropOffPct);
+            remaining *= (1.0 - dropOffPct);
             if (remaining <= 0) return 0;
         }
 

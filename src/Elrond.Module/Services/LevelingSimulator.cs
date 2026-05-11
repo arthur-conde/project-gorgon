@@ -47,9 +47,13 @@ public sealed class LevelingSimulator
 
         if (goalLevel <= charSkill.Level) return MakeEmptyResult(skillName, charSkill, goalLevel, character);
 
-        // Gather all recipes that award XP for this skill
+        // Gather all recipes that award XP for this skill. Recipes without an
+        // InternalName can't be matched against CharacterSnapshot.RecipeCompletions
+        // (which keys on InternalName); the bundled data carries InternalName for
+        // every XP-awarding recipe, so this is a defensive filter.
         var skillRecipes = _ref.Recipes.Values
-            .Where(r => r.RewardSkill.Equals(skillName, StringComparison.Ordinal)
+            .Where(r => string.Equals(r.RewardSkill, skillName, StringComparison.Ordinal)
+                        && !string.IsNullOrEmpty(r.InternalName)
                         && (r.RewardSkillXp > 0 || r.RewardSkillXpFirstTime > 0))
             .ToList();
 
@@ -68,12 +72,12 @@ public sealed class LevelingSimulator
             if (recipe.RewardSkillXpFirstTime <= 0) continue;
             if (!constraints.UseFirstTimeBonuses) continue;
 
-            if (character.RecipeCompletions.TryGetValue(recipe.InternalName, out var count))
+            if (character.RecipeCompletions.TryGetValue(recipe.InternalName!, out var count))
             {
                 if (count == 0)
                     unusedBonuses.Add(recipe.Key);
                 else
-                    completedRecipes.Add(recipe.InternalName);
+                    completedRecipes.Add(recipe.InternalName!);
             }
             else if (!constraints.OnlyAlreadyLearnedRecipes)
             {
@@ -118,7 +122,7 @@ public sealed class LevelingSimulator
                 .Where(r => r.SkillLevelReq <= level &&
                             (r.PrereqRecipe is null || completedRecipes.Contains(r.PrereqRecipe)) &&
                             (!constraints.OnlyAlreadyLearnedRecipes
-                                || character.RecipeCompletions.ContainsKey(r.InternalName)))
+                                || character.RecipeCompletions.ContainsKey(r.InternalName!)))
                 .Select(r => (recipe: r, effXp: _engine.ComputeEffectiveXp(r, level)))
                 .Where(x => x.effXp > 0 || unusedBonuses.Contains(x.recipe.Key))
                 .ToList();
@@ -143,8 +147,8 @@ public sealed class LevelingSimulator
 
                 xp += bonusXp;
                 unusedBonuses.Remove(recipe.Key);
-                completedRecipes.Add(recipe.InternalName);
-                AddDelta(deltaCompletions, recipe.InternalName, 1);
+                completedRecipes.Add(recipe.InternalName!);
+                AddDelta(deltaCompletions, recipe.InternalName!, 1);
 
                 // Handle level-ups from this single bonus craft
                 var levelAfter = level;
@@ -161,7 +165,7 @@ public sealed class LevelingSimulator
 
                 steps.Add(new SimulationStep(
                     recipe.Key,
-                    recipe.Name,
+                    recipe.Name ?? "",
                     recipe.IconId,
                     Completions: 1,
                     XpPerCompletion: effXp,
@@ -190,8 +194,8 @@ public sealed class LevelingSimulator
 
             var totalGrindXp = (long)completions * grindEffXp;
             xp += totalGrindXp;
-            completedRecipes.Add(best.recipe.InternalName);
-            AddDelta(deltaCompletions, best.recipe.InternalName, completions);
+            completedRecipes.Add(best.recipe.InternalName!);
+            AddDelta(deltaCompletions, best.recipe.InternalName!, completions);
 
             // Handle level-ups
             while (xp >= xpForLevel && level < goalLevel)
@@ -206,7 +210,7 @@ public sealed class LevelingSimulator
 
             steps.Add(new SimulationStep(
                 best.recipe.Key,
-                best.recipe.Name,
+                best.recipe.Name ?? "",
                 best.recipe.IconId,
                 completions,
                 XpPerCompletion: grindEffXp,

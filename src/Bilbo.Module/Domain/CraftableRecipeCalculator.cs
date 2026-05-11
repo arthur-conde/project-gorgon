@@ -1,4 +1,5 @@
 using System.Globalization;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 
@@ -36,24 +37,25 @@ public static class CraftableRecipeCalculator
             {
                 string itemName;
                 long available;
-                switch (ingredient)
+                if (ingredient.ItemCode is { } itemCode)
                 {
-                    case RecipeItemIngredient byItem:
-                        itemName = refData.Items.TryGetValue(byItem.ItemCode, out var entry)
-                            ? entry.Name ?? $"#{byItem.ItemCode}"
-                            : $"#{byItem.ItemCode}";
-                        have.TryGetValue(byItem.ItemCode, out available);
-                        break;
-                    case RecipeKeywordIngredient kw:
-                        itemName = kw.Desc ?? ItemKeywordIndex.Humanise(kw.ItemKeys);
-                        // Sum across every owned item whose Keywords match the AND-set.
-                        available = 0;
-                        foreach (var match in refData.KeywordIndex.ItemsMatching(kw.ItemKeys))
-                            if (have.TryGetValue(match.Id, out var matchHave))
-                                available += matchHave;
-                        break;
-                    default:
-                        continue;
+                    itemName = refData.Items.TryGetValue(itemCode, out var entry)
+                        ? entry.Name ?? $"#{itemCode}"
+                        : $"#{itemCode}";
+                    have.TryGetValue(itemCode, out available);
+                }
+                else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
+                {
+                    itemName = ingredient.Desc ?? ItemKeywordIndex.Humanise(itemKeys);
+                    // Sum across every owned item whose Keywords match the AND-set.
+                    available = 0;
+                    foreach (var match in refData.KeywordIndex.ItemsMatching(itemKeys))
+                        if (have.TryGetValue(match.Id, out var matchHave))
+                            available += matchHave;
+                }
+                else
+                {
+                    continue;
                 }
 
                 var part = $"{itemName} x{ingredient.StackSize}";
@@ -61,7 +63,7 @@ public static class CraftableRecipeCalculator
                     part += $" (p={Math.Round(chance * 100).ToString("0", CultureInfo.InvariantCulture)}%)";
                 ingredientParts.Add(part);
 
-                var perIngredient = ConsumeQuantile.MaxCrafts(available, ingredient.StackSize, ingredient.ChanceToConsume, confidence);
+                var perIngredient = ConsumeQuantile.MaxCrafts(available, ingredient.StackSize, (float?)ingredient.ChanceToConsume, confidence);
                 if (perIngredient < maxCraftable)
                     maxCraftable = perIngredient;
 
@@ -77,8 +79,8 @@ public static class CraftableRecipeCalculator
             var (isKnown, timesCompleted) = ResolveKnown(recipe, character);
 
             result.Add(new CraftableRecipeRow(
-                Name: recipe.Name,
-                Skill: recipe.Skill,
+                Name: recipe.Name ?? "",
+                Skill: recipe.Skill ?? "",
                 SkillLevelReq: recipe.SkillLevelReq,
                 CharacterSkillLevel: charLevel,
                 SkillLevelMet: skillMet,
@@ -90,38 +92,40 @@ public static class CraftableRecipeCalculator
                 ResultItem: resultName,
                 ResultStackSize: resultStack,
                 IconId: recipe.IconId,
-                InternalName: recipe.InternalName));
+                InternalName: recipe.InternalName ?? ""));
         }
 
         return result;
     }
 
-    private static (string name, int stack) ResolveResult(RecipeEntry recipe, IReferenceDataService refData)
+    private static (string name, int stack) ResolveResult(Recipe recipe, IReferenceDataService refData)
     {
-        if (recipe.ResultItems.Count == 0)
+        if (recipe.ResultItems is not { Count: > 0 } results)
             return ("(no result)", 0);
-        var first = recipe.ResultItems[0];
+        var first = results[0];
         var name = refData.Items.TryGetValue(first.ItemCode, out var entry)
             ? entry.Name ?? $"#{first.ItemCode}"
             : $"#{first.ItemCode}";
         return (name, first.StackSize);
     }
 
-    private static (int? level, bool met) ResolveSkill(RecipeEntry recipe, CharacterSnapshot? character)
+    private static (int? level, bool met) ResolveSkill(Recipe recipe, CharacterSnapshot? character)
     {
         if (character is null || string.IsNullOrEmpty(recipe.Skill))
             return (null, false);
-        if (!character.Skills.TryGetValue(recipe.Skill, out var skill))
+        if (!character.Skills.TryGetValue(recipe.Skill!, out var skill))
             return (null, false);
         var effective = skill.Level + skill.BonusLevels;
         return (effective, effective >= recipe.SkillLevelReq);
     }
 
-    private static (bool known, int times) ResolveKnown(RecipeEntry recipe, CharacterSnapshot? character)
+    private static (bool known, int times) ResolveKnown(Recipe recipe, CharacterSnapshot? character)
     {
         if (character is null)
             return (false, 0);
-        if (character.RecipeCompletions.TryGetValue(recipe.InternalName, out var times))
+        if (string.IsNullOrEmpty(recipe.InternalName))
+            return (false, 0);
+        if (character.RecipeCompletions.TryGetValue(recipe.InternalName!, out var times))
             return (true, times);
         return (false, 0);
     }

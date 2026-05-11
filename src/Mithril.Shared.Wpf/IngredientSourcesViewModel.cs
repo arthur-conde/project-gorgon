@@ -180,7 +180,7 @@ public sealed record IngredientSourcesViewModel(
             return new AcquisitionSource("Recipe", "Crafted", AreaFriendlyName: null, Detail: src.Context);
         }
 
-        var label = string.IsNullOrEmpty(recipe.Name) ? recipe.InternalName : recipe.Name;
+        var label = string.IsNullOrEmpty(recipe.Name) ? recipe.InternalName ?? src.Context : recipe.Name;
         var requirement = !string.IsNullOrEmpty(recipe.Skill) && recipe.SkillLevelReq > 0
             ? $"Requires {recipe.Skill} {recipe.SkillLevelReq}"
             : null;
@@ -190,7 +190,7 @@ public sealed record IngredientSourcesViewModel(
 
         return new AcquisitionSource(
             Kind: "Crafted",
-            Label: label,
+            Label: label!,
             AreaFriendlyName: null,
             Detail: detail,
             Requirement: requirement);

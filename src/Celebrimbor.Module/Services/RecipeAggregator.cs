@@ -1,5 +1,6 @@
 using Celebrimbor.Domain;
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 
@@ -200,7 +201,7 @@ public sealed class RecipeAggregator
         IReadOnlyList<string> seeds,
         int expansionDepth,
         IReferenceDataService refData,
-        IReadOnlyDictionary<string, RecipeEntry> producers,
+        IReadOnlyDictionary<string, Recipe> producers,
         Dictionary<string, KeywordSpec> keywordSpecs)
     {
         var chain = new HashSet<string>(seeds, StringComparer.Ordinal);
@@ -214,19 +215,18 @@ public sealed class RecipeAggregator
                 if (!producers.TryGetValue(item, out var recipe)) continue;
                 foreach (var ingredient in recipe.Ingredients)
                 {
-                    switch (ingredient)
+                    if (ingredient.ItemCode is { } itemCode)
                     {
-                        case RecipeItemIngredient item2:
-                            if (!refData.Items.TryGetValue(item2.ItemCode, out var ing)) continue;
-                            if (string.IsNullOrEmpty(ing.InternalName)) continue;
-                            if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
-                            break;
-                        case RecipeKeywordIngredient kw:
-                            var key = MakeKeywordKey(kw.ItemKeys);
-                            keywordSpecs.TryAdd(key, new KeywordSpec(kw.ItemKeys, kw.Desc));
-                            chain.Add(key);
-                            // Keyword rows are leaves — no recursion needed; they have no producer.
-                            break;
+                        if (!refData.Items.TryGetValue(itemCode, out var ing)) continue;
+                        if (string.IsNullOrEmpty(ing.InternalName)) continue;
+                        if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
+                    }
+                    else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
+                    {
+                        var key = MakeKeywordKey(itemKeys);
+                        keywordSpecs.TryAdd(key, new KeywordSpec(itemKeys, ingredient.Desc));
+                        chain.Add(key);
+                        // Keyword rows are leaves — no recursion needed; they have no producer.
                     }
                 }
             }
@@ -245,7 +245,7 @@ public sealed class RecipeAggregator
     /// </summary>
     private static int ComputeDepth(
         string itemName,
-        IReadOnlyDictionary<string, RecipeEntry> producers,
+        IReadOnlyDictionary<string, Recipe> producers,
         IReferenceDataService refData,
         Dictionary<string, int> cache,
         HashSet<string> onPath)
@@ -257,13 +257,13 @@ public sealed class RecipeAggregator
         var maxIngredientDepth = 0;
         foreach (var ingredient in recipe.Ingredients)
         {
-            if (ingredient is RecipeItemIngredient byItem
-                && refData.Items.TryGetValue(byItem.ItemCode, out var item)
+            if (ingredient.ItemCode is { } itemCode
+                && refData.Items.TryGetValue(itemCode, out var item)
                 && !string.IsNullOrEmpty(item.InternalName))
             {
                 maxIngredientDepth = Math.Max(maxIngredientDepth, ComputeDepth(item.InternalName!, producers, refData, cache, onPath));
             }
-            // RecipeKeywordIngredient: depth 0 leaves, no contribution.
+            // Keyword-matched ingredients: depth 0 leaves, no contribution.
         }
 
         onPath.Remove(itemName);
@@ -274,7 +274,7 @@ public sealed class RecipeAggregator
 
     private static void AddIngredients(
         Dictionary<string, double> demand,
-        RecipeEntry recipe,
+        Recipe recipe,
         double batches,
         IReferenceDataService refData,
         Dictionary<string, KeywordSpec> keywordSpecs)
@@ -282,19 +282,20 @@ public sealed class RecipeAggregator
         foreach (var ingredient in recipe.Ingredients)
         {
             string demandKey;
-            switch (ingredient)
+            if (ingredient.ItemCode is { } itemCode)
             {
-                case RecipeItemIngredient byItem:
-                    if (!refData.Items.TryGetValue(byItem.ItemCode, out var item)) continue;
-                    if (string.IsNullOrEmpty(item.InternalName)) continue;
-                    demandKey = item.InternalName!;
-                    break;
-                case RecipeKeywordIngredient kw:
-                    demandKey = MakeKeywordKey(kw.ItemKeys);
-                    keywordSpecs.TryAdd(demandKey, new KeywordSpec(kw.ItemKeys, kw.Desc));
-                    break;
-                default:
-                    continue;
+                if (!refData.Items.TryGetValue(itemCode, out var item)) continue;
+                if (string.IsNullOrEmpty(item.InternalName)) continue;
+                demandKey = item.InternalName!;
+            }
+            else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
+            {
+                demandKey = MakeKeywordKey(itemKeys);
+                keywordSpecs.TryAdd(demandKey, new KeywordSpec(itemKeys, ingredient.Desc));
+            }
+            else
+            {
+                continue;
             }
 
             var perBatch = ingredient.StackSize * (ingredient.ChanceToConsume ?? 1.0);
@@ -311,7 +312,7 @@ public sealed class RecipeAggregator
         Dictionary<string, double> demand,
         int depth,
         IReferenceDataService refData,
-        IReadOnlyDictionary<string, RecipeEntry> producers,
+        IReadOnlyDictionary<string, Recipe> producers,
         IReadOnlyDictionary<string, int>? onHandByInternalName,
         IReadOnlyDictionary<string, int>? overridesByInternalName,
         Dictionary<string, KeywordSpec> keywordSpecs)
@@ -366,12 +367,13 @@ public sealed class RecipeAggregator
     /// item's InternalName" match that only worked when recipe and item happened to
     /// share a name (e.g. Butter) and silently skipped most intermediate crafts.
     /// </summary>
-    private static IReadOnlyDictionary<string, RecipeEntry> BuildProducerLookup(IReferenceDataService refData)
+    private static IReadOnlyDictionary<string, Recipe> BuildProducerLookup(IReferenceDataService refData)
     {
-        var map = new Dictionary<string, RecipeEntry>(StringComparer.Ordinal);
+        var map = new Dictionary<string, Recipe>(StringComparer.Ordinal);
         foreach (var recipe in refData.Recipes.Values)
         {
-            RegisterResults(recipe, recipe.ResultItems, refData, map);
+            if (recipe.ResultItems is { } results)
+                RegisterResults(recipe, results, refData, map);
             if (recipe.ProtoResultItems is { } proto)
                 RegisterResults(recipe, proto, refData, map);
         }
@@ -379,10 +381,10 @@ public sealed class RecipeAggregator
     }
 
     private static void RegisterResults(
-        RecipeEntry recipe,
-        IReadOnlyList<RecipeItemRef> results,
+        Recipe recipe,
+        IReadOnlyList<RecipeResultItem> results,
         IReferenceDataService refData,
-        Dictionary<string, RecipeEntry> map)
+        Dictionary<string, Recipe> map)
     {
         foreach (var result in results)
         {
@@ -394,26 +396,31 @@ public sealed class RecipeAggregator
         }
     }
 
-    private static Item? FindPrimaryOutput(RecipeEntry recipe, IReferenceDataService refData)
+    private static Item? FindPrimaryOutput(Recipe recipe, IReferenceDataService refData)
     {
-        foreach (var result in recipe.ResultItems)
-            if (refData.Items.TryGetValue(result.ItemCode, out var item)) return item;
+        if (recipe.ResultItems is { } results)
+            foreach (var result in results)
+                if (refData.Items.TryGetValue(result.ItemCode, out var item)) return item;
         if (recipe.ProtoResultItems is { } proto)
             foreach (var result in proto)
                 if (refData.Items.TryGetValue(result.ItemCode, out var item)) return item;
         return null;
     }
 
-    private static int FindOutputStackSize(RecipeEntry recipe, string itemInternalName, IReferenceDataService refData)
+    private static int FindOutputStackSize(Recipe recipe, string itemInternalName, IReferenceDataService refData)
     {
-        foreach (var result in recipe.ResultItems)
+        if (recipe.ResultItems is { } results)
         {
-            if (!refData.Items.TryGetValue(result.ItemCode, out var item)) continue;
-            if (item.InternalName == itemInternalName) return Math.Max(1, result.StackSize);
+            foreach (var result in results)
+            {
+                if (!refData.Items.TryGetValue(result.ItemCode, out var item)) continue;
+                if (item.InternalName == itemInternalName) return Math.Max(1, result.StackSize);
+            }
+            // Fall back to the first result if the recipe doesn't publish the item
+            // we expected (rare but possible with data drift).
+            return results.FirstOrDefault()?.StackSize ?? 1;
         }
-        // Fall back to the first result if the recipe doesn't publish the item
-        // we expected (rare but possible with data drift).
-        return recipe.ResultItems.FirstOrDefault()?.StackSize ?? 1;
+        return 1;
     }
 
     private static string MakeKeywordKey(IReadOnlyList<string> keys)
