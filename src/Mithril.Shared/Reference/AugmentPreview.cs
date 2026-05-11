@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of an <c>AddItemTSysPower(powerInternalName, tier)</c> entry in
-/// <see cref="RecipeEntry.ResultEffects"/>. The power resolves to a <see cref="PowerEntry"/>
+/// <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. The power resolves to a <see cref="PowerEntry"/>
 /// in tsysclientinfo.json; this record carries the pre-rendered effect lines for the
 /// requested tier so UI code can bind directly without redoing the render pipeline.
 /// </summary>

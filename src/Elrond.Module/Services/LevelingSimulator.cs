@@ -101,7 +101,7 @@ public sealed class LevelingSimulator
         var steps = new List<SimulationStep>();
 
         // Per-recipe completion deltas built up during the run, merged into FinalState at the end.
-        // Keyed on RecipeEntry.InternalName (matching CharacterSnapshot.RecipeCompletions).
+        // Keyed on Recipe.InternalName (matching CharacterSnapshot.RecipeCompletions).
         var deltaCompletions = new Dictionary<string, int>(StringComparer.Ordinal);
 
         while (level < goalLevel)

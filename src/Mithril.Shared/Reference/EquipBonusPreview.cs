@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of a <c>BoostItemEquipAdvancementTable(table)</c> entry in
-/// <see cref="RecipeEntry.ResultEffects"/>. Equipping the crafted item passively
+/// <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Equipping the crafted item passively
 /// awards XP toward an advancement table — typically a <c>Foretold{Weapon}Damage</c>
 /// or similar permanent-skill progression bucket.
 /// <para>

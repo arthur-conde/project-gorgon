@@ -2,7 +2,7 @@ namespace Mithril.Shared.Reference;
 
 /// <summary>
 /// Parsed projection of an <c>ExtractTSysPower(cubeItem, craftingSkill, minTier, maxTier)</c>
-/// entry in <see cref="RecipeEntry.ResultEffects"/>. Distinct from
+/// entry in <see cref="Mithril.Reference.Models.Recipes.Recipe.ResultEffects"/>. Distinct from
 /// <see cref="AugmentPoolPreview"/> because the rolled outcome is fundamentally
 /// indeterminate at preview time: the recipe consumes a player-provided augment
 /// cube (e.g. a <c>MainHandAugment</c>) whose specific power was minted by an
