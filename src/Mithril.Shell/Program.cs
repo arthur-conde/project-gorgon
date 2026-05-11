@@ -153,6 +153,7 @@ public static class Program
                 .AddMithrilReferenceData(referenceCacheDir)
                 .AddMithrilCommunityCalibration(communityCalibrationCacheDir)
                 .AddMithrilIcons(iconCacheDir)
+                .AddMithrilAudio()
                 .AddMithrilHotkeys()
                 .AddMithrilDialogs()
                 .AddMithrilModuleGates()
