@@ -9,7 +9,7 @@ namespace Mithril.Shared.Wpf;
 /// Segmented two-or-more-way toggle for selecting a view mode (e.g. Rows / Cards).
 /// Internally a <see cref="ListBox"/> with one item per <see cref="ViewModeOption"/>;
 /// consumers bind <see cref="SelectedMode"/> two-way and declare options as inline
-/// children. Default style ships in <c>Mithril.Shared/Wpf/Resources.xaml</c>.
+/// children. Default style ships in <c>Mithril.Shared.Wpf/Resources.xaml</c>.
 /// </summary>
 [ContentProperty(nameof(Modes))]
 public sealed class ViewModeToggle : Control

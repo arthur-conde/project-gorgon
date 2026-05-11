@@ -7,7 +7,7 @@ and the things that bite.
 ## What this is
 
 Mithril ships a SQL-WHERE-flavoured query engine in
-[`Mithril.Shared/Wpf/Query/`](../src/Mithril.Shared/Wpf/Query/). It parses a
+[`Mithril.Shared.Wpf/Query/`](../src/Mithril.Shared.Wpf/Query/). It parses a
 text query into an AST, compiles to a `Func<object, bool>` against a schema
 reflected from your row type's public properties, and offers three consumer
 surfaces depending on where you want filtering to apply.
@@ -28,9 +28,9 @@ NOT LIKE / NOT IN / NOT BETWEEN              — negation prefix
 ```
 
 Full grammar lives in
-[`QueryParser.cs`](../src/Mithril.Shared/Wpf/Query/QueryParser.cs); per-type
+[`QueryParser.cs`](../src/Mithril.Shared.Wpf/Query/QueryParser.cs); per-type
 compilation lives in
-[`QueryCompiler.cs`](../src/Mithril.Shared/Wpf/Query/QueryCompiler.cs).
+[`QueryCompiler.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompiler.cs).
 
 ## Three consumer surfaces
 
@@ -162,7 +162,7 @@ explicitly.
 
 `QueryableSource<T>()` and `QueryFilter` both reflect over the item type's
 public instance properties via
-[`ColumnBindingHelper.BuildFromProperties`](../src/Mithril.Shared/Wpf/Query/ColumnBindingHelper.cs).
+[`ColumnBindingHelper.BuildFromProperties`](../src/Mithril.Shared.Wpf/Query/ColumnBindingHelper.cs).
 Indexer properties are skipped. Records' auto-generated `EqualityContract`
 is `protected` so it's excluded. If you need a different surface, pass an
 explicit `IReadOnlyDictionary<string, ColumnBinding>` to
@@ -190,16 +190,16 @@ force a synchronous rebuild.
 
 | File | Purpose |
 |---|---|
-| [`QueryParser.cs`](../src/Mithril.Shared/Wpf/Query/QueryParser.cs) | Lexer + recursive-descent parser → AST; also `LooksLikeGrammar` classifier |
-| [`QueryAst.cs`](../src/Mithril.Shared/Wpf/Query/QueryAst.cs) | AST node + value records |
-| [`QueryCompiler.cs`](../src/Mithril.Shared/Wpf/Query/QueryCompiler.cs) | AST → `Func<object, bool>` with type-aware coercion |
-| [`ColumnBindingHelper.cs`](../src/Mithril.Shared/Wpf/Query/ColumnBindingHelper.cs) | Reflection → `ColumnBinding` + `ColumnSchema` |
-| [`QueryHighlighter.cs`](../src/Mithril.Shared/Wpf/Query/QueryHighlighter.cs) | Permissive lex → syntax-colour runs |
-| [`QueryCompletionProvider.cs`](../src/Mithril.Shared/Wpf/Query/QueryCompletionProvider.cs) | Context-aware autocomplete; defines `ColumnSchema` |
-| [`MithrilDataGrid.cs`](../src/Mithril.Shared/Wpf/MithrilDataGrid.cs) | Themed `DataGrid` subclass; filter composition lives here |
-| [`MithrilQueryBox.cs`](../src/Mithril.Shared/Wpf/MithrilQueryBox.cs) | Single-line editor with overlay highlighting + completion popup |
-| [`QueryFilter.cs`](../src/Mithril.Shared/Wpf/Query/QueryFilter.cs) | Attached behaviour for any `ItemsControl` |
-| [`QueryableSource.cs`](../src/Mithril.Shared/Wpf/Query/QueryableSource.cs) | VM helper — no WPF deps |
+| [`QueryParser.cs`](../src/Mithril.Shared.Wpf/Query/QueryParser.cs) | Lexer + recursive-descent parser → AST; also `LooksLikeGrammar` classifier |
+| [`QueryAst.cs`](../src/Mithril.Shared.Wpf/Query/QueryAst.cs) | AST node + value records |
+| [`QueryCompiler.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompiler.cs) | AST → `Func<object, bool>` with type-aware coercion |
+| [`ColumnBindingHelper.cs`](../src/Mithril.Shared.Wpf/Query/ColumnBindingHelper.cs) | Reflection → `ColumnBinding` + `ColumnSchema` |
+| [`QueryHighlighter.cs`](../src/Mithril.Shared.Wpf/Query/QueryHighlighter.cs) | Permissive lex → syntax-colour runs |
+| [`QueryCompletionProvider.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompletionProvider.cs) | Context-aware autocomplete; defines `ColumnSchema` |
+| [`MithrilDataGrid.cs`](../src/Mithril.Shared.Wpf/MithrilDataGrid.cs) | Themed `DataGrid` subclass; filter composition lives here |
+| [`MithrilQueryBox.cs`](../src/Mithril.Shared.Wpf/MithrilQueryBox.cs) | Single-line editor with overlay highlighting + completion popup |
+| [`QueryFilter.cs`](../src/Mithril.Shared.Wpf/Query/QueryFilter.cs) | Attached behaviour for any `ItemsControl` |
+| [`QueryableSource.cs`](../src/Mithril.Shared.Wpf/Query/QueryableSource.cs) | VM helper — no WPF deps |
 
 ## When NOT to use this
 

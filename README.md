@@ -165,7 +165,7 @@ Log parsers implement `ILogParser.TryParse(string line, DateTime timestamp)` and
 - **MVVM** with `CommunityToolkit.Mvvm` source generators (`[ObservableProperty]`, `[RelayCommand]`).
 - **Settings classes** implement `INotifyPropertyChanged` and are serialized through source-generated `JsonSerializerContext`s.
 - **HostedServices** carry background work. Lazy-module services gate behind `ModuleGate.WaitAsync()`.
-- **WPF resources** (styles, converters, brushes) are shared via [src/Mithril.Shared/Wpf/Resources.xaml](src/Mithril.Shared/Wpf/Resources.xaml). Icons come from the MahApps Lucide pack.
+- **WPF resources** (styles, converters, brushes) are shared via [src/Mithril.Shared.Wpf/Resources.xaml](src/Mithril.Shared.Wpf/Resources.xaml). Icons come from the MahApps Lucide pack.
 
 ## Paths the app touches
 

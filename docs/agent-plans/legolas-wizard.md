@@ -305,7 +305,7 @@ style requires this verification before reporting done.
   prompt? Lean: no — these are short sessions, undo is "set position
   and start again". Mirrors the dashboard's behavior.
 - **Light/dark theme.** Dashboard sketch above assumes the existing
-  Mithril dark palette; verify against `Mithril.Shared/Wpf/Resources.xaml`
+  Mithril dark palette; verify against `Mithril.Shared.Wpf/Resources.xaml`
   brushes when implementing.
 - **Animation between states.** Probably none — wizard re-templates can
   cross-fade if it feels too jarring, but start without and add only

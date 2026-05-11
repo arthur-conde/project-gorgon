@@ -79,7 +79,7 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 - **Settings classes** implement `INotifyPropertyChanged` with source-generated JSON serialization contexts (not reflection)
 - **Log parsing**: implement `ILogParser.TryParse(string line, DateTime timestamp)` returning a `LogEvent?`; state machines consume events from `IPlayerLogStream`/`IChatLogStream`
 - **HostedServices** for background work; gated behind `ModuleGate.WaitAsync()` for lazy modules
-- **WPF resources** shared via `Mithril.Shared/Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
+- **WPF resources** shared via `Mithril.Shared.Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
 
 ### Game Data Paths
 
