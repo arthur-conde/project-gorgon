@@ -15,9 +15,6 @@
             <!-- Alarm settings -->
             <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
             <CheckBox Content="Enabled" IsChecked="{Binding Settings.AlarmEnabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-            <CheckBox Content="Allow concurrent alarm sounds"
-                      IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <CheckBox Content="Flash the Mithril window when a timer completes" IsChecked="{Binding Settings.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
 

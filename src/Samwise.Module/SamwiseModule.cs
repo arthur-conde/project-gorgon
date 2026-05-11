@@ -86,7 +86,6 @@ public sealed class SamwiseModule : IMithrilModule
         services.AddSingleton<SamwiseSettingsView>(sp => new SamwiseSettingsView
         {
             DataContext = sp.GetRequiredService<SamwiseSettings>(),
-            Audio = sp.GetRequiredService<AudioSettings>(),
         });
 
         services.AddSingleton<IHotkeyCommand, SnoozeAllAlarmsCommand>();

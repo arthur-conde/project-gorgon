@@ -32,9 +32,6 @@
             <!-- Alarms: master toggles -->
             <TextBlock Text="Alarms" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
             <CheckBox Content="Enabled" IsChecked="{Binding Alarms.Enabled}" Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
-            <CheckBox Content="Allow concurrent alarm sounds"
-                      IsChecked="{Binding Audio.ConcurrentAlarms, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <CheckBox Content="Flash the Mithril window when firing" IsChecked="{Binding Alarms.FlashWindow}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
             <DockPanel Margin="0,8,0,0" LastChildFill="True">

@@ -1,6 +1,5 @@
 using System.Windows;
 using Mithril.Shared.Audio;
-using Mithril.Shared.Settings;
 using Microsoft.Win32;
 using Samwise.Alarms;
 
@@ -11,8 +10,6 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
     private IPlaybackHandle? _testHandle;
 
     public SamwiseSettingsView() { InitializeComponent(); }
-
-    public AudioSettings? Audio { get; set; }
 
     private void BrowseSound_Click(object sender, RoutedEventArgs e)
     {

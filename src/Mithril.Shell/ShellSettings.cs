@@ -20,9 +20,6 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private string? _activeServer;
     public string? ActiveServer { get => _activeServer; set => Set(ref _activeServer, value); }
 
-    private bool _concurrentAlarms;
-    public bool ConcurrentAlarms { get => _concurrentAlarms; set => Set(ref _concurrentAlarms, value); }
-
     private bool _developerMode;
     public bool DeveloperMode { get => _developerMode; set => Set(ref _developerMode, value); }
 
