@@ -249,6 +249,46 @@ public class AlarmServiceTests
     }
 
     [Fact]
+    public void SuppressIfStagePlaying_DropsSecondAlarmForSameStage()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].SuppressIfStagePlaying = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");
+
+        s.Sink.Plays.Should().HaveCount(1);
+        s.Sink.Plays[0].Handle.IsPlaying.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SuppressIfStagePlaying_DoesNotBlockADifferentStageOnSameChannel()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].SuppressIfStagePlaying = true;
+
+        RipenPlot(s, "1", "Carrot");        // Ripe alarm → playing
+        ThirstyPlot(s, "2", "Onion");       // Thirsty on same channel — should still play
+
+        s.Sink.Plays.Should().HaveCount(2);
+        s.Sink.Plays[1].Handle.IsPlaying.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SuppressIfStagePlaying_AllowsNextFireOnceFirstStops()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].SuppressIfStagePlaying = true;
+
+        RipenPlot(s, "1", "Carrot");
+        s.Sink.Plays[0].Handle.IsPlaying = false;   // simulate first sound finishing
+        RipenPlot(s, "2", "Onion");
+
+        s.Sink.Plays.Should().HaveCount(2);
+        s.Sink.Plays[1].Handle.IsPlaying.Should().BeTrue();
+    }
+
+    [Fact]
     public void StopPreview_DoesNotAffectRealAlarmsOnSameChannel()
     {
         var s = BuildSut(AlarmCollisionBehavior.Mix);

@@ -18,7 +18,9 @@ public sealed class AlarmService : IDisposable
 
     // AlarmKey identifies which alarm "owns" the handle so StopOwner can stop the
     // exact (plot, stage) alarm rather than whichever sound currently plays on the channel.
-    private sealed record ChannelOwner(string AlarmKey, IPlaybackHandle Handle);
+    // Stage carries the plot stage that produced the owner so the per-stage
+    // SuppressIfStagePlaying check can find prior owners for the same stage.
+    private sealed record ChannelOwner(string AlarmKey, PlotStage Stage, IPlaybackHandle Handle);
     private readonly Dictionary<string, List<ChannelOwner>> _channelPlayback = new(StringComparer.Ordinal);
 
     public event EventHandler<ActiveAlarm>? AlarmTriggered;
@@ -76,7 +78,7 @@ public sealed class AlarmService : IDisposable
         if (_firedAt.ContainsKey(key)) return;
 
         _firedAt[key] = DateTimeOffset.UtcNow;
-        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), rule);
+        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), e.NewStage, rule);
     }
 
     private AlarmChannel ResolveChannel(string id)
@@ -117,14 +119,11 @@ public sealed class AlarmService : IDisposable
         }
     }
 
-    private void Fire(ActiveAlarm alarm, StageAlarmRule rule)
+    private void Fire(ActiveAlarm alarm, PlotStage stage, StageAlarmRule rule)
     {
         Dispatch(() =>
         {
-            if (TryRouteToChannel(rule, alarm.Key, out _))
-            {
-                // sound dispatched
-            }
+            TryRouteToChannel(stage, rule, alarm.Key, out _);
 
             if (_settings.Alarms.FlashWindow)
             {
@@ -145,7 +144,7 @@ public sealed class AlarmService : IDisposable
     public void PreviewStage(PlotStage stage)
     {
         if (!_settings.Alarms.Rules.TryGetValue(stage, out var rule)) return;
-        Dispatch(() => TryRouteToChannel(rule, PreviewKey(stage), out _));
+        Dispatch(() => TryRouteToChannel(stage, rule, PreviewKey(stage), out _));
     }
 
     /// <summary>
@@ -177,12 +176,17 @@ public sealed class AlarmService : IDisposable
     /// drops the new sound if any owner is still playing; Mix appends.
     /// Returns true and emits the new handle when a sound was actually started.
     /// </summary>
-    private bool TryRouteToChannel(StageAlarmRule rule, string ownerKey, out IPlaybackHandle? handle)
+    private bool TryRouteToChannel(PlotStage stage, StageAlarmRule rule, string ownerKey, out IPlaybackHandle? handle)
     {
         handle = null;
         var channel = ResolveChannel(rule.ChannelId);
         var owners = OwnersOf(channel.Id);
         PruneStopped(owners);
+
+        // Per-stage gate: drop the new alarm if the same stage is already sounding
+        // on this channel, regardless of the channel's collision behaviour.
+        if (rule.SuppressIfStagePlaying && owners.Any(o => o.Stage == stage))
+            return false;
 
         bool willPlaySound;
         switch (channel.Collision)
@@ -204,7 +208,7 @@ public sealed class AlarmService : IDisposable
         if (!willPlaySound) return false;
 
         handle = _audio.Play(rule.SoundFilePath, (float)_settings.Alarms.AlarmVolume, "samwise", loop: rule.Loop);
-        owners.Add(new ChannelOwner(ownerKey, handle));
+        owners.Add(new ChannelOwner(ownerKey, stage, handle));
         return true;
     }
 

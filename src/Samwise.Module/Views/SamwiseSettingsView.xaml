@@ -136,6 +136,10 @@
                                           Content="Loop until dismissed"
                                           IsChecked="{Binding Value.Loop}"
                                           IsEnabled="{Binding Value.Enabled}"/>
+                                <CheckBox Margin="0,6,0,0" Foreground="#FFE8E8E8"
+                                          Content="One alarm per stage (skip if this stage is already sounding)"
+                                          IsChecked="{Binding Value.SuppressIfStagePlaying}"
+                                          IsEnabled="{Binding Value.Enabled}"/>
                                 <DockPanel Margin="0,6,0,0" LastChildFill="False">
                                     <TextBlock Text="Channel:" Foreground="#FFE8E8E8" VerticalAlignment="Center" Width="80"/>
                                     <ComboBox Width="200" Margin="6,0"

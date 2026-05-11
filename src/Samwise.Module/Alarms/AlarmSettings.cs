@@ -21,12 +21,20 @@ public sealed class StageAlarmRule : INotifyPropertyChanged
     private bool _stopOnInteraction = true;
 
     private bool _loop;
+    private bool _suppressIfStagePlaying;
     private string _channelId = "default";
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public string? SoundFilePath { get => _soundFilePath; set => Set(ref _soundFilePath, value); }
     public bool StopOnInteraction { get => _stopOnInteraction; set => Set(ref _stopOnInteraction, value); }
     public bool Loop { get => _loop; set => Set(ref _loop, value); }
+    /// <summary>
+    /// When true, a fire for this stage is dropped if another alarm for the
+    /// same stage is already playing on the channel. Lets clusters of crops
+    /// entering the same stage produce a single sound while other stages still
+    /// layer/replace per the channel's collision policy.
+    /// </summary>
+    public bool SuppressIfStagePlaying { get => _suppressIfStagePlaying; set => Set(ref _suppressIfStagePlaying, value); }
     public string ChannelId { get => _channelId; set => Set(ref _channelId, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
