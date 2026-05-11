@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Windows.Threading;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
@@ -208,6 +209,94 @@ public sealed class DashboardAggregatorTests
         agg.Recompute();
 
         agg.Summaries.Single().State.Should().Be(TimerState.Done);
+    }
+
+    [Fact]
+    public void Updated_marshals_to_captured_dispatcher_when_RowsChanged_fires_off_thread()
+    {
+        // Regression for #191: prior to the fix, OnSourceRowsChanged ran
+        // synchronously on the source's calling thread. For QuestSource /
+        // LootSource that's the log-tail background thread when a completion
+        // is observed live — DashboardViewModel.Refresh then mutated WPF-bound
+        // ObservableCollections off the UI thread, which CollectionView throws
+        // on. Worse, the throw aborted the multicast invocation so the per-tab
+        // TimerSourceBinder (a later subscriber) never ran — tab rows kept
+        // showing the previous cooldown's state even though the JSON had the
+        // new startedAt. Fix: capture a Dispatcher in the ctor and marshal
+        // the delta application + Updated fire through it.
+        //
+        // Test runs synchronously (not async Task) and uses a raw Thread
+        // (not Task.Run) so PushFrame stays on the test thread that owns
+        // the dispatcher — async/await would resume the continuation on a
+        // pool thread, and PushFrame on a non-owner thread blocks forever.
+        var src = new FakeSource("gandalf.test")
+        {
+            Catalog = [new TimerCatalogEntry("k1", "Daily", "R", TimeSpan.FromHours(1), null)],
+        };
+        var time = new ManualTime(Origin);
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var dispatcherThread = Environment.CurrentManagedThreadId;
+
+        using var agg = new DashboardAggregator([src], time, dispatcher);
+
+        var observedThread = -1;
+        agg.Updated += (_, _) => observedThread = Environment.CurrentManagedThreadId;
+
+        // Fire RowsChanged from a non-dispatcher thread.
+        var workerThread = -1;
+        var worker = new Thread(() =>
+        {
+            workerThread = Environment.CurrentManagedThreadId;
+            src.RaiseRowsChanged([
+                new TimerRowDelta("k1", TimerRowChangeKind.ProgressChanged,
+                    src.Catalog[0],
+                    new TimerProgressEntry("k1", time.GetUtcNow(), null)),
+            ]);
+        });
+        worker.Start();
+        worker.Join();
+
+        observedThread.Should().Be(-1,
+            "Updated must NOT fire synchronously on the calling thread when it differs from the dispatcher");
+
+        // Pump the dispatcher (on its owning test thread) to drain the
+        // queued ApplyDeltas + Updated fire.
+        var frame = new DispatcherFrame();
+        _ = dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () => frame.Continue = false);
+        Dispatcher.PushFrame(frame);
+
+        observedThread.Should().Be(dispatcherThread,
+            "Updated must marshal to the captured dispatcher's thread, not the calling thread");
+        workerThread.Should().NotBe(dispatcherThread,
+            "regression-test sanity: RowsChanged really did fire from a different thread");
+    }
+
+    [Fact]
+    public void Updated_runs_synchronously_when_RowsChanged_fires_on_dispatcher_thread()
+    {
+        // The other half of the dispatch contract: when a source happens to
+        // raise RowsChanged on the dispatcher thread itself (e.g. user-driven
+        // events that originate on the UI thread), Updated should fire
+        // synchronously — no extra dispatcher hop, no observable latency.
+        var src = new FakeSource("gandalf.test")
+        {
+            Catalog = [new TimerCatalogEntry("k1", "Daily", "R", TimeSpan.FromHours(1), null)],
+        };
+        var time = new ManualTime(Origin);
+        var dispatcher = Dispatcher.CurrentDispatcher;
+
+        using var agg = new DashboardAggregator([src], time, dispatcher);
+
+        var fired = 0;
+        agg.Updated += (_, _) => fired++;
+
+        src.RaiseRowsChanged([
+            new TimerRowDelta("k1", TimerRowChangeKind.ProgressChanged,
+                src.Catalog[0],
+                new TimerProgressEntry("k1", time.GetUtcNow(), null)),
+        ]);
+
+        fired.Should().Be(1, "synchronous fire keeps the dispatcher hop count at zero on the hot path");
     }
 
     [Fact]
