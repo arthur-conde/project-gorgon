@@ -49,6 +49,14 @@ public sealed class AlarmService : IDisposable
         StopAllChannelPlayback();
     }
 
+    /// <summary>
+    /// Stop every currently-playing Samwise alarm sound without touching the
+    /// dedup state. Plots flagged as already-fired stay flagged (no re-fire on
+    /// the next tick). Use this when a replay storm or other event burst floods
+    /// the audio path and you just want silence.
+    /// </summary>
+    public void StopAllPlayback() => Dispatch(StopAllChannelPlayback);
+
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
     {
         if (e.OldStage is not null && e.NewStage != e.OldStage)

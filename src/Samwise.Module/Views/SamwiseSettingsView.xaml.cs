@@ -36,6 +36,8 @@ public partial class SamwiseSettingsView : System.Windows.Controls.UserControl
             Alarms?.StopPreview(stage);
     }
 
+    private void StopAllSounds_Click(object sender, RoutedEventArgs e) => Alarms?.StopAllPlayback();
+
     private void ClearSound_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement fe && fe.Tag is StageAlarmRule rule) rule.SoundFilePath = null;
