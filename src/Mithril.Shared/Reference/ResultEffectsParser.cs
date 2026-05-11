@@ -479,7 +479,7 @@ public static class ResultEffectsParser
         // GiveTSysItem / CraftSimpleTSysItem only carry the template name; tier/subtype stay null.
         if (isGiveOrSimple)
         {
-            preview = new CraftedGearPreview(internalName, item.Name, item.IconId, null, null);
+            preview = new CraftedGearPreview(internalName, item.Name ?? internalName, item.IconId, null, null);
             return true;
         }
 
@@ -498,7 +498,7 @@ public static class ResultEffectsParser
             if (subtypeToken.Length > 0) subtype = subtypeToken;
         }
 
-        preview = new CraftedGearPreview(internalName, item.Name, item.IconId, tier, subtype);
+        preview = new CraftedGearPreview(internalName, item.Name ?? internalName, item.IconId, tier, subtype);
         return true;
     }
 
@@ -614,7 +614,7 @@ public static class ResultEffectsParser
         if (refData.ItemsByInternalName.TryGetValue(cubeItemName, out var cubeItem))
         {
             preview = new UnpreviewableExtractionPreview(
-                cubeItemName, cubeItem.Name, cubeItem.IconId, minTier, maxTier);
+                cubeItemName, cubeItem.Name ?? cubeItemName, cubeItem.IconId, minTier, maxTier);
         }
         else
         {
@@ -1294,7 +1294,7 @@ public static class ResultEffectsParser
 
         if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
         {
-            preview = new ItemProducingPreview(item.Name, item.IconId, Qualifier: null, item.InternalName);
+            preview = new ItemProducingPreview(item.Name ?? itemName, item.IconId, Qualifier: null, item.InternalName);
         }
         else
         {
@@ -1317,7 +1317,7 @@ public static class ResultEffectsParser
             : "Mining Survey";
 
         if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
-            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+            preview = new ItemProducingPreview(item.Name ?? itemName, item.IconId, qualifier, item.InternalName);
         else
             preview = new ItemProducingPreview(Humanize(itemName), IconId: null, qualifier, itemName);
         return true;
@@ -1336,7 +1336,7 @@ public static class ResultEffectsParser
             : "Geology Survey";
 
         if (refData.ItemsByInternalName.TryGetValue(itemName, out var item))
-            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+            preview = new ItemProducingPreview(item.Name ?? itemName, item.IconId, qualifier, item.InternalName);
         else
             preview = new ItemProducingPreview(Humanize(itemName), IconId: null, qualifier, itemName);
         return true;
@@ -1361,7 +1361,7 @@ public static class ResultEffectsParser
         var qualifier = Humanize(quality);
 
         if (refData.ItemsByInternalName.TryGetValue(itemInternalName, out var item))
-            preview = new ItemProducingPreview(item.Name, item.IconId, qualifier, item.InternalName);
+            preview = new ItemProducingPreview(item.Name ?? displayName, item.IconId, qualifier, item.InternalName);
         else
             preview = new ItemProducingPreview(displayName, IconId: null, qualifier, itemInternalName);
         return true;
