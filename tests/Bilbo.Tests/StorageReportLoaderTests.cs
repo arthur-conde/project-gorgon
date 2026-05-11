@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using System.IO;
 using System.Text.Json;
 using Bilbo.Domain;
@@ -137,8 +138,8 @@ public class StorageReportLoaderTests
     private sealed class EmptyRefData : IReferenceDataService
     {
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

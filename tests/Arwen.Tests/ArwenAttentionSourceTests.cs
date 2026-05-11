@@ -2,6 +2,7 @@ using System.IO;
 using Arwen.Domain;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -13,11 +14,15 @@ public sealed class ArwenAttentionSourceTests
 {
     private static (CalibrationService svc, FakeInventory inv) BuildService(string dataDir)
     {
-        var items = new Dictionary<long, ItemEntry>
+        var items = new Dictionary<long, Item>
         {
-            [7] = new(7, "Phlogiston1", "Phlogiston1", MaxStackSize: 10, IconId: 0,
-                [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)],
-                Value: 5m),
+            [7] = new Item
+            {
+                Id = 7, Name = "Phlogiston1", InternalName = "Phlogiston1",
+                MaxStackSize = 10, IconId = 0,
+                Keywords = [new ItemKeyword("Crystal", 0), new ItemKeyword("Moonstone", 500)],
+                Value = 5m,
+            },
         };
         var npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal)
         {

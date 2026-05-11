@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
@@ -84,8 +85,8 @@ public class LegolasReportServiceTests
         var settings = new LegolasSettings();
         var flow = new SurveyFlowController(session, settings, clock);
         var refData = new StubRefData(
-            new ItemEntry(1, Name: "Diamond",   InternalName: "RawGem_Diamond", MaxStackSize: 100, IconId: 42, Keywords: Array.Empty<ItemKeyword>()),
-            new ItemEntry(2, Name: "Mystery",   InternalName: "Item_Unknown",   MaxStackSize: 100, IconId: 0,  Keywords: Array.Empty<ItemKeyword>()));
+            new Item { Id = 1, Name = "Diamond", InternalName = "RawGem_Diamond", MaxStackSize = 100, IconId = 42, Keywords = [] },
+            new Item { Id = 2, Name = "Mystery", InternalName = "Item_Unknown",   MaxStackSize = 100, IconId = 0,  Keywords = [] });
         var report = new LegolasReportService(flow, session, clock, activeChar: null, refData: refData);
         settings.AutoResetWhenAllCollected = false;
 
@@ -242,7 +243,7 @@ public class LegolasReportServiceTests
             },
         };
         var refData = new StubRefData(
-            new ItemEntry(1, Name: "Diamond", InternalName: "RawGem_Diamond", MaxStackSize: 100, IconId: 1, Keywords: Array.Empty<ItemKeyword>()));
+            new Item { Id = 1, Name = "Diamond", InternalName = "RawGem_Diamond", MaxStackSize = 100, IconId = 1, Keywords = [] });
 
         var summary = LegolasReportService.BuildSummary(payload, refData);
         summary.Should().Contain("Argothian");
@@ -293,22 +294,23 @@ public class LegolasReportServiceTests
     /// </summary>
     private sealed class StubRefData : IReferenceDataService
     {
-        public StubRefData(params ItemEntry[] items)
+        public StubRefData(params Item[] items)
         {
-            var byId = new Dictionary<long, ItemEntry>();
-            var byInternalName = new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
+            var byId = new Dictionary<long, Item>();
+            var byInternalName = new Dictionary<string, Item>(StringComparer.Ordinal);
             foreach (var i in items)
             {
                 byId[i.Id] = i;
-                byInternalName[i.InternalName] = i;
+                if (!string.IsNullOrEmpty(i.InternalName))
+                    byInternalName[i.InternalName!] = i;
             }
             Items = byId;
             ItemsByInternalName = byInternalName;
         }
 
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex => ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

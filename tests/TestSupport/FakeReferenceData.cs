@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Mithril.TestSupport;
@@ -26,9 +27,9 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public void RaiseQuestsUpdated() => FileUpdated?.Invoke(this, "quests");
 
     public IReadOnlyList<string> Keys { get; } = ["quests"];
-    public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-    public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
-    public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, ItemEntry>());
+    public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+    public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
+    public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
     public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
     public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();
     public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();

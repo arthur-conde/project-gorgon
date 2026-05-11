@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
@@ -211,10 +212,12 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Single_skill_use_gate_renders_in_title_bar()
     {
-        var item = new ItemEntry(
-            Id: 1, Name: "Cabbage Leafling", InternalName: "CabbageLeafling",
-            MaxStackSize: 50, IconId: 0, Keywords: [],
-            SkillReqs: new Dictionary<string, int> { ["Gardening"] = 10 });
+        var item = new Item
+        {
+            Id = 1, Name = "Cabbage Leafling", InternalName = "CabbageLeafling",
+            MaxStackSize = 50, IconId = 0, Keywords = [],
+            SkillReqs = new Dictionary<string, int> { ["Gardening"] = 10 },
+        };
         var refData = new StubRefData(
             itemsByInternalName: new() { ["CabbageLeafling"] = item });
 
@@ -227,10 +230,12 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Multi_skill_use_gate_renders_comma_joined_alphabetical()
     {
-        var item = new ItemEntry(
-            Id: 2, Name: "Wolfen Speed Potion", InternalName: "WolfenSpeed",
-            MaxStackSize: 50, IconId: 0, Keywords: [],
-            SkillReqs: new Dictionary<string, int> { ["Werewolf"] = 35, ["Alchemy"] = 35 });
+        var item = new Item
+        {
+            Id = 2, Name = "Wolfen Speed Potion", InternalName = "WolfenSpeed",
+            MaxStackSize = 50, IconId = 0, Keywords = [],
+            SkillReqs = new Dictionary<string, int> { ["Werewolf"] = 35, ["Alchemy"] = 35 },
+        };
         var refData = new StubRefData(
             itemsByInternalName: new() { ["WolfenSpeed"] = item });
 
@@ -244,7 +249,7 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Item_with_no_skill_requirements_has_null_UseRequirement()
     {
-        var item = new ItemEntry(1, "Plain Item", "Plain", 50, 0, []);
+        var item = new Item { Id = 1, Name = "Plain Item", InternalName = "Plain", MaxStackSize = 50, IconId = 0, Keywords = [] };
         var refData = new StubRefData(itemsByInternalName: new() { ["Plain"] = item });
 
         var vm = IngredientSourcesViewModel.Build(
@@ -332,18 +337,18 @@ public class IngredientSourcesViewModelTests
             Dictionary<string, NpcEntry>? npcs = null,
             Dictionary<string, AreaEntry>? areas = null,
             Dictionary<string, RecipeEntry>? recipesByInternalName = null,
-            Dictionary<string, ItemEntry>? itemsByInternalName = null)
+            Dictionary<string, Item>? itemsByInternalName = null)
         {
             ItemSources = sources ?? new Dictionary<string, IReadOnlyList<ItemSource>>();
             Npcs = npcs ?? new Dictionary<string, NpcEntry>();
             Areas = areas ?? new Dictionary<string, AreaEntry>();
             RecipesByInternalName = recipesByInternalName ?? new Dictionary<string, RecipeEntry>();
-            ItemsByInternalName = itemsByInternalName ?? new Dictionary<string, ItemEntry>();
+            ItemsByInternalName = itemsByInternalName ?? new Dictionary<string, Item>();
         }
 
         public IReadOnlyList<string> Keys => [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; } = new Dictionary<long, ItemEntry>();
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; }

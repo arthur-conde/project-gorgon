@@ -170,7 +170,7 @@ public sealed partial class ShoppingListViewModel : ObservableObject
             {
                 results = (recipe.ProtoResultItems ?? [])
                     .Select(r => _refData.Items.TryGetValue(r.ItemCode, out var item)
-                        ? new IngredientChip(item.Name, item.IconId, r.StackSize, null, item.InternalName)
+                        ? new IngredientChip(item.Name ?? "", item.IconId, r.StackSize, null, item.InternalName)
                         : null)
                     .Where(c => c is not null).Select(c => c!)
                     .ToList();

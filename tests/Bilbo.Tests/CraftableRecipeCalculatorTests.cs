@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Bilbo.Domain;
 using FluentAssertions;
 using Mithril.Shared.Character;
@@ -11,9 +12,16 @@ public class CraftableRecipeCalculatorTests
     private static StorageItemRow Row(int typeId, int stack, string name = "item", string location = "Inventory") =>
         new(name, location, stack, 0, 0, null, null, null, 0, null, false, typeId, 0, name);
 
-    private static ItemEntry Item(long id, string name) => new(id, name, name, 100, 0, []);
-    private static ItemEntry KeywordedItem(long id, string name, params string[] keywords)
-        => new(id, name, name, 100, 0, keywords.Select(k => new ItemKeyword(k, 0)).ToList());
+    private static Item MakeItem(long id, string name) => new()
+    {
+        Id = id, Name = name, InternalName = name, MaxStackSize = 100, IconId = 0,
+        Keywords = [],
+    };
+    private static Item KeywordedItem(long id, string name, params string[] keywords) => new()
+    {
+        Id = id, Name = name, InternalName = name, MaxStackSize = 100, IconId = 0,
+        Keywords = keywords.Select(k => new ItemKeyword(k, 0)).ToList(),
+    };
 
     private static RecipeEntry Recipe(string key, string name, IReadOnlyList<RecipeIngredient> ingredients, IReadOnlyList<RecipeItemRef>? results = null, string skill = "Cooking", int skillReq = 0, string internalName = "r_default") =>
         new(
@@ -30,9 +38,9 @@ public class CraftableRecipeCalculatorTests
         var refData = new TestRefData(
             items: new()
             {
-                [100] = Item(100, "Onion"),
-                [200] = Item(200, "Salt"),
-                [900] = Item(900, "Stew"),
+                [100] = MakeItem(100, "Onion"),
+                [200] = MakeItem(200, "Salt"),
+                [900] = MakeItem(900, "Stew"),
             },
             recipes: new()
             {
@@ -64,8 +72,8 @@ public class CraftableRecipeCalculatorTests
         var refData = new TestRefData(
             items: new()
             {
-                [100] = Item(100, "Onion"),
-                [300] = Item(300, "Pepper"),
+                [100] = MakeItem(100, "Onion"),
+                [300] = MakeItem(300, "Pepper"),
             },
             recipes: new()
             {
@@ -86,7 +94,7 @@ public class CraftableRecipeCalculatorTests
     public void Multi_Vault_Aggregation_Sums_By_TypeID()
     {
         var refData = new TestRefData(
-            items: new() { [100] = Item(100, "Onion") },
+            items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
                 ["r"] = Recipe("r", "OnionSoup", ingredients: [new RecipeItemIngredient(100, 1, null)]),
@@ -123,7 +131,7 @@ public class CraftableRecipeCalculatorTests
     public void Character_Decoration_Populates_Skill_And_Known()
     {
         var refData = new TestRefData(
-            items: new() { [100] = Item(100, "Onion") },
+            items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
                 ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
@@ -151,7 +159,7 @@ public class CraftableRecipeCalculatorTests
     public void Null_Character_Leaves_Decoration_Defaulted()
     {
         var refData = new TestRefData(
-            items: new() { [100] = Item(100, "Onion") },
+            items: new() { [100] = MakeItem(100, "Onion") },
             recipes: new()
             {
                 ["r"] = Recipe("r", "Stew", ingredients: [new RecipeItemIngredient(100, 1, null)],
@@ -179,7 +187,7 @@ public class CraftableRecipeCalculatorTests
             {
                 [100] = KeywordedItem(100, "RoughCrystal", "Crystal"),
                 [101] = KeywordedItem(101, "PolishedCrystal", "Crystal"),
-                [200] = Item(200, "EnchantedGear"),
+                [200] = MakeItem(200, "EnchantedGear"),
             },
             recipes: new()
             {
@@ -205,7 +213,7 @@ public class CraftableRecipeCalculatorTests
             items: new()
             {
                 [100] = KeywordedItem(100, "RoughCrystal", "Crystal"),
-                [200] = Item(200, "EnchantedGear"),
+                [200] = MakeItem(200, "EnchantedGear"),
             },
             recipes: new()
             {
@@ -229,8 +237,8 @@ public class CraftableRecipeCalculatorTests
         var refData = new TestRefData(
             items: new()
             {
-                [100] = Item(100, "Onion"),
-                [500] = Item(500, "Catalyst"),
+                [100] = MakeItem(100, "Onion"),
+                [500] = MakeItem(500, "Catalyst"),
             },
             recipes: new()
             {
@@ -247,15 +255,15 @@ public class CraftableRecipeCalculatorTests
 
     private sealed class TestRefData : IReferenceDataService
     {
-        public TestRefData(Dictionary<long, ItemEntry> items, Dictionary<string, RecipeEntry> recipes)
+        public TestRefData(Dictionary<long, Item> items, Dictionary<string, RecipeEntry> recipes)
         {
             Items = items;
             Recipes = recipes;
         }
 
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; }
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

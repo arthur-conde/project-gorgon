@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using System.Windows.Media.Imaging;
 using FluentAssertions;
 using Mithril.Shared.Icons;
@@ -18,9 +19,9 @@ public class PippinShareViewModelTests
 {
     private static FoodCatalog CreateCatalog(params (long Id, string InternalName, string Name, int IconId)[] foods)
     {
-        var dict = new Dictionary<long, ItemEntry>();
+        var dict = new Dictionary<long, Item>();
         foreach (var (id, internalName, name, iconId) in foods)
-            dict[id] = new ItemEntry(id, name, internalName, 1, iconId, [], FoodDesc: "Level 0 Snack");
+            dict[id] = new Item { Id = id, Name = name, InternalName = internalName, MaxStackSize = 1, IconId = iconId, Keywords = [], FoodDesc = "Level 0 Snack" };
         return new FoodCatalog(new StubReferenceData(dict));
     }
 
@@ -185,11 +186,11 @@ public class PippinShareViewModelTests
 
     private sealed class StubReferenceData : IReferenceDataService
     {
-        public StubReferenceData(Dictionary<long, ItemEntry> items) { Items = items; }
+        public StubReferenceData(Dictionary<long, Item> items) { Items = items; }
 
         public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; } = new Dictionary<string, ItemEntry>();
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -9,7 +10,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void SingleArg_ReturnsPreviewWithNullTierAndSubtype()
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots1", "Leather Boots", icon: 111));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots1", "Leather Boots", icon: 111));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["TSysCraftedEquipment(CraftedLeatherBoots1)"], refData);
@@ -21,7 +22,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void TwoArgs_CarriesTier()
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots5", "Leather Boots", icon: 222));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots5", "Leather Boots", icon: 222));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["TSysCraftedEquipment(CraftedLeatherBoots5,1)"], refData);
@@ -33,7 +34,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void ThreeArgs_CarriesTierAndSubtype()
     {
-        var refData = Fake(Item(1, "CraftedWerewolfShoes1", "Werewolf Shoes", icon: 333));
+        var refData = Fake(MakeItem(1, "CraftedWerewolfShoes1", "Werewolf Shoes", icon: 333));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["TSysCraftedEquipment(CraftedWerewolfShoes1,0,Werewolf)"], refData);
@@ -45,7 +46,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void UnknownPrefix_ReturnsEmpty()
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots1", "Leather Boots"));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots1", "Leather Boots"));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["DispelCalligraphyA()", "GiveTeleportationXp()"], refData);
@@ -56,7 +57,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void UnresolvableTemplate_IsSkippedSilently()
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots1", "Leather Boots"));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots1", "Leather Boots"));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["TSysCraftedEquipment(DoesNotExistInItems,3,Werewolf)"], refData);
@@ -73,7 +74,7 @@ public class ResultEffectsParserTests
     [InlineData("   ")]
     public void MalformedInput_IsSkippedSilently(string effect)
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots1", "Leather Boots"));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots1", "Leather Boots"));
 
         var previews = ResultEffectsParser.ParseCraftedGear([effect], refData);
 
@@ -83,7 +84,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void NonIntegerTier_DropsToNull()
     {
-        var refData = Fake(Item(1, "CraftedLeatherBoots1", "Leather Boots"));
+        var refData = Fake(MakeItem(1, "CraftedLeatherBoots1", "Leather Boots"));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["TSysCraftedEquipment(CraftedLeatherBoots1,notanumber,Werewolf)"], refData);
@@ -95,7 +96,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void MixedEffects_ReturnsOnlyCraftedGear()
     {
-        var refData = Fake(Item(1, "CraftedLongsword3", "Longsword"));
+        var refData = Fake(MakeItem(1, "CraftedLongsword3", "Longsword"));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
         [
@@ -110,7 +111,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void GiveTSysItem_FoldsIntoCraftedGearWithNullTier()
     {
-        var refData = Fake(Item(99, "Horseshoes", "Horseshoes", icon: 555));
+        var refData = Fake(MakeItem(99, "Horseshoes", "Horseshoes", icon: 555));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["GiveTSysItem(Horseshoes)"], refData);
@@ -122,7 +123,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void CraftSimpleTSysItem_FoldsIntoCraftedGearWithNullTier()
     {
-        var refData = Fake(Item(42, "ArachnidHarness", "Arachnid Harness", icon: 600));
+        var refData = Fake(MakeItem(42, "ArachnidHarness", "Arachnid Harness", icon: 600));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["CraftSimpleTSysItem(ArachnidHarness)"], refData);
@@ -134,7 +135,7 @@ public class ResultEffectsParserTests
     [Fact]
     public void GiveTSysItem_UnknownTemplate_IsSkippedSilently()
     {
-        var refData = Fake(Item(1, "Horseshoes", "Horseshoes"));
+        var refData = Fake(MakeItem(1, "Horseshoes", "Horseshoes"));
 
         var previews = ResultEffectsParser.ParseCraftedGear(
             ["GiveTSysItem(NotInItems)", "CraftSimpleTSysItem(AlsoMissing)"], refData);
@@ -163,29 +164,33 @@ public class ResultEffectsParserTests
         preview.DisplayLine.Should().Be(expected);
     }
 
-    private static ItemEntry Item(long id, string internalName, string displayName, int icon = 0)
-        => new(
-            Id: id,
-            Name: displayName,
-            InternalName: internalName,
-            MaxStackSize: 50,
-            IconId: icon,
-            Keywords: []);
+    private static Item MakeItem(long id, string internalName, string displayName, int icon = 0)
+        => new()
+        {
+            Id = id,
+            Name = displayName,
+            InternalName = internalName,
+            MaxStackSize = 50,
+            IconId = icon,
+            Keywords = [],
+        };
 
-    private static IReferenceDataService Fake(params ItemEntry[] items)
+    private static IReferenceDataService Fake(params Item[] items)
         => new MinimalRefData(items);
 
     private sealed class MinimalRefData : IReferenceDataService
     {
-        public MinimalRefData(IEnumerable<ItemEntry> items)
+        public MinimalRefData(IEnumerable<Item> items)
         {
             Items = items.ToDictionary(i => i.Id);
-            ItemsByInternalName = items.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
+            ItemsByInternalName = items
+                .Where(i => !string.IsNullOrEmpty(i.InternalName))
+                .ToDictionary(i => i.InternalName!, StringComparer.Ordinal);
         }
 
         public IReadOnlyList<string> Keys => [];
-        public IReadOnlyDictionary<long, ItemEntry> Items { get; }
-        public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName { get; }
+        public IReadOnlyDictionary<long, Item> Items { get; }
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; }
         public ItemKeywordIndex KeywordIndex => new(Items);
         public IReadOnlyDictionary<string, RecipeEntry> Recipes { get; } = new Dictionary<string, RecipeEntry>();
         public IReadOnlyDictionary<string, RecipeEntry> RecipesByInternalName { get; } = new Dictionary<string, RecipeEntry>();

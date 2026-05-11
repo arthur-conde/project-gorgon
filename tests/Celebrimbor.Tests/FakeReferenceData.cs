@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Tests;
@@ -5,8 +6,8 @@ namespace Celebrimbor.Tests;
 /// <summary>Minimal in-memory IReferenceDataService for unit tests.</summary>
 internal sealed class FakeReferenceData : IReferenceDataService
 {
-    private readonly Dictionary<long, ItemEntry> _items;
-    private readonly Dictionary<string, ItemEntry> _itemsByName;
+    private readonly Dictionary<long, Item> _items;
+    private readonly Dictionary<string, Item> _itemsByName;
     private readonly Dictionary<string, RecipeEntry> _recipes;
     private readonly Dictionary<string, RecipeEntry> _recipesByName;
     private readonly Dictionary<string, PowerEntry> _powers;
@@ -14,14 +15,16 @@ internal sealed class FakeReferenceData : IReferenceDataService
     private readonly Dictionary<string, IReadOnlyList<string>> _profiles;
 
     public FakeReferenceData(
-        IEnumerable<ItemEntry> items,
+        IEnumerable<Item> items,
         IEnumerable<RecipeEntry> recipes,
         IEnumerable<PowerEntry>? powers = null,
         IEnumerable<AttributeEntry>? attributes = null,
         IDictionary<string, IReadOnlyList<string>>? profiles = null)
     {
         _items = items.ToDictionary(i => i.Id);
-        _itemsByName = _items.Values.ToDictionary(i => i.InternalName, StringComparer.Ordinal);
+        _itemsByName = _items.Values
+            .Where(i => !string.IsNullOrEmpty(i.InternalName))
+            .ToDictionary(i => i.InternalName!, StringComparer.Ordinal);
         _keywordIndex = new ItemKeywordIndex(_items);
         _recipes = recipes.ToDictionary(r => r.Key, StringComparer.Ordinal);
         _recipesByName = _recipes.Values.ToDictionary(r => r.InternalName, StringComparer.Ordinal);
@@ -33,8 +36,8 @@ internal sealed class FakeReferenceData : IReferenceDataService
     }
 
     public IReadOnlyList<string> Keys => [];
-    public IReadOnlyDictionary<long, ItemEntry> Items => _items;
-    public IReadOnlyDictionary<string, ItemEntry> ItemsByInternalName => _itemsByName;
+    public IReadOnlyDictionary<long, Item> Items => _items;
+    public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByName;
     public ItemKeywordIndex KeywordIndex => _keywordIndex;
     private readonly ItemKeywordIndex _keywordIndex;
     public IReadOnlyDictionary<string, RecipeEntry> Recipes => _recipes;
@@ -61,25 +64,29 @@ internal sealed class FakeReferenceData : IReferenceDataService
 
     // Factory helpers for tests ──
 
-    public static ItemEntry Item(long id, string name, params string[] keywords)
-        => new(
-            Id: id,
-            Name: name,
-            InternalName: name,
-            MaxStackSize: 50,
-            IconId: (int)id,
-            Keywords: keywords.Select(k => new ItemKeyword(k, 0)).ToList());
+    public static Item Item(long id, string name, params string[] keywords)
+        => new()
+        {
+            Id = id,
+            Name = name,
+            InternalName = name,
+            MaxStackSize = 50,
+            IconId = (int)id,
+            Keywords = keywords.Select(k => new ItemKeyword(k, 0)).ToList(),
+        };
 
-    public static ItemEntry ItemWithProfile(long id, string name, string tsysProfile, string? equipSlot = null)
-        => new(
-            Id: id,
-            Name: name,
-            InternalName: name,
-            MaxStackSize: 50,
-            IconId: (int)id,
-            Keywords: [],
-            TSysProfile: tsysProfile,
-            EquipSlot: equipSlot);
+    public static Item ItemWithProfile(long id, string name, string tsysProfile, string? equipSlot = null)
+        => new()
+        {
+            Id = id,
+            Name = name,
+            InternalName = name,
+            MaxStackSize = 50,
+            IconId = (int)id,
+            Keywords = [],
+            TSysProfile = tsysProfile,
+            EquipSlot = equipSlot,
+        };
 
     public static PowerEntry Power(string internalName, string skill, string? suffix = null, params PowerTier[] tiers)
         => new(internalName, skill, Slots: [], Suffix: suffix, Tiers: tiers.ToDictionary(t => t.Tier));
