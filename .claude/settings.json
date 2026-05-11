@@ -20,5 +20,11 @@
       "mcp__mithril-logs__*",
       "Read(//c/Users/arthu/AppData/Local/Mithril/Legolas/perf/**)"
     ]
+  },
+  "enabledPlugins": {
+    "csharp-lsp@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true
   }
 }

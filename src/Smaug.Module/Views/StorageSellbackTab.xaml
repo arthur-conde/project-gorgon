@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Smaug.ViewModels"
-             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:StorageSellbackViewModel}"
              Background="#FF1A1A1A">
@@ -12,7 +12,7 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared;component/Wpf/Resources.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TextCol" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="#FFE8E8E8"/>

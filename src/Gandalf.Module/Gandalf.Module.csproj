@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Gandalf.Tests" />

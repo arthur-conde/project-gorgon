@@ -11,7 +11,6 @@ using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
-using Mithril.Shared.Wpf.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -232,6 +231,4 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMithrilModuleGates(this IServiceCollection services) =>
         services.AddSingleton<ModuleGates>();
 
-    public static IServiceCollection AddMithrilDialogs(this IServiceCollection services) =>
-        services.AddSingleton<IDialogService, DialogService>();
 }

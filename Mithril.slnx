@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />
     <Project Path="src/Mithril.Shared/Mithril.Shared.csproj" />
+    <Project Path="src/Mithril.Shared.Wpf/Mithril.Shared.Wpf.csproj" />
     <Project Path="src/Mithril.GameState/Mithril.GameState.csproj" />
     <Project Path="src/Mithril.Shell/Mithril.Shell.csproj" />
     <Project Path="src/Samwise.Module/Samwise.Module.csproj" />
