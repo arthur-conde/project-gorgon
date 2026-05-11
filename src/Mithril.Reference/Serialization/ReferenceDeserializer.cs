@@ -60,6 +60,7 @@ public static class ReferenceDeserializer
     {
         var settings = SerializerSettings.Build();
         settings.Converters.Add(RecipeDiscriminators.BuildRequirementConverter());
+        settings.Converters.Add(new RecipeIngredientConverter());
         settings.Converters.Add(new SingleOrArrayConverter<RecipeRequirement>());
         settings.Converters.Add(new SingleOrArrayConverter<string>());
 
