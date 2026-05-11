@@ -46,25 +46,25 @@ public sealed class SkillAdvisorEngine
         string.IsNullOrEmpty(recipe.SortSkill) ? recipe.RewardSkill ?? "" : recipe.SortSkill!;
 
     /// <summary>
-    /// Project a flat <see cref="RecipeIngredient"/> to a display-ready
+    /// Project a polymorphic <see cref="RecipeIngredient"/> to a display-ready
     /// <see cref="RecipeIngredientDisplay"/>. Item-coded slots resolve via the
     /// items catalog; keyword slots show <c>Desc</c> or a humanised keyword list.
     /// </summary>
     private static RecipeIngredientDisplay ProjectIngredientDisplay(RecipeIngredient i, IReferenceDataService refData)
     {
-        if (i.ItemCode is { } itemCode)
+        switch (i)
         {
-            return refData.Items.TryGetValue(itemCode, out var item)
-                ? new RecipeIngredientDisplay(item.Name ?? $"Item #{itemCode}", item.IconId, i.StackSize, (float?)i.ChanceToConsume)
-                : new RecipeIngredientDisplay($"Item #{itemCode}", 0, i.StackSize, (float?)i.ChanceToConsume);
+            case RecipeItemIngredient itemIng:
+                return refData.Items.TryGetValue(itemIng.ItemCode, out var item)
+                    ? new RecipeIngredientDisplay(item.Name ?? $"Item #{itemIng.ItemCode}", item.IconId, i.StackSize, (float?)i.ChanceToConsume)
+                    : new RecipeIngredientDisplay($"Item #{itemIng.ItemCode}", 0, i.StackSize, (float?)i.ChanceToConsume);
+            case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                return new RecipeIngredientDisplay(
+                    kwIng.Desc ?? $"Any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}",
+                    IconId: 0, i.StackSize, (float?)i.ChanceToConsume);
+            default:
+                return new RecipeIngredientDisplay("(unknown ingredient)", 0, i.StackSize, (float?)i.ChanceToConsume);
         }
-        if (i.ItemKeys is { Count: > 0 } itemKeys)
-        {
-            return new RecipeIngredientDisplay(
-                i.Desc ?? $"Any {ItemKeywordIndex.Humanise(itemKeys)}",
-                IconId: 0, i.StackSize, (float?)i.ChanceToConsume);
-        }
-        return new RecipeIngredientDisplay("(unknown ingredient)", 0, i.StackSize, (float?)i.ChanceToConsume);
     }
 
     /// <summary>

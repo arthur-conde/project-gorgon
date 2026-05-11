@@ -13,7 +13,7 @@ public class RecipeAggregatorTests
         => new() { ItemCode = id, StackSize = stack };
 
     private static RecipeIngredient Ing(long id, int stack, double? chance = null)
-        => new() { ItemCode = id, StackSize = stack, ChanceToConsume = chance };
+        => new RecipeItemIngredient { ItemCode = id, StackSize = stack, ChanceToConsume = chance };
 
     private static FakeReferenceData MakeStandardData()
     {

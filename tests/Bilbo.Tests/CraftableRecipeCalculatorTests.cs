@@ -35,10 +35,10 @@ public class CraftableRecipeCalculatorTests
         };
 
     private static RecipeIngredient ItemIng(long itemCode, int stack, double? chanceToConsume = null)
-        => new() { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
+        => new RecipeItemIngredient { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
 
     private static RecipeIngredient KeywordIng(IReadOnlyList<string> keys, string? desc, int stack)
-        => new() { ItemKeys = keys, Desc = desc, StackSize = stack };
+        => new RecipeKeywordIngredient { ItemKeys = keys, Desc = desc, StackSize = stack };
 
     private static RecipeResultItem ResultItem(long itemCode, int stack)
         => new() { ItemCode = itemCode, StackSize = stack };

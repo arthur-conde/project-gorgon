@@ -219,11 +219,10 @@ public class ReferenceDataServiceTests : IDisposable
         var recipe = svc.Recipes["recipe_1"];
         recipe.Ingredients.Should().HaveCount(2);
 
-        recipe.Ingredients[0].ItemCode.Should().Be(100);
-        recipe.Ingredients[0].ItemKeys.Should().BeNull();
+        var itemSlot = recipe.Ingredients[0].Should().BeOfType<Mithril.Reference.Models.Recipes.RecipeItemIngredient>().Subject;
+        itemSlot.ItemCode.Should().Be(100);
 
-        var keyword = recipe.Ingredients[1];
-        keyword.ItemCode.Should().BeNull();
+        var keyword = recipe.Ingredients[1].Should().BeOfType<Mithril.Reference.Models.Recipes.RecipeKeywordIngredient>().Subject;
         keyword.ItemKeys.Should().Equal(["Crystal"]);
         keyword.Desc.Should().Be("Auxiliary Crystal");
         keyword.StackSize.Should().Be(1);

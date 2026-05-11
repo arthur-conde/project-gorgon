@@ -32,23 +32,23 @@ public sealed partial class RecipeRowViewModel : ObservableObject
 
     internal static IngredientChip? ProjectIngredientChip(RecipeIngredient ingredient, IReferenceDataService refData)
     {
-        if (ingredient.ItemCode is { } itemCode)
+        switch (ingredient)
         {
-            return refData.Items.TryGetValue(itemCode, out var item)
-                ? new IngredientChip(item.Name ?? "", item.IconId, ingredient.StackSize, (float?)ingredient.ChanceToConsume, item.InternalName)
-                : null;
+            case RecipeItemIngredient itemIng:
+                return refData.Items.TryGetValue(itemIng.ItemCode, out var item)
+                    ? new IngredientChip(item.Name ?? "", item.IconId, ingredient.StackSize, (float?)ingredient.ChanceToConsume, item.InternalName)
+                    : null;
+            case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                return new IngredientChip(
+                    Name: kwIng.Desc ?? ItemKeywordIndex.Humanise(kwIng.ItemKeys),
+                    IconId: 0,
+                    StackSize: ingredient.StackSize,
+                    ChanceToConsume: (float?)ingredient.ChanceToConsume,
+                    InternalName: null,
+                    KeywordsLabel: $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}");
+            default:
+                return null;
         }
-        if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
-        {
-            return new IngredientChip(
-                Name: ingredient.Desc ?? ItemKeywordIndex.Humanise(itemKeys),
-                IconId: 0,
-                StackSize: ingredient.StackSize,
-                ChanceToConsume: (float?)ingredient.ChanceToConsume,
-                InternalName: null,
-                KeywordsLabel: $"any {ItemKeywordIndex.Humanise(itemKeys)}");
-        }
-        return null;
     }
 
     private static IReadOnlyList<IngredientChip> BuildInspectable(

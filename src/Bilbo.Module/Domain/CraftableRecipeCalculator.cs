@@ -37,25 +37,24 @@ public static class CraftableRecipeCalculator
             {
                 string itemName;
                 long available;
-                if (ingredient.ItemCode is { } itemCode)
+                switch (ingredient)
                 {
-                    itemName = refData.Items.TryGetValue(itemCode, out var entry)
-                        ? entry.Name ?? $"#{itemCode}"
-                        : $"#{itemCode}";
-                    have.TryGetValue(itemCode, out available);
-                }
-                else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
-                {
-                    itemName = ingredient.Desc ?? ItemKeywordIndex.Humanise(itemKeys);
-                    // Sum across every owned item whose Keywords match the AND-set.
-                    available = 0;
-                    foreach (var match in refData.KeywordIndex.ItemsMatching(itemKeys))
-                        if (have.TryGetValue(match.Id, out var matchHave))
-                            available += matchHave;
-                }
-                else
-                {
-                    continue;
+                    case RecipeItemIngredient itemIng:
+                        itemName = refData.Items.TryGetValue(itemIng.ItemCode, out var entry)
+                            ? entry.Name ?? $"#{itemIng.ItemCode}"
+                            : $"#{itemIng.ItemCode}";
+                        have.TryGetValue(itemIng.ItemCode, out available);
+                        break;
+                    case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                        itemName = kwIng.Desc ?? ItemKeywordIndex.Humanise(kwIng.ItemKeys);
+                        // Sum across every owned item whose Keywords match the AND-set.
+                        available = 0;
+                        foreach (var match in refData.KeywordIndex.ItemsMatching(kwIng.ItemKeys))
+                            if (have.TryGetValue(match.Id, out var matchHave))
+                                available += matchHave;
+                        break;
+                    default:
+                        continue;
                 }
 
                 var part = $"{itemName} x{ingredient.StackSize}";

@@ -215,18 +215,19 @@ public sealed class RecipeAggregator
                 if (!producers.TryGetValue(item, out var recipe)) continue;
                 foreach (var ingredient in recipe.Ingredients)
                 {
-                    if (ingredient.ItemCode is { } itemCode)
+                    switch (ingredient)
                     {
-                        if (!refData.Items.TryGetValue(itemCode, out var ing)) continue;
-                        if (string.IsNullOrEmpty(ing.InternalName)) continue;
-                        if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
-                    }
-                    else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
-                    {
-                        var key = MakeKeywordKey(itemKeys);
-                        keywordSpecs.TryAdd(key, new KeywordSpec(itemKeys, ingredient.Desc));
-                        chain.Add(key);
-                        // Keyword rows are leaves — no recursion needed; they have no producer.
+                        case RecipeItemIngredient itemIng:
+                            if (!refData.Items.TryGetValue(itemIng.ItemCode, out var ing)) continue;
+                            if (string.IsNullOrEmpty(ing.InternalName)) continue;
+                            if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
+                            break;
+                        case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                            var key = MakeKeywordKey(kwIng.ItemKeys);
+                            keywordSpecs.TryAdd(key, new KeywordSpec(kwIng.ItemKeys, kwIng.Desc));
+                            chain.Add(key);
+                            // Keyword rows are leaves — no recursion needed; they have no producer.
+                            break;
                     }
                 }
             }
@@ -257,8 +258,8 @@ public sealed class RecipeAggregator
         var maxIngredientDepth = 0;
         foreach (var ingredient in recipe.Ingredients)
         {
-            if (ingredient.ItemCode is { } itemCode
-                && refData.Items.TryGetValue(itemCode, out var item)
+            if (ingredient is RecipeItemIngredient itemIng
+                && refData.Items.TryGetValue(itemIng.ItemCode, out var item)
                 && !string.IsNullOrEmpty(item.InternalName))
             {
                 maxIngredientDepth = Math.Max(maxIngredientDepth, ComputeDepth(item.InternalName!, producers, refData, cache, onPath));
@@ -282,20 +283,19 @@ public sealed class RecipeAggregator
         foreach (var ingredient in recipe.Ingredients)
         {
             string demandKey;
-            if (ingredient.ItemCode is { } itemCode)
+            switch (ingredient)
             {
-                if (!refData.Items.TryGetValue(itemCode, out var item)) continue;
-                if (string.IsNullOrEmpty(item.InternalName)) continue;
-                demandKey = item.InternalName!;
-            }
-            else if (ingredient.ItemKeys is { Count: > 0 } itemKeys)
-            {
-                demandKey = MakeKeywordKey(itemKeys);
-                keywordSpecs.TryAdd(demandKey, new KeywordSpec(itemKeys, ingredient.Desc));
-            }
-            else
-            {
-                continue;
+                case RecipeItemIngredient itemIng:
+                    if (!refData.Items.TryGetValue(itemIng.ItemCode, out var item)) continue;
+                    if (string.IsNullOrEmpty(item.InternalName)) continue;
+                    demandKey = item.InternalName!;
+                    break;
+                case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                    demandKey = MakeKeywordKey(kwIng.ItemKeys);
+                    keywordSpecs.TryAdd(demandKey, new KeywordSpec(kwIng.ItemKeys, kwIng.Desc));
+                    break;
+                default:
+                    continue;
             }
 
             var perBatch = ingredient.StackSize * (ingredient.ChanceToConsume ?? 1.0);

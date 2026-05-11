@@ -111,13 +111,13 @@ internal sealed class FakeReferenceData : IReferenceDataService
         => new(name, powers);
 
     public static RecipeIngredient ItemIngredient(long itemCode, int stack, double? chanceToConsume = null)
-        => new() { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
+        => new RecipeItemIngredient { ItemCode = itemCode, StackSize = stack, ChanceToConsume = chanceToConsume };
 
     public static RecipeIngredient Keyword(int stack, params string[] keys)
-        => new() { ItemKeys = keys, StackSize = stack };
+        => new RecipeKeywordIngredient { ItemKeys = keys, StackSize = stack };
 
     public static RecipeIngredient KeywordWithDesc(int stack, string desc, params string[] keys)
-        => new() { ItemKeys = keys, Desc = desc, StackSize = stack };
+        => new RecipeKeywordIngredient { ItemKeys = keys, Desc = desc, StackSize = stack };
 
     public static RecipeResultItem Result(long itemCode, int stack)
         => new() { ItemCode = itemCode, StackSize = stack };
