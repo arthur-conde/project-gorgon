@@ -222,7 +222,7 @@ public sealed class RecipeAggregator
                             if (string.IsNullOrEmpty(ing.InternalName)) continue;
                             if (chain.Add(ing.InternalName!)) next.Add(ing.InternalName!);
                             break;
-                        case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                        case RecipeKeywordIngredient kwIng:
                             var key = MakeKeywordKey(kwIng.ItemKeys);
                             keywordSpecs.TryAdd(key, new KeywordSpec(kwIng.ItemKeys, kwIng.Desc));
                             chain.Add(key);
@@ -290,7 +290,7 @@ public sealed class RecipeAggregator
                     if (string.IsNullOrEmpty(item.InternalName)) continue;
                     demandKey = item.InternalName!;
                     break;
-                case RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                case RecipeKeywordIngredient kwIng:
                     demandKey = MakeKeywordKey(kwIng.ItemKeys);
                     keywordSpecs.TryAdd(demandKey, new KeywordSpec(kwIng.ItemKeys, kwIng.Desc));
                     break;
