@@ -7,6 +7,7 @@ using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.GameState.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
@@ -121,6 +122,7 @@ public static class Program
 
             // Build host
             var logDir = Path.Combine(shellDir, "logs");
+            var perfDir = Path.Combine(shellDir, "perf");
             var referenceCacheDir = Path.Combine(localApp, "Mithril", "Reference");
             var communityCalibrationCacheDir = Path.Combine(localApp, "Mithril", "Reference", "CommunityCalibration");
             var iconCacheDir = Path.Combine(localApp, "Mithril", "Icons");
@@ -144,6 +146,7 @@ public static class Program
                 .AddSingleton(audioSettings)
                 .AddSingleton(gameConfig)
                 .AddMithrilDiagnostics(logDir)
+                .AddMithrilPerfTrace(perfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
                 .AddMithrilGameServices()
                 .AddMithrilGameState()
                 .AddMithrilPerCharacterStorage(charactersRootDir)
@@ -204,6 +207,18 @@ public static class Program
             app.InitializeComponent();
 
             _ = new UiFontApplier(app, shellSettings);
+
+            // Auto-start a perf-trace session before the shell view-model resolves
+            // (which is what fires the first ActivateModule). Anything earlier than
+            // this — Velopack hooks, mutex, settings load, host.Build, eager-module
+            // gate opens — is still only captured by boot.log; the WPF-side hooks
+            // need Application.Current to attach, which only exists from the
+            // `new App()` above onward.
+            if (shellSettings.EnablePerfTrace && shellSettings.AutoStartPerfTrace)
+            {
+                try { host.Services.GetRequiredService<PerfTracerHostedService>().Toggle(); }
+                catch (Exception ex) { Boot($"perf auto-start failed: {ex.Message}"); }
+            }
 
             Boot("resolving ShellWindow");
             var shell = host.Services.GetRequiredService<ShellWindow>();

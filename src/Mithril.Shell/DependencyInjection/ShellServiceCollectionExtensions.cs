@@ -93,7 +93,9 @@ public static class ShellServiceCollectionExtensions
         services.AddSingleton<IIngredientSourcesPresenter, IngredientSourcesPresenter>();
 
     public static IServiceCollection AddMithrilShellCommands(this IServiceCollection services) =>
-        services.AddSingleton<IHotkeyCommand, ForceQuitCommand>();
+        services
+            .AddSingleton<IHotkeyCommand, ForceQuitCommand>()
+            .AddSingleton<IHotkeyCommand, StartPerfTraceHotkey>();
 
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>
         services
@@ -106,6 +108,7 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<ReferenceDataViewModel>()
             .AddSingleton<AppearanceSettingsViewModel>()
             .AddSingleton<AboutSettingsViewModel>()
+            .AddSingleton<DiagnosticsSettingsViewModel>()
             .AddSingleton<SettingsHostViewModel>()
             // Views
             .AddSingleton<ShellWindow>()
@@ -136,6 +139,10 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<AboutSettingsView>(sp => new AboutSettingsView
             {
                 DataContext = sp.GetRequiredService<AboutSettingsViewModel>(),
+            })
+            .AddSingleton<DiagnosticsSettingsView>(sp => new DiagnosticsSettingsView
+            {
+                DataContext = sp.GetRequiredService<DiagnosticsSettingsViewModel>(),
             })
             .AddSingleton<SettingsHostView>(sp => new SettingsHostView
             {

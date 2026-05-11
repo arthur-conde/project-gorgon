@@ -37,6 +37,24 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}"
                            Foreground="#66FFFFFF" Margin="12,0,0,0"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            Visibility="{Binding IsPerfTraceRecording, Converter={StaticResource BoolToVis}}"
+                            ToolTip="{Binding PerfTraceTooltip}" Margin="12,0,0,0">
+                    <Ellipse Width="8" Height="8" Fill="#FFE04545" VerticalAlignment="Center" Margin="0,0,5,0">
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="1.0" To="0.25" Duration="0:0:0.9"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                    <TextBlock Text="REC" Foreground="#FFE04545" FontWeight="SemiBold"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                </StackPanel>
                 <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
             </DockPanel>
         </Border>

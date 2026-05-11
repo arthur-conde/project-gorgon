@@ -26,6 +26,27 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _developerMode;
     public bool DeveloperMode { get => _developerMode; set => Set(ref _developerMode, value); }
 
+    /// <summary>Master toggle for the perf-trace harness. When false, the hotkey
+    /// is a no-op and no WPF hooks are attached, so the feature costs nothing.</summary>
+    private bool _enablePerfTrace;
+    public bool EnablePerfTrace { get => _enablePerfTrace; set => Set(ref _enablePerfTrace, value); }
+
+    /// <summary>When true, emit a <c>frame</c> event per render rather than
+    /// aggregating to <c>frame_summary</c>. Use for short captures where
+    /// per-frame fidelity matters; otherwise leave off to keep trace files small.</summary>
+    private bool _verboseFrameEvents;
+    public bool VerboseFrameEvents { get => _verboseFrameEvents; set => Set(ref _verboseFrameEvents, value); }
+
+    /// <summary>When true (and <see cref="EnablePerfTrace"/> is true), starts a
+    /// perf-trace session automatically right after the WPF Application is
+    /// created in <c>Program.Main</c> — before the shell view-model resolves,
+    /// so the initial <c>module_activated</c> event, first-frame render, and
+    /// dispatcher-queue ramp during startup all land in the trace. Use this
+    /// when investigating slow launches; otherwise leave off and toggle
+    /// sessions via the hotkey for targeted captures.</summary>
+    private bool _autoStartPerfTrace;
+    public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
+
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
 

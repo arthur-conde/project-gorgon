@@ -70,6 +70,14 @@ public sealed partial class SettingsHostViewModel : ObservableObject
 
         Sections.Add(new SettingsSection
         {
+            Title = "Diagnostics",
+            Icon = PackIconLucideKind.Activity,
+            ViewType = typeof(Views.DiagnosticsSettingsView),
+            IconUri = "pack://application:,,,/Mithril;component/Resources/perf-trace.ico",
+        });
+
+        Sections.Add(new SettingsSection
+        {
             Title = "About",
             Icon = PackIconLucideKind.Info,
             ViewType = typeof(Views.AboutSettingsView),
