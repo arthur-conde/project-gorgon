@@ -87,4 +87,25 @@ public class AlarmSettingsTests
 
         s.Alarms.Rules[PlotStage.Ripe].ChannelId.Should().Be(s.Alarms.Channels[0].Id);
     }
+
+    [Fact]
+    public void Channels_JsonRoundTrip_PreservesChannelId()
+    {
+        var s = new SamwiseSettings();
+        // Add a second channel with a non-default Id to make this stronger
+        // than just verifying the literal "default" string survives.
+        var extra = new AlarmChannel { Name = "Extra", Collision = AlarmCollisionBehavior.Suppress };
+        var extraId = extra.Id;
+        s.Alarms.Channels.Add(extra);
+
+        var json = JsonSerializer.Serialize(s, SamwiseSettingsJsonContext.Default.SamwiseSettings);
+        var loaded = JsonSerializer.Deserialize(json, SamwiseSettingsJsonContext.Default.SamwiseSettings)!;
+        (loaded as Mithril.Shared.Settings.IPostLoadInit)?.PostLoadInit();
+
+        loaded.Alarms.Channels.Should().HaveCount(2);
+        loaded.Alarms.Channels[0].Id.Should().Be("default");
+        loaded.Alarms.Channels[1].Id.Should().Be(extraId);
+        loaded.Alarms.Channels[1].Name.Should().Be("Extra");
+        loaded.Alarms.Channels[1].Collision.Should().Be(AlarmCollisionBehavior.Suppress);
+    }
 }

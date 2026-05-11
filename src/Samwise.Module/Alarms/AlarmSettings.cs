@@ -229,12 +229,13 @@ public sealed class SamwiseSettings : INotifyPropertyChanged, Mithril.Shared.Set
 
     public void PostLoadInit()
     {
-        _alarms.PostLoadInit();
-        // Re-wire bubbling on freshly-loaded children (STJ source-gen path).
+        // Re-wire first so any PropertyChanged events fired during _alarms.PostLoadInit()
+        // (e.g. via dangling-id fixup) bubble through OnAlarmsChanged.
         _alarms.PropertyChanged -= OnAlarmsChanged;
         _alarms.PropertyChanged += OnAlarmsChanged;
         _calibration.PropertyChanged -= OnCalibrationChanged;
         _calibration.PropertyChanged += OnCalibrationChanged;
+        _alarms.PostLoadInit();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
