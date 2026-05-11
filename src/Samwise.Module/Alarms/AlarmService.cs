@@ -37,13 +37,13 @@ public sealed class AlarmService : IDisposable
         var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
-        // Channel-aware stop landed in Task 9.
+        StopAllChannelPlayback();
     }
 
     public void DismissAll()
     {
         _firedAt.Clear();
-        // Channel-aware stop landed in Task 9.
+        StopAllChannelPlayback();
     }
 
     private void OnPlotChanged(object? sender, PlotChangedArgs e)
@@ -55,8 +55,7 @@ public sealed class AlarmService : IDisposable
                 && _settings.Alarms.Rules.TryGetValue(e.OldStage.Value, out var oldRule)
                 && oldRule.StopOnInteraction)
             {
-                // Stage-exit stop is rewritten in Task 9 to use _channelPlayback.
-                // Leaving the firedAt removal intact so existing dedup tests still pass.
+                StopOwner(oldRule.ChannelId, resolvedKey);
             }
         }
 
@@ -94,6 +93,27 @@ public sealed class AlarmService : IDisposable
         if (!_channelPlayback.TryGetValue(channelId, out var list))
             _channelPlayback[channelId] = list = new();
         return list;
+    }
+
+    private void StopOwner(string channelId, string alarmKey)
+    {
+        var resolved = ResolveChannel(channelId).Id;
+        if (!_channelPlayback.TryGetValue(resolved, out var owners)) return;
+        var mine = owners.FirstOrDefault(o => o.AlarmKey == alarmKey);
+        if (mine is not null)
+        {
+            mine.Handle.Stop();
+            owners.Remove(mine);
+        }
+    }
+
+    private void StopAllChannelPlayback()
+    {
+        foreach (var owners in _channelPlayback.Values)
+        {
+            foreach (var o in owners) o.Handle.Stop();
+            owners.Clear();
+        }
     }
 
     private void Fire(ActiveAlarm alarm, StageAlarmRule rule)
@@ -147,15 +167,23 @@ public sealed class AlarmService : IDisposable
     {
         var prefix = $"{plot.CharName}|{plot.PlotId}|";
         foreach (var k in _firedAt.Keys.Where(k => k.StartsWith(prefix)).ToArray())
+        {
             _firedAt.Remove(k);
+            var stageName = k[(prefix.Length)..];
+            if (Enum.TryParse<PlotStage>(stageName, out var stage)
+                && _settings.Alarms.Rules.TryGetValue(stage, out var rule)
+                && rule.StopOnInteraction)
+            {
+                StopOwner(rule.ChannelId, k);
+            }
+        }
         foreach (var k in _snoozedUntil.Keys.Where(k => k.StartsWith(prefix)).ToArray())
             _snoozedUntil.Remove(k);
-        // Channel-aware stop landed in Task 9.
     }
 
     public void Dispose()
     {
         _state.PlotChanged -= OnPlotChanged;
-        // Channel-aware stop landed in Task 9.
+        StopAllChannelPlayback();
     }
 }
