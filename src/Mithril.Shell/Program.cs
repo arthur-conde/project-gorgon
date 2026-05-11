@@ -15,6 +15,7 @@ using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf;
+using Mithril.Shared.Wpf.DependencyInjection;
 using Mithril.Shell.DependencyInjection;
 using Mithril.Shell.Updates;
 using Mithril.Shell.ViewModels;
