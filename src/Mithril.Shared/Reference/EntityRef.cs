@@ -27,3 +27,29 @@ public enum EntityKind
 /// <param name="Kind">The category of entity.</param>
 /// <param name="InternalName">The entity's unique internal name (e.g. <c>"CraftedLeatherBoots5"</c>).</param>
 public sealed record EntityRef(EntityKind Kind, string InternalName);
+
+/// <summary>
+/// Describes what kind of navigation action produced a <see cref="NavigatedEventArgs"/>.
+/// </summary>
+public enum NavigationKind
+{
+    /// <summary>A new entity was opened, pushing onto the back stack and clearing the forward stack.</summary>
+    Open,
+
+    /// <summary>The user navigated back through history.</summary>
+    Back,
+
+    /// <summary>The user navigated forward through history.</summary>
+    Forward,
+}
+
+/// <summary>
+/// Event data fired by <see cref="IReferenceNavigator.Navigated"/> on every state change.
+/// </summary>
+/// <param name="Previous">The entity that was current before this navigation, or <see langword="null"/> if there was none.</param>
+/// <param name="Current">The entity that is current after this navigation, or <see langword="null"/> if the history is now empty.</param>
+/// <param name="Kind">What kind of navigation produced this event.</param>
+public sealed record NavigatedEventArgs(
+    EntityRef? Previous,
+    EntityRef? Current,
+    NavigationKind Kind);
