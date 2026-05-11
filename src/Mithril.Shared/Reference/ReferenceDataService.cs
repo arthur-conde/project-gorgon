@@ -211,18 +211,18 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     public async Task RefreshAllAsync(CancellationToken ct = default)
     {
-        await RefreshAsync("items", ct);
-        await RefreshAsync("recipes", ct);
-        await RefreshAsync("skills", ct);
-        await RefreshAsync("xptables", ct);
-        await RefreshAsync("npcs", ct);
-        await RefreshAsync("areas", ct);
-        await RefreshAsync("sources_items", ct);
-        await RefreshAsync("attributes", ct);
-        await RefreshAsync("tsysclientinfo", ct);
-        await RefreshAsync("tsysprofiles", ct);
-        await RefreshAsync("quests", ct);
-        await RefreshAsync("strings_all", ct);
+        await RefreshAsync("items", ct).ConfigureAwait(false);
+        await RefreshAsync("recipes", ct).ConfigureAwait(false);
+        await RefreshAsync("skills", ct).ConfigureAwait(false);
+        await RefreshAsync("xptables", ct).ConfigureAwait(false);
+        await RefreshAsync("npcs", ct).ConfigureAwait(false);
+        await RefreshAsync("areas", ct).ConfigureAwait(false);
+        await RefreshAsync("sources_items", ct).ConfigureAwait(false);
+        await RefreshAsync("attributes", ct).ConfigureAwait(false);
+        await RefreshAsync("tsysclientinfo", ct).ConfigureAwait(false);
+        await RefreshAsync("tsysprofiles", ct).ConfigureAwait(false);
+        await RefreshAsync("quests", ct).ConfigureAwait(false);
+        await RefreshAsync("strings_all", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -291,7 +291,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         Action<T, ReferenceFileMetadata> swapper,
         CancellationToken ct)
     {
-        var version = await CdnVersionDetector.TryDetectAsync(_http, CdnRoot, ct)
+        var version = await CdnVersionDetector.TryDetectAsync(_http, CdnRoot, ct).ConfigureAwait(false)
                       ?? GetSnapshot(fileName).CdnVersion
                       ?? FallbackCdnVersion;
         var url = $"{CdnRoot}{version}/data/{fileName}.json";
@@ -301,9 +301,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         var fetchSw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            using var resp = await _http.GetAsync(url, ct);
+            using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
-            body = await resp.Content.ReadAsByteArrayAsync(ct);
+            body = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -323,14 +323,25 @@ public sealed class ReferenceDataService : IReferenceDataService
         Directory.CreateDirectory(_cacheDir);
         var cachePath = Path.Combine(_cacheDir, $"{fileName}.json");
         var metaPath = Path.Combine(_cacheDir, $"{fileName}.meta.json");
-        await Settings.AtomicFile.WriteAllBytesAtomicAsync(cachePath, body, ct);
+        await Settings.AtomicFile.WriteAllBytesAtomicAsync(cachePath, body, ct).ConfigureAwait(false);
         await Settings.AtomicFile.WriteJsonAtomicAsync(metaPath, meta,
-            ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
+            ReferenceJsonContext.Default.ReferenceFileMetadata, ct).ConfigureAwait(false);
 
-        var json = Encoding.UTF8.GetString(body);
-        var parsed = parser(json);
-        swapper(parsed, meta);
-        ReportUnknowns(fileName, parsed!, meta.CdnVersion);
+        // Parse + dictionary swap + drift walk are CPU-bound and collectively
+        // 500–1380 ms per file at full CDN payload (strings_all = 15 MB).
+        // Force them onto the thread pool — when this method runs under a
+        // captured sync context (e.g. the WPF dispatcher via the Settings
+        // panel's Refresh All button) those costs MUST NOT land on the UI
+        // thread. The swap mutates reference-typed snapshot fields with
+        // atomic reference assignment; readers tolerate seeing either the
+        // old or new dictionary. See #197.
+        await Task.Run(() =>
+        {
+            var json = Encoding.UTF8.GetString(body);
+            var parsed = parser(json);
+            swapper(parsed, meta);
+            ReportUnknowns(fileName, parsed!, meta.CdnVersion);
+        }, ct).ConfigureAwait(false);
         _diag?.Info("Reference", $"{fileName}.json refreshed: version {version}.");
         FileUpdated?.Invoke(this, fileName);
     }
