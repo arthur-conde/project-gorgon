@@ -343,4 +343,120 @@ public class AlarmServiceTests
         s.Sink.Plays.Should().HaveCount(2);
         s.Sink.Plays[1].Handle.IsPlaying.Should().BeTrue();
     }
+
+    [Fact]
+    public void Replace_Loop_HarvestCurrentOwner_TransfersHandleToSurvivor()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Replace);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+
+        RipenPlot(s, "1", "Carrot");
+        var firstHandle = s.Sink.Plays[0].Handle;
+        RipenPlot(s, "2", "Onion");
+        var secondHandle = s.Sink.Plays[1].Handle;
+        firstHandle.IsPlaying.Should().BeFalse();   // sanity: Replace stopped it
+        secondHandle.IsPlaying.Should().BeTrue();
+
+        // Harvest plot 2 (the current channel owner). Plot 1 is still Ripe.
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "2", "SummonedOnion"));
+
+        // Handle keeps playing (transferred to plot 1 — no fresh Play call).
+        secondHandle.IsPlaying.Should().BeTrue();
+        s.Sink.Plays.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Replace_Loop_HarvestAllSurvivors_FinallyStopsLoop()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Replace);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");
+        var liveHandle = s.Sink.Plays[1].Handle;
+
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "2", "SummonedOnion"));
+        liveHandle.IsPlaying.Should().BeTrue();   // transferred to plot 1
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "1", "SummonedCarrot"));
+        liveHandle.IsPlaying.Should().BeFalse();  // last survivor resolved
+    }
+
+    [Fact]
+    public void Suppress_Loop_HarvestCurrentOwner_TransfersHandleToSurvivor()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Suppress);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");          // suppressed — channel busy
+        s.Sink.Plays.Should().HaveCount(1);
+        var handle = s.Sink.Plays[0].Handle;
+
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "1", "SummonedCarrot"));
+
+        handle.IsPlaying.Should().BeTrue();
+        s.Sink.Plays.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Mix_SuppressIfStagePlaying_Loop_HarvestCurrentOwner_TransfersHandleToSurvivor()
+    {
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].SuppressIfStagePlaying = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");          // dropped — same stage already playing
+        s.Sink.Plays.Should().HaveCount(1);
+        var handle = s.Sink.Plays[0].Handle;
+
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "1", "SummonedCarrot"));
+
+        handle.IsPlaying.Should().BeTrue();
+        s.Sink.Plays.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Mix_Loop_OwnHandlesEach_HarvestOneOnlyStopsThatHandle()
+    {
+        // Mix without SuppressIfStagePlaying: every plot already owns its own
+        // handle, so resolving one must just stop that one — no transfer needed.
+        var s = BuildSut(AlarmCollisionBehavior.Mix);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = true;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");
+        var firstHandle = s.Sink.Plays[0].Handle;
+        var secondHandle = s.Sink.Plays[1].Handle;
+
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "1", "SummonedCarrot"));
+
+        firstHandle.IsPlaying.Should().BeFalse();
+        secondHandle.IsPlaying.Should().BeTrue();
+        s.Sink.Plays.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void LoopOff_DoesNotTransferHandle()
+    {
+        // Non-loop alarms shouldn't get promoted — the original one-shot already
+        // played, and reusing the handle for a survivor would be surprising.
+        var s = BuildSut(AlarmCollisionBehavior.Replace);
+        s.Settings.Alarms.Rules[PlotStage.Ripe].Loop = false;
+        s.Settings.Alarms.Rules[PlotStage.Ripe].StopOnInteraction = true;
+
+        RipenPlot(s, "1", "Carrot");
+        RipenPlot(s, "2", "Onion");
+        var liveHandle = s.Sink.Plays[1].Handle;
+
+        s.StateMachine.Apply(new StartInteraction(s.Time.Now.UtcDateTime, "2", "SummonedOnion"));
+
+        liveHandle.IsPlaying.Should().BeFalse();
+        s.Sink.Plays.Should().HaveCount(2);
+    }
 }
