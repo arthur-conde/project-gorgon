@@ -110,12 +110,40 @@ public sealed class AlarmService : IDisposable
     {
         var resolved = ResolveChannel(channelId).Id;
         if (!_channelPlayback.TryGetValue(resolved, out var owners)) return;
-        var mine = owners.FirstOrDefault(o => o.AlarmKey == alarmKey);
-        if (mine is not null)
+        var idx = owners.FindIndex(o => o.AlarmKey == alarmKey);
+        if (idx < 0) return;
+        var mine = owners[idx];
+
+        // If this is a looping alarm and another plot is still in the same stage
+        // but had its sound suppressed by the channel's collision policy, transfer
+        // the live handle to that survivor instead of stopping. Keeps the loop
+        // audibly continuous until every same-stage plot is resolved.
+        if (TryFindSurvivorKey(mine.Stage, owners, alarmKey) is { } survivor)
         {
-            mine.Handle.Stop();
-            owners.Remove(mine);
+            owners[idx] = mine with { AlarmKey = survivor };
+            return;
         }
+
+        mine.Handle.Stop();
+        owners.RemoveAt(idx);
+    }
+
+    private string? TryFindSurvivorKey(PlotStage stage, List<ChannelOwner> owners, string excludedKey)
+    {
+        if (!_settings.Alarms.Rules.TryGetValue(stage, out var rule) || !rule.Loop) return null;
+
+        var stageSuffix = "|" + stage;
+        var ownedByOthers = new HashSet<string>(
+            owners.Where(o => o.AlarmKey != excludedKey).Select(o => o.AlarmKey),
+            StringComparer.Ordinal);
+
+        return _firedAt
+            .Where(kvp => kvp.Key != excludedKey
+                          && kvp.Key.EndsWith(stageSuffix, StringComparison.Ordinal)
+                          && !ownedByOthers.Contains(kvp.Key))
+            .OrderBy(kvp => kvp.Value)
+            .Select(kvp => kvp.Key)
+            .FirstOrDefault();
     }
 
     private void StopAllChannelPlayback()
