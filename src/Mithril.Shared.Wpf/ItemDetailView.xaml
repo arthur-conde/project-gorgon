@@ -108,7 +108,7 @@
                                Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4">
                         <Run Text="Used in" />
-                        <Run Text="{Binding ConsumedByRecipes.Count, StringFormat=' ({0})'}" />
+                        <Run Text="{Binding ConsumedByRecipes.Count, StringFormat=' ({0})', Mode=OneWay}" />
                     </TextBlock>
                     <ItemsControl ItemsSource="{Binding ConsumedByRecipes}">
                         <ItemsControl.ItemsPanel>
