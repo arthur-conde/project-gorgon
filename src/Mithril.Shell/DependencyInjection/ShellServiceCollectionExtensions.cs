@@ -82,7 +82,7 @@ public static class ShellServiceCollectionExtensions
             // modules register them at their discretion, and the router degrades gracefully
             // (deep links to absent handlers are logged + dropped, never thrown).
             .AddSingleton<IDeepLinkRouter>(sp => new DeepLinkRouter(
-                sp.GetRequiredService<IItemDetailPresenter>(),
+                sp.GetRequiredService<Mithril.Shared.Reference.IReferenceNavigator>(),
                 sp.GetService<ICraftListImportTarget>(),
                 sp.GetService<IPippinShareImportTarget>(),
                 sp.GetService<ILegolasShareImportTarget>(),

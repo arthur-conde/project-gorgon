@@ -1,8 +1,7 @@
-<Window x:Class="Mithril.Shared.Wpf.ItemDetailWindow"
+<Window x:Class="Silmarillion.Views.RecipeDetailWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:c="clr-namespace:Mithril.Shared.Wpf"
-        xmlns:local="clr-namespace:Mithril.Shared.Wpf"
+        xmlns:local="clr-namespace:Silmarillion.Views"
         xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
         mc:Ignorable="d"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -44,10 +43,8 @@
                 </DockPanel>
             </Border>
 
-            <!-- Body: the actual detail content lives in a UserControl so it can also be
-                 hosted directly in a master-detail tab (Silmarillion module) without the
-                 Window chrome. -->
-            <local:ItemDetailView/>
+            <!-- Body: shared UserControl. -->
+            <local:RecipeDetailView/>
         </DockPanel>
     </Border>
 </Window>

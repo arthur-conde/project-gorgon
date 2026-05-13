@@ -156,13 +156,17 @@ public static class Program
                 .AddMithrilHotkeys()
                 .AddMithrilDialogs()
                 .AddMithrilModuleGates()
+                // Register NoOp navigator BEFORE modules so module Register() calls
+                // (which run inside AddMithrilModules) can override via AddSingleton.
+                // Without this ordering, the NoOp would win and CanOpen would always
+                // return false — chip cross-links would render disabled.
+                .AddSingleton<IReferenceNavigator, NoOpReferenceNavigator>()
                 .AddMithrilModules()
                 .AddMithrilAttention()
                 .AddMithrilShellUpdates()
                 .AddMithrilShellViews()
                 .AddMithrilItemDetail()
                 .AddMithrilIngredientSources()
-                .AddSingleton<IReferenceNavigator, NoOpReferenceNavigator>()
                 .AddMithrilShellCommands();
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");

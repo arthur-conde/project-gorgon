@@ -23,7 +23,11 @@ public sealed record ItemDetailContext(
     IReadOnlyList<EquipBonusPreview>? EquipBonuses = null,
     IReadOnlyList<CraftingEnhancePreview>? CraftingEnhancements = null,
     IReadOnlyList<RecipeCooldownPreview>? RecipeCooldowns = null,
-    IReadOnlyList<UnpreviewableExtractionPreview>? UnpreviewableExtractions = null)
+    IReadOnlyList<UnpreviewableExtractionPreview>? UnpreviewableExtractions = null,
+    // ── Cross-link sections (populated by the Silmarillion module; null/empty for other callers) ──
+    IReadOnlyList<EntityChipVm>? ProducedByRecipes = null,
+    IReadOnlyList<EntityChipVm>? ConsumedByRecipes = null,
+    IReadOnlyList<ItemSourceChipVm>? Sources = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }

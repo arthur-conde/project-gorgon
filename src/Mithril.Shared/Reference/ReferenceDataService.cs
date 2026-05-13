@@ -63,6 +63,10 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, Recipe> _recipes = new Dictionary<string, Recipe>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, Recipe> _recipesByInternalName =
         new Dictionary<string, Recipe>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesByProducedItem =
+        new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesByIngredientItem =
+        new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _recipesSnapshot;
 
     // Skills
@@ -160,6 +164,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     public ItemKeywordIndex KeywordIndex => _keywordIndex;
     public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
     public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByInternalName;
+    public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByProducedItem;
+    public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => _recipesByIngredientItem;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
@@ -424,6 +430,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _itemsByInternalName = byName;
         _keywordIndex = new ItemKeywordIndex(byId);
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
+        BuildRecipeCrossLinkIndices();
     }
 
     private void ParseAndSwapRecipes(IReadOnlyDictionary<string, Recipe> raw, ReferenceFileMetadata meta)
@@ -439,6 +446,57 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipes = byKey;
         _recipesByInternalName = byName;
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildRecipeCrossLinkIndices();
+    }
+
+    /// <summary>
+    /// Builds <see cref="_recipesByProducedItem"/> and <see cref="_recipesByIngredientItem"/>
+    /// from the current <see cref="_recipes"/> + <see cref="_items"/>. Items lacking InternalName
+    /// or item codes that don't resolve to a known item are silently skipped (they can't be
+    /// cross-linked to a browsable entity anyway). Called from both ParseAndSwapItems and
+    /// ParseAndSwapRecipes so a refresh of either file rebuilds the indices.
+    /// </summary>
+    private void BuildRecipeCrossLinkIndices()
+    {
+        var produced = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
+        var ingredient = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
+
+        foreach (var recipe in _recipes.Values)
+        {
+            var resultSource = (recipe.ResultItems is { Count: > 0 } ? recipe.ResultItems : recipe.ProtoResultItems)
+                ?? (IReadOnlyList<Mithril.Reference.Models.Recipes.RecipeResultItem>)Array.Empty<Mithril.Reference.Models.Recipes.RecipeResultItem>();
+            foreach (var result in resultSource)
+            {
+                if (!_items.TryGetValue(result.ItemCode, out var item) || string.IsNullOrEmpty(item.InternalName))
+                    continue;
+                if (!produced.TryGetValue(item.InternalName, out var list))
+                {
+                    list = new List<Recipe>();
+                    produced[item.InternalName] = list;
+                }
+                if (!list.Contains(recipe))
+                    list.Add(recipe);
+            }
+
+            // recipe.Ingredients is annotated non-nullable but JSON deserialization with a missing
+            // field yields null at runtime — guard rather than crash.
+            var ingredients = recipe.Ingredients ?? (IReadOnlyList<Mithril.Reference.Models.Recipes.RecipeIngredient>)Array.Empty<Mithril.Reference.Models.Recipes.RecipeIngredient>();
+            foreach (var ing in ingredients.OfType<Mithril.Reference.Models.Recipes.RecipeItemIngredient>())
+            {
+                if (!_items.TryGetValue(ing.ItemCode, out var item) || string.IsNullOrEmpty(item.InternalName))
+                    continue;
+                if (!ingredient.TryGetValue(item.InternalName, out var list))
+                {
+                    list = new List<Recipe>();
+                    ingredient[item.InternalName] = list;
+                }
+                if (!list.Contains(recipe))
+                    list.Add(recipe);
+            }
+        }
+
+        _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
+        _recipesByIngredientItem = ingredient.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
     }
 
     private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)

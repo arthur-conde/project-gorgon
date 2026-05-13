@@ -1,0 +1,56 @@
+<UserControl x:Class="Silmarillion.Views.SilmarillionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <UserControl.InputBindings>
+        <KeyBinding Modifiers="Alt" Key="Left" Command="{Binding BackCommand}"/>
+        <KeyBinding Modifiers="Alt" Key="Right" Command="{Binding ForwardCommand}"/>
+    </UserControl.InputBindings>
+
+    <DockPanel>
+        <!-- Header: back/forward + open-in-window -->
+        <Border DockPanel.Dock="Top" Background="#FF202020" Padding="8,4">
+            <StackPanel Orientation="Horizontal">
+                <Button Command="{Binding BackCommand}" Width="28" Height="24" Padding="0"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        ToolTip="Back (Alt+Left, mouse button 4)">
+                    <icon:PackIconLucide Kind="ChevronLeft" Width="14" Height="14" Foreground="#CCFFFFFF"/>
+                </Button>
+                <Button Command="{Binding ForwardCommand}" Width="28" Height="24" Padding="0"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        ToolTip="Forward (Alt+Right, mouse button 5)" Margin="2,0,0,0">
+                    <icon:PackIconLucide Kind="ChevronRight" Width="14" Height="14" Foreground="#CCFFFFFF"/>
+                </Button>
+                <Button Command="{Binding OpenInWindowCommand}" Width="28" Height="24" Padding="0"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        ToolTip="Open current detail in a new window" Margin="8,0,0,0">
+                    <icon:PackIconLucide Kind="ExternalLink" Width="13" Height="13" Foreground="#CCFFFFFF"/>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Tab strip -->
+        <TabControl SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
+                    Background="Transparent" BorderThickness="0">
+            <TabItem Header="Items">
+                <local:ItemsTabView DataContext="{Binding Items}"/>
+            </TabItem>
+            <TabItem Header="Recipes">
+                <local:RecipesTabView DataContext="{Binding Recipes}"/>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</UserControl>

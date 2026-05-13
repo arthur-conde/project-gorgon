@@ -1,13 +1,17 @@
 using System.Text.RegularExpressions;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Wpf;
+using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Modules;
 
 /// <summary>
 /// Default <see cref="IDeepLinkRouter"/> implementation. Current actions:
 /// <list type="bullet">
-///   <item><c>mithril://item/&lt;internalName&gt;</c> — opens <see cref="IItemDetailPresenter"/>.</item>
+///   <item><c>mithril://item/&lt;internalName&gt;</c> — opens the item via
+///         <see cref="IReferenceNavigator.Open"/> (Silmarillion's master-detail; popup
+///         <see cref="IItemDetailPresenter"/> is no longer involved).</item>
+///   <item><c>mithril://recipe/&lt;internalName&gt;</c> — opens the recipe via
+///         <see cref="IReferenceNavigator.Open"/>.</item>
 ///   <item><c>mithril://list/&lt;base64url&gt;</c> — hands the payload to
 ///         <see cref="ICraftListImportTarget"/> (Celebrimbor).</item>
 ///   <item><c>mithril://pippin/&lt;base64url&gt;</c> — hands the payload to
@@ -24,9 +28,9 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
 {
     private const string Scheme = "mithril";
 
-    // Item internal names in the reference data are ASCII identifiers; tighten the grammar so
-    // we refuse anything that could confuse downstream lookups or smuggle separators.
-    private static readonly Regex ItemPayloadPattern = new("^[A-Za-z0-9_]{1,128}$", RegexOptions.Compiled);
+    // Item/Recipe internal names in the reference data are ASCII identifiers; tighten the grammar
+    // so we refuse anything that could confuse downstream lookups or smuggle separators.
+    private static readonly Regex EntityPayloadPattern = new("^[A-Za-z0-9_]{1,128}$", RegexOptions.Compiled);
 
     // mithril://list, pippin, and legolas all carry a base64url-encoded gzip payload.
     // Base64url uses [A-Za-z0-9_-]; cap length well above any plausible compressed payload
@@ -37,7 +41,7 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
     // run is at most a couple dozen items + timestamps. 8192 is plenty.
     private static readonly Regex LegolasPayloadPattern = new("^[A-Za-z0-9_-]{1,8192}$", RegexOptions.Compiled);
 
-    private readonly IItemDetailPresenter _itemDetail;
+    private readonly IReferenceNavigator _navigator;
     private readonly ICraftListImportTarget? _listImport;
     private readonly IPippinShareImportTarget? _pippinImport;
     private readonly ILegolasShareImportTarget? _legolasImport;
@@ -45,14 +49,14 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
     private readonly IDiagnosticsSink? _diag;
 
     public DeepLinkRouter(
-        IItemDetailPresenter itemDetail,
+        IReferenceNavigator navigator,
         ICraftListImportTarget? listImport = null,
         IPippinShareImportTarget? pippinImport = null,
         ILegolasShareImportTarget? legolasImport = null,
         IElrondSkillImportTarget? elrondImport = null,
         IDiagnosticsSink? diag = null)
     {
-        _itemDetail = itemDetail;
+        _navigator = navigator;
         _listImport = listImport;
         _pippinImport = pippinImport;
         _legolasImport = legolasImport;
@@ -81,12 +85,21 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
         switch (action)
         {
             case "item":
-                if (!ItemPayloadPattern.IsMatch(payload))
+                if (!EntityPayloadPattern.IsMatch(payload))
                 {
                     _diag?.Info("DeepLink", $"Rejected: item payload '{payload}' failed validation.");
                     return false;
                 }
-                _itemDetail.Show(payload);
+                _navigator.Open(EntityRef.Item(payload));
+                return true;
+
+            case "recipe":
+                if (!EntityPayloadPattern.IsMatch(payload))
+                {
+                    _diag?.Info("DeepLink", $"Rejected: recipe payload '{payload}' failed validation.");
+                    return false;
+                }
+                _navigator.Open(EntityRef.Recipe(payload));
                 return true;
 
             case "list":
@@ -135,7 +148,7 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
                 // Skill keys are id-shaped (matches SkillEntry.Key, recipes' RewardSkill);
                 // reuse the strict item pattern. Hyphens/spaces are NOT permitted — the
                 // human-readable display name is never on the wire.
-                if (!ItemPayloadPattern.IsMatch(payload))
+                if (!EntityPayloadPattern.IsMatch(payload))
                 {
                     _diag?.Info("DeepLink", $"Rejected: elrond payload '{payload}' failed validation.");
                     return false;
