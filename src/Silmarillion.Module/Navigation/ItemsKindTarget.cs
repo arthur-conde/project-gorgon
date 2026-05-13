@@ -1,3 +1,4 @@
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 using Silmarillion.ViewModels;
@@ -15,10 +16,12 @@ namespace Silmarillion.Navigation;
 public sealed class ItemsKindTarget : IReferenceKindTarget
 {
     private readonly ItemsTabViewModel _vm;
+    private readonly IDiagnosticsSink? _diag;
 
-    public ItemsKindTarget(ItemsTabViewModel vm)
+    public ItemsKindTarget(ItemsTabViewModel vm, IDiagnosticsSink? diag = null)
     {
         _vm = vm;
+        _diag = diag;
     }
 
     public EntityKind Kind => EntityKind.Item;
@@ -35,7 +38,12 @@ public sealed class ItemsKindTarget : IReferenceKindTarget
         // Looking up in AllItems guarantees we pick the canonical instance the
         // ListBox already knows.
         var item = _vm.AllItems.FirstOrDefault(i => i.InternalName == internalName);
-        if (item is null) return false;
+        if (item is null)
+        {
+            _diag?.Info("Silmarillion.Nav", $"Items.TrySelect '{internalName}' → not found (AllItems={_vm.AllItems.Count}).");
+            return false;
+        }
+        _diag?.Info("Silmarillion.Nav", $"Items.TrySelect '{internalName}' → found, selecting.");
         _vm.SelectedItem = item;
         return true;
     }

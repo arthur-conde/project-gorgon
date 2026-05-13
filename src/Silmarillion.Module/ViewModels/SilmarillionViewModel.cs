@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Silmarillion.ViewModels;
@@ -18,16 +19,19 @@ public sealed partial class SilmarillionViewModel : ObservableObject
 {
     private readonly IReferenceNavigator _navigator;
     private readonly IReadOnlyDictionary<EntityKind, IReferenceKindTarget> _targets;
+    private readonly IDiagnosticsSink? _diag;
 
     public SilmarillionViewModel(
         ItemsTabViewModel items,
         RecipesTabViewModel recipes,
         IReferenceNavigator navigator,
-        IEnumerable<IReferenceKindTarget> targets)
+        IEnumerable<IReferenceKindTarget> targets,
+        IDiagnosticsSink? diag = null)
     {
         Items = items;
         Recipes = recipes;
         _navigator = navigator;
+        _diag = diag;
 
         // Same fail-loud-on-duplicate shape as SilmarillionReferenceNavigator —
         // mis-wired DI should crash startup, not silently last-wins.
@@ -76,9 +80,18 @@ public sealed partial class SilmarillionViewModel : ObservableObject
         ForwardCommand.NotifyCanExecuteChanged();
         OpenInWindowCommand.NotifyCanExecuteChanged();
 
-        if (e.Current is null) return;
-        if (!_targets.TryGetValue(e.Current.Kind, out var target)) return;
+        if (e.Current is null)
+        {
+            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind=null ({e.Kind}) — no-op.");
+            return;
+        }
+        if (!_targets.TryGetValue(e.Current.Kind, out var target))
+        {
+            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' — no target registered.");
+            return;
+        }
 
+        _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' tabIndex={target.TabIndex}.");
         SelectedTabIndex = target.TabIndex;
         target.TrySelectByInternalName(e.Current.InternalName);
     }

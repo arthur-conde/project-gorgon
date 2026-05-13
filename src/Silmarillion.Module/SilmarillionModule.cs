@@ -1,5 +1,6 @@
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Silmarillion.Navigation;
@@ -33,7 +34,9 @@ public sealed class SilmarillionModule : IMithrilModule
         // CanOpen invocation, which is what breaks the construction cycle (kind targets
         // depend on tab VMs, tab VMs depend on this navigator).
         services.AddSingleton<IReferenceNavigator>(sp => new SilmarillionReferenceNavigator(
-            () => sp.GetServices<IReferenceKindTarget>()));
+            () => sp.GetServices<IReferenceKindTarget>(),
+            sp.GetService<IModuleActivator>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         services.AddSingleton<ItemsTabViewModel>();
         services.AddSingleton<RecipesTabViewModel>();
@@ -44,9 +47,11 @@ public sealed class SilmarillionModule : IMithrilModule
         // than refData — see ItemsKindTarget for the post-refresh divergence
         // that motivates this.
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemsKindTarget(
-            sp.GetRequiredService<ItemsTabViewModel>()));
+            sp.GetRequiredService<ItemsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipesKindTarget(
-            sp.GetRequiredService<RecipesTabViewModel>()));
+            sp.GetRequiredService<RecipesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>

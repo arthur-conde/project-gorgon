@@ -54,9 +54,11 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         switch (kind)
         {
             case "item":
+                diag?.Info("DeepLink", $"Silmarillion handler dispatching item '{name}'.");
                 _navigator.Open(EntityRef.Item(name));
                 return true;
             case "recipe":
+                diag?.Info("DeepLink", $"Silmarillion handler dispatching recipe '{name}'.");
                 _navigator.Open(EntityRef.Recipe(name));
                 return true;
             default:

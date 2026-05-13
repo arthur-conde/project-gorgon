@@ -1,3 +1,5 @@
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
 namespace Silmarillion.Navigation;
@@ -25,6 +27,8 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 {
     private readonly Func<IEnumerable<IReferenceKindTarget>>? _targetsFactory;
     private IReadOnlyDictionary<EntityKind, IReferenceKindTarget>? _targets;
+    private readonly IModuleActivator? _activator;
+    private readonly IDiagnosticsSink? _diag;
 
     private readonly Stack<EntityRef> _back = new();
     private readonly Stack<EntityRef> _forward = new();
@@ -38,11 +42,21 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
     /// <summary>
     /// Lazy construction: defers validation and target enumeration to the first
     /// <see cref="CanOpen"/> call. Used by DI to break the cycle between this
-    /// navigator and the kind targets' tab-VM dependencies.
+    /// navigator and the kind targets' tab-VM dependencies. <paramref name="activator"/>
+    /// is optional — when wired, <see cref="Open"/> brings the Silmarillion tab to
+    /// the foreground first so that <c>SilmarillionViewModel</c> (which subscribes
+    /// to <see cref="Navigated"/> in its constructor) exists by the time the event
+    /// fires. Critical for deep links that arrive before the lazy module has been
+    /// activated by a tab click.
     /// </summary>
-    public SilmarillionReferenceNavigator(Func<IEnumerable<IReferenceKindTarget>> targetsFactory)
+    public SilmarillionReferenceNavigator(
+        Func<IEnumerable<IReferenceKindTarget>> targetsFactory,
+        IModuleActivator? activator = null,
+        IDiagnosticsSink? diag = null)
     {
         _targetsFactory = targetsFactory;
+        _activator = activator;
+        _diag = diag;
     }
 
     private IReadOnlyDictionary<EntityKind, IReferenceKindTarget> Targets =>
@@ -73,6 +87,15 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 
     public void Open(EntityRef reference)
     {
+        _diag?.Info("Silmarillion.Nav", $"Open kind={reference.Kind} name='{reference.InternalName}'.");
+
+        // Activate the host module BEFORE firing Navigated so SilmarillionViewModel
+        // exists and is subscribed by the time the event reaches it. Without this,
+        // a deep link that arrives while the user is on a different tab silently
+        // updates Current but no UI responds — the navigator's state is correct
+        // but invisible.
+        _activator?.Activate("silmarillion");
+
         var previous = Current;
         if (previous is not null) _back.Push(previous);
         _forward.Clear();

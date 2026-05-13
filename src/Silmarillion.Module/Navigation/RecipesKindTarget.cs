@@ -1,3 +1,4 @@
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -12,10 +13,12 @@ namespace Silmarillion.Navigation;
 public sealed class RecipesKindTarget : IReferenceKindTarget
 {
     private readonly RecipesTabViewModel _vm;
+    private readonly IDiagnosticsSink? _diag;
 
-    public RecipesKindTarget(RecipesTabViewModel vm)
+    public RecipesKindTarget(RecipesTabViewModel vm, IDiagnosticsSink? diag = null)
     {
         _vm = vm;
+        _diag = diag;
     }
 
     public EntityKind Kind => EntityKind.Recipe;
@@ -25,11 +28,14 @@ public sealed class RecipesKindTarget : IReferenceKindTarget
     public bool TrySelectByInternalName(string internalName)
     {
         // Resolve against AllRecipes (canonical, matches WPF's ListBox ItemsSource),
-        // not against refData. See ItemsKindTarget for context. The pre-existing
-        // SelectedRecipe setter also uses ReferenceEquals, which fails post-refresh
-        // when references diverge — going through SelectedRow directly avoids it.
+        // not against refData. See ItemsKindTarget for context.
         var row = _vm.AllRecipes.FirstOrDefault(r => r.Recipe.InternalName == internalName);
-        if (row is null) return false;
+        if (row is null)
+        {
+            _diag?.Info("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → not found (AllRecipes={_vm.AllRecipes.Count}).");
+            return false;
+        }
+        _diag?.Info("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → found, selecting.");
         _vm.SelectedRow = row;
         return true;
     }
