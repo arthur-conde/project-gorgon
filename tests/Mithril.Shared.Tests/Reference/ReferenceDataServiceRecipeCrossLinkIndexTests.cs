@@ -213,6 +213,141 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
+    public void KeywordDisplayNames_uses_recipes_json_Desc_when_strings_all_absent()
+    {
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_777": {
+                "Name": "R", "InternalName": "R", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Metal Armor", "ItemKeys": ["MetalArmor"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("MetalArmor")
+            .WhoseValue.Should().Be("Metal Armor",
+                because: "the slot is a singleton and its recipes.json Desc is a friendly form of the raw tag");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_prefers_strings_all_over_recipes_json_Desc()
+    {
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"),
+            """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"),
+            """
+            {
+              "recipe_888": {
+                "Name": "R", "InternalName": "R", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Main-Hand Weapon", "ItemKeys": ["MainHandWeapon"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "strings_all.json"),
+            """{ "recipe_888_Ingredients_0_Desc": "Main-Hand Item" }""");
+        File.WriteAllText(Path.Combine(_bundledDir, "strings_all.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("MainHandWeapon")
+            .WhoseValue.Should().Be("Main-Hand Item",
+                because: "strings_all takes precedence over recipes.json's Desc — it's the in-game wording");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_omits_keywords_whose_Desc_is_the_raw_tag()
+    {
+        // recipe_9008's GreenCrystal slot has Desc = "GreenCrystal" — same as the raw tag.
+        // The map should NOT contain GreenCrystal so the caller knows to apply a CamelCaseSplit fallback.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_9008": {
+                "Name": "R", "InternalName": "R", "Skill": "Teleportation",
+                "Ingredients": [
+                  { "Desc": "GreenCrystal", "ItemKeys": ["GreenCrystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordsUsedInRecipeSlots.Should().Contain("GreenCrystal");
+        svc.KeywordDisplayNames.Should().NotContainKey("GreenCrystal",
+            because: "a Desc identical to the raw tag adds no value over a CamelCase-split fallback");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_ignores_composite_tuple_slots()
+    {
+        // Composite slots like ["EquipmentSlot:MainHand", "MinTSysPrereq:0"] have Descs that
+        // describe the AND-matched composite ("Main-Hand Item"), not any single keyword tag.
+        // Surfacing the composite's Desc for either tag would be misleading.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_555": {
+                "Name": "R", "InternalName": "R", "Skill": "Augmentation",
+                "Ingredients": [
+                  { "Desc": "Main-Hand Item", "ItemKeys": ["EquipmentSlot:MainHand", "MinTSysPrereq:0"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().NotContainKey("EquipmentSlot:MainHand");
+        svc.KeywordDisplayNames.Should().NotContainKey("MinTSysPrereq:0");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_first_match_wins_when_a_keyword_has_multiple_singleton_slots()
+    {
+        // Two recipes both use Crystal as a singleton slot; the first one (recipe_100) sets a
+        // friendly Desc, the second (recipe_200) sets the raw tag. First-match-wins should land
+        // on the friendly Desc (recipe iteration order is dictionary order, which is stable enough
+        // for the test fixture's controlled inputs).
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_100": {
+                "Name": "R1", "InternalName": "R1", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Sparkly Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              },
+              "recipe_200": {
+                "Name": "R2", "InternalName": "R2", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("Crystal")
+            .WhoseValue.Should().Be("Sparkly Crystal",
+                because: "first slot encountered with a friendly Desc claims the display name");
+    }
+
+    [Fact]
     public void Indices_SkipItemsThatLackInternalName()
     {
         // Some items in the bundled file lack InternalName; cross-link indices key on

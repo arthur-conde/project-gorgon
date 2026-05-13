@@ -59,6 +59,22 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => Array.Empty<string>();
 
+    /// <summary>
+    /// Friendly display names for keyword tags, sourced from singleton-slot Descs in recipes
+    /// (looked up via <c>strings_all["recipe_&lt;id&gt;_Ingredients_&lt;idx&gt;_Desc"]</c>, falling
+    /// back to <see cref="RecipeKeywordIngredient.Desc"/> from recipes.json). Only singleton slots
+    /// — those whose <see cref="RecipeKeywordIngredient.ItemKeys"/> has exactly one entry — are
+    /// considered, because composite-tuple Descs describe the AND-matched composite, not any one
+    /// keyword. Keywords whose only friendly Desc is identical to the raw tag are omitted (callers
+    /// should treat "missing" as "use the raw tag, optionally split by camel-case"). First match
+    /// wins (recipe-id iteration order is stable). Built whenever recipes.json or strings_all.json
+    /// reloads. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, string> KeywordDisplayNames => EmptyStringMap;
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyStringMap
+        = new Dictionary<string, string>(StringComparer.Ordinal);
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Recipe>> EmptyRecipeIndex
         = new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
 

@@ -59,8 +59,16 @@ public sealed class CamelCaseSplitConverter : IValueConverter
 {
     private static readonly Regex SplitPattern = new("(?<=[a-z0-9])(?=[A-Z])", RegexOptions.Compiled);
 
+    /// <summary>
+    /// Splits a PascalCase / camelCase token into space-separated words.
+    /// Exposed for non-XAML callers (VMs, services) that want the same heuristic
+    /// without going through the converter pipeline.
+    /// </summary>
+    public static string Split(string value) =>
+        string.IsNullOrEmpty(value) ? value : SplitPattern.Replace(value, " ");
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => value is string s && !string.IsNullOrEmpty(s) ? SplitPattern.Replace(s, " ") : (value ?? "");
+        => value is string s ? Split(s) : (value ?? "");
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }

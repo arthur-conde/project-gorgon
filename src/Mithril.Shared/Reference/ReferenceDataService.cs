@@ -68,6 +68,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesByIngredientItem =
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
     private IReadOnlyCollection<string> _keywordsUsedInRecipeSlots = Array.Empty<string>();
+    private IReadOnlyDictionary<string, string> _keywordDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _recipesSnapshot;
 
     // Skills
@@ -175,6 +176,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByProducedItem;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => _recipesByIngredientItem;
     public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => _keywordsUsedInRecipeSlots;
+    public IReadOnlyDictionary<string, string> KeywordDisplayNames => _keywordDisplayNames;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
@@ -465,19 +467,23 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     /// <summary>
     /// Builds <see cref="_recipesByProducedItem"/>, <see cref="_recipesByIngredientItem"/>,
-    /// and <see cref="_keywordsUsedInRecipeSlots"/> from the current <see cref="_recipes"/> +
-    /// <see cref="_items"/>. Items lacking InternalName or item codes that don't resolve to a
-    /// known item are silently skipped (they can't be cross-linked to a browsable entity anyway).
+    /// <see cref="_keywordsUsedInRecipeSlots"/>, and <see cref="_keywordDisplayNames"/>
+    /// from the current <see cref="_recipes"/> + <see cref="_items"/>. Items lacking
+    /// InternalName or item codes that don't resolve to a known item are silently skipped
+    /// (they can't be cross-linked to a browsable entity anyway).
     /// <see cref="_keywordsUsedInRecipeSlots"/> accumulates the union of every
     /// <see cref="Mithril.Reference.Models.Recipes.RecipeKeywordIngredient.ItemKeys"/> entry
-    /// across all recipes. Called from both ParseAndSwapItems and ParseAndSwapRecipes so a
-    /// refresh of either file rebuilds the indices.
+    /// across all recipes. <see cref="_keywordDisplayNames"/> records friendly per-keyword
+    /// display strings sourced from singleton-slot Descs (strings_all-resolved with the raw
+    /// Desc field as fallback). Called from both ParseAndSwapItems and ParseAndSwapRecipes so
+    /// a refresh of either file rebuilds the indices.
     /// </summary>
     private void BuildRecipeCrossLinkIndices()
     {
         var produced = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
         var ingredient = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
         var keywordSet = new HashSet<string>(StringComparer.Ordinal);
+        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var recipe in _recipes.Values)
         {
@@ -499,8 +505,9 @@ public sealed class ReferenceDataService : IReferenceDataService
             // recipe.Ingredients is annotated non-nullable but JSON deserialization with a missing
             // field yields null at runtime — guard rather than crash.
             var ingredients = recipe.Ingredients ?? (IReadOnlyList<Mithril.Reference.Models.Recipes.RecipeIngredient>)Array.Empty<Mithril.Reference.Models.Recipes.RecipeIngredient>();
-            foreach (var ing in ingredients)
+            for (var slotIndex = 0; slotIndex < ingredients.Count; slotIndex++)
             {
+                var ing = ingredients[slotIndex];
                 switch (ing)
                 {
                     case Mithril.Reference.Models.Recipes.RecipeItemIngredient itemIng:
@@ -511,6 +518,19 @@ public sealed class ReferenceDataService : IReferenceDataService
                     case Mithril.Reference.Models.Recipes.RecipeKeywordIngredient kwIng:
                         foreach (var key in kwIng.ItemKeys)
                             keywordSet.Add(key);
+                        // Singleton slots are the only unambiguous source for a per-keyword display
+                        // name. Composite tuples like ["EquipmentSlot:MainHand","MinTSysPrereq:0"]
+                        // carry Descs that describe the AND-matched composite, not any one tag.
+                        if (kwIng.ItemKeys.Count == 1)
+                        {
+                            var tag = kwIng.ItemKeys[0];
+                            if (!displayNames.ContainsKey(tag))
+                            {
+                                var resolved = ResolveSlotDesc(recipe.Key, slotIndex, kwIng.Desc);
+                                if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, tag, StringComparison.Ordinal))
+                                    displayNames[tag] = resolved;
+                            }
+                        }
                         break;
                 }
             }
@@ -519,6 +539,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _recipesByIngredientItem = ingredient.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _keywordsUsedInRecipeSlots = keywordSet;
+        _keywordDisplayNames = displayNames;
 
         static void AddIngredientRecipe(Dictionary<string, List<Recipe>> map, string internalName, Recipe recipe)
         {
@@ -529,6 +550,14 @@ public sealed class ReferenceDataService : IReferenceDataService
             }
             if (!list.Contains(recipe))
                 list.Add(recipe);
+        }
+
+        string? ResolveSlotDesc(string recipeKey, int slotIndex, string? fallback)
+        {
+            var stringsKey = $"{recipeKey}_Ingredients_{slotIndex}_Desc";
+            return _strings.TryGetValue(stringsKey, out var s) && !string.IsNullOrEmpty(s)
+                ? s
+                : fallback;
         }
     }
 
@@ -639,6 +668,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         // dictionary conventions and freeze it as IReadOnlyDictionary.
         _strings = new Dictionary<string, string>(raw, StringComparer.Ordinal);
         _stringsSnapshot = new ReferenceFileSnapshot("strings_all", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _strings.Count);
+        // Rebuild cross-link indices: _keywordDisplayNames consults _strings, so a refresh of
+        // strings_all changes the answer. The other two indices are unaffected but rebuilding
+        // them is cheap (single recipe walk).
+        BuildRecipeCrossLinkIndices();
     }
 
     /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>

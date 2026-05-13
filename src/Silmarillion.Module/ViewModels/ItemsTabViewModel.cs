@@ -127,13 +127,17 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             return null;
         var used = _refData.KeywordsUsedInRecipeSlots;
         if (used.Count == 0) return null;
+        var displayNames = _refData.KeywordDisplayNames;
         var chips = item.Keywords
             .Where(k => used.Contains(k.Tag))
             .Select(k =>
             {
                 var reference = EntityRef.RecipeIngredientKeyword(k.Tag);
+                var display = displayNames.TryGetValue(k.Tag, out var friendly)
+                    ? friendly
+                    : CamelCaseSplitConverter.Split(k.Tag);
                 return new EntityChipVm(
-                    DisplayName: k.Tag,
+                    DisplayName: display,
                     IconId: 0,
                     Reference: reference,
                     IsNavigable: _navigator.CanOpen(reference));
