@@ -57,6 +57,7 @@ public sealed partial class ItemDetailViewModel
         UnpreviewableExtractions = context.UnpreviewableExtractions ?? [];
         ProducedByRecipes = context.ProducedByRecipes ?? [];
         ConsumedByRecipes = context.ConsumedByRecipes ?? [];
+        ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
         Sources = context.Sources ?? [];
         _poolPresenter = poolPresenter;
     }
@@ -98,6 +99,13 @@ public sealed partial class ItemDetailViewModel
     /// <see cref="ProducedByRecipes"/>.
     /// </summary>
     public IReadOnlyList<EntityChipVm> ConsumedByRecipes { get; }
+
+    /// <summary>
+    /// Per-keyword chips for the item-detail "Used as" section. One chip per keyword the
+    /// item carries that also appears in some recipe's keyword-slot tuple. Clicking deep-links
+    /// to the Recipes tab pre-filtered via QueryText = IngredientKeywords CONTAINS "&lt;keyword&gt;".
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> ConsumedAsKeywordIn { get; }
 
     /// <summary>
     /// Item sources (NPC vendors, monster drops, quest rewards, …) — rendered as a list of

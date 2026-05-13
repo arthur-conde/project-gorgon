@@ -27,6 +27,7 @@ public sealed record ItemDetailContext(
     // ── Cross-link sections (populated by the Silmarillion module; null/empty for other callers) ──
     IReadOnlyList<EntityChipVm>? ProducedByRecipes = null,
     IReadOnlyList<EntityChipVm>? ConsumedByRecipes = null,
+    IReadOnlyList<EntityChipVm>? ConsumedAsKeywordIn = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null)
 {
     public static ItemDetailContext Empty { get; } = new();

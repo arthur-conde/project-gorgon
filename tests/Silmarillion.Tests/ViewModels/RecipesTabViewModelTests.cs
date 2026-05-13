@@ -2,6 +2,7 @@ using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Query;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -351,6 +352,35 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void RecipeListRow_IngredientKeywords_flattens_RecipeKeywordIngredient_ItemKeys_distinctly()
+    {
+        // One recipe with two keyword slots: ["Crystal"] and ["Crystal", "Tier2"].
+        // The flat, deduped set across all slots should be exactly {"Crystal", "Tier2"}.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "EnchantCrystal",
+            Name = "Enchant Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal", "Tier2"], StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+        };
+
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        var row = vm.AllRecipes.Should().ContainSingle().Subject;
+        row.IngredientKeywords.Select(k => k.Tag)
+            .Should().BeEquivalentTo(["Crystal", "Tier2"]);
+    }
+
+    [Fact]
     public void ProducedItemChips_PreferResultItems_FallBackToProtoResultItems()
     {
         var sauce = new Item { Id = 101, InternalName = "TomatoSauce", Name = "Tomato Sauce", IconId = 2 };
@@ -374,6 +404,58 @@ public sealed class RecipesTabViewModelTests
 
         vm.DetailViewModel!.ProducedItems.Should().ContainSingle()
             .Which.Reference.Should().Be(EntityRef.Item("TomatoSauce"));
+    }
+
+    [Fact]
+    public void QueryText_IngredientKeywordsContains_FiltersToMatchingRecipeOnly()
+    {
+        // Recipe A: has a keyword ingredient with "Crystal" — should match.
+        var recipeA = new Recipe
+        {
+            Key = "rA",
+            InternalName = "EnchantWithCrystal",
+            Name = "Enchant With Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], StackSize = 1 },
+            },
+        };
+        // Recipe B: only item ingredients, no keyword slots — should NOT match.
+        var recipeB = new Recipe
+        {
+            Key = "rB",
+            InternalName = "BakeBread",
+            Name = "Bake Bread",
+            Skill = "Baking",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeItemIngredient { ItemCode = 999, StackSize = 2 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey =
+            {
+                ["rA"] = recipeA,
+                ["rB"] = recipeB,
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        // The exact query string produced by RecipeIngredientKeywordKindTarget.TrySelectByInternalName.
+        const string queryString = "IngredientKeywords CONTAINS \"Crystal\"";
+
+        var columns = ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow));
+        var predicate = QueryCompiler.Compile(queryString, columns);
+        predicate.Should().NotBeNull("the query string must parse without error");
+
+        var matches = vm.AllRecipes.Where(row => predicate!(row)).ToList();
+
+        matches.Should().ContainSingle(r => r.Recipe.InternalName == "EnchantWithCrystal",
+            "Recipe A has a Crystal keyword ingredient");
+        matches.Should().NotContain(r => r.Recipe.InternalName == "BakeBread",
+            "Recipe B has no keyword ingredients");
     }
 
     private sealed class StubReferenceData : IReferenceDataService

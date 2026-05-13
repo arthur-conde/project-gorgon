@@ -1,6 +1,9 @@
 using FluentAssertions;
+using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Silmarillion.Navigation;
+using Silmarillion.ViewModels;
 using Xunit;
 
 namespace Silmarillion.Tests.Navigation;
@@ -209,6 +212,32 @@ public sealed class SilmarillionReferenceNavigatorTests
         nav.CanGoForward.Should().BeTrue();
     }
 
+    [Fact]
+    public void Open_RecipeIngredientKeyword_SwitchesToRecipesTab_AndSetsQueryText()
+    {
+        // Arrange: build a real RecipeIngredientKeywordKindTarget backed by a
+        // RecipesTabViewModel so we can assert on both SelectedTabIndex and QueryText.
+        var refData = new FakeReferenceData();
+        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var keywordTarget = new RecipeIngredientKeywordKindTarget(recipesVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            keywordTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(items: null!, recipes: recipesVm, nav, targets);
+
+        // Act
+        nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
+
+        // Assert
+        silmarillionVm.SelectedTabIndex.Should().Be(1);
+        silmarillionVm.Recipes.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
+    }
+
     private static IEnumerable<IReferenceKindTarget> NavTargets() => new IReferenceKindTarget[]
     {
         new StubTarget(EntityKind.Item),
@@ -222,5 +251,31 @@ public sealed class SilmarillionReferenceNavigatorTests
         public int TabIndex => 0;
         public bool TrySelectByInternalName(string internalName) => true;
         public bool TryOpenInWindow() => false;
+    }
+
+    private sealed class FakeReferenceData : IReferenceDataService
+    {
+        public IReadOnlyList<string> Keys => Array.Empty<string>();
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
+        public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
+        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
+        public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated { add { } remove { } }
     }
 }

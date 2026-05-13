@@ -114,9 +114,21 @@ public sealed partial class RecipesTabViewModel : ObservableObject
                 Name: r.Name ?? r.InternalName ?? r.Key,
                 IconId: r.IconId > 0 ? r.IconId : ResolveResultIcon(r),
                 SkillDisplayName: ResolveSkillDisplayName(r.Skill),
-                SkillLevelReq: r.SkillLevelReq))
+                SkillLevelReq: r.SkillLevelReq,
+                IngredientKeywords: BuildIngredientKeywords(r)))
             .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static IReadOnlyList<IngredientKeywordValue> BuildIngredientKeywords(Recipe recipe)
+    {
+        if (recipe.Ingredients is null) return [];
+        return recipe.Ingredients
+            .OfType<RecipeKeywordIngredient>()
+            .SelectMany(slot => slot.ItemKeys)
+            .Distinct(StringComparer.Ordinal)
+            .Select(tag => new IngredientKeywordValue(tag))
+            .ToList();
+    }
 
     /// <summary>
     /// Convenience accessor — the actual <see cref="Recipe"/> behind the selected row.

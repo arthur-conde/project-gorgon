@@ -60,9 +60,38 @@ public sealed class ItemsTabViewModelTests
         vm.DetailViewModel.Should().BeNull();
     }
 
+    [Fact]
+    public void BuildCrossLinkContext_emits_keyword_chips_for_intersection_of_item_Keywords_and_KeywordsUsedInRecipeSlots()
+    {
+        var tourmaline = new Item
+        {
+            Id = 99,
+            InternalName = "MassiveTourmaline",
+            Name = "Massive Tourmaline",
+            IconId = 0,
+            Keywords = [new ItemKeyword("Crystal", 0), new ItemKeyword("Bogus", 0)],
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MassiveTourmaline"] = tourmaline },
+            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "Crystal" },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedItem = tourmaline;
+
+        vm.DetailViewModel.Should().NotBeNull();
+        var chips = vm.DetailViewModel!.ConsumedAsKeywordIn;
+        chips.Should().ContainSingle();
+        chips.Single().DisplayName.Should().Be("Crystal");
+        chips.Single().IconId.Should().Be(0);
+        chips.Single().Reference.Should().Be(EntityRef.RecipeIngredientKeyword("Crystal"));
+    }
+
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
+        public IReadOnlyCollection<string> KeywordsInRecipeSlots { get; init; } = [];
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
@@ -81,6 +110,8 @@ public sealed class ItemsTabViewModelTests
         public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
         public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
+
+        public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => KeywordsInRecipeSlots;
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
