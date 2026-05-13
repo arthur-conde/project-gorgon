@@ -60,12 +60,12 @@ New files under `src/Mithril.Shared.Wpf/Modules/`:
 
 The two regex constants `EntityPayloadPattern`, `ListPayloadPattern`, `PippinPayloadPattern`, `LegolasPayloadPattern` move with their owning handler. Keep them `private static readonly` on each handler class — they're not shared across handlers.
 
-New files in each owning module project (`src/<Module>.Module/Navigation/<Module>DeepLinkHandler.cs`):
+New files in each owning module project, alongside the existing import-target implementation (so navigation lives co-located with its analogue):
 
-- `Celebrimbor.Module/Navigation/CraftListDeepLinkHandler.cs` — `Action = "list"`, calls `ICraftListImportTarget.ImportFromLinkPayload`. Project already references `Mithril.Shared.Wpf`.
-- `Pippin.Module/Navigation/PippinDeepLinkHandler.cs` — `Action = "pippin"`.
-- `Legolas.Module/Navigation/LegolasDeepLinkHandler.cs` — `Action = "legolas"`.
-- `Elrond.Module/Navigation/ElrondDeepLinkHandler.cs` — `Action = "elrond"`.
+- `Celebrimbor.Module/Services/CraftListDeepLinkHandler.cs` — `Action = "list"`, calls `ICraftListImportTarget.ImportFromLinkPayload`. Sits next to `CraftListImportTarget.cs`. Project already references `Mithril.Shared.Wpf`.
+- `Pippin.Module/Sharing/PippinDeepLinkHandler.cs` — `Action = "pippin"`. Sits next to `PippinShareImportTarget.cs`.
+- `Legolas.Module/Sharing/LegolasDeepLinkHandler.cs` — `Action = "legolas"`. Sits next to `LegolasShareImportTarget.cs`.
+- `Elrond.Module/Services/ElrondDeepLinkHandler.cs` — `Action = "elrond"`. Sits next to `ElrondSkillImportTarget.cs`.
 
 Each module's `Register(IServiceCollection)` adds `services.AddSingleton<IDeepLinkHandler, FooDeepLinkHandler>()`. Item and Recipe handlers register from shell DI ([ServiceCollectionExtensions.cs](../../src/Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs)) since they live in the shared layer.
 
