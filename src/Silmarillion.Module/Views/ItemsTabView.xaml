@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:query="clr-namespace:Mithril.Shared.Wpf.Query;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -66,19 +67,22 @@
         <Grid Grid.Row="1" Grid.Column="1" Background="#FF1A1A1A">
             <ScrollViewer VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
+                <!-- DataType-keyed template (vs. ContentTemplate=) so the template applies
+                     only when Content is a non-null ItemDetailViewModel. With ContentTemplate
+                     the template fires even for null Content and ItemDetailView's section
+                     Visibility bindings fail silently to Visible, leaking labels into the
+                     empty state. -->
                 <ContentControl Content="{Binding DetailViewModel}">
-                    <ContentControl.ContentTemplate>
-                        <DataTemplate>
+                    <ContentControl.Resources>
+                        <DataTemplate DataType="{x:Type wpf:ItemDetailViewModel}">
                             <wpf:ItemDetailView/>
                         </DataTemplate>
-                    </ContentControl.ContentTemplate>
+                    </ContentControl.Resources>
                 </ContentControl>
             </ScrollViewer>
-            <TextBlock Text="Select an item to view details"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="#88FFFFFF" FontStyle="Italic">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="320">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding DetailViewModel}" Value="{x:Null}">
@@ -86,8 +90,21 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                </StackPanel.Style>
+                <icon:PackIconLucide Kind="Package" Width="48" Height="48"
+                                     Foreground="#33FFFFFF"
+                                     HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock Text="Browse items"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeLarge}"
+                           Foreground="#CCFFFFFF"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Select an item from the list to see its description, effects, the recipes that produce or consume it, and where to find it."
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           Foreground="#88FFFFFF"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Margin="0,8,0,0"/>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>
