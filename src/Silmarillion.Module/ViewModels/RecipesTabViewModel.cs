@@ -141,11 +141,28 @@ public sealed partial class RecipesTabViewModel : ObservableObject
 
     private IReadOnlyList<EntityChipVm> BuildIngredientChips(Recipe recipe) =>
         (recipe.Ingredients ?? (IReadOnlyList<RecipeIngredient>)Array.Empty<RecipeIngredient>())
-            .OfType<RecipeItemIngredient>()
-            .Select(ing => BuildItemChip(ing.ItemCode, ing.StackSize, percentChance: null))
+            .Select(BuildIngredientChip)
             .Where(c => c is not null)
             .Select(c => c!)
             .ToList();
+
+    private EntityChipVm? BuildIngredientChip(RecipeIngredient ingredient) => ingredient switch
+    {
+        RecipeItemIngredient itemIng => BuildItemChip(itemIng.ItemCode, itemIng.StackSize, percentChance: null),
+        RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0 => BuildKeywordChip(kwIng),
+        _ => null,
+    };
+
+    // Keyword-set ingredients ({"ItemKeys":[…]}) don't point at a single entity, so the chip is
+    // non-navigable. EntityChipVm.Reference is non-nullable; a sentinel EntityRef is safe because
+    // EntityChip only dereferences Reference inside its click handler, which is gated on IsNavigable.
+    private static readonly EntityRef KeywordSentinelRef = EntityRef.Item(string.Empty);
+
+    private static EntityChipVm BuildKeywordChip(RecipeKeywordIngredient kwIng)
+    {
+        var label = kwIng.Desc ?? $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}";
+        return new EntityChipVm(label, IconId: 0, Reference: KeywordSentinelRef, IsNavigable: false);
+    }
 
     private IReadOnlyList<EntityChipVm> BuildProducedChips(Recipe recipe)
     {
