@@ -10,7 +10,7 @@ Project Gorgon's CDN serves **29 reference-data files** (pg-data MCP, v470). Eve
 
 Silmarillion v1 (PR #236, merged 2026-05-13) shipped the two highest-payoff browse surfaces: **Items** and **Recipes**. The architecture is built to fan out:
 
-- [`EntityRef`](../src/Mithril.Shared/Reference/EntityRef.cs) enumerates 11 entity kinds — `Item, Recipe, Ability, Effect, Npc, Quest, Lorebook, Landmark, Area, PlayerTitle, StorageVault`. Cross-link chips for kinds not yet tabbed render as plain text and silently become navigable the moment a tab joins `V1TabbedKinds` in `SilmarillionReferenceNavigator`.
+- [`EntityRef`](../src/Mithril.Shared/Reference/EntityRef.cs) enumerates 11 entity kinds — `Item, Recipe, Ability, Effect, Npc, Quest, Lorebook, Landmark, Area, PlayerTitle, StorageVault` — plus one synthetic deep-link variant (`RecipeIngredientKeyword`, added by #259) used to route keyword chips into a pre-filtered Recipes tab; the synthetic kind isn't a CDN source and isn't part of the Bucket A/B/C/D classification below. Cross-link chips for kinds without a registered `IReferenceKindTarget` render as plain text and silently become navigable the moment that target ships (#239 retired the old `V1TabbedKinds` HashSet).
 - The master-detail pattern (`MithrilQueryBox` → virtualised list → detail pane with cross-link chips) is duplicable per tab — adding a tab is `TabItem + View + ViewModel + EntityKind handling + V1TabbedKinds entry`.
 
 This doc is the rationale for which of the remaining 27 CDN sources warrant that duplication.
@@ -37,7 +37,7 @@ Applied to the 29 sources:
 | C — Fold into a Bucket-A or -B tab | 10 | Provider / index / sub-tables that surface as sections, filters, or sidecars within a parent tab |
 | D — Never a tab | 8 | Lookup / engine-internal / raw-projection feeds |
 
-Totals: 2 + 9 + 10 + 8 = 29, and Bucket A + Bucket B covers every `EntityKind` value exactly.
+Totals: 2 + 9 + 10 + 8 = 29, and Bucket A + Bucket B covers every `EntityKind` value that maps to a CDN source. (`EntityKind` also carries the synthetic `RecipeIngredientKeyword` variant noted above; it's deep-link routing, not a tab.)
 
 ## Out of scope for v1 — tabs deferred (Bucket B)
 
@@ -114,3 +114,4 @@ These would each require their own master-detail just to render a row count and 
 ## History
 
 - **2026-05-13** — v1 shipped (PR #236, Items + Recipes tabs, cross-link navigator, master-detail scaffold). Bucketing rationale captured in this doc; per-tab follow-ups filed against `module:silmarillion` on the [Roadmap Project](https://github.com/users/arthur-conde/projects/3/views/1?filterQuery=module%3A%22Silmarillion%22).
+- **2026-05-13** — `EntityKind` grew the synthetic `RecipeIngredientKeyword` variant via PR #259 (keyword-collapse design for the item-detail "Used as" section, replacing a naive fan-out widening of `RecipesByIngredientItem`). Sets the precedent for "deep-link to a tab with pre-filled query" as a kind-target shape distinct from "select a row by name."
