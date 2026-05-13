@@ -1,6 +1,7 @@
 <UserControl x:Class="Silmarillion.Views.ItemsTabView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:query="clr-namespace:Mithril.Shared.Wpf.Query;assembly=Mithril.Shared.Wpf"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
@@ -31,7 +32,8 @@
         <!-- Query box spans both columns -->
         <Border Grid.Row="0" Grid.ColumnSpan="2" Padding="8,6" Background="#FF252525">
             <StackPanel>
-                <wpf:MithrilQueryBox QueryText="{Binding QueryText, Mode=TwoWay}"
+                <wpf:MithrilQueryBox Schema="{x:Static vm:ItemsTabViewModel.SchemaSnapshot}"
+                                     QueryText="{Binding QueryText, Mode=TwoWay}"
                                      Watermark="bare text, or e.g. Name = 'Tomato'"/>
                 <TextBlock Text="{Binding QueryError}"
                            Foreground="#FFD96A6A" FontStyle="Italic"
