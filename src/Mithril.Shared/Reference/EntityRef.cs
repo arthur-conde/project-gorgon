@@ -17,6 +17,12 @@ public enum EntityKind
     Area,
     PlayerTitle,
     StorageVault,
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Recipes tab filtered to recipes
+    /// whose ingredient list mentions this keyword tag." InternalName carries the keyword
+    /// (e.g. "Crystal"). Dispatched by RecipeIngredientKeywordKindTarget.
+    /// </summary>
+    RecipeIngredientKeyword,
 }
 
 /// <summary>
@@ -39,6 +45,7 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef Area(string internalName) => new(EntityKind.Area, internalName);
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
+    public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
 }
 
 /// <summary>
