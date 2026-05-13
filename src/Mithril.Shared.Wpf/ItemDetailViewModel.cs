@@ -52,6 +52,9 @@ public sealed partial class ItemDetailViewModel
         CraftingEnhancements = context.CraftingEnhancements ?? [];
         RecipeCooldowns = context.RecipeCooldowns ?? [];
         UnpreviewableExtractions = context.UnpreviewableExtractions ?? [];
+        ProducedByRecipes = context.ProducedByRecipes ?? [];
+        ConsumedByRecipes = context.ConsumedByRecipes ?? [];
+        Sources = context.Sources ?? [];
         _poolPresenter = poolPresenter;
     }
 
@@ -79,6 +82,27 @@ public sealed partial class ItemDetailViewModel
     public IReadOnlyList<CraftingEnhancePreview> CraftingEnhancements { get; }
     public IReadOnlyList<RecipeCooldownPreview> RecipeCooldowns { get; }
     public IReadOnlyList<UnpreviewableExtractionPreview> UnpreviewableExtractions { get; }
+
+    /// <summary>
+    /// Recipes whose result includes this item. Populated by the Silmarillion master-detail
+    /// flow; legacy callers (Celebrimbor pop-up window, deep links) pass null and the section
+    /// stays hidden. Renders as plain text in Phase 1 — EntityChip control arrives in Phase 5.
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> ProducedByRecipes { get; }
+
+    /// <summary>
+    /// Recipes that consume this item as an ingredient. Same lifecycle as
+    /// <see cref="ProducedByRecipes"/>.
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> ConsumedByRecipes { get; }
+
+    /// <summary>
+    /// Item sources (NPC vendors, monster drops, quest rewards, …) — rendered as a list of
+    /// <see cref="ItemSourceChipVm"/>. Most v1 sources aren't navigable to a tab; the chip
+    /// VM carries an <see cref="ItemSourceChipVm.IsNavigable"/> flag that drives clickable
+    /// vs. plain-text rendering once Phase 5 ships <c>EntityChip</c>.
+    /// </summary>
+    public IReadOnlyList<ItemSourceChipVm> Sources { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

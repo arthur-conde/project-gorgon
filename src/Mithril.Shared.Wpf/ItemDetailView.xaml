@@ -40,6 +40,10 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <!-- Phase 1 cross-link sections — Sources, Produced by, Used in. -->
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Header: icon + equip slot -->
@@ -460,8 +464,62 @@
                 </ItemsControl>
             </StackPanel>
 
+            <!-- Sources (vendor / drop / quest reward / …); plain-text in Phase 1 -->
+            <StackPanel Grid.Row="19" Margin="0,10,0,0"
+                        Visibility="{Binding Sources.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Sources" FontWeight="SemiBold"
+                           Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding Sources}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Produced by recipes — cross-link to recipes whose result is this item -->
+            <StackPanel Grid.Row="20" Margin="0,10,0,0"
+                        Visibility="{Binding ProducedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Produced by" FontWeight="SemiBold"
+                           Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding ProducedByRecipes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Used in recipes — cross-link to recipes that consume this item -->
+            <StackPanel Grid.Row="21" Margin="0,10,0,0"
+                        Visibility="{Binding ConsumedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Used in" FontWeight="SemiBold"
+                           Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding ConsumedByRecipes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
             <!-- Internal name footer -->
-            <TextBlock Grid.Row="19" Text="{Binding InternalName}"
+            <TextBlock Grid.Row="22" Text="{Binding InternalName}"
                        Foreground="#88FFFFFF"
                        FontFamily="{DynamicResource AppMonoFontFamily}"
                        FontSize="{DynamicResource AppFontSizeSmall}"
