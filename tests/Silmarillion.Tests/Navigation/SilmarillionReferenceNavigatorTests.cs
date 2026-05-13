@@ -10,7 +10,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Initial_CurrentIsNull_AndStacksEmpty()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
 
         nav.Current.Should().BeNull();
         nav.CanGoBack.Should().BeFalse();
@@ -20,7 +20,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Open_SetsCurrent_AndFiresNavigatedWithOpenKind()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         NavigatedEventArgs? captured = null;
         nav.Navigated += (_, e) => captured = e;
 
@@ -36,7 +36,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Open_AfterFirstOpen_PushesPreviousToBackStack()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("Tomato"));
         nav.Open(EntityRef.Recipe("MakeSalsa"));
 
@@ -48,7 +48,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Open_ClearsForwardStack()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Item("B"));
         nav.Back();
@@ -62,7 +62,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Back_PopsBackStack_PushesForward_FiresNavigatedWithBackKind()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Item("B"));
         NavigatedEventArgs? captured = null;
@@ -82,7 +82,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Forward_PopsForwardStack_PushesBack_FiresNavigatedWithForwardKind()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Item("B"));
         nav.Back();
@@ -101,7 +101,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Back_WhenStackEmpty_IsNoOp_AndDoesNotFireNavigated()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         var fired = false;
         nav.Navigated += (_, _) => fired = true;
 
@@ -114,7 +114,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Forward_WhenStackEmpty_IsNoOp_AndDoesNotFireNavigated()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         var fired = false;
         nav.Navigated += (_, _) => fired = true;
@@ -128,35 +128,56 @@ public sealed class SilmarillionReferenceNavigatorTests
     public void OpenSameEntityTwice_StillPushesToBackStack()
     {
         // "Open same item again" is still a history step. User can hit Back to undo.
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Item("A"));
 
         nav.CanGoBack.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(EntityKind.Item, true)]
-    [InlineData(EntityKind.Recipe, true)]
-    [InlineData(EntityKind.Ability, false)]
-    [InlineData(EntityKind.Npc, false)]
-    [InlineData(EntityKind.Quest, false)]
-    [InlineData(EntityKind.Lorebook, false)]
-    [InlineData(EntityKind.Landmark, false)]
-    [InlineData(EntityKind.Area, false)]
-    [InlineData(EntityKind.PlayerTitle, false)]
-    [InlineData(EntityKind.StorageVault, false)]
-    [InlineData(EntityKind.Effect, false)]
-    public void CanOpen_TrueForV1TabbedKinds_FalseOtherwise(EntityKind kind, bool expected)
+    [Fact]
+    public void CanOpen_RegisteredKind_ReturnsTrue()
     {
-        var nav = new SilmarillionReferenceNavigator();
-        nav.CanOpen(new EntityRef(kind, "anything")).Should().Be(expected);
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
+
+        nav.CanOpen(EntityRef.Item("anything")).Should().BeTrue();
+        nav.CanOpen(EntityRef.Recipe("anything")).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(EntityKind.Ability)]
+    [InlineData(EntityKind.Npc)]
+    [InlineData(EntityKind.Quest)]
+    [InlineData(EntityKind.Lorebook)]
+    [InlineData(EntityKind.Landmark)]
+    [InlineData(EntityKind.Area)]
+    [InlineData(EntityKind.PlayerTitle)]
+    [InlineData(EntityKind.StorageVault)]
+    [InlineData(EntityKind.Effect)]
+    public void CanOpen_UnregisteredKind_ReturnsFalse(EntityKind kind)
+    {
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
+
+        nav.CanOpen(new EntityRef(kind, "anything")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Constructor_DuplicateKind_Throws()
+    {
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Item),
+        };
+        var act = () => new SilmarillionReferenceNavigator(targets);
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage("*Duplicate IReferenceKindTarget*Item*");
     }
 
     [Fact]
     public void Back_PreservesDeepHistory_WhenMultipleEntitiesOnStack()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Recipe("B"));
         nav.Open(EntityRef.Item("C"));
@@ -174,7 +195,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     [Fact]
     public void Forward_AfterMultipleBacks_RestoresIntermediateState()
     {
-        var nav = new SilmarillionReferenceNavigator();
+        var nav = new SilmarillionReferenceNavigator(NavTargets());
         nav.Open(EntityRef.Item("A"));
         nav.Open(EntityRef.Item("B"));
         nav.Open(EntityRef.Item("C"));
@@ -186,5 +207,20 @@ public sealed class SilmarillionReferenceNavigatorTests
         nav.Current.Should().Be(EntityRef.Item("B"));
         nav.CanGoBack.Should().BeTrue();
         nav.CanGoForward.Should().BeTrue();
+    }
+
+    private static IEnumerable<IReferenceKindTarget> NavTargets() => new IReferenceKindTarget[]
+    {
+        new StubTarget(EntityKind.Item),
+        new StubTarget(EntityKind.Recipe),
+    };
+
+    private sealed class StubTarget : IReferenceKindTarget
+    {
+        public StubTarget(EntityKind kind) => Kind = kind;
+        public EntityKind Kind { get; }
+        public int TabIndex => 0;
+        public bool TrySelectByInternalName(string internalName) => true;
+        public bool TryOpenInWindow() => false;
     }
 }

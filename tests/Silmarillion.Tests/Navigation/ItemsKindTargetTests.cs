@@ -2,71 +2,84 @@ using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
 
-namespace Silmarillion.Tests.ViewModels;
+namespace Silmarillion.Tests.Navigation;
 
-public sealed class ItemsTabViewModelTests
+public sealed class ItemsKindTargetTests
 {
     [Fact]
-    public void AllItems_PopulatedFromReferenceData_OrderedByName()
+    public void Kind_IsItem()
     {
-        var refData = new StubReferenceData
-        {
-            ItemsByName =
-            {
-                ["Tomato"] = new Item { Id = 1, InternalName = "Tomato", Name = "Tomato", IconId = 1 },
-                ["Apple"] = new Item { Id = 2, InternalName = "Apple", Name = "Apple", IconId = 2 },
-            },
-        };
-
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
-
-        vm.AllItems.Should().HaveCount(2);
-        vm.AllItems.Select(i => i.Name).Should().Equal("Apple", "Tomato");
+        var (target, _, _) = BuildTarget();
+        target.Kind.Should().Be(EntityKind.Item);
     }
 
     [Fact]
-    public void SelectingItem_BuildsDetailViewModel()
+    public void TabIndex_IsZero()
     {
-        var item = new Item { Id = 1, InternalName = "Tomato", Name = "Tomato", IconId = 1 };
-        var refData = new StubReferenceData
-        {
-            ItemsByName = { ["Tomato"] = item },
-        };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
-
-        vm.SelectedItem = item;
-
-        vm.DetailViewModel.Should().NotBeNull();
-        vm.DetailViewModel!.Item.Should().Be(item);
+        var (target, _, _) = BuildTarget();
+        target.TabIndex.Should().Be(0);
     }
 
     [Fact]
-    public void DeselectingItem_ClearsDetailViewModel()
+    public void TrySelectByInternalName_KnownItem_SelectsOnTabVm_ReturnsTrue()
     {
-        var item = new Item { Id = 1, InternalName = "Tomato", Name = "Tomato" };
-        var refData = new StubReferenceData
-        {
-            ItemsByName = { ["Tomato"] = item },
-        };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var item = new Item { Id = 5010, InternalName = "Tomato", Name = "Tomato" };
+        var (target, vm, _) = BuildTarget(item);
 
-        vm.SelectedItem = item;
-        vm.SelectedItem = null;
+        var ok = target.TrySelectByInternalName("Tomato");
 
-        vm.DetailViewModel.Should().BeNull();
+        ok.Should().BeTrue();
+        vm.SelectedItem.Should().Be(item);
     }
 
-    private sealed class StubReferenceData : IReferenceDataService
+    [Fact]
+    public void TrySelectByInternalName_UnknownItem_ReturnsFalse_VmUnchanged()
     {
-        public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
+        var (target, vm, _) = BuildTarget();
+        vm.SelectedItem.Should().BeNull();  // precondition
 
-        public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
-        public IReadOnlyDictionary<string, Item> ItemsByInternalName => ItemsByName;
+        target.TrySelectByInternalName("DoesNotExist").Should().BeFalse();
+        vm.SelectedItem.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryOpenInWindow_NoDetailSelected_ReturnsFalse()
+    {
+        var (target, _, _) = BuildTarget();
+        target.TryOpenInWindow().Should().BeFalse();
+    }
+
+    private static (ItemsKindTarget Target, ItemsTabViewModel Vm, FakeReferenceData RefData) BuildTarget(
+        params Item[] items)
+    {
+        var refData = new FakeReferenceData();
+        foreach (var item in items)
+            refData.AddItem(item);
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new ItemsTabViewModel(refData, nav);
+        var target = new ItemsKindTarget(vm, refData);
+        return (target, vm, refData);
+    }
+
+    private sealed class FakeReferenceData : IReferenceDataService
+    {
+        private readonly Dictionary<long, Item> _items = new();
+        private readonly Dictionary<string, Item> _byName = new(StringComparer.Ordinal);
+
+        public void AddItem(Item item)
+        {
+            _items[item.Id] = item;
+            if (item.InternalName is not null) _byName[item.InternalName] = item;
+        }
+
+        public IReadOnlyList<string> Keys => Array.Empty<string>();
+        public IReadOnlyDictionary<long, Item> Items => _items;
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();

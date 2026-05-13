@@ -8,6 +8,23 @@ using Xunit;
 
 namespace Silmarillion.Tests.ViewModels;
 
+// Helper to build a navigator with specific kinds registered (needed for IsNavigable assertions).
+file static class NavFactory
+{
+    /// <summary>Creates a navigator with stub targets for the given entity kinds.</summary>
+    public static SilmarillionReferenceNavigator WithKinds(params EntityKind[] kinds) =>
+        new SilmarillionReferenceNavigator(kinds.Select(k => (IReferenceKindTarget)new StubKindTarget(k)));
+
+    private sealed class StubKindTarget : IReferenceKindTarget
+    {
+        public StubKindTarget(EntityKind kind) => Kind = kind;
+        public EntityKind Kind { get; }
+        public int TabIndex => 0;
+        public bool TrySelectByInternalName(string internalName) => true;
+        public bool TryOpenInWindow() => false;
+    }
+}
+
 public sealed class RecipesTabViewModelTests
 {
     [Fact]
@@ -22,7 +39,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.AllRecipes.Should().HaveCount(2);
         vm.AllRecipes.Select(r => r.Name).Should().Equal("Apple Sauce", "Bake Bread");
@@ -51,7 +68,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.AllRecipes.Should().ContainSingle()
             .Which.SkillDisplayName.Should().Be("Armor Augment Brewing");
@@ -65,7 +82,7 @@ public sealed class RecipesTabViewModelTests
             RecipesByKey = { ["r1"] = new Recipe { Key = "r1", Name = "A", Skill = "UnknownSkill", SkillLevelReq = 1, Ingredients = [] } },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.AllRecipes.Should().ContainSingle()
             .Which.SkillDisplayName.Should().Be("UnknownSkill");
@@ -87,7 +104,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.SelectedRecipe = recipe;
 
@@ -103,7 +120,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.SelectedRecipe = recipe;
         vm.SelectedRecipe = null;
@@ -131,7 +148,8 @@ public sealed class RecipesTabViewModelTests
             ItemsByCode = { [100] = tomato },
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        // Use a navigator that has Item kind registered so CanOpen returns true for items.
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item));
 
         vm.SelectedRecipe = recipe;
 
@@ -161,7 +179,7 @@ public sealed class RecipesTabViewModelTests
             ItemsByCode = { [101] = sauce },
             RecipesByKey = { ["r1"] = protoRecipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
 
         vm.SelectedRecipe = protoRecipe;
 
