@@ -158,6 +158,18 @@ Bare text becomes a case-insensitive substring search across the item type's
 populates `Error`. If your VM wants bare-text behaviour, compose it
 explicitly.
 
+### `CONTAINS` over collections (string and `IQueryStringValue`)
+
+`CONTAINS` on a column whose value is `IEnumerable<string>` matches when any
+element equals the needle (case-insensitive by default — equality, not
+substring). Collection-element types in `Mithril.Reference` can opt in to
+the same behaviour by implementing
+[`IQueryStringValue`](../src/Mithril.Reference/IQueryStringValue.cs) and
+returning a string from `QueryStringValue` — this is how
+`Item.Keywords` (`IReadOnlyList<ItemKeyword>`) supports
+`Keywords CONTAINS 'Crystal'` from the Silmarillion Items tab.
+`STARTSWITH` / `ENDSWITH` remain string-column-only.
+
 ### Schema is reflected, not declared
 
 `QueryableSource<T>()` and `QueryFilter` both reflect over the item type's

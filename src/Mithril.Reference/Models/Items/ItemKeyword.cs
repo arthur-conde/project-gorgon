@@ -10,4 +10,12 @@ namespace Mithril.Reference.Models.Items;
 /// exactly" invariant — the JSON ships these as plain strings. See
 /// <c>docs/mithril-reference-shape-quirks.md</c> for the rationale.
 /// </remarks>
-public sealed record ItemKeyword(string Tag, int Quality);
+public sealed record ItemKeyword(string Tag, int Quality) : IQueryStringValue
+{
+    /// <summary>
+    /// Surfaces <see cref="Tag"/> to the Mithril query engine so
+    /// <c>Keywords CONTAINS 'X'</c> matches when any keyword's tag equals
+    /// <c>X</c> (case-insensitive by default).
+    /// </summary>
+    public string QueryStringValue => Tag;
+}
