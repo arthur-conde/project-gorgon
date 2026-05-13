@@ -90,6 +90,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<ItemSource>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _itemSourcesSnapshot;
 
+    // Recipe sources (sources_recipes.json)
+    private IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> _recipeSources =
+        new Dictionary<string, IReadOnlyList<RecipeSource>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _recipeSourcesSnapshot;
+
     // Attributes (attributes.json) — resolves EffectDescs placeholder tokens.
     private IReadOnlyDictionary<string, AttributeEntry> _attributes =
         new Dictionary<string, AttributeEntry>(StringComparer.Ordinal);
@@ -137,6 +142,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _areasSnapshot = new ReferenceFileSnapshot("areas", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -149,15 +155,16 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadXpTables();
         LoadNpcs();
         LoadAreas();
-        LoadQuests();              // Must run before LoadItemSources — ResolveSourceContext reads _quests.
+        LoadQuests();              // Must run before LoadItemSources / LoadRecipeSources — ResolveSourceContext reads _quests.
         LoadItemSources();
+        LoadRecipeSources();
         LoadAttributes();
         LoadPowers();
         LoadProfiles();
         LoadStrings();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -171,6 +178,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
     public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
+    public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
@@ -187,6 +195,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "npcs" => _npcsSnapshot,
         "areas" => _areasSnapshot,
         "sources_items" => _itemSourcesSnapshot,
+        "sources_recipes" => _recipeSourcesSnapshot,
         "attributes" => _attributesSnapshot,
         "tsysclientinfo" => _powersSnapshot,
         "tsysprofiles" => _profilesSnapshot,
@@ -206,6 +215,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "npcs" => RefreshFileAsync("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs, ct),
         "areas" => RefreshFileAsync("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources, ct),
+        "sources_recipes" => RefreshFileAsync("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources, ct),
         "attributes" => RefreshFileAsync("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes, ct),
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers, ct),
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
@@ -223,6 +233,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("npcs", ct).ConfigureAwait(false);
         await RefreshAsync("areas", ct).ConfigureAwait(false);
         await RefreshAsync("sources_items", ct).ConfigureAwait(false);
+        await RefreshAsync("sources_recipes", ct).ConfigureAwait(false);
         await RefreshAsync("attributes", ct).ConfigureAwait(false);
         await RefreshAsync("tsysclientinfo", ct).ConfigureAwait(false);
         await RefreshAsync("tsysprofiles", ct).ConfigureAwait(false);
@@ -400,6 +411,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadNpcs() => LoadFile("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs);
     private void LoadAreas() => LoadFile("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources);
+    private void LoadRecipeSources() => LoadFile("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources);
     private void LoadAttributes() => LoadFile("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes);
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers);
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
@@ -650,6 +662,32 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _itemSources = byInternalName;
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+    }
+
+    private void ParseAndSwapRecipeSources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)
+    {
+        // sources_recipes.json shape: { "recipe_N": { "entries": [ { type, npc, ... }, ... ] } }
+        // Mirrors ParseAndSwapItemSources; differs only in envelope-key prefix and the
+        // dictionary it resolves against. ResolveSourceContext is shared between both
+        // because Recipe / Quest sources resolve the same way regardless of which
+        // sources_*.json file they were found in.
+        var byInternalName = new Dictionary<string, IReadOnlyList<RecipeSource>>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, envelope) in raw)
+        {
+            if (!_recipes.TryGetValue(key, out var recipe) || string.IsNullOrEmpty(recipe.InternalName)) continue;
+            if (envelope.entries is null || envelope.entries.Count == 0) continue;
+
+            var projected = new List<RecipeSource>(envelope.entries.Count);
+            foreach (var r in envelope.entries)
+            {
+                if (string.IsNullOrEmpty(r.type)) continue;
+                projected.Add(new RecipeSource(r.type, ExtractNpc(r), ResolveSourceContext(r)));
+            }
+            if (projected.Count > 0)
+                byInternalName[recipe.InternalName!] = projected;
+        }
+        _recipeSources = byInternalName;
+        _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
     }
 
     private static string? ExtractNpc(SourceModels.SourceEntry s) => s switch

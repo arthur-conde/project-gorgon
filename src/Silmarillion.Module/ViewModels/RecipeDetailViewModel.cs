@@ -20,7 +20,8 @@ public sealed class RecipeDetailViewModel
         IReadOnlyList<EntityChipVm> producedItems,
         IReadOnlyList<string> resultEffectsText,
         ICommand? openEntityCommand = null,
-        string? skillDisplayName = null)
+        string? skillDisplayName = null,
+        IReadOnlyList<ItemSourceChipVm>? sources = null)
     {
         Recipe = recipe;
         Ingredients = ingredients;
@@ -28,6 +29,7 @@ public sealed class RecipeDetailViewModel
         ResultEffectsText = resultEffectsText;
         OpenEntityCommand = openEntityCommand;
         SkillDisplayName = skillDisplayName ?? recipe.Skill;
+        Sources = sources;
     }
 
     /// <summary>
@@ -67,4 +69,12 @@ public sealed class RecipeDetailViewModel
     /// <see cref="EntityRef"/>. Wired by <see cref="RecipesTabViewModel"/> to the navigator.
     /// </summary>
     public ICommand? OpenEntityCommand { get; }
+
+    /// <summary>
+    /// Where this recipe comes from (NPC trainer, scroll/effect, quest reward, …). Pulled
+    /// from <c>IReferenceDataService.RecipeSources</c>. Null when no sources are known —
+    /// drives the empty-section hide in <see cref="Views.RecipeDetailView"/>. Mirrors the
+    /// <c>Sources</c> shape used by <see cref="ItemDetailViewModel"/>.
+    /// </summary>
+    public IReadOnlyList<ItemSourceChipVm>? Sources { get; }
 }

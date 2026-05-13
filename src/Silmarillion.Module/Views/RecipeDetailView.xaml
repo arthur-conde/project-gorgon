@@ -54,6 +54,24 @@
                        MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
                        Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
 
+            <!-- Taught by (sources_recipes.json projection) — plain-text in v1; chips will
+                 become navigable once an NPC tab ships (#241). Mirrors the Sources block in
+                 ItemDetailView. Hidden when no sources are recorded. -->
+            <StackPanel Margin="0,0,0,10"
+                        Visibility="{Binding Sources.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Taught by" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding Sources}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
             <!-- Ingredients -->
             <StackPanel Margin="0,0,0,10"
                         Visibility="{Binding Ingredients.Count, Converter={StaticResource PositiveIntToVis}}">

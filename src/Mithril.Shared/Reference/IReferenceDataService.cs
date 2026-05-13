@@ -78,6 +78,17 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; }
 
     /// <summary>
+    /// Recipe InternalName → sources describing how the recipe is acquired
+    /// (Training / Skill / Effect / Quest / NpcGift / …). Pulled from
+    /// <c>sources_recipes.json</c>. Mirrors <see cref="ItemSources"/>. Defaults
+    /// to an empty dictionary so existing test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => EmptyRecipeSourceIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> EmptyRecipeSourceIndex
+        = new Dictionary<string, IReadOnlyList<RecipeSource>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Placeholder token (e.g. <c>"MAX_ARMOR"</c>) → <see cref="AttributeEntry"/> with the
     /// human-readable label and formatting hints used to render <see cref="Item.EffectDescs"/>.
     /// Pulled from <c>attributes.json</c>.

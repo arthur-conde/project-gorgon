@@ -78,8 +78,9 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         var ingredients = BuildIngredientChips(recipe);
         var produced = BuildProducedChips(recipe);
         var effects = recipe.ResultEffects ?? Array.Empty<string>();
+        var sources = BuildSourceChips(recipe);
         DetailViewModel = new RecipeDetailViewModel(
-            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName);
+            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources);
     }
 
     private void OnFileUpdated(object? sender, string fileKey)
@@ -189,4 +190,34 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         var reference = EntityRef.Item(item.InternalName!);
         return new EntityChipVm(displayName, item.IconId, reference, _navigator.CanOpen(reference));
     }
+
+    /// <summary>
+    /// Project the recipe's <c>sources_recipes.json</c> entries to display chips. NPC chips
+    /// carry an <see cref="EntityRef.Npc"/> reference so they'll become clickable the moment
+    /// an NPCs tab ships (#241); other source kinds (Skill, Effect, Quest, …) render as plain
+    /// text with the <c>Context</c> resolved by <see cref="ReferenceDataService.ResolveSourceContext"/>.
+    /// Returns null when no sources are recorded — drives the empty-section hide in XAML.
+    /// </summary>
+    private IReadOnlyList<ItemSourceChipVm>? BuildSourceChips(Recipe recipe)
+    {
+        if (string.IsNullOrEmpty(recipe.InternalName)) return null;
+        if (!_refData.RecipeSources.TryGetValue(recipe.InternalName!, out var sources) || sources.Count == 0)
+            return null;
+
+        return sources
+            .Select(s =>
+            {
+                var reference = string.IsNullOrEmpty(s.Npc) ? null : EntityRef.Npc(s.Npc!);
+                return new ItemSourceChipVm(
+                    DisplayName: FormatSourceDisplayName(s),
+                    Detail: s.Context,
+                    IconId: null,
+                    EntityReference: reference,
+                    IsNavigable: reference is not null && _navigator.CanOpen(reference));
+            })
+            .ToList();
+    }
+
+    private static string FormatSourceDisplayName(RecipeSource s) =>
+        string.IsNullOrEmpty(s.Npc) ? s.Type : $"{s.Type}: {s.Npc}";
 }
