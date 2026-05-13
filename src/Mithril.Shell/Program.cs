@@ -131,6 +131,20 @@ public static class Program
 
             var builder = Host.CreateApplicationBuilder(args);
 
+            // Validate the DI graph at host-build time. Catches singleton-vs-singleton
+            // cycles and missing dependencies as a clear exception at builder.Build()
+            // instead of letting them manifest later as a hung App.OnStartup. Cost is
+            // one eager singleton-resolution pass; upside is fail-fast with a precise
+            // error trace instead of "stuck at 'creating App'".
+            //
+            // HostApplicationBuilder routes this through ConfigureContainer rather
+            // than the older HostBuilder.UseDefaultServiceProvider extension.
+            builder.ConfigureContainer(new DefaultServiceProviderFactory(new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true,
+            }));
+
             // Cross-cutting user preferences (12/24h clock, future display
             // toggles). Lives in Mithril.Shared so modules can read it
             // without depending on Mithril.Shell. Persisted to

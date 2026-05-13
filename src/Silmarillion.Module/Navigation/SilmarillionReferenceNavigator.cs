@@ -27,7 +27,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 {
     private readonly Func<IEnumerable<IReferenceKindTarget>>? _targetsFactory;
     private IReadOnlyDictionary<EntityKind, IReferenceKindTarget>? _targets;
-    private readonly IModuleActivator? _activator;
+    private readonly Func<IModuleActivator?>? _activatorFactory;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly Stack<EntityRef> _back = new();
@@ -51,11 +51,11 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
     /// </summary>
     public SilmarillionReferenceNavigator(
         Func<IEnumerable<IReferenceKindTarget>> targetsFactory,
-        IModuleActivator? activator = null,
+        Func<IModuleActivator?>? activatorFactory = null,
         IDiagnosticsSink? diag = null)
     {
         _targetsFactory = targetsFactory;
-        _activator = activator;
+        _activatorFactory = activatorFactory;
         _diag = diag;
     }
 
@@ -94,7 +94,16 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
         // a deep link that arrives while the user is on a different tab silently
         // updates Current but no UI responds — the navigator's state is correct
         // but invisible.
-        _activator?.Activate("silmarillion");
+        //
+        // Activator resolution is deferred via Func<> because eagerly resolving
+        // IModuleActivator at navigator-construction time would drag ShellViewModel
+        // and its entire dependency closure into the DI chain that builds
+        // IDeepLinkRouter → SilmarillionDeepLinkHandler → IReferenceNavigator. That
+        // is a startup-time chain; ShellViewModel is built later and depending on
+        // it from here either cycles or blocks. The Func keeps the navigator
+        // construction-time deps minimal; Activate fires on the user-action path
+        // where ShellViewModel is already constructed.
+        _activatorFactory?.Invoke()?.Activate("silmarillion");
 
         var previous = Current;
         if (previous is not null) _back.Push(previous);

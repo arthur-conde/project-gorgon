@@ -35,7 +35,7 @@ public sealed class SilmarillionModule : IMithrilModule
         // depend on tab VMs, tab VMs depend on this navigator).
         services.AddSingleton<IReferenceNavigator>(sp => new SilmarillionReferenceNavigator(
             () => sp.GetServices<IReferenceKindTarget>(),
-            sp.GetService<IModuleActivator>(),
+            () => sp.GetService<IModuleActivator>(),
             sp.GetService<IDiagnosticsSink>()));
 
         services.AddSingleton<ItemsTabViewModel>();
