@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
+using Mithril.Reference;
 using Mithril.Shared.Wpf.Query;
 using Xunit;
 
@@ -283,6 +284,96 @@ public class QueryCompilerTests
     {
         Record.Exception(() => Filter("samples CONTAINS 'x'"))
             .Should().BeOfType<QueryException>();
+    }
+
+    // ─────────────── CONTAINS over IQueryStringValue collections ───────────────
+    //
+    // Mirrors the existing string-collection behaviour: equality (not substring),
+    // case-insensitive by default. Elements opt in to query matching by
+    // implementing IQueryStringValue.
+
+    private sealed record TestTag(string Name) : IQueryStringValue
+    {
+        public string QueryStringValue => Name;
+    }
+
+    private sealed record TaggedRow(string Name, IReadOnlyList<TestTag>? Tags);
+
+    private static readonly TaggedRow[] TaggedDataset =
+    {
+        new("Sword",   new[] { new TestTag("Crystal"), new TestTag("Sharp") }),
+        new("Hammer",  new[] { new TestTag("Blunt") }),
+        new("Wand",    Array.Empty<TestTag>()),
+        new("Mystery", null),
+    };
+
+    private static readonly IReadOnlyDictionary<string, ColumnBinding> TaggedColumns = new Dictionary<string, ColumnBinding>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["name"] = new("name", typeof(string),                    r => ((TaggedRow)r).Name),
+        ["tags"] = new("tags", typeof(IReadOnlyList<TestTag>),    r => ((TaggedRow)r).Tags),
+    };
+
+    private static TaggedRow[] FilterTagged(string query, bool caseSensitive = false)
+    {
+        var predicate = QueryCompiler.Compile(query, TaggedColumns, caseSensitive);
+        if (predicate is null)
+        {
+            return TaggedDataset;
+        }
+        return TaggedDataset.Where(r => predicate(r)).ToArray();
+    }
+
+    [Fact]
+    public void Contains_matches_IQueryStringValue_element()
+    {
+        FilterTagged("tags CONTAINS 'Crystal'").Select(r => r.Name)
+            .Should().BeEquivalentTo(new[] { "Sword" });
+    }
+
+    [Fact]
+    public void Contains_returns_empty_when_no_element_matches()
+    {
+        FilterTagged("tags CONTAINS 'Missing'").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Contains_is_case_insensitive_by_default_for_IQueryStringValue()
+    {
+        FilterTagged("tags CONTAINS 'crystal'").Select(r => r.Name)
+            .Should().BeEquivalentTo(new[] { "Sword" });
+    }
+
+    [Fact]
+    public void Contains_respects_case_sensitive_flag_for_IQueryStringValue()
+    {
+        FilterTagged("tags CONTAINS 'crystal'", caseSensitive: true).Should().BeEmpty();
+        FilterTagged("tags CONTAINS 'Crystal'", caseSensitive: true).Select(r => r.Name)
+            .Should().BeEquivalentTo(new[] { "Sword" });
+    }
+
+    [Fact]
+    public void Not_Contains_negates_over_IQueryStringValue_collection()
+    {
+        // Negation includes rows whose collection is empty AND rows where the
+        // collection is null — mirroring the existing string-collection behaviour
+        // (null collection returns the negated flag from the predicate).
+        FilterTagged("tags NOT CONTAINS 'Crystal'").Select(r => r.Name)
+            .Should().BeEquivalentTo(new[] { "Hammer", "Wand", "Mystery" });
+    }
+
+    [Fact]
+    public void Contains_on_null_collection_does_not_match()
+    {
+        // "Mystery" has Tags = null; CONTAINS must not throw, must not match.
+        FilterTagged("tags CONTAINS 'anything'").Should().NotContain(r => r.Name == "Mystery");
+    }
+
+    [Fact]
+    public void Contains_uses_equality_not_substring_for_IQueryStringValue()
+    {
+        // "Crys" is a substring of "Crystal", but CONTAINS over a collection
+        // means element-wise equality. No row's tag literally equals "Crys".
+        FilterTagged("tags CONTAINS 'Crys'").Should().BeEmpty();
     }
 }
 
