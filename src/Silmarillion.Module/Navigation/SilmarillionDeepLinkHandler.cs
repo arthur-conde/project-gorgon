@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -19,8 +18,6 @@ namespace Silmarillion.Navigation;
 /// </summary>
 public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
 {
-    private static readonly Regex PayloadPattern = new("^[A-Za-z0-9_]{1,128}$", RegexOptions.Compiled);
-
     private readonly IReferenceNavigator _navigator;
 
     public SilmarillionDeepLinkHandler(IReferenceNavigator navigator) => _navigator = navigator;
@@ -47,7 +44,7 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         var kind = parts[0];
         var name = parts[1];
 
-        if (!PayloadPattern.IsMatch(name))
+        if (!DeepLinkPayload.IsValidInternalName(name))
         {
             diag?.Info("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
             return false;
