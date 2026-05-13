@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Mithril.Reference;
 
 namespace Mithril.Shared.Wpf.Query;
 
@@ -182,10 +183,12 @@ public static class QueryCompiler
         var needle = node.Text;
         bool negated = node.Negated;
 
-        // CONTAINS over a string-collection column means "any element equals the
-        // needle". Extends naturally to lists like PowerEntry.Slots without forcing
-        // callers to expose a flattened string. STARTSWITH / ENDSWITH on a list have
-        // no obvious semantic, so they remain string-only.
+        // CONTAINS over a string-like collection column means "any element equals
+        // the needle". Extends naturally to lists like PowerEntry.Slots (string
+        // elements) and Item.Keywords (ItemKeyword elements opting in via
+        // IQueryStringValue) without forcing callers to expose a flattened string.
+        // STARTSWITH / ENDSWITH on a list have no obvious semantic, so they remain
+        // string-only.
         if (node.Kind == StringMatchKind.Contains && IsStringCollection(underlying))
         {
             var elementCmp = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
@@ -199,6 +202,11 @@ public static class QueryCompiler
                 foreach (var element in seq)
                 {
                     if (element is string s && elementCmp.Equals(s, needle))
+                    {
+                        hit = true;
+                        break;
+                    }
+                    if (element is IQueryStringValue q && elementCmp.Equals(q.QueryStringValue, needle))
                     {
                         hit = true;
                         break;
@@ -231,16 +239,23 @@ public static class QueryCompiler
         };
     }
 
+    // "String-like" here means the element type is either string itself or opts
+    // in to query-CONTAINS matching via IQueryStringValue (so e.g. ItemKeyword
+    // can be matched by tag without flattening to string at the model layer).
     private static bool IsStringCollection(Type t)
     {
         if (t == typeof(string)) return false;
         foreach (var iface in t.GetInterfaces())
         {
             if (iface.IsGenericType
-                && iface.GetGenericTypeDefinition() == typeof(IEnumerable<>)
-                && iface.GetGenericArguments()[0] == typeof(string))
+                && iface.GetGenericTypeDefinition() == typeof(IEnumerable<>))
             {
-                return true;
+                var element = iface.GetGenericArguments()[0];
+                if (element == typeof(string)
+                    || typeof(IQueryStringValue).IsAssignableFrom(element))
+                {
+                    return true;
+                }
             }
         }
         return false;
