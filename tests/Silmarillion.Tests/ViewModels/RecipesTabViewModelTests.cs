@@ -29,6 +29,49 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void RecipeListRow_ResolvesSkillKey_ToDisplayName_WhenPresent()
+    {
+        var refData = new StubReferenceData
+        {
+            SkillsByKey =
+            {
+                ["AncillaryArmorAugmentBrewing"] = new SkillEntry(
+                    Key: "AncillaryArmorAugmentBrewing",
+                    DisplayName: "Armor Augment Brewing",
+                    Id: 1,
+                    Combat: false,
+                    XpTable: "",
+                    MaxBonusLevels: 0,
+                    Parents: [],
+                    Rewards: new Dictionary<string, SkillRewardEntry>()),
+            },
+            RecipesByKey =
+            {
+                ["r1"] = new Recipe { Key = "r1", Name = "A", Skill = "AncillaryArmorAugmentBrewing", SkillLevelReq = 30, Ingredients = [] },
+            },
+        };
+
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+
+        vm.AllRecipes.Should().ContainSingle()
+            .Which.SkillDisplayName.Should().Be("Armor Augment Brewing");
+    }
+
+    [Fact]
+    public void RecipeListRow_FallsBack_ToSkillKey_WhenUnresolved()
+    {
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = new Recipe { Key = "r1", Name = "A", Skill = "UnknownSkill", SkillLevelReq = 1, Ingredients = [] } },
+        };
+
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator());
+
+        vm.AllRecipes.Should().ContainSingle()
+            .Which.SkillDisplayName.Should().Be("UnknownSkill");
+    }
+
+    [Fact]
     public void SelectingRecipe_BuildsDetailViewModel()
     {
         var recipe = new Recipe
@@ -130,6 +173,7 @@ public sealed class RecipesTabViewModelTests
     {
         public Dictionary<long, Item> ItemsByCode { get; } = new();
         public Dictionary<string, Recipe> RecipesByKey { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, SkillEntry> SkillsByKey { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByCode;
@@ -138,7 +182,7 @@ public sealed class RecipesTabViewModelTests
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes => RecipesByKey;
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills => SkillsByKey;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();

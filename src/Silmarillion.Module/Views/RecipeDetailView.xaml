@@ -17,8 +17,19 @@
     </UserControl.Resources>
 
     <Border Padding="14,12">
-        <StackPanel>
-            <!-- Header: icon + name + internal name subscript -->
+        <DockPanel>
+            <!-- Footer docks to bottom; body StackPanel fills the rest. When the host
+                 ContentControl has MinHeight=viewport, this pins the footer to the bottom
+                 of the pane even for short recipes. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       Margin="0,8,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
+            <StackPanel>
+            <!-- Header: icon + name. Internal name goes in the footer bottom-right per the
+                 detail-view convention (matches ItemDetailView). -->
             <DockPanel Margin="0,0,0,10">
                 <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
                              Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
@@ -26,10 +37,6 @@
                     <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
                                Foreground="#FFD4A847"
                                FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding InternalName}" Foreground="#88FFFFFF"
-                               FontFamily="{DynamicResource AppMonoFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,2,0,0"
-                               Visibility="{Binding InternalName, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
             </DockPanel>
 
@@ -98,6 +105,8 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
-        </StackPanel>
+
+            </StackPanel>
+        </DockPanel>
     </Border>
 </UserControl>

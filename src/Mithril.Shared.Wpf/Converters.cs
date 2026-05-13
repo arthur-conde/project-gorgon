@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -46,6 +47,22 @@ public sealed class InverseBoolConverter : IValueConverter
         => value is bool b && !b;
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => value is bool b && !b;
+}
+
+/// <summary>
+/// Splits a PascalCase / camelCase internal name into space-separated words for display.
+/// e.g. "MainHand" → "Main Hand", "OffHand" → "Off Hand", "Head" → "Head". Heuristic
+/// (no strings_all.json lookup) — works for known equip-slot names which are all
+/// PascalCase ASCII identifiers.
+/// </summary>
+public sealed class CamelCaseSplitConverter : IValueConverter
+{
+    private static readonly Regex SplitPattern = new("(?<=[a-z0-9])(?=[A-Z])", RegexOptions.Compiled);
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is string s && !string.IsNullOrEmpty(s) ? SplitPattern.Replace(s, " ") : (value ?? "");
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
 /// <summary>

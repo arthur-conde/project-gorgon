@@ -45,7 +45,7 @@
         <ListBox Grid.Row="1" Grid.Column="0"
                  ItemsSource="{Binding AllRecipes}"
                  ItemTemplate="{StaticResource RecipeCardTemplate}"
-                 SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}"
+                 SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                  query:QueryFilter.QueryText="{Binding QueryText}"
                  query:QueryFilter.QueryError="{Binding QueryError, Mode=OneWayToSource}"
                  Background="#FF1A1A1A" BorderThickness="0"
@@ -63,11 +63,14 @@
         </ListBox>
 
         <Grid Grid.Row="1" Grid.Column="1" Background="#FF1A1A1A">
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
+            <ScrollViewer x:Name="DetailScroller"
+                          VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <!-- DataType-keyed template applies only when Content is a non-null VM.
-                     See ItemsTabView.xaml comment for context. -->
-                <ContentControl Content="{Binding DetailViewModel}">
+                     See ItemsTabView.xaml comment for context. MinHeight bound to viewport
+                     so the recipe detail's footer pins to the bottom of the pane. -->
+                <ContentControl Content="{Binding DetailViewModel}"
+                                MinHeight="{Binding ViewportHeight, ElementName=DetailScroller}">
                     <ContentControl.Resources>
                         <DataTemplate DataType="{x:Type vm:RecipeDetailViewModel}">
                             <local:RecipeDetailView/>

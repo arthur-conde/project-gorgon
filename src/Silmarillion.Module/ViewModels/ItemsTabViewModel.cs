@@ -80,10 +80,27 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             .OrderBy(r => r.Name ?? r.InternalName ?? r.Key, StringComparer.OrdinalIgnoreCase)
             .Select(r => new EntityChipVm(
                 DisplayName: r.Name ?? r.InternalName ?? r.Key,
-                IconId: r.IconId,
+                IconId: r.IconId > 0 ? r.IconId : ResolveRecipeFallbackIcon(r),
                 Reference: EntityRef.Recipe(r.InternalName ?? r.Key),
                 IsNavigable: _navigator.CanOpen(EntityRef.Recipe(r.InternalName ?? r.Key))))
             .ToList();
+    }
+
+    /// <summary>
+    /// Many recipes in the bundled JSON ship with IconId = 0; their visual identity is
+    /// carried by the result item's icon. Walk ResultItems → ProtoResultItems → 0 for
+    /// the chip-icon fallback so cross-link chips have something to render.
+    /// </summary>
+    private int ResolveRecipeFallbackIcon(Mithril.Reference.Models.Recipes.Recipe recipe)
+    {
+        var source = (recipe.ResultItems is { Count: > 0 } ? recipe.ResultItems : recipe.ProtoResultItems)
+            ?? (IReadOnlyList<Mithril.Reference.Models.Recipes.RecipeResultItem>)Array.Empty<Mithril.Reference.Models.Recipes.RecipeResultItem>();
+        foreach (var result in source)
+        {
+            if (_refData.Items.TryGetValue(result.ItemCode, out var item) && item.IconId > 0)
+                return item.IconId;
+        }
+        return 0;
     }
 
     private IReadOnlyList<ItemSourceChipVm>? BuildSourceChips(string itemInternalName)

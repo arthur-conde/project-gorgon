@@ -54,7 +54,8 @@
                     <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
                                Foreground="#FFD4A847"
                                FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding EquipSlot}" Foreground="#88FFFFFF"
+                    <TextBlock Text="{Binding EquipSlot, Converter={StaticResource CamelCaseSplit}}"
+                               Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"
                                Visibility="{Binding EquipSlot, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
@@ -113,20 +114,6 @@
                     <ItemsControl ItemsSource="{Binding EffectLines}"
                                   ItemTemplate="{StaticResource EffectLineTemplate}"/>
                 </ScrollViewer>
-                <TextBlock Text="No effects on this item." Foreground="#88FFFFFF"
-                           FontStyle="Italic" FontSize="{DynamicResource AppFontSizeHint}"
-                           Margin="0,4,0,0">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding EffectLines.Count}" Value="0">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
             </StackPanel>
 
             <!-- Augmentation (hidden when empty) -->
@@ -518,12 +505,15 @@
                 </ItemsControl>
             </StackPanel>
 
-            <!-- Internal name footer -->
+            <!-- Internal-name footer. Pins to the bottom of the right pane when the host
+                 ContentControl has MinHeight = ScrollViewer.ViewportHeight (Grid.Row="3"
+                 Effects section uses Height="*" to absorb the slack). -->
             <TextBlock Grid.Row="22" Text="{Binding InternalName}"
                        Foreground="#88FFFFFF"
                        FontFamily="{DynamicResource AppMonoFontFamily}"
                        FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"/>
+                       Margin="0,8,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
         </Grid>
     </Border>
 </UserControl>

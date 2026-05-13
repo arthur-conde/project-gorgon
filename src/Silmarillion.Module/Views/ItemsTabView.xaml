@@ -65,14 +65,18 @@
         <!-- Right: detail pane. ContentControl naturally renders nothing when Content is null,
              so we just overlay a placeholder TextBlock that shows when DetailViewModel is null. -->
         <Grid Grid.Row="1" Grid.Column="1" Background="#FF1A1A1A">
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
+            <ScrollViewer x:Name="DetailScroller"
+                          VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <!-- DataType-keyed template (vs. ContentTemplate=) so the template applies
                      only when Content is a non-null ItemDetailViewModel. With ContentTemplate
                      the template fires even for null Content and ItemDetailView's section
                      Visibility bindings fail silently to Visible, leaking labels into the
-                     empty state. -->
-                <ContentControl Content="{Binding DetailViewModel}">
+                     empty state.
+                     MinHeight bound to viewport so the in-view internal-name footer pins
+                     to the bottom of the pane when content is shorter than the viewport. -->
+                <ContentControl Content="{Binding DetailViewModel}"
+                                MinHeight="{Binding ViewportHeight, ElementName=DetailScroller}">
                     <ContentControl.Resources>
                         <DataTemplate DataType="{x:Type wpf:ItemDetailViewModel}">
                             <wpf:ItemDetailView/>

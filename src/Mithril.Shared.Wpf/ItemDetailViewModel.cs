@@ -38,7 +38,7 @@ public sealed partial class ItemDetailViewModel
             ? []
             : item.SkillReqs
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-                .Select(kv => $"{kv.Key} {kv.Value}")
+                .Select(kv => $"{ResolveSkillDisplayName(refData, kv.Key)} {kv.Value}")
                 .ToList();
         Augments = context.Augments ?? [];
         WaxItems = context.WaxItems ?? [];
@@ -120,6 +120,9 @@ public sealed partial class ItemDetailViewModel
     /// visibility on the AugmentPools section.
     /// </summary>
     public bool HasPoolPresenter => _poolPresenter is not null;
+
+    private static string ResolveSkillDisplayName(IReferenceDataService refData, string skillKey) =>
+        refData.Skills.TryGetValue(skillKey, out var s) ? s.DisplayName : skillKey;
 
     [RelayCommand(CanExecute = nameof(HasPoolPresenter))]
     private void BrowsePool(AugmentPoolPreview? pool)

@@ -19,7 +19,8 @@
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
                                Foreground="#FFD4A847" TextWrapping="Wrap"
                                FontSize="{DynamicResource AppFontSizeHint}"/>
-                    <TextBlock Text="{Binding EquipSlot}" Foreground="#88FFFFFF"
+                    <TextBlock Text="{Binding EquipSlot, Converter={StaticResource CamelCaseSplit}}"
+                               Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,1,0,0"
                                Visibility="{Binding EquipSlot, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
@@ -27,7 +28,7 @@
         </Border>
     </DataTemplate>
 
-    <!-- Card template for Recipes tab. Bound DataContext: Mithril.Reference.Models.Recipes.Recipe. -->
+    <!-- Card template for Recipes tab. Bound DataContext: Silmarillion.ViewModels.RecipeListRow. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
                 CornerRadius="4" Padding="8" Margin="4" Width="240">
@@ -40,8 +41,8 @@
                                FontSize="{DynamicResource AppFontSizeHint}"/>
                     <TextBlock Foreground="#88FFFFFF" Margin="0,1,0,0"
                                FontSize="{DynamicResource AppFontSizeSmall}"
-                               Visibility="{Binding Skill, Converter={StaticResource NullOrEmptyToVis}}">
-                        <Run Text="{Binding Skill, Mode=OneWay}"/>
+                               Visibility="{Binding SkillDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="{Binding SkillDisplayName, Mode=OneWay}"/>
                         <Run Text=" "/>
                         <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
                     </TextBlock>

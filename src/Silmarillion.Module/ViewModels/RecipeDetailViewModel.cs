@@ -19,14 +19,22 @@ public sealed class RecipeDetailViewModel
         IReadOnlyList<EntityChipVm> ingredients,
         IReadOnlyList<EntityChipVm> producedItems,
         IReadOnlyList<string> resultEffectsText,
-        ICommand? openEntityCommand = null)
+        ICommand? openEntityCommand = null,
+        string? skillDisplayName = null)
     {
         Recipe = recipe;
         Ingredients = ingredients;
         ProducedItems = producedItems;
         ResultEffectsText = resultEffectsText;
         OpenEntityCommand = openEntityCommand;
+        SkillDisplayName = skillDisplayName ?? recipe.Skill;
     }
+
+    /// <summary>
+    /// Human-readable skill name (resolved by the page VM via <c>IReferenceDataService.Skills</c>),
+    /// falling back to the internal name if resolution fails. Drives <see cref="SkillRequirementChip"/>.
+    /// </summary>
+    public string? SkillDisplayName { get; }
 
     public Recipe Recipe { get; }
 
@@ -42,7 +50,7 @@ public sealed class RecipeDetailViewModel
     /// caller should hide the chip border on empty strings.
     /// </summary>
     public string SkillRequirementChip =>
-        string.IsNullOrEmpty(Recipe.Skill) ? "" : $"{Recipe.Skill} {Recipe.SkillLevelReq}";
+        string.IsNullOrEmpty(SkillDisplayName) ? "" : $"{SkillDisplayName} {Recipe.SkillLevelReq}";
 
     public IReadOnlyList<EntityChipVm> Ingredients { get; }
 
