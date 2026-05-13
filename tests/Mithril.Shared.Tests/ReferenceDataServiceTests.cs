@@ -275,6 +275,89 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Recipe_sources_project_envelope_to_RecipeSource_records_keyed_by_recipe_InternalName()
+    {
+        // sources_recipes.json envelope is keyed by "recipe_N". The parser resolves
+        // those against the recipes dictionary and emits projected RecipeSource records
+        // keyed by recipe.InternalName, mirroring how ItemSources is keyed by InternalName.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_42": {
+                "Name": "Bake Bread",
+                "InternalName": "BakeBread",
+                "Skill": "Cooking",
+                "SkillLevelReq": 5
+              },
+              "recipe_43": {
+                "Name": "Make Cheese",
+                "InternalName": "MakeCheese",
+                "Skill": "Cooking",
+                "SkillLevelReq": 12
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_recipes.json"), """
+            {
+              "recipe_42": {
+                "entries": [
+                  { "npc": "NPC_Marna", "type": "Training" },
+                  { "skill": "Cooking", "type": "Skill" }
+                ]
+              },
+              "recipe_43": {
+                "entries": [
+                  { "type": "Effect" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipeSources.Should().ContainKey("BakeBread");
+        var bakeBread = svc.RecipeSources["BakeBread"];
+        bakeBread.Should().HaveCount(2);
+        bakeBread[0].Type.Should().Be("Training");
+        bakeBread[0].Npc.Should().Be("NPC_Marna");
+        bakeBread[1].Type.Should().Be("Skill");
+        bakeBread[1].Context.Should().Be("Cooking");
+
+        svc.RecipeSources.Should().ContainKey("MakeCheese");
+        svc.RecipeSources["MakeCheese"].Should().ContainSingle()
+            .Which.Type.Should().Be("Effect");
+
+        svc.GetSnapshot("sources_recipes").EntryCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void RealBundled_sources_recipes_LoadsAndKeysByInternalName()
+    {
+        // Smoke test against the real bundled file shipped with the app — confirms the
+        // production payload parses cleanly and the consumer-facing dictionary is keyed
+        // by recipe InternalName (not "recipe_N"). Skipped in environments where the
+        // bundled file isn't reachable (e.g. CI without binplacing).
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "sources_recipes.json"))) return;
+        if (!File.Exists(Path.Combine(realBundled, "recipes.json"))) return;
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: realBundled);
+
+        svc.RecipeSources.Count.Should().BeGreaterThan(1000);
+        // recipe_1 is taught by NPC_Braigon per the bundled file — resolve via InternalName.
+        var braigonRecipe = svc.Recipes["recipe_1"];
+        if (!string.IsNullOrEmpty(braigonRecipe.InternalName))
+        {
+            svc.RecipeSources.Should().ContainKey(braigonRecipe.InternalName!);
+            svc.RecipeSources[braigonRecipe.InternalName!]
+                .Should().Contain(s => s.Type == "Training" && s.Npc == "NPC_Braigon");
+        }
+    }
+
+    [Fact]
     public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
     {
         // Verifies the polymorphic discriminator dispatch in Mithril.Reference's

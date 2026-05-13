@@ -246,6 +246,111 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void SourceChips_NpcTrainerSource_NotNavigable_UntilNpcKindShips()
+    {
+        // Recipe taught by a single NPC trainer → one ItemSourceChipVm chip with the NPC
+        // EntityRef attached but IsNavigable=false because the NPCs tab hasn't shipped yet.
+        // The moment a kind target for Npc is registered (#241), the same chip flips to
+        // clickable with no code change here.
+        var recipe = new Recipe
+        {
+            Key = "recipe_1",
+            InternalName = "MakeTomatoSauce",
+            Name = "Make Tomato Sauce",
+            Skill = "Cooking",
+            Ingredients = [],
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["recipe_1"] = recipe },
+            RecipeSourcesByName =
+            {
+                ["MakeTomatoSauce"] = new[]
+                {
+                    new RecipeSource("Training", "NPC_Marna", null),
+                },
+            },
+        };
+        // Navigator has Recipe + Item kinds, but NOT Npc — matches v1 ship state.
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item, EntityKind.Recipe));
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.Sources.Should().NotBeNull();
+        vm.DetailViewModel.Sources!.Should().ContainSingle();
+        var chip = vm.DetailViewModel.Sources![0];
+        chip.DisplayName.Should().Be("Training: NPC_Marna");
+        chip.EntityReference.Should().Be(EntityRef.Npc("NPC_Marna"));
+        chip.IsNavigable.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SourceChips_MixedKinds_ProjectInOrder_WithCorrectShapePerKind()
+    {
+        // Recipe with three source kinds:
+        //   1. Training (NPC chip) — NPC ref attached, non-navigable in v1.
+        //   2. Skill — no NPC, Context carries the skill name as Detail.
+        //   3. Effect — no NPC, no Context (scroll-derived recipes don't carry it
+        //      yet; reverse-resolve is #252-style follow-up). Plain-text chip.
+        var recipe = new Recipe
+        {
+            Key = "recipe_99",
+            InternalName = "ScrollOfFireball",
+            Name = "Scroll of Fireball",
+            Skill = "Mentalism",
+            Ingredients = [],
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["recipe_99"] = recipe },
+            RecipeSourcesByName =
+            {
+                ["ScrollOfFireball"] = new[]
+                {
+                    new RecipeSource("Training", "NPC_Fritz", null),
+                    new RecipeSource("Skill", null, "Mentalism"),
+                    new RecipeSource("Effect", null, null),
+                },
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe));
+
+        vm.SelectedRecipe = recipe;
+
+        var sources = vm.DetailViewModel!.Sources!;
+        sources.Should().HaveCount(3);
+
+        sources[0].DisplayName.Should().Be("Training: NPC_Fritz");
+        sources[0].EntityReference.Should().Be(EntityRef.Npc("NPC_Fritz"));
+        sources[0].IsNavigable.Should().BeFalse();
+
+        sources[1].DisplayName.Should().Be("Skill");
+        sources[1].EntityReference.Should().BeNull();
+        sources[1].Detail.Should().Be("Mentalism");
+
+        sources[2].DisplayName.Should().Be("Effect");
+        sources[2].EntityReference.Should().BeNull();
+        sources[2].Detail.Should().BeNull();
+    }
+
+    [Fact]
+    public void SourceChips_RecipeWithNoSources_LeavesSourcesNull_ForXamlHide()
+    {
+        // The XAML uses PositiveIntToVis on Sources.Count to collapse the section;
+        // a null Sources list therefore disappears the "Taught by" header entirely.
+        var recipe = new Recipe { Key = "recipe_42", InternalName = "Untaught", Name = "Untaught", Ingredients = [] };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["recipe_42"] = recipe },
+        };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.Sources.Should().BeNull();
+    }
+
+    [Fact]
     public void ProducedItemChips_PreferResultItems_FallBackToProtoResultItems()
     {
         var sauce = new Item { Id = 101, InternalName = "TomatoSauce", Name = "Tomato Sauce", IconId = 2 };
@@ -276,6 +381,7 @@ public sealed class RecipesTabViewModelTests
         public Dictionary<long, Item> ItemsByCode { get; } = new();
         public Dictionary<string, Recipe> RecipesByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, SkillEntry> SkillsByKey { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<RecipeSource>> RecipeSourcesByName { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByCode;
@@ -289,6 +395,7 @@ public sealed class RecipesTabViewModelTests
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => RecipeSourcesByName;
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
