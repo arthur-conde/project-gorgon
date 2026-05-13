@@ -31,6 +31,27 @@ public interface IReferenceDataService
     /// <summary>InternalName → <see cref="Recipe"/> lookup. Matches RecipeCompletions keys from character exports.</summary>
     IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; }
 
+    /// <summary>
+    /// Recipes indexed by the InternalName of any item they produce (via
+    /// <see cref="Recipe.ResultItems"/>, falling back to <see cref="Recipe.ProtoResultItems"/>
+    /// when ResultItems is empty). Built whenever items.json or recipes.json reloads.
+    /// Powers the reference-browser's item-detail "Produced by" cross-link section.
+    /// Defaults to empty so test fakes don't need to opt into cross-linking.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => EmptyRecipeIndex;
+
+    /// <summary>
+    /// Recipes indexed by the InternalName of any item they consume as an ingredient
+    /// (<see cref="RecipeItemIngredient"/> only — <see cref="RecipeKeywordIngredient"/>
+    /// entries are kind-based, not item-based, and are excluded). Built whenever
+    /// items.json or recipes.json reloads. Powers the "Used in" cross-link section.
+    /// Defaults to empty so test fakes don't need to opt into cross-linking.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => EmptyRecipeIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Recipe>> EmptyRecipeIndex
+        = new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
+
     /// <summary>Skill key (e.g. "Meditation", "AncillaryArmorAugmentBrewing") → SkillEntry.
     /// Keys are id-shaped (ASCII identifier-safe) and match recipes' RewardSkill field.
     /// For the human-readable in-game name use <see cref="SkillEntry.DisplayName"/>.</summary>
