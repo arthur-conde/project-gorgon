@@ -493,22 +493,39 @@ public sealed class ReferenceDataService : IReferenceDataService
             // recipe.Ingredients is annotated non-nullable but JSON deserialization with a missing
             // field yields null at runtime — guard rather than crash.
             var ingredients = recipe.Ingredients ?? (IReadOnlyList<Mithril.Reference.Models.Recipes.RecipeIngredient>)Array.Empty<Mithril.Reference.Models.Recipes.RecipeIngredient>();
-            foreach (var ing in ingredients.OfType<Mithril.Reference.Models.Recipes.RecipeItemIngredient>())
+            foreach (var ing in ingredients)
             {
-                if (!_items.TryGetValue(ing.ItemCode, out var item) || string.IsNullOrEmpty(item.InternalName))
-                    continue;
-                if (!ingredient.TryGetValue(item.InternalName, out var list))
+                switch (ing)
                 {
-                    list = new List<Recipe>();
-                    ingredient[item.InternalName] = list;
+                    case Mithril.Reference.Models.Recipes.RecipeItemIngredient itemIng:
+                        if (_items.TryGetValue(itemIng.ItemCode, out var item) && !string.IsNullOrEmpty(item.InternalName))
+                            AddIngredientRecipe(ingredient, item.InternalName, recipe);
+                        break;
+
+                    case Mithril.Reference.Models.Recipes.RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
+                        foreach (var matchedItem in _keywordIndex.ItemsMatching(kwIng.ItemKeys))
+                        {
+                            if (!string.IsNullOrEmpty(matchedItem.InternalName))
+                                AddIngredientRecipe(ingredient, matchedItem.InternalName, recipe);
+                        }
+                        break;
                 }
-                if (!list.Contains(recipe))
-                    list.Add(recipe);
             }
         }
 
         _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _recipesByIngredientItem = ingredient.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
+
+        static void AddIngredientRecipe(Dictionary<string, List<Recipe>> map, string internalName, Recipe recipe)
+        {
+            if (!map.TryGetValue(internalName, out var list))
+            {
+                list = new List<Recipe>();
+                map[internalName] = list;
+            }
+            if (!list.Contains(recipe))
+                list.Add(recipe);
+        }
     }
 
     private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)

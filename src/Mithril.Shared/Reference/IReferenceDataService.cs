@@ -41,11 +41,13 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => EmptyRecipeIndex;
 
     /// <summary>
-    /// Recipes indexed by the InternalName of any item they consume as an ingredient
-    /// (<see cref="RecipeItemIngredient"/> only — <see cref="RecipeKeywordIngredient"/>
-    /// entries are kind-based, not item-based, and are excluded). Built whenever
-    /// items.json or recipes.json reloads. Powers the "Used in" cross-link section.
-    /// Defaults to empty so test fakes don't need to opt into cross-linking.
+    /// Recipes indexed by the InternalName of any item they consume as an ingredient.
+    /// Includes both <see cref="RecipeItemIngredient"/> (direct item-code references)
+    /// and <see cref="RecipeKeywordIngredient"/> (keyword-matched slots — each slot
+    /// fans out to every item whose enriched keywords AND-match the slot's ItemKeys
+    /// via <see cref="ItemKeywordIndex.ItemsMatching"/>). Built whenever items.json
+    /// or recipes.json reloads. Powers the "Used in" cross-link section. Defaults to
+    /// empty so test fakes don't need to opt into cross-linking.
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => EmptyRecipeIndex;
 

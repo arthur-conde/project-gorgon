@@ -233,6 +233,116 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void RecipesByIngredientItem_expands_keyword_ingredients_to_matching_items()
+    {
+        // #254: keyword-matched ingredient slots (e.g. ItemKeys:["Crystal"]) should fan
+        // out in the reverse index so that opening "any Crystal" item surfaces every
+        // recipe that consumes it via a keyword slot — not just direct ItemCode references.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_100": { "Name": "Boots", "InternalName": "Boots", "MaxStackSize": 1 },
+              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "MaxStackSize": 50, "Keywords": ["Crystal"] }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_1": {
+                "Name": "EnchantBoots",
+                "InternalName": "EnchantBoots",
+                "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "ItemCode": 100, "StackSize": 1 },
+                  { "Desc": "Auxiliary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ],
+                "ResultItems": [
+                  { "ItemCode": 100, "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipesByIngredientItem.Should().ContainKey("RoughCrystal",
+            because: "the keyword slot ItemKeys:[\"Crystal\"] should fan out to RoughCrystal which carries that keyword");
+        svc.RecipesByIngredientItem["RoughCrystal"].Select(r => r.InternalName)
+            .Should().BeEquivalentTo(["EnchantBoots"]);
+
+        // Sanity: the direct ItemCode ingredient still surfaces too.
+        svc.RecipesByIngredientItem.Should().ContainKey("Boots");
+        svc.RecipesByIngredientItem["Boots"].Select(r => r.InternalName)
+            .Should().BeEquivalentTo(["EnchantBoots"]);
+    }
+
+    [Fact]
+    public void RecipesByIngredientItem_keyword_expansion_respects_AND_match()
+    {
+        // Multi-key slots are AND-matched by ItemKeywordIndex.ItemsMatching. An item
+        // carrying only one of the required keywords must not surface — this documents
+        // that the reverse-index expansion honours that semantics, not a looser any-match.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "MaxStackSize": 50, "Keywords": ["Crystal"] }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_1": {
+                "Name": "EnchantTier2Boots",
+                "InternalName": "EnchantTier2Boots",
+                "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "Desc": "Auxiliary Tier-2 Crystal", "ItemKeys": ["Crystal", "Tier2"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipesByIngredientItem.Should().NotContainKey("RoughCrystal",
+            because: "RoughCrystal carries Crystal but not Tier2, so the AND-match fails");
+    }
+
+    [Fact]
+    public void RecipesByIngredientItem_dedupes_when_recipe_references_same_item_directly_and_by_keyword()
+    {
+        // An item that's both ItemCode-referenced and keyword-matched by the same recipe
+        // should appear in the reverse index exactly once — the existing !Contains de-dupe.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "MaxStackSize": 50, "Keywords": ["Crystal"] }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_1": {
+                "Name": "DoubleDip",
+                "InternalName": "DoubleDip",
+                "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "ItemCode": 200, "StackSize": 1 },
+                  { "Desc": "Auxiliary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipesByIngredientItem.Should().ContainKey("RoughCrystal");
+        svc.RecipesByIngredientItem["RoughCrystal"]
+            .Should().ContainSingle(r => r.InternalName == "DoubleDip",
+                because: "the recipe references RoughCrystal via both an ItemCode slot and a Crystal keyword slot; it should be listed once");
+    }
+
+    [Fact]
     public void Recipe_item_source_resolves_recipeId_to_recipe_InternalName()
     {
         // sources_items.json carries recipeId numerically; the parser should look up

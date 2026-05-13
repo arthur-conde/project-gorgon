@@ -130,40 +130,6 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
-    public void RecipesByIngredientItem_DoesNotIndexKeywordIngredients()
-    {
-        // Keyword ingredients are kind-based (e.g. any "Crystal") and don't map to a single InternalName.
-        WriteFixture(
-            itemsJson: """
-            {
-              "item_100": { "Name": "Boots", "InternalName": "Boots" },
-              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "Keywords": ["Crystal"] }
-            }
-            """,
-            recipesJson: """
-            {
-              "recipe_1": {
-                "Name": "Enchant Boots",
-                "InternalName": "EnchantBoots",
-                "Skill": "Leatherworking",
-                "Ingredients": [
-                  { "ItemCode": 100, "StackSize": 1 },
-                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
-                ]
-              }
-            }
-            """);
-
-        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
-
-        // The Boots item ingredient should be indexed.
-        svc.RecipesByIngredientItem.Should().ContainKey("Boots");
-        // The Crystal keyword ingredient should NOT contribute an entry — RoughCrystal happens to
-        // carry the Crystal keyword, but the index only follows direct ItemCode references.
-        svc.RecipesByIngredientItem.Should().NotContainKey("RoughCrystal");
-    }
-
-    [Fact]
     public void Indices_SkipItemsThatLackInternalName()
     {
         // Some items in the bundled file lack InternalName; cross-link indices key on
