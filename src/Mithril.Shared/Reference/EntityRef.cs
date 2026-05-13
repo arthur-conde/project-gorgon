@@ -26,7 +26,20 @@ public enum EntityKind
 /// </summary>
 /// <param name="Kind">The category of entity.</param>
 /// <param name="InternalName">The entity's unique internal name (e.g. <c>"CraftedLeatherBoots5"</c>).</param>
-public sealed record EntityRef(EntityKind Kind, string InternalName);
+public sealed record EntityRef(EntityKind Kind, string InternalName)
+{
+    public static EntityRef Item(string internalName) => new(EntityKind.Item, internalName);
+    public static EntityRef Recipe(string internalName) => new(EntityKind.Recipe, internalName);
+    public static EntityRef Ability(string internalName) => new(EntityKind.Ability, internalName);
+    public static EntityRef Effect(string internalName) => new(EntityKind.Effect, internalName);
+    public static EntityRef Npc(string internalName) => new(EntityKind.Npc, internalName);
+    public static EntityRef Quest(string internalName) => new(EntityKind.Quest, internalName);
+    public static EntityRef Lorebook(string internalName) => new(EntityKind.Lorebook, internalName);
+    public static EntityRef Landmark(string internalName) => new(EntityKind.Landmark, internalName);
+    public static EntityRef Area(string internalName) => new(EntityKind.Area, internalName);
+    public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
+    public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
+}
 
 /// <summary>
 /// Describes what kind of navigation action produced a <see cref="NavigatedEventArgs"/>.
