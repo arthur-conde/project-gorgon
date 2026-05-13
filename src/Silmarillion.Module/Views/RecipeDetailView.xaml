@@ -1,0 +1,102 @@
+<UserControl x:Class="Silmarillion.Views.RecipeDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <StackPanel>
+            <!-- Header: icon + name + internal name subscript -->
+            <DockPanel Margin="0,0,0,10">
+                <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                             Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
+                               Foreground="#FFD4A847"
+                               FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding InternalName}" Foreground="#88FFFFFF"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,2,0,0"
+                               Visibility="{Binding InternalName, Converter={StaticResource NullOrEmptyToVis}}"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Skill requirement chip -->
+            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                    CornerRadius="3" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,0,10"
+                    Visibility="{Binding SkillRequirementChip, Converter={StaticResource NullOrEmptyToVis}}">
+                <TextBlock Text="{Binding SkillRequirementChip}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+            </Border>
+
+            <!-- Description -->
+            <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
+                       FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                       MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
+                       Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+            <!-- Ingredients -->
+            <StackPanel Margin="0,0,0,10"
+                        Visibility="{Binding Ingredients.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Ingredients" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding Ingredients}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Produces -->
+            <StackPanel Margin="0,0,0,10"
+                        Visibility="{Binding ProducedItems.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Produces" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding ProducedItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
+                            <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Result effects (plain-text stub; TODO(stub:#214) brings rich chip rendering) -->
+            <StackPanel Margin="0,0,0,10"
+                        Visibility="{Binding ResultEffectsText.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Effects" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding ResultEffectsText}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- TODO(stub:#214): rich chip templates -->
+                            <TextBlock Text="{Binding}" Foreground="#AAFFFFFF"
+                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                       FontSize="{DynamicResource AppFontSizeSmall}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>
