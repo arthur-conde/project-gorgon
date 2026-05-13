@@ -107,7 +107,29 @@ public sealed partial class ItemsTabViewModel : ObservableObject
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: BuildRecipeChips(_refData.RecipesByIngredientItem, item.InternalName!),
+            ConsumedAsKeywordIn: BuildKeywordChips(item),
             Sources: BuildSourceChips(item.InternalName!));
+    }
+
+    private IReadOnlyList<EntityChipVm>? BuildKeywordChips(Item item)
+    {
+        if (item.Keywords is null || item.Keywords.Count == 0)
+            return null;
+        var used = _refData.KeywordsUsedInRecipeSlots;
+        if (used.Count == 0) return null;
+        var chips = item.Keywords
+            .Where(k => used.Contains(k.Tag))
+            .Select(k =>
+            {
+                var reference = EntityRef.RecipeIngredientKeyword(k.Tag);
+                return new EntityChipVm(
+                    DisplayName: k.Tag,
+                    IconId: 0,
+                    Reference: reference,
+                    IsNavigable: _navigator.CanOpen(reference));
+            })
+            .ToList();
+        return chips.Count == 0 ? null : chips;
     }
 
     private IReadOnlyList<EntityChipVm>? BuildRecipeChips(
