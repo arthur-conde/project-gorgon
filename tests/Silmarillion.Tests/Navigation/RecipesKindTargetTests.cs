@@ -52,13 +52,13 @@ public sealed class RecipesKindTargetTests
     }
 
     [Fact]
-    public void TrySelectByInternalName_ResolvesFromAllRecipes_NotRefData()
+    public void TrySelectByInternalName_AfterRefresh_ResolvesFreshInstance()
     {
-        // Simulates a background reference-data refresh that swaps in a NEW
-        // Recipe instance with the same InternalName. The tab VM's AllRecipes
-        // still holds the OLD reference (captured at construction). Resolving
-        // via AllRecipes (not refData) keeps the WPF ListBox selection working
-        // when references diverge.
+        // Simulates a background reference-data refresh: refData hands out a NEW
+        // Recipe instance with the same InternalName, AND FileUpdated fires for
+        // "recipes". The tab VM rebuilds AllRecipes via UiThread.Run (inline here
+        // since Application.Current is null in tests) and the selection setter
+        // resolves to the fresh instance — not the stale one captured at construction.
         var originalRecipe = new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] };
         var refData = new FakeReferenceData();
         refData.AddRecipe(originalRecipe);
@@ -66,13 +66,36 @@ public sealed class RecipesKindTargetTests
         var vm = new RecipesTabViewModel(refData, nav);
         var target = new RecipesKindTarget(vm);
 
-        // Simulate a refresh: refData now hands out a DIFFERENT Recipe instance
-        // for the same internal name. AllRecipes still references the original.
-        refData.AddRecipe(new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] });
+        // Refresh: swap in a new Recipe instance.
+        var refreshedRecipe = new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] };
+        refData.AddRecipe(refreshedRecipe);
+        refData.RaiseFileUpdated("recipes");
 
         target.TrySelectByInternalName("MakeSalsa").Should().BeTrue();
         vm.SelectedRow.Should().NotBeNull();
-        vm.SelectedRecipe.Should().BeSameAs(originalRecipe);
+        vm.SelectedRecipe.Should().BeSameAs(refreshedRecipe);
+    }
+
+    [Fact]
+    public void FileUpdated_PreservesCurrentSelectionByInternalName()
+    {
+        // VM has a selection. Refresh fires. New instance for the same name.
+        // After refresh, selection is preserved (re-resolved to the new instance)
+        // and detail VM is rebuilt with fresh data.
+        var original = new Recipe { Key = "recipe_1", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] };
+        var refData = new FakeReferenceData();
+        refData.AddRecipe(original);
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new RecipesTabViewModel(refData, nav);
+        vm.SelectedRow = vm.AllRecipes.Single();
+        vm.SelectedRecipe.Should().BeSameAs(original);
+
+        var refreshed = new Recipe { Key = "recipe_1", InternalName = "MakeSalsa", Name = "Make Salsa (v2)", Ingredients = [] };
+        refData.AddRecipe(refreshed);
+        refData.RaiseFileUpdated("recipes");
+
+        vm.SelectedRecipe.Should().BeSameAs(refreshed);
+        vm.DetailViewModel.Should().NotBeNull();
     }
 
     private static (RecipesKindTarget Target, RecipesTabViewModel Vm, FakeReferenceData RefData) BuildTarget(
@@ -120,6 +143,7 @@ public sealed class RecipesKindTargetTests
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
         public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
         public void BeginBackgroundRefresh() { }
-        public event EventHandler<string>? FileUpdated { add { } remove { } }
+        public event EventHandler<string>? FileUpdated;
+        public void RaiseFileUpdated(string fileKey) => FileUpdated?.Invoke(this, fileKey);
     }
 }

@@ -13,6 +13,13 @@ namespace Silmarillion.ViewModels;
 /// <see cref="SelectedItem"/>, built lazily on selection change with cross-link sections
 /// populated from <c>IReferenceDataService.RecipesByProducedItem</c> /
 /// <c>RecipesByIngredientItem</c> / <c>ItemSources</c>.
+///
+/// Subscribes to <see cref="IReferenceDataService.FileUpdated"/> for <c>"items"</c> and
+/// rebuilds <see cref="AllItems"/> on the UI thread, preserving the current selection by
+/// <see cref="Item.InternalName"/>. Without this, a background CDN refresh after the tab
+/// is loaded would leave WPF's ListBox bound to a stale Item collection while refData
+/// hands out new instances — selections set via the navigator would silently fall out of
+/// the list.
 /// </summary>
 public sealed partial class ItemsTabViewModel : ObservableObject
 {
@@ -25,12 +32,12 @@ public sealed partial class ItemsTabViewModel : ObservableObject
         _refData = refData;
         _navigator = navigator;
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
-        AllItems = refData.ItemsByInternalName.Values
-            .OrderBy(i => i.Name ?? i.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        _allItems = BuildAllItems(refData);
+        refData.FileUpdated += OnFileUpdated;
     }
 
-    public IReadOnlyList<Item> AllItems { get; }
+    [ObservableProperty]
+    private IReadOnlyList<Item> _allItems;
 
     [ObservableProperty]
     private string _queryText = "";
@@ -55,6 +62,41 @@ public sealed partial class ItemsTabViewModel : ObservableObject
         DetailViewModel = new ItemDetailViewModel(
             value, _refData, context, poolPresenter: null, openEntityCommand: _openEntityCommand);
     }
+
+    private void OnFileUpdated(object? sender, string fileKey)
+    {
+        // Items.json is the primary trigger. Recipes.json updates also rebuild
+        // refData's cross-link indices (BuildRecipeCrossLinkIndices runs on both),
+        // which means an open ItemDetailView's "Produced by" / "Used in" chips can
+        // go stale even when items.json itself didn't change. Re-resolve on both.
+        if (fileKey != "items" && fileKey != "recipes") return;
+
+        UiThread.Run(() =>
+        {
+            var captured = SelectedItem?.InternalName;
+            // items.json refresh rebuilds the bound list. recipes.json refresh
+            // only changes the cross-link side; AllItems doesn't need rebuilding.
+            if (fileKey == "items")
+            {
+                AllItems = BuildAllItems(_refData);
+            }
+            if (!string.IsNullOrEmpty(captured))
+            {
+                var resolved = AllItems.FirstOrDefault(i => i.InternalName == captured);
+                // Force a SelectedItem change so OnSelectedItemChanged rebuilds the
+                // detail VM with the fresh refData snapshot. Toggling through null is
+                // necessary because [ObservableProperty]'s equality check would
+                // suppress a same-reference reassignment.
+                SelectedItem = null;
+                SelectedItem = resolved;
+            }
+        });
+    }
+
+    private static IReadOnlyList<Item> BuildAllItems(IReferenceDataService refData) =>
+        refData.ItemsByInternalName.Values
+            .OrderBy(i => i.Name ?? i.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private ItemDetailContext BuildCrossLinkContext(Item item)
     {
