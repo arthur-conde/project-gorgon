@@ -1,6 +1,8 @@
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
+using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
 
@@ -24,6 +26,10 @@ public sealed class SilmarillionModule : IMithrilModule
 
     public void Register(IServiceCollection services)
     {
+        // Replace the shell-registered NoOpReferenceNavigator. Last AddSingleton<T> wins for
+        // non-keyed singleton resolution, and module Register() runs after shell DI setup.
+        services.AddSingleton<IReferenceNavigator, SilmarillionReferenceNavigator>();
+
         services.AddSingleton<SilmarillionViewModel>();
         services.AddSingleton<SilmarillionView>(sp => new SilmarillionView
         {
