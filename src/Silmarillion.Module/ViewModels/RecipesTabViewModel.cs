@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
@@ -15,11 +16,13 @@ public sealed partial class RecipesTabViewModel : ObservableObject
 {
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
+    private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
     public RecipesTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator)
     {
         _refData = refData;
         _navigator = navigator;
+        _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         AllRecipes = refData.Recipes.Values
             .OrderBy(r => r.Name ?? r.InternalName ?? r.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -50,7 +53,7 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         var ingredients = BuildIngredientChips(value);
         var produced = BuildProducedChips(value);
         var effects = value.ResultEffects ?? Array.Empty<string>();
-        DetailViewModel = new RecipeDetailViewModel(value, ingredients, produced, effects);
+        DetailViewModel = new RecipeDetailViewModel(value, ingredients, produced, effects, _openEntityCommand);
     }
 
     private IReadOnlyList<EntityChipVm> BuildIngredientChips(Recipe recipe) =>

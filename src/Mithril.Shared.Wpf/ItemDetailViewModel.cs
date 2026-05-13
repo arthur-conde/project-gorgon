@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
@@ -27,8 +28,10 @@ public sealed partial class ItemDetailViewModel
         Item item,
         IReferenceDataService refData,
         ItemDetailContext context,
-        IAugmentPoolPresenter? poolPresenter = null)
+        IAugmentPoolPresenter? poolPresenter = null,
+        ICommand? openEntityCommand = null)
     {
+        OpenEntityCommand = openEntityCommand;
         Item = item;
         EffectLines = EffectDescsRenderer.Render(item.EffectDescs, refData.Attributes);
         SkillReqChips = item.SkillReqs is null
@@ -103,6 +106,13 @@ public sealed partial class ItemDetailViewModel
     /// vs. plain-text rendering once Phase 5 ships <c>EntityChip</c>.
     /// </summary>
     public IReadOnlyList<ItemSourceChipVm> Sources { get; }
+
+    /// <summary>
+    /// Command invoked when the user clicks a cross-link chip in any of the new sections.
+    /// Receives the chip's <see cref="EntityRef"/> as parameter. Null in legacy callers
+    /// (Celebrimbor pop-up, deep links) — chips remain plain text when null.
+    /// </summary>
+    public ICommand? OpenEntityCommand { get; }
 
     /// <summary>
     /// True when an <see cref="IAugmentPoolPresenter"/> is available — i.e. the Celebrimbor

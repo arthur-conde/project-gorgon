@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Wpf;
 
@@ -17,12 +18,14 @@ public sealed class RecipeDetailViewModel
         Recipe recipe,
         IReadOnlyList<EntityChipVm> ingredients,
         IReadOnlyList<EntityChipVm> producedItems,
-        IReadOnlyList<string> resultEffectsText)
+        IReadOnlyList<string> resultEffectsText,
+        ICommand? openEntityCommand = null)
     {
         Recipe = recipe;
         Ingredients = ingredients;
         ProducedItems = producedItems;
         ResultEffectsText = resultEffectsText;
+        OpenEntityCommand = openEntityCommand;
     }
 
     public Recipe Recipe { get; }
@@ -50,4 +53,10 @@ public sealed class RecipeDetailViewModel
     /// chip templates in #214.
     /// </summary>
     public IReadOnlyList<string> ResultEffectsText { get; }
+
+    /// <summary>
+    /// Command invoked when the user clicks an ingredient/produced chip. Receives the chip's
+    /// <see cref="EntityRef"/>. Wired by <see cref="RecipesTabViewModel"/> to the navigator.
+    /// </summary>
+    public ICommand? OpenEntityCommand { get; }
 }
