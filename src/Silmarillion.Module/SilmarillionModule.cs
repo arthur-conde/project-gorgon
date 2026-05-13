@@ -52,6 +52,9 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipesKindTarget(
             sp.GetRequiredService<RecipesTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientKeywordKindTarget(
+            sp.GetRequiredService<RecipesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>
