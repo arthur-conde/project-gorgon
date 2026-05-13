@@ -12,15 +12,44 @@ namespace Silmarillion.Navigation;
 /// <see cref="IReferenceKindTarget"/> has been registered for it. As Bucket-B
 /// tabs ship (NPCs → Quests → …), each one adds a target and chip
 /// clickability for that kind flips on automatically.
+///
+/// Two constructors exist: an eager one (validates at construction; used by tests
+/// that build a navigator from a fixed array) and a lazy one (validates on first
+/// <see cref="CanOpen"/> call; used by DI to break the construction cycle, since
+/// kind targets depend on tab view-models and tab view-models depend on this
+/// navigator). The lazy path's factory closure isn't invoked until first
+/// <see cref="CanOpen"/>, by which time this navigator is already cached in the
+/// container.
 /// </summary>
 public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 {
-    private readonly IReadOnlyDictionary<EntityKind, IReferenceKindTarget> _targets;
+    private readonly Func<IEnumerable<IReferenceKindTarget>>? _targetsFactory;
+    private IReadOnlyDictionary<EntityKind, IReferenceKindTarget>? _targets;
 
     private readonly Stack<EntityRef> _back = new();
     private readonly Stack<EntityRef> _forward = new();
 
+    /// <summary>Eager construction: validates immediately. Used in tests.</summary>
     public SilmarillionReferenceNavigator(IEnumerable<IReferenceKindTarget> targets)
+    {
+        _targets = BuildRegistry(targets);
+    }
+
+    /// <summary>
+    /// Lazy construction: defers validation and target enumeration to the first
+    /// <see cref="CanOpen"/> call. Used by DI to break the cycle between this
+    /// navigator and the kind targets' tab-VM dependencies.
+    /// </summary>
+    public SilmarillionReferenceNavigator(Func<IEnumerable<IReferenceKindTarget>> targetsFactory)
+    {
+        _targetsFactory = targetsFactory;
+    }
+
+    private IReadOnlyDictionary<EntityKind, IReferenceKindTarget> Targets =>
+        _targets ??= BuildRegistry(_targetsFactory!());
+
+    private static IReadOnlyDictionary<EntityKind, IReferenceKindTarget> BuildRegistry(
+        IEnumerable<IReferenceKindTarget> targets)
     {
         // Fail-loud on duplicate Kind registrations — same shape as DeepLinkRouter.
         var byKind = new Dictionary<EntityKind, IReferenceKindTarget>();
@@ -32,7 +61,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
                     $"{byKind[t.Kind].GetType().FullName} and {t.GetType().FullName}.");
             byKind[t.Kind] = t;
         }
-        _targets = byKind;
+        return byKind;
     }
 
     public EntityRef? Current { get; private set; }
@@ -40,7 +69,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
     public bool CanGoForward => _forward.Count > 0;
     public event EventHandler<NavigatedEventArgs>? Navigated;
 
-    public bool CanOpen(EntityRef reference) => _targets.ContainsKey(reference.Kind);
+    public bool CanOpen(EntityRef reference) => Targets.ContainsKey(reference.Kind);
 
     public void Open(EntityRef reference)
     {

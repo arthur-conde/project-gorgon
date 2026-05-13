@@ -28,9 +28,12 @@ public sealed class SilmarillionModule : IMithrilModule
     {
         // Replace the shell-registered NoOpReferenceNavigator. Last AddSingleton<T> wins
         // for non-keyed singleton resolution, and module Register() runs after shell DI
-        // setup. The navigator pulls all IReferenceKindTarget registrations via DI.
+        // setup. The navigator pulls all IReferenceKindTarget registrations via DI;
+        // the Func<> wrapper defers the GetServices call until the navigator's first
+        // CanOpen invocation, which is what breaks the construction cycle (kind targets
+        // depend on tab VMs, tab VMs depend on this navigator).
         services.AddSingleton<IReferenceNavigator>(sp => new SilmarillionReferenceNavigator(
-            sp.GetServices<IReferenceKindTarget>()));
+            () => sp.GetServices<IReferenceKindTarget>()));
 
         services.AddSingleton<ItemsTabViewModel>();
         services.AddSingleton<RecipesTabViewModel>();
