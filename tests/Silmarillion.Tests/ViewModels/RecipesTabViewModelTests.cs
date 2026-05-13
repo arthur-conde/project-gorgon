@@ -162,6 +162,90 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void IngredientChips_IncludeKeywordIngredient_AlongsideItemIngredient()
+    {
+        var tomato = new Item { Id = 100, InternalName = "Tomato", Name = "Tomato", IconId = 1 };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "MakeSauce",
+            Name = "Make Sauce",
+            Skill = "Cooking",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeItemIngredient { ItemCode = 100, StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Auxiliary Crystal", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByCode = { [100] = tomato },
+            RecipesByKey = { ["r1"] = recipe },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item));
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.Ingredients.Should().HaveCount(2);
+
+        var keywordChip = vm.DetailViewModel.Ingredients[1];
+        keywordChip.DisplayName.Should().Be("Auxiliary Crystal");
+        keywordChip.IsNavigable.Should().BeFalse();
+        keywordChip.IconId.Should().Be(0);
+    }
+
+    [Fact]
+    public void IngredientChips_KeywordIngredient_WithoutDesc_FallsBackToHumanisedItemKeys()
+    {
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "EnchantSomething",
+            Name = "Enchant Something",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal", "Tier3"], Desc = null, StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+        };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.Ingredients.Should().ContainSingle()
+            .Which.DisplayName.Should().Be("any Crystal + Tier3");
+    }
+
+    [Fact]
+    public void IngredientChips_KeywordIngredient_WithEmptyItemKeys_IsSkipped()
+    {
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "DegenerateRecipe",
+            Name = "Degenerate",
+            Skill = "Cooking",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = [], Desc = null, StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+        };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.Ingredients.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ProducedItemChips_PreferResultItems_FallBackToProtoResultItems()
     {
         var sauce = new Item { Id = 101, InternalName = "TomatoSauce", Name = "Tomato Sauce", IconId = 2 };
