@@ -69,6 +69,32 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
     private IReadOnlyCollection<string> _keywordsUsedInRecipeSlots = Array.Empty<string>();
     private IReadOnlyDictionary<string, string> _keywordDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Hardcoded overrides for the slot-walk that builds <see cref="_keywordDisplayNames"/>.
+    /// Each entry forces the display name for a keyword tag regardless of what singleton-slot
+    /// Descs say. Two semantics:
+    /// <list type="bullet">
+    ///   <item>Non-null value: use the value as the display name.</item>
+    ///   <item><c>null</c> value: suppress the slot-walk entirely for that keyword, so the
+    ///   consumer's fallback (typically CamelCase splitting) takes over.</item>
+    /// </list>
+    /// Seeded with keywords whose singleton-slot Descs encode slot ROLE rather than describing
+    /// the keyword itself — e.g. <c>Crystal</c> slots are labelled "Primary Crystal" or
+    /// "Auxiliary Crystal" by the recipe author, neither of which is a faithful per-keyword
+    /// label. Grow as we discover more cases (small enough to stay hardcoded for now).
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string?> KeywordDisplayOverrides
+        = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            // Crystal slots are labelled by their slot role (Primary/Auxiliary) in singleton
+            // Descs, not by what a Crystal is. Force fallback.
+            ["Crystal"] = null,
+            ["MassiveCrystal"] = null,
+            // The sole non-tag singleton Desc for Equipment is "Item to Copy Appearance From"
+            // (recipe_30105) — recipe-specific, misleading as a generic chip label.
+            ["Equipment"] = null,
+        };
     private ReferenceFileSnapshot _recipesSnapshot;
 
     // Skills
@@ -474,16 +500,21 @@ public sealed class ReferenceDataService : IReferenceDataService
     /// <see cref="_keywordsUsedInRecipeSlots"/> accumulates the union of every
     /// <see cref="Mithril.Reference.Models.Recipes.RecipeKeywordIngredient.ItemKeys"/> entry
     /// across all recipes. <see cref="_keywordDisplayNames"/> records friendly per-keyword
-    /// display strings sourced from singleton-slot Descs (strings_all-resolved with the raw
-    /// Desc field as fallback). Called from both ParseAndSwapItems and ParseAndSwapRecipes so
-    /// a refresh of either file rebuilds the indices.
+    /// display strings — checked against <see cref="KeywordDisplayOverrides"/> first, then
+    /// resolved by picking the most-common Desc across all singleton slots that reference
+    /// the keyword (with <c>strings_all</c> consulted before <see cref="RecipeKeywordIngredient.Desc"/>).
+    /// Called from both ParseAndSwapItems and ParseAndSwapRecipes so a refresh of either file
+    /// rebuilds the indices.
     /// </summary>
     private void BuildRecipeCrossLinkIndices()
     {
         var produced = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
         var ingredient = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
         var keywordSet = new HashSet<string>(StringComparer.Ordinal);
-        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        // tag → Desc → occurrence count. Used after the walk to pick the most-common Desc
+        // for each keyword. Most-common-wins handles cases where one Desc dominates across
+        // recipes; ties broken by first-encountered (dictionary insertion order is stable).
+        var descCounts = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
 
         foreach (var recipe in _recipes.Values)
         {
@@ -518,22 +549,59 @@ public sealed class ReferenceDataService : IReferenceDataService
                     case Mithril.Reference.Models.Recipes.RecipeKeywordIngredient kwIng:
                         foreach (var key in kwIng.ItemKeys)
                             keywordSet.Add(key);
-                        // Singleton slots are the only unambiguous source for a per-keyword display
-                        // name. Composite tuples like ["EquipmentSlot:MainHand","MinTSysPrereq:0"]
-                        // carry Descs that describe the AND-matched composite, not any one tag.
+                        // Only singleton slots feed display-name resolution. Composite tuples
+                        // (e.g. ["EquipmentSlot:MainHand","MinTSysPrereq:0"]) carry Descs that
+                        // describe the AND-matched composite, not any one tag.
                         if (kwIng.ItemKeys.Count == 1)
                         {
                             var tag = kwIng.ItemKeys[0];
-                            if (!displayNames.ContainsKey(tag))
+                            var resolved = ResolveSlotDesc(recipe.Key, slotIndex, kwIng.Desc);
+                            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, tag, StringComparison.Ordinal))
                             {
-                                var resolved = ResolveSlotDesc(recipe.Key, slotIndex, kwIng.Desc);
-                                if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, tag, StringComparison.Ordinal))
-                                    displayNames[tag] = resolved;
+                                if (!descCounts.TryGetValue(tag, out var perDesc))
+                                {
+                                    perDesc = new Dictionary<string, int>(StringComparer.Ordinal);
+                                    descCounts[tag] = perDesc;
+                                }
+                                perDesc[resolved] = perDesc.TryGetValue(resolved, out var c) ? c + 1 : 1;
                             }
                         }
                         break;
                 }
             }
+        }
+
+        // Resolve final display names: overrides win first, then most-common-Desc from the walk.
+        var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (tag, perDesc) in descCounts)
+        {
+            if (KeywordDisplayOverrides.TryGetValue(tag, out var overrideValue))
+            {
+                if (!string.IsNullOrEmpty(overrideValue))
+                    displayNames[tag] = overrideValue;
+                // null override → suppress; let the consumer's fallback take over
+                continue;
+            }
+            // Pick the Desc with the highest occurrence count. Dictionary iteration order is
+            // insertion order, so ties resolve to the first-encountered Desc deterministically.
+            string? best = null;
+            var bestCount = 0;
+            foreach (var (desc, count) in perDesc)
+            {
+                if (count > bestCount)
+                {
+                    best = desc;
+                    bestCount = count;
+                }
+            }
+            if (best is not null)
+                displayNames[tag] = best;
+        }
+        // Apply non-null overrides for tags that didn't appear in any singleton slot at all.
+        foreach (var (tag, overrideValue) in KeywordDisplayOverrides)
+        {
+            if (!string.IsNullOrEmpty(overrideValue) && !displayNames.ContainsKey(tag))
+                displayNames[tag] = overrideValue;
         }
 
         _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
