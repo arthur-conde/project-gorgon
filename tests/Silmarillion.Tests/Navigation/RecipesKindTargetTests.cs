@@ -51,6 +51,30 @@ public sealed class RecipesKindTargetTests
         target.TryOpenInWindow().Should().BeFalse();
     }
 
+    [Fact]
+    public void TrySelectByInternalName_ResolvesFromAllRecipes_NotRefData()
+    {
+        // Simulates a background reference-data refresh that swaps in a NEW
+        // Recipe instance with the same InternalName. The tab VM's AllRecipes
+        // still holds the OLD reference (captured at construction). Resolving
+        // via AllRecipes (not refData) keeps the WPF ListBox selection working
+        // when references diverge.
+        var originalRecipe = new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] };
+        var refData = new FakeReferenceData();
+        refData.AddRecipe(originalRecipe);
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new RecipesTabViewModel(refData, nav);
+        var target = new RecipesKindTarget(vm);
+
+        // Simulate a refresh: refData now hands out a DIFFERENT Recipe instance
+        // for the same internal name. AllRecipes still references the original.
+        refData.AddRecipe(new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] });
+
+        target.TrySelectByInternalName("MakeSalsa").Should().BeTrue();
+        vm.SelectedRow.Should().NotBeNull();
+        vm.SelectedRecipe.Should().BeSameAs(originalRecipe);
+    }
+
     private static (RecipesKindTarget Target, RecipesTabViewModel Vm, FakeReferenceData RefData) BuildTarget(
         params Recipe[] recipes)
     {
@@ -59,7 +83,7 @@ public sealed class RecipesKindTargetTests
             refData.AddRecipe(recipe);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
         var vm = new RecipesTabViewModel(refData, nav);
-        var target = new RecipesKindTarget(vm, refData);
+        var target = new RecipesKindTarget(vm);
         return (target, vm, refData);
     }
 

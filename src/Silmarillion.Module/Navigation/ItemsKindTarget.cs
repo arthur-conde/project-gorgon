@@ -15,12 +15,10 @@ namespace Silmarillion.Navigation;
 public sealed class ItemsKindTarget : IReferenceKindTarget
 {
     private readonly ItemsTabViewModel _vm;
-    private readonly IReferenceDataService _refData;
 
-    public ItemsKindTarget(ItemsTabViewModel vm, IReferenceDataService refData)
+    public ItemsKindTarget(ItemsTabViewModel vm)
     {
         _vm = vm;
-        _refData = refData;
     }
 
     public EntityKind Kind => EntityKind.Item;
@@ -29,8 +27,15 @@ public sealed class ItemsKindTarget : IReferenceKindTarget
 
     public bool TrySelectByInternalName(string internalName)
     {
-        if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
-            return false;
+        // Resolve against the tab VM's AllItems (the bound ListBox ItemsSource),
+        // not against refData directly. If a background reference-data refresh swaps
+        // the underlying dictionary, refData hands us a new Item instance while
+        // AllItems still holds the old reference — WPF's ListBox can't find a match
+        // by Equals and silently clears the selection, leaving the detail empty.
+        // Looking up in AllItems guarantees we pick the canonical instance the
+        // ListBox already knows.
+        var item = _vm.AllItems.FirstOrDefault(i => i.InternalName == internalName);
+        if (item is null) return false;
         _vm.SelectedItem = item;
         return true;
     }

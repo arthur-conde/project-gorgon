@@ -40,12 +40,13 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
+        // They resolve entities against the tab VMs' bound collections rather
+        // than refData — see ItemsKindTarget for the post-refresh divergence
+        // that motivates this.
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemsKindTarget(
-            sp.GetRequiredService<ItemsTabViewModel>(),
-            sp.GetRequiredService<IReferenceDataService>()));
+            sp.GetRequiredService<ItemsTabViewModel>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipesKindTarget(
-            sp.GetRequiredService<RecipesTabViewModel>(),
-            sp.GetRequiredService<IReferenceDataService>()));
+            sp.GetRequiredService<RecipesTabViewModel>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>

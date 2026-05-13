@@ -62,7 +62,7 @@ public sealed class ItemsKindTargetTests
             refData.AddItem(item);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
         var vm = new ItemsTabViewModel(refData, nav);
-        var target = new ItemsKindTarget(vm, refData);
+        var target = new ItemsKindTarget(vm);
         return (target, vm, refData);
     }
 
