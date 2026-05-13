@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Mithril.Shared;
 using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shell.Updates;
@@ -69,7 +70,7 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
     {
         try
         {
-            Process.Start(new ProcessStartInfo($"{MithrilUpdateManager.RepoUrl}/releases/latest")
+            Process.Start(new ProcessStartInfo($"{MithrilRepository.Url}/releases/latest")
             {
                 UseShellExecute = true,
             });

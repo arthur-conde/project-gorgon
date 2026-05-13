@@ -16,7 +16,7 @@ namespace Mithril.GameState.Quests.Parsing;
 /// <see cref="IReferenceDataService.Quests"/> so downstream consumers
 /// (e.g. <c>QuestService</c>) can track the journal by stable name.
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#processaddquest--quest-accepted
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#processaddquest--quest-accepted
 /// </summary>
 public sealed partial class QuestAcceptedParser : ILogParser
 {

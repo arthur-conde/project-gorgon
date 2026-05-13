@@ -1,6 +1,6 @@
 # Mithril.Reference Roadmap
 
-> **Status:** Phases 0–6 done as of April 2026 — see History at the bottom. Phase 6 *Optional future work* tracked as issues [#50](https://github.com/arthur-conde/project-gorgon/issues/50) (field-coverage walker) and [#51](https://github.com/arthur-conde/project-gorgon/issues/51) (live-CDN parity test).
+> **Status:** Phases 0–6 done as of April 2026 — see History at the bottom. Phase 6 *Optional future work* tracked as issues [#50](https://github.com/moumantai-gg/mithril/issues/50) (field-coverage walker) and [#51](https://github.com/moumantai-gg/mithril/issues/51) (live-CDN parity test).
 
 A faithful POCO library covering every BundledData JSON file, with serialization
 isolated so the library can be split into a Models / Serialization pair later
@@ -212,7 +212,7 @@ same machinery into the runtime parse path.
   in `ReferenceDataServiceTests` — feeds a quest with a synthetic
   `T: "TotallyMadeUpRequirementType123"`, asserts the warning surfaces.
 
-**Optional future work:** tracked as issues — [#50 field-coverage walker](https://github.com/arthur-conde/project-gorgon/issues/50), [#51 live-CDN parity test](https://github.com/arthur-conde/project-gorgon/issues/51). Both are additive; the Phase 1 validation harness is the substrate.
+**Optional future work:** tracked as issues — [#50 field-coverage walker](https://github.com/moumantai-gg/mithril/issues/50), [#51 live-CDN parity test](https://github.com/moumantai-gg/mithril/issues/51). Both are additive; the Phase 1 validation harness is the substrate.
 
 ## Budget
 

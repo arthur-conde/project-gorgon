@@ -8,8 +8,7 @@ namespace Mithril.Shared.Reference;
 
 public sealed class CommunityCalibrationService : ICommunityCalibrationService
 {
-    private const string UrlTemplate =
-        "https://raw.githubusercontent.com/arthur-conde/mithril-calibration/main/aggregated/{0}.json";
+    private const string UrlTemplate = MithrilRepository.CalibrationDataUrlTemplate;
 
     // Target schema versions — payloads with mismatches are rejected.
     private const int SamwiseSchemaVersion = 1;

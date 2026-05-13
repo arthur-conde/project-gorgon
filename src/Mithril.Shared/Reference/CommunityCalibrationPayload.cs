@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Mithril.Shared.Reference;
 
 // Wire types for the community-calibration payloads fetched from
-// https://raw.githubusercontent.com/arthur-conde/mithril-calibration/main/aggregated/{samwise|arwen}.json
+// https://raw.githubusercontent.com/moumantai-gg/mithril-calibration/main/aggregated/{samwise|arwen}.json
 // and produced by the app's Share dialogs.
 //
 // Field shapes must match the dictionaries persisted by each module (CropGrowthRate,

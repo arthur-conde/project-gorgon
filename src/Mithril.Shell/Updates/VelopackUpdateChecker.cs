@@ -1,3 +1,4 @@
+using Mithril.Shared;
 using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shell.Updates;
@@ -47,7 +48,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
                 remoteVersion: targetVersion,
                 remotePublishedAt: null,
                 status: UpdateComparisonStatus.Behind,
-                releaseNotesUrl: $"{MithrilUpdateManager.RepoUrl}/releases/tag/v{targetVersion}");
+                releaseNotesUrl: $"{MithrilRepository.Url}/releases/tag/v{targetVersion}");
 
             _diag.Info("updates", $"Update available: local={_status.Local.SemanticVersion} remote={targetVersion} channel={_holder.Channel.Name}");
         }

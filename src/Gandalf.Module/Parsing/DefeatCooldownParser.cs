@@ -14,7 +14,7 @@ namespace Gandalf.Parsing;
 /// signal; classifying which one emits it is unnecessary because the cooldown
 /// row is anchored on the prior kill, not the rejection.
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#defeat-cooldown-creatures
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#defeat-cooldown-creatures
 /// </summary>
 public sealed partial class DefeatCooldownParser : ILogParser
 {

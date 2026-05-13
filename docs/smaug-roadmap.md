@@ -83,4 +83,4 @@ v1 is therefore log-driven sell-price calibration + a passive catalog. Future ve
 
 ## History
 
-- **2026-04-30** — backlog migrated from inline checklist into [issues #33–#41](https://github.com/arthur-conde/project-gorgon/issues?q=is%3Aissue+label%3Amodule%3Asmaug) as part of the docs-wiki-projects three-tier reorganization. v1.1 candidates (sources_items bundle, Civic Pride from export) and the Sell Planner tab tagged for prioritisation in the `Mithril Roadmap` Project.
+- **2026-04-30** — backlog migrated from inline checklist into [issues #33–#41](https://github.com/moumantai-gg/mithril/issues?q=is%3Aissue+label%3Amodule%3Asmaug) as part of the docs-wiki-projects three-tier reorganization. v1.1 candidates (sources_items bundle, Civic Pride from export) and the Sell Planner tab tagged for prioritisation in the `Mithril Roadmap` Project.

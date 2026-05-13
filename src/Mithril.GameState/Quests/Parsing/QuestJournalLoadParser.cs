@@ -15,7 +15,7 @@ namespace Mithril.GameState.Quests.Parsing;
 ///   [50208,51252,...,50675,], [3,4,5,...,21501,])
 /// </code>
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#processloadquests--bulk-on-login
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#processloadquests--bulk-on-login
 /// </summary>
 public sealed partial class QuestJournalLoadParser : ILogParser
 {

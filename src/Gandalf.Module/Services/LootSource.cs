@@ -21,7 +21,7 @@ namespace Gandalf.Services;
 ///   <c>IsDurationVerified=false</c> so the UI can flag them.</item>
 /// </list>
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#defeat-cooldown-creatures
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#defeat-cooldown-creatures
 /// </summary>
 public sealed class LootSource : ITimerSource, IDisposable
 {

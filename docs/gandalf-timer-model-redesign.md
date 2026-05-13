@@ -1,7 +1,7 @@
 # Gandalf timer model redesign — eliminate 1 Hz refresh storm + coarse change events
 
-**Tracked in:** [#154](https://github.com/arthur-conde/project-gorgon/issues/154)
-**Sibling issue:** [#153](https://github.com/arthur-conde/project-gorgon/issues/153) (chest-cache write-only — separate localized fix)
+**Tracked in:** [#154](https://github.com/moumantai-gg/mithril/issues/154)
+**Sibling issue:** [#153](https://github.com/moumantai-gg/mithril/issues/153) (chest-cache write-only — separate localized fix)
 
 ## Context
 
@@ -179,4 +179,4 @@ Manual UI checks (from a clean run, with a character logged in):
 - **Replacing `EventHandler<T>` with `IObservable<T>` / channels.** The delta-+-binder pattern *is* lightweight Rx; the dependency cost isn't justified.
 - **`Storyboard`-driven `Fraction` animation.** Hours-scale progress bars don't need 60 Hz interpolation; the gated 1 Hz fast-tick is enough.
 - **Per-character debouncing in `DerivedTimerProgressService`** (the 500 ms `_debounce`) — unrelated to this redesign; do not touch.
-- **Issue [#153](https://github.com/arthur-conde/project-gorgon/issues/153)** (chest-cache write-only) — separate localized cache-schema migration, not a model redesign.
+- **Issue [#153](https://github.com/moumantai-gg/mithril/issues/153)** (chest-cache write-only) — separate localized cache-schema migration, not a model redesign.

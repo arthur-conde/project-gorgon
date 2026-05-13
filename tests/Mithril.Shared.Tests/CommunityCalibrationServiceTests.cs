@@ -89,7 +89,7 @@ public sealed class CommunityCalibrationServiceTests : IDisposable
         var handler = new RoutingHandler(req =>
         {
             req.RequestUri!.AbsoluteUri.Should()
-                .Be("https://raw.githubusercontent.com/arthur-conde/mithril-calibration/main/aggregated/samwise.json");
+                .Be("https://raw.githubusercontent.com/moumantai-gg/mithril-calibration/main/aggregated/samwise.json");
             return Respond(payload);
         });
 

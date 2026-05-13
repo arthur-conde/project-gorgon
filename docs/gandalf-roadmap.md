@@ -44,7 +44,7 @@ This keeps v1 honest: every cooldown shown is a cooldown the parser can compute 
 
 The feature pulls on three pieces of cross-cutting plumbing. State of each:
 
-1. **Audio playback in `Mithril.Shared`** — *shipped in [PR #28](https://github.com/arthur-conde/project-gorgon/pull/28)*. `AudioPlayer`, `IPlaybackHandle`, `WindowFlasher` now live in Shared; Gandalf consumes them without a Samwise dependency.
+1. **Audio playback in `Mithril.Shared`** — *shipped in [PR #28](https://github.com/moumantai-gg/mithril/pull/28)*. `AudioPlayer`, `IPlaybackHandle`, `WindowFlasher` now live in Shared; Gandalf consumes them without a Samwise dependency.
 2. **Two-feed timer source** — *not shipped*. The single `TimerDefinitionsService` needs to compose user-defined and quest-derived feeds into one stream of `GandalfTimerDef`-shaped rows. Likely an `ITimerSource` abstraction or a parallel definitions service joined at `TimerListViewModel`.
 3. **Past-anchored start times in `TimerProgressService`** — *not shipped*. [`TimerProgressService.StartedAt`](../src/Gandalf.Module/Services/TimerProgressService.cs) is unconditionally set to `DateTimeOffset.UtcNow` on Start. Quest cooldowns need `StartedAt = T_complete` (a past timestamp) — confirm whether the existing service can express that, or whether it needs a new entrypoint.
 
@@ -52,7 +52,7 @@ The feature pulls on three pieces of cross-cutting plumbing. State of each:
 
 ## Non-goals
 
-- **Typed `QuestRequirement` parsing.** The current flat projection ([QuestRequirement record](../src/Mithril.Shared/Reference/QuestEntry.cs#L45-L51)) is enough for display + log-line matching. Discriminated requirement records are a precondition for *eligibility evaluation* ("can the player re-take this right now, given their skills/favor?") that a future quest DB or favor planner needs — but the timer itself doesn't. Tracked as issue [#12](https://github.com/arthur-conde/project-gorgon/issues/12).
+- **Typed `QuestRequirement` parsing.** The current flat projection ([QuestRequirement record](../src/Mithril.Shared/Reference/QuestEntry.cs#L45-L51)) is enough for display + log-line matching. Discriminated requirement records are a precondition for *eligibility evaluation* ("can the player re-take this right now, given their skills/favor?") that a future quest DB or favor planner needs — but the timer itself doesn't. Tracked as issue [#12](https://github.com/moumantai-gg/mithril/issues/12).
 - **Shell-scoped notification/inbox subsystem.** A persisted-ack-shaped inbox is the right model for quest readiness (cooldowns are long; the player may be away from Mithril for hours after readiness fires). The v1 timer ships with local dismiss persistence inside Gandalf. Defer the shell inbox until a second feature (Samwise ripeness, future Pippin work, etc.) creates real cross-module demand.
 - **Quests-as-database module.** Searching "what favor quests can I do for Sie Antry that I qualify for?" is a separate, larger feature requiring typed requirements + a character snapshot. Don't bundle it with the timer.
 
@@ -63,4 +63,4 @@ The feature pulls on three pieces of cross-cutting plumbing. State of each:
 
 ## History
 
-- **2026-04-29** — [PR #28](https://github.com/arthur-conde/project-gorgon/pull/28): audio playback (`AudioPlayer` / `IPlaybackHandle` / `WindowFlasher`) lifted from Samwise/Gandalf into `Mithril.Shared`. Architectural prereq #1; unblocks the quest-timer pipeline by removing the cross-module dependency.
+- **2026-04-29** — [PR #28](https://github.com/moumantai-gg/mithril/pull/28): audio playback (`AudioPlayer` / `IPlaybackHandle` / `WindowFlasher`) lifted from Samwise/Gandalf into `Mithril.Shared`. Architectural prereq #1; unblocks the quest-timer pipeline by removing the cross-module dependency.

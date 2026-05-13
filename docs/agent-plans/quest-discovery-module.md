@@ -20,7 +20,7 @@ two pressures pulling in opposite directions:
   completions.
 
 Splitting the modules lets each surface stay narrow and honest. Per the
-[Mithril design principles](https://github.com/arthur-conde/project-gorgon/wiki/Mithril-Design-Principles)
+[Mithril design principles](https://github.com/moumantai-gg/mithril/wiki/Mithril-Design-Principles)
 note, Gandalf does not re-evaluate eligibility — and a quest browser by
 definition has to. They're different jobs.
 

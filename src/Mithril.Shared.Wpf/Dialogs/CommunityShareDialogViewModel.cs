@@ -16,8 +16,7 @@ namespace Mithril.Shared.Wpf.Dialogs;
 /// </summary>
 public sealed partial class CommunityShareDialogViewModel : DialogViewModelBase
 {
-    private const string IssueNewUrlTemplate =
-        "https://github.com/arthur-conde/mithril-calibration/issues/new?template={0}&body={1}";
+    private const string IssueNewUrlTemplate = MithrilRepository.CalibrationIssueUrlTemplate;
 
     // Leave ~6 KB safety room under the typical browser URL cap (~8 KB). If the encoded
     // payload is larger, open the issue with a minimal body and rely on clipboard paste.
