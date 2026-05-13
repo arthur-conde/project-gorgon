@@ -364,12 +364,7 @@ public class DeepLinkRouterTests
     public void SilmarillionRoute_DispatchedToReferenceNavigator()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(new IDeepLinkHandler[]
-        {
-            new ItemDeepLinkHandler(nav),
-            new RecipeDeepLinkHandler(nav),
-            new Silmarillion.Navigation.SilmarillionDeepLinkHandler(nav),
-        });
+        var router = BuildSilmarillionRouter(nav);
 
         router.Handle("mithril://silmarillion/item/CraftedLeatherBoots5").Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
@@ -377,4 +372,40 @@ public class DeepLinkRouterTests
         router.Handle("mithril://silmarillion/recipe/MakeTomatoSauce").Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Recipe("MakeTomatoSauce"));
     }
+
+    [Theory]
+    [InlineData("mithril://silmarillion/")]                       // empty payload
+    [InlineData("mithril://silmarillion/item")]                   // missing name segment
+    [InlineData("mithril://silmarillion/item/")]                  // trailing slash, empty name
+    [InlineData("mithril://silmarillion/item/has space")]         // illegal payload char
+    [InlineData("mithril://silmarillion/item/has-hyphen")]        // hyphen not in [A-Za-z0-9_]
+    [InlineData("mithril://silmarillion/item/extra/segment")]     // extra path segments forbidden
+    [InlineData("mithril://silmarillion/garbage/Foo")]            // unknown EntityKind
+    public void SilmarillionRoute_MalformedInputs_ReturnFalse_AndDontDispatch(string uri)
+    {
+        var nav = new RecordingNavigator();
+        var router = BuildSilmarillionRouter(nav);
+
+        router.Handle(uri).Should().BeFalse();
+        nav.LastOpened.Should().BeNull();
+    }
+
+    [Fact]
+    public void SilmarillionRoute_PayloadOverLengthCap_IsRejected()
+    {
+        var nav = new RecordingNavigator();
+        var router = BuildSilmarillionRouter(nav);
+
+        var tooLong = new string('A', 129);
+        router.Handle($"mithril://silmarillion/item/{tooLong}").Should().BeFalse();
+        nav.LastOpened.Should().BeNull();
+    }
+
+    private static DeepLinkRouter BuildSilmarillionRouter(IReferenceNavigator nav) =>
+        new(new IDeepLinkHandler[]
+        {
+            new ItemDeepLinkHandler(nav),
+            new RecipeDeepLinkHandler(nav),
+            new Silmarillion.Navigation.SilmarillionDeepLinkHandler(nav),
+        });
 }
