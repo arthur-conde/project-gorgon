@@ -11,6 +11,11 @@ namespace Silmarillion.Navigation;
 /// <c>mithril://legolas/...</c>, etc. The legacy single-kind forms
 /// (<c>mithril://item/...</c> / <c>mithril://recipe/...</c>) remain supported
 /// via <see cref="ItemDeepLinkHandler"/> / <see cref="RecipeDeepLinkHandler"/>.
+///
+/// Kind dispatch delegates to the navigator's <see cref="IReferenceNavigator.CanOpen"/>
+/// so the handler inherits whatever kinds the navigator's
+/// <c>IReferenceKindTarget</c> registry covers — new Bucket-B tabs (NPCs, Quests, …)
+/// become deep-linkable without touching this file.
 /// </summary>
 public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
 {
@@ -30,40 +35,38 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
             return false;
         }
 
-        // Strictly two segments: kind/name. Extra segments are rejected so the
-        // grammar stays unambiguous when future kinds ship.
-        var slash = subPath.IndexOf('/');
-        if (slash < 0 || slash == subPath.Length - 1)
+        // Cap at 3 so 'item/foo/bar' yields three parts and gets rejected as
+        // extra-segments rather than silently accepted.
+        var parts = subPath.Split('/', 3);
+        if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0)
         {
-            diag?.Info("DeepLink", $"Rejected: silmarillion payload '{subPath}' missing kind or name segment.");
+            diag?.Info("DeepLink", $"Rejected: silmarillion payload '{subPath}' must be '<kind>/<name>'.");
             return false;
         }
-        var kind = subPath.AsSpan(0, slash).ToString().ToLowerInvariant();
-        var name = subPath[(slash + 1)..];
-        if (name.Contains('/'))
-        {
-            diag?.Info("DeepLink", $"Rejected: silmarillion payload '{subPath}' has extra segments.");
-            return false;
-        }
+
+        var kind = parts[0];
+        var name = parts[1];
+
         if (!PayloadPattern.IsMatch(name))
         {
             diag?.Info("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
             return false;
         }
 
-        switch (kind)
+        if (!Enum.TryParse<EntityKind>(kind, ignoreCase: true, out var entityKind))
         {
-            case "item":
-                diag?.Info("DeepLink", $"Silmarillion handler dispatching item '{name}'.");
-                _navigator.Open(EntityRef.Item(name));
-                return true;
-            case "recipe":
-                diag?.Info("DeepLink", $"Silmarillion handler dispatching recipe '{name}'.");
-                _navigator.Open(EntityRef.Recipe(name));
-                return true;
-            default:
-                diag?.Info("DeepLink", $"Rejected: silmarillion kind '{kind}' is not yet routable.");
-                return false;
+            diag?.Info("DeepLink", $"Rejected: silmarillion kind '{kind}' is not a known EntityKind.");
+            return false;
         }
+
+        var entityRef = new EntityRef(entityKind, name);
+        if (!_navigator.CanOpen(entityRef))
+        {
+            diag?.Info("DeepLink", $"Rejected: silmarillion kind '{kind}' has no registered target yet.");
+            return false;
+        }
+
+        _navigator.Open(entityRef);
+        return true;
     }
 }

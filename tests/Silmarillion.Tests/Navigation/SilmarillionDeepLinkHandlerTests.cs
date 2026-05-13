@@ -81,7 +81,40 @@ public sealed class SilmarillionDeepLinkHandlerTests
         nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
     }
 
+    [Theory]
+    [InlineData("npc/Marna", EntityKind.Npc, "Marna")]
+    [InlineData("ability/Hatchet", EntityKind.Ability, "Hatchet")]
+    [InlineData("quest/RuminationsOfAYoungMan", EntityKind.Quest, "RuminationsOfAYoungMan")]
+    public void TryHandle_DispatchesAnyEntityKindTheNavigatorAccepts(
+        string subPath, EntityKind expectedKind, string expectedName)
+    {
+        var nav = new PermissiveNavigator();
+        var handler = new SilmarillionDeepLinkHandler(nav);
+
+        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        nav.LastOpened.Should().Be(new EntityRef(expectedKind, expectedName));
+    }
+
+    // Models the production SilmarillionReferenceNavigator: only kinds that have
+    // a registered IReferenceKindTarget are openable. Items + Recipes are the
+    // currently-shipping Bucket-A tabs.
     private sealed class RecordingNavigator : IReferenceNavigator
+    {
+        public EntityRef? LastOpened { get; private set; }
+        public EntityRef? Current => LastOpened;
+        public bool CanGoBack => false;
+        public bool CanGoForward => false;
+        public bool CanOpen(EntityRef reference) =>
+            reference.Kind is EntityKind.Item or EntityKind.Recipe;
+        public void Open(EntityRef reference) => LastOpened = reference;
+        public void Back() { }
+        public void Forward() { }
+        public event EventHandler<NavigatedEventArgs>? Navigated { add { } remove { } }
+    }
+
+    // Opens any kind — used to prove the handler delegates to the navigator's
+    // registry rather than enumerating kinds itself.
+    private sealed class PermissiveNavigator : IReferenceNavigator
     {
         public EntityRef? LastOpened { get; private set; }
         public EntityRef? Current => LastOpened;
