@@ -464,11 +464,14 @@ public sealed class ReferenceDataService : IReferenceDataService
     }
 
     /// <summary>
-    /// Builds <see cref="_recipesByProducedItem"/> and <see cref="_recipesByIngredientItem"/>
-    /// from the current <see cref="_recipes"/> + <see cref="_items"/>. Items lacking InternalName
-    /// or item codes that don't resolve to a known item are silently skipped (they can't be
-    /// cross-linked to a browsable entity anyway). Called from both ParseAndSwapItems and
-    /// ParseAndSwapRecipes so a refresh of either file rebuilds the indices.
+    /// Builds <see cref="_recipesByProducedItem"/>, <see cref="_recipesByIngredientItem"/>,
+    /// and <see cref="_keywordsUsedInRecipeSlots"/> from the current <see cref="_recipes"/> +
+    /// <see cref="_items"/>. Items lacking InternalName or item codes that don't resolve to a
+    /// known item are silently skipped (they can't be cross-linked to a browsable entity anyway).
+    /// <see cref="_keywordsUsedInRecipeSlots"/> accumulates the union of every
+    /// <see cref="Mithril.Reference.Models.Recipes.RecipeKeywordIngredient.ItemKeys"/> entry
+    /// across all recipes. Called from both ParseAndSwapItems and ParseAndSwapRecipes so a
+    /// refresh of either file rebuilds the indices.
     /// </summary>
     private void BuildRecipeCrossLinkIndices()
     {
