@@ -2,7 +2,7 @@
 
 Reference for the JSON-lines files written by [`IPerfTracer`](../src/Mithril.Shared/Diagnostics/Performance/IPerfTracer.cs) — what each event means, what its properties carry, and how to read a trace.
 
-Shipped in PR [#196](https://github.com/arthur-conde/project-gorgon/pull/196). Tracking issue: [#195](https://github.com/arthur-conde/project-gorgon/issues/195).
+Shipped in PR [#196](https://github.com/moumantai-gg/mithril/pull/196). Tracking issue: [#195](https://github.com/moumantai-gg/mithril/issues/195).
 
 ## What gets recorded and where
 
@@ -32,7 +32,7 @@ The discriminator is **`Kind`** — one of the constants in [`PerfEventKinds`](.
 
 ## What's instrumented today
 
-Not every event kind has a producer yet — the schema defines the vocabulary; the codebase decides what gets emitted. Current state (PR [#196](https://github.com/arthur-conde/project-gorgon/pull/196)):
+Not every event kind has a producer yet — the schema defines the vocabulary; the codebase decides what gets emitted. Current state (PR [#196](https://github.com/moumantai-gg/mithril/pull/196)):
 
 | Kind | Producer | Status |
 |---|---|---|

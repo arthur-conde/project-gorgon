@@ -14,7 +14,7 @@ namespace Mithril.GameState.Quests.Parsing;
 /// Anchors the cooldown clock on this Timestamp so log-replay produces the
 /// right elapsed time.
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#processcompletequest--quest-turned-in
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#processcompletequest--quest-turned-in
 /// </summary>
 public sealed partial class QuestCompletedParser : ILogParser
 {

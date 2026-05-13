@@ -18,7 +18,7 @@ Legolas tails the chat log, parses these offsets, and:
 4. Optimises a route through the unvisited pins.
 5. Watches for `… collected!` lines to mark pins done; auto-resets when the last one drops (configurable).
 
-The overlay is a HUD layered over the in-game map — strictly 1:1 with it. Internal zoom/pan was removed in [#126](https://github.com/arthur-conde/project-gorgon/pull/127).
+The overlay is a HUD layered over the in-game map — strictly 1:1 with it. Internal zoom/pan was removed in [#126](https://github.com/moumantai-gg/mithril/pull/127).
 
 ## End-to-end Survey flow
 
@@ -168,7 +168,7 @@ The drag handler in [`MapOverlayView.xaml.cs`](../src/Legolas.Module/Views/MapOv
 |---|---|---|
 | `SurveyDedupRadiusMetres` | 5.0 | New `SurveyDetected` whose offset is within this radius of an uncollected pin updates that pin instead of creating a new one. |
 | `SurveyPinRadiusMetres` | 8.0 | Pin diameter, in **screen pixels** (not metres — multiplying by projector scale made pins visibly resize on every refit, which felt buggy). |
-| `MapOpacity`, `InventoryOpacity` | 1.0 | Floored at `MinInteractiveOpacity = 0.01` so a faded overlay stays clickable. See [#124](https://github.com/arthur-conde/project-gorgon/pull/124). |
+| `MapOpacity`, `InventoryOpacity` | 1.0 | Floored at `MinInteractiveOpacity = 0.01` so a faded overlay stays clickable. See [#124](https://github.com/moumantai-gg/mithril/pull/124). |
 | `ClickThroughMap`, `ClickThroughInventory` | false | Toggles `WS_EX_TRANSPARENT` on the window. |
 | `AutoClickThroughInventoryDuringSession` | true | Issue #4 bullet 4 — auto-engage click-through on inventory while `Listening`. |
 | `AutoHideOverlaysOnGameUnfocused` | true | Issue #116. |
@@ -311,7 +311,7 @@ WPF screen Y grows downward; map north grows upward. `Project` negates the rotat
 
 ### Overlay is strictly 1:1 with the game map
 
-No internal zoom/pan ([#126](https://github.com/arthur-conde/project-gorgon/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the D2D canvas inside renders at exactly 1 DIP per CSS pixel, and the D3D11 back buffer is sized in device pixels for per-monitor DPI correctness. If you find yourself adding a `RenderTransform` or scaling factor to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.
+No internal zoom/pan ([#126](https://github.com/moumantai-gg/mithril/pull/127)). The window size and position are user-controlled (header drag + edge resize via `WindowLayoutBinder`); the D2D canvas inside renders at exactly 1 DIP per CSS pixel, and the D3D11 back buffer is sized in device pixels for per-monitor DPI correctness. If you find yourself adding a `RenderTransform` or scaling factor to anything inside `Viewport`, stop and reconsider — the entire model assumes canvas pixel == screen pixel == game-map pixel.
 
 ### Second-run `StartedAt` regression — keep the stamp on the Ready→Listening edge
 

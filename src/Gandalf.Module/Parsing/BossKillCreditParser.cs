@@ -26,7 +26,7 @@ namespace Gandalf.Parsing;
 /// stays consistent across the variants. The stripped form is what calibration
 /// overlays key on (<c>aggregated/gandalf.json</c>).
 ///
-/// Wiki: https://github.com/arthur-conde/project-gorgon/wiki/Player-Log-Signals#defeat-cooldown-creatures
+/// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#defeat-cooldown-creatures
 /// </summary>
 public sealed partial class BossKillCreditParser : ILogParser
 {

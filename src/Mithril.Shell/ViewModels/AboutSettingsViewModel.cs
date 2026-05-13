@@ -2,14 +2,13 @@ using System.Diagnostics;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Shared;
 using Mithril.Shell.Updates;
 
 namespace Mithril.Shell.ViewModels;
 
 public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposable
 {
-    private const string RepoUrl = "https://github.com/arthur-conde/project-gorgon";
-
     private readonly IUpdateStatusService _status;
     private readonly IUpdateChecker _checker;
     private readonly IUpdateApplier _applier;
@@ -116,12 +115,12 @@ public sealed partial class AboutSettingsViewModel : ObservableObject, IDisposab
     }
 
     [RelayCommand]
-    private void OpenRepo() => OpenUrl(RepoUrl);
+    private void OpenRepo() => OpenUrl(MithrilRepository.Url);
 
     [RelayCommand]
     private void OpenReleaseNotes()
     {
-        var url = _status.ReleaseNotesUrl ?? $"{RepoUrl}/releases/latest";
+        var url = _status.ReleaseNotesUrl ?? $"{MithrilRepository.Url}/releases/latest";
         OpenUrl(url);
     }
 

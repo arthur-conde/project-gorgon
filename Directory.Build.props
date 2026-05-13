@@ -15,7 +15,7 @@
     <Copyright>Copyright © Arthur Conde 2026</Copyright>
     <Description>Modular WPF desktop companion app for the MMORPG Project Gorgon.</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <RepositoryUrl>https://github.com/arthur-conde/project-gorgon.git</RepositoryUrl>
+    <RepositoryUrl>https://github.com/moumantai-gg/mithril.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <Deterministic>true</Deterministic>
   </PropertyGroup>

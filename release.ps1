@@ -146,4 +146,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Tagged $tag and pushed to $Remote."
-Write-Host "Watch CI: https://github.com/arthur-conde/project-gorgon/actions"
+Write-Host "Watch CI: https://github.com/moumantai-gg/mithril/actions"

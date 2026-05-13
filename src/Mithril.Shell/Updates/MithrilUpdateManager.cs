@@ -1,3 +1,4 @@
+using Mithril.Shared;
 using Velopack;
 using Velopack.Sources;
 
@@ -15,8 +16,6 @@ namespace Mithril.Shell.Updates;
 /// </remarks>
 public sealed class MithrilUpdateManager
 {
-    public const string RepoUrl = "https://github.com/arthur-conde/project-gorgon";
-
     private readonly UpdateManager? _manager;
 
     public MithrilUpdateManager(UpdateChannelInfo channel)
@@ -24,7 +23,7 @@ public sealed class MithrilUpdateManager
         Channel = channel;
         if (channel.IsDevelopment) return;
 
-        var source = new GithubSource(RepoUrl, accessToken: null, prerelease: false);
+        var source = new GithubSource(MithrilRepository.Url, accessToken: null, prerelease: false);
         _manager = new UpdateManager(source, new UpdateOptions { ExplicitChannel = channel.Name });
     }
 
