@@ -351,6 +351,35 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void RecipeListRow_IngredientKeywords_flattens_RecipeKeywordIngredient_ItemKeys_distinctly()
+    {
+        // One recipe with two keyword slots: ["Crystal"] and ["Crystal", "Tier2"].
+        // The flat, deduped set across all slots should be exactly {"Crystal", "Tier2"}.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "EnchantCrystal",
+            Name = "Enchant Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal", "Tier2"], StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+        };
+
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        var row = vm.AllRecipes.Should().ContainSingle().Subject;
+        row.IngredientKeywords.Select(k => k.Tag)
+            .Should().BeEquivalentTo(["Crystal", "Tier2"]);
+    }
+
+    [Fact]
     public void ProducedItemChips_PreferResultItems_FallBackToProtoResultItems()
     {
         var sauce = new Item { Id = 101, InternalName = "TomatoSauce", Name = "Tomato Sauce", IconId = 2 };
