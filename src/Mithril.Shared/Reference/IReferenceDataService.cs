@@ -41,15 +41,23 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => EmptyRecipeIndex;
 
     /// <summary>
-    /// Recipes indexed by the InternalName of any item they consume as an ingredient.
-    /// Includes both <see cref="RecipeItemIngredient"/> (direct item-code references)
-    /// and <see cref="RecipeKeywordIngredient"/> (keyword-matched slots — each slot
-    /// fans out to every item whose enriched keywords AND-match the slot's ItemKeys
-    /// via <see cref="ItemKeywordIndex.ItemsMatching"/>). Built whenever items.json
-    /// or recipes.json reloads. Powers the "Used in" cross-link section. Defaults to
-    /// empty so test fakes don't need to opt into cross-linking.
+    /// Recipes indexed by the InternalName of any item they consume as an ingredient via a
+    /// direct <see cref="RecipeItemIngredient"/>. <see cref="RecipeKeywordIngredient"/> slots
+    /// are kind-based (e.g. "any Crystal") and don't map to a single InternalName — they're
+    /// surfaced through <see cref="KeywordsUsedInRecipeSlots"/> instead. Built whenever
+    /// items.json or recipes.json reloads. Defaults to empty so test fakes don't need to opt
+    /// into cross-linking.
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => EmptyRecipeIndex;
+
+    /// <summary>
+    /// The flat set of every distinct keyword tag that appears in any
+    /// <see cref="RecipeKeywordIngredient.ItemKeys"/> across all recipes. Powers the item-detail
+    /// "Used as" section: an item's chip set is <c>item.Keywords ∩ KeywordsUsedInRecipeSlots</c>,
+    /// so chips only appear for keywords that actually lead to at least one recipe. Built
+    /// whenever recipes.json reloads. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => Array.Empty<string>();
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Recipe>> EmptyRecipeIndex
         = new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);

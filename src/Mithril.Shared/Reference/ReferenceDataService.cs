@@ -67,6 +67,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesByIngredientItem =
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
+    private IReadOnlyCollection<string> _keywordsUsedInRecipeSlots = Array.Empty<string>();
     private ReferenceFileSnapshot _recipesSnapshot;
 
     // Skills
@@ -173,6 +174,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByInternalName;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByProducedItem;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => _recipesByIngredientItem;
+    public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => _keywordsUsedInRecipeSlots;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
@@ -472,6 +474,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     {
         var produced = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
         var ingredient = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
+        var keywordSet = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var recipe in _recipes.Values)
         {
@@ -502,12 +505,9 @@ public sealed class ReferenceDataService : IReferenceDataService
                             AddIngredientRecipe(ingredient, item.InternalName, recipe);
                         break;
 
-                    case Mithril.Reference.Models.Recipes.RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0:
-                        foreach (var matchedItem in _keywordIndex.ItemsMatching(kwIng.ItemKeys))
-                        {
-                            if (!string.IsNullOrEmpty(matchedItem.InternalName))
-                                AddIngredientRecipe(ingredient, matchedItem.InternalName, recipe);
-                        }
+                    case Mithril.Reference.Models.Recipes.RecipeKeywordIngredient kwIng:
+                        foreach (var key in kwIng.ItemKeys)
+                            keywordSet.Add(key);
                         break;
                 }
             }
@@ -515,6 +515,7 @@ public sealed class ReferenceDataService : IReferenceDataService
 
         _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _recipesByIngredientItem = ingredient.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
+        _keywordsUsedInRecipeSlots = keywordSet;
 
         static void AddIngredientRecipe(Dictionary<string, List<Recipe>> map, string internalName, Recipe recipe)
         {

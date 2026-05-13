@@ -130,6 +130,89 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
+    public void RecipesByIngredientItem_DoesNotIndexKeywordIngredients()
+    {
+        // Keyword ingredients are kind-based (e.g. any "Crystal") and don't map to a single
+        // InternalName. Surfacing them as item-keyed entries would flood the reverse index;
+        // they live on KeywordsUsedInRecipeSlots instead.
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Boots", "InternalName": "Boots" },
+              "item_200": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "Keywords": ["Crystal"] }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Enchant Boots",
+                "InternalName": "EnchantBoots",
+                "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "ItemCode": 100, "StackSize": 1 },
+                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipesByIngredientItem.Should().ContainKey("Boots");
+        svc.RecipesByIngredientItem.Should().NotContainKey("RoughCrystal",
+            because: "keyword-matched usage lives in KeywordsUsedInRecipeSlots, not the per-item dictionary");
+    }
+
+    [Fact]
+    public void KeywordsUsedInRecipeSlots_collects_distinct_tags_across_all_RecipeKeywordIngredient_slots()
+    {
+        WriteFixture(
+            itemsJson: """
+            { "item_100": { "Name": "Boots", "InternalName": "Boots" } }
+            """,
+            recipesJson: """
+            {
+              "recipe_singleton": {
+                "Name": "R1", "InternalName": "R1", "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "ItemCode": 100, "StackSize": 1 },
+                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              },
+              "recipe_tuple": {
+                "Name": "R2", "InternalName": "R2", "Skill": "Leatherworking",
+                "Ingredients": [
+                  { "Desc": "T2", "ItemKeys": ["Crystal", "Tier2"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordsUsedInRecipeSlots.Should().BeEquivalentTo(["Crystal", "Tier2"]);
+    }
+
+    [Fact]
+    public void KeywordsUsedInRecipeSlots_is_empty_when_no_recipes_reference_keyword_slots()
+    {
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "X", "InternalName": "X" } }""",
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "R1", "InternalName": "R1", "Skill": "Cooking",
+                "Ingredients": [ { "ItemCode": 100, "StackSize": 1 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordsUsedInRecipeSlots.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Indices_SkipItemsThatLackInternalName()
     {
         // Some items in the bundled file lack InternalName; cross-link indices key on
