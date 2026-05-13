@@ -30,6 +30,12 @@ public sealed class SilmarillionModule : IMithrilModule
         // non-keyed singleton resolution, and module Register() runs after shell DI setup.
         services.AddSingleton<IReferenceNavigator, SilmarillionReferenceNavigator>();
 
+        // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
+        // Legacy mithril://item/<name> / mithril://recipe/<name> remain wired in
+        // Mithril.Shared.Wpf.
+        services.AddSingleton<IDeepLinkHandler>(sp =>
+            new SilmarillionDeepLinkHandler(sp.GetRequiredService<IReferenceNavigator>()));
+
         services.AddSingleton<ItemsTabViewModel>();
         services.AddSingleton<RecipesTabViewModel>();
         services.AddSingleton<SilmarillionViewModel>();

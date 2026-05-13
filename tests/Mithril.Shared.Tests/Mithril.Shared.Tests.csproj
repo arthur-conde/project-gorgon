@@ -29,5 +29,6 @@
     <ProjectReference Include="..\..\src\Celebrimbor.Module\Celebrimbor.Module.csproj" />
     <ProjectReference Include="..\..\src\Elrond.Module\Elrond.Module.csproj" />
     <ProjectReference Include="..\..\src\Gandalf.Module\Gandalf.Module.csproj" />
+    <ProjectReference Include="..\..\src\Silmarillion.Module\Silmarillion.Module.csproj" />
   </ItemGroup>
 </Project>

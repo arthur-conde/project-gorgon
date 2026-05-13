@@ -359,4 +359,22 @@ public class DeepLinkRouterTests
         act.Should().Throw<InvalidOperationException>()
            .WithMessage("*Duplicate IDeepLinkHandler*item*");
     }
+
+    [Fact]
+    public void SilmarillionRoute_DispatchedToReferenceNavigator()
+    {
+        var nav = new RecordingNavigator();
+        var router = new DeepLinkRouter(new IDeepLinkHandler[]
+        {
+            new ItemDeepLinkHandler(nav),
+            new RecipeDeepLinkHandler(nav),
+            new Silmarillion.Navigation.SilmarillionDeepLinkHandler(nav),
+        });
+
+        router.Handle("mithril://silmarillion/item/CraftedLeatherBoots5").Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
+
+        router.Handle("mithril://silmarillion/recipe/MakeTomatoSauce").Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.Recipe("MakeTomatoSauce"));
+    }
 }
