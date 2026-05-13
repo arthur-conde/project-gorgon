@@ -30,6 +30,8 @@ public sealed class SilmarillionModule : IMithrilModule
         // non-keyed singleton resolution, and module Register() runs after shell DI setup.
         services.AddSingleton<IReferenceNavigator, SilmarillionReferenceNavigator>();
 
+        services.AddSingleton<ItemsTabViewModel>();
+        services.AddSingleton<RecipesTabViewModel>();
         services.AddSingleton<SilmarillionViewModel>();
         services.AddSingleton<SilmarillionView>(sp => new SilmarillionView
         {
