@@ -143,7 +143,7 @@
 
             <TextBlock Text="Deep linking" Foreground="#88FFFFFF" Margin="0,28,0,4" FontWeight="SemiBold"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
-                       Text="Register a mithril:// URL handler so other apps can open Mithril directly at a specific item. Example: mithril://item/CraftedLeatherBoots5. Stored in your user registry (HKCU); no admin rights required."/>
+                       Text="Register a mithril:// URL handler so other apps can open Mithril directly at a specific item. Example: mithril://silmarillion/item/CraftedLeatherBoots5. Stored in your user registry (HKCU); no admin rights required."/>
             <TextBlock Text="{Binding LinkSchemeStatus}" Foreground="#CCFFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"/>
             <Button Padding="12,6" HorizontalAlignment="Left"
