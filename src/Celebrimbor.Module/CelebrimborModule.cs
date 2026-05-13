@@ -34,6 +34,8 @@ public sealed class CelebrimborModule : IMithrilModule
         services.AddSingleton<RecipeSearchIndex>();
         services.AddSingleton<OnHandInventoryQuery>();
         services.AddSingleton<ICraftListImportTarget, CraftListImportTarget>();
+        services.AddSingleton<IDeepLinkHandler>(sp =>
+            new CraftListDeepLinkHandler(sp.GetRequiredService<ICraftListImportTarget>()));
         services.AddSingleton<IAugmentPoolPresenter, CelebrimborAugmentPoolPresenter>();
 
         services.AddSingleton<RecipePickerViewModel>();

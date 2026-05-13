@@ -78,15 +78,15 @@ public static class ShellServiceCollectionExtensions
         services
             .AddSingleton<IItemDetailPresenter, ItemDetailPresenter>()
             .AddSingleton<IModuleActivator, ShellModuleActivator>()
-            // Factory form so module-side import targets and IDiagnosticsSink stay optional —
-            // modules register them at their discretion, and the router degrades gracefully
-            // (deep links to absent handlers are logged + dropped, never thrown).
+            // Shell-side deep-link handlers: depend only on IReferenceNavigator
+            // (NoOp when Silmarillion isn't loaded), so they belong here, not in
+            // a module's Register(). Modules register their own action handlers.
+            .AddSingleton<IDeepLinkHandler, ItemDeepLinkHandler>()
+            .AddSingleton<IDeepLinkHandler, RecipeDeepLinkHandler>()
+            // Router pulls every registered IDeepLinkHandler. Module-side handlers
+            // register from their own IMithrilModule.Register() implementations.
             .AddSingleton<IDeepLinkRouter>(sp => new DeepLinkRouter(
-                sp.GetRequiredService<Mithril.Shared.Reference.IReferenceNavigator>(),
-                sp.GetService<ICraftListImportTarget>(),
-                sp.GetService<IPippinShareImportTarget>(),
-                sp.GetService<ILegolasShareImportTarget>(),
-                sp.GetService<IElrondSkillImportTarget>(),
+                sp.GetServices<IDeepLinkHandler>(),
                 sp.GetService<IDiagnosticsSink>()));
 
     public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>

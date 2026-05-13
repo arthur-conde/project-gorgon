@@ -72,6 +72,8 @@ public sealed class PippinModule : IMithrilModule
             sp.GetRequiredService<FoodCatalog>(),
             sp.GetService<IModuleActivator>(),
             sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+        services.AddSingleton<IDeepLinkHandler>(sp =>
+            new PippinDeepLinkHandler(sp.GetRequiredService<IPippinShareImportTarget>()));
 
         // Sharing — image export renderer (round 3)
         services.AddSingleton<PippinShareCardRenderer>(sp => new PippinShareCardRenderer(

@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
-using Silmarillion.Views;
 
 namespace Silmarillion.ViewModels;
 
@@ -11,22 +11,40 @@ namespace Silmarillion.ViewModels;
 /// (Back / Forward / Open-in-window). Subscribes to <see cref="IReferenceNavigator.Navigated"/>
 /// to drive automatic tab-switching when an entity of a different kind is opened
 /// (e.g. clicking a Recipe cross-link from an Item detail).
+///
+/// OnNavigated and OpenInWindow dispatch via the <see cref="IReferenceKindTarget"/>
+/// registry; per-kind switches were retired in #239.
 /// </summary>
 public sealed partial class SilmarillionViewModel : ObservableObject
 {
     private readonly IReferenceNavigator _navigator;
-    private readonly IReferenceDataService _refData;
+    private readonly IReadOnlyDictionary<EntityKind, IReferenceKindTarget> _targets;
+    private readonly IDiagnosticsSink? _diag;
 
     public SilmarillionViewModel(
         ItemsTabViewModel items,
         RecipesTabViewModel recipes,
         IReferenceNavigator navigator,
-        IReferenceDataService refData)
+        IEnumerable<IReferenceKindTarget> targets,
+        IDiagnosticsSink? diag = null)
     {
         Items = items;
         Recipes = recipes;
         _navigator = navigator;
-        _refData = refData;
+        _diag = diag;
+
+        // Same fail-loud-on-duplicate shape as SilmarillionReferenceNavigator —
+        // mis-wired DI should crash startup, not silently last-wins.
+        var byKind = new Dictionary<EntityKind, IReferenceKindTarget>();
+        foreach (var t in targets)
+        {
+            if (byKind.ContainsKey(t.Kind))
+                throw new InvalidOperationException(
+                    $"Duplicate IReferenceKindTarget registration for kind '{t.Kind}': " +
+                    $"{byKind[t.Kind].GetType().FullName} and {t.GetType().FullName}.");
+            byKind[t.Kind] = t;
+        }
+        _targets = byKind;
 
         BackCommand = new RelayCommand(() => _navigator.Back(), () => _navigator.CanGoBack);
         ForwardCommand = new RelayCommand(() => _navigator.Forward(), () => _navigator.CanGoForward);
@@ -47,14 +65,10 @@ public sealed partial class SilmarillionViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanOpenInWindow))]
     private void OpenInWindow()
     {
-        switch (_navigator.Current?.Kind)
+        if (_navigator.Current is { } current
+            && _targets.TryGetValue(current.Kind, out var target))
         {
-            case EntityKind.Item when Items.DetailViewModel is not null:
-                new Mithril.Shared.Wpf.ItemDetailWindow(Items.DetailViewModel).Show();
-                break;
-            case EntityKind.Recipe when Recipes.DetailViewModel is not null:
-                new RecipeDetailWindow { DataContext = Recipes.DetailViewModel }.Show();
-                break;
+            target.TryOpenInWindow();
         }
     }
 
@@ -66,25 +80,19 @@ public sealed partial class SilmarillionViewModel : ObservableObject
         ForwardCommand.NotifyCanExecuteChanged();
         OpenInWindowCommand.NotifyCanExecuteChanged();
 
-        if (e.Current is null) return;
-
-        switch (e.Current.Kind)
+        if (e.Current is null)
         {
-            case EntityKind.Item:
-                if (_refData.ItemsByInternalName.TryGetValue(e.Current.InternalName, out var item))
-                {
-                    SelectedTabIndex = 0;
-                    Items.SelectedItem = item;
-                }
-                break;
-            case EntityKind.Recipe:
-                if (_refData.RecipesByInternalName.TryGetValue(e.Current.InternalName, out var recipe))
-                {
-                    SelectedTabIndex = 1;
-                    Recipes.SelectedRecipe = recipe;
-                }
-                break;
+            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind=null ({e.Kind}) — no-op.");
+            return;
         }
+        if (!_targets.TryGetValue(e.Current.Kind, out var target))
+        {
+            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' — no target registered.");
+            return;
+        }
+
+        _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' tabIndex={target.TabIndex}.");
+        SelectedTabIndex = target.TabIndex;
+        target.TrySelectByInternalName(e.Current.InternalName);
     }
 }
-

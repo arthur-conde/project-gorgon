@@ -11,7 +11,7 @@ public class DeepLinkRouterTests
     public void ItemUri_DispatchedTo_ReferenceNavigator_AsItemKind()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         var handled = router.Handle("mithril://item/CraftedLeatherBoots5");
 
@@ -23,7 +23,7 @@ public class DeepLinkRouterTests
     public void RecipeUri_DispatchedTo_ReferenceNavigator_AsRecipeKind()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         var handled = router.Handle("mithril://recipe/MakeTomatoSauce");
 
@@ -35,7 +35,7 @@ public class DeepLinkRouterTests
     public void SchemeIsCaseInsensitive()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         router.Handle("MITHRIL://item/CraftedLeatherBoots5").Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
@@ -55,7 +55,7 @@ public class DeepLinkRouterTests
     public void RejectedInputs_ReturnFalse_AndDontDispatch(string? uri)
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         router.Handle(uri).Should().BeFalse();
         nav.LastOpened.Should().BeNull();
@@ -65,7 +65,7 @@ public class DeepLinkRouterTests
     public void Payload_OverLengthCap_IsRejected()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         var tooLong = new string('A', 129);
         router.Handle($"mithril://item/{tooLong}").Should().BeFalse();
@@ -76,7 +76,7 @@ public class DeepLinkRouterTests
     public void Payload_AtLengthCap_IsAccepted()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav);
+        var router = BuildRouter(nav);
 
         var cap = new string('A', 128);
         router.Handle($"mithril://item/{cap}").Should().BeTrue();
@@ -90,7 +90,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var listTarget = new RecordingListTarget();
-        var router = new DeepLinkRouter(nav, listTarget);
+        var router = BuildRouter(nav, listTarget: listTarget);
 
         // Base64url alphabet includes '-' and '_', which the item validator rejects — this
         // also confirms per-action validation routes here instead of the stricter item rule.
@@ -101,10 +101,10 @@ public class DeepLinkRouterTests
     }
 
     [Fact]
-    public void ListUri_WithoutRegisteredTarget_IsDropped()
+    public void ListUri_HandlerNotRegistered_IsDropped()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav, listImport: null);
+        var router = BuildRouter(nav, listTarget: null);
 
         router.Handle("mithril://list/AB-_abcXYZ123").Should().BeFalse();
     }
@@ -117,7 +117,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var listTarget = new RecordingListTarget();
-        var router = new DeepLinkRouter(nav, listTarget);
+        var router = BuildRouter(nav, listTarget: listTarget);
 
         router.Handle(uri).Should().BeFalse();
         listTarget.LastPayload.Should().BeNull();
@@ -128,7 +128,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var listTarget = new RecordingListTarget();
-        var router = new DeepLinkRouter(nav, listTarget);
+        var router = BuildRouter(nav, listTarget: listTarget);
 
         var tooLong = new string('A', 8193);
         router.Handle($"mithril://list/{tooLong}").Should().BeFalse();
@@ -142,7 +142,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var pippinTarget = new RecordingPippinTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: pippinTarget);
+        var router = BuildRouter(nav, pippinTarget: pippinTarget);
 
         var handled = router.Handle("mithril://pippin/AB-_abcXYZ123");
 
@@ -151,10 +151,10 @@ public class DeepLinkRouterTests
     }
 
     [Fact]
-    public void PippinUri_WithoutRegisteredTarget_IsDropped()
+    public void PippinUri_HandlerNotRegistered_IsDropped()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null);
+        var router = BuildRouter(nav, pippinTarget: null);
 
         router.Handle("mithril://pippin/AB-_abcXYZ123").Should().BeFalse();
     }
@@ -167,7 +167,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var pippinTarget = new RecordingPippinTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: pippinTarget);
+        var router = BuildRouter(nav, pippinTarget: pippinTarget);
 
         router.Handle(uri).Should().BeFalse();
         pippinTarget.LastPayload.Should().BeNull();
@@ -178,7 +178,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var pippinTarget = new RecordingPippinTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: pippinTarget);
+        var router = BuildRouter(nav, pippinTarget: pippinTarget);
 
         var tooLong = new string('A', 16_385);
         router.Handle($"mithril://pippin/{tooLong}").Should().BeFalse();
@@ -217,7 +217,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var legolasTarget = new RecordingLegolasTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+        var router = BuildRouter(nav, legolasTarget: legolasTarget);
 
         var handled = router.Handle("mithril://legolas/AB-_abcXYZ123");
 
@@ -226,10 +226,10 @@ public class DeepLinkRouterTests
     }
 
     [Fact]
-    public void LegolasUri_WithoutRegisteredTarget_IsDropped()
+    public void LegolasUri_HandlerNotRegistered_IsDropped()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null, legolasImport: null);
+        var router = BuildRouter(nav, legolasTarget: null);
 
         router.Handle("mithril://legolas/AB-_abcXYZ123").Should().BeFalse();
     }
@@ -242,7 +242,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var legolasTarget = new RecordingLegolasTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+        var router = BuildRouter(nav, legolasTarget: legolasTarget);
 
         router.Handle(uri).Should().BeFalse();
         legolasTarget.LastPayload.Should().BeNull();
@@ -253,7 +253,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var legolasTarget = new RecordingLegolasTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null, legolasImport: legolasTarget);
+        var router = BuildRouter(nav, legolasTarget: legolasTarget);
 
         var tooLong = new string('A', 8193);
         router.Handle($"mithril://legolas/{tooLong}").Should().BeFalse();
@@ -273,8 +273,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var elrondTarget = new RecordingElrondTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null,
-            legolasImport: null, elrondImport: elrondTarget);
+        var router = BuildRouter(nav, elrondTarget: elrondTarget);
 
         var handled = router.Handle("mithril://elrond/ArmorAugmentBrewing");
 
@@ -283,11 +282,10 @@ public class DeepLinkRouterTests
     }
 
     [Fact]
-    public void ElrondUri_WithoutRegisteredTarget_IsDropped()
+    public void ElrondUri_HandlerNotRegistered_IsDropped()
     {
         var nav = new RecordingNavigator();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null,
-            legolasImport: null, elrondImport: null);
+        var router = BuildRouter(nav, elrondTarget: null);
 
         router.Handle("mithril://elrond/Cooking").Should().BeFalse();
     }
@@ -301,8 +299,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var elrondTarget = new RecordingElrondTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null,
-            legolasImport: null, elrondImport: elrondTarget);
+        var router = BuildRouter(nav, elrondTarget: elrondTarget);
 
         router.Handle(uri).Should().BeFalse();
         elrondTarget.LastPayload.Should().BeNull();
@@ -313,8 +310,7 @@ public class DeepLinkRouterTests
     {
         var nav = new RecordingNavigator();
         var elrondTarget = new RecordingElrondTarget();
-        var router = new DeepLinkRouter(nav, listImport: null, pippinImport: null,
-            legolasImport: null, elrondImport: elrondTarget);
+        var router = BuildRouter(nav, elrondTarget: elrondTarget);
 
         var tooLong = new string('A', 129);
         router.Handle($"mithril://elrond/{tooLong}").Should().BeFalse();
@@ -325,5 +321,60 @@ public class DeepLinkRouterTests
     {
         public string? LastPayload { get; private set; }
         public void ImportFromLinkPayload(string skillKey) => LastPayload = skillKey;
+    }
+
+    private static DeepLinkRouter BuildRouter(
+        IReferenceNavigator nav,
+        ICraftListImportTarget? listTarget = null,
+        IPippinShareImportTarget? pippinTarget = null,
+        ILegolasShareImportTarget? legolasTarget = null,
+        IElrondSkillImportTarget? elrondTarget = null)
+    {
+        var handlers = new List<IDeepLinkHandler>
+        {
+            new ItemDeepLinkHandler(nav),
+            new RecipeDeepLinkHandler(nav),
+        };
+        if (listTarget is not null)
+            handlers.Add(new Celebrimbor.Services.CraftListDeepLinkHandler(listTarget));
+        if (pippinTarget is not null)
+            handlers.Add(new Pippin.Sharing.PippinDeepLinkHandler(pippinTarget));
+        if (legolasTarget is not null)
+            handlers.Add(new Legolas.Sharing.LegolasDeepLinkHandler(legolasTarget));
+        if (elrondTarget is not null)
+            handlers.Add(new Elrond.Services.ElrondDeepLinkHandler(elrondTarget));
+        return new DeepLinkRouter(handlers);
+    }
+
+    [Fact]
+    public void Constructor_DuplicateAction_Throws()
+    {
+        var nav = new RecordingNavigator();
+        var handlers = new IDeepLinkHandler[]
+        {
+            new ItemDeepLinkHandler(nav),
+            new ItemDeepLinkHandler(nav),  // duplicate
+        };
+        var act = () => new DeepLinkRouter(handlers);
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage("*Duplicate IDeepLinkHandler*item*");
+    }
+
+    [Fact]
+    public void SilmarillionRoute_DispatchedToReferenceNavigator()
+    {
+        var nav = new RecordingNavigator();
+        var router = new DeepLinkRouter(new IDeepLinkHandler[]
+        {
+            new ItemDeepLinkHandler(nav),
+            new RecipeDeepLinkHandler(nav),
+            new Silmarillion.Navigation.SilmarillionDeepLinkHandler(nav),
+        });
+
+        router.Handle("mithril://silmarillion/item/CraftedLeatherBoots5").Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
+
+        router.Handle("mithril://silmarillion/recipe/MakeTomatoSauce").Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.Recipe("MakeTomatoSauce"));
     }
 }

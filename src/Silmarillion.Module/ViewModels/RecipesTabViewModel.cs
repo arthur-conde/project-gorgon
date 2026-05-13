@@ -11,6 +11,11 @@ namespace Silmarillion.ViewModels;
 /// filterable row list on the left, recipe detail on the right. On selection change
 /// builds a <see cref="RecipeDetailViewModel"/> with ingredient/produced chips
 /// resolved from <c>IReferenceDataService</c>.
+///
+/// Subscribes to <see cref="IReferenceDataService.FileUpdated"/> for <c>"recipes"</c>
+/// and <c>"items"</c> (the latter rebuilds chip resolution) and rebuilds
+/// <see cref="AllRecipes"/> on the UI thread, preserving the current selection by
+/// <see cref="Recipe.InternalName"/>.
 /// </summary>
 public sealed partial class RecipesTabViewModel : ObservableObject
 {
@@ -23,18 +28,12 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         _refData = refData;
         _navigator = navigator;
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
-        AllRecipes = refData.Recipes.Values
-            .Select(r => new RecipeListRow(
-                Recipe: r,
-                Name: r.Name ?? r.InternalName ?? r.Key,
-                IconId: r.IconId > 0 ? r.IconId : ResolveResultIcon(r),
-                SkillDisplayName: ResolveSkillDisplayName(r.Skill),
-                SkillLevelReq: r.SkillLevelReq))
-            .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        _allRecipes = BuildAllRecipes(refData);
+        refData.FileUpdated += OnFileUpdated;
     }
 
-    public IReadOnlyList<RecipeListRow> AllRecipes { get; }
+    [ObservableProperty]
+    private IReadOnlyList<RecipeListRow> _allRecipes;
 
     [ObservableProperty]
     private string _queryText = "";
@@ -51,15 +50,16 @@ public sealed partial class RecipesTabViewModel : ObservableObject
 
     /// <summary>
     /// Convenience accessor — the actual <see cref="Recipe"/> behind the selected row.
-    /// Setter resolves the recipe to its row in <see cref="AllRecipes"/>. Tests and the
-    /// navigator's OnNavigated handler write through this property.
+    /// Setter resolves the recipe to its row in <see cref="AllRecipes"/> by InternalName
+    /// (not reference equality, since refresh swaps can hand out a different instance for
+    /// the same name).
     /// </summary>
     public Recipe? SelectedRecipe
     {
         get => SelectedRow?.Recipe;
         set => SelectedRow = value is null
             ? null
-            : AllRecipes.FirstOrDefault(row => ReferenceEquals(row.Recipe, value));
+            : AllRecipes.FirstOrDefault(row => row.Recipe.InternalName == value.InternalName);
     }
 
     [ObservableProperty]
@@ -82,6 +82,46 @@ public sealed partial class RecipesTabViewModel : ObservableObject
             recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName);
     }
 
+    private void OnFileUpdated(object? sender, string fileKey)
+    {
+        // recipes.json updates rebuild the bound list. items.json updates only refresh
+        // the ingredient/produced chip resolution; AllRecipes doesn't change.
+        if (fileKey != "recipes" && fileKey != "items") return;
+
+        UiThread.Run(() =>
+        {
+            var captured = SelectedRow?.Recipe.InternalName;
+            if (fileKey == "recipes")
+            {
+                AllRecipes = BuildAllRecipes(_refData);
+            }
+            if (!string.IsNullOrEmpty(captured))
+            {
+                var resolved = AllRecipes.FirstOrDefault(r => r.Recipe.InternalName == captured);
+                // Toggle through null to force OnSelectedRowChanged to rebuild the detail
+                // VM with the fresh refData snapshot (chip resolution uses live refData).
+                SelectedRow = null;
+                SelectedRow = resolved;
+            }
+        });
+    }
+
+    private IReadOnlyList<RecipeListRow> BuildAllRecipes(IReferenceDataService refData) =>
+        refData.Recipes.Values
+            .Select(r => new RecipeListRow(
+                Recipe: r,
+                Name: r.Name ?? r.InternalName ?? r.Key,
+                IconId: r.IconId > 0 ? r.IconId : ResolveResultIcon(r),
+                SkillDisplayName: ResolveSkillDisplayName(r.Skill),
+                SkillLevelReq: r.SkillLevelReq))
+            .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>
+    /// Convenience accessor — the actual <see cref="Recipe"/> behind the selected row.
+    /// Setter resolves the recipe to its row in <see cref="AllRecipes"/>. Tests and the
+    /// navigator's OnNavigated handler write through this property.
+    /// </summary>
     private string? ResolveSkillDisplayName(string? skillKey) =>
         !string.IsNullOrEmpty(skillKey) && _refData.Skills.TryGetValue(skillKey, out var s)
             ? s.DisplayName

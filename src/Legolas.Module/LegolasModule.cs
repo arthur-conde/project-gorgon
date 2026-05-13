@@ -109,6 +109,8 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetService<IReferenceDataService>(),
             sp.GetService<IModuleActivator>(),
             sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IDeepLinkHandler>(sp =>
+            new LegolasDeepLinkHandler(sp.GetRequiredService<ILegolasShareImportTarget>()));
 
         services.AddSingleton<LegolasWizardViewModel>();
         services.AddSingleton<LegolasSettingsViewModel>();
