@@ -13,6 +13,7 @@
     <Project Path="src/Arwen.Module/Arwen.Module.csproj" />
     <Project Path="src/Pippin.Module/Pippin.Module.csproj" />
     <Project Path="src/Saruman.Module/Saruman.Module.csproj" />
+    <Project Path="src/Silmarillion.Module/Silmarillion.Module.csproj" />
     <Project Path="src/Smaug.Module/Smaug.Module.csproj" />
     <Project Path="src/Celebrimbor.Module/Celebrimbor.Module.csproj" />
     <Project Path="src/Palantir.Module/Palantir.Module.csproj" />

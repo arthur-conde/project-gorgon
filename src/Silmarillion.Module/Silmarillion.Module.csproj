@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Silmarillion</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Mithril.Reference\Mithril.Reference.csproj" />
+    <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,23 @@
+<UserControl x:Class="Silmarillion.Views.SilmarillionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480">
+            <TextBlock Text="Silmarillion · Reference"
+                       FontFamily="{DynamicResource AppHeaderFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeXLarge}"
+                       Foreground="#FFD4A847"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="Items and Recipes tabs arriving in subsequent commits."
+                       Foreground="#88FFFFFF" FontStyle="Italic"
+                       HorizontalAlignment="Center"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap" TextAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
