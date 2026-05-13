@@ -6,6 +6,13 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              x:Name="ChipRoot">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <Button Padding="6,2" Margin="0,1,4,1"
             Command="{Binding ClickCommand, ElementName=ChipRoot}"
             CommandParameter="{Binding Reference}"

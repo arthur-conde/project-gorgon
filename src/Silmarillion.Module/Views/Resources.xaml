@@ -1,0 +1,47 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf">
+
+    <!-- Card template for Items tab. Bound DataContext: Mithril.Reference.Models.Items.Item. -->
+    <DataTemplate x:Key="ItemCardTemplate">
+        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="4" Width="240">
+            <DockPanel>
+                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                               Width="36" Height="36" Margin="0,0,8,0" VerticalAlignment="Top"/>
+                <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                               Foreground="#FFD4A847" TextWrapping="Wrap"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                    <TextBlock Text="{Binding EquipSlot}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,1,0,0"
+                               Visibility="{Binding EquipSlot, Converter={StaticResource NullOrEmptyToVis}}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </DataTemplate>
+
+    <!-- Card template for Recipes tab. Bound DataContext: Mithril.Reference.Models.Recipes.Recipe. -->
+    <DataTemplate x:Key="RecipeCardTemplate">
+        <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="4" Width="240">
+            <DockPanel>
+                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                               Width="36" Height="36" Margin="0,0,8,0" VerticalAlignment="Top"/>
+                <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                               Foreground="#FFD4A847" TextWrapping="Wrap"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                    <TextBlock Foreground="#88FFFFFF" Margin="0,1,0,0"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Visibility="{Binding Skill, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="{Binding Skill, Mode=OneWay}"/>
+                        <Run Text=" "/>
+                        <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </DataTemplate>
+
+</ResourceDictionary>
