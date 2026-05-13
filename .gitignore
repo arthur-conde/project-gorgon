@@ -15,6 +15,7 @@ src/temp
 .claude/scheduled_tasks.lock
 .claude/tmp/
 .claude/worktrees/
+reviews/
 
 # Legacy browser-based garden helper (superseded by Samwise module)
 garden/
