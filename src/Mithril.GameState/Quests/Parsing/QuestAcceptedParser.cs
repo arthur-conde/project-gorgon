@@ -43,7 +43,7 @@ public sealed partial class QuestAcceptedParser : ILogParser
         if (!int.TryParse(m.Groups["id"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
             return null;
 
-        if (!_refData.Quests.TryGetValue($"quest_{id}", out var entry))
+        if (!_refData.Quests.TryGetValue($"quest_{id}", out var entry) || string.IsNullOrEmpty(entry.InternalName))
         {
             _diag?.Trace("Gandalf.Quest", $"Unknown questId {id}; dropping ProcessBook \"New Quest\" line");
             return null;

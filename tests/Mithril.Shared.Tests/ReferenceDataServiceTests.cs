@@ -358,13 +358,12 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
-    public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
+    public void Quest_requirements_with_polymorphic_T_discriminator_deserialise_to_concrete_subclasses()
     {
         // Verifies the polymorphic discriminator dispatch in Mithril.Reference's
         // ParseQuests: the JSON's "T" field maps to a concrete QuestRequirement
-        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.)
-        // and ParseAndSwapQuests projects that to the flat QuestRequirement
-        // record exposed on QuestEntry.Requirements.
+        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.).
+        // ParseAndSwapQuests exposes the raw POCO; no projection layer.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
         File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
         File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
@@ -402,22 +401,28 @@ public class ReferenceDataServiceTests : IDisposable
         quest.Name.Should().Be("Test Quest");
         quest.DisplayedLocation.Should().Be("Serbule");
         quest.FavorNpc.Should().Be("AreaSerbule/NPC_Joe");
-        quest.FavorReward.Should().Be(100);
+        quest.Reward_Favor.Should().Be(100);
 
         quest.Requirements.Should().HaveCount(2);
-        quest.Requirements[0].Type.Should().Be("QuestCompleted");
-        quest.Requirements[0].Quest.Should().Be("PriorQuest");
-        quest.Requirements[1].Type.Should().Be("MinFavorLevel");
-        quest.Requirements[1].Level.Should().Be("Friends");
-        quest.Requirements[1].Npc.Should().Be("AreaSerbule/NPC_Joe");
+        var completed = quest.Requirements![0].Should()
+            .BeOfType<Mithril.Reference.Models.Quests.QuestCompletedRequirement>().Subject;
+        completed.T.Should().Be("QuestCompleted");
+        completed.Quest.Should().Be("PriorQuest");
+        var favor = quest.Requirements![1].Should()
+            .BeOfType<Mithril.Reference.Models.Quests.MinFavorLevelRequirement>().Subject;
+        favor.T.Should().Be("MinFavorLevel");
+        favor.Level.Should().Be("Friends");
+        favor.Npc.Should().Be("AreaSerbule/NPC_Joe");
 
-        quest.SkillRewards.Should().ContainSingle();
-        quest.SkillRewards[0].Skill.Should().Be("Sword");
-        quest.SkillRewards[0].Xp.Should().Be(750);
+        var skillReward = quest.Rewards.Should()
+            .ContainSingle().Which.Should()
+            .BeOfType<Mithril.Reference.Models.Quests.SkillXpReward>().Subject;
+        skillReward.Skill.Should().Be("Sword");
+        skillReward.Xp.Should().Be(750);
 
-        quest.ItemRewards.Should().ContainSingle();
-        quest.ItemRewards[0].ItemInternalName.Should().Be("Potato");
-        quest.ItemRewards[0].StackSize.Should().Be(5);
+        quest.Rewards_Items.Should().ContainSingle();
+        quest.Rewards_Items![0].Item.Should().Be("Potato");
+        quest.Rewards_Items![0].StackSize.Should().Be(5);
     }
 
     [Fact]
@@ -574,7 +579,7 @@ public class ReferenceDataServiceTests : IDisposable
     public void Quest_item_source_resolves_questId_to_quest_InternalName()
     {
         // sources_items.json carries questId numerically; the parser should look up
-        // the matching QuestEntry and store its InternalName in ItemSource.Context.
+        // the matching Mithril.Reference.Models.Quests.Quest and store its InternalName in ItemSource.Context.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
             {
               "item_700": { "Name": "Cat Eyeball", "InternalName": "CatEyeball" }

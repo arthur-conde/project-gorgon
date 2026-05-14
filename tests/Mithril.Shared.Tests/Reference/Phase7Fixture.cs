@@ -18,8 +18,8 @@ internal sealed class Phase7Fixture : IReferenceDataService
     public required IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; init; }
     public required IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; init; }
 
-    public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
-    public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+    public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+    public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
     public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public IReadOnlyList<string> Keys => [];

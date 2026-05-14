@@ -32,7 +32,7 @@ public sealed class QuestServiceTests : IDisposable
 
     private (QuestService svc, ScriptedStream stream, FakeActiveCharacterService active,
              FakeReferenceData refData, PerCharacterView<QuestServiceState> view)
-        Build(IReadOnlyList<QuestEntry>? quests = null,
+        Build(IReadOnlyList<(string Key, Mithril.Reference.Models.Quests.Quest Quest)>? quests = null,
               string character = "Arthur", string server = "Kwatoxi")
     {
         var refData = new FakeReferenceData(quests ?? []);
@@ -59,8 +59,8 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_1", "Q1", "Quest 1", TimeSpan.FromHours(1)),
-            QuestEntryFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_1", "Q1", "Quest 1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         try
@@ -87,8 +87,8 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(20)),
-            QuestEntryFactory.Repeatable("quest_3", "Quest_Reg_3", "Regular 3", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_3", "Quest_Reg_3", "Regular 3", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         try
@@ -107,7 +107,7 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "WO 50208", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_50208", "Quest_WO_50208", "WO 50208", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         try
@@ -125,9 +125,9 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
-            QuestEntryFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
-            QuestEntryFactory.Repeatable("quest_3", "Q3", "Q3", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_3", "Q3", "Q3", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
@@ -158,7 +158,7 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
@@ -185,7 +185,7 @@ public sealed class QuestServiceTests : IDisposable
         var ts = new DateTime(2026, 4, 30, 12, 34, 56, DateTimeKind.Utc);
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         try
@@ -208,7 +208,7 @@ public sealed class QuestServiceTests : IDisposable
         var ts = new DateTime(2026, 4, 30, 12, 34, 56, DateTimeKind.Utc);
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
@@ -234,8 +234,8 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
-            QuestEntryFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(20)),
         };
 
         // First service: accept Q1, complete Q2.
@@ -267,8 +267,8 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
-            QuestEntryFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
         };
 
         // Pre-populate Bob's quests.json by running a short-lived service against him.
@@ -316,7 +316,7 @@ public sealed class QuestServiceTests : IDisposable
     {
         var quests = new[]
         {
-            QuestEntryFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
         };
         var (svc, stream, _, _, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);

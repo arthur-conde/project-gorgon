@@ -36,7 +36,7 @@ public class QuestTimersViewModelTests : IDisposable
 
     private (QuestTimersViewModel vm, QuestSource src, DerivedTimerProgressService derived,
              FakeQuestService questSvc, ManualTime time)
-        Build(params QuestEntry[] quests)
+        Build(params (string Key, Mithril.Reference.Models.Quests.Quest Quest)[] quests)
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -63,7 +63,7 @@ public class QuestTimersViewModelTests : IDisposable
         // bug — even with a vast universe, an empty active set + no progress
         // means an empty catalog → empty VM.
         var quests = Enumerable.Range(0, 500)
-            .Select(i => QuestEntryFactory.Repeatable($"k{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
+            .Select(i => QuestFactory.Repeatable($"k{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
             .ToArray();
 
         var (vm, src, derived, _, _) = Build(quests);
@@ -78,9 +78,9 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Pending_quests_show_as_idle_rows()
     {
-        var q1 = QuestEntryFactory.Repeatable("k1", "Q1", "Quest 1", TimeSpan.FromHours(1));
-        var q2 = QuestEntryFactory.Repeatable("k2", "Q2", "Quest 2", TimeSpan.FromHours(1));
-        var q3 = QuestEntryFactory.Repeatable("k3", "Q3", "Quest 3", TimeSpan.FromHours(1));
+        var q1 = QuestFactory.Repeatable("k1", "Q1", "Quest 1", TimeSpan.FromHours(1));
+        var q2 = QuestFactory.Repeatable("k2", "Q2", "Quest 2", TimeSpan.FromHours(1));
+        var q3 = QuestFactory.Repeatable("k3", "Q3", "Quest 3", TimeSpan.FromHours(1));
 
         var (vm, src, derived, questSvc, time) = Build(q1, q2, q3);
         try
@@ -98,7 +98,7 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Recently_completed_quest_appears_as_running()
     {
-        var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
         var (vm, src, derived, questSvc, time) = Build(q);
         try
         {
@@ -114,7 +114,7 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Quest_completed_long_ago_appears_as_done()
     {
-        var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
         var (vm, src, derived, questSvc, time) = Build(q);
         try
         {
@@ -130,7 +130,7 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Dismissed_row_disappears_from_visible_set()
     {
-        var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
         var (vm, src, derived, questSvc, time) = Build(q);
         try
         {
@@ -147,7 +147,7 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Re_loading_a_dismissed_quest_re_adds_it_as_pending()
     {
-        var q = QuestEntryFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
         var (vm, src, derived, questSvc, time) = Build(q);
         try
         {

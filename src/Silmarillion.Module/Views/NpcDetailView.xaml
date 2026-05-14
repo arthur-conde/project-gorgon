@@ -125,17 +125,19 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Quests (plain text until #242 ships the Quests tab) -->
+                <!-- Quests this NPC gives, turns in, or anchors favor for. Routes through
+                     QuestsByGiverNpc — chips become navigable once the Quests tab ships. -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding Quests.Count, Converter={StaticResource PositiveIntToVis}}">
                     <TextBlock Text="Quests" FontWeight="SemiBold" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <ItemsControl ItemsSource="{Binding Quests}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

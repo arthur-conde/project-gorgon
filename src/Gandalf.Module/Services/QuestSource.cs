@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
 using Mithril.GameState.Quests;
+using Mithril.Reference.Models.Quests;
 using Mithril.Shared.Reference;
 
 namespace Gandalf.Services;
@@ -121,7 +122,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
             {
                 SourceId = Id,
                 Key = key,
-                DisplayName = quest.Name,
+                DisplayName = quest.Name ?? questInternalName,
                 ReadyAt = readyAt,
                 SourceMetadata = new QuestCatalogPayload(quest),
             });
@@ -217,10 +218,10 @@ public sealed class QuestSource : ITimerSource, IDisposable
         return list;
     }
 
-    private static TimerCatalogEntry ProjectEntry(QuestEntry quest, TimeSpan duration) =>
+    private static TimerCatalogEntry ProjectEntry(Quest quest, TimeSpan duration) =>
         new(
-            Key: QuestKey(quest.InternalName),
-            DisplayName: quest.Name,
+            Key: QuestKey(quest.InternalName ?? ""),
+            DisplayName: quest.Name ?? quest.InternalName ?? "",
             Region: quest.DisplayedLocation ?? quest.FavorNpc ?? "Quests",
             Duration: duration,
             SourceMetadata: new QuestCatalogPayload(quest));
@@ -230,12 +231,12 @@ public sealed class QuestSource : ITimerSource, IDisposable
             ? key.Substring("quest:".Length)
             : null;
 
-    private static TimeSpan ComputeDuration(QuestEntry q)
+    private static TimeSpan ComputeDuration(Quest q)
     {
         var total = TimeSpan.Zero;
-        if (q.ReuseDays is { } d) total += TimeSpan.FromDays(d);
-        if (q.ReuseHours is { } h) total += TimeSpan.FromHours(h);
-        if (q.ReuseMinutes is { } m) total += TimeSpan.FromMinutes(m);
+        if (q.ReuseTime_Days is { } d) total += TimeSpan.FromDays(d);
+        if (q.ReuseTime_Hours is { } h) total += TimeSpan.FromHours(h);
+        if (q.ReuseTime_Minutes is { } m) total += TimeSpan.FromMinutes(m);
         return total;
     }
 

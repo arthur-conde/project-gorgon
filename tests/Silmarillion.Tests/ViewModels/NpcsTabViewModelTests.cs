@@ -393,34 +393,26 @@ public sealed class NpcsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_Quests_PopulatedFromQuestsWithMatchingFavorNpc()
+    public void DetailViewModel_Quests_PopulatedFromQuestsByGiverNpc()
     {
         var npc = new Npc { Name = "Joeh" };
+        var quest = new Mithril.Reference.Models.Quests.Quest
+        {
+            InternalName = "GetCatEyeballs",
+            Name = "Get Cat Eyeballs",
+            FavorNpc = "NPC_Joeh",
+        };
         var refData = new StubReferenceData
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
-            QuestsByKey =
-            {
-                ["quest_1"] = new QuestEntry("quest_1", "Get Cat Eyeballs", "GetCatEyeballs", "...",
-                    DisplayedLocation: null, FavorNpc: "NPC_Joeh", Keywords: [], Objectives: [],
-                    Requirements: [], RequirementsToSustain: null, SkillRewards: [], ItemRewards: [],
-                    FavorReward: 0, RewardEffects: [], RewardLootProfile: null,
-                    ReuseMinutes: null, ReuseHours: null, ReuseDays: null,
-                    PrefaceText: null, SuccessText: null),
-                ["quest_2"] = new QuestEntry("quest_2", "Other Quest", "OtherQuest", "...",
-                    DisplayedLocation: null, FavorNpc: "NPC_Other", Keywords: [], Objectives: [],
-                    Requirements: [], RequirementsToSustain: null, SkillRewards: [], ItemRewards: [],
-                    FavorReward: 0, RewardEffects: [], RewardLootProfile: null,
-                    ReuseMinutes: null, ReuseHours: null, ReuseDays: null,
-                    PrefaceText: null, SuccessText: null),
-            },
+            QuestsByGiverNpcMap = { ["NPC_Joeh"] = new[] { quest } },
         };
         var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
         vm.DetailViewModel!.Quests.Should().ContainSingle();
-        vm.DetailViewModel.Quests[0].InternalName.Should().Be("GetCatEyeballs");
+        vm.DetailViewModel.Quests[0].Reference.InternalName.Should().Be("GetCatEyeballs");
         vm.DetailViewModel.Quests[0].DisplayName.Should().Be("Get Cat Eyeballs");
     }
 
@@ -448,7 +440,8 @@ public sealed class NpcsTabViewModelTests
         public Dictionary<string, Npc> NpcsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpcMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Item>> ItemsSoldByNpcMap { get; } = new(StringComparer.Ordinal);
-        public Dictionary<string, QuestEntry> QuestsByKey { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByKey { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> QuestsByGiverNpcMap { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -468,8 +461,9 @@ public sealed class NpcsTabViewModelTests
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
-        public IReadOnlyDictionary<string, QuestEntry> Quests => QuestsByKey;
-        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests => QuestsByKey;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> QuestsByGiverNpc => QuestsByGiverNpcMap;
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);

@@ -37,7 +37,7 @@ public class QuestSourceTests : IDisposable
 
     private (QuestSource src, DerivedTimerProgressService derived, FakeReferenceData refData,
              FakeQuestService questSvc, ManualTime time)
-        Build(params Mithril.Shared.Reference.QuestEntry[] quests)
+        Build(params (string Key, Mithril.Reference.Models.Quests.Quest Quest)[] quests)
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -73,7 +73,7 @@ public class QuestSourceTests : IDisposable
         // projects only ActiveQuests ∪ keys-with-progress — not the universe.
         // Regression guard for the relevance-predicate wart that #155 retired.
         var quests = Enumerable.Range(0, 100)
-            .Select(i => QuestEntryFactory.Repeatable($"quest_{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
+            .Select(i => QuestFactory.Repeatable($"quest_{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
             .ToArray();
         var (src, derived, _, _, _) = Build(quests);
         try
@@ -86,7 +86,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Catalog_includes_active_quests_with_reuse_duration()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily Pet Care", TimeSpan.FromHours(20),
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily Pet Care", TimeSpan.FromHours(20),
             location: "Serbule");
         var (src, derived, _, questSvc, time) = Build(quest);
         try
@@ -105,7 +105,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Catalog_excludes_non_repeatable_quests_even_when_active()
     {
-        var nonRep = QuestEntryFactory.NonRepeatable("quest_x", "QX", "One-Off Story Quest");
+        var nonRep = QuestFactory.NonRepeatable("quest_x", "QX", "One-Off Story Quest");
         var (src, derived, _, questSvc, time) = Build(nonRep);
         try
         {
@@ -120,13 +120,13 @@ public class QuestSourceTests : IDisposable
     {
         // The game is the authoritative gate; QuestSource does not re-evaluate
         // QuestCompletedRecently / MinDelayAfterFirstCompletion / etc.
-        var recentlyGated = QuestEntryFactory.Repeatable("quest_a", "QA", "Recently-gated daily",
+        var recentlyGated = QuestFactory.Repeatable("quest_a", "QA", "Recently-gated daily",
             TimeSpan.FromHours(20),
-            requirements: QuestEntryFactory.TimeGate("QuestCompletedRecently"));
-        var firstDelayGated = QuestEntryFactory.Repeatable("quest_b", "QB", "First-delay-gated daily",
+            requirements: QuestFactory.TimeGate("QuestCompletedRecently"));
+        var firstDelayGated = QuestFactory.Repeatable("quest_b", "QB", "First-delay-gated daily",
             TimeSpan.FromHours(20),
-            requirements: QuestEntryFactory.TimeGate("MinDelayAfterFirstCompletion_Hours"));
-        var plain = QuestEntryFactory.Repeatable("quest_c", "QC", "Plain daily", TimeSpan.FromHours(20));
+            requirements: QuestFactory.TimeGate("MinDelayAfterFirstCompletion_Hours"));
+        var plain = QuestFactory.Repeatable("quest_c", "QC", "Plain daily", TimeSpan.FromHours(20));
 
         var (src, derived, _, questSvc, time) = Build(recentlyGated, firstDelayGated, plain);
         try
@@ -145,7 +145,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Completed_event_anchors_progress_to_log_timestamp()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -157,7 +157,7 @@ public class QuestSourceTests : IDisposable
             src.Progress.Should().ContainKey(key);
             src.Progress[key].StartedAt.Should().Be(new DateTimeOffset(fiveHoursAgo, TimeSpan.Zero));
             // 20h cooldown started 5h ago — 15h remaining.
-            var remaining = quest.ReuseHours!.Value * TimeSpan.FromHours(1)
+            var remaining = quest.Quest.ReuseTime_Hours!.Value * TimeSpan.FromHours(1)
                             - (time.GetUtcNow() - src.Progress[key].StartedAt);
             remaining.Should().Be(TimeSpan.FromHours(15));
         }
@@ -167,7 +167,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Replay_of_dismissed_quest_completion_preserves_dismissal()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -191,7 +191,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Genuine_re_completion_after_dismissal_resurrects_the_row()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(20));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -225,7 +225,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void TimerReady_fires_when_completion_is_anchored_past_the_cooldown()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -257,7 +257,7 @@ public class QuestSourceTests : IDisposable
 
             // Stage new reference data and accept a quest backed by it. The
             // FileUpdated rebuild will then have something to project.
-            var late = QuestEntryFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2));
+            var late = QuestFactory.Repeatable("quest_1", "Q1", "Late Arrival", TimeSpan.FromHours(2));
             refData.SetQuests([late]);
             refData.RaiseQuestsUpdated();
             questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
@@ -272,7 +272,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Accepted_event_emits_RowsChanged_with_an_Added_delta()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(2));
+        var quest = QuestFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(2));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -292,7 +292,7 @@ public class QuestSourceTests : IDisposable
     [Fact]
     public void Abandoned_event_for_uncompleted_quest_emits_a_Removed_delta()
     {
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {
@@ -316,7 +316,7 @@ public class QuestSourceTests : IDisposable
         // Catalog = ActiveQuests ∪ keys-with-progress. Completing a quest
         // drops it from the active set BUT _derived has the cooldown row, so
         // the union keeps it visible until the user dismisses.
-        var quest = QuestEntryFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
+        var quest = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(2));
         var (src, derived, _, questSvc, time) = Build(quest);
         try
         {

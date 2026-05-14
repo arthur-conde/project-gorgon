@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 
@@ -7,22 +8,26 @@ namespace Mithril.TestSupport;
 /// <summary>
 /// Minimal <see cref="IReferenceDataService"/> fake for Quest source tests —
 /// just enough to populate <c>Quests</c> + <c>QuestsByInternalName</c> and
-/// raise <see cref="FileUpdated"/> on demand.
+/// raise <see cref="FileUpdated"/> on demand. Builds the keyed dictionaries
+/// from a flat list of <see cref="Quest"/> POCOs (each carrying its own
+/// envelope key in a synthetic <c>quest_&lt;ix&gt;</c> form when not provided).
 /// </summary>
 internal sealed class FakeReferenceData : IReferenceDataService
 {
-    public FakeReferenceData(IReadOnlyList<QuestEntry>? quests = null)
+    public FakeReferenceData(IReadOnlyList<(string Key, Quest Quest)>? quests = null)
     {
         SetQuests(quests ?? []);
     }
 
-    private Dictionary<string, QuestEntry> _quests = new(StringComparer.Ordinal);
-    private Dictionary<string, QuestEntry> _byInternalName = new(StringComparer.Ordinal);
+    private Dictionary<string, Quest> _quests = new(StringComparer.Ordinal);
+    private Dictionary<string, Quest> _byInternalName = new(StringComparer.Ordinal);
 
-    public void SetQuests(IReadOnlyList<QuestEntry> quests)
+    public void SetQuests(IReadOnlyList<(string Key, Quest Quest)> quests)
     {
-        _quests = quests.ToDictionary(q => q.Key, StringComparer.Ordinal);
-        _byInternalName = quests.ToDictionary(q => q.InternalName, StringComparer.Ordinal);
+        _quests = quests.ToDictionary(p => p.Key, p => p.Quest, StringComparer.Ordinal);
+        _byInternalName = quests
+            .Where(p => !string.IsNullOrEmpty(p.Quest.InternalName))
+            .ToDictionary(p => p.Quest.InternalName!, p => p.Quest, StringComparer.Ordinal);
     }
 
     public void RaiseQuestsUpdated() => FileUpdated?.Invoke(this, "quests");
@@ -43,8 +48,8 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
     public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
-    public IReadOnlyDictionary<string, QuestEntry> Quests => _quests;
-    public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName => _byInternalName;
+    public IReadOnlyDictionary<string, Quest> Quests => _quests;
+    public IReadOnlyDictionary<string, Quest> QuestsByInternalName => _byInternalName;
 
     /// <summary>Mutable for tests that need friendly-name resolution coverage.</summary>
     public Dictionary<string, string> StringsRaw { get; } = new(StringComparer.Ordinal);
@@ -57,9 +62,9 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public event EventHandler<string>? FileUpdated;
 }
 
-internal static class QuestEntryFactory
+internal static class QuestFactory
 {
-    public static QuestEntry Repeatable(
+    public static (string Key, Quest Quest) Repeatable(
         string key,
         string internalName,
         string displayName,
@@ -72,39 +77,35 @@ internal static class QuestEntryFactory
         if (reuse.Hours > 0) hours = reuse.Hours;
         if (reuse.Minutes > 0) minutes = reuse.Minutes;
 
-        return new QuestEntry(
-            Key: key,
-            Name: displayName,
-            InternalName: internalName,
-            Description: "",
-            DisplayedLocation: location,
-            FavorNpc: null,
-            Keywords: [],
-            Objectives: [],
-            Requirements: requirements,
-            RequirementsToSustain: null,
-            SkillRewards: [],
-            ItemRewards: [],
-            FavorReward: 0,
-            RewardEffects: [],
-            RewardLootProfile: null,
-            ReuseMinutes: minutes,
-            ReuseHours: hours,
-            ReuseDays: days,
-            PrefaceText: null,
-            SuccessText: null);
+        return (key, new Quest
+        {
+            InternalName = internalName,
+            Name = displayName,
+            DisplayedLocation = location,
+            Requirements = requirements.Length == 0 ? null : requirements,
+            ReuseTime_Minutes = minutes,
+            ReuseTime_Hours = hours,
+            ReuseTime_Days = days,
+        });
     }
 
-    public static QuestEntry NonRepeatable(string key, string internalName, string displayName) =>
-        new(
-            Key: key, Name: displayName, InternalName: internalName,
-            Description: "", DisplayedLocation: null, FavorNpc: null,
-            Keywords: [], Objectives: [], Requirements: [],
-            RequirementsToSustain: null, SkillRewards: [], ItemRewards: [],
-            FavorReward: 0, RewardEffects: [], RewardLootProfile: null,
-            ReuseMinutes: null, ReuseHours: null, ReuseDays: null,
-            PrefaceText: null, SuccessText: null);
+    public static (string Key, Quest Quest) NonRepeatable(string key, string internalName, string displayName) =>
+        (key, new Quest
+        {
+            InternalName = internalName,
+            Name = displayName,
+        });
 
-    public static QuestRequirement TimeGate(string type) =>
-        new(Type: type, Quest: null, Level: null, Npc: null, Skill: null, Keyword: null);
+    /// <summary>
+    /// Synthesises a generic <see cref="QuestCompletedRecentlyRequirement"/>-shaped
+    /// time gate. Most Gandalf tests don't care about the precise discriminator beyond
+    /// "the quest has at least one requirement"; this returns a recognisable POCO type.
+    /// </summary>
+    public static QuestRequirement TimeGate(string type) => type switch
+    {
+        "QuestCompletedRecently" => new QuestCompletedRecentlyRequirement { T = type },
+        "MinFavorLevel" => new MinFavorLevelRequirement { T = type },
+        "MinSkillLevel" => new MinSkillLevelRequirement { T = type },
+        _ => new UnknownQuestRequirement { T = type, DiscriminatorValue = type },
+    };
 }
