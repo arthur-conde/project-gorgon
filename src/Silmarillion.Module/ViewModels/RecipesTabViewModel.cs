@@ -32,12 +32,14 @@ public sealed partial class RecipesTabViewModel : ObservableObject
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
+    private readonly IEntityNameResolver _nameResolver;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
-    public RecipesTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator)
+    public RecipesTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver)
     {
         _refData = refData;
         _navigator = navigator;
+        _nameResolver = nameResolver;
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         _allRecipes = BuildAllRecipes(refData);
         refData.FileUpdated += OnFileUpdated;
@@ -261,5 +263,5 @@ public sealed partial class RecipesTabViewModel : ObservableObject
     private string FormatSourceDisplayName(RecipeSource s) =>
         string.IsNullOrEmpty(s.Npc)
             ? s.Type
-            : $"{s.Type}: {NpcNameResolver.Resolve(_refData, s.Npc!)}";
+            : $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
 }

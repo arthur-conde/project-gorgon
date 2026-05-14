@@ -75,7 +75,7 @@ public sealed class NpcsKindTargetTests
         foreach (var (key, npc) in npcs)
             refData.AddNpc(key, npc);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new NpcsTabViewModel(refData, nav);
+        var vm = new NpcsTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         var target = new NpcsKindTarget(vm);
         return (target, vm, refData);
     }

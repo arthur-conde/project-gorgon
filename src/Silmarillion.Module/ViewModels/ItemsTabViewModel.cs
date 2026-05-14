@@ -36,18 +36,20 @@ public sealed partial class ItemsTabViewModel : ObservableObject
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
+    private readonly IEntityNameResolver _nameResolver;
     private readonly SilmarillionSettings _settings;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
-    public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator)
-        : this(refData, navigator, settings: null)
+    public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver)
+        : this(refData, navigator, nameResolver, settings: null)
     {
     }
 
-    public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, SilmarillionSettings? settings)
+    public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver, SilmarillionSettings? settings)
     {
         _refData = refData;
         _navigator = navigator;
+        _nameResolver = nameResolver;
         // null → owned default instance keeps non-DI callers (tests) working without forcing
         // every fixture to construct one. The DI path always passes the live singleton.
         _settings = settings ?? new SilmarillionSettings();
@@ -265,5 +267,5 @@ public sealed partial class ItemsTabViewModel : ObservableObject
     private string FormatSourceDisplayName(ItemSource s) =>
         string.IsNullOrEmpty(s.Npc)
             ? s.Type
-            : $"{s.Type}: {NpcNameResolver.Resolve(_refData, s.Npc!)}";
+            : $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
 }

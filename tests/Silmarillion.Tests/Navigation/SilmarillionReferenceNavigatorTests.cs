@@ -218,7 +218,7 @@ public sealed class SilmarillionReferenceNavigatorTests
         // Arrange: build a real RecipeIngredientKeywordKindTarget backed by a
         // RecipesTabViewModel so we can assert on both SelectedTabIndex and QueryText.
         var refData = new FakeReferenceData();
-        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
         var keywordTarget = new RecipeIngredientKeywordKindTarget(recipesVm);
 
         var targets = new IReferenceKindTarget[]
@@ -243,7 +243,7 @@ public sealed class SilmarillionReferenceNavigatorTests
     {
         var refData = new FakeReferenceData();
         var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub);
+        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
         var keywordTarget = new ItemKeywordKindTarget(itemsVm);
 
         var targets = new IReferenceKindTarget[]
@@ -269,7 +269,7 @@ public sealed class SilmarillionReferenceNavigatorTests
         // the slot as '+'-joined InternalName and the kind target reconstitutes it.
         var refData = new FakeReferenceData();
         var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub);
+        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
         var keywordTarget = new ItemKeywordKindTarget(itemsVm);
 
         var targets = new IReferenceKindTarget[]
@@ -296,7 +296,7 @@ public sealed class SilmarillionReferenceNavigatorTests
         var refData = new FakeReferenceData();
         refData.AddItem(new Item { Id = 100, InternalName = "RawCrystal", Name = "Raw Crystal" });
         var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub);
+        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
         itemsVm.SelectedItem = itemsVm.AllItems.Single();
         itemsVm.SelectedItem.Should().NotBeNull(); // precondition
 
@@ -327,7 +327,7 @@ public sealed class SilmarillionReferenceNavigatorTests
         var refData = new FakeReferenceData();
         // Seed a recipe so SelectedRow has something to point at before navigation.
         refData.AddRecipe(new Recipe { Key = "recipe_1", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] });
-        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
         recipesVm.SelectedRow = recipesVm.AllRecipes.Single();
         recipesVm.SelectedRow.Should().NotBeNull(); // precondition
 

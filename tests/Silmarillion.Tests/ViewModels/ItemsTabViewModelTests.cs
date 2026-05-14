@@ -2,6 +2,7 @@ using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.TestSupport;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -22,7 +23,7 @@ public sealed class ItemsTabViewModelTests
             },
         };
 
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.AllItems.Should().HaveCount(2);
         vm.AllItems.Select(i => i.Name).Should().Equal("Apple", "Tomato");
@@ -36,7 +37,7 @@ public sealed class ItemsTabViewModelTests
         {
             ItemsByName = { ["Tomato"] = item },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedItem = item;
 
@@ -52,7 +53,7 @@ public sealed class ItemsTabViewModelTests
         {
             ItemsByName = { ["Tomato"] = item },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedItem = item;
         vm.SelectedItem = null;
@@ -76,7 +77,7 @@ public sealed class ItemsTabViewModelTests
             ItemsByName = { ["MassiveTourmaline"] = tourmaline },
             KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "Crystal" },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedItem = tourmaline;
 
@@ -107,7 +108,7 @@ public sealed class ItemsTabViewModelTests
                 ["MetalArmor"] = "Metal Armor",  // friendly form sourced from a recipe slot
             },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedItem = item;
 
@@ -127,7 +128,7 @@ public sealed class ItemsTabViewModelTests
                 ["MetalSlab1"] = MakeRecipeList(count: 5),
             },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
@@ -149,7 +150,7 @@ public sealed class ItemsTabViewModelTests
                 ["MetalSlab1"] = MakeRecipeList(count: 69),
             },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
@@ -173,7 +174,7 @@ public sealed class ItemsTabViewModelTests
             ItemsByName = { ["MetalSlab1"] = item },
             RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 3) },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 0 });
 
         vm.SelectedItem = item;
@@ -192,7 +193,7 @@ public sealed class ItemsTabViewModelTests
             ItemsByName = { ["MetalSlab1"] = item },
             RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 12) },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
@@ -215,7 +216,7 @@ public sealed class ItemsTabViewModelTests
             RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 20) },
         };
         var settings = new SilmarillionSettings { UsedInChipCap = 12 };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), settings);
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(), settings);
         vm.SelectedItem = item;
 
         var before = vm.DetailViewModel!;
@@ -256,14 +257,15 @@ public sealed class ItemsTabViewModelTests
         };
         // Navigator with the Npc kind registered — matches the post-#241 ship state.
         var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
-            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }),
+            new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedItem = apple;
 
         vm.DetailViewModel!.Sources.Should().ContainSingle();
         var chip = vm.DetailViewModel.Sources![0];
-        // No NPC POCO seeded → NpcNameResolver falls back to stripping the "NPC_" prefix
-        // (envelope-key heuristic), so "NPC_Joeh" reads as "Joeh" on the chip.
+        // No NPC POCO seeded → ReferenceDataEntityNameResolver falls back to stripping the
+        // "NPC_" prefix (envelope-key heuristic), so "NPC_Joeh" reads as "Joeh" on the chip.
         chip.DisplayName.Should().Be("Vendor: Joeh");
         chip.EntityReference.Should().Be(EntityRef.Npc("NPC_Joeh"));
         chip.IsNavigable.Should().BeTrue();
@@ -289,7 +291,8 @@ public sealed class ItemsTabViewModelTests
             },
         };
         var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
-            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }),
+            new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedItem = apple;
 
@@ -314,7 +317,8 @@ public sealed class ItemsTabViewModelTests
             },
         };
         var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
-            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }),
+            new FakeEntityNameResolver());
 
         vm.SelectedItem = apple;
 
@@ -383,7 +387,7 @@ public sealed class ItemsTabViewModelTests
             KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "GreenCrystal" },
             // KeywordDisplays intentionally empty — no friendly display name available.
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedItem = item;
 

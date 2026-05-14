@@ -15,4 +15,8 @@
     <ProjectReference Include="..\..\src\Silmarillion.Module\Silmarillion.Module.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\TestSupport\FakeEntityNameResolver.cs"
+             Link="TestSupport\FakeEntityNameResolver.cs" />
+  </ItemGroup>
 </Project>

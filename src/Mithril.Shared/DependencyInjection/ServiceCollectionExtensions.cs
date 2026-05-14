@@ -138,7 +138,8 @@ public static class ServiceCollectionExtensions
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
                 sp.GetRequiredService<IDiagnosticsSink>(),
-                perf: sp.GetService<IPerfTracer>()));
+                perf: sp.GetService<IPerfTracer>()))
+            .AddSingleton<IEntityNameResolver, ReferenceDataEntityNameResolver>();
 
     public static IServiceCollection AddMithrilCommunityCalibration(this IServiceCollection services, string cacheDirectory) =>
         services

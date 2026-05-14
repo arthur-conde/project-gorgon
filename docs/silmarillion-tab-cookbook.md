@@ -78,7 +78,7 @@ Before shipping, grep for:
 - Any `ItemSourceChipVm(..., EntityReference: null, IsNavigable: false)` literal — if the source `Type` could match the new kind (e.g. `"NpcGift"` for NPCs), wire it through `EntityRef.<NewKind>(s.Npc)` and `_navigator.CanOpen(...)`.
 - Any `<TextBlock Text="{Binding ...}"/>` rendering source-style data with a `TODO(stub:#…)` nearby — it's probably an `ItemSourceChip` waiting to happen.
 
-Replace the friendly display name in those builders with `_nameResolver.Resolve(EntityRef.<NewKind>(internalName))` from the shared `IEntityNameResolver` (per scaffolding step 1). Until that service exists, NPCs ship through a transitional `NpcNameResolver` static at [src/Silmarillion.Module/ViewModels/NpcNameResolver.cs](../src/Silmarillion.Module/ViewModels/NpcNameResolver.cs); fold it into the shared service when you wire your kind in.
+Replace the friendly display name in those builders with `_nameResolver.Resolve(EntityRef.<NewKind>(internalName))` from the shared `IEntityNameResolver` (per scaffolding step 1).
 
 ## Synthetic kinds — deep-linking to a tab with a pre-filled query
 
