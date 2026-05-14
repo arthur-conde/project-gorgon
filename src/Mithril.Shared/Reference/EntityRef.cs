@@ -15,7 +15,6 @@ public enum EntityKind
     Npc,
     Quest,
     Lorebook,
-    Landmark,
     Area,
     PlayerTitle,
     StorageVault,
@@ -120,7 +119,6 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     }
     public static EntityRef Quest(string internalName) => new(EntityKind.Quest, internalName);
     public static EntityRef Lorebook(string internalName) => new(EntityKind.Lorebook, internalName);
-    public static EntityRef Landmark(string internalName) => new(EntityKind.Landmark, internalName);
     public static EntityRef Area(string internalName) => new(EntityKind.Area, internalName);
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);

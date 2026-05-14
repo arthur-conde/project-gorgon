@@ -152,7 +152,6 @@ public sealed class SilmarillionReferenceNavigatorTests
     [InlineData(EntityKind.Npc)]
     [InlineData(EntityKind.Quest)]
     [InlineData(EntityKind.Lorebook)]
-    [InlineData(EntityKind.Landmark)]
     [InlineData(EntityKind.Area)]
     [InlineData(EntityKind.PlayerTitle)]
     [InlineData(EntityKind.StorageVault)]
