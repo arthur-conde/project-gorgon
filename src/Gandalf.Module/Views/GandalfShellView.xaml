@@ -8,13 +8,15 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:GandalfShellViewModel}"
              Background="#FF1A1A1A">
+    <!-- Intentionally no MergedDictionary for Mithril.Shared.Wpf here: a per-UserControl
+         copy shadows Application.Resources and isn't reliably re-scaled by UiFontApplier
+         at the right moment for Eager modules, so the tab strip ends up at the unscaled
+         AppFontSizeMedium. Letting DynamicResource references fall through to App-level
+         keeps the lookup hitting the dict UiFontApplier owns. The Gandalf module
+         resources (just converters) aren't referenced from this view either; tab
+         content views pull them in at their own UserControl.Resources level. -->
     <UserControl.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/Gandalf.Module;component/Views/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-
             <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
                 <views:DashboardView/>
             </DataTemplate>
@@ -45,8 +47,8 @@
         <TabControl ItemsSource="{Binding Tabs}"
                     SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
                     Background="Transparent" BorderThickness="0" Padding="0"
-                    ItemContainerStyle="{StaticResource MithrilTabItemStyle}"
-                    ItemTemplate="{StaticResource ModuleTabHeaderTemplate}">
+                    ItemContainerStyle="{DynamicResource MithrilTabItemStyle}"
+                    ItemTemplate="{DynamicResource ModuleTabHeaderTemplate}">
             <TabControl.ContentTemplate>
                 <DataTemplate>
                     <ContentControl Content="{Binding Content}"/>

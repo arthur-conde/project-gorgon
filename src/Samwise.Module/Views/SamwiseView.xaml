@@ -10,12 +10,15 @@
              d:DataContext="{d:DesignInstance vm:SamwiseShellViewModel}"
              Background="#FF1A1A1A">
 
+    <!-- Intentionally no MergedDictionary for Mithril.Shared.Wpf here: a per-UserControl
+         copy shadows Application.Resources and isn't reliably re-scaled by UiFontApplier
+         at the right moment for Eager modules, so the tab strip ends up at the unscaled
+         AppFontSizeMedium. Letting StaticResource references fall through to App-level
+         keeps the lookup hitting the dict UiFontApplier owns. The shared resources are
+         still in scope via App.xaml's MergedDictionaries — DynamicResource resolves
+         them at runtime. -->
     <UserControl.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-
             <DataTemplate DataType="{x:Type vm:GardenViewModel}">
                 <local:GardenView/>
             </DataTemplate>
@@ -37,8 +40,8 @@
 
         <TabControl ItemsSource="{Binding Tabs}"
                     Background="Transparent" BorderThickness="0" Padding="0"
-                    ItemContainerStyle="{StaticResource MithrilTabItemStyle}"
-                    ItemTemplate="{StaticResource ModuleTabHeaderTemplate}">
+                    ItemContainerStyle="{DynamicResource MithrilTabItemStyle}"
+                    ItemTemplate="{DynamicResource ModuleTabHeaderTemplate}">
             <TabControl.ContentTemplate>
                 <DataTemplate>
                     <ContentControl Content="{Binding Content}"/>
