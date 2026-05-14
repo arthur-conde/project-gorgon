@@ -10,7 +10,13 @@ namespace Mithril.Reference.Models.Misc;
 /// </summary>
 public sealed class AbilityKeyword
 {
+    public IReadOnlyList<string>? AttributesThatDeltaAccuracy { get; set; }
     public IReadOnlyList<string>? AttributesThatDeltaCritChance { get; set; }
+    public IReadOnlyList<string>? AttributesThatDeltaDamage { get; set; }
+    public IReadOnlyList<string>? AttributesThatDeltaPowerCost { get; set; }
+    public IReadOnlyList<string>? AttributesThatDeltaRange { get; set; }
+    public IReadOnlyList<string>? AttributesThatDeltaResetTime { get; set; }
     public IReadOnlyList<string>? AttributesThatModCritDamage { get; set; }
+    public IReadOnlyList<string>? AttributesThatModDamage { get; set; }
     public IReadOnlyList<string>? MustHaveAbilityKeywords { get; set; }
 }
