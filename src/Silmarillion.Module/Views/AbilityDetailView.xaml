@@ -132,18 +132,10 @@
                                    FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2"
-                                    Visibility="{Binding SkillDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
-                                <TextBlock Text="{Binding SkillDisplayName}" Foreground="#CCFFFFFF"
+                                    CornerRadius="3" Padding="6,2">
+                                <TextBlock Text="{Binding SkillLevelDisplay, Mode=OneWay}"
+                                           Foreground="#CCFFFFFF"
                                            FontSize="{DynamicResource AppFontSizeHint}"/>
-                            </Border>
-                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0">
-                                <TextBlock Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}">
-                                    <Run Text="Level "/>
-                                    <Run Text="{Binding Level, Mode=OneWay}"/>
-                                </TextBlock>
                             </Border>
                             <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
                                     CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
@@ -195,7 +187,7 @@
                     <ItemsControl ItemsSource="{Binding CostRows}" Margin="0,2,0,0"
                                   Visibility="{Binding CostRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                Visibility="{Binding SharesResetTimerWithChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding SharesResetTimerWithChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Shares reset timer with:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ContentControl Content="{Binding SharesResetTimerWithChip}">
@@ -214,10 +206,10 @@
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding PrerequisiteChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding PrerequisiteChip, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding UpgradeOfChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding UpgradeOfChip, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
@@ -229,6 +221,9 @@
                                 <DataTrigger Binding="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding FormGateLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
@@ -236,7 +231,7 @@
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding PrerequisiteChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding PrerequisiteChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Requires:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ContentControl Content="{Binding PrerequisiteChip}">
@@ -248,7 +243,7 @@
                         </ContentControl>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding UpgradeOfChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding UpgradeOfChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Upgrade of:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ContentControl Content="{Binding UpgradeOfChip}">
@@ -272,6 +267,28 @@
                                     <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <!-- Form-gate labels: caster-state requirements ("Must be in Cow Form") that
+                         PG packs into ItemKeywordReqs alongside real item keywords. Rendered as
+                         plain-text chips because they don't map to any Items-tab keyword. See #303. -->
+                    <StackPanel Margin="0,0,0,3"
+                                Visibility="{Binding FormGateLabels.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Form required:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding FormGateLabels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                            CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
+                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"

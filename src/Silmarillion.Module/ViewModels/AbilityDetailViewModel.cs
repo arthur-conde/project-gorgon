@@ -44,7 +44,8 @@ public sealed class AbilityDetailViewModel
         UpgradeOfChip = BuildAbilityChip(ability.UpgradeOf, nameResolver, navigator);
         SharesResetTimerWithChip = BuildAbilityChip(ability.SharesResetTimerWith, nameResolver, navigator);
 
-        ItemKeywordReqChips = BuildItemKeywordChips(ability.ItemKeywordReqs, navigator);
+        (ItemKeywordReqChips, FormGateLabels) = PartitionItemKeywordReqs(
+            ability.ItemKeywordReqs, ability.ItemKeywordReqErrorMessage, navigator);
         EffectKeywordReqChips = BuildEffectKeywordChips(ability.EffectKeywordReqs, navigator);
         TargetEffectKeywordReqChip = BuildSingleEffectKeywordChip(ability.TargetEffectKeywordReq, navigator);
         SpecialCasterRequirementLabels = BuildSpecialCasterRequirementLabels(ability.SpecialCasterRequirements);
@@ -76,6 +77,16 @@ public sealed class AbilityDetailViewModel
     public int IconID => Ability.IconID;
     public string? SkillDisplayName { get; }
     public int Level => Ability.Level;
+
+    /// <summary>
+    /// Combined skill + level chip text — "Sword 7" when skill is known, "Level 7" otherwise.
+    /// Matches the cookbook's master-list precedent so the list-card "Sword 7" reads the same
+    /// when promoted into the detail header chip.
+    /// </summary>
+    public string SkillLevelDisplay =>
+        string.IsNullOrEmpty(SkillDisplayName)
+            ? $"Level {Level}"
+            : $"{SkillDisplayName} {Level}";
     public string? Rank => Ability.Rank;
     public string? AbilityGroupDisplayName { get; }
 
@@ -89,6 +100,16 @@ public sealed class AbilityDetailViewModel
     public EntityChipVm? SharesResetTimerWithChip { get; }
 
     public IReadOnlyList<EntityChipVm> ItemKeywordReqChips { get; }
+
+    /// <summary>
+    /// Form-gate labels peeled out of <see cref="Ability.ItemKeywordReqs"/>. PG packs
+    /// caster-state requirements ("must be in Cow form") into the same array as real item
+    /// keywords; routing them through the Items tab produces dead links, so they surface here
+    /// as plain-text chips instead. Label is <see cref="Ability.ItemKeywordReqErrorMessage"/>
+    /// verbatim — that's the player-facing string and is always populated in the corpus
+    /// (corpus walk 2026-05-14, see #303).
+    /// </summary>
+    public IReadOnlyList<string> FormGateLabels { get; }
 
     /// <summary>
     /// Required effect-keyword chips — each chip points at the Effects tab filtered by
@@ -183,24 +204,69 @@ public sealed class AbilityDetailViewModel
             IsNavigable: navigator.CanOpen(reference));
     }
 
-    private static IReadOnlyList<EntityChipVm> BuildItemKeywordChips(
+    /// <summary>
+    /// Split <see cref="Ability.ItemKeywordReqs"/> into real item-keyword chips and form-gate
+    /// labels. Form-gate values (e.g. <c>"form:Cow"</c>, <c>"Werewolf"</c>, <c>"Beast"</c>)
+    /// are caster-state requirements packed into the item-keyword array; routing them through
+    /// the Items tab produces dead-link chips, so they peel off into <see cref="FormGateLabels"/>.
+    /// <para>
+    /// Corpus invariants (audited 2026-05-14, see #303): no ability mixes a form-gate with a
+    /// real item keyword; no ability carries more than one form-gate value;
+    /// <see cref="Ability.ItemKeywordReqErrorMessage"/> is always populated for gate-bearing
+    /// abilities — so the player-facing message is the cleanest label source.
+    /// </para>
+    /// </summary>
+    private static (IReadOnlyList<EntityChipVm> Chips, IReadOnlyList<string> FormGateLabels) PartitionItemKeywordReqs(
         IReadOnlyList<string>? itemKeywordReqs,
+        string? errorMessage,
         IReferenceNavigator navigator)
     {
-        if (itemKeywordReqs is null || itemKeywordReqs.Count == 0) return [];
-        var list = new List<EntityChipVm>(itemKeywordReqs.Count);
+        if (itemKeywordReqs is null || itemKeywordReqs.Count == 0) return ([], []);
+        var chips = new List<EntityChipVm>(itemKeywordReqs.Count);
+        var gateValues = new List<string>();
         foreach (var kw in itemKeywordReqs)
         {
             if (string.IsNullOrEmpty(kw)) continue;
+            if (IsFormGateKeyword(kw))
+            {
+                gateValues.Add(kw);
+                continue;
+            }
             var reference = EntityRef.ItemKeyword(kw);
-            list.Add(new EntityChipVm(
+            chips.Add(new EntityChipVm(
                 DisplayName: kw,
                 IconId: 0,
                 Reference: reference,
                 IsNavigable: navigator.CanOpen(reference)));
         }
-        return list;
+
+        if (gateValues.Count == 0) return (chips, []);
+
+        // Prefer the player-facing error message ("Must be in Cow Form"). Fallback for data
+        // without one: derive from the raw gate value ("form:Cow" → "Cow Form", "Werewolf" →
+        // "Werewolf Form").
+        var labels = new List<string>(1);
+        if (!string.IsNullOrEmpty(errorMessage))
+        {
+            labels.Add(errorMessage!);
+        }
+        else
+        {
+            foreach (var gv in gateValues)
+                labels.Add(DeriveFormGateLabel(gv));
+        }
+        return (chips, labels);
     }
+
+    private static bool IsFormGateKeyword(string keyword) =>
+        keyword.StartsWith("form:", StringComparison.Ordinal)
+        || keyword == "Werewolf"
+        || keyword == "Beast";
+
+    private static string DeriveFormGateLabel(string gateValue) =>
+        gateValue.StartsWith("form:", StringComparison.Ordinal)
+            ? gateValue["form:".Length..] + " Form"
+            : gateValue + " Form";
 
     private static IReadOnlyList<EntityChipVm> BuildEffectKeywordChips(
         IReadOnlyList<string>? effectKeywordReqs,

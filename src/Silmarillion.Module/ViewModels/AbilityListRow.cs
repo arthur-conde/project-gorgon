@@ -26,4 +26,12 @@ public sealed record AbilityListRow(
     IReadOnlyList<IngredientKeywordValue> Keywords,
     IReadOnlyList<IngredientKeywordValue> EffectKeywordReqs,
     double ResetTimeSeconds,
-    int IconID);
+    int IconID)
+{
+    /// <summary>
+    /// Card-secondary line — "Sword 7" format per the cookbook's master-list precedent. Bound by
+    /// the <c>AbilityCardTemplate</c> as a single <see cref="System.Windows.Documents.Run"/> to
+    /// avoid the multi-<c>Run</c> whitespace inflation that read as tab-spacing.
+    /// </summary>
+    public string SkillLevelDisplay => $"{Skill} {Level}";
+}
