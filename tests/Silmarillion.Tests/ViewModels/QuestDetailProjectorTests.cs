@@ -55,6 +55,61 @@ public sealed class QuestDetailProjectorTests
     }
 
     [Fact]
+    public void MinFavorLevel_WithSlugFormNpc_StripsAreaPrefix_AppendsAreaFromPoco()
+    {
+        // Quest data references NPCs by slug ("AreaSerbule2/NPC_DurstinTallow") while npcs.json
+        // keys them bare ("NPC_DurstinTallow"). EntityRef.Npc normalises for lookup, and the
+        // resolved POCO's AreaFriendlyName is appended in parentheses for disambiguation.
+        var refData = new StubRefData();
+        refData.NpcsByInternalNameMap["NPC_DurstinTallow"] = new Npc { Name = "Durstin Tallow", AreaFriendlyName = "Serbule Hills" };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[]
+            {
+                new MinFavorLevelRequirement { T = "MinFavorLevel", Npc = "AreaSerbule2/NPC_DurstinTallow", Level = "Neutral" },
+            },
+            refData, resolver, nav);
+
+        groups.Should().ContainSingle(g => g.Label == "Favor")
+            .Which.Requirements.Single().Text.Should().Be("Neutral with Durstin Tallow (Serbule Hills)");
+    }
+
+    [Fact]
+    public void MinFavorLevel_FallsBackToJustNpcName_WhenAreaMissing()
+    {
+        var refData = new StubRefData();
+        refData.NpcsByInternalNameMap["NPC_Joeh"] = new Npc { Name = "Joeh" }; // no AreaFriendlyName
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[] { new MinFavorLevelRequirement { T = "MinFavorLevel", Npc = "NPC_Joeh", Level = "Friends" } },
+            refData, resolver, nav);
+
+        groups.Single().Requirements.Single().Text.Should().Be("Friends with Joeh");
+    }
+
+    [Fact]
+    public void MinFavorRequirement_IncludesArea_AndFormatsAmount()
+    {
+        var refData = new StubRefData();
+        refData.NpcsByInternalNameMap["NPC_DurstinTallow"] = new Npc { Name = "Durstin Tallow", AreaFriendlyName = "Serbule Hills" };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[]
+            {
+                new MinFavorRequirement { T = "MinFavor", Npc = "AreaSerbule2/NPC_DurstinTallow", MinFavor = 5000 },
+            },
+            refData, resolver, nav);
+
+        groups.Single().Requirements.Single().Text.Should().Be("5,000 favor with Durstin Tallow (Serbule Hills)");
+    }
+
+    [Fact]
     public void QuestCompleted_BucketedAsStoryPrerequisite_WithNavigableQuestChip()
     {
         var refData = new StubRefData();

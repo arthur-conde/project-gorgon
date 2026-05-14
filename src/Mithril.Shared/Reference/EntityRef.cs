@@ -54,7 +54,19 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef Recipe(string internalName) => new(EntityKind.Recipe, internalName);
     public static EntityRef Ability(string internalName) => new(EntityKind.Ability, internalName);
     public static EntityRef Effect(string internalName) => new(EntityKind.Effect, internalName);
-    public static EntityRef Npc(string internalName) => new(EntityKind.Npc, internalName);
+    /// <summary>
+    /// Construct a Npc reference, normalising any area-prefixed slug form (used by quest
+    /// fields like <c>Quest.QuestNpc</c> = <c>"AreaSerbule2/NPC_DurstinTallow"</c>) to the
+    /// bare envelope-key form used by <c>npcs.json</c> and every downstream consumer
+    /// (resolver, kind target, navigator history). No npcs.json envelope key carries a
+    /// slash, so the strip is unambiguous.
+    /// </summary>
+    public static EntityRef Npc(string internalName)
+    {
+        var slashIdx = internalName.LastIndexOf('/');
+        var canonical = slashIdx >= 0 ? internalName.Substring(slashIdx + 1) : internalName;
+        return new(EntityKind.Npc, canonical);
+    }
     public static EntityRef Quest(string internalName) => new(EntityKind.Quest, internalName);
     public static EntityRef Lorebook(string internalName) => new(EntityKind.Lorebook, internalName);
     public static EntityRef Landmark(string internalName) => new(EntityKind.Landmark, internalName);

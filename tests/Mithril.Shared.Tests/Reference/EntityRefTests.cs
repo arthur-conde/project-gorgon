@@ -52,4 +52,33 @@ public class EntityRefTests
         reference.Kind.Should().Be(EntityKind.RecipeIngredientItem);
         reference.InternalName.Should().Be("MetalSlab1");
     }
+
+    [Fact]
+    public void Npc_factory_strips_area_prefix_from_slug_form()
+    {
+        // Quest fields (Quest.QuestNpc / FavorNpc / MainNpcName) reference NPCs as
+        // "<AreaName>/<NpcKey>" — npcs.json keys these NPCs bare ("NPC_DurstinTallow").
+        // Normalise at construction so every downstream consumer (resolver, kind target,
+        // navigator history) compares against the canonical bare form.
+        EntityRef.Npc("AreaSerbule2/NPC_DurstinTallow").InternalName.Should().Be("NPC_DurstinTallow");
+        EntityRef.Npc("AreaCave2/WerewolfAltar").InternalName.Should().Be("WerewolfAltar");
+    }
+
+    [Fact]
+    public void Npc_factory_preserves_bare_form_unchanged()
+    {
+        // Items/Recipes source references use the bare envelope-key form already; ensure
+        // the strip is a no-op for keys without a slash.
+        EntityRef.Npc("NPC_Joeh").InternalName.Should().Be("NPC_Joeh");
+        EntityRef.Npc("Altar_Druid").InternalName.Should().Be("Altar_Druid");
+    }
+
+    [Fact]
+    public void Npc_factory_equality_collapses_slug_and_bare_forms()
+    {
+        // Same underlying NPC, two reference shapes — should compare equal after factory
+        // normalisation so navigator history dedups correctly.
+        EntityRef.Npc("AreaSerbule2/NPC_DurstinTallow")
+            .Should().Be(EntityRef.Npc("NPC_DurstinTallow"));
+    }
 }

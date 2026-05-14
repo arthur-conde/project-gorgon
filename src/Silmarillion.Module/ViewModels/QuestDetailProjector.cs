@@ -182,13 +182,13 @@ public static class QuestDetailProjector
 
             case MinFavorLevelRequirement m:
                 return new QuestRequirementDisplay(
-                    $"{m.Level} with {ResolveNpcName(resolver, m.Npc)}",
+                    $"{m.Level} with {ResolveNpcDisplayWithArea(refData, resolver, m.Npc)}",
                     BuildNpcRef(m.Npc, navigator, out var canOpenNpc),
                     canOpenNpc);
 
             case MinFavorRequirement m:
                 return new QuestRequirementDisplay(
-                    $"{m.MinFavor:N0} favor with {ResolveNpcName(resolver, m.Npc)}",
+                    $"{m.MinFavor:N0} favor with {ResolveNpcDisplayWithArea(refData, resolver, m.Npc)}",
                     BuildNpcRef(m.Npc, navigator, out var canOpenNpc2),
                     canOpenNpc2);
 
@@ -451,6 +451,31 @@ public static class QuestDetailProjector
         string.IsNullOrEmpty(npcInternalName)
             ? "(unknown NPC)"
             : resolver.Resolve(EntityRef.Npc(npcInternalName!));
+
+    /// <summary>
+    /// Resolve an NPC reference to a player-readable string with the NPC's area in
+    /// parentheses when available: <c>"Durstin Tallow (Serbule Hills)"</c>. Quest data
+    /// references NPCs in the slug form <c>&lt;AreaName&gt;/&lt;NpcKey&gt;</c>; the
+    /// <see cref="EntityRef.Npc"/> factory strips the area prefix for lookup, but the
+    /// area is still useful context on the rendered chip / inline favor line. Looks up
+    /// the resolved NPC POCO and appends <see cref="Mithril.Reference.Models.Npcs.Npc.AreaFriendlyName"/>
+    /// when present; falls back to just the resolved name otherwise.
+    /// </summary>
+    public static string ResolveNpcDisplayWithArea(
+        IReferenceDataService refData,
+        IEntityNameResolver resolver,
+        string? npcInternalName)
+    {
+        if (string.IsNullOrEmpty(npcInternalName)) return "(unknown NPC)";
+        var canonical = EntityRef.Npc(npcInternalName!).InternalName;
+        var name = resolver.Resolve(EntityRef.Npc(npcInternalName!));
+        if (refData.NpcsByInternalName.TryGetValue(canonical, out var npc)
+            && !string.IsNullOrEmpty(npc.AreaFriendlyName))
+        {
+            return $"{name} ({npc.AreaFriendlyName})";
+        }
+        return name;
+    }
 
     private static EntityRef? BuildNpcRef(string? npcInternalName, IReferenceNavigator navigator, out bool isNavigable)
     {

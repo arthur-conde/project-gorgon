@@ -43,9 +43,9 @@ public sealed class QuestDetailViewModel
             ? null
             : ResolveSkillDisplay(refData, quest.WorkOrderSkill!);
 
-        GiverChip = BuildNpcChip(quest.QuestNpc, nameResolver, navigator);
-        TurnInChip = BuildNpcChip(quest.MainNpcName, nameResolver, navigator);
-        FavorNpcChip = BuildNpcChip(quest.FavorNpc, nameResolver, navigator);
+        GiverChip = BuildNpcChip(quest.QuestNpc, refData, nameResolver, navigator);
+        TurnInChip = BuildNpcChip(quest.MainNpcName, refData, nameResolver, navigator);
+        FavorNpcChip = BuildNpcChip(quest.FavorNpc, refData, nameResolver, navigator);
 
         Objectives = QuestDetailProjector.BuildObjectives(quest, refData, nameResolver, navigator);
         RequirementGroups = QuestDetailProjector.BuildRequirementGroups(quest.Requirements, refData, nameResolver, navigator);
@@ -60,7 +60,7 @@ public sealed class QuestDetailViewModel
         PreGiveRecipeChips = BuildRecipeChips(quest.PreGiveRecipes, refData, nameResolver, navigator);
 
         RepeatabilityDisplay = BuildRepeatability(quest);
-        FavorRewardDisplay = BuildFavorRewardDisplay(quest, nameResolver);
+        FavorRewardDisplay = BuildFavorRewardDisplay(quest, refData, nameResolver);
         BadgesDisplay = BuildBadgesDisplay(IsCancellable, IsGuildQuest, IsWorkOrder, WorkOrderSkillDisplay);
 
         OpenEntityCommand = openEntityCommand;
@@ -110,12 +110,16 @@ public sealed class QuestDetailViewModel
 
     // ─── Builders ──────────────────────────────────────────────────────────────────────
 
-    private static EntityChipVm? BuildNpcChip(string? internalName, IEntityNameResolver resolver, IReferenceNavigator navigator)
+    private static EntityChipVm? BuildNpcChip(
+        string? internalName,
+        IReferenceDataService refData,
+        IEntityNameResolver resolver,
+        IReferenceNavigator navigator)
     {
         if (string.IsNullOrEmpty(internalName)) return null;
         var reference = EntityRef.Npc(internalName!);
         return new EntityChipVm(
-            DisplayName: resolver.Resolve(reference),
+            DisplayName: QuestDetailProjector.ResolveNpcDisplayWithArea(refData, resolver, internalName),
             IconId: 0,
             Reference: reference,
             IsNavigable: navigator.CanOpen(reference));
@@ -221,11 +225,11 @@ public sealed class QuestDetailViewModel
         return parts.Count == 0 ? "One-time quest" : $"Repeatable every {string.Join(" ", parts)}";
     }
 
-    private static string? BuildFavorRewardDisplay(Quest quest, IEntityNameResolver resolver)
+    private static string? BuildFavorRewardDisplay(Quest quest, IReferenceDataService refData, IEntityNameResolver resolver)
     {
         var favor = quest.Reward_Favor ?? quest.Rewards_Favor ?? 0;
         if (favor <= 0 || string.IsNullOrEmpty(quest.FavorNpc)) return null;
-        return $"+{favor:N0} favor with {resolver.Resolve(EntityRef.Npc(quest.FavorNpc!))}";
+        return $"+{favor:N0} favor with {QuestDetailProjector.ResolveNpcDisplayWithArea(refData, resolver, quest.FavorNpc)}";
     }
 
     private static string? BuildBadgesDisplay(bool cancellable, bool guild, bool workOrder, string? workOrderSkill)
