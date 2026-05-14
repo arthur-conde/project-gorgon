@@ -150,6 +150,14 @@
                                Visibility="{Binding BadgesDisplay, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
 
+                <!-- Description sits high in the layout so it sets context before the player
+                     scans objectives / requirements. Embedded <i>/<b> markup parsed by the
+                     FormattedText attached property. -->
+                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
+                           Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
                 <!-- Giver / turn-in NPCs. Two labelled chip slots — these typically refer to the
                      same NPC for repeatable quests (giver = turn-in); render both regardless so the
                      player can verify, and the chip degradation handles missing data. -->
@@ -301,32 +309,31 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Long-form text blocks: description (always shown), preface, midway, success. -->
-                <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
-                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
-                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
-                           Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
-                <TextBlock Foreground="#88FFFFFF"
-                           FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
-                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
-                           Visibility="{Binding PrefaceText, Converter={StaticResource NullOrEmptyToVis}}">
-                    <Run Text="Preface: " FontWeight="SemiBold"/>
-                    <Run Text="{Binding PrefaceText, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Foreground="#88FFFFFF"
-                           FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
-                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
-                           Visibility="{Binding MidwayText, Converter={StaticResource NullOrEmptyToVis}}">
-                    <Run Text="Midway: " FontWeight="SemiBold"/>
-                    <Run Text="{Binding MidwayText, Mode=OneWay}"/>
-                </TextBlock>
-                <TextBlock Foreground="#88FFFFFF"
-                           FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
-                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
-                           Visibility="{Binding SuccessText, Converter={StaticResource NullOrEmptyToVis}}">
-                    <Run Text="On completion: " FontWeight="SemiBold"/>
-                    <Run Text="{Binding SuccessText, Mode=OneWay}"/>
-                </TextBlock>
+                <!-- NPC dialogue (preface / midway / completion). Mostly flavor text — tucked
+                     into an Expander that defaults closed so it doesn't dominate the pane. PG's
+                     <i>Speaker:</i> dialogue markup is parsed by the FormattedText attached
+                     property. -->
+                <Expander Header="Quest dialogue"
+                          Foreground="#88FFFFFF" Background="Transparent"
+                          BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
+                          Padding="0,4,0,0" Margin="0,0,0,10"
+                          IsExpanded="False"
+                          Visibility="{Binding HasFlavorText, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Margin="0,6,0,0">
+                        <TextBlock c:FormattedText.Text="{Binding PrefaceFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding PrefaceFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock c:FormattedText.Text="{Binding MidwayFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding MidwayFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock c:FormattedText.Text="{Binding SuccessFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding SuccessFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                    </StackPanel>
+                </Expander>
             </StackPanel>
         </DockPanel>
     </Border>

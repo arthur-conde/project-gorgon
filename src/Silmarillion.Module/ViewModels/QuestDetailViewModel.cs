@@ -102,6 +102,30 @@ public sealed class QuestDetailViewModel
     public string? MidwayText => Quest.MidwayText;
 
     /// <summary>
+    /// <see cref="PrefaceText"/> with a bold "Preface: " prefix baked in, so a single
+    /// <c>FormattedText.Text</c>-bound TextBlock can render the label + the body with both the
+    /// label's bold and any embedded &lt;i&gt;/&lt;b&gt; markup the source carries. Null when
+    /// the underlying field is absent, which drives the section's visibility binding.
+    /// </summary>
+    public string? PrefaceFormatted => FormatLabelled("Preface: ", PrefaceText);
+    public string? MidwayFormatted => FormatLabelled("Midway: ", MidwayText);
+    public string? SuccessFormatted => FormatLabelled("On completion: ", SuccessText);
+
+    /// <summary>
+    /// True when at least one of <see cref="PrefaceText"/> / <see cref="MidwayText"/> /
+    /// <see cref="SuccessText"/> is present. Drives the flavor-text accordion's visibility
+    /// — three independent NullOrEmptyToVis bindings on the body wouldn't collapse the
+    /// expander when *all* three are missing.
+    /// </summary>
+    public bool HasFlavorText =>
+        !string.IsNullOrEmpty(PrefaceText)
+        || !string.IsNullOrEmpty(MidwayText)
+        || !string.IsNullOrEmpty(SuccessText);
+
+    private static string? FormatLabelled(string label, string? body) =>
+        string.IsNullOrEmpty(body) ? null : $"<b>{label}</b>{body}";
+
+    /// <summary>
     /// Command invoked when the user clicks a cross-link chip (item / recipe / quest / NPC).
     /// Receives the chip's <see cref="EntityRef"/>. Wired by <see cref="QuestsTabViewModel"/>
     /// to the navigator.
