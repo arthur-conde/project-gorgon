@@ -286,6 +286,16 @@ public class MithrilQueryBox : Control
             if (_popup is not null) ClosePopup();
             return;
         }
+        // Completion is a typing affordance: only surface it when the user actually has
+        // focus on the editor (or on the popup list — mouse-accept hands focus there briefly).
+        // Without this gate, programmatic writes to QueryText — chip-click navigation that
+        // pre-populates a filter, or the initial OnApplyTemplate text sync — would pop the
+        // list unbidden the moment the tab is shown.
+        if (!_editor.IsKeyboardFocused && !_list.IsKeyboardFocusWithin)
+        {
+            ClosePopup();
+            return;
+        }
         var text = _editor.Text ?? string.Empty;
         int caret = _editor.CaretIndex;
         var schema = EffectiveSchema();
