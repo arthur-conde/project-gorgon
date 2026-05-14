@@ -133,6 +133,33 @@ This is the kind of issue that would have manifested at runtime (XAML parse erro
 
 **Cookbook addition:** the cookbook doesn't mention the project ships an XamlResourceLint tool. Worth a one-liner in the verification ladder: *"Build-time XamlResourceLint catches dangling StaticResource references at parse scope — when adding a new converter or template, either declare it locally in the consuming view's `UserControl.Resources` or explicitly merge the module's `Resources.xaml`."*
 
+## 13a. Chip-stub pattern must be applied symmetrically across requirement and reward paths
+
+**Friction:** The chip-stub pattern (carry `Prefix + ChipName + Reference + IsNavigable` on the display VM, render via converter) got applied to the requirement-side favor lines (`MinFavorLevelRequirement`, `MinFavorRequirement`) and to entity-shaped reward effects (`BestowTitle`, `LearnAbility`, `BestowRecipe`, `EnsureLoreBookKnown`). The reward-side equivalent — `DeltaNpcFavor`, the most common reward effect in the catalogue (239 occurrences) — was left as prose-only. The Text-shape assertion in the synthetic test passed because the *prose* was correct; only the chip fields were absent.
+
+User caught it in visual smoke against a real quest screen: "+10 favor with Orran (Red Wing Casino)" rendered as plain text where every other entity-shape effect was a clickable chip.
+
+**Cookbook addition:** when a tab has parallel projection paths for symmetric concepts (requirements vs rewards), enumerate the entity-shape transforms as a **grid** (kind × path) during chip-stub design, not a flat per-method list. A grid surfaces gaps:
+
+| Entity kind   | Requirement side          | Reward side          |
+|---------------|---------------------------|----------------------|
+| NPC (favor)   | `MinFavorLevel` ✓ chip    | `DeltaNpcFavor` ✗→✓  |
+| Quest         | `QuestCompleted` ✓ chip   | (n/a)                |
+| Item          | `InventoryItem` ✓ chip    | (via reward chips)   |
+| Ability       | `AbilityKnown` text only  | `LearnAbility` ✓ chip |
+
+The mismatched row (NPC×reward) jumps out visually. A flat list of *"these methods build chips: ..."* hides it.
+
+Related: synthetic tests that assert `Text` should also assert `ChipName`/`Reference`/`Prefix` when a chip is intended. Asserting only Text accepts a regression where the chip half drops to null.
+
+## 13b. Fallback identifier splitter must handle underscores as word boundaries
+
+**Friction:** Chip-stub fallback rendering routes through a `SplitCamelCase` helper that inserts a space before any uppercase letter preceded by a non-uppercase. Catalog identifiers like `LiveEvent_Crafting` (effect keyword), `LiveNpc_Orran` (event NPC), and `LiveEvent_Kalrod_Done` (internal flag) use underscores as semantic separators — the splitter treated `_` as "non-uppercase" and inserted a space *after* it, producing `"Live Event_ Crafting"` (literal underscore + space).
+
+Visible in the visual smoke on the Effects tab's chip-stub fallback (effects tab not registered yet, so the chip renders as fallback text). Fixed by extending the splitter to treat `_` as a word boundary that emits a single space (deduped against the camel-case rule's space insertion).
+
+**Cookbook addition:** when the fallback display path is "CamelCase-split the identifier", verify it gracefully handles **all separator chars present in the source data**, not just camel-case boundaries. Catalog identifiers commonly carry `_` as a semantic separator; some data files also use `.` (e.g. `Skill.Bard`). Add a regression test with a real-data identifier (e.g. `LiveEvent_Crafting`) the first time the helper is wired up — the fallback path is exactly the case synthetic tests with clean identifier inputs don't cover.
+
 ## 13. Real-data integration test as a sanity walk artefact
 
 **Friction:** Cookbook rung 4 mandates a manual real-data sanity walk before shipping. I added two automated tests that load the real bundled `quests.json` and walk specific quests (`Wolf_HuntDeer2` for MoonPhase + favor + skill + story; `quest_1` `KillSkeletons` for objectives + rewards). They no-op if bundled data isn't co-located (graceful CI behaviour) but otherwise assert text shape: no `(unknown)` sentinels, every text non-empty, expected buckets present.
@@ -152,8 +179,10 @@ In rough priority order:
 5. **Subclass-count automation** — a test fixture asserting every polymorphic discriminator has a switch arm (item 3).
 6. **Disambiguator-when-display-names-collide pattern** for entity kinds (item 8).
 7. **Cadence/loop-affecting metadata belongs in the header** (item 10).
-8. **Promote the real-data sanity walk to an automated test** alongside the manual walk (item 13).
-9. **XamlResourceLint exists** — mention it (item 12).
-10. **SilmarillionViewModel constructor friction is recurrent** — refactor to enumerable injection (item 11).
+8. **Chip-stub coverage grid** — enumerate kind × projection-path as a matrix during chip-stub design to surface gaps; assert `ChipName` + `Reference` in tests, not just `Text` (item 13a).
+9. **Fallback identifier splitter — test against real-data identifiers** that contain underscores or other separators, not just clean CamelCase (item 13b).
+10. **Promote the real-data sanity walk to an automated test** alongside the manual walk (item 13).
+11. **XamlResourceLint exists** — mention it (item 12).
+12. **SilmarillionViewModel constructor friction is recurrent** — refactor to enumerable injection (item 11).
 
-Items 1, 2, and 5 are the highest-friction items — the first two would have prevented two of the visual-smoke iterations entirely, and the third would have prevented six silently-unhandled subclasses.
+Items 1, 2, and 5 are the highest-friction items — the first two would have prevented two of the visual-smoke iterations entirely, and the third would have prevented six silently-unhandled subclasses. Items 13a and 13b are both *symmetric-application* failures: the pattern was applied to most-but-not-all cases, and only visual smoke caught the gap. The chip-stub coverage grid (item 13a) is the cheap fix; the underscore-aware splitter (item 13b) is a one-line hardening of a helper used catalogue-wide.

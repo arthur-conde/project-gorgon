@@ -156,6 +156,30 @@ public sealed class QuestDetailProjectorTests
     }
 
     [Fact]
+    public void HasEffectKeyword_WithUnderscoreSeparator_ReadsAsWordsNotMixedPunctuation()
+    {
+        // Real keyword from the catalogue: "LiveEvent_Crafting". The fallback splitter must
+        // treat the underscore as a word boundary so the chip-stub reads "Live Event Crafting"
+        // rather than "Live Event_ Crafting" while we wait for the Effects tab (#244) to ship
+        // its proper resolver path.
+        var refData = new StubRefData();
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[] { new HasEffectKeywordRequirement { T = "HasEffectKeyword", Keyword = "LiveEvent_Crafting" } },
+            refData, resolver, nav);
+
+        var req = groups.Should().ContainSingle(g => g.Label == "Inventory & equipment").Which.Requirements.Single();
+        req.Text.Should().Be("Has effect: Live Event Crafting");
+        req.Prefix.Should().Be("Has effect:");
+        req.ChipName.Should().Be("Live Event Crafting");
+        req.Reference!.Kind.Should().Be(EntityKind.Effect);
+        req.Reference.InternalName.Should().Be("LiveEvent_Crafting");
+        req.IsNavigable.Should().BeFalse("the Effects kind target isn't registered until #244");
+    }
+
+    [Fact]
     public void IsVampire_BucketedAsIdentity_RendersStaticText_WithoutChipFields()
     {
         // No navigable entity → ChipName stays null and the XAML falls through to the
@@ -362,16 +386,24 @@ public sealed class QuestDetailProjectorTests
         // Second half of the Kalrod4 regression: "DeltaNpcFavor(AreaCasino/LiveNpc_Orran,10)"
         // The LiveNpc_Orran entry doesn't exist in npcs.json (event-only scripted NPC), so the
         // fallback path resolves the area via areas.json + strips the LiveNpc_ prefix from
-        // the display name.
+        // the display name. NPC portion lifts into the chip half so the EntityChip can render
+        // a navigable link to the NPC tab.
         var refData = new StubRefData();
         refData.AreasMap["AreaCasino"] = new AreaEntry("AreaCasino", "Red Wing Casino", "Casino");
+        var nav = new SilmarillionReferenceNavigator(new[] { (IReferenceKindTarget)new RecordingTarget(EntityKind.Npc) });
         var quest = new Quest { Rewards_Effects = new[] { "DeltaNpcFavor(AreaCasino/LiveNpc_Orran,10)" } };
 
         var groups = QuestDetailProjector.BuildRewardGroups(quest, refData,
-            new ReferenceDataEntityNameResolver(refData), NoOpNavigator);
+            new ReferenceDataEntityNameResolver(refData), nav);
 
-        groups.Should().ContainSingle(g => g.Label == "Effects")
-            .Which.Rewards.Single().Text.Should().Be("+10 favor with Orran (Red Wing Casino)");
+        var reward = groups.Should().ContainSingle(g => g.Label == "Effects")
+            .Which.Rewards.Single();
+        reward.Text.Should().Be("+10 favor with Orran (Red Wing Casino)");
+        reward.Prefix.Should().Be("+10 favor with");
+        reward.ChipName.Should().Be("Orran (Red Wing Casino)");
+        reward.Reference!.Kind.Should().Be(EntityKind.Npc);
+        reward.Reference.InternalName.Should().Be("LiveNpc_Orran");
+        reward.IsNavigable.Should().BeTrue();
     }
 
     [Fact]

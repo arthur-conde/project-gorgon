@@ -579,8 +579,17 @@ public static class QuestDetailProjector
             case "GiveXP" when args.Count == 2:
                 return new QuestRewardDisplay($"{ResolveSkillName(refData, args[0])}: +{FormatNumber(args[1])} XP");
             case "DeltaNpcFavor" when args.Count == 2:
-                return new QuestRewardDisplay(
-                    $"{FormatSignedAmount(args[1])} favor with {ResolveNpcDisplayWithArea(refData, resolver, args[0])}");
+                {
+                    var chipName = ResolveNpcDisplayWithArea(refData, resolver, args[0]);
+                    var reference = BuildNpcRef(args[0], navigator, out var canOpenNpc);
+                    var favorPrefix = $"{FormatSignedAmount(args[1])} favor with";
+                    return new QuestRewardDisplay(
+                        Text: $"{favorPrefix} {chipName}",
+                        Reference: reference,
+                        IsNavigable: canOpenNpc,
+                        Prefix: favorPrefix,
+                        ChipName: chipName);
+                }
             case "RaiseSkillToLevel" when args.Count == 2:
                 return new QuestRewardDisplay($"Raise {ResolveSkillName(refData, args[0])} to level {args[1]}");
 
@@ -710,6 +719,11 @@ public static class QuestDetailProjector
     /// <summary>
     /// Insert spaces before uppercase letters inside a CamelCase identifier so display reads
     /// as a phrase: <c>"MoonPhase"</c> → <c>"Moon Phase"</c>, <c>"FullMoon"</c> → <c>"Full Moon"</c>.
+    /// Underscores are treated as explicit word boundaries (deduped against any space the
+    /// camel-case rule would also insert), so <c>"LiveEvent_Crafting"</c> reads as
+    /// <c>"Live Event Crafting"</c> rather than <c>"Live Event_ Crafting"</c>. This matters
+    /// because chip-stub fallbacks (HasEffectKeyword / BestowTitle / LearnAbility /
+    /// EnsureLoreBookKnown) hit this path until each target tab ships its proper resolver.
     /// Strings shorter than 2 chars pass through unchanged; null/empty returns "(unknown)".
     /// </summary>
     private static string SplitCamelCase(string? input)
@@ -717,15 +731,22 @@ public static class QuestDetailProjector
         if (string.IsNullOrEmpty(input)) return "(unknown)";
         if (input!.Length < 2) return input;
         var sb = new System.Text.StringBuilder(input.Length + 4);
-        sb.Append(input[0]);
-        for (var i = 1; i < input.Length; i++)
+        for (var i = 0; i < input.Length; i++)
         {
             var c = input[i];
-            if (char.IsUpper(c) && !char.IsUpper(input[i - 1]))
+            if (c == '_')
+            {
+                if (sb.Length > 0 && sb[sb.Length - 1] != ' ') sb.Append(' ');
+                continue;
+            }
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(input[i - 1])
+                && sb.Length > 0 && sb[sb.Length - 1] != ' ')
+            {
                 sb.Append(' ');
+            }
             sb.Append(c);
         }
-        return sb.ToString();
+        return sb.ToString().Trim();
     }
 
     private static string FriendlyCurrencyName(string? currency) =>
