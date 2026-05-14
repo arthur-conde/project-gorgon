@@ -52,6 +52,7 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetRequiredService<SilmarillionSettings>()));
         services.AddSingleton<RecipesTabViewModel>();
         services.AddSingleton<NpcsTabViewModel>();
+        services.AddSingleton<QuestsTabViewModel>();
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -66,6 +67,9 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new NpcsKindTarget(
             sp.GetRequiredService<NpcsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new QuestsKindTarget(
+            sp.GetRequiredService<QuestsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientKeywordKindTarget(
             sp.GetRequiredService<RecipesTabViewModel>(),

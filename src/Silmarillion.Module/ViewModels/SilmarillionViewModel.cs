@@ -26,6 +26,7 @@ public sealed partial class SilmarillionViewModel : ObservableObject
         ItemsTabViewModel items,
         RecipesTabViewModel recipes,
         NpcsTabViewModel npcs,
+        QuestsTabViewModel quests,
         IReferenceNavigator navigator,
         IEnumerable<IReferenceKindTarget> targets,
         IDiagnosticsSink? diag = null)
@@ -33,11 +34,13 @@ public sealed partial class SilmarillionViewModel : ObservableObject
         Items = items;
         Recipes = recipes;
         Npcs = npcs;
+        Quests = quests;
         Tabs = new[]
         {
             new ModuleTab("Items",   items),
             new ModuleTab("Recipes", recipes),
             new ModuleTab("NPCs",    npcs),
+            new ModuleTab("Quests",  quests),
         };
         _navigator = navigator;
         _diag = diag;
@@ -64,11 +67,12 @@ public sealed partial class SilmarillionViewModel : ObservableObject
     public ItemsTabViewModel Items { get; }
     public RecipesTabViewModel Recipes { get; }
     public NpcsTabViewModel Npcs { get; }
+    public QuestsTabViewModel Quests { get; }
 
     /// <summary>The tab descriptors bound to <c>TabControl.ItemsSource</c>.</summary>
     public IReadOnlyList<ModuleTab> Tabs { get; }
 
-    /// <summary>0 = Items, 1 = Recipes, 2 = NPCs. Two-way bound to the TabControl in the view.</summary>
+    /// <summary>0 = Items, 1 = Recipes, 2 = NPCs, 3 = Quests. Two-way bound to the TabControl in the view.</summary>
     [ObservableProperty]
     private int _selectedTabIndex;
 
