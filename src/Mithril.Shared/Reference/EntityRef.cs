@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Mithril.Shared.Reference;
 
 /// <summary>
@@ -46,6 +48,24 @@ public enum EntityKind
     /// <see cref="RecipeIngredientKeyword"/> for the item-pivot direction.
     /// </summary>
     RecipeIngredientItem,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Effects tab filtered to effects
+    /// whose <c>Keywords</c> list contains this tag." InternalName carries the keyword
+    /// (e.g. <c>"FrostShard"</c>, <c>"Buff"</c>). Dispatched by EffectKeywordKindTarget.
+    /// Use this — not <see cref="Effect"/> — when a chip's natural target is a keyword
+    /// filter rather than a specific effect envelope row.
+    /// </summary>
+    EffectKeyword,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Abilities tab filtered to
+    /// abilities whose effect-keyword requirement union contains this tag." InternalName
+    /// carries the effect-keyword (e.g. <c>"FrostShard"</c>). Dispatched by
+    /// AbilityByEffectKeywordKindTarget; powers the Effects-tab "Required by abilities"
+    /// section's overflow pill when the chip cluster exceeds the configured cap.
+    /// </summary>
+    AbilityByEffectKeyword,
 }
 
 /// <summary>
@@ -60,7 +80,21 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef Item(string internalName) => new(EntityKind.Item, internalName);
     public static EntityRef Recipe(string internalName) => new(EntityKind.Recipe, internalName);
     public static EntityRef Ability(string internalName) => new(EntityKind.Ability, internalName);
-    public static EntityRef Effect(string internalName) => new(EntityKind.Effect, internalName);
+
+    /// <summary>
+    /// Effect InternalName — equal to the envelope key (e.g. <c>"effect_10003"</c>), lifted
+    /// from effects.json by the deserializer. Not a keyword tag and not the human-form
+    /// <c>Effect.Name</c> (which collides across many entries). For keyword-based filtering
+    /// of the Effects tab use <see cref="EffectKeyword"/> instead.
+    /// </summary>
+    public static EntityRef Effect(string internalName)
+    {
+        Debug.Assert(
+            internalName.StartsWith("effect_", StringComparison.Ordinal),
+            $"EntityRef.Effect expects an envelope-key InternalName like 'effect_10003', got '{internalName}'. "
+            + "If you have a keyword tag, use EntityRef.EffectKeyword(...) instead.");
+        return new(EntityKind.Effect, internalName);
+    }
     /// <summary>
     /// Construct a Npc reference, normalising any area-prefixed slug form (used by quest
     /// fields like <c>Quest.QuestNpc</c> = <c>"AreaSerbule2/NPC_DurstinTallow"</c>) to the
@@ -85,6 +119,8 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
     public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
     public static EntityRef RecipeIngredientItem(string itemInternalName) => new(EntityKind.RecipeIngredientItem, itemInternalName);
+    public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
+    public static EntityRef AbilityByEffectKeyword(string keyword) => new(EntityKind.AbilityByEffectKeyword, keyword);
 }
 
 /// <summary>

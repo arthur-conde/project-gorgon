@@ -22,6 +22,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Npc => ResolveNpc(reference.InternalName),
         EntityKind.Quest => ResolveQuest(reference.InternalName),
         EntityKind.Ability => ResolveAbility(reference.InternalName),
+        EntityKind.Effect => ResolveEffect(reference.InternalName),
         EntityKind.Skill => ResolveSkill(reference.InternalName),
         _ => reference.InternalName,
     };
@@ -58,6 +59,17 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
     private string ResolveAbility(string internalName) =>
         _refData.AbilitiesByInternalName.TryGetValue(internalName, out var ability) && !string.IsNullOrEmpty(ability.Name)
             ? ability.Name!
+            : internalName;
+
+    /// <summary>
+    /// Effect InternalNames are the envelope keys (e.g. <c>"effect_10003"</c>, lifted by
+    /// <c>ReferenceDeserializer.ParseEffects</c>). The human-form <see cref="Effect.Name"/>
+    /// is preferred for display; the envelope key falls through when no entry is registered
+    /// or the Name field is empty (which is uncommon — effects almost always carry a Name).
+    /// </summary>
+    private string ResolveEffect(string internalName) =>
+        _refData.EffectsByInternalName.TryGetValue(internalName, out var effect) && !string.IsNullOrEmpty(effect.Name)
+            ? effect.Name!
             : internalName;
 
     /// <summary>

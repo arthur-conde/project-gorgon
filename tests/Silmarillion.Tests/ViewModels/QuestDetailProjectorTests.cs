@@ -174,9 +174,9 @@ public sealed class QuestDetailProjectorTests
         req.Text.Should().Be("Has effect: Live Event Crafting");
         req.Prefix.Should().Be("Has effect:");
         req.ChipName.Should().Be("Live Event Crafting");
-        req.Reference!.Kind.Should().Be(EntityKind.Effect);
+        req.Reference!.Kind.Should().Be(EntityKind.EffectKeyword);
         req.Reference.InternalName.Should().Be("LiveEvent_Crafting");
-        req.IsNavigable.Should().BeFalse("the Effects kind target isn't registered until #244");
+        req.IsNavigable.Should().BeFalse("no EffectKeyword kind target is registered in this stub setup");
     }
 
     [Fact]

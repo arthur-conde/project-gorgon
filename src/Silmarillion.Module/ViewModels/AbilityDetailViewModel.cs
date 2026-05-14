@@ -45,11 +45,12 @@ public sealed class AbilityDetailViewModel
         SharesResetTimerWithChip = BuildAbilityChip(ability.SharesResetTimerWith, nameResolver, navigator);
 
         ItemKeywordReqChips = BuildItemKeywordChips(ability.ItemKeywordReqs, navigator);
-        EffectKeywordReqs = ability.EffectKeywordReqs ?? (IReadOnlyList<string>)[];
+        EffectKeywordReqChips = BuildEffectKeywordChips(ability.EffectKeywordReqs, navigator);
+        TargetEffectKeywordReqChip = BuildSingleEffectKeywordChip(ability.TargetEffectKeywordReq, navigator);
         SpecialCasterRequirementLabels = BuildSpecialCasterRequirementLabels(ability.SpecialCasterRequirements);
 
         CostRows = BuildCostRows(ability.Costs);
-        ConditionalKeywordRows = BuildConditionalKeywordRows(ability.ConditionalKeywords);
+        ConditionalKeywordRows = BuildConditionalKeywordRows(ability.ConditionalKeywords, navigator);
         AmmoKeywordRows = BuildAmmoKeywordRows(ability.AmmoKeywords, ability.AmmoDescription, navigator);
 
         EnvironmentalFlags = BuildEnvironmentalFlags(ability);
@@ -88,9 +89,21 @@ public sealed class AbilityDetailViewModel
     public EntityChipVm? SharesResetTimerWithChip { get; }
 
     public IReadOnlyList<EntityChipVm> ItemKeywordReqChips { get; }
-    public IReadOnlyList<string> EffectKeywordReqs { get; }
-    /// <summary>Comma-joined effect-keyword requirements for the XAML <c>Run</c>.</summary>
-    public string EffectKeywordReqsDisplay => string.Join(", ", EffectKeywordReqs);
+
+    /// <summary>
+    /// Required effect-keyword chips — each chip points at the Effects tab filtered by
+    /// <c>Keywords CONTAINS "&lt;tag&gt;"</c> via <see cref="EntityRef.EffectKeyword"/>.
+    /// Empty when the ability has no <c>EffectKeywordReqs</c>.
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> EffectKeywordReqChips { get; }
+
+    /// <summary>
+    /// Single chip for <see cref="Ability.TargetEffectKeywordReq"/> — the targeting-gate
+    /// keyword that the ability requires the target effect to carry. Null when unset.
+    /// Surfaced in the Special-Targeting section above the flag rows.
+    /// </summary>
+    public EntityChipVm? TargetEffectKeywordReqChip { get; }
+
     public IReadOnlyList<string> SpecialCasterRequirementLabels { get; }
 
     public IReadOnlyList<AbilityCostRow> CostRows { get; }
@@ -189,6 +202,31 @@ public sealed class AbilityDetailViewModel
         return list;
     }
 
+    private static IReadOnlyList<EntityChipVm> BuildEffectKeywordChips(
+        IReadOnlyList<string>? effectKeywordReqs,
+        IReferenceNavigator navigator)
+    {
+        if (effectKeywordReqs is null || effectKeywordReqs.Count == 0) return [];
+        var list = new List<EntityChipVm>(effectKeywordReqs.Count);
+        foreach (var kw in effectKeywordReqs)
+        {
+            var chip = BuildSingleEffectKeywordChip(kw, navigator);
+            if (chip is not null) list.Add(chip);
+        }
+        return list;
+    }
+
+    private static EntityChipVm? BuildSingleEffectKeywordChip(string? keyword, IReferenceNavigator navigator)
+    {
+        if (string.IsNullOrEmpty(keyword)) return null;
+        var reference = EntityRef.EffectKeyword(keyword!);
+        return new EntityChipVm(
+            DisplayName: keyword!,
+            IconId: 0,
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference));
+    }
+
     private static IReadOnlyList<string> BuildSpecialCasterRequirementLabels(
         IReadOnlyList<AbilitySpecialCasterRequirement>? requirements)
     {
@@ -257,7 +295,8 @@ public sealed class AbilityDetailViewModel
     }
 
     private static IReadOnlyList<AbilityConditionalKeywordRow> BuildConditionalKeywordRows(
-        IReadOnlyList<AbilityConditionalKeyword>? conditionals)
+        IReadOnlyList<AbilityConditionalKeyword>? conditionals,
+        IReferenceNavigator navigator)
     {
         if (conditionals is null || conditionals.Count == 0) return [];
         var list = new List<AbilityConditionalKeywordRow>(conditionals.Count);
@@ -265,17 +304,29 @@ public sealed class AbilityDetailViewModel
         {
             if (c is null) continue;
             string condition;
+            EntityChipVm? chip = null;
             if (c.Default == true)
+            {
                 condition = "Default";
+            }
             else if (!string.IsNullOrEmpty(c.EffectKeywordMustExist))
-                condition = $"When effect keyword present: {c.EffectKeywordMustExist}";
+            {
+                condition = "When effect keyword present:";
+                chip = BuildSingleEffectKeywordChip(c.EffectKeywordMustExist, navigator);
+            }
             else if (!string.IsNullOrEmpty(c.EffectKeywordMustNotExist))
-                condition = $"When effect keyword absent: {c.EffectKeywordMustNotExist}";
+            {
+                condition = "When effect keyword absent:";
+                chip = BuildSingleEffectKeywordChip(c.EffectKeywordMustNotExist, navigator);
+            }
             else
+            {
                 condition = "Always";
+            }
             list.Add(new AbilityConditionalKeywordRow(
                 Keyword: c.Keyword ?? "(none)",
-                Condition: condition));
+                Condition: condition,
+                EffectKeywordChip: chip));
         }
         return list;
     }
@@ -343,8 +394,8 @@ public sealed class AbilityDetailViewModel
     private static IReadOnlyList<AbilityFlagRow> BuildSpecialTargetingFlags(Ability ability)
     {
         var list = new List<AbilityFlagRow>();
-        if (!string.IsNullOrEmpty(ability.TargetEffectKeywordReq))
-            list.Add(new AbilityFlagRow("Target effect keyword", ability.TargetEffectKeywordReq!));
+        // TargetEffectKeywordReq is surfaced as a chip via TargetEffectKeywordReqChip above the
+        // flag rows, not in this list — the chip carries the EffectKeyword deep-link affordance.
         if (!string.IsNullOrEmpty(ability.TargetTypeTagReq))
             list.Add(new AbilityFlagRow("Target type tag", ability.TargetTypeTagReq!));
         if (ability.SpecialTargetingTypeReq is int s)
@@ -542,8 +593,15 @@ public sealed class AbilityDetailViewModel
 /// <summary>One row in <see cref="AbilityDetailViewModel.CostRows"/>.</summary>
 public sealed record AbilityCostRow(string Currency, int Price);
 
-/// <summary>One row in <see cref="AbilityDetailViewModel.ConditionalKeywordRows"/>.</summary>
-public sealed record AbilityConditionalKeywordRow(string Keyword, string Condition);
+/// <summary>
+/// One row in <see cref="AbilityDetailViewModel.ConditionalKeywordRows"/>. The
+/// <paramref name="Condition"/> string carries the human-readable trigger prefix
+/// ("When effect keyword present:", "When effect keyword absent:", "Always",
+/// "Default"); when an effect-keyword chip is appropriate it lands on
+/// <paramref name="EffectKeywordChip"/> for the XAML to render alongside the
+/// prefix. The chip is null for unconditional / default rows.
+/// </summary>
+public sealed record AbilityConditionalKeywordRow(string Keyword, string Condition, EntityChipVm? EffectKeywordChip);
 
 /// <summary>One row in <see cref="AbilityDetailViewModel.AmmoKeywordRows"/>. The chip is keyed by
 /// <see cref="EntityRef.ItemKeyword(string)"/>; clicking opens the Items tab filtered by that keyword.</summary>
