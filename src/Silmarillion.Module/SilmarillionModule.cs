@@ -19,7 +19,7 @@ public sealed class SilmarillionModule : IMithrilModule
     public string Id => "silmarillion";
     public string DisplayName => "Silmarillion · Reference";
     public PackIconLucideKind Icon => PackIconLucideKind.BookOpen;
-    public string? IconUri => null;
+    public string? IconUri => "pack://application:,,,/Silmarillion.Module;component/Resources/silmarillion.ico";
     public int SortOrder => 950;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(SilmarillionView);
