@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
@@ -201,6 +202,17 @@ public interface IReferenceDataService
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Quest>> EmptyQuestIndex
         = new Dictionary<string, IReadOnlyList<Quest>>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Flat ordered list of every <see cref="DirectedGoal"/> from
+    /// <c>directedgoals.json</c> — the "stuff to do" in-game guidance panel. Mixed-type
+    /// list of category headers (<see cref="DirectedGoal.IsCategoryGate"/> = true,
+    /// e.g. <c>"Anagoge Island"</c>, <c>"Serbule Hills"</c>) and per-area sub-goals
+    /// (e.g. <c>"Grow a potato"</c>, <c>"Meet Nightshade"</c>) keyed to a parent gate
+    /// via <see cref="DirectedGoal.CategoryGateId"/>. Defaults to empty so test fakes
+    /// don't need to opt in.
+    /// </summary>
+    IReadOnlyList<DirectedGoal> DirectedGoals => Array.Empty<DirectedGoal>();
 
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their

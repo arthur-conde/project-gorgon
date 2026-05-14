@@ -14,6 +14,7 @@ using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
 using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
 using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
+using DirectedGoal = Mithril.Reference.Models.Misc.DirectedGoal;
 using Quest = Mithril.Reference.Models.Quests.Quest;
 using Recipe = Mithril.Reference.Models.Recipes.Recipe;
 using PocoSkill = Mithril.Reference.Models.Misc.Skill;
@@ -161,6 +162,10 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, string> _strings = new Dictionary<string, string>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _stringsSnapshot;
 
+    // directedgoals.json — flat ordered list (category gates + per-area sub-goals).
+    private IReadOnlyList<DirectedGoal> _directedGoals = Array.Empty<DirectedGoal>();
+    private ReferenceFileSnapshot _directedGoalsSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
@@ -187,6 +192,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _questsSnapshot = new ReferenceFileSnapshot("quests", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _stringsSnapshot = new ReferenceFileSnapshot("strings_all", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _directedGoalsSnapshot = new ReferenceFileSnapshot("directedgoals", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -201,9 +207,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadPowers();
         LoadProfiles();
         LoadStrings();
+        LoadDirectedGoals();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -230,6 +237,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, Quest> QuestsByInternalName => _questsByInternalName;
     public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsByGiverNpc => _questsByGiverNpc;
     public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsRewardingItem => _questsRewardingItem;
+    public IReadOnlyList<DirectedGoal> DirectedGoals => _directedGoals;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -247,6 +255,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysprofiles" => _profilesSnapshot,
         "quests" => _questsSnapshot,
         "strings_all" => _stringsSnapshot,
+        "directedgoals" => _directedGoalsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -267,6 +276,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
         "quests" => RefreshFileAsync("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests, ct),
         "strings_all" => RefreshFileAsync("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings, ct),
+        "directedgoals" => RefreshFileAsync("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -285,6 +295,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("tsysprofiles", ct).ConfigureAwait(false);
         await RefreshAsync("quests", ct).ConfigureAwait(false);
         await RefreshAsync("strings_all", ct).ConfigureAwait(false);
+        await RefreshAsync("directedgoals", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -463,6 +474,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
     private void LoadQuests() => LoadFile("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests);
     private void LoadStrings() => LoadFile("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings);
+    private void LoadDirectedGoals() => LoadFile("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -805,6 +817,15 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _areas = byKey;
         _areasSnapshot = new ReferenceFileSnapshot("areas", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private void ParseAndSwapDirectedGoals(IReadOnlyList<DirectedGoal> raw, ReferenceFileMetadata meta)
+    {
+        // Defensive copy with the same backing-store semantics as the rest of the
+        // service: hand consumers a frozen IReadOnlyList wrapper over a snapshot list.
+        _directedGoals = raw.ToArray();
+        _directedGoalsSnapshot = new ReferenceFileSnapshot(
+            "directedgoals", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _directedGoals.Count);
     }
 
     private void ParseAndSwapStrings(IReadOnlyDictionary<string, string> raw, ReferenceFileMetadata meta)
