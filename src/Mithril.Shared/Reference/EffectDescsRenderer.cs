@@ -68,8 +68,15 @@ public static class EffectDescsRenderer
 
         if (!ShouldRender(attr, value)) return false;
 
-        var formatted = FormatValue(attr.DisplayType, value);
-        var text = ComposeLine(attr.DisplayType, attr.Label, formatted);
+        // AsBuffMod expects DefaultValue=1; combined with DefaultValue=0 it's an upstream-data
+        // anomaly — 39 tokens in attributes.json (all "Chance to..." probability bonuses).
+        // Treat as additive AsPercent. See issue #278.
+        var effectiveDisplayType = attr.DisplayType == "AsBuffMod" && attr.DefaultValue is double dv && dv == 0
+            ? "AsPercent"
+            : attr.DisplayType;
+
+        var formatted = FormatValue(effectiveDisplayType, value);
+        var text = ComposeLine(effectiveDisplayType, attr.Label, formatted);
         var icon = attr.IconIds.Count > 0 ? attr.IconIds[0] : 0;
         line = new EffectLine(icon, text);
         return true;

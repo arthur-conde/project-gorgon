@@ -68,6 +68,44 @@ public class EffectDescsRendererTests
     }
 
     [Fact]
+    public void AsBuffMod_WithDefaultZero_TreatedAsAdditivePercent_Issue278()
+    {
+        // Mirrors LOOT_CHANCE_EXTRA_SEEDS shape — 39 "Chance to..." tokens in attributes.json
+        // are mis-tagged AsBuffMod with DefaultValue:0. Renderer must treat them as AsPercent
+        // so +0.15 prints as "15%", not "-85%".
+        var registry = Registry(
+            new AttributeEntry("LOOT_CHANCE_EXTRA_SEEDS", "Chance to Forage Extra Herbs/Seeds %", "AsBuffMod", "IfNotDefault", 0, [108]));
+
+        var lines = EffectDescsRenderer.Render(["{LOOT_CHANCE_EXTRA_SEEDS}{0.15}"], registry);
+
+        lines.Should().ContainSingle().Which.Text.Should().Be("15% Chance to Forage Extra Herbs/Seeds %");
+    }
+
+    [Fact]
+    public void AsBuffMod_WithDefaultZero_ZeroValue_StillSuppressedByIfNotDefault_Issue278()
+    {
+        var registry = Registry(
+            new AttributeEntry("LOOT_CHANCE_EXTRA_SEEDS", "Chance to Forage Extra Herbs/Seeds %", "AsBuffMod", "IfNotDefault", 0, [108]));
+
+        var lines = EffectDescsRenderer.Render(["{LOOT_CHANCE_EXTRA_SEEDS}{0}"], registry);
+
+        lines.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AsBuffMod_WithDefaultOne_StillUsesMultiplierSemantics_Issue278()
+    {
+        // Negative control: a true AsBuffMod entry (DefaultValue:1) must keep multiplier math
+        // so the data-anomaly heuristic doesn't misfire on legitimate AsBuffMod tokens.
+        var registry = Registry(
+            new AttributeEntry("MOD_SKILL_ALL_KNIFE", "Knife Damage %", "AsBuffMod", "IfNotDefault", 1, [108]));
+
+        var lines = EffectDescsRenderer.Render(["{MOD_SKILL_ALL_KNIFE}{1.08}"], registry);
+
+        lines.Should().ContainSingle().Which.Text.Should().Be("+8% Knife Damage %");
+    }
+
+    [Fact]
     public void IfNotZero_SuppressesZeroValues()
     {
         var registry = Registry(
