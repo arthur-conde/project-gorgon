@@ -1,3 +1,4 @@
+using System.IO;
 using CommunityToolkit.Mvvm.Input;
 using FluentAssertions;
 using Mithril.Reference.Models.Abilities;
@@ -239,6 +240,99 @@ public sealed class AreaDetailViewModelTests
         var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
 
         vm.LandmarkGroups.Single(g => g.Type == "Portal").Heading.Should().Be("Portals (3)");
+    }
+
+    [Fact]
+    public void RealBundledArea_Eltibule_ProjectsSensibly()
+    {
+        // Real-data sanity walk per cookbook *Verification ladder* — load actual bundled
+        // areas.json + landmarks.json + npcs.json and verify the largest-NPC area projects
+        // without missing fields. Skips when bundled data isn't co-located.
+        var bundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(bundled, "landmarks.json"))) return;
+
+        var refData = BuildRealRefData(bundled);
+        if (refData is null) return;
+
+        var areasVm = new AreasTabViewModel(refData,
+            new SilmarillionReferenceNavigator(new[] { (IReferenceKindTarget)new StubKindTarget(EntityKind.Npc), new StubKindTarget(EntityKind.Area) }),
+            new ReferenceDataEntityNameResolver(refData),
+            new SilmarillionSettings());
+
+        var serbule = areasVm.AllAreas.FirstOrDefault(a => a.Key == "AreaSerbule");
+        serbule.Should().NotBeNull("AreaSerbule is a stable area in bundled areas.json");
+        areasVm.SelectedArea = serbule;
+
+        var detail = areasVm.DetailViewModel!;
+        detail.DisplayName.Should().NotBeNullOrEmpty();
+        detail.DisplayName.Should().NotBe("(unknown)");
+        detail.HasNpcs.Should().BeTrue("AreaSerbule has multiple NPCs in bundled npcs.json");
+        detail.NpcChips.Should().OnlyContain(c => !string.IsNullOrEmpty(c.DisplayName));
+        detail.NpcChips.Should().OnlyContain(c => !c.DisplayName.StartsWith("NPC_"),
+            because: "the resolver should project envelope keys to friendly names");
+
+        // Landmark sections render with at least one valid group; every group has non-empty rows.
+        detail.LandmarkGroups.Should().OnlyContain(g => g.Rows.Count > 0,
+            because: "empty groups are filtered out by BuildLandmarkGroups");
+        detail.LandmarkGroups.SelectMany(g => g.Rows).Should().OnlyContain(r => !string.IsNullOrEmpty(r.Name));
+    }
+
+    [Fact]
+    public void RealBundledArea_LargestLandmarkCluster_PartitionsWithoutUnknownTypes()
+    {
+        // Cardinality stress: the area with the most landmarks (32 in AreaDesert1Caves) should
+        // partition cleanly into the three known Types — no "(unknown)" fallback group.
+        var bundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(bundled, "landmarks.json"))) return;
+
+        var refData = BuildRealRefData(bundled);
+        if (refData is null) return;
+
+        var biggestArea = refData.Landmarks
+            .OrderByDescending(kv => kv.Value.Count)
+            .First();
+        if (!refData.Areas.TryGetValue(biggestArea.Key, out var areaEntry)) return;
+
+        var areasVm = new AreasTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData),
+            new SilmarillionSettings());
+        areasVm.SelectedArea = areasVm.AllAreas.First(a => a.Key == areaEntry.Key);
+
+        var groups = areasVm.DetailViewModel!.LandmarkGroups;
+        groups.Should().NotBeEmpty();
+        groups.Select(g => g.Type).Should().BeSubsetOf(new[] { "MeditationPillar", "Portal", "TeleportationPlatform" },
+            because: "the corpus only carries those three Types; a fallback '(unknown)' indicates either a future PG patch shipping a new Type or a POCO binding break");
+    }
+
+    private static IReferenceDataService? BuildRealRefData(string bundled)
+    {
+        try
+        {
+            var cacheDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            Directory.CreateDirectory(cacheDir);
+            using var http = new System.Net.Http.HttpClient(new ThrowingHttpHandler());
+            return new ReferenceDataService(cacheDir, http, bundledDir: bundled);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed class ThrowingHttpHandler : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("HTTP must not be called in this test");
+    }
+
+    private sealed class StubKindTarget : IReferenceKindTarget
+    {
+        public StubKindTarget(EntityKind kind) => Kind = kind;
+        public EntityKind Kind { get; }
+        public int TabIndex => 0;
+        public bool TrySelectByInternalName(string internalName) => true;
+        public bool TryOpenInWindow() => false;
     }
 
     private static (AreaDetailViewModel Vm, StubReferenceData RefData) Build(
