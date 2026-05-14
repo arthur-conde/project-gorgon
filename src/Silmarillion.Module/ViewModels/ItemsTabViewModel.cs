@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Items;
@@ -35,15 +36,25 @@ public sealed partial class ItemsTabViewModel : ObservableObject
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
+    private readonly SilmarillionSettings _settings;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
     public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator)
+        : this(refData, navigator, settings: null)
+    {
+    }
+
+    public ItemsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, SilmarillionSettings? settings)
     {
         _refData = refData;
         _navigator = navigator;
+        // null → owned default instance keeps non-DI callers (tests) working without forcing
+        // every fixture to construct one. The DI path always passes the live singleton.
+        _settings = settings ?? new SilmarillionSettings();
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         _allItems = BuildAllItems(refData);
         refData.FileUpdated += OnFileUpdated;
+        _settings.PropertyChanged += OnSettingsChanged;
     }
 
     [ObservableProperty]
@@ -108,17 +119,63 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             .OrderBy(i => i.Name ?? i.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // UsedInChipCap controls the "Used in" overflow pill threshold; rebuild the live
+        // detail VM when it changes so the slider feels immediate. Toggle through null to
+        // sidestep [ObservableProperty]'s reference-equality check.
+        if (e.PropertyName != nameof(SilmarillionSettings.UsedInChipCap)) return;
+        var captured = SelectedItem;
+        if (captured is null) return;
+        UiThread.Run(() =>
+        {
+            SelectedItem = null;
+            SelectedItem = captured;
+        });
+    }
+
     private ItemDetailContext BuildCrossLinkContext(Item item)
     {
         if (string.IsNullOrEmpty(item.InternalName))
         {
             return ItemDetailContext.Empty;
         }
+        var (consumed, more) = BuildConsumedByChips(_refData.RecipesByIngredientItem, item);
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
-            ConsumedByRecipes: BuildRecipeChips(_refData.RecipesByIngredientItem, item.InternalName!),
+            ConsumedByRecipes: consumed,
             ConsumedAsKeywordIn: BuildKeywordChips(item),
-            Sources: BuildSourceChips(item.InternalName!));
+            Sources: BuildSourceChips(item.InternalName!),
+            MoreRecipesChip: more);
+    }
+
+    /// <summary>
+    /// Apply <see cref="SilmarillionSettings.UsedInChipCap"/> to the "Used in" chip list.
+    /// When the underlying recipe count exceeds the cap, returns the first N chips plus a
+    /// pill chip pointing to the symmetric recipe-tab filter
+    /// (<c>Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>). Pill carries the item's own
+    /// icon for visual continuity with the detail header.
+    /// </summary>
+    private (IReadOnlyList<EntityChipVm>? Chips, EntityChipVm? More) BuildConsumedByChips(
+        IReadOnlyDictionary<string, IReadOnlyList<Recipe>> index,
+        Item item)
+    {
+        var itemName = item.InternalName!;
+        var all = BuildRecipeChips(index, itemName);
+        if (all is null) return (null, null);
+
+        var cap = _settings.UsedInChipCap;
+        if (all.Count <= cap) return (all, null);
+
+        var capped = cap == 0 ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>() : all.Take(cap).ToList();
+        var overflow = all.Count - cap;
+        var reference = EntityRef.RecipeIngredientItem(itemName);
+        var pill = new EntityChipVm(
+            DisplayName: $"+{overflow} more →",
+            IconId: item.IconId,
+            Reference: reference,
+            IsNavigable: _navigator.CanOpen(reference));
+        return (capped, pill);
     }
 
     private IReadOnlyList<EntityChipVm>? BuildKeywordChips(Item item)

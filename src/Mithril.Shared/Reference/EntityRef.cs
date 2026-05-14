@@ -31,6 +31,14 @@ public enum EntityKind
     /// Dispatched by ItemKeywordKindTarget.
     /// </summary>
     ItemKeyword,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Recipes tab filtered to recipes
+    /// that consume this item as a direct ingredient." InternalName carries the item's
+    /// InternalName. Dispatched by RecipeIngredientItemKindTarget. Mirror of
+    /// <see cref="RecipeIngredientKeyword"/> for the item-pivot direction.
+    /// </summary>
+    RecipeIngredientItem,
 }
 
 /// <summary>
@@ -56,6 +64,7 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
     public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
     public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
+    public static EntityRef RecipeIngredientItem(string itemInternalName) => new(EntityKind.RecipeIngredientItem, itemInternalName);
 }
 
 /// <summary>

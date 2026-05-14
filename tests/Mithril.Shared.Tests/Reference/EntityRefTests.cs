@@ -43,4 +43,13 @@ public class EntityRefTests
         // InternalName, so callers can construct either way without ambiguity.
         EntityRef.ItemKeyword(["Crystal"]).Should().Be(EntityRef.ItemKeyword("Crystal"));
     }
+
+    [Fact]
+    public void RecipeIngredientItem_factory_produces_expected_kind_and_internalname()
+    {
+        var reference = EntityRef.RecipeIngredientItem("MetalSlab1");
+
+        reference.Kind.Should().Be(EntityKind.RecipeIngredientItem);
+        reference.InternalName.Should().Be("MetalSlab1");
+    }
 }

@@ -126,7 +126,8 @@ public sealed partial class RecipesTabViewModel : ObservableObject
                 IconId: r.IconId > 0 ? r.IconId : ResolveResultIcon(r),
                 SkillDisplayName: ResolveSkillDisplayName(r.Skill),
                 SkillLevelReq: r.SkillLevelReq,
-                IngredientKeywords: BuildIngredientKeywords(r)))
+                IngredientKeywords: BuildIngredientKeywords(r),
+                Ingredients: BuildIngredientItems(r, refData)))
             .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -138,6 +139,19 @@ public sealed partial class RecipesTabViewModel : ObservableObject
             .SelectMany(slot => slot.ItemKeys)
             .Distinct(StringComparer.Ordinal)
             .Select(tag => new IngredientKeywordValue(tag))
+            .ToList();
+    }
+
+    private static IReadOnlyList<IngredientItemValue> BuildIngredientItems(Recipe recipe, IReferenceDataService refData)
+    {
+        if (recipe.Ingredients is null) return [];
+        return recipe.Ingredients
+            .OfType<RecipeItemIngredient>()
+            .Select(slot => refData.Items.TryGetValue(slot.ItemCode, out var item) ? item.InternalName : null)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .Distinct(StringComparer.Ordinal)
+            .Select(name => new IngredientItemValue(name))
             .ToList();
     }
 

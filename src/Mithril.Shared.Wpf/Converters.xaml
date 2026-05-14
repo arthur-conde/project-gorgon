@@ -7,5 +7,6 @@
     <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
     <c:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
     <c:PositiveIntToVisibilityConverter x:Key="PositiveIntToVis"/>
+    <c:NullToVisibilityConverter x:Key="NullToVis"/>
     <c:CamelCaseSplitConverter x:Key="CamelCaseSplit"/>
 </ResourceDictionary>
