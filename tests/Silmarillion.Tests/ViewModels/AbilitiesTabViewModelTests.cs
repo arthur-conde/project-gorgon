@@ -263,6 +263,79 @@ public sealed class AbilitiesTabViewModelTests
         effectChip.Reference.Kind.Should().Be(EntityKind.EffectKeyword);
         effectChip.Reference.InternalName.Should().Be("BattleRage");
         effectChip.IsNavigable.Should().BeTrue();
+
+        detail.FormGateLabels.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("form:Cow", "Must be in Cow Form")]
+    [InlineData("form:Fox", "Must be in Fox Form")]
+    [InlineData("Werewolf", "Must be in Wolf Form")]
+    [InlineData("Beast", "Must be in a beast form")]
+    public void DetailViewModel_FormGateInItemKeywordReqs_SurfacesAsFormGateLabel(
+        string gateValue, string errorMessage)
+    {
+        var ability = new Ability
+        {
+            InternalName = "GatedAbility",
+            Name = "Gated Ability",
+            Skill = "Werewolf",
+            Level = 1,
+            ItemKeywordReqs = [gateValue],
+            ItemKeywordReqErrorMessage = errorMessage,
+        };
+        var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.ItemKeywordReqChips.Should().BeEmpty();
+        detail.FormGateLabels.Should().ContainSingle().Which.Should().Be(errorMessage);
+    }
+
+    [Fact]
+    public void DetailViewModel_FormGateWithoutErrorMessage_DerivesLabelFromGateValue()
+    {
+        var ability = new Ability
+        {
+            InternalName = "GatedAbility",
+            Name = "Gated Ability",
+            Skill = "Cow",
+            Level = 1,
+            ItemKeywordReqs = ["form:Cow", "Werewolf"],
+            ItemKeywordReqErrorMessage = null,
+        };
+        var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.ItemKeywordReqChips.Should().BeEmpty();
+        detail.FormGateLabels.Should().Equal("Cow Form", "Werewolf Form");
+    }
+
+    [Fact]
+    public void DetailViewModel_NoFormGate_FormGateLabelsEmpty()
+    {
+        var ability = new Ability
+        {
+            InternalName = "PlainAbility",
+            Name = "Plain Ability",
+            Skill = "Sword",
+            Level = 1,
+            ItemKeywordReqs = ["Sword"],
+        };
+        var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.FormGateLabels.Should().BeEmpty();
+        detail.ItemKeywordReqChips.Should().ContainSingle()
+            .Which.DisplayName.Should().Be("Sword");
     }
 
     [Fact]

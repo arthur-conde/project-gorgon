@@ -229,6 +229,9 @@
                                 <DataTrigger Binding="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding FormGateLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
@@ -272,6 +275,28 @@
                                     <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <!-- Form-gate labels: caster-state requirements ("Must be in Cow Form") that
+                         PG packs into ItemKeywordReqs alongside real item keywords. Rendered as
+                         plain-text chips because they don't map to any Items-tab keyword. See #303. -->
+                    <StackPanel Margin="0,0,0,3"
+                                Visibility="{Binding FormGateLabels.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Form required:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding FormGateLabels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                            CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
+                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
