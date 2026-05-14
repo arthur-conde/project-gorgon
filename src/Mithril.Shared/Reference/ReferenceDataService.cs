@@ -6,6 +6,7 @@ using Mithril.Reference;
 using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Diagnostics.Performance;
+using Ability = Mithril.Reference.Models.Abilities.Ability;
 using Item = Mithril.Reference.Models.Items.Item;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
@@ -128,6 +129,28 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<RecipeSource>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _recipeSourcesSnapshot;
 
+    // Abilities (abilities.json) — keyed by "ability_N" plus InternalName secondary lookup,
+    // with derived skill / upgrade-chain / group / teaching-NPC indices for the Abilities tab
+    // and cross-link surfaces (#243).
+    private IReadOnlyDictionary<string, Ability> _abilities =
+        new Dictionary<string, Ability>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Ability> _abilitiesByInternalName =
+        new Dictionary<string, Ability>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesBySkill =
+        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesUpgradingFrom =
+        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesInGroup =
+        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesTaughtByNpc =
+        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _abilitiesSnapshot;
+
+    // Ability sources (sources_abilities.json)
+    private IReadOnlyDictionary<string, IReadOnlyList<AbilitySource>> _abilitySources =
+        new Dictionary<string, IReadOnlyList<AbilitySource>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _abilitySourcesSnapshot;
+
     // Attributes (attributes.json) — resolves EffectDescs placeholder tokens.
     private IReadOnlyDictionary<string, AttributeEntry> _attributes =
         new Dictionary<string, AttributeEntry>(StringComparer.Ordinal);
@@ -187,6 +210,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         _areasSnapshot = new ReferenceFileSnapshot("areas", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _abilitiesSnapshot = new ReferenceFileSnapshot("abilities", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _abilitySourcesSnapshot = new ReferenceFileSnapshot("sources_abilities", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _attributesSnapshot = new ReferenceFileSnapshot("attributes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _powersSnapshot = new ReferenceFileSnapshot("tsysclientinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -200,9 +225,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadXpTables();
         LoadNpcs();
         LoadAreas();
-        LoadQuests();              // Must run before LoadItemSources / LoadRecipeSources — ResolveSourceContext reads _quests.
+        LoadQuests();              // Must run before LoadItemSources / LoadRecipeSources / LoadAbilitySources — ResolveSourceContext reads _quests.
         LoadItemSources();
         LoadRecipeSources();
+        LoadAbilities();           // Must run before LoadAbilitySources — ParseAndSwapAbilitySources keys by Ability.InternalName.
+        LoadAbilitySources();
         LoadAttributes();
         LoadPowers();
         LoadProfiles();
@@ -210,7 +237,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadDirectedGoals();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -230,6 +257,13 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
+    public IReadOnlyDictionary<string, Ability> Abilities => _abilities;
+    public IReadOnlyDictionary<string, Ability> AbilitiesByInternalName => _abilitiesByInternalName;
+    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesBySkill => _abilitiesBySkill;
+    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesUpgradingFrom => _abilitiesUpgradingFrom;
+    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesInGroup => _abilitiesInGroup;
+    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesTaughtByNpc => _abilitiesTaughtByNpc;
+    public IReadOnlyDictionary<string, IReadOnlyList<AbilitySource>> AbilitySources => _abilitySources;
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
@@ -250,6 +284,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         "areas" => _areasSnapshot,
         "sources_items" => _itemSourcesSnapshot,
         "sources_recipes" => _recipeSourcesSnapshot,
+        "abilities" => _abilitiesSnapshot,
+        "sources_abilities" => _abilitySourcesSnapshot,
         "attributes" => _attributesSnapshot,
         "tsysclientinfo" => _powersSnapshot,
         "tsysprofiles" => _profilesSnapshot,
@@ -271,6 +307,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         "areas" => RefreshFileAsync("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources, ct),
         "sources_recipes" => RefreshFileAsync("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources, ct),
+        "abilities" => RefreshFileAsync("abilities", ReferenceDeserializer.ParseAbilities, ParseAndSwapAbilities, ct),
+        "sources_abilities" => RefreshFileAsync("sources_abilities", ReferenceDeserializer.ParseSources, ParseAndSwapAbilitySources, ct),
         "attributes" => RefreshFileAsync("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes, ct),
         "tsysclientinfo" => RefreshFileAsync("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers, ct),
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
@@ -290,6 +328,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("areas", ct).ConfigureAwait(false);
         await RefreshAsync("sources_items", ct).ConfigureAwait(false);
         await RefreshAsync("sources_recipes", ct).ConfigureAwait(false);
+        await RefreshAsync("abilities", ct).ConfigureAwait(false);
+        await RefreshAsync("sources_abilities", ct).ConfigureAwait(false);
         await RefreshAsync("attributes", ct).ConfigureAwait(false);
         await RefreshAsync("tsysclientinfo", ct).ConfigureAwait(false);
         await RefreshAsync("tsysprofiles", ct).ConfigureAwait(false);
@@ -469,6 +509,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadAreas() => LoadFile("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources);
     private void LoadRecipeSources() => LoadFile("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources);
+    private void LoadAbilities() => LoadFile("abilities", ReferenceDeserializer.ParseAbilities, ParseAndSwapAbilities);
+    private void LoadAbilitySources() => LoadFile("sources_abilities", ReferenceDeserializer.ParseSources, ParseAndSwapAbilitySources);
     private void LoadAttributes() => LoadFile("attributes", ReferenceDeserializer.ParseAttributes, ParseAndSwapAttributes);
     private void LoadPowers() => LoadFile("tsysclientinfo", ReferenceDeserializer.ParseTsysClientInfo, ParseAndSwapPowers);
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
@@ -707,10 +749,30 @@ public sealed class ReferenceDataService : IReferenceDataService
             }
         }
 
+        var abilitiesTaught = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+        foreach (var (abilityInternalName, sources) in _abilitySources)
+        {
+            if (!_abilitiesByInternalName.TryGetValue(abilityInternalName, out var ability)) continue;
+            foreach (var source in sources)
+            {
+                if (!string.Equals(source.Type, "Training", StringComparison.Ordinal)) continue;
+                if (string.IsNullOrEmpty(source.Npc)) continue;
+                if (!abilitiesTaught.TryGetValue(source.Npc, out var list))
+                {
+                    list = new List<Ability>();
+                    abilitiesTaught[source.Npc] = list;
+                }
+                if (!list.Contains(ability))
+                    list.Add(ability);
+            }
+        }
+
         _recipesTaughtByNpc = recipesTaught.ToDictionary(
             kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _itemsSoldByNpc = itemsSold.ToDictionary(
             kv => kv.Key, kv => (IReadOnlyList<Item>)kv.Value, StringComparer.Ordinal);
+        _abilitiesTaughtByNpc = abilitiesTaught.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
     }
 
     private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)
@@ -911,6 +973,102 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipeSources = byInternalName;
         _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
         BuildNpcCrossLinkIndices();
+    }
+
+    private void ParseAndSwapAbilities(IReadOnlyDictionary<string, Ability> raw, ReferenceFileMetadata meta)
+    {
+        var byKey = new Dictionary<string, Ability>(raw.Count, StringComparer.Ordinal);
+        var byInternalName = new Dictionary<string, Ability>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, ability) in raw)
+        {
+            if (ability is null) continue;
+            byKey[key] = ability;
+            if (!string.IsNullOrEmpty(ability.InternalName))
+                byInternalName[ability.InternalName!] = ability;
+        }
+        _abilities = byKey;
+        _abilitiesByInternalName = byInternalName;
+        _abilitiesSnapshot = new ReferenceFileSnapshot("abilities", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildAbilityCrossLinkIndices();
+        // Re-derive AbilitiesTaughtByNpc when the ability set itself changes.
+        BuildNpcCrossLinkIndices();
+    }
+
+    private void ParseAndSwapAbilitySources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)
+    {
+        // sources_abilities.json shape mirrors sources_items / sources_recipes:
+        // { "ability_N": { "entries": [ { type, npc, ... }, ... ] } }.
+        var byInternalName = new Dictionary<string, IReadOnlyList<AbilitySource>>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, envelope) in raw)
+        {
+            if (!_abilities.TryGetValue(key, out var ability) || string.IsNullOrEmpty(ability.InternalName)) continue;
+            if (envelope.entries is null || envelope.entries.Count == 0) continue;
+
+            var projected = new List<AbilitySource>(envelope.entries.Count);
+            foreach (var r in envelope.entries)
+            {
+                if (string.IsNullOrEmpty(r.type)) continue;
+                projected.Add(new AbilitySource(r.type, ExtractNpc(r), ResolveSourceContext(r)));
+            }
+            if (projected.Count > 0)
+                byInternalName[ability.InternalName!] = projected;
+        }
+        _abilitySources = byInternalName;
+        _abilitySourcesSnapshot = new ReferenceFileSnapshot("sources_abilities", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+        BuildNpcCrossLinkIndices();
+    }
+
+    /// <summary>
+    /// Build the derived ability indices (<see cref="_abilitiesBySkill"/>,
+    /// <see cref="_abilitiesUpgradingFrom"/>, <see cref="_abilitiesInGroup"/>) from the current
+    /// <see cref="_abilities"/> map. AbilitiesTaughtByNpc derives from <see cref="_abilitySources"/>
+    /// and lives in <see cref="BuildNpcCrossLinkIndices"/> with the recipe / item teaching indices.
+    /// </summary>
+    private void BuildAbilityCrossLinkIndices()
+    {
+        var bySkill = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+        var upgradingFrom = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+        var inGroup = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+
+        foreach (var ability in _abilities.Values)
+        {
+            if (!string.IsNullOrEmpty(ability.Skill))
+            {
+                if (!bySkill.TryGetValue(ability.Skill!, out var list))
+                {
+                    list = new List<Ability>();
+                    bySkill[ability.Skill!] = list;
+                }
+                list.Add(ability);
+            }
+
+            if (!string.IsNullOrEmpty(ability.UpgradeOf))
+            {
+                if (!upgradingFrom.TryGetValue(ability.UpgradeOf!, out var list))
+                {
+                    list = new List<Ability>();
+                    upgradingFrom[ability.UpgradeOf!] = list;
+                }
+                list.Add(ability);
+            }
+
+            if (!string.IsNullOrEmpty(ability.AbilityGroup))
+            {
+                if (!inGroup.TryGetValue(ability.AbilityGroup!, out var list))
+                {
+                    list = new List<Ability>();
+                    inGroup[ability.AbilityGroup!] = list;
+                }
+                list.Add(ability);
+            }
+        }
+
+        _abilitiesBySkill = bySkill.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
+        _abilitiesUpgradingFrom = upgradingFrom.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
+        _abilitiesInGroup = inGroup.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
     }
 
     private static string? ExtractNpc(SourceModels.SourceEntry s) => s switch

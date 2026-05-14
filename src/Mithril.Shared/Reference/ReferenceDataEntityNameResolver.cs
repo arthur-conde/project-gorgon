@@ -21,6 +21,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Recipe => ResolveRecipe(reference.InternalName),
         EntityKind.Npc => ResolveNpc(reference.InternalName),
         EntityKind.Quest => ResolveQuest(reference.InternalName),
+        EntityKind.Ability => ResolveAbility(reference.InternalName),
         _ => reference.InternalName,
     };
 
@@ -47,6 +48,15 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
     private string ResolveQuest(string internalName) =>
         _refData.QuestsByInternalName.TryGetValue(internalName, out var quest) && !string.IsNullOrEmpty(quest.Name)
             ? quest.Name!
+            : internalName;
+
+    /// <summary>
+    /// Ability InternalNames are bare ASCII identifiers (e.g. "Sword1", "Mentalism5") — no
+    /// envelope-key prefix to strip when the POCO's Name is missing.
+    /// </summary>
+    private string ResolveAbility(string internalName) =>
+        _refData.AbilitiesByInternalName.TryGetValue(internalName, out var ability) && !string.IsNullOrEmpty(ability.Name)
+            ? ability.Name!
             : internalName;
 
     private static string StripNpcPrefix(string internalName) =>
