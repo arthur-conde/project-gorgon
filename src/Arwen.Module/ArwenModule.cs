@@ -89,29 +89,26 @@ public sealed class ArwenModule : IMithrilModule
         services.AddSingleton<StorageGiftsViewModel>();
         services.AddSingleton<CalibrationViewModel>();
 
-        // Holder is constructed early; .Inner is wired below once FavorView exists.
-        // VMs depend on IFavorViewNavigator (the holder) so DI doesn't loop back into FavorView.
+        // Holder is constructed early; .Inner is wired below once FavorShellViewModel exists.
+        // VMs depend on IFavorViewNavigator (the holder) so DI doesn't loop back into the shell VM.
         services.AddSingleton<FavorViewNavigatorHolder>();
         services.AddSingleton<IFavorViewNavigator>(sp => sp.GetRequiredService<FavorViewNavigatorHolder>());
 
-        services.AddSingleton<FavorView>(sp =>
+        services.AddSingleton<FavorShellViewModel>(sp =>
         {
-            var view = new FavorView();
-            view.AddTab("NPC Dashboard", new NpcDashboardTab { DataContext = sp.GetRequiredService<FavorDashboardViewModel>() });
-            view.AddTab("Favor Calculator", new FavorCalculatorTab { DataContext = sp.GetRequiredService<FavorCalculatorViewModel>() });
-            view.AddTab("Gift Scanner", new GiftScannerTab { DataContext = sp.GetRequiredService<GiftScannerViewModel>() });
-            view.AddTab("Item Lookup", new ItemLookupTab { DataContext = sp.GetRequiredService<ItemLookupViewModel>() });
-            view.AddTab("Storage Gifts", new StorageGiftsTab { DataContext = sp.GetRequiredService<StorageGiftsViewModel>() });
-            var calibrationVm = sp.GetRequiredService<CalibrationViewModel>();
-            view.AddTab("Calibration", new CalibrationTab { DataContext = calibrationVm });
-            // Editor shares the same VM — every change recomputes rates via the VM's Refresh()
-            // wired to CalibrationService.DataChanged, so both tabs stay in sync automatically.
-            // Pending observations live here too, so the PendingCount badge follows.
-            var editorTab = view.AddTab("Edit Observations", new ObservationsEditorTab { DataContext = calibrationVm });
-            editorTab.SetBinding(TabBadge.CountProperty,
-                new System.Windows.Data.Binding(nameof(CalibrationViewModel.PendingCount)) { Source = calibrationVm });
-            sp.GetRequiredService<FavorViewNavigatorHolder>().Inner = view;
-            return view;
+            var shell = new FavorShellViewModel(
+                sp.GetRequiredService<FavorDashboardViewModel>(),
+                sp.GetRequiredService<FavorCalculatorViewModel>(),
+                sp.GetRequiredService<GiftScannerViewModel>(),
+                sp.GetRequiredService<ItemLookupViewModel>(),
+                sp.GetRequiredService<StorageGiftsViewModel>(),
+                sp.GetRequiredService<CalibrationViewModel>());
+            sp.GetRequiredService<FavorViewNavigatorHolder>().Inner = shell;
+            return shell;
+        });
+        services.AddSingleton<FavorView>(sp => new FavorView
+        {
+            DataContext = sp.GetRequiredService<FavorShellViewModel>(),
         });
         services.AddSingleton<ArwenSettingsView>(sp => new ArwenSettingsView
         {

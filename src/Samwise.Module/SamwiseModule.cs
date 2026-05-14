@@ -78,12 +78,10 @@ public sealed class SamwiseModule : IMithrilModule
 
         services.AddSingleton<GardenViewModel>();
         services.AddSingleton<GrowthCalibrationViewModel>();
-        services.AddSingleton<SamwiseView>(sp =>
+        services.AddSingleton<SamwiseShellViewModel>();
+        services.AddSingleton<SamwiseView>(sp => new SamwiseView
         {
-            var view = new SamwiseView();
-            view.AddTab("Garden", new GardenView { DataContext = sp.GetRequiredService<GardenViewModel>() });
-            view.AddTab("Growth Calibration", new GrowthCalibrationTab { DataContext = sp.GetRequiredService<GrowthCalibrationViewModel>() });
-            return view;
+            DataContext = sp.GetRequiredService<SamwiseShellViewModel>(),
         });
         services.AddSingleton<SamwiseSettingsView>(sp => new SamwiseSettingsView
         {

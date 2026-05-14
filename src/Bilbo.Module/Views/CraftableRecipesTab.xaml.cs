@@ -2,9 +2,9 @@ using System.Windows.Controls;
 
 namespace Bilbo.Views;
 
-public partial class StorageView : UserControl
+public partial class CraftableRecipesTab : UserControl
 {
-    public StorageView()
+    public CraftableRecipesTab()
     {
         InitializeComponent();
     }

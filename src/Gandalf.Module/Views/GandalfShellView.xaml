@@ -3,14 +3,23 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Gandalf.ViewModels"
              xmlns:views="clr-namespace:Gandalf.Views"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:GandalfShellViewModel}"
              Background="#FF1A1A1A">
+    <!-- Intentionally no MergedDictionary for Mithril.Shared.Wpf here: a per-UserControl
+         copy shadows Application.Resources and isn't reliably re-scaled by UiFontApplier
+         at the right moment for Eager modules, so the tab strip ends up at the unscaled
+         AppFontSizeMedium. Letting DynamicResource references fall through to App-level
+         keeps the lookup hitting the dict UiFontApplier owns. The Gandalf module
+         resources (just converters) aren't referenced from this view either; tab
+         content views pull them in at their own UserControl.Resources level. -->
     <UserControl.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/Gandalf.Module;component/Views/Resources.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-
+            <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+                <views:DashboardView/>
+            </DataTemplate>
             <DataTemplate DataType="{x:Type vm:TimerListViewModel}">
                 <views:TimerListView/>
             </DataTemplate>
@@ -19,9 +28,6 @@
             </DataTemplate>
             <DataTemplate DataType="{x:Type vm:LootTimersViewModel}">
                 <views:LootTimersView/>
-            </DataTemplate>
-            <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
-                <views:DashboardView/>
             </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -38,50 +44,16 @@
             </StackPanel>
         </DockPanel>
 
-        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" Padding="0"
-                    SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
-            <TabControl.Resources>
-                <Style TargetType="TabItem">
-                    <Setter Property="Foreground" Value="#CCFFFFFF"/>
-                    <Setter Property="FontSize" Value="{DynamicResource AppFontSizeMedium}"/>
-                    <Setter Property="Padding" Value="14,6"/>
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="TabItem">
-                                <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}"
-                                        BorderBrush="Transparent" BorderThickness="0,0,0,2" Margin="0,0,2,0">
-                                    <ContentPresenter ContentSource="Header"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#FFD4A847"/>
-                                        <Setter Property="Foreground" Value="#FFE8E8E8"/>
-                                    </Trigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="#18FFFFFF"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
-            </TabControl.Resources>
-
-            <TabItem Header="Dashboard" Margin="0,8,0,0">
-                <ContentControl Content="{Binding DashboardTab}"/>
-            </TabItem>
-
-            <TabItem Header="User" Margin="0,8,0,0">
-                <ContentControl Content="{Binding UserTab}"/>
-            </TabItem>
-
-            <TabItem Header="Quests" Margin="0,8,0,0">
-                <ContentControl Content="{Binding QuestsTab}"/>
-            </TabItem>
-
-            <TabItem Header="Loot" Margin="0,8,0,0">
-                <ContentControl Content="{Binding LootTab}"/>
-            </TabItem>
+        <TabControl ItemsSource="{Binding Tabs}"
+                    SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    ItemContainerStyle="{DynamicResource MithrilTabItemStyle}"
+                    ItemTemplate="{DynamicResource ModuleTabHeaderTemplate}">
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <ContentControl Content="{Binding Content}"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
         </TabControl>
     </DockPanel>
 </UserControl>
