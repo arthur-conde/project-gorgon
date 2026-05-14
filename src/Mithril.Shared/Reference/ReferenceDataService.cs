@@ -107,6 +107,12 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     // NPCs
     private IReadOnlyDictionary<string, NpcEntry> _npcs = new Dictionary<string, NpcEntry>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, PocoNpc> _npcsByInternalName =
+        new Dictionary<string, PocoNpc>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesTaughtByNpc =
+        new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Item>> _itemsSoldByNpc =
+        new Dictionary<string, IReadOnlyList<Item>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _npcsSnapshot;
 
     // Areas (areas.json) — area code → friendly display names.
@@ -206,6 +212,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables => _xpTables;
     public IReadOnlyDictionary<string, NpcEntry> Npcs => _npcs;
+    public IReadOnlyDictionary<string, PocoNpc> NpcsByInternalName => _npcsByInternalName;
+    public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpc => _recipesTaughtByNpc;
+    public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsSoldByNpc => _itemsSoldByNpc;
     public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
@@ -473,6 +482,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _keywordIndex = new ItemKeywordIndex(byId);
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
         BuildRecipeCrossLinkIndices();
+        BuildNpcCrossLinkIndices();
     }
 
     private void ParseAndSwapRecipes(IReadOnlyDictionary<string, Recipe> raw, ReferenceFileMetadata meta)
@@ -489,6 +499,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipesByInternalName = byName;
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
         BuildRecipeCrossLinkIndices();
+        BuildNpcCrossLinkIndices();
     }
 
     /// <summary>
@@ -629,6 +640,59 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
     }
 
+    /// <summary>
+    /// Builds <see cref="_recipesTaughtByNpc"/> and <see cref="_itemsSoldByNpc"/> from the
+    /// current <see cref="_recipeSources"/> / <see cref="_itemSources"/> filtered to the
+    /// <c>Training</c> / <c>Vendor</c> source kinds. Powers the Silmarillion NPCs tab's
+    /// "Teaches recipes" and "Sells items" sections without per-selection scans of the
+    /// sources dictionaries. Called from every parse-and-swap whose inputs feed either
+    /// index — both source files and both entity files (items / recipes), since the
+    /// dictionary swap re-keys on InternalName.
+    /// </summary>
+    private void BuildNpcCrossLinkIndices()
+    {
+        var recipesTaught = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
+        foreach (var (recipeInternalName, sources) in _recipeSources)
+        {
+            if (!_recipesByInternalName.TryGetValue(recipeInternalName, out var recipe)) continue;
+            foreach (var source in sources)
+            {
+                if (!string.Equals(source.Type, "Training", StringComparison.Ordinal)) continue;
+                if (string.IsNullOrEmpty(source.Npc)) continue;
+                if (!recipesTaught.TryGetValue(source.Npc, out var list))
+                {
+                    list = new List<Recipe>();
+                    recipesTaught[source.Npc] = list;
+                }
+                if (!list.Contains(recipe))
+                    list.Add(recipe);
+            }
+        }
+
+        var itemsSold = new Dictionary<string, List<Item>>(StringComparer.Ordinal);
+        foreach (var (itemInternalName, sources) in _itemSources)
+        {
+            if (!_itemsByInternalName.TryGetValue(itemInternalName, out var item)) continue;
+            foreach (var source in sources)
+            {
+                if (!string.Equals(source.Type, "Vendor", StringComparison.Ordinal)) continue;
+                if (string.IsNullOrEmpty(source.Npc)) continue;
+                if (!itemsSold.TryGetValue(source.Npc, out var list))
+                {
+                    list = new List<Item>();
+                    itemsSold[source.Npc] = list;
+                }
+                if (!list.Contains(item))
+                    list.Add(item);
+            }
+        }
+
+        _recipesTaughtByNpc = recipesTaught.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
+        _itemsSoldByNpc = itemsSold.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Item>)kv.Value, StringComparer.Ordinal);
+    }
+
     private void ParseAndSwapSkills(IReadOnlyDictionary<string, PocoSkill> raw, ReferenceFileMetadata meta)
     {
         var byName = new Dictionary<string, SkillEntry>(raw.Count, StringComparer.Ordinal);
@@ -682,6 +746,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void ParseAndSwapNpcs(IReadOnlyDictionary<string, PocoNpc> raw, ReferenceFileMetadata meta)
     {
         var byKey = new Dictionary<string, NpcEntry>(raw.Count, StringComparer.Ordinal);
+        // The raw dictionary is already keyed by the NPC envelope key (== InternalName).
+        // Copy it through with the Ordinal comparer to match the rest of the service.
+        var byInternalName = new Dictionary<string, PocoNpc>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
             var prefs = (v.Preferences ?? (IReadOnlyList<PocoNpcPreference>)[])
@@ -711,8 +778,10 @@ public sealed class ReferenceDataService : IReferenceDataService
                 services);
 
             byKey[key] = entry;
+            byInternalName[key] = v;
         }
         _npcs = byKey;
+        _npcsByInternalName = byInternalName;
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
@@ -784,6 +853,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _itemSources = byInternalName;
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+        BuildNpcCrossLinkIndices();
     }
 
     private void ParseAndSwapRecipeSources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)
@@ -810,6 +880,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _recipeSources = byInternalName;
         _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byInternalName.Count);
+        BuildNpcCrossLinkIndices();
     }
 
     private static string? ExtractNpc(SourceModels.SourceEntry s) => s switch

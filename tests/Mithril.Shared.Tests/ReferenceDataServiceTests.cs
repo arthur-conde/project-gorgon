@@ -653,6 +653,122 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void RecipesTaughtByNpc_indexes_Training_recipe_sources_by_npc_InternalName()
+    {
+        // Reverse index built from sources_recipes.json filtered to Type == "Training".
+        // Skill / Effect / Quest source rows are excluded; the index is the spine of the
+        // NPCs tab's "Teaches recipes" section (#241).
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"), """
+            {
+              "recipe_42": {
+                "Name": "Bake Bread",
+                "InternalName": "BakeBread",
+                "Skill": "Cooking",
+                "SkillLevelReq": 5
+              },
+              "recipe_43": {
+                "Name": "Make Cheese",
+                "InternalName": "MakeCheese",
+                "Skill": "Cooking",
+                "SkillLevelReq": 12
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_recipes.json"), """
+            {
+              "recipe_42": {
+                "entries": [
+                  { "npc": "NPC_Marna", "type": "Training" },
+                  { "skill": "Cooking", "type": "Skill" }
+                ]
+              },
+              "recipe_43": {
+                "entries": [
+                  { "npc": "NPC_Marna", "type": "Training" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.RecipesTaughtByNpc.Should().ContainKey("NPC_Marna");
+        svc.RecipesTaughtByNpc["NPC_Marna"].Select(r => r.InternalName)
+            .Should().BeEquivalentTo(["BakeBread", "MakeCheese"]);
+    }
+
+    [Fact]
+    public void ItemsSoldByNpc_indexes_Vendor_item_sources_by_npc_InternalName()
+    {
+        // Reverse index built from sources_items.json filtered to Type == "Vendor".
+        // Drop / Quest / NpcGift source rows are excluded; the index drives the NPCs tab's
+        // "Sells items" section (#241).
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_700": { "Name": "Apple", "InternalName": "Apple" },
+              "item_701": { "Name": "Bread", "InternalName": "Bread" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.json"), """
+            {
+              "item_700": {
+                "entries": [
+                  { "npc": "NPC_Joeh", "type": "Vendor" }
+                ]
+              },
+              "item_701": {
+                "entries": [
+                  { "npc": "NPC_Joeh", "type": "Vendor" },
+                  { "type": "Monster", "monsterName": "Hippo" }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "sources_items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemsSoldByNpc.Should().ContainKey("NPC_Joeh");
+        svc.ItemsSoldByNpc["NPC_Joeh"].Select(i => i.InternalName)
+            .Should().BeEquivalentTo(["Apple", "Bread"]);
+    }
+
+    [Fact]
+    public void NpcsByInternalName_exposes_full_Npc_POCO_keyed_by_envelope_key()
+    {
+        // Sibling to the slim NpcEntry projection (consumed by Arwen). NpcsByInternalName
+        // surfaces the raw POCO — Services, Preferences, ItemGifts, etc. — for the NPCs tab.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.json"), """
+            {
+              "NPC_Joeh": {
+                "Name": "Joeh",
+                "AreaName": "Serbule",
+                "AreaFriendlyName": "Serbule",
+                "Pos": "100 50 200",
+                "Desc": "A friendly NPC."
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.NpcsByInternalName.Should().ContainKey("NPC_Joeh");
+        var joeh = svc.NpcsByInternalName["NPC_Joeh"];
+        joeh.Name.Should().Be("Joeh");
+        joeh.AreaFriendlyName.Should().Be("Serbule");
+        joeh.Pos.Should().Be("100 50 200");
+        joeh.Desc.Should().Be("A friendly NPC.");
+    }
+
+    [Fact]
     public void GetSnapshot_UnknownKey_Throws()
     {
         WriteBundled("""{}""", version: "v100");

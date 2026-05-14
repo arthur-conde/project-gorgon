@@ -65,19 +65,21 @@
                     </TextBlock>
                 </StackPanel>
 
-                <!-- Sources (vendor / drop / quest reward / …); plain-text in Phase 1 -->
+                <!-- Sources (vendor / drop / quest reward / …). Renders as ItemSourceChip:
+                     navigable chip when the source resolves to a tabbed entity (e.g. NPC vendors
+                     after #241 shipped the NPCs tab), plain-text otherwise. -->
                 <StackPanel Margin="0,10,0,0"
                             Visibility="{Binding Sources.Count, Converter={StaticResource PositiveIntToVis}}">
                     <TextBlock Text="Sources" FontWeight="SemiBold"
                                Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <ItemsControl ItemsSource="{Binding Sources}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- TODO(stub:#207): replace with EntityChip in Phase 5 -->
-                                <TextBlock Text="{Binding DisplayName}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <c:ItemSourceChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

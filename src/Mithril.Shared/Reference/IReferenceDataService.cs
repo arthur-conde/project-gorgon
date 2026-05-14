@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Recipes;
 
 namespace Mithril.Shared.Reference;
@@ -88,6 +89,37 @@ public interface IReferenceDataService
 
     /// <summary>NPC key (e.g. "NPC_Marna") → NpcEntry with gift preferences.</summary>
     IReadOnlyDictionary<string, NpcEntry> Npcs { get; }
+
+    /// <summary>
+    /// NPC <c>InternalName</c> (the JSON envelope key, e.g. <c>"NPC_Marna"</c>, <c>"Altar_Druid"</c>) →
+    /// the full <see cref="Npc"/> POCO from <c>npcs.json</c>. Unlike <see cref="Npcs"/>, which is a
+    /// slim projection consumed by Arwen for gift calculation, this dictionary exposes Services,
+    /// Preferences, ItemGifts, Pos, AreaFriendlyName etc. for Silmarillion's master-detail tab.
+    /// Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Npc> NpcsByInternalName => EmptyNpcMap;
+
+    /// <summary>
+    /// Reverse index from NPC <c>InternalName</c> → recipes the NPC teaches, derived from
+    /// <see cref="RecipeSources"/> entries with <c>Type == "Training"</c>. Built whenever
+    /// recipes.json, npcs.json, or sources_recipes.json reloads. Defaults to empty so test
+    /// fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpc => EmptyRecipeIndex;
+
+    /// <summary>
+    /// Reverse index from NPC <c>InternalName</c> → items the NPC sells, derived from
+    /// <see cref="ItemSources"/> entries with <c>Type == "Vendor"</c>. Built whenever items.json,
+    /// npcs.json, or sources_items.json reloads. Defaults to empty so test fakes don't need to
+    /// opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsSoldByNpc => EmptyItemIndex;
+
+    private static readonly IReadOnlyDictionary<string, Npc> EmptyNpcMap
+        = new Dictionary<string, Npc>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Item>> EmptyItemIndex
+        = new Dictionary<string, IReadOnlyList<Item>>(StringComparer.Ordinal);
 
     /// <summary>
     /// Area key (e.g. <c>"AreaSerbule"</c>) → friendly display names. Pulled from

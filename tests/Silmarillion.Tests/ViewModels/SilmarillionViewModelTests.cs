@@ -43,10 +43,29 @@ public sealed class SilmarillionViewModelTests
         var (vm, nav) = BuildVm(new IReferenceKindTarget[] { itemsTarget });
 
         vm.SelectedTabIndex = 0;
-        nav.Open(new EntityRef(EntityKind.Npc, "NPC_Marna"));
+        nav.Open(new EntityRef(EntityKind.Quest, "FutureQuest"));
 
         vm.SelectedTabIndex.Should().Be(0);  // unchanged
         itemsTarget.LastSelectedInternalName.Should().BeNull();
+    }
+
+    [Fact]
+    public void OnNavigated_NpcKind_SwitchesTabAndCallsTarget()
+    {
+        // NPCs tab ships at index 2 (#241) — opening an Npc EntityRef should now switch the
+        // tab strip and dispatch the select call to the NPCs target rather than silently
+        // landing on the Items tab.
+        var itemsTarget = new RecordingTarget(EntityKind.Item, tabIndex: 0);
+        var recipesTarget = new RecordingTarget(EntityKind.Recipe, tabIndex: 1);
+        var npcsTarget = new RecordingTarget(EntityKind.Npc, tabIndex: 2);
+        var (vm, nav) = BuildVm(new IReferenceKindTarget[] { itemsTarget, recipesTarget, npcsTarget });
+
+        nav.Open(EntityRef.Npc("NPC_Marna"));
+
+        vm.SelectedTabIndex.Should().Be(2);
+        npcsTarget.LastSelectedInternalName.Should().Be("NPC_Marna");
+        itemsTarget.LastSelectedInternalName.Should().BeNull();
+        recipesTarget.LastSelectedInternalName.Should().BeNull();
     }
 
     [Fact]
@@ -85,7 +104,7 @@ public sealed class SilmarillionViewModelTests
             new RecordingTarget(EntityKind.Recipe, tabIndex: 1),
         });
 
-        var act = () => new SilmarillionViewModel(items: null!, recipes: null!, nav, targets);
+        var act = () => new SilmarillionViewModel(items: null!, recipes: null!, npcs: null!, nav, targets);
 
         act.Should().Throw<InvalidOperationException>()
            .WithMessage("*Duplicate IReferenceKindTarget*Item*");
@@ -97,8 +116,8 @@ public sealed class SilmarillionViewModelTests
         var nav = new SilmarillionReferenceNavigator(targets);
         // Empty/null tab VMs are fine — the tests only exercise the dispatch path,
         // not the tab VMs themselves (those are tested separately).
-        // Pass null-forgiving stubs; SilmarillionViewModel never reads .Items / .Recipes here.
-        var vm = new SilmarillionViewModel(items: null!, recipes: null!, nav, targets);
+        // Pass null-forgiving stubs; SilmarillionViewModel never reads .Items / .Recipes / .Npcs here.
+        var vm = new SilmarillionViewModel(items: null!, recipes: null!, npcs: null!, nav, targets);
         return (vm, nav);
     }
 
