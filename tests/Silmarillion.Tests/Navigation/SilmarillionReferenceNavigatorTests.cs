@@ -419,6 +419,31 @@ public sealed class SilmarillionReferenceNavigatorTests
     }
 
     [Fact]
+    public void Open_Area_SwitchesToAreasTab_AndSelects()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddArea(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        var settings = new Silmarillion.SilmarillionSettings();
+        var areasVm = new AreasTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var areasTarget = new AreasKindTarget(areasVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            areasTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { areasVm }, nav, targets);
+
+        nav.Open(EntityRef.Area("AreaSerbule"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(6);
+        areasVm.SelectedArea.Should().NotBeNull();
+        areasVm.SelectedArea!.Key.Should().Be("AreaSerbule");
+    }
+
+    [Fact]
     public void Constructor_DuplicateGuard_TripsForEffectAndEffectKeyword()
     {
         // Verifies the duplicate-registration guard still trips with the new kinds in the mix.
@@ -487,6 +512,9 @@ public sealed class SilmarillionReferenceNavigatorTests
             if (ability.InternalName is not null) _abilitiesByInternalName[ability.InternalName] = ability;
         }
 
+        private readonly Dictionary<string, AreaEntry> _areas = new(StringComparer.Ordinal);
+        public void AddArea(AreaEntry area) => _areas[area.Key] = area;
+
         public IReadOnlyList<string> Keys => Array.Empty<string>();
         public IReadOnlyDictionary<long, Item> Items => _itemsById;
         public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -496,7 +524,7 @@ public sealed class SilmarillionReferenceNavigatorTests
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
-        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
+        public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();

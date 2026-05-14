@@ -59,6 +59,11 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetRequiredService<IReferenceNavigator>(),
             sp.GetRequiredService<IEntityNameResolver>(),
             sp.GetRequiredService<SilmarillionSettings>()));
+        services.AddSingleton<AreasTabViewModel>(sp => new AreasTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<IEntityNameResolver>(),
+            sp.GetRequiredService<SilmarillionSettings>()));
         // Forward each concrete tab VM to ITabViewModel so SilmarillionViewModel can compose
         // its Tabs collection from IEnumerable<ITabViewModel>. Adding a future tab is a single
         // pair of registrations here — no SilmarillionViewModel ctor change (refactor #243).
@@ -68,6 +73,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<QuestsTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<AbilitiesTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<EffectsTabViewModel>());
+        services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<AreasTabViewModel>());
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -109,6 +115,9 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectByStackingTypeKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new AreasKindTarget(
+            sp.GetRequiredService<AreasTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
