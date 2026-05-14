@@ -1,3 +1,5 @@
+using Mithril.Shared.Wpf;
+
 namespace Silmarillion.ViewModels;
 
 /// <summary>
@@ -10,4 +12,16 @@ namespace Silmarillion.ViewModels;
 public sealed record NpcServiceRow(
     string Type,
     string? MinFavorTier,
-    IReadOnlyList<string> Details);
+    IReadOnlyList<NpcServiceDetailLine> Details);
+
+/// <summary>
+/// One line in a service row's detail strip. <see cref="Text"/> carries the prose ("Despised → 5,000g",
+/// "Skills: Toolcrafting, Non-Fiction Writing") and is always rendered. <see cref="Chips"/> is an
+/// optional trailing chip strip — Store cap-increase rows surface their per-tier keyword tuple as
+/// navigable <see cref="EntityChipVm"/>s targeting the Items tab via <see cref="Mithril.Shared.Reference.EntityKind.ItemKeyword"/>.
+/// Empty for non-Store rows; the XAML hides the strip when the list is empty.
+/// </summary>
+public sealed record NpcServiceDetailLine(string Text, IReadOnlyList<EntityChipVm> Chips)
+{
+    public static NpcServiceDetailLine TextOnly(string text) => new(text, []);
+}

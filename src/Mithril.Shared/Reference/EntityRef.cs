@@ -18,6 +18,13 @@ public enum EntityKind
     PlayerTitle,
     StorageVault,
     /// <summary>
+    /// A player skill (e.g. <c>"NonfictionWriting"</c>, <c>"Carpentry"</c>). InternalName carries
+    /// the skill key from <c>skills.json</c>; the resolver maps it to <see cref="SkillEntry.DisplayName"/>
+    /// (e.g. <c>"Non-Fiction Writing"</c>). No browsable Silmarillion skill tab today, so the
+    /// resolver covers the rendering case while leaving navigation as a follow-up.
+    /// </summary>
+    Skill,
+    /// <summary>
     /// Not an entity per se — a deep-link target for "open the Recipes tab filtered to recipes
     /// whose ingredient list mentions this keyword tag." InternalName carries the keyword
     /// (e.g. "Crystal"). Dispatched by RecipeIngredientKeywordKindTarget.
@@ -73,6 +80,7 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef Area(string internalName) => new(EntityKind.Area, internalName);
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
+    public static EntityRef Skill(string skillKey) => new(EntityKind.Skill, skillKey);
     public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
     public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
     public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
