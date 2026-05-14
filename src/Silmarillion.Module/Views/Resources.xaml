@@ -95,7 +95,7 @@
                            FontSize="{DynamicResource AppFontSizeSmall}"
                            TextTrimming="CharacterEllipsis">
                     <Run Text="{Binding Skill, Mode=OneWay}"/>
-                    <Run Text=" L"/>
+                    <Run Text=" "/>
                     <Run Text="{Binding Level, Mode=OneWay}"/>
                 </TextBlock>
             </StackPanel>
