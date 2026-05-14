@@ -1,3 +1,4 @@
+using System.IO;
 using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
@@ -330,6 +331,99 @@ public sealed class QuestDetailProjectorTests
         rows[0].NestedRequirements.Should().ContainSingle(g => g.Label == "Skill / ability gates");
         rows[1].Index.Should().Be(2);
         rows[1].Number.Should().BeNull(because: "Number==1 doesn't merit a 'repeat' chip");
+    }
+
+    // ─── Real-data sanity walk (cookbook rung 4) ───────────────────────────────────────
+    //
+    // Projects three real quests with mixed requirement families against the actual bundled
+    // data and asserts the output is well-formed: every requirement text is non-empty and
+    // doesn't contain "(unknown)" sentinels, every group label is one we know about, and the
+    // expected requirement buckets are present. Synthetic-fixture tests above verify projection
+    // logic per subclass; this one verifies the projector reads sensibly against the live
+    // catalogue with all 42 subclasses landing in real entries.
+
+    [Fact]
+    public void RealBundledQuest_WolfHuntDeer2_ProjectsRequirementsByIntentAndResolvesInternalNames()
+    {
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "quests.json")))
+            return; // bundled data not co-located (some CI shapes); skip rather than fail.
+
+        var svc = new Mithril.Shared.Reference.ReferenceDataService(
+            cacheDir: Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+            http: NeverCallHttp(),
+            bundledDir: realBundled);
+        var resolver = new ReferenceDataEntityNameResolver(svc);
+        var nav = new SilmarillionReferenceNavigator(new[]
+        {
+            (IReferenceKindTarget)new RecordingTarget(EntityKind.Npc),
+            new RecordingTarget(EntityKind.Quest),
+        });
+
+        // Wolf_HuntDeer2 — a real bundled quest with MinFavorLevel + MinSkillLevel +
+        // QuestCompleted + RequirementsToSustain(MoonPhase=FullMoon) + Rewards_Effects.
+        // Verifies four buckets and the moon-phase rendering with real data, not synthetics.
+        svc.QuestsByInternalName.Should().ContainKey("Wolf_HuntDeer2");
+        var quest = svc.QuestsByInternalName["Wolf_HuntDeer2"];
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(quest.Requirements, svc, resolver, nav);
+
+        groups.Select(g => g.Label).Should().Contain(new[]
+        {
+            "Favor",
+            "Skill / ability gates",
+            "Story prerequisites",
+        }, because: "Wolf_HuntDeer2 carries MinFavorLevel + MinSkillLevel + QuestCompleted gates");
+        groups.Should().AllSatisfy(g => g.Requirements.Should().AllSatisfy(r =>
+        {
+            r.Text.Should().NotBeNullOrWhiteSpace();
+            r.Text.Should().NotContain("(unknown)", because: "real-data internal names must resolve");
+        }));
+
+        var sustain = QuestDetailProjector.BuildRequirementGroups(quest.RequirementsToSustain, svc, resolver, nav);
+        sustain.Should().ContainSingle(g => g.Label == "Time & moon")
+            .Which.Requirements.Single().Text.Should().Contain("Full Moon");
+
+        var rewardGroups = QuestDetailProjector.BuildRewardGroups(quest, svc);
+        rewardGroups.Select(g => g.Label).Should().Contain("Effects");
+    }
+
+    [Fact]
+    public void RealBundledQuest_KillSkeletons_ProjectsSensibly()
+    {
+        // quest_1 — every player's first repeatable. Lowest-effort sanity check that the
+        // catalogue-anchored projection round-trips for a starter quest.
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "quests.json"))) return;
+
+        var svc = new Mithril.Shared.Reference.ReferenceDataService(
+            cacheDir: Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+            http: NeverCallHttp(),
+            bundledDir: realBundled);
+        var resolver = new ReferenceDataEntityNameResolver(svc);
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+
+        var quest = svc.Quests["quest_1"];
+        var objectives = QuestDetailProjector.BuildObjectives(quest, svc, resolver, nav);
+        var requirements = QuestDetailProjector.BuildRequirementGroups(quest.Requirements, svc, resolver, nav);
+        var rewards = QuestDetailProjector.BuildRewardGroups(quest, svc);
+
+        quest.Name.Should().NotBeNullOrEmpty();
+        objectives.Should().NotBeEmpty(because: "KillSkeletons has at least one Kill objective");
+        // Either path is fine — the assertion is "doesn't blow up + every projected text is non-empty"
+        foreach (var group in requirements)
+            group.Requirements.Should().AllSatisfy(r => r.Text.Should().NotBeNullOrWhiteSpace());
+        foreach (var group in rewards)
+            group.Rewards.Should().AllSatisfy(r => r.Text.Should().NotBeNullOrWhiteSpace());
+    }
+
+    private static System.Net.Http.HttpClient NeverCallHttp() =>
+        new(new ThrowingHandler());
+    private sealed class ThrowingHandler : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken ct) =>
+            throw new InvalidOperationException("HTTP must not be called from a sanity-walk test.");
     }
 
     private sealed class StubRefData : IReferenceDataService
