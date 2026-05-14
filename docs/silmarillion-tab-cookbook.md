@@ -17,12 +17,13 @@ How to add a new master-detail tab to Silmarillion, after the Items + Recipes v1
 - Verification ladder
 
 **Your handoff still owns**:
-- Which `IReferenceDataService` source dictionary to read
+- Which `IReferenceDataService` source dictionary to read. **If a slim `<X>Entry` projection already exists for the kind** (Arwen consumes `NpcEntry`, etc.), decide explicitly whether to add a sibling `<X>sByInternalName` property exposing the full `Mithril.Reference.Models.<X>s.<X>` POCO (smallest blast radius — recommended) or migrate the existing projection (defer to a follow-up issue, ripples into other modules' tests). For kinds with both a POCO and a slim projection, expect to alias `using <Kind>Poco = Mithril.Reference.Models.<Kind>s.<Kind>;` in the tab VM and tests to disambiguate.
 - The master-list row shape and filter facets
-- Detail-pane sections — which fields surface, in what order
+- Detail-pane sections — which fields surface, in what order. For polymorphic entities (NPC `Services`, quest `QuestRequirement`), don't render every subclass field via `Concat(...)` into one bullet list — group by subclass and label each group, or real game data will read as undifferentiated slop.
 - Reverse-lookup plumbing on `IReferenceDataService` (if the detail pane needs new cross-links)
 - Cross-link chip kinds (which `EntityKind` values to anchor to)
 - Any bundled JSON / refresh ordering caveats for the entity's source file
+- **Default-value noise filtering.** When a chip / badge surfaces an enum-like value, identify whether one value is the universal default (e.g. `Favor: Despised` on every NPC service) and null it out in the projection so the XAML hides the chip — every persistent chip should carry information.
 
 ## Scaffolding checklist
 
@@ -33,6 +34,7 @@ For tab `X` (e.g. `Npcs`, `Quests`, `Areas`):
    - `src/Silmarillion.Module/ViewModels/<X>TabViewModel.cs`
    - `src/Silmarillion.Module/ViewModels/<X>DetailViewModel.cs` *(or reuse an existing shared detail VM if the entity already has one — e.g. items use `Mithril.Shared.Wpf.ItemDetailViewModel`)*
    - `src/Silmarillion.Module/Navigation/<X>KindTarget.cs`
+   - **No new resolver class.** Friendly-name resolution lives in a shared DI-registered `IEntityNameResolver` that switches on `EntityKind` (one place to extend, one DI seam to mock in tests). To add support for your new kind, add a case to the resolver's switch with the kind's POCO-name fallback chain (raw POCO `Name` field, then internal name with prefix-stripping if the kind uses `<Prefix>_<Name>` envelope keys like `NPC_Joeh`). Consume the resolver in your master-list row projection, detail header, and any pre-existing chip-builder on a different tab that surfaces the kind's friendly name — see *Cross-link chips → audit existing surfaces*, below. Inlining `_refData.<X>sByInternalName[name]?.Name ?? name` in three places is the smell you're avoiding.
 2. **`SilmarillionModule.Register`** ([src/Silmarillion.Module/SilmarillionModule.cs](../src/Silmarillion.Module/SilmarillionModule.cs)) — three `AddSingleton` lines, **in this order** so DI can resolve:
    ```csharp
    services.AddSingleton<XTabViewModel>();
@@ -41,7 +43,7 @@ For tab `X` (e.g. `Npcs`, `Quests`, `Areas`):
        sp.GetRequiredService<XTabViewModel>(),
        sp.GetService<IDiagnosticsSink>()));
    ```
-3. **`SilmarillionViewModel`** ([src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs](../src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs)) — add a constructor parameter `XTabViewModel x`, a public `X { get; }` property, and **append a `new ModuleTab("<Label>", x)` entry to the `Tabs` collection** built in the constructor. Tab index is the array position. **No changes to `OnNavigated` or `OpenInWindow`** — the registry-driven dispatch already handles new kinds automatically. Confirm `EntityKind.<X>` exists in [src/Mithril.Shared/Reference/EntityRef.cs](../src/Mithril.Shared/Reference/EntityRef.cs); it should — all 11 entity kinds were enumerated in v1, alongside three synthetic deep-link variants (`RecipeIngredientKeyword` from #259, `ItemKeyword` from #270, `RecipeIngredientItem` from #273) — see *Synthetic kinds*, below.
+3. **`SilmarillionViewModel`** ([src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs](../src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs)) — add a constructor parameter `XTabViewModel x`, a public `X { get; }` property, and **append a `new ModuleTab("<Label>", x)` entry to the `Tabs` collection** built in the constructor. Tab index is the array position. **No changes to `OnNavigated` or `OpenInWindow`** — the registry-driven dispatch already handles new kinds automatically. Confirm `EntityKind.<X>` exists in [src/Mithril.Shared/Reference/EntityRef.cs](../src/Mithril.Shared/Reference/EntityRef.cs); it should — all 11 entity kinds were enumerated in v1, alongside three synthetic deep-link variants (`RecipeIngredientKeyword` from #259, `ItemKeyword` from #270, `RecipeIngredientItem` from #273) — see *Synthetic kinds*, below. **This change ripples** into `SilmarillionViewModelTests` and `SilmarillionReferenceNavigatorTests` — both currently call `new SilmarillionViewModel(items: null!, recipes: null!, ...)` at multiple sites; update each to add the new positional argument. Use named arguments throughout to keep the diff readable.
 4. **`SilmarillionView.xaml`** ([src/Silmarillion.Module/Views/SilmarillionView.xaml](../src/Silmarillion.Module/Views/SilmarillionView.xaml)) — **the `TabControl` itself doesn't change** (it binds `ItemsSource="{Binding Tabs}"` since the #272 / #233 refactor). Add a `<DataTemplate DataType="{x:Type vm:XTabViewModel}"><local:XTabView/></DataTemplate>` entry to `UserControl.Resources` so the TabControl's `ContentTemplate` can resolve the new VM type to its view. Header rendering and the gold IsSelected underline come from `ModuleTabHeaderTemplate` + `MithrilTabItemStyle` — already wired.
 5. **Wire `IReferenceDataService.FileUpdated`** in the tab VM constructor — subscribe to the file name your data source reads (e.g. `"npcs"`, `"quests"`). Rebuild the master list on the UI thread; preserve selection by `InternalName`. **Don't skip this** — without it, a background CDN refresh leaves WPF's ListBox bound to a stale collection and selections set via the navigator silently fall out of the list.
 6. **Expose `public static IReadOnlyList<ColumnSchema> SchemaSnapshot`** on the tab VM, reflected from your row type via `ColumnBindingHelper.BuildFromProperties(typeof(<Row>)).ToSchema()` — see [ItemsTabViewModel.cs:34](../src/Silmarillion.Module/ViewModels/ItemsTabViewModel.cs#L34) for the canonical shape. Bind it from XAML as `<wpf:MithrilQueryBox Schema="{x:Static vm:XTabViewModel.SchemaSnapshot}" .../>` (#264 / #262). Without this binding the completion popup silently never opens and column-name highlighting falls back to unknown-column red. The reflected surface must match what the row type exposes, since the same reflection drives the `QueryFilter` parser at attach time.
@@ -60,9 +62,23 @@ The Recipes tab does the same dance with a row-projection wrapper (`RecipeListRo
 
 ## Cross-link chips
 
-Use [`EntityChipVm`](../src/Mithril.Shared.Wpf/EntityChipVm.cs) for entity references. The chip carries `(DisplayName, IconId, EntityRef Reference, bool IsNavigable)`. Set `IsNavigable = _navigator.CanOpen(reference)` — this returns `true` iff a kind target is registered for `reference.Kind`. Chips to kinds without a tab degrade to plain text automatically; they flip to clickable the moment that kind's tab ships. **Don't gate on the kind manually** — let `CanOpen` decide.
+Two parallel chip vocabularies, both rendered through reusable WPF UserControls in `Mithril.Shared.Wpf`:
 
-Use [`ItemSourceChipVm`](../src/Mithril.Shared.Wpf/EntityChipVm.cs) for source-style rows where the anchor entity may not exist as a clickable target — its `EntityReference` is nullable for true non-entity sources (e.g. "monster drop", "barter table"). Don't introduce a parallel chip type per entity kind; reuse this one.
+**Entity-anchored** — use [`EntityChipVm`](../src/Mithril.Shared.Wpf/EntityChipVm.cs) `(DisplayName, IconId, EntityRef Reference, bool IsNavigable)` rendered through `<c:EntityChip .../>`. Set `IsNavigable = _navigator.CanOpen(reference)` — this returns `true` iff a kind target is registered for `reference.Kind`. Chips to kinds without a tab degrade to plain text automatically; they flip to clickable the moment that kind's tab ships. **Don't gate on the kind manually** — let `CanOpen` decide.
+
+**Source-anchored** — use [`ItemSourceChipVm`](../src/Mithril.Shared.Wpf/EntityChipVm.cs) `(DisplayName, Detail, IconId, EntityRef? EntityReference, bool IsNavigable)` rendered through `<c:ItemSourceChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={...}}" .../>`. The `EntityReference` is nullable for true non-entity sources (monster drop, barter table). The chip auto-degrades to plain text in a transparent frame when `IsNavigable=false`. Don't introduce a parallel chip type per entity kind; reuse this one.
+
+### Audit existing surfaces when shipping a new EntityKind
+
+The "let `CanOpen` decide" rule only protects chips that *follow* it. Pre-existing chip-builders that hardcoded `IsNavigable: false` or `EntityReference: null` (because the kind wasn't tabbed when they were written) **stay stale** when the new kind ships. Symptoms: a chip on some *other* tab still renders plain text after your tab is live.
+
+Before shipping, grep for:
+
+- Any `EntityRef.<NewKind>(...)` call site — confirm its consumer sets `IsNavigable = _navigator.CanOpen(...)` and not a hardcoded `false`.
+- Any `ItemSourceChipVm(..., EntityReference: null, IsNavigable: false)` literal — if the source `Type` could match the new kind (e.g. `"NpcGift"` for NPCs), wire it through `EntityRef.<NewKind>(s.Npc)` and `_navigator.CanOpen(...)`.
+- Any `<TextBlock Text="{Binding ...}"/>` rendering source-style data with a `TODO(stub:#…)` nearby — it's probably an `ItemSourceChip` waiting to happen.
+
+Replace the friendly display name in those builders with `_nameResolver.Resolve(EntityRef.<NewKind>(internalName))` from the shared `IEntityNameResolver` (per scaffolding step 1). Until that service exists, NPCs ship through a transitional `NpcNameResolver` static at [src/Silmarillion.Module/ViewModels/NpcNameResolver.cs](../src/Silmarillion.Module/ViewModels/NpcNameResolver.cs); fold it into the shared service when you wire your kind in.
 
 ## Synthetic kinds — deep-linking to a tab with a pre-filled query
 
@@ -80,6 +96,18 @@ All three set `TryOpenInWindow` → `false` (nothing to open in isolation) and `
 2. **When fan-out cardinality is unbounded but the *direct* refs are still useful, cap + overflow-pill.** [`ItemsTabViewModel.BuildConsumedByChips`](../src/Silmarillion.Module/ViewModels/ItemsTabViewModel.cs) returns the first `UsedInChipCap` (default 12) chips plus a `+{N-cap} more →` pill that uses a synthetic kind target to deep-link to the filtered tab. The pill carries the source entity's icon for visual continuity. Settings live in [`SilmarillionSettings`](../src/Silmarillion.Module/SilmarillionSettings.cs); follow that file as the template if your tab needs persistent settings (`SchemaVersion` stamped from day one, `INotifyPropertyChanged`, source-gen STJ context, debounced autosave via `AddMithrilSettings<T>`).
 
 **Tooling for collection-CONTAINS filtering:** wrap the tag/value in a small record implementing `IQueryStringValue` (e.g. [`IngredientKeywordValue.cs`](../src/Silmarillion.Module/ViewModels/IngredientKeywordValue.cs), [`IngredientItemValue.cs`](../src/Silmarillion.Module/ViewModels/IngredientItemValue.cs)), expose the field on your master-list row as `IReadOnlyList<TValue>`, and the `MithrilQueryBox` parser handles `CONTAINS` for free (#261). Make sure the row type's reflected schema (step 6 above) includes the collection field — without it, autocomplete won't suggest it.
+
+## Reverse-lookup index rebuild triggers
+
+When your detail pane needs cross-link sections fed by reverse lookups (`RecipesTaughtByNpc`, `ItemsSoldByNpc`, etc.), build them in a `Build<X>CrossLinkIndices()` method on `ReferenceDataService`, mirroring the existing [`BuildRecipeCrossLinkIndices`](../src/Mithril.Shared/Reference/ReferenceDataService.cs). Call it from the end of the `ParseAndSwap*` method for **every** input file the index depends on, so a refresh of any one rebuilds the index. Concrete trigger matrix:
+
+| Index | Triggers rebuild from |
+| --- | --- |
+| `RecipesByProducedItem`, `RecipesByIngredientItem` | `items.json`, `recipes.json` |
+| `RecipesTaughtByNpc` | `recipes.json`, `sources_recipes.json` |
+| `ItemsSoldByNpc` | `items.json`, `sources_items.json` |
+
+Same pattern for whatever index your tab adds. Missing a trigger means a CDN refresh of the dependent file leaves the index pointed at stale POCO instances.
 
 ## DI cycle break — why the Func<> wrappers exist
 
@@ -106,6 +134,17 @@ Three test files per tab, mirroring the v1 trio:
 
 Use the `NavFactory.WithKinds(...)` helper from [RecipesTabViewModelTests.cs](../tests/Silmarillion.Tests/ViewModels/RecipesTabViewModelTests.cs) to construct stub navigators with a specific kind subset registered — this is how you write `IsNavigable=true|false` assertions deterministically. Extend `StubReferenceData` with new source dictionaries as needed; consumer fakes in other modules use the interface default for any property they don't care about, so adding source data doesn't ripple across the test suite.
 
+**The non-rippling default depends on you giving the new property an interface-level default value.** Pattern for every new `IReferenceDataService` property:
+
+```csharp
+IReadOnlyDictionary<string, Npc> NpcsByInternalName => EmptyNpcMap;
+
+private static readonly IReadOnlyDictionary<string, Npc> EmptyNpcMap
+    = new Dictionary<string, Npc>(StringComparer.Ordinal);
+```
+
+Without the `=> Empty<X>` default, every test fake across every module needs a `NpcsByInternalName` getter — a many-file cascade you don't want.
+
 ## Verification ladder
 
 Every Bucket B PR should pass these in order:
@@ -113,20 +152,23 @@ Every Bucket B PR should pass these in order:
 1. `dotnet build Mithril.slnx` — warnings-as-errors clean.
 2. `dotnet test tests/Silmarillion.Tests` — the three new test files + existing tests pass.
 3. `dotnet test Mithril.slnx` — no regressions, especially in consumers of `IReferenceDataService` (Celebrimbor, Bilbo, Elrond, Arwen).
-4. `dotnet run --project src/Mithril.Shell` — manual checks:
+4. **Real-data sanity check before manual smoke.** Walk 2-3 real entries from the bundled JSON for the kind, and confirm each polymorphic subclass / variant renders legibly with real data. Synthetic test fixtures verify *projection correctness*; only real data exposes whether the *grouping and labelling* are parseable. (NPC `Training` services were the cautionary tale — synthetic tests were green; real data showed skill names visually indistinguishable from favor-tier unlocks because both were rendered in one undifferentiated bullet list.)
+5. `dotnet run --project src/Mithril.Shell` — manual checks. **Close Mithril between rebuilds during iterative fix cycles** — the post-build copy-to-`Mithril.Shell/modules/` cascades to MSB3027 file-lock errors when the running app holds the module DLL open. Symptom: a clean Module build fails 10× retries before erroring; test DLLs build cleanly because tests don't copy to `modules/`.
    - Open Silmarillion → new tab appears in the strip with the gold IsSelected underline (confirms `MithrilTabItemStyle` is being applied — only happens when the tab comes through `ItemsSource`, not direct `TabControl.Items.Add`).
    - Pick an entity → detail pane populates.
    - Type a column name in the query box → completion popup opens, known names highlight in column-gold (confirms `SchemaSnapshot` is wired per step 6).
    - Cross-link chips render (navigable to tabbed kinds, plain text otherwise).
    - Click a chip that points to your new kind from an *existing* tab → tab switches and entity selects.
+   - Click a chip on a *different* tab that anchors your new kind (e.g. NPC chips on recipe-detail's "Taught by" section after shipping NPCs) — confirms the audit pass from *Cross-link chips → audit existing surfaces* caught everything.
    - Open-in-window button on the header works for the new kind.
    - Background refresh check: leave the tab open, force a CDN refresh, confirm the list rebuilds without losing the current selection.
 
-## Three things that go wrong
+## Four things that go wrong
 
 1. **The tab VM is registered but the kind target isn't.** The tab renders but cross-link chips to its kind stay plain-text, and the navigator's `CanOpen` returns false for the new kind. Symptom: clicking a chip silently does nothing. Cause: missed the second `AddSingleton<IReferenceKindTarget>` line. Fix: register the target.
 2. **The tab VM lookup happens against `IReferenceDataService` instead of the bound `All<X>` collection.** Symptom: post-CDN-refresh navigation appears to succeed but the detail pane goes blank. Cause: WPF's ListBox can't match the new refData instance to its `ItemsSource`. Fix: resolve in `TrySelectByInternalName` against the tab VM's bound collection, per the `ItemsKindTarget` comment.
 3. **`MithrilQueryBox.Schema` isn't bound.** Symptom: typing in the query box never opens the completion popup, and known column names render as unknown-column red. Cause: missed the `Schema="{x:Static vm:XTabViewModel.SchemaSnapshot}"` binding (or never exposed `SchemaSnapshot`). The query *parser* still works for hand-typed expressions, so this fails silently in tests — only manual smoke catches it. Fix: per step 6 above.
+4. **The new kind's tab ships, but pre-existing chip-builders on *other* tabs are stale.** Symptom: clicking a chip on a tab *other* than the one being shipped doesn't navigate, even though the kind target is registered and the lookup is correct. Cause: a chip-builder elsewhere hardcoded `IsNavigable: false` / `EntityReference: null`, or rendered through a plain `<TextBlock/>` with a `TODO(stub:#…)` rather than `EntityChip` / `ItemSourceChip`. Fix: the *Audit existing surfaces* grep pass under *Cross-link chips* — replace hardcoded falsy flags with `_navigator.CanOpen(reference)` and upgrade stub `TextBlock`s to `<c:ItemSourceChip .../>`.
 
 ## When the cookbook doesn't apply
 
