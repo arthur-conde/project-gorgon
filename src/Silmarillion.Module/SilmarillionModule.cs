@@ -53,6 +53,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<RecipesTabViewModel>();
         services.AddSingleton<NpcsTabViewModel>();
         services.AddSingleton<QuestsTabViewModel>();
+        services.AddSingleton<AbilitiesTabViewModel>();
         // Forward each concrete tab VM to ITabViewModel so SilmarillionViewModel can compose
         // its Tabs collection from IEnumerable<ITabViewModel>. Adding a future tab is a single
         // pair of registrations here — no SilmarillionViewModel ctor change (refactor #243).
@@ -60,6 +61,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<RecipesTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<NpcsTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<QuestsTabViewModel>());
+        services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<AbilitiesTabViewModel>());
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -77,6 +79,9 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new QuestsKindTarget(
             sp.GetRequiredService<QuestsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new AbilityKindTarget(
+            sp.GetRequiredService<AbilitiesTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientKeywordKindTarget(
             sp.GetRequiredService<RecipesTabViewModel>(),

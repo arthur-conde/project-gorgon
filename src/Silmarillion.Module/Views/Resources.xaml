@@ -80,6 +80,28 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- Compact two-line row for Abilities tab. Bound DataContext: Silmarillion.ViewModels.AbilityListRow.
+         Icon comes from Ability.IconID (most abilities ship one); the row's secondary line shows
+         Skill + Level + optional Rank. -->
+    <DataTemplate x:Key="AbilityCardTemplate">
+        <DockPanel LastChildFill="True">
+            <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconID}"
+                           Width="24" Height="24" Margin="6,3,6,3" VerticalAlignment="Center"/>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding Skill, Mode=OneWay}"/>
+                    <Run Text=" L"/>
+                    <Run Text="{Binding Level, Mode=OneWay}"/>
+                </TextBlock>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
     <!-- Compact two-line row for Recipes tab. Bound DataContext: Silmarillion.ViewModels.RecipeListRow. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <DockPanel LastChildFill="True">
