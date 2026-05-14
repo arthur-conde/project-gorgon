@@ -4,6 +4,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Query;
+using Mithril.TestSupport;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -46,7 +47,7 @@ public sealed class NpcsTabViewModelTests
             },
         };
 
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.AllNpcs.Should().HaveCount(2);
         vm.AllNpcs.Select(n => n.Name).Should().Equal("Albert", "Joeh");
@@ -65,7 +66,7 @@ public sealed class NpcsTabViewModelTests
                 ["NPC_None"] = new Npc { Name = "None" },
             },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.AllNpcs.Single(r => r.InternalName == "NPC_Friendly").AreaDisplayName.Should().Be("Friendly Area");
         vm.AllNpcs.Single(r => r.InternalName == "NPC_Raw").AreaDisplayName.Should().Be("AreaRaw");
@@ -91,7 +92,7 @@ public sealed class NpcsTabViewModelTests
                 },
             },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         var row = vm.AllNpcs.Single();
         row.ServiceTypes.Select(s => s.Type).Should().BeEquivalentTo(["Store", "Training"]);
@@ -116,7 +117,7 @@ public sealed class NpcsTabViewModelTests
                 },
             },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         const string queryString = "ServiceTypes CONTAINS \"Store\"";
         var columns = ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow));
@@ -137,7 +138,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -153,7 +154,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
         vm.SelectedRow = null;
@@ -176,7 +177,7 @@ public sealed class NpcsTabViewModelTests
             NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
             RecipesTaughtByNpcMap = { ["NPC_Joeh"] = new[] { recipe } },
         };
-        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe));
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -197,7 +198,7 @@ public sealed class NpcsTabViewModelTests
             NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
             ItemsSoldByNpcMap = { ["NPC_Joeh"] = new[] { apple } },
         };
-        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item));
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -222,7 +223,7 @@ public sealed class NpcsTabViewModelTests
                 ["Altar_Druid"] = new Npc { Name = "Druid Altar", AreaName = "AreaSerbule" },
             },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -254,7 +255,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -285,7 +286,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -319,7 +320,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -345,7 +346,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -378,7 +379,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -414,7 +415,7 @@ public sealed class NpcsTabViewModelTests
                     PrefaceText: null, SuccessText: null),
             },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -430,7 +431,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
         };
-        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
         vm.SelectedRow = vm.AllNpcs.Single();
 
         // Swap in a fresh Npc instance for the same key — refData hands out the new instance.

@@ -80,7 +80,7 @@ public sealed class RecipesKindTargetTests
         var refData = new FakeReferenceData();
         refData.AddRecipe(originalRecipe);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new RecipesTabViewModel(refData, nav);
+        var vm = new RecipesTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         var target = new RecipesKindTarget(vm);
 
         // Refresh: swap in a new Recipe instance.
@@ -103,7 +103,7 @@ public sealed class RecipesKindTargetTests
         var refData = new FakeReferenceData();
         refData.AddRecipe(original);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new RecipesTabViewModel(refData, nav);
+        var vm = new RecipesTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         vm.SelectedRow = vm.AllRecipes.Single();
         vm.SelectedRecipe.Should().BeSameAs(original);
 
@@ -122,7 +122,7 @@ public sealed class RecipesKindTargetTests
         foreach (var recipe in recipes)
             refData.AddRecipe(recipe);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new RecipesTabViewModel(refData, nav);
+        var vm = new RecipesTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         var target = new RecipesKindTarget(vm);
         return (target, vm, refData);
     }

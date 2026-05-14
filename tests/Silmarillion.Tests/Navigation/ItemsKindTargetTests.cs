@@ -78,7 +78,7 @@ public sealed class ItemsKindTargetTests
         foreach (var item in items)
             refData.AddItem(item);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new ItemsTabViewModel(refData, nav);
+        var vm = new ItemsTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         var target = new ItemsKindTarget(vm);
         return (target, vm, refData);
     }

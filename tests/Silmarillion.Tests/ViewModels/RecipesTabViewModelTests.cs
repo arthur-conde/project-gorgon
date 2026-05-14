@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Query;
+using Mithril.TestSupport;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -40,7 +41,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.AllRecipes.Should().HaveCount(2);
         vm.AllRecipes.Select(r => r.Name).Should().Equal("Apple Sauce", "Bake Bread");
@@ -69,7 +70,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.AllRecipes.Should().ContainSingle()
             .Which.SkillDisplayName.Should().Be("Armor Augment Brewing");
@@ -83,7 +84,7 @@ public sealed class RecipesTabViewModelTests
             RecipesByKey = { ["r1"] = new Recipe { Key = "r1", Name = "A", Skill = "UnknownSkill", SkillLevelReq = 1, Ingredients = [] } },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.AllRecipes.Should().ContainSingle()
             .Which.SkillDisplayName.Should().Be("UnknownSkill");
@@ -105,7 +106,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -121,7 +122,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
         vm.SelectedRecipe = null;
@@ -150,7 +151,7 @@ public sealed class RecipesTabViewModelTests
             RecipesByKey = { ["r1"] = recipe },
         };
         // Use a navigator that has Item kind registered so CanOpen returns true for items.
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -183,7 +184,7 @@ public sealed class RecipesTabViewModelTests
             ItemsByCode = { [100] = tomato },
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -214,7 +215,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
         var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -242,7 +243,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
         var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -273,7 +274,7 @@ public sealed class RecipesTabViewModelTests
             },
         };
         var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -301,7 +302,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -327,7 +328,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["r1"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -361,14 +362,14 @@ public sealed class RecipesTabViewModelTests
             },
         };
         // Navigator has Recipe + Item kinds, but NOT Npc — matches v1 ship state.
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item, EntityKind.Recipe));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item, EntityKind.Recipe), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRecipe = recipe;
 
         vm.DetailViewModel!.Sources.Should().NotBeNull();
         vm.DetailViewModel.Sources!.Should().ContainSingle();
         var chip = vm.DetailViewModel.Sources![0];
-        // No NPC POCO seeded → NpcNameResolver strips the "NPC_" prefix.
+        // No NPC POCO seeded → ReferenceDataEntityNameResolver strips the "NPC_" prefix.
         chip.DisplayName.Should().Be("Training: Marna");
         chip.EntityReference.Should().Be(EntityRef.Npc("NPC_Marna"));
         chip.IsNavigable.Should().BeFalse();
@@ -403,7 +404,7 @@ public sealed class RecipesTabViewModelTests
                 },
             },
         };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe));
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRecipe = recipe;
 
@@ -433,7 +434,7 @@ public sealed class RecipesTabViewModelTests
         {
             RecipesByKey = { ["recipe_42"] = recipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
@@ -462,7 +463,7 @@ public sealed class RecipesTabViewModelTests
             RecipesByKey = { ["r1"] = recipe },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         var row = vm.AllRecipes.Should().ContainSingle().Subject;
         row.IngredientKeywords.Select(k => k.Tag)
@@ -496,7 +497,7 @@ public sealed class RecipesTabViewModelTests
             RecipesByKey = { ["r1"] = recipe },
         };
 
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         var row = vm.AllRecipes.Should().ContainSingle().Subject;
         row.Ingredients.Select(i => i.InternalName)
@@ -525,7 +526,7 @@ public sealed class RecipesTabViewModelTests
             ItemsByCode = { [42] = slab, [88] = hide },
             RecipesByKey = { ["rA"] = recipeA, ["rB"] = recipeB },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         const string queryString = "Ingredients CONTAINS \"MetalSlab1\"";
         var columns = ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow));
@@ -556,7 +557,7 @@ public sealed class RecipesTabViewModelTests
             ItemsByCode = { [101] = sauce },
             RecipesByKey = { ["r1"] = protoRecipe },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = protoRecipe;
 
@@ -599,7 +600,7 @@ public sealed class RecipesTabViewModelTests
                 ["rB"] = recipeB,
             },
         };
-        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         // The exact query string produced by RecipeIngredientKeywordKindTarget.TrySelectByInternalName.
         const string queryString = "IngredientKeywords CONTAINS \"Crystal\"";

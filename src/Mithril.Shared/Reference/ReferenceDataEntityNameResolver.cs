@@ -1,0 +1,45 @@
+namespace Mithril.Shared.Reference;
+
+/// <summary>
+/// Default <see cref="IEntityNameResolver"/> — resolves names via the live
+/// <see cref="IReferenceDataService"/> indices. NPC envelope keys (e.g. <c>"NPC_Joeh"</c>,
+/// <c>"Altar_Druid"</c>) fall back to a leading <c>"NPC_"</c> strip so unnamed altars /
+/// placeholders read as <c>"SpiderPlaceholder"</c> rather than <c>"NPC_SpiderPlaceholder"</c>.
+/// Items and Recipes fall through to the raw internal name when no POCO is registered or
+/// its <c>Name</c> field is empty. Unrecognised kinds (e.g. a freshly-added
+/// <see cref="EntityKind"/> whose case isn't wired in yet) return the raw internal name.
+/// </summary>
+public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
+{
+    private readonly IReferenceDataService _refData;
+
+    public ReferenceDataEntityNameResolver(IReferenceDataService refData) => _refData = refData;
+
+    public string Resolve(EntityRef reference) => reference.Kind switch
+    {
+        EntityKind.Item => ResolveItem(reference.InternalName),
+        EntityKind.Recipe => ResolveRecipe(reference.InternalName),
+        EntityKind.Npc => ResolveNpc(reference.InternalName),
+        _ => reference.InternalName,
+    };
+
+    private string ResolveItem(string internalName) =>
+        _refData.ItemsByInternalName.TryGetValue(internalName, out var item) && !string.IsNullOrEmpty(item.Name)
+            ? item.Name!
+            : internalName;
+
+    private string ResolveRecipe(string internalName) =>
+        _refData.RecipesByInternalName.TryGetValue(internalName, out var recipe) && !string.IsNullOrEmpty(recipe.Name)
+            ? recipe.Name!
+            : internalName;
+
+    private string ResolveNpc(string internalName) =>
+        _refData.NpcsByInternalName.TryGetValue(internalName, out var npc) && !string.IsNullOrEmpty(npc.Name)
+            ? npc.Name!
+            : StripNpcPrefix(internalName);
+
+    private static string StripNpcPrefix(string internalName) =>
+        internalName.StartsWith("NPC_", StringComparison.Ordinal)
+            ? internalName.Substring(4)
+            : internalName;
+}

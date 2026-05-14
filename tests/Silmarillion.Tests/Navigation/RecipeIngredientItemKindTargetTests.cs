@@ -73,7 +73,7 @@ public sealed class RecipeIngredientItemKindTargetTests
         foreach (var recipe in recipes)
             refData.AddRecipe(recipe);
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var vm = new RecipesTabViewModel(refData, nav);
+        var vm = new RecipesTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData));
         return (new RecipeIngredientItemKindTarget(vm), vm);
     }
 

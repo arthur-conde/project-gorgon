@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Mithril.Reference.Models.Npcs;
+using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
 namespace Silmarillion.ViewModels;
@@ -14,9 +15,12 @@ namespace Silmarillion.ViewModels;
 /// </summary>
 public sealed class NpcDetailViewModel
 {
+    private readonly IEntityNameResolver _nameResolver;
+
     public NpcDetailViewModel(
         Npc npc,
         string internalName,
+        IEntityNameResolver nameResolver,
         IReadOnlyList<NpcServiceRow> services,
         IReadOnlyList<EntityChipVm> taughtRecipes,
         IReadOnlyList<EntityChipVm> soldItems,
@@ -27,6 +31,7 @@ public sealed class NpcDetailViewModel
     {
         Npc = npc;
         InternalName = internalName;
+        _nameResolver = nameResolver;
         Services = services;
         TaughtRecipes = taughtRecipes;
         SoldItems = soldItems;
@@ -38,8 +43,7 @@ public sealed class NpcDetailViewModel
 
     public Npc Npc { get; }
     public string InternalName { get; }
-    public string DisplayName =>
-        !string.IsNullOrEmpty(Npc.Name) ? Npc.Name! : NpcNameResolver.StripNpcPrefix(InternalName);
+    public string DisplayName => _nameResolver.Resolve(EntityRef.Npc(InternalName));
     public string? AreaDisplayName => Npc.AreaFriendlyName ?? Npc.AreaName;
     public string? Pos => Npc.Pos;
     public string? Description => Npc.Desc;

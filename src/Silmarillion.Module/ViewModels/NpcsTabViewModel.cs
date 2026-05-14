@@ -38,12 +38,14 @@ public sealed partial class NpcsTabViewModel : ObservableObject
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
+    private readonly IEntityNameResolver _nameResolver;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
-    public NpcsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator)
+    public NpcsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver)
     {
         _refData = refData;
         _navigator = navigator;
+        _nameResolver = nameResolver;
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         _allNpcs = BuildAllNpcs(refData);
         refData.FileUpdated += OnFileUpdated;
@@ -105,20 +107,16 @@ public sealed partial class NpcsTabViewModel : ObservableObject
         });
     }
 
-    private static IReadOnlyList<NpcListRow> BuildAllNpcs(IReferenceDataService refData) =>
+    private IReadOnlyList<NpcListRow> BuildAllNpcs(IReferenceDataService refData) =>
         refData.NpcsByInternalName
             .Select(kv => BuildRow(kv.Key, kv.Value))
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    private static NpcListRow BuildRow(string internalName, Npc npc) => new(
+    private NpcListRow BuildRow(string internalName, Npc npc) => new(
         Npc: npc,
         InternalName: internalName,
-        // Prefer the POCO's Name; fall back to the envelope key with the "NPC_" prefix stripped
-        // so unnamed entries (altars, placeholders) read as "SpiderPlaceholder" rather than
-        // "NPC_SpiderPlaceholder". Same rule applied to source-chip display names so the two
-        // surfaces stay in sync — see NpcNameResolver.
-        Name: !string.IsNullOrEmpty(npc.Name) ? npc.Name! : NpcNameResolver.StripNpcPrefix(internalName),
+        Name: _nameResolver.Resolve(EntityRef.Npc(internalName)),
         AreaDisplayName: npc.AreaFriendlyName ?? npc.AreaName ?? "(unknown)",
         ServiceTypes: BuildServiceTypes(npc));
 
@@ -145,6 +143,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject
         return new NpcDetailViewModel(
             row.Npc,
             row.InternalName,
+            _nameResolver,
             services,
             taught,
             sold,
