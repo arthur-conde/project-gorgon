@@ -574,6 +574,113 @@ public sealed class NpcsTabViewModelTests
     }
 
     [Fact]
+    public void DetailViewModel_ServiceDetails_ConsignmentItemTypes_EmitChips_Navigable_WhenItemKeywordKindRegistered()
+    {
+        // Follow-up to #292 / PR #294: ConsignmentService.ItemTypes is an array of raw
+        // item-keyword tags (e.g. Equipment, CorpseTrophy, Tool) — same shape as Store cap
+        // keyword tuples. Lift them out of the comma-joined "Items:" prose into a per-line
+        // chip strip that routes the Items tab via EntityKind.ItemKeyword, matching #270.
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new ConsignmentService
+                {
+                    Type = "Consignment",
+                    ItemTypes = ["Equipment", "CorpseTrophy", "AugmentationRelated"],
+                    Unlocks = ["CloseFriends", "BestFriends"],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var consignment = vm.DetailViewModel!.Services.Single();
+        consignment.Details.Should().HaveCount(2);
+
+        var itemsLine = consignment.Details[0];
+        itemsLine.Text.Should().Be("Items:", because: "the label is preserved as prose so the chip strip reads as a labeled list, matching the Store cap-increase visual rhythm");
+        itemsLine.Chips.Should().HaveCount(3);
+        itemsLine.Chips.Select(c => c.Reference).Should().Equal(
+            EntityRef.ItemKeyword("Equipment"),
+            EntityRef.ItemKeyword("CorpseTrophy"),
+            EntityRef.ItemKeyword("AugmentationRelated"));
+        itemsLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeTrue(
+            because: "ItemKeyword kind is registered, so each consignment chip should route to the Items tab."));
+        // CamelCase split fallback when KeywordDisplayNames has no entry (default test stub).
+        itemsLine.Chips.Select(c => c.DisplayName).Should().Equal(
+            "Equipment", "Corpse Trophy", "Augmentation Related");
+    }
+
+    [Fact]
+    public void DetailViewModel_ServiceDetails_ConsignmentUnlocks_StaysTextOnly()
+    {
+        // Unlocks are favor tiers, not item keywords — they must stay as comma-joined prose.
+        // Only ItemTypes lifts into chips; mirrors the Store cap split where the keyword tuple
+        // becomes chips but the tier→gold prose stays text.
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new ConsignmentService
+                {
+                    Type = "Consignment",
+                    ItemTypes = ["Equipment"],
+                    Unlocks = ["CloseFriends", "BestFriends", "LikeFamily"],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var unlocksLine = vm.DetailViewModel!.Services.Single().Details[1];
+        unlocksLine.Text.Should().Be("Unlocks at higher favor: CloseFriends, BestFriends, LikeFamily");
+        unlocksLine.Chips.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DetailViewModel_ServiceDetails_ConsignmentItemTypes_NonNavigable_WhenItemKeywordKindNotRegistered()
+    {
+        // Mirror image of the Store cap non-navigable test: when the navigator has no
+        // ItemKeyword kind wired, chips still render but degrade to IsNavigable=false.
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new ConsignmentService
+                {
+                    Type = "Consignment",
+                    ItemTypes = ["Equipment", "Tool"],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var chips = vm.DetailViewModel!.Services.Single().Details[0].Chips;
+        chips.Should().HaveCount(2);
+        chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeFalse());
+    }
+
+    [Fact]
     public void DetailViewModel_Quests_PopulatedFromQuestsByGiverNpc()
     {
         var npc = new Npc { Name = "Joeh" };
