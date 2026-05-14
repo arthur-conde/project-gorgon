@@ -1,0 +1,40 @@
+<UserControl x:Class="Silmarillion.Views.SilmarillionSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#FF1A1A1A"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,16" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <Image Source="pack://application:,,,/Silmarillion.Module;component/Resources/silmarillion.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Silmarillion · Reference Settings"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- "Used in" chip cap -->
+            <TextBlock Text="Item detail · 'Used in' chips" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <DockPanel Margin="0,0,0,4">
+                <TextBlock DockPanel.Dock="Left" Text="Show at most" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="60"
+                           Text="{Binding UsedInChipCap, StringFormat={}{0} chips}"/>
+                <Slider Minimum="0" Maximum="100" TickFrequency="4" IsSnapToTickEnabled="True"
+                        Value="{Binding UsedInChipCap, Mode=TwoWay}"
+                        VerticalAlignment="Center" Margin="0,0,8,0"/>
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,24">
+                Items with many recipes (e.g. metal slabs, leather hides) take longer to render
+                when every consuming recipe gets its own chip. Above the cap, the remaining
+                recipes collapse into a single &quot;+N more →&quot; pill that opens the Recipes
+                tab pre-filtered to recipes using this item. Default 12. Set to 0 to always
+                collapse; raise to 100 to show everything.
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

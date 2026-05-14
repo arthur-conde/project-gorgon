@@ -116,6 +116,126 @@ public sealed class ItemsTabViewModelTests
     }
 
     [Fact]
+    public void UsedIn_belowCap_emitsAllChips_andNoMoreRecipesChip()
+    {
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient =
+            {
+                ["MetalSlab1"] = MakeRecipeList(count: 5),
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(5);
+        vm.DetailViewModel.MoreRecipesChip.Should().BeNull();
+    }
+
+    [Fact]
+    public void UsedIn_aboveCap_capsChips_andEmitsMoreRecipesPill()
+    {
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab", IconId = 4242 };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient =
+            {
+                // The MetalSlab1 case from the issue (~69 recipes).
+                ["MetalSlab1"] = MakeRecipeList(count: 69),
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12,
+            because: "cap 12 means the first dozen show as chips and the rest collapse behind the pill");
+
+        var pill = vm.DetailViewModel.MoreRecipesChip;
+        pill.Should().NotBeNull();
+        pill!.DisplayName.Should().Be("+57 more →");
+        pill.IconId.Should().Be(4242, because: "pill carries the item's own icon for visual continuity");
+        pill.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
+    }
+
+    [Fact]
+    public void UsedIn_capZero_collapsesEverythingIntoPill()
+    {
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 3) },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new SilmarillionSettings { UsedInChipCap = 0 });
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedByRecipes.Should().BeEmpty();
+        vm.DetailViewModel.MoreRecipesChip.Should().NotBeNull();
+        vm.DetailViewModel.MoreRecipesChip!.DisplayName.Should().Be("+3 more →");
+    }
+
+    [Fact]
+    public void UsedIn_capExactlyMatchesCount_noOverflowPill()
+    {
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 12) },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12);
+        vm.DetailViewModel.MoreRecipesChip.Should().BeNull(
+            because: "the pill appears only when count exceeds the cap, not when they're equal");
+    }
+
+    [Fact]
+    public void UsedInChipCap_change_liveRebuilds_DetailViewModel()
+    {
+        // The user drags the slider; the open detail view should re-cap on the spot. We
+        // verify by changing the cap and checking that ConsumedByRecipes / MoreRecipesChip
+        // reflect the new value.
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 20) },
+        };
+        var settings = new SilmarillionSettings { UsedInChipCap = 12 };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), settings);
+        vm.SelectedItem = item;
+
+        var before = vm.DetailViewModel!;
+        before.ConsumedByRecipes.Should().HaveCount(12);
+        before.MoreRecipesChip.Should().NotBeNull();
+
+        settings.UsedInChipCap = 25;
+
+        var after = vm.DetailViewModel!;
+        after.Should().NotBeSameAs(before, because: "live-update rebuilds the detail VM on slider drag");
+        after.ConsumedByRecipes.Should().HaveCount(20);
+        after.MoreRecipesChip.Should().BeNull();
+    }
+
+    private static IReadOnlyList<Recipe> MakeRecipeList(int count) =>
+        Enumerable.Range(1, count)
+            .Select(i => new Recipe { Key = $"recipe_{i:D3}", InternalName = $"Recipe{i:D3}", Name = $"Recipe {i:D3}" })
+            .ToList();
+
+    [Fact]
     public void Keyword_chip_falls_back_to_CamelCaseSplit_when_no_friendly_display_name()
     {
         // Mirrors the GreenCrystal case: no recipe carries a friendly singleton Desc for the keyword,
@@ -145,12 +265,14 @@ public sealed class ItemsTabViewModelTests
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<Recipe>> RecipesByIngredient { get; } = new(StringComparer.Ordinal);
         public IReadOnlyCollection<string> KeywordsInRecipeSlots { get; init; } = [];
         public IReadOnlyDictionary<string, string> KeywordDisplays { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
         public IReadOnlyDictionary<string, Item> ItemsByInternalName => ItemsByName;
+        public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => RecipesByIngredient;
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();

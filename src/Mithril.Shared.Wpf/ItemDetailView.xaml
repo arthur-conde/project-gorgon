@@ -101,14 +101,29 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Used in recipes — cross-link to recipes that consume this item -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding ConsumedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Used in recipes — cross-link to recipes that consume this item. Capped at
+                     SilmarillionSettings.UsedInChipCap to keep selection-change cheap (long-tail
+                     items like MetalSlab1 ship 60+ recipes). The trailing pill collapses the
+                     overflow into a single chip that deep-links to the Recipes tab filtered to
+                     Ingredients CONTAINS "<itemInternalName>" — same total reach, one paint. -->
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ConsumedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding MoreRecipesChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock FontWeight="SemiBold"
                                Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4">
                         <Run Text="Used in" />
-                        <Run Text="{Binding ConsumedByRecipes.Count, StringFormat=' ({0})', Mode=OneWay}" />
                     </TextBlock>
                     <ItemsControl ItemsSource="{Binding ConsumedByRecipes}">
                         <ItemsControl.ItemsPanel>
@@ -120,6 +135,10 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <c:EntityChip DataContext="{Binding MoreRecipesChip}"
+                                  ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"
+                                  Visibility="{Binding Converter={StaticResource NullToVis}}"
+                                  HorizontalAlignment="Left"/>
                 </StackPanel>
 
                 <!-- Used as: keyword chips — items that satisfy keyword-based slots in recipes -->

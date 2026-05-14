@@ -469,6 +469,75 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void RecipeListRow_Ingredients_flattens_RecipeItemIngredient_InternalNames_distinctly()
+    {
+        // Two direct-item slots referencing the same item code, plus a keyword slot
+        // (which must be ignored — keywords go into IngredientKeywords, not Ingredients).
+        var slab = new Item { Id = 42, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var oil = new Item { Id = 7, InternalName = "OilTier1", Name = "Tier 1 Oil" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "ForgeSlab",
+            Name = "Forge Slab",
+            Skill = "Blacksmithing",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeItemIngredient { ItemCode = 42, StackSize = 1 },
+                new RecipeItemIngredient { ItemCode = 42, StackSize = 2 }, // dup → collapses
+                new RecipeItemIngredient { ItemCode = 7, StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], StackSize = 1 }, // ignored
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByCode = { [42] = slab, [7] = oil },
+            RecipesByKey = { ["r1"] = recipe },
+        };
+
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        var row = vm.AllRecipes.Should().ContainSingle().Subject;
+        row.Ingredients.Select(i => i.InternalName)
+            .Should().BeEquivalentTo(["MetalSlab1", "OilTier1"]);
+    }
+
+    [Fact]
+    public void QueryText_IngredientsContains_FiltersToMatchingRecipeOnly()
+    {
+        // Symmetric counterpart to the IngredientKeywords query test — verifies the same
+        // query path works for the item-pivot direction (powers the "Used in" overflow pill).
+        var slab = new Item { Id = 42, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var hide = new Item { Id = 88, InternalName = "LeatherHide", Name = "Leather Hide" };
+        var recipeA = new Recipe
+        {
+            Key = "rA", InternalName = "ForgeSlab", Name = "Forge Slab", Skill = "Blacksmithing",
+            Ingredients = new RecipeIngredient[] { new RecipeItemIngredient { ItemCode = 42, StackSize = 1 } },
+        };
+        var recipeB = new Recipe
+        {
+            Key = "rB", InternalName = "TanHide", Name = "Tan Hide", Skill = "Tanning",
+            Ingredients = new RecipeIngredient[] { new RecipeItemIngredient { ItemCode = 88, StackSize = 1 } },
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByCode = { [42] = slab, [88] = hide },
+            RecipesByKey = { ["rA"] = recipeA, ["rB"] = recipeB },
+        };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        const string queryString = "Ingredients CONTAINS \"MetalSlab1\"";
+        var columns = ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow));
+        var predicate = QueryCompiler.Compile(queryString, columns);
+        predicate.Should().NotBeNull();
+
+        var matches = vm.AllRecipes.Where(row => predicate!(row)).ToList();
+
+        matches.Should().ContainSingle(r => r.Recipe.InternalName == "ForgeSlab");
+        matches.Should().NotContain(r => r.Recipe.InternalName == "TanHide");
+    }
+
+    [Fact]
     public void ProducedItemChips_PreferResultItems_FallBackToProtoResultItems()
     {
         var sauce = new Item { Id = 101, InternalName = "TomatoSauce", Name = "Tomato Sauce", IconId = 2 };

@@ -1,5 +1,7 @@
+using System.IO;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -23,10 +25,15 @@ public sealed class SilmarillionModule : IMithrilModule
     public int SortOrder => 950;
     public ActivationMode DefaultActivation => ActivationMode.Lazy;
     public Type ViewType => typeof(SilmarillionView);
-    public Type? SettingsViewType => null;
+    public Type? SettingsViewType => typeof(SilmarillionSettingsView);
 
     public void Register(IServiceCollection services)
     {
+        var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var silmarillionDir = Path.Combine(localApp, "Mithril", "Silmarillion");
+        var settingsPath = Path.Combine(silmarillionDir, "settings.json");
+        services.AddMithrilSettings<SilmarillionSettings>(settingsPath, SilmarillionSettingsJsonContext.Default.SilmarillionSettings);
+
         // Replace the shell-registered NoOpReferenceNavigator. Last AddSingleton<T> wins
         // for non-keyed singleton resolution, and module Register() runs after shell DI
         // setup. The navigator pulls all IReferenceKindTarget registrations via DI;
@@ -38,7 +45,10 @@ public sealed class SilmarillionModule : IMithrilModule
             () => sp.GetService<IModuleActivator>(),
             sp.GetService<IDiagnosticsSink>()));
 
-        services.AddSingleton<ItemsTabViewModel>();
+        services.AddSingleton<ItemsTabViewModel>(sp => new ItemsTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<SilmarillionSettings>()));
         services.AddSingleton<RecipesTabViewModel>();
         services.AddSingleton<SilmarillionViewModel>();
 
@@ -58,6 +68,9 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemKeywordKindTarget(
             sp.GetRequiredService<ItemsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientItemKindTarget(
+            sp.GetRequiredService<RecipesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>
@@ -66,6 +79,10 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<SilmarillionView>(sp => new SilmarillionView
         {
             DataContext = sp.GetRequiredService<SilmarillionViewModel>(),
+        });
+        services.AddSingleton<SilmarillionSettingsView>(sp => new SilmarillionSettingsView
+        {
+            DataContext = sp.GetRequiredService<SilmarillionSettings>(),
         });
     }
 }
