@@ -102,6 +102,32 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- Compact two-line row for Effects tab. Bound DataContext: Silmarillion.ViewModels.EffectListRow.
+         Effects ship icon ids in most entries; secondary line shows StackingType or Duration when
+         non-null (StackingType wins because it carries more identity, Duration falls back).
+         Primary key for selection-preservation is EnvelopeKey, not DisplayName — names collide. -->
+    <DataTemplate x:Key="EffectCardTemplate">
+        <DockPanel LastChildFill="True">
+            <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                           Width="24" Height="24" Margin="6,3,6,3" VerticalAlignment="Center"/>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Text>
+                        <PriorityBinding>
+                            <Binding Path="StackingType"/>
+                            <Binding Path="Duration"/>
+                        </PriorityBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
     <!-- Compact two-line row for Recipes tab. Bound DataContext: Silmarillion.ViewModels.RecipeListRow. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <DockPanel LastChildFill="True">
