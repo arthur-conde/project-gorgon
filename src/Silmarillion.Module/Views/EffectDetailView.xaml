@@ -143,21 +143,20 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── 6. Stacks with ─── -->
+                <!-- ─── 6. Stacks with — single chip per StackingType (collapsed). Clicking
+                       filters the Effects tab to peers in the same stacking group. The label
+                       carries the peer-count suffix so the group's size is visible upfront. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding StacksWithChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                            Visibility="{Binding StacksWithChip, Converter={StaticResource NullOrEmptyToVis}}">
                     <TextBlock Text="Stacks with" FontWeight="SemiBold" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding StacksWithChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
+                    <ContentControl Content="{Binding StacksWithChip}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
                                 <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ContentControl.Resources>
+                    </ContentControl>
                 </StackPanel>
 
                 <!-- ─── 7. Required by abilities ─── -->

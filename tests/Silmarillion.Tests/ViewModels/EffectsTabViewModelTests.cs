@@ -128,8 +128,11 @@ public sealed class EffectsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_StacksWith_ListsSiblingsWithSameStackingType_ExcludingSelf()
+    public void DetailViewModel_StacksWith_CollapsesToSingleChipPerStackingType_WithPeerCountSuffix()
     {
+        // Per #259's keyword-collapse precedent: a stacking group like "Food" (~326 effects)
+        // would produce an unscannable chip wall. Render a single chip whose label includes
+        // the peer count, and whose click filters the Effects tab.
         var sticky = new PocoEffect { InternalName = "effect_1", Name = "Sticky 1", IconId = 1, StackingType = "Sticky" };
         var sticky2 = new PocoEffect { InternalName = "effect_2", Name = "Sticky 2", IconId = 2, StackingType = "Sticky" };
         var sticky3 = new PocoEffect { InternalName = "effect_3", Name = "Sticky 3", IconId = 3, StackingType = "Sticky" };
@@ -146,15 +149,48 @@ public sealed class EffectsTabViewModelTests
                 ["Sticky"] = new[] { sticky, sticky2, sticky3 },
             },
         };
-        var vm = BuildVm(refData);
+        var vm = new EffectsTabViewModel(
+            refData,
+            NavFactory.WithKinds(EntityKind.EffectByStackingType),
+            new ReferenceDataEntityNameResolver(refData),
+            new SilmarillionSettings());
 
         vm.SelectedRow = vm.AllEffects.First(r => r.EnvelopeKey == "effect_1");
-        var chips = vm.DetailViewModel!.StacksWithChips;
+        var chip = vm.DetailViewModel!.StacksWithChip;
 
-        chips.Select(c => c.Reference.InternalName)
-            .Should().BeEquivalentTo("effect_2", "effect_3");
-        chips.Select(c => c.Reference.Kind)
-            .Should().AllBeEquivalentTo(EntityKind.Effect);
+        chip.Should().NotBeNull();
+        chip!.DisplayName.Should().Be("Sticky (2)", because: "the chip carries the StackingType plus a peer-count suffix");
+        chip.Reference.Kind.Should().Be(EntityKind.EffectByStackingType);
+        chip.Reference.InternalName.Should().Be("Sticky");
+        chip.IsNavigable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetailViewModel_StacksWith_NullWhenNoStackingType()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_1"] = new PocoEffect { InternalName = "effect_1", Name = "Loner" } },
+        };
+        var vm = BuildVm(refData);
+
+        vm.SelectedRow = vm.AllEffects.Single();
+        vm.DetailViewModel!.StacksWithChip.Should().BeNull();
+    }
+
+    [Fact]
+    public void DetailViewModel_StacksWith_NullWhenSoleMemberOfGroup()
+    {
+        var lone = new PocoEffect { InternalName = "effect_1", Name = "Solo", StackingType = "Unique" };
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_1"] = lone },
+            EffectsByStackingTypeMap = { ["Unique"] = new[] { lone } },
+        };
+        var vm = BuildVm(refData);
+
+        vm.SelectedRow = vm.AllEffects.Single();
+        vm.DetailViewModel!.StacksWithChip.Should().BeNull(because: "no peers means no useful filter target");
     }
 
     [Fact]

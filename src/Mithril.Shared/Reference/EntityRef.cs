@@ -66,6 +66,16 @@ public enum EntityKind
     /// section's overflow pill when the chip cluster exceeds the configured cap.
     /// </summary>
     AbilityByEffectKeyword,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Effects tab filtered to
+    /// effects sharing this <see cref="Mithril.Reference.Models.Effects.Effect.StackingType"/>."
+    /// InternalName carries the StackingType value (e.g. <c>"Food"</c>, <c>"Snack"</c>).
+    /// Dispatched by EffectByStackingTypeKindTarget; powers the Effects-tab "Stacks with"
+    /// section's overflow pill — stacking groups like <c>"Food"</c> contain ~326 entries
+    /// and would render unscannably as a flat chip cluster.
+    /// </summary>
+    EffectByStackingType,
 }
 
 /// <summary>
@@ -121,6 +131,7 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef RecipeIngredientItem(string itemInternalName) => new(EntityKind.RecipeIngredientItem, itemInternalName);
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
     public static EntityRef AbilityByEffectKeyword(string keyword) => new(EntityKind.AbilityByEffectKeyword, keyword);
+    public static EntityRef EffectByStackingType(string stackingType) => new(EntityKind.EffectByStackingType, stackingType);
 }
 
 /// <summary>

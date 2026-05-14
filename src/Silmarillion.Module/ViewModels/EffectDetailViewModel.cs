@@ -44,7 +44,7 @@ public sealed class EffectDetailViewModel
         KeywordChips = BuildKeywordChips(effect.Keywords, navigator);
         ConditionalDotRows = BuildConditionalDotRows(effect, refData);
         ConditionalSpecialValueRows = BuildConditionalSpecialValueRows(effect, refData);
-        StacksWithChips = BuildStacksWithChips(effect, envelopeKey, refData, nameResolver, navigator);
+        StacksWithChip = BuildStacksWithChip(effect, envelopeKey, refData, navigator);
         var (chips, pill) = BuildRequiredByAbilityChips(effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
         RequiredByAbilityChips = chips;
         RequiredByAbilitiesOverflowPill = pill;
@@ -80,7 +80,16 @@ public sealed class EffectDetailViewModel
     public bool HasConditionalRuleRows =>
         ConditionalDotRows.Count > 0 || ConditionalSpecialValueRows.Count > 0;
 
-    public IReadOnlyList<EntityChipVm> StacksWithChips { get; }
+    /// <summary>
+    /// Single collapsed chip representing the stacking group this effect belongs to —
+    /// label is the StackingType value with a peer-count suffix (e.g. <c>"Food (326)"</c>),
+    /// reference is <see cref="EntityRef.EffectByStackingType(string)"/>. Clicking filters
+    /// the Effects tab to <c>StackingType = "&lt;value&gt;"</c>. Null when the effect has
+    /// no StackingType or is the only entry in the group (per #259's keyword-collapse
+    /// precedent — don't fan out to per-effect chips when cardinality could be large; the
+    /// "Food" stacking group alone has hundreds of effects).
+    /// </summary>
+    public EntityChipVm? StacksWithChip { get; }
     public IReadOnlyList<EntityChipVm> RequiredByAbilityChips { get; }
 
     /// <summary>
@@ -226,30 +235,38 @@ public sealed class EffectDetailViewModel
         return body;
     }
 
-    private static IReadOnlyList<EntityChipVm> BuildStacksWithChips(
+    /// <summary>
+    /// Build the single "Stacks with" chip. Collapses what could be hundreds of per-effect
+    /// chips (the <c>"Food"</c> stacking group alone has ~326 entries) into one chip whose
+    /// label is the StackingType value plus a peer-count suffix; clicking deep-links to
+    /// the Effects tab filtered by <c>StackingType = "&lt;value&gt;"</c>. Mirrors the
+    /// keyword-collapse pattern from #259. Returns <see langword="null"/> when the effect
+    /// has no StackingType or is the only entry in its stacking group.
+    /// </summary>
+    private static EntityChipVm? BuildStacksWithChip(
         PocoEffect effect,
         string envelopeKey,
         IReferenceDataService refData,
-        IEntityNameResolver nameResolver,
         IReferenceNavigator navigator)
     {
-        if (string.IsNullOrEmpty(effect.StackingType)) return [];
-        if (!refData.EffectsByStackingType.TryGetValue(effect.StackingType!, out var peers)) return [];
-        if (peers.Count <= 1) return [];
+        if (string.IsNullOrEmpty(effect.StackingType)) return null;
+        if (!refData.EffectsByStackingType.TryGetValue(effect.StackingType!, out var peers)) return null;
 
-        var list = new List<EntityChipVm>(peers.Count - 1);
+        var peerCount = 0;
         foreach (var peer in peers)
         {
             if (peer.InternalName is null) continue;
             if (peer.InternalName == envelopeKey) continue;
-            var reference = EntityRef.Effect(peer.InternalName);
-            list.Add(new EntityChipVm(
-                DisplayName: nameResolver.Resolve(reference),
-                IconId: peer.IconId,
-                Reference: reference,
-                IsNavigable: navigator.CanOpen(reference)));
+            peerCount++;
         }
-        return list;
+        if (peerCount == 0) return null;
+
+        var reference = EntityRef.EffectByStackingType(effect.StackingType!);
+        return new EntityChipVm(
+            DisplayName: $"{effect.StackingType} ({peerCount})",
+            IconId: 0,
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference));
     }
 
     /// <summary>

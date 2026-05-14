@@ -107,6 +107,9 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceKindTarget>(sp => new AbilityByEffectKeywordKindTarget(
             sp.GetRequiredService<AbilitiesTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new EffectByStackingTypeKindTarget(
+            sp.GetRequiredService<EffectsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>
