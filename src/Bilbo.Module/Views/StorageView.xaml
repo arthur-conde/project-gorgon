@@ -4,8 +4,10 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:vm="clr-namespace:Bilbo.ViewModels"
+             xmlns:local="clr-namespace:Bilbo.Views"
              mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:BilboShellViewModel}"
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <ResourceDictionary>
@@ -13,6 +15,13 @@
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
                 <ResourceDictionary Source="Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate DataType="{x:Type vm:InventoryTabViewModel}">
+                <local:InventoryTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:CraftableRecipesTabViewModel}">
+                <local:CraftableRecipesTab/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -30,7 +39,7 @@
         <!-- Controls bar -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="False">
             <Button DockPanel.Dock="Right" Padding="10,4"
-                    Command="{Binding RefreshCommand}"
+                    Command="{Binding Storage.RefreshCommand}"
                     ToolTip="Re-scan the Reports folder for new storage exports">
                 <StackPanel Orientation="Horizontal">
                     <icon:PackIconLucide Kind="RefreshCw" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
@@ -41,207 +50,19 @@
 
         <!-- Status bar -->
         <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="4">
-            <TextBlock Text="{Binding StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+            <TextBlock Text="{Binding Storage.StatusMessage}" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
         </Border>
 
         <!-- Tabs: Inventory / Craftable Recipes -->
-        <TabControl Background="Transparent" BorderThickness="0" Padding="0">
-            <TabItem Header="Inventory">
-                <DockPanel>
-                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
-                        <TextBlock Text="Location:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ComboBox Width="180" Margin="0,0,16,0"
-                                  ItemsSource="{Binding AvailableLocations}"
-                                  SelectedItem="{Binding SelectedLocation}"/>
-                        <wpf:MithrilQueryBox Grid="{Binding ElementName=ItemsGrid}"
-                                            QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
-                                            Watermark="bare text, or e.g. Rarity = 'Epic' AND Level &gt;= 50"/>
-                    </DockPanel>
-                    <wpf:MithrilDataGrid x:Name="ItemsGrid"
-                                        ItemsSource="{Binding FilteredItems}"
-                                        QueryText="{Binding InventoryQueryText, Mode=TwoWay}"
-                                        Mode="ReadOnly"
-                                        MouseDoubleClick="ItemsGrid_OnMouseDoubleClick">
-                    <wpf:MithrilDataGrid.Columns>
-                        <DataGridTemplateColumn Header="Name" Width="*" MinWidth="160" SortMemberPath="Name">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Location" Binding="{Binding Location}" SortMemberPath="Location" Width="160"/>
-                        <DataGridTextColumn Header="Stack" Binding="{Binding StackSize}" SortMemberPath="StackSize" Width="60">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Total Value" Binding="{Binding TotalValue, Converter={StaticResource DecimalFormat}}" SortMemberPath="TotalValue" Width="85">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Right"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Rarity" Binding="{Binding Rarity, Converter={StaticResource NullDash}}" SortMemberPath="Rarity" Width="90">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="{Binding Rarity, Converter={StaticResource RarityBrush}}"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Slot" Binding="{Binding Slot, Converter={StaticResource NullDash}}" SortMemberPath="Slot" Width="90">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Lvl" Binding="{Binding Level, Converter={StaticResource NullDash}}" SortMemberPath="Level" Width="50">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Mods" Binding="{Binding ModCount}" SortMemberPath="ModCount" Width="50">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                    </wpf:MithrilDataGrid.Columns>
-                    <wpf:MithrilDataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
-                            <Setter Property="ToolTip">
-                                <Setter.Value>
-                                    <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
-                                             Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                        <ToolTip.ContentTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
-                                                        CornerRadius="4" Padding="10" MaxWidth="320">
-                                                    <DockPanel>
-                                                        <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                                                       Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
-                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                                   Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"
-                                                                   VerticalAlignment="Center"/>
-                                                    </DockPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ToolTip.ContentTemplate>
-                                    </ToolTip>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </wpf:MithrilDataGrid.RowStyle>
-                    </wpf:MithrilDataGrid>
-                </DockPanel>
-            </TabItem>
-            <TabItem Header="Craftable Recipes">
-                <DockPanel>
-                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,8">
-                        <TextBlock Text="Confidence:" Foreground="#AAFFFFFF" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ComboBox Width="170" Margin="0,0,16,0"
-                                  ItemsSource="{Binding ConfidenceOptions}"
-                                  DisplayMemberPath="Label"
-                                  SelectedValuePath="Value"
-                                  SelectedValue="{Binding Confidence}"/>
-                        <wpf:MithrilQueryBox Grid="{Binding ElementName=RecipesGrid}"
-                                            QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
-                                            Watermark="e.g. MaxCraftable &gt; 0 AND IsKnown AND SkillLevelMet"/>
-                    </DockPanel>
-                    <wpf:MithrilDataGrid x:Name="RecipesGrid"
-                                        ItemsSource="{Binding CraftableRecipes}"
-                                        QueryText="{Binding RecipeQueryText, Mode=TwoWay}"
-                                        Mode="ReadOnly">
-                        <wpf:MithrilDataGrid.Columns>
-                            <DataGridTemplateColumn Header="Recipe" Width="*" MinWidth="200" SortMemberPath="Name">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Skill" Binding="{Binding Skill}" SortMemberPath="Skill" Width="110"/>
-                            <DataGridTextColumn Header="Req" Binding="{Binding SkillLevelReq}" SortMemberPath="SkillLevelReq" Width="45">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Char Lvl" Binding="{Binding CharacterSkillLevel, Converter={StaticResource NullDash}}" SortMemberPath="CharacterSkillLevel" Width="60">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridCheckBoxColumn Header="Met" Binding="{Binding SkillLevelMet}" SortMemberPath="SkillLevelMet" Width="45"/>
-                            <DataGridCheckBoxColumn Header="Known" Binding="{Binding IsKnown}" SortMemberPath="IsKnown" Width="55"/>
-                            <DataGridTextColumn Header="Done" Binding="{Binding TimesCompleted}" SortMemberPath="TimesCompleted" Width="50">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Max" Binding="{Binding MaxCraftable}" SortMemberPath="MaxCraftable" Width="60">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="Result" Binding="{Binding ResultItem}" SortMemberPath="ResultItem" Width="*" MinWidth="160"/>
-                        </wpf:MithrilDataGrid.Columns>
-                        <wpf:MithrilDataGrid.RowStyle>
-                            <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
-                                <Setter Property="ToolTip">
-                                    <Setter.Value>
-                                        <ToolTip Background="Transparent" BorderThickness="0" Padding="0"
-                                                 Content="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                            <ToolTip.ContentTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="#FF2A2A2A" BorderBrush="#55FFFFFF" BorderThickness="1"
-                                                            CornerRadius="4" Padding="10" MaxWidth="380">
-                                                        <StackPanel>
-                                                            <DockPanel Margin="0,0,0,6">
-                                                                <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                                                               Width="40" Height="40" Margin="0,0,10,0" VerticalAlignment="Top"/>
-                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                                           Foreground="#FFD4A847" FontSize="{DynamicResource AppFontSizeLarge}"
-                                                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                                            </DockPanel>
-                                                            <TextBlock Text="Ingredients" Foreground="#88FFFFFF"
-                                                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,2"/>
-                                                            <TextBlock Text="{Binding Ingredients}" Foreground="#FFE8E8E8"
-                                                                       TextWrapping="Wrap" Margin="0,0,0,4"/>
-                                                            <TextBlock Text="Missing" Foreground="#88FFFFFF"
-                                                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,2"
-                                                                       Visibility="{Binding MissingIngredients, Converter={StaticResource NonEmptyToVisible}}"/>
-                                                            <TextBlock Text="{Binding MissingIngredients}" Foreground="#FFE09090"
-                                                                       TextWrapping="Wrap"
-                                                                       Visibility="{Binding MissingIngredients, Converter={StaticResource NonEmptyToVisible}}"/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ToolTip.ContentTemplate>
-                                        </ToolTip>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </wpf:MithrilDataGrid.RowStyle>
-                    </wpf:MithrilDataGrid>
-                </DockPanel>
-            </TabItem>
+        <TabControl ItemsSource="{Binding Tabs}"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    ItemContainerStyle="{StaticResource MithrilTabItemStyle}"
+                    ItemTemplate="{StaticResource ModuleTabHeaderTemplate}">
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <ContentControl Content="{Binding Content}"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
         </TabControl>
     </DockPanel>
 </UserControl>

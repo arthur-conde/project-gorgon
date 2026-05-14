@@ -597,9 +597,11 @@
          c:TabBadge.Count="<int>" on a TabItem to render a small accent pill
          next to the header; the pill is hidden when Count <= 0.
 
-         Applied implicitly app-wide via the unkeyed style below. The keyed
-         style is kept for callers that bind ItemContainerStyle explicitly
-         (Arwen/Elrond) or want to base derived styles on it. -->
+         Apply via TabControl's ItemContainerStyle when binding ItemsSource
+         to a collection of ModuleTab — generated TabItem containers honor
+         the style cleanly. (Items added directly to TabControl.Items via
+         XAML or code bypass the ItemContainerStyle pipeline; that's the
+         WPF quirk #233 was unwinding.) -->
     <Style x:Key="MithrilTabItemStyle" TargetType="TabItem">
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
@@ -638,19 +640,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-
-    <!-- Implicit app-wide TabItem style. Merged at App.Resources via
-         Mithril.Shared.Wpf/Resources.xaml, so any TabControl in the app
-         inherits the Mithril look without per-module boilerplate. Modules
-         that want a different look can still scope a local
-         TabControl.Resources style (see IngredientSourcesWindow).
-
-         Used by Bilbo and Silmarillion which still hard-code their TabItems
-         in XAML. Modules that bind TabControl.ItemsSource to a collection of
-         ModuleTab (Samwise/Smaug/Palantir/Arwen/Gandalf) set
-         ItemContainerStyle="{StaticResource MithrilTabItemStyle}" explicitly,
-         which is the right hook for WPF-generated containers. -->
-    <Style TargetType="TabItem" BasedOn="{StaticResource MithrilTabItemStyle}"/>
 
     <!-- Default DataTemplate for ModuleTab tab-strip headers. Binds Font* and
          Foreground via RelativeSource to the ancestor TabItem so the header

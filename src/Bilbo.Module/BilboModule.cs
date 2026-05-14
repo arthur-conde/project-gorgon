@@ -4,9 +4,7 @@ using Bilbo.ViewModels;
 using Bilbo.Views;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
-using Mithril.Shared.Wpf;
 using MahApps.Metro.IconPacks;
-using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Bilbo;
@@ -14,7 +12,7 @@ namespace Bilbo;
 public sealed class BilboModule : IMithrilModule
 {
     public string Id => "bilbo";
-    public string DisplayName => "Bilbo \u00b7 Storage";
+    public string DisplayName => "Bilbo · Storage";
     public PackIconLucideKind Icon => PackIconLucideKind.Package;
     public string? IconUri => "pack://application:,,,/Bilbo.Module;component/Resources/bilbo.ico";
     public int SortOrder => 400;
@@ -30,12 +28,12 @@ public sealed class BilboModule : IMithrilModule
         services.AddMithrilSettings<BilboSettings>(settingsPath, BilboSettingsJsonContext.Default.BilboSettings);
 
         services.AddSingleton<StorageViewModel>();
-        services.AddSingleton<StorageView>(sp => new StorageView(
-            sp.GetRequiredService<BilboSettings>(),
-            sp.GetRequiredService<SettingsAutoSaver<BilboSettings>>(),
-            sp.GetRequiredService<IItemDetailPresenter>())
+        services.AddSingleton<InventoryTabViewModel>();
+        services.AddSingleton<CraftableRecipesTabViewModel>();
+        services.AddSingleton<BilboShellViewModel>();
+        services.AddSingleton<StorageView>(sp => new StorageView
         {
-            DataContext = sp.GetRequiredService<StorageViewModel>(),
+            DataContext = sp.GetRequiredService<BilboShellViewModel>(),
         });
     }
 }
