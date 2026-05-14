@@ -9,6 +9,7 @@
         <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
     </ResourceDictionary.MergedDictionaries>
 
+
     <!-- Compact two-line row for Items tab. Bound DataContext: Mithril.Reference.Models.Items.Item.
          Replaces the card layout in #231; ~36px per row, ~40+ visible. Key name kept as
          "*CardTemplate" to avoid rippling into both tab views — names are wallpaper. -->

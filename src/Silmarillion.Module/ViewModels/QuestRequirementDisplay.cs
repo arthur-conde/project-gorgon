@@ -3,18 +3,30 @@ using Mithril.Shared.Reference;
 namespace Silmarillion.ViewModels;
 
 /// <summary>
-/// One projected line in a quest's <see cref="QuestRequirementGroup"/>. Carries a
-/// player-readable <see cref="Text"/> (internal names already resolved to display names),
-/// an optional <see cref="Reference"/> for navigable chips (a completed-quest gate becomes
-/// a clickable quest chip; an inventory-item gate becomes a clickable item chip), and a
-/// flag indicating whether the navigator currently has a kind target for the reference's
-/// kind (so the renderer can degrade unsupported kinds to plain text per the cookbook's
-/// "let CanOpen decide" rule).
+/// One projected line in a quest's <see cref="QuestRequirementGroup"/>.
+/// <para>
+/// Two render shapes, chosen at projection time:
+/// </para>
+/// <list type="bullet">
+///   <item><description><b>Prose row:</b> <see cref="Text"/> set, <see cref="ChipName"/> null. Renders as a
+///   labelled sentence (<c>"Friends with Joeh (Serbule)"</c>). A trailing arrow button appears
+///   when <see cref="IsNavigable"/> is true.</description></item>
+///   <item><description><b>Chip row:</b> <see cref="Prefix"/> + <see cref="ChipName"/> set. Renders as
+///   <c>"{Prefix} [chip:{ChipName} →]"</c> where the entity name is a proper clickable chip when
+///   <see cref="IsNavigable"/> is true. Used for gates that resolve cleanly to a single entity —
+///   completed-quest prerequisites, "has item" gates, ability gates.</description></item>
+/// </list>
+/// <para>
+/// <see cref="Text"/> is always populated as the fallback / accessibility-readable representation;
+/// the chip path just uses <see cref="Prefix"/>/<see cref="ChipName"/> in preference for display.
+/// </para>
 /// </summary>
 public sealed record QuestRequirementDisplay(
     string Text,
     EntityRef? Reference,
-    bool IsNavigable);
+    bool IsNavigable,
+    string? Prefix = null,
+    string? ChipName = null);
 
 /// <summary>
 /// A labelled bundle of related quest-requirement entries. Grouping is by intent (what kind

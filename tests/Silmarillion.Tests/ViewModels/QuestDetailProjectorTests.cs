@@ -60,6 +60,7 @@ public sealed class QuestDetailProjectorTests
         // Quest data references NPCs by slug ("AreaSerbule2/NPC_DurstinTallow") while npcs.json
         // keys them bare ("NPC_DurstinTallow"). EntityRef.Npc normalises for lookup, and the
         // resolved POCO's AreaFriendlyName is appended in parentheses for disambiguation.
+        // Renders as a chip: Prefix="Neutral with" + ChipName="Durstin Tallow (Serbule Hills)".
         var refData = new StubRefData();
         refData.NpcsByInternalNameMap["NPC_DurstinTallow"] = new Npc { Name = "Durstin Tallow", AreaFriendlyName = "Serbule Hills" };
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
@@ -72,8 +73,10 @@ public sealed class QuestDetailProjectorTests
             },
             refData, resolver, nav);
 
-        groups.Should().ContainSingle(g => g.Label == "Favor")
-            .Which.Requirements.Single().Text.Should().Be("Neutral with Durstin Tallow (Serbule Hills)");
+        var req = groups.Should().ContainSingle(g => g.Label == "Favor").Which.Requirements.Single();
+        req.Text.Should().Be("Neutral with Durstin Tallow (Serbule Hills)");
+        req.Prefix.Should().Be("Neutral with");
+        req.ChipName.Should().Be("Durstin Tallow (Serbule Hills)");
     }
 
     [Fact]
@@ -112,6 +115,9 @@ public sealed class QuestDetailProjectorTests
     [Fact]
     public void QuestCompleted_BucketedAsStoryPrerequisite_WithNavigableQuestChip()
     {
+        // Chip-eligible: Prefix + ChipName populated so the XAML renders this as
+        // "{Completed:} [chip:Kill Skeletons]" with the quest name as a proper navigable chip.
+        // Text remains the canonical full-sentence form for the prose fallback path.
         var refData = new StubRefData();
         refData.QuestsByInternalNameMap["KillSkeletons"] = new Quest { InternalName = "KillSkeletons", Name = "Kill Skeletons" };
         var nav = new SilmarillionReferenceNavigator(new[] { (IReferenceKindTarget)new RecordingTarget(EntityKind.Quest) });
@@ -123,6 +129,8 @@ public sealed class QuestDetailProjectorTests
 
         var req = groups.Should().ContainSingle(g => g.Label == "Story prerequisites").Which.Requirements.Single();
         req.Text.Should().Be("Completed: Kill Skeletons");
+        req.Prefix.Should().Be("Completed:");
+        req.ChipName.Should().Be("Kill Skeletons");
         req.Reference.Should().NotBeNull();
         req.Reference!.Kind.Should().Be(EntityKind.Quest);
         req.IsNavigable.Should().BeTrue();
@@ -142,12 +150,17 @@ public sealed class QuestDetailProjectorTests
 
         var req = groups.Should().ContainSingle(g => g.Label == "Inventory & equipment").Which.Requirements.Single();
         req.Text.Should().Be("Has Skinning Knife");
+        req.Prefix.Should().Be("Has");
+        req.ChipName.Should().Be("Skinning Knife");
         req.IsNavigable.Should().BeTrue();
     }
 
     [Fact]
-    public void IsVampire_BucketedAsIdentity_RendersStaticText()
+    public void IsVampire_BucketedAsIdentity_RendersStaticText_WithoutChipFields()
     {
+        // No navigable entity → ChipName stays null and the XAML falls through to the
+        // plain-Text rendering path. Lock that contract in so a future addition can't
+        // accidentally chip-ify a no-entity row.
         var refData = new StubRefData();
         var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
         var resolver = new ReferenceDataEntityNameResolver(refData);
@@ -156,8 +169,11 @@ public sealed class QuestDetailProjectorTests
             new QuestRequirement[] { new IsVampireRequirement { T = "IsVampire" } },
             refData, resolver, nav);
 
-        groups.Should().ContainSingle(g => g.Label == "Identity / state")
-            .Which.Requirements.Single().Text.Should().Be("Must be a vampire");
+        var req = groups.Should().ContainSingle(g => g.Label == "Identity / state")
+            .Which.Requirements.Single();
+        req.Text.Should().Be("Must be a vampire");
+        req.ChipName.Should().BeNull();
+        req.Prefix.Should().BeNull();
     }
 
     [Fact]

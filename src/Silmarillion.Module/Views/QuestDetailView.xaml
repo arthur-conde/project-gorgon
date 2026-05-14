@@ -15,34 +15,53 @@
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- One projected requirement row. A non-null Reference + IsNavigable=true gives
-                 a clickable navigation icon next to the text; otherwise the text reads as
-                 plain prose. Kept lightweight on purpose — the player wants the *constraint
-                 as a sentence*, not a chip wall. -->
+            <!-- Local converter declaration: keeps the resource scoped to this view (no
+                 cross-view merge of the module's Resources.xaml needed). -->
+            <vm:RequirementChipVmConverter x:Key="RequirementChipVmConverter"/>
+
+            <!-- One projected requirement row. Two render paths chosen by the projector:
+                   - Prefix + ChipName set: "{Prefix} [chip:{ChipName}]" — the entity is a
+                     proper clickable EntityChip when IsNavigable is true; degrades to a
+                     plain pill when the kind isn't tabbed yet. Used for story prerequisites
+                     (Completed: Wolf: Hunt Deer), favor gates (Friends with Joeh (Serbule)),
+                     inventory gates (Has Skinning Knife), etc.
+                   - Otherwise: plain Text only (skill levels, time-of-day, identity, flags). -->
             <DataTemplate DataType="{x:Type vm:QuestRequirementDisplay}">
-                <DockPanel Margin="0,0,0,2" LastChildFill="True">
-                    <Button DockPanel.Dock="Right"
-                            Command="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
-                            CommandParameter="{Binding Reference}"
-                            VerticalAlignment="Center" Margin="6,0,0,0"
-                            Background="Transparent" BorderThickness="0" Padding="2" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
+                <Grid Margin="0,0,0,3">
+                    <!-- Chip-rendered path: Prefix + EntityChip. -->
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsNavigable}" Value="True">
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </Button.Style>
-                        <TextBlock Text="→" Foreground="#FFD4A847"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </Button>
+                        </StackPanel.Style>
+                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
+                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
+                    </StackPanel>
+                    <!-- Plain-text path: shown only when ChipName is empty. -->
                     <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" VerticalAlignment="Center"/>
-                </DockPanel>
+                               TextWrapping="Wrap" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </DataTemplate>
 
             <!-- One labelled requirement group (e.g. "Skill / ability gates"). Renders the
@@ -109,18 +128,13 @@
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer docks first to claim the bottom of the dock — internal name + repeatability. -->
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                <TextBlock Text="{Binding RepeatabilityDisplay}" Foreground="#88FFFFFF"
-                           FontStyle="Italic"
-                           FontSize="{DynamicResource AppFontSizeSmall}"
-                           HorizontalAlignment="Right"/>
-                <TextBlock Text="{Binding InternalName}"
-                           Foreground="#88FFFFFF"
-                           FontFamily="{DynamicResource AppMonoFontFamily}"
-                           FontSize="{DynamicResource AppFontSizeSmall}"
-                           HorizontalAlignment="Right"/>
-            </StackPanel>
+            <!-- Footer: internal name (mono). Repeatability promoted to a header chip so it's
+                 visible at first glance for daily-quest distinction. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       HorizontalAlignment="Right" Margin="0,8,0,0"/>
 
             <StackPanel>
                 <!-- Header: name + location chip + badges -->
@@ -142,6 +156,15 @@
                                 CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
                                 Visibility="{Binding LocationDisplay, Converter={StaticResource NullOrEmptyToVis}}">
                             <TextBlock Text="{Binding LocationDisplay}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                        </Border>
+                        <!-- Repeatability cadence. Gold-tinted to draw the eye — distinguishing
+                             a daily from a one-shot is the first piece of info a player wants. -->
+                        <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
+                                CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                Visibility="{Binding RepeatabilityChip, Converter={StaticResource NullOrEmptyToVis}}">
+                            <TextBlock Text="{Binding RepeatabilityChip}" Foreground="#FFD4A847"
+                                       FontWeight="SemiBold"
                                        FontSize="{DynamicResource AppFontSizeHint}"/>
                         </Border>
                     </StackPanel>

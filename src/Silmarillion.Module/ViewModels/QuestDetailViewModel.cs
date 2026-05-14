@@ -60,6 +60,7 @@ public sealed class QuestDetailViewModel
         PreGiveRecipeChips = BuildRecipeChips(quest.PreGiveRecipes, refData, nameResolver, navigator);
 
         RepeatabilityDisplay = BuildRepeatability(quest);
+        RepeatabilityChip = BuildRepeatabilityChip(quest);
         FavorRewardDisplay = BuildFavorRewardDisplay(quest, refData, nameResolver);
         BadgesDisplay = BuildBadgesDisplay(IsCancellable, IsGuildQuest, IsWorkOrder, WorkOrderSkillDisplay);
 
@@ -93,6 +94,15 @@ public sealed class QuestDetailViewModel
     public IReadOnlyList<EntityChipVm> PreGiveRecipeChips { get; }
 
     public string RepeatabilityDisplay { get; }
+
+    /// <summary>
+    /// Short-form repeatability for a header badge: <c>"Daily"</c>, <c>"Weekly"</c>,
+    /// <c>"Every 20h"</c>, etc. Null for one-time quests so the chip collapses entirely —
+    /// most story quests are one-shot, and an explicit "One-time" chip on every one would
+    /// be noise.
+    /// </summary>
+    public string? RepeatabilityChip { get; }
+
     public string? FavorRewardDisplay { get; }
     public string? BadgesDisplay { get; }
 
@@ -247,6 +257,32 @@ public sealed class QuestDetailViewModel
         if (quest.ReuseTime_Hours is int h && h > 0) parts.Add($"{h} hour{(h == 1 ? "" : "s")}");
         if (quest.ReuseTime_Minutes is int m && m > 0) parts.Add($"{m} minute{(m == 1 ? "" : "s")}");
         return parts.Count == 0 ? "One-time quest" : $"Repeatable every {string.Join(" ", parts)}";
+    }
+
+    /// <summary>
+    /// Short-form repeatability for the header badge. Common cadences get friendly names
+    /// ("Daily" for 20–24h, "Weekly" for 7d); other durations fall through to compact units
+    /// ("Every 12h", "Every 3d", "Every 30m"). Null when the quest is one-time so the chip
+    /// drops out of the header.
+    /// </summary>
+    private static string? BuildRepeatabilityChip(Quest quest)
+    {
+        var days = quest.ReuseTime_Days ?? 0;
+        var hours = quest.ReuseTime_Hours ?? 0;
+        var minutes = quest.ReuseTime_Minutes ?? 0;
+        if (days == 0 && hours == 0 && minutes == 0) return null;
+
+        // Common cadence shorthands. PG's "daily" quests typically use a 20h cooldown so
+        // the player can play at the same in-game time each calendar day; treat 20–24h as
+        // daily and 7d exact as weekly.
+        if (days == 7 && hours == 0 && minutes == 0) return "Weekly";
+        if (days == 0 && hours is >= 20 and <= 24 && minutes == 0) return "Daily";
+
+        var parts = new List<string>(3);
+        if (days > 0) parts.Add($"{days}d");
+        if (hours > 0) parts.Add($"{hours}h");
+        if (minutes > 0) parts.Add($"{minutes}m");
+        return $"Every {string.Join(" ", parts)}";
     }
 
     private static string? BuildFavorRewardDisplay(Quest quest, IReferenceDataService refData, IEntityNameResolver resolver)

@@ -181,16 +181,30 @@ public static class QuestDetailProjector
                 return new QuestRequirementDisplay($"Knows ability: {SplitCamelCase(m.Ability)}", null, false);
 
             case MinFavorLevelRequirement m:
-                return new QuestRequirementDisplay(
-                    $"{m.Level} with {ResolveNpcDisplayWithArea(refData, resolver, m.Npc)}",
-                    BuildNpcRef(m.Npc, navigator, out var canOpenNpc),
-                    canOpenNpc);
+                {
+                    var chipName = ResolveNpcDisplayWithArea(refData, resolver, m.Npc);
+                    var reference = BuildNpcRef(m.Npc, navigator, out var canOpenNpc);
+                    var prefix = $"{m.Level} with";
+                    return new QuestRequirementDisplay(
+                        Text: $"{prefix} {chipName}",
+                        Reference: reference,
+                        IsNavigable: canOpenNpc,
+                        Prefix: prefix,
+                        ChipName: chipName);
+                }
 
             case MinFavorRequirement m:
-                return new QuestRequirementDisplay(
-                    $"{m.MinFavor:N0} favor with {ResolveNpcDisplayWithArea(refData, resolver, m.Npc)}",
-                    BuildNpcRef(m.Npc, navigator, out var canOpenNpc2),
-                    canOpenNpc2);
+                {
+                    var chipName = ResolveNpcDisplayWithArea(refData, resolver, m.Npc);
+                    var reference = BuildNpcRef(m.Npc, navigator, out var canOpenNpc2);
+                    var prefix = $"{m.MinFavor:N0} favor with";
+                    return new QuestRequirementDisplay(
+                        Text: $"{prefix} {chipName}",
+                        Reference: reference,
+                        IsNavigable: canOpenNpc2,
+                        Prefix: prefix,
+                        ChipName: chipName);
+                }
 
             case QuestCompletedRequirement q:
                 return BuildQuestChip(q.Quest, "Completed:", resolver, navigator);
@@ -500,9 +514,11 @@ public static class QuestDetailProjector
         var name = resolver.Resolve(EntityRef.Quest(questInternalName!));
         var reference = EntityRef.Quest(questInternalName!);
         return new QuestRequirementDisplay(
-            $"{prefix} {name}",
-            reference,
-            navigator.CanOpen(reference));
+            Text: $"{prefix} {name}",
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference),
+            Prefix: prefix,
+            ChipName: name);
     }
 
     private static QuestRequirementDisplay BuildItemChip(
@@ -517,9 +533,11 @@ public static class QuestDetailProjector
         var name = resolver.Resolve(EntityRef.Item(itemInternalName!));
         var reference = EntityRef.Item(itemInternalName!);
         return new QuestRequirementDisplay(
-            $"{prefix} {name}",
-            reference,
-            navigator.CanOpen(reference));
+            Text: $"{prefix} {name}",
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference),
+            Prefix: prefix,
+            ChipName: name);
     }
 
     /// <summary>
