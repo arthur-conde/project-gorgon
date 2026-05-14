@@ -35,12 +35,23 @@
                                Foreground="#FFD4A847"
                                FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                CornerRadius="3" Padding="6,2"
-                                Visibility="{Binding AreaDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
-                            <TextBlock Text="{Binding AreaDisplayName}" Foreground="#CCFFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}"/>
-                        </Border>
+                        <!-- Area chip: navigable EntityChip into the Areas tab. NullToVis (NOT
+                             NullOrEmptyToVis) because the binding is object-typed; the latter
+                             tests `value as string` and silently collapses chip references —
+                             bitten twice already (PR #298, PR #302). -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding AreaChip, Converter={StaticResource NullToVis}}">
+                            <TextBlock Text="Area: " Foreground="#88FFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       VerticalAlignment="Center"/>
+                            <ContentControl Content="{Binding AreaChip}" VerticalAlignment="Center">
+                                <ContentControl.Resources>
+                                    <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
+                                    </DataTemplate>
+                                </ContentControl.Resources>
+                            </ContentControl>
+                        </StackPanel>
                         <TextBlock Text="{Binding Pos}" Foreground="#88FFFFFF"
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
                                    FontSize="{DynamicResource AppFontSizeSmall}"
