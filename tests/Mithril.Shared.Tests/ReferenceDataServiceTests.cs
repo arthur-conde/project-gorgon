@@ -658,6 +658,83 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void QuestsByGiverNpc_indexes_quests_with_matching_QuestNpc_or_FavorNpc()
+    {
+        // Reverse index that powers the NPCs tab's "Quests" section. Merges both
+        // Quest.QuestNpc (story giver) and Quest.FavorNpc (favor anchor) on the same NPC
+        // so the player sees one combined list. References to NPCs the catalog doesn't
+        // know about are dropped — those would render as plain-text chips anyway.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.json"), """
+            {
+              "NPC_Joeh": { "Name": "Joeh" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_1": { "Name": "Q1", "InternalName": "Q1", "FavorNpc": "NPC_Joeh" },
+              "quest_2": { "Name": "Q2", "InternalName": "Q2", "QuestNpc": "NPC_Joeh" },
+              "quest_3": { "Name": "Q3", "InternalName": "Q3", "QuestNpc": "NPC_Joeh", "FavorNpc": "NPC_Joeh" },
+              "quest_4": { "Name": "Q4", "InternalName": "Q4", "FavorNpc": "NPC_DoesNotExist" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.QuestsByGiverNpc.Should().ContainKey("NPC_Joeh");
+        svc.QuestsByGiverNpc["NPC_Joeh"].Select(q => q.InternalName).Should()
+            .BeEquivalentTo(new[] { "Q1", "Q2", "Q3" },
+                because: "Q3 should appear once even though it matches both QuestNpc and FavorNpc");
+        svc.QuestsByGiverNpc.Should().NotContainKey("NPC_DoesNotExist",
+            because: "the index drops refs to NPCs the catalog doesn't know about");
+    }
+
+    [Fact]
+    public void QuestsRewardingItem_indexes_quests_by_reward_item_InternalName()
+    {
+        // Reverse index that powers the Items-tab "Awarded by" section. Walks Quest.Rewards_Items
+        // and groups by item InternalName. Items the catalog doesn't know about are dropped.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_1": { "Name": "Frost Shard", "InternalName": "FrostShard" },
+              "item_2": { "Name": "Cera", "InternalName": "Cera" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_1": {
+                "Name": "Q1", "InternalName": "Q1",
+                "Rewards_Items": [
+                  { "Item": "FrostShard", "StackSize": 1 },
+                  { "Item": "Cera", "StackSize": 100 }
+                ]
+              },
+              "quest_2": {
+                "Name": "Q2", "InternalName": "Q2",
+                "Rewards_Items": [
+                  { "Item": "FrostShard", "StackSize": 1 },
+                  { "Item": "UnknownItem", "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.QuestsRewardingItem.Should().ContainKey("FrostShard");
+        svc.QuestsRewardingItem["FrostShard"].Select(q => q.InternalName).Should()
+            .BeEquivalentTo(new[] { "Q1", "Q2" });
+        svc.QuestsRewardingItem.Should().ContainKey("Cera");
+        svc.QuestsRewardingItem["Cera"].Should().ContainSingle();
+        svc.QuestsRewardingItem.Should().NotContainKey("UnknownItem");
+    }
+
+    [Fact]
     public void RecipesTaughtByNpc_indexes_Training_recipe_sources_by_npc_InternalName()
     {
         // Reverse index built from sources_recipes.json filtered to Type == "Training".

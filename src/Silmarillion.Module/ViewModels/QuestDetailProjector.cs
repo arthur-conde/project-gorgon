@@ -19,7 +19,7 @@ namespace Silmarillion.ViewModels;
 /// subclass fields in one flat bullet list and being unscannable.
 /// </para>
 /// </summary>
-internal static class QuestDetailProjector
+public static class QuestDetailProjector
 {
     // ─── Requirements ──────────────────────────────────────────────────────────────────
 
