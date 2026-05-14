@@ -15,6 +15,65 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- ── Per-type landmark row templates ──
+                 Mixed font runs (Combo/Loc in mono, Desc italic) are achieved through separate
+                 Run elements bound to the row's pre-formatted *Display properties (which return
+                 empty string when the underlying field is null — Run can't carry Visibility, so
+                 the empty-string idiom is the WPF-friendly way to collapse missing pieces). -->
+            <!-- Portal: bold Name — italic Desc · mono Loc. -->
+            <DataTemplate DataType="{x:Type vm:AreaLandmarkPortalRow}">
+                <TextBlock Margin="0,0,0,2" TextWrapping="Wrap"
+                           Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}">
+                    <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold"/>
+                    <Run Text="{Binding DescDisplay, Mode=OneWay}" FontStyle="Italic" Foreground="#CCFFFFFF"/>
+                    <Run Text="{Binding LocDisplay, Mode=OneWay}"
+                         FontFamily="{DynamicResource AppMonoFontFamily}"
+                         Foreground="#88FFFFFF"/>
+                </TextBlock>
+            </DataTemplate>
+
+            <!-- MeditationPillar: bold Name · Combo: mono (gold) · mono Loc. -->
+            <DataTemplate DataType="{x:Type vm:AreaLandmarkPillarRow}">
+                <TextBlock Margin="0,0,0,2" TextWrapping="Wrap"
+                           Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}">
+                    <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold"/>
+                    <Run Text="{Binding ComboDisplay, Mode=OneWay}"
+                         FontFamily="{DynamicResource AppMonoFontFamily}"
+                         Foreground="#FFD4A847"/>
+                    <Run Text="{Binding LocDisplay, Mode=OneWay}"
+                         FontFamily="{DynamicResource AppMonoFontFamily}"
+                         Foreground="#88FFFFFF"/>
+                </TextBlock>
+            </DataTemplate>
+
+            <!-- TeleportationPlatform: bold Name · mono Loc. -->
+            <DataTemplate DataType="{x:Type vm:AreaLandmarkPlatformRow}">
+                <TextBlock Margin="0,0,0,2" TextWrapping="Wrap"
+                           Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}">
+                    <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold"/>
+                    <Run Text="{Binding LocDisplay, Mode=OneWay}"
+                         FontFamily="{DynamicResource AppMonoFontFamily}"
+                         Foreground="#88FFFFFF"/>
+                </TextBlock>
+            </DataTemplate>
+
+            <!-- One landmark group: heading + per-row layout (delegated to the row's DataTemplate). -->
+            <DataTemplate DataType="{x:Type vm:AreaLandmarkGroup}">
+                <StackPanel Margin="0,0,0,8">
+                    <TextBlock Text="{Binding Heading}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <!-- Non-virtualizing StackPanel: the largest area carries 32 landmarks across
+                         three groups (avg ~10 per group), well below the threshold where
+                         virtualization matters. Revisit if a future PG patch significantly
+                         expands per-area landmark counts. -->
+                    <ItemsControl ItemsSource="{Binding Rows}"/>
+                </StackPanel>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -42,7 +101,37 @@
                                Visibility="{Binding ShortFriendlyName, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
 
-                <!-- NPCs cluster and landmark section land in slice (d) of #245. -->
+                <!-- ─── NPCs in this area ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding HasNpcs, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="NPCs in this area" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding NpcChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Foreground="#88FFFFFF" FontStyle="Italic"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Margin="0,4,0,0"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding NpcOverflowCount, Converter={StaticResource PositiveIntToVis}}">
+                        <Run Text="+"/><Run Text="{Binding NpcOverflowCount, Mode=OneWay}"/><Run Text=" more — filter the NPCs tab by area to see all."/>
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- ─── Landmarks in this area ─── -->
+                <StackPanel
+                            Visibility="{Binding HasLandmarks, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Landmarks in this area" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding LandmarkGroups}"/>
+                </StackPanel>
             </StackPanel>
         </DockPanel>
     </Border>
