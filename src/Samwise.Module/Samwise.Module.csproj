@@ -23,6 +23,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\samwise.ico" />
-    <Resource Include="Resources\samwise.jpg" />
   </ItemGroup>
 </Project>

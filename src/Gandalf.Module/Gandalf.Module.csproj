@@ -22,6 +22,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\gandalf.ico" />
-    <Resource Include="Resources\gandalf.jpg" />
   </ItemGroup>
 </Project>

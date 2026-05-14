@@ -16,6 +16,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\pippin.ico" />
-    <Resource Include="Resources\pippin.jpg" />
   </ItemGroup>
 </Project>

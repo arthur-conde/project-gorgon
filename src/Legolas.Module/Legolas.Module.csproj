@@ -25,6 +25,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\legolas.ico" />
-    <Resource Include="Resources\legolas.jpg" />
   </ItemGroup>
 </Project>

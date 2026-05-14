@@ -43,25 +43,15 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\mithril.ico" />
-    <Resource Include="Resources\mithril.jpg" />
     <Resource Include="Resources\game-folder.ico" />
-    <Resource Include="Resources\game-folder.jpg" />
     <Resource Include="Resources\reference-data.ico" />
-    <Resource Include="Resources\reference-data.jpg" />
     <Resource Include="Resources\icons.ico" />
-    <Resource Include="Resources\icons.jpg" />
     <Resource Include="Resources\diagnostics.ico" />
-    <Resource Include="Resources\diagnostics.jpg" />
     <Resource Include="Resources\hotkeys.ico" />
-    <Resource Include="Resources\hotkeys.jpg" />
     <Resource Include="Resources\settings.ico" />
-    <Resource Include="Resources\settings.jpg" />
     <Resource Include="Resources\appearance.ico" />
-    <Resource Include="Resources\appearance.jpg" />
     <Resource Include="Resources\about.ico" />
-    <Resource Include="Resources\about.jpg" />
     <Resource Include="Resources\perf-trace.ico" />
-    <Resource Include="Resources\perf-trace.jpg" />
     <Resource Include="Resources\attention-overlay.ico" />
     <Resource Include="Resources\mithril-attention.ico" />
   </ItemGroup>
