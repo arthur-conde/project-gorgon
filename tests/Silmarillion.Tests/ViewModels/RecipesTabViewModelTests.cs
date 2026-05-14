@@ -196,6 +196,94 @@ public sealed class RecipesTabViewModelTests
     }
 
     [Fact]
+    public void IngredientChips_SingletonKeywordSlot_WithItemKeywordKindRegistered_IsNavigable()
+    {
+        // Symmetric to the item-detail "Used as" chip → recipe-tab filter direction
+        // (PR #267): a recipe's singleton keyword slot now navigates back to the Items
+        // tab filtered by that keyword. Chip stays inert (existing test above) when
+        // the ItemKeyword kind isn't registered with the navigator.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "EnchantCrystal",
+            Name = "Enchant Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Auxiliary Crystal", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+
+        vm.SelectedRecipe = recipe;
+
+        var chip = vm.DetailViewModel!.Ingredients.Single();
+        chip.IsNavigable.Should().BeTrue();
+        chip.Reference.Should().Be(EntityRef.ItemKeyword("Crystal"));
+        chip.DisplayName.Should().Be("Auxiliary Crystal");
+    }
+
+    [Fact]
+    public void IngredientChips_CompositeKeywordSlot_AllMappable_IsNavigable()
+    {
+        // Composite slot every key of which is translatable (bare tag + EquipmentSlot:)
+        // → mapper succeeds → AND-joined query, chip is navigable. Today's catalogue
+        // doesn't ship a slot of this exact shape but the mapping covers any future one.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "Hypothetical",
+            Name = "Hypothetical",
+            Skill = "Augmentation",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["EquipmentSlot:MainHand", "Crystal"], Desc = "Crystal Main-Hand", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+
+        vm.SelectedRecipe = recipe;
+
+        var chip = vm.DetailViewModel!.Ingredients.Single();
+        chip.IsNavigable.Should().BeTrue();
+        chip.Reference.Should().Be(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "Crystal"]));
+        chip.DisplayName.Should().Be("Crystal Main-Hand");
+    }
+
+    [Fact]
+    public void IngredientChips_CompositeKeywordSlot_WithUnmappableKey_StaysNonNavigable()
+    {
+        // Real catalogue pattern: Decompose Main-Hand Weapon's slot is
+        // ["EquipmentSlot:MainHand", "MinTSysPrereq:0"]. MinTSysPrereq:N has no item-side
+        // analogue today, so the mapper fails and the chip stays inert even with the
+        // ItemKeyword kind target registered. The Reference is still emitted so a future
+        // mapping expansion (e.g. item-side TSys prereq exposure) flips the chip live
+        // with no chip-builder change.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "DecomposeMainHand",
+            Name = "Decompose Main-Hand Weapon",
+            Skill = "WeaponAugmentBrewing",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["EquipmentSlot:MainHand", "MinTSysPrereq:0"], Desc = "Main-Hand Item", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword));
+
+        vm.SelectedRecipe = recipe;
+
+        var chip = vm.DetailViewModel!.Ingredients.Single();
+        chip.IsNavigable.Should().BeFalse(because: "MinTSysPrereq:0 has no item-side mapping");
+        chip.Reference.Should().Be(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "MinTSysPrereq:0"]));
+        chip.DisplayName.Should().Be("Main-Hand Item");
+    }
+
+    [Fact]
     public void IngredientChips_KeywordIngredient_WithoutDesc_FallsBackToHumanisedItemKeys()
     {
         var recipe = new Recipe

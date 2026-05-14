@@ -23,6 +23,14 @@ public enum EntityKind
     /// (e.g. "Crystal"). Dispatched by RecipeIngredientKeywordKindTarget.
     /// </summary>
     RecipeIngredientKeyword,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Items tab filtered to items
+    /// that satisfy this recipe-slot's keyword constraint." InternalName carries the slot's
+    /// <c>ItemKeys</c> list, '+'-joined (singleton slots collapse to a single token).
+    /// Dispatched by ItemKeywordKindTarget.
+    /// </summary>
+    ItemKeyword,
 }
 
 /// <summary>
@@ -46,6 +54,8 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
     public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
+    public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
+    public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
 }
 
 /// <summary>

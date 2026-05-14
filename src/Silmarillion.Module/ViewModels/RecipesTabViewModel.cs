@@ -4,6 +4,7 @@ using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.Query;
+using Silmarillion.Navigation;
 
 namespace Silmarillion.ViewModels;
 
@@ -176,15 +177,18 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         _ => null,
     };
 
-    // Keyword-set ingredients ({"ItemKeys":[…]}) don't point at a single entity, so the chip is
-    // non-navigable. EntityChipVm.Reference is non-nullable; a sentinel EntityRef is safe because
-    // EntityChip only dereferences Reference inside its click handler, which is gated on IsNavigable.
-    private static readonly EntityRef KeywordSentinelRef = EntityRef.Item(string.Empty);
-
-    private static EntityChipVm BuildKeywordChip(RecipeKeywordIngredient kwIng)
+    // The chip's Reference is always the slot's keys encoded as EntityRef.ItemKeyword; IsNavigable
+    // gates two ways: (a) the kind target is registered with the navigator, AND (b) every slot key
+    // is mappable to a query clause via ItemKeywordQueryMapper. Either failing → inert chip, but the
+    // reference is still well-formed so a future mapping/registration expansion flips the chip live
+    // with no chip-builder change.
+    private EntityChipVm BuildKeywordChip(RecipeKeywordIngredient kwIng)
     {
         var label = kwIng.Desc ?? $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}";
-        return new EntityChipVm(label, IconId: 0, Reference: KeywordSentinelRef, IsNavigable: false);
+        var reference = EntityRef.ItemKeyword(kwIng.ItemKeys);
+        var canMap = ItemKeywordQueryMapper.TryBuildQuery(kwIng.ItemKeys, out _);
+        var isNavigable = canMap && _navigator.CanOpen(reference);
+        return new EntityChipVm(label, IconId: 0, Reference: reference, IsNavigable: isNavigable);
     }
 
     private IReadOnlyList<EntityChipVm> BuildProducedChips(Recipe recipe)
