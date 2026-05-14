@@ -1,0 +1,446 @@
+<UserControl x:Class="Silmarillion.Views.AbilityDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Cost row (currency + price) — one row per AbilityCost in the Core mechanics section. -->
+            <DataTemplate DataType="{x:Type vm:AbilityCostRow}">
+                <TextBlock Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           TextWrapping="Wrap" Margin="0,0,0,2">
+                    <Run Text="{Binding Currency, Mode=OneWay}"/>
+                    <Run Text=": "/>
+                    <Run Text="{Binding Price, Mode=OneWay, StringFormat={}{0:N0}}"/>
+                </TextBlock>
+            </DataTemplate>
+
+            <!-- Conditional-keyword row (trigger + applied keyword). -->
+            <DataTemplate DataType="{x:Type vm:AbilityConditionalKeywordRow}">
+                <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="6,4" Margin="0,0,0,3">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Condition}" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                        <TextBlock Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextWrapping="Wrap" Margin="0,2,0,0">
+                            <Run Text="Adds keyword: "/>
+                            <Run Text="{Binding Keyword, Mode=OneWay}" FontWeight="SemiBold"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
+            <!-- Ammo keyword row (clickable keyword chip + count). The chip opens the Items tab
+                 filtered by Keywords CONTAINS <keyword> (e.g. clicking "Beginner's Dense Arrow"
+                 lists every item that carries the DenseArrow1 keyword). -->
+            <DataTemplate DataType="{x:Type vm:AbilityAmmoKeywordRow}">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                    <ContentControl Content="{Binding Chip}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
+                    <TextBlock Text="{Binding Count, StringFormat=' × {0}'}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="4,0,0,0"/>
+                </StackPanel>
+            </DataTemplate>
+
+            <!-- Generic label/value flag row, shared by environmental / pet / internal / PvE stats. -->
+            <DataTemplate DataType="{x:Type vm:AbilityFlagRow}">
+                <DockPanel Margin="0,0,0,2">
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding Value}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap"/>
+                </DockPanel>
+            </DataTemplate>
+
+            <!-- Special-value row (label + numeric value + optional suffix). -->
+            <DataTemplate DataType="{x:Type vm:AbilitySpecialValueRow}">
+                <DockPanel Margin="0,0,0,2">
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap"/>
+                </DockPanel>
+            </DataTemplate>
+
+            <!-- DoT row (rendered as a single descriptive line). -->
+            <DataTemplate DataType="{x:Type vm:AbilityDoTRow}">
+                <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <DockPanel>
+            <!-- Footer: internal name (mono, bottom-right). -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       Margin="0,8,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
+
+            <StackPanel>
+                <!-- ─── 1. Header: icon + name + skill chip + level + rank badge + group chip ─── -->
+                <DockPanel Margin="0,0,0,10">
+                    <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconID}"
+                                 Width="40" Height="40" Margin="0,0,10,0"
+                                 VerticalAlignment="Top"
+                                 Visibility="{Binding IconID, Converter={StaticResource PositiveIntToVis}}"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
+                                   Foreground="#FFD4A847"
+                                   FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                    CornerRadius="3" Padding="6,2"
+                                    Visibility="{Binding SkillDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
+                                <TextBlock Text="{Binding SkillDisplayName}" Foreground="#CCFFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                            </Border>
+                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0">
+                                <TextBlock Foreground="#CCFFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}">
+                                    <Run Text="Level "/>
+                                    <Run Text="{Binding Level, Mode=OneWay}"/>
+                                </TextBlock>
+                            </Border>
+                            <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
+                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                    Visibility="{Binding Rank, Converter={StaticResource NullOrEmptyToVis}}">
+                                <TextBlock Text="{Binding Rank}" Foreground="#FFD4A847"
+                                           FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                            </Border>
+                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                    Visibility="{Binding AbilityGroupDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
+                                <TextBlock Foreground="#CCFFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}">
+                                    <Run Text="Group: "/>
+                                    <Run Text="{Binding AbilityGroupDisplayName, Mode=OneWay}"/>
+                                </TextBlock>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- ─── 2. Description ─── -->
+                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
+                           Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                <!-- ─── 3. Core mechanics: Target, ResetTime, CombatRefreshBaseAmount, Costs, SharesResetTimerWith ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="Core mechanics" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                Visibility="{Binding Target, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Target:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding Target}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                        <TextBlock Text="Reset time:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
+                        <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
+                            <Run Text="{Binding ResetTime, Mode=OneWay, StringFormat={}{0:0.##}}"/>
+                            <Run Text="s"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                Visibility="{Binding CombatRefreshBaseAmount, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Combat refresh:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding CombatRefreshBaseAmount}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding CostRows}" Margin="0,2,0,0"
+                                  Visibility="{Binding CostRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                                Visibility="{Binding SharesResetTimerWithChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Shares reset timer with:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding SharesResetTimerWithChip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ─── 4. Prerequisites: Prerequisite chip + UpgradeOf chip + ItemKeywordReqs chips + EffectKeywordReqs text + SpecialCasterRequirements text ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding PrerequisiteChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding UpgradeOfChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding EffectKeywordReqs.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Prerequisites" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
+                                Visibility="{Binding PrerequisiteChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Requires:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding PrerequisiteChip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
+                                Visibility="{Binding UpgradeOfChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Upgrade of:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding UpgradeOfChip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,3"
+                                Visibility="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Required item keywords:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ItemKeywordReqChips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,3"
+                                Visibility="{Binding EffectKeywordReqs.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap">
+                            <Run Text="Required effect keywords: " Foreground="#88FFFFFF"/>
+                            <Run Text="{Binding EffectKeywordReqsDisplay, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,0,3"
+                                Visibility="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Special requirements:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding SpecialCasterRequirementLabels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                            CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
+                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ─── 5. PvE stats + 6. Conditional behaviors interleaved by section header ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding PvEStats.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="PvE stats" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding PvEStats}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding SpecialValueRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Special values" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding SpecialValueRows}"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding DoTRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Damage over time" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding DoTRows}"/>
+                </StackPanel>
+
+                <!-- ─── 6. Conditional behaviors ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding ConditionalKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Conditional behaviors" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding ConditionalKeywordRows}"/>
+                </StackPanel>
+
+                <!-- ─── 7. Ammo ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding HasAmmoSection, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Ammo" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock c:FormattedText.Text="{Binding AmmoDescription}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"
+                               Margin="0,0,0,3"
+                               Visibility="{Binding ShowAmmoDescription, Converter={StaticResource BoolToVis}}"/>
+                    <ItemsControl ItemsSource="{Binding AmmoKeywordRows}" Margin="0,0,0,3"
+                                  Visibility="{Binding AmmoKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,0,0,2"
+                               Visibility="{Binding AmmoStickChance, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="Stick chance: " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding AmmoStickChance, Mode=OneWay, StringFormat={}{0:P0}}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,0,0,2"
+                               Visibility="{Binding AmmoConsumeChance, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="Consume chance: " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding AmmoConsumeChance, Mode=OneWay, StringFormat={}{0:P0}}"/>
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- ─── 8. Environmental flags ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding EnvironmentalFlags.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Environmental" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding EnvironmentalFlags}"/>
+                </StackPanel>
+
+                <!-- ─── 9. Special targeting tags ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Special targeting" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding SpecialTargetingFlags}"/>
+                </StackPanel>
+
+                <!-- ─── 10. Pet-related ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding PetFlags.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Pet-related" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding PetFlags}"/>
+                </StackPanel>
+
+                <!-- Other abilities in group: reverse-lookup roster of siblings (AbilityGroup). -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding AbilitiesInGroupChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Other abilities in group" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding AbilitiesInGroupChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Upgrades to: reverse-lookup of abilities whose UpgradeOf == this ability. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding UpgradesToChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Upgrades to" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding UpgradesToChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ─── 12. Sources: trainer NPCs ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding SourceChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Trainers" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding SourceChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ─── 11. Internal flags (deprioritised — mono small text) ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding InternalFlags.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Internal flags" FontWeight="SemiBold" Foreground="#66FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,0,0,2"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                    <ItemsControl ItemsSource="{Binding InternalFlags}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,0,0,1">
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Foreground="#66FFFFFF"
+                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                               Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding Value}" Foreground="#88FFFFFF"
+                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                               TextWrapping="Wrap"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

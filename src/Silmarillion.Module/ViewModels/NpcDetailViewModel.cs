@@ -23,6 +23,7 @@ public sealed class NpcDetailViewModel
         IEntityNameResolver nameResolver,
         IReadOnlyList<NpcServiceRow> services,
         IReadOnlyList<EntityChipVm> taughtRecipes,
+        IReadOnlyList<EntityChipVm> taughtAbilities,
         IReadOnlyList<EntityChipVm> soldItems,
         IReadOnlyList<EntityChipVm> quests,
         IReadOnlyList<NpcPreferenceRow> preferences,
@@ -34,6 +35,7 @@ public sealed class NpcDetailViewModel
         _nameResolver = nameResolver;
         Services = services;
         TaughtRecipes = taughtRecipes;
+        TaughtAbilities = taughtAbilities;
         SoldItems = soldItems;
         Quests = quests;
         Preferences = preferences;
@@ -50,6 +52,7 @@ public sealed class NpcDetailViewModel
 
     public IReadOnlyList<NpcServiceRow> Services { get; }
     public IReadOnlyList<EntityChipVm> TaughtRecipes { get; }
+    public IReadOnlyList<EntityChipVm> TaughtAbilities { get; }
     public IReadOnlyList<EntityChipVm> SoldItems { get; }
     public IReadOnlyList<EntityChipVm> Quests { get; }
     public IReadOnlyList<NpcPreferenceRow> Preferences { get; }

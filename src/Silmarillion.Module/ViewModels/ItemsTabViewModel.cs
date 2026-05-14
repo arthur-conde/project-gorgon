@@ -23,7 +23,7 @@ namespace Silmarillion.ViewModels;
 /// hands out new instances — selections set via the navigator would silently fall out of
 /// the list.
 /// </summary>
-public sealed partial class ItemsTabViewModel : ObservableObject
+public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
 {
     /// <summary>
     /// Reflected schema for <see cref="Item"/> exposed to <c>MithrilQueryBox.Schema</c> so the
@@ -33,6 +33,9 @@ public sealed partial class ItemsTabViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
         ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(Item)));
+
+    public string TabHeader => "Items";
+    public int TabOrder => 0;
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;

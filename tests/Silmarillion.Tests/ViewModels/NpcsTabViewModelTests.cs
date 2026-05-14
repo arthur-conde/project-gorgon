@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.Reference.Models.Abilities;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Recipes;
@@ -186,6 +187,34 @@ public sealed class NpcsTabViewModelTests
         chip.DisplayName.Should().Be("Bake Bread");
         chip.IconId.Should().Be(7);
         chip.Reference.Should().Be(EntityRef.Recipe("BakeBread"));
+        chip.IsNavigable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetailViewModel_TaughtAbilities_ProjectsAbilitiesTaughtByNpc_ToChips_Navigable_WhenAbilityKindRegistered()
+    {
+        var ability = new Ability
+        {
+            InternalName = "WoundingShot",
+            Name = "Wounding Shot",
+            Skill = "Archery",
+            Level = 5,
+            IconID = 42,
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Flia"] = new Npc { Name = "Flia" } },
+            AbilitiesTaughtByNpcMap = { ["NPC_Flia"] = new[] { ability } },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Ability), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.TaughtAbilities.Should().HaveCount(1);
+        var chip = vm.DetailViewModel.TaughtAbilities[0];
+        chip.DisplayName.Should().Be("Wounding Shot");
+        chip.IconId.Should().Be(42);
+        chip.Reference.Should().Be(EntityRef.Ability("WoundingShot"));
         chip.IsNavigable.Should().BeTrue();
     }
 
@@ -440,6 +469,7 @@ public sealed class NpcsTabViewModelTests
         public Dictionary<string, Npc> NpcsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpcMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Item>> ItemsSoldByNpcMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<Ability>> AbilitiesTaughtByNpcMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> QuestsByGiverNpcMap { get; } = new(StringComparer.Ordinal);
 
@@ -455,6 +485,14 @@ public sealed class NpcsTabViewModelTests
         public IReadOnlyDictionary<string, Npc> NpcsByInternalName => NpcsByKey;
         public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpc => RecipesTaughtByNpcMap;
         public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsSoldByNpc => ItemsSoldByNpcMap;
+        public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesTaughtByNpc => AbilitiesTaughtByNpcMap;
+        // Surface every ability referenced in AbilitiesTaughtByNpcMap so the entity-name resolver
+        // can project InternalName → Name for the chip's DisplayName.
+        public IReadOnlyDictionary<string, Ability> AbilitiesByInternalName =>
+            AbilitiesTaughtByNpcMap.Values.SelectMany(list => list)
+                .Where(a => !string.IsNullOrEmpty(a.InternalName))
+                .GroupBy(a => a.InternalName!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources { get; } = new Dictionary<string, IReadOnlyList<RecipeSource>>();

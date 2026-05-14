@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Mithril.Reference.Models.Abilities;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Recipes;
@@ -25,7 +26,7 @@ namespace Silmarillion.ViewModels;
 /// sections) and rebuilds <see cref="AllNpcs"/> on the UI thread, preserving the current
 /// selection by <see cref="NpcListRow.InternalName"/>.
 /// </summary>
-public sealed partial class NpcsTabViewModel : ObservableObject
+public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
 {
     /// <summary>
     /// Reflected schema for <see cref="NpcListRow"/> exposed to <c>MithrilQueryBox.Schema</c>
@@ -35,6 +36,9 @@ public sealed partial class NpcsTabViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
         ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow)));
+
+    public string TabHeader => "NPCs";
+    public int TabOrder => 2;
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
@@ -86,7 +90,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject
         // npcs.json drives the master list. items/recipes/sources_* affect the cross-link
         // sections on the detail pane — rebuild on each so an open detail re-resolves chips
         // against the fresh refData snapshot. quests.json feeds the (plain-text) Quests block.
-        if (fileKey is not ("npcs" or "items" or "recipes" or "sources_items" or "sources_recipes" or "quests"))
+        if (fileKey is not ("npcs" or "items" or "recipes" or "sources_items" or "sources_recipes" or "quests" or "abilities" or "sources_abilities"))
             return;
 
         UiThread.Run(() =>
@@ -135,6 +139,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject
     {
         var services = BuildServiceRows(row.Npc);
         var taught = BuildTaughtRecipeChips(row.InternalName);
+        var taughtAbilities = BuildTaughtAbilityChips(row.InternalName);
         var sold = BuildSoldItemChips(row.InternalName);
         var quests = BuildQuestLinks(row.InternalName);
         var preferences = BuildPreferenceRows(row.Npc);
@@ -146,6 +151,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject
             _nameResolver,
             services,
             taught,
+            taughtAbilities,
             sold,
             quests,
             preferences,
@@ -265,6 +271,27 @@ public sealed partial class NpcsTabViewModel : ObservableObject
                 return item.IconId;
         }
         return 0;
+    }
+
+    private IReadOnlyList<EntityChipVm> BuildTaughtAbilityChips(string npcInternalName)
+    {
+        if (!_refData.AbilitiesTaughtByNpc.TryGetValue(npcInternalName, out var abilities) || abilities.Count == 0)
+            return [];
+        return abilities
+            .Where(a => !string.IsNullOrEmpty(a.InternalName))
+            .OrderBy(a => a.Skill ?? "", StringComparer.OrdinalIgnoreCase)
+            .ThenBy(a => a.Level)
+            .ThenBy(a => a.Name ?? a.InternalName, StringComparer.OrdinalIgnoreCase)
+            .Select(a =>
+            {
+                var reference = EntityRef.Ability(a.InternalName!);
+                return new EntityChipVm(
+                    DisplayName: _nameResolver.Resolve(reference),
+                    IconId: a.IconID,
+                    Reference: reference,
+                    IsNavigable: _navigator.CanOpen(reference));
+            })
+            .ToList();
     }
 
     private IReadOnlyList<EntityChipVm> BuildSoldItemChips(string npcInternalName)

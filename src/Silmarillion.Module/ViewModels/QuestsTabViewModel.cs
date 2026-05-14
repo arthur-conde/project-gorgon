@@ -18,7 +18,7 @@ namespace Silmarillion.ViewModels;
 /// <see cref="AllQuests"/> on the UI thread, preserving the current selection by
 /// <see cref="QuestListRow.InternalName"/>.
 /// </summary>
-public sealed partial class QuestsTabViewModel : ObservableObject
+public sealed partial class QuestsTabViewModel : ObservableObject, ITabViewModel
 {
     /// <summary>
     /// Reflected schema for <see cref="QuestListRow"/> exposed to <c>MithrilQueryBox.Schema</c>
@@ -27,6 +27,9 @@ public sealed partial class QuestsTabViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
         ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(QuestListRow)));
+
+    public string TabHeader => "Quests";
+    public int TabOrder => 3;
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;

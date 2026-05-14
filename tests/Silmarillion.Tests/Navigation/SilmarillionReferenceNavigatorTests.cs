@@ -228,14 +228,14 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, quests: null!, nav, targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { recipesVm }, nav, targets);
 
         // Act
         nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
 
         // Assert
         silmarillionVm.SelectedTabIndex.Should().Be(1);
-        silmarillionVm.Recipes.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
+        recipesVm.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
     }
 
     [Fact]
@@ -253,7 +253,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword("Crystal"));
 
@@ -279,7 +279,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
+        _ = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "Crystal"]));
 
@@ -308,7 +308,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
+        _ = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword("Crystal"));
 
@@ -339,7 +339,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, quests: null!, nav, targets);
+        _ = new SilmarillionViewModel(new ITabViewModel[] { recipesVm }, nav, targets);
 
         nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
 

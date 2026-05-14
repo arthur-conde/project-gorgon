@@ -1,3 +1,4 @@
+using Mithril.Reference.Models.Abilities;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
@@ -147,6 +148,72 @@ public interface IReferenceDataService
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> EmptyRecipeSourceIndex
         = new Dictionary<string, IReadOnlyList<RecipeSource>>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Ability envelope key (e.g. <c>"ability_42"</c>) → the full <see cref="Ability"/> POCO from
+    /// <c>abilities.json</c>. Carries the wide ability metadata surface (animations,
+    /// prerequisites, ammo, sidebar visibility, the nested <see cref="Ability.PvE"/> stat block,
+    /// etc.) consumed by Silmarillion's Abilities tab. Defaults to empty so test fakes don't
+    /// need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Ability> Abilities => EmptyAbilityMap;
+
+    /// <summary>
+    /// Ability <c>InternalName</c> (e.g. <c>"Sword1"</c>, <c>"Mentalism5"</c>) →
+    /// <see cref="Ability"/>. Used by the navigator + chip cross-links and by
+    /// <see cref="IEntityNameResolver"/> to project ability InternalNames to display names.
+    /// Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Ability> AbilitiesByInternalName => EmptyAbilityMap;
+
+    /// <summary>
+    /// Skill key (e.g. <c>"Sword"</c>, <c>"Mentalism"</c>) → abilities tagged to that skill via
+    /// <see cref="Ability.Skill"/>. Powers the Abilities-tab master-list skill facet. Built
+    /// whenever <c>abilities.json</c> reloads. Defaults to empty so test fakes don't need to
+    /// opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesBySkill => EmptyAbilityIndex;
+
+    /// <summary>
+    /// Reverse index from prior ability <c>InternalName</c> → abilities that name it in
+    /// <see cref="Ability.UpgradeOf"/>. Powers the ability-detail "Upgrades to" reverse view
+    /// on the prior ability. Built whenever <c>abilities.json</c> reloads. Defaults to empty
+    /// so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesUpgradingFrom => EmptyAbilityIndex;
+
+    /// <summary>
+    /// Reverse index from <see cref="Ability.AbilityGroup"/> → all abilities in that group.
+    /// Powers the ability-detail "Other abilities in group" roster section. Built whenever
+    /// <c>abilities.json</c> reloads. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesInGroup => EmptyAbilityIndex;
+
+    /// <summary>
+    /// Reverse index from NPC <c>InternalName</c> → abilities the NPC teaches, derived from
+    /// <see cref="AbilitySources"/> entries with <c>Type == "Training"</c>. Built whenever
+    /// <c>abilities.json</c>, <c>npcs.json</c>, or <c>sources_abilities.json</c> reloads.
+    /// Mirrors <see cref="RecipesTaughtByNpc"/>. Defaults to empty so test fakes don't need
+    /// to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesTaughtByNpc => EmptyAbilityIndex;
+
+    /// <summary>
+    /// Ability <c>InternalName</c> → sources describing how the ability is acquired
+    /// (Training / Skill / Quest / Effect / …). Pulled from <c>sources_abilities.json</c>.
+    /// Mirrors <see cref="ItemSources"/> and <see cref="RecipeSources"/>. Defaults to empty
+    /// so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<AbilitySource>> AbilitySources => EmptyAbilitySourceIndex;
+
+    private static readonly IReadOnlyDictionary<string, Ability> EmptyAbilityMap
+        = new Dictionary<string, Ability>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Ability>> EmptyAbilityIndex
+        = new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<AbilitySource>> EmptyAbilitySourceIndex
+        = new Dictionary<string, IReadOnlyList<AbilitySource>>(StringComparer.Ordinal);
 
     /// <summary>
     /// Placeholder token (e.g. <c>"MAX_ARMOR"</c>) → <see cref="AttributeEntry"/> with the

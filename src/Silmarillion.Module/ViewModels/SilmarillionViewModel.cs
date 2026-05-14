@@ -8,13 +8,17 @@ namespace Silmarillion.ViewModels;
 
 /// <summary>
 /// Top-level view-model for the Silmarillion reference-data browser. Hosts the
-/// per-tab view-models and the navigation commands surfaced in the header chrome
-/// (Back / Forward / Open-in-window). Subscribes to <see cref="IReferenceNavigator.Navigated"/>
+/// per-tab view-models (registered as <see cref="ITabViewModel"/> singletons) and
+/// the navigation commands surfaced in the header chrome (Back / Forward /
+/// Open-in-window). Subscribes to <see cref="IReferenceNavigator.Navigated"/>
 /// to drive automatic tab-switching when an entity of a different kind is opened
 /// (e.g. clicking a Recipe cross-link from an Item detail).
 ///
 /// OnNavigated and OpenInWindow dispatch via the <see cref="IReferenceKindTarget"/>
-/// registry; per-kind switches were retired in #239.
+/// registry; per-kind switches were retired in #239. Tabs are composed from
+/// <c>IEnumerable&lt;ITabViewModel&gt;</c> ordered by <see cref="ITabViewModel.TabOrder"/>
+/// so adding a new tab is a DI registration only — no constructor change rippling
+/// into test fixtures (refactor introduced in #243).
 /// </summary>
 public sealed partial class SilmarillionViewModel : ObservableObject
 {
@@ -23,25 +27,15 @@ public sealed partial class SilmarillionViewModel : ObservableObject
     private readonly IDiagnosticsSink? _diag;
 
     public SilmarillionViewModel(
-        ItemsTabViewModel items,
-        RecipesTabViewModel recipes,
-        NpcsTabViewModel npcs,
-        QuestsTabViewModel quests,
+        IEnumerable<ITabViewModel> tabs,
         IReferenceNavigator navigator,
         IEnumerable<IReferenceKindTarget> targets,
         IDiagnosticsSink? diag = null)
     {
-        Items = items;
-        Recipes = recipes;
-        Npcs = npcs;
-        Quests = quests;
-        Tabs = new[]
-        {
-            new ModuleTab("Items",   items),
-            new ModuleTab("Recipes", recipes),
-            new ModuleTab("NPCs",    npcs),
-            new ModuleTab("Quests",  quests),
-        };
+        Tabs = tabs
+            .OrderBy(t => t.TabOrder)
+            .Select(t => new ModuleTab(t.TabHeader, t))
+            .ToArray();
         _navigator = navigator;
         _diag = diag;
 
@@ -64,15 +58,10 @@ public sealed partial class SilmarillionViewModel : ObservableObject
         _navigator.Navigated += OnNavigated;
     }
 
-    public ItemsTabViewModel Items { get; }
-    public RecipesTabViewModel Recipes { get; }
-    public NpcsTabViewModel Npcs { get; }
-    public QuestsTabViewModel Quests { get; }
-
     /// <summary>The tab descriptors bound to <c>TabControl.ItemsSource</c>.</summary>
     public IReadOnlyList<ModuleTab> Tabs { get; }
 
-    /// <summary>0 = Items, 1 = Recipes, 2 = NPCs, 3 = Quests. Two-way bound to the TabControl in the view.</summary>
+    /// <summary>Two-way bound to the TabControl in the view. Index matches <see cref="ITabViewModel.TabOrder"/>.</summary>
     [ObservableProperty]
     private int _selectedTabIndex;
 

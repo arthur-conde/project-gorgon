@@ -99,3 +99,46 @@ The bigger restructure suggested by this list:
 - Promote the `<Kind>NameResolver` pattern to a first-class cookbook step alongside the master-list row projection.
 
 Items 1, 3, and 9 are the highest-friction items — addressing them in the cookbook would have saved the bulk of the post-smoke iteration cycle.
+
+# Feedback from the Abilities Tab Shipment (#243)
+
+## A1. Chip-builder display-name resolution requires the destination kind's POCO map on the fake
+
+**Friction:** When a tab VM uses `IEntityNameResolver` to resolve chip display names for a *cross-link* kind (e.g. the NPCs tab's `BuildTaughtAbilityChips` resolves `EntityRef.Ability(...)` to the ability's display name), the test fake on the *originating* tab (NPCs) needs to surface `AbilitiesByInternalName` so the resolver can project `InternalName` → `Name`. Without it, the chip's `DisplayName` quietly falls through to the InternalName ("WoundingShot" instead of "Wounding Shot") and a synthetic test asserting `DisplayName == "Wounding Shot"` fails. This isn't a bug in the cookbook's "interface defaults so consumer fakes don't ripple" pattern — it's a complementary rule: *if your test fake feeds a reverse-lookup index for kind X, also surface `XByInternalName` (or its equivalent) on the fake so the resolver can do its job*.
+
+**Cookbook addition:** in the test scaffolding section, alongside the empty-dictionary default pattern, note: *"When a chip-builder uses `IEntityNameResolver` against a reverse-lookup index your fake exposes, also surface the destination kind's `<X>ByInternalName` projection on the fake (deriving it from the index values is fine — see `AbilitiesByInternalName => AbilitiesTaughtByNpcMap.Values.SelectMany(...).ToDictionary(...)`). Otherwise the resolver falls through to the raw InternalName and `DisplayName` assertions become InternalName assertions."*
+
+## A2. Bundled-data smoke test plumbing pattern is worth a one-liner
+
+**Friction:** The "real-data integration test" rung 4 says "Skip when bundled data isn't co-located so CI shapes that strip it stay green." But the actual construction path — instantiating a `ReferenceDataService` with a throwing-handler `HttpClient` pointed at the bundled directory — isn't shown. I borrowed it from `ReferenceDataServiceRecipeCrossLinkIndexTests`, which does the same dance with its own private `ThrowingHandler`. Could be a shared helper, or just one-liner pointer in the cookbook.
+
+**Cookbook addition:** small one — under the verification ladder rung 4, link to `tests/Mithril.Shared.Tests/Reference/ReferenceDataServiceRecipeCrossLinkIndexTests.cs` as the canonical example of *"load bundled JSON via `new ReferenceDataService(cacheDir, NeverCallHttp(), bundledDir: bundled)`; skip with an existence-check on the bundled file"*. Saves a future agent 10 minutes of grepping for the pattern.
+
+## A3. Wide-but-flat POCOs benefit from row-VM types adjacent to the detail VM
+
+**Friction:** The Ability POCO has ~80 properties, the nested `AbilityPvE` block, and several sub-types (`AbilityCost`, `AbilityConditionalKeyword`, `AbilityAmmoKeyword`, `AbilityDoT`, `AbilitySpecialValue`). My first instinct was to expose them on the detail VM as `IReadOnlyList<AbilityCost>` directly. But that bound the XAML to the raw POCO shape — the cost row "Currency × Price" template lives on the *display projection*, not the POCO. Wrapping each in a small `Ability<X>Row` record (`AbilityCostRow`, `AbilityConditionalKeywordRow`, `AbilityAmmoKeywordRow`, `AbilityFlagRow`, `AbilitySpecialValueRow`, `AbilityDoTRow`) sitting right next to the detail VM kept the XAML clean and let me bake display-only computed properties (e.g. `AbilityDoTRow.Display`, `AbilitySpecialValueRow.Display`) into the row instead of the XAML. The pattern's worth surfacing in the cookbook for any wide POCO going forward.
+
+**Cookbook addition:** in the "Default-value noise filtering" / detail-pane section, add a sub-bullet: *"For wide POCOs with multiple sub-list shapes, define one row-record per shape (e.g. `<Kind><Sub>Row`) co-located with the detail VM. The XAML binds against the row type, not the POCO sub-type — this lets display-only computed properties (formatted DoT line, value+suffix string) live in the row record rather than `<Run StringFormat=...>` gymnastics in XAML."*
+
+## A4. The "audit existing surfaces" pass for `EntityRef.Ability(...)` came up clean
+
+This isn't friction, just a note: the only pre-existing `EntityRef.Ability(...)` call sites were in `QuestDetailProjector` (`LearnAbility` reward, ability requirement chip) — both correctly wired through `_navigator.CanOpen(...)`. So the new Ability tab's shipment automatically lit them up without any chip-builder edits. The cookbook's "Audit existing surfaces" rule worked exactly as designed.
+
+## A5. Card-row secondary-line format: no unit suffixes ("L", "lvl", "x", etc.)
+
+**Friction (review-spotted):** First-pass Abilities card secondary line rendered as `"Sword L7"` (skill + literal "L" + level). Reviewer flagged this against the Recipes/NPCs/Quests precedent, which all use `"<primary> <secondary>"` with no unit decoration — Recipes is `"Cooking 30"`, NPCs is the area name, Quests is location-or-favor-NPC. Single-line fix (drop the `<Run Text=" L"/>`) but the rule wasn't called out.
+
+**Cookbook addition:** in the master-list / card-row section, add a sub-bullet under "Secondary line format": *"Plain `'<primary> <secondary>'` separated by a space — no unit-letter prefixes ('L' for level, 'x' for count, etc.) and no parenthetical decoration. Match the Items / Recipes / NPCs / Quests card precedent. Unit context is conveyed by the primary token (`'Cooking 30'` reads as a skill level; `'Sword 7'` reads the same way) without spelling out the unit each row."*
+
+## A6. Editorial duplication between Description prose and sibling display fields
+
+**Friction (review-spotted):** AcidBolt1 (and ~76% of ammo-using abilities) renders ammo information twice — once inline in `Description` ("Fire an acid-covered bolt that destroys armor. **Uses a Beginner's Dense Arrow.**") and once in the Ammo section's standalone `AmmoDescription` line ("Beginner's Dense Arrow"). PG bakes the friendly ammo name into the description prose, and the detail VM dutifully echoes it. The cookbook's *Default-value noise filtering* rule doesn't cover *editorial* duplication — only universal-default suppression.
+
+**Cookbook addition:** in the *Default-value noise filtering* section, add a sibling sub-bullet: *"**Editorial duplication suppression**: when a POCO has both a `Description` field that PG editorialises (free-form prose) and a sibling display field (e.g. `AmmoDescription`, `Caster requirements text`, `Effect tooltip`) that the prose verbatim contains, suppress the sibling line and either drop it or fold it into a chip label. Verify quantitatively against bundled data before locking in the suppression — the substring check should hide the duplicate in the common case but leave the line visible when the prose is generic and the sibling carries unique tier-specific info (e.g. `MushroomTurret`'s generic description + tier-specific ammo)."*
+
+## A7. Keyword-vs-Item chip discrimination: `<KeywordName>N` slug pattern
+
+**Friction (review-spotted):** First-pass Ammo section rendered each `AbilityAmmoKeyword.ItemKeyword` as plain text — looked tier-specific (`"DenseArrow1"`, `"SporeBomb3"`) but wasn't clickable. Two follow-up review comments resolved it: (a) it could be a chip; (b) "DenseArrow1 can match multiple items" — so it's `EntityRef.ItemKeyword(...)`, not `EntityRef.Item(...)`. The discrimination rule isn't obvious from the field name alone (`ItemKeyword` could plausibly mean either), but the data shape makes it clear: tier-suffixed slugs in POCO fields like `ItemKeyword`, `KeywordRef`, `ReqKeyword` are item *keywords* (filter chip, opens Items tab with `Keywords CONTAINS`), not item InternalNames.
+
+**Cookbook addition:** in the cross-link chip conventions section, add a sub-bullet under *EntityRef factory normalisation*: *"**Keyword-vs-Item discrimination**: a JSON field whose value reads like a tier-suffixed item slug (`'DenseArrow1'`, `'SporeBomb3'`, `'Crystal2'`) is almost always an item *keyword*, not an item InternalName. Use `EntityRef.ItemKeyword(...)` (the #270 pattern). Heuristic: if the value matches multiple items in `ItemsByInternalName.Keywords` rather than appearing as a single `Item.InternalName`, it's a keyword. Field-name clues: `ItemKeyword`, `<X>Keyword`, `ReqKeyword`, `KeywordRef`, `*Keywords` — all keyword-typed."*
+

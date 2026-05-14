@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.Reference.Models.Abilities;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
@@ -178,6 +179,46 @@ public sealed class ReferenceDataEntityNameResolverTests
     }
 
     [Fact]
+    public void Ability_ResolvesPocoName_WhenAbilityPresentWithName()
+    {
+        var refData = new ResolverStub
+        {
+            AbilitiesByInternalNameMap =
+            {
+                ["SwordSlash"] = new Ability { InternalName = "SwordSlash", Name = "Sword Slash" },
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Ability("SwordSlash")).Should().Be("Sword Slash");
+    }
+
+    [Fact]
+    public void Ability_FallsBackToInternalName_WhenAbilityAbsent()
+    {
+        // Ability InternalNames are bare ASCII identifiers (Sword1, Mentalism5) — no envelope-
+        // key prefix to strip, so the InternalName itself is the sensible fallback.
+        var resolver = new ReferenceDataEntityNameResolver(new ResolverStub());
+
+        resolver.Resolve(EntityRef.Ability("UnknownAbility")).Should().Be("UnknownAbility");
+    }
+
+    [Fact]
+    public void Ability_FallsBackToInternalName_WhenPocoNameIsEmpty()
+    {
+        var refData = new ResolverStub
+        {
+            AbilitiesByInternalNameMap =
+            {
+                ["Nameless"] = new Ability { InternalName = "Nameless", Name = "" },
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Ability("Nameless")).Should().Be("Nameless");
+    }
+
+    [Fact]
     public void UnknownKind_ReturnsInternalNameVerbatim()
     {
         // Kinds the resolver doesn't yet have a case for (e.g. Effect/Area/PlayerTitle —
@@ -194,6 +235,7 @@ public sealed class ReferenceDataEntityNameResolverTests
         public Dictionary<string, Recipe> RecipesByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Npc> NpcsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Quest> QuestsByInternalNameMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Ability> AbilitiesByInternalNameMap { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -212,6 +254,7 @@ public sealed class ReferenceDataEntityNameResolverTests
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
         public IReadOnlyDictionary<string, Quest> Quests { get; } = new Dictionary<string, Quest>();
         public IReadOnlyDictionary<string, Quest> QuestsByInternalName => QuestsByInternalNameMap;
+        public IReadOnlyDictionary<string, Ability> AbilitiesByInternalName => AbilitiesByInternalNameMap;
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);

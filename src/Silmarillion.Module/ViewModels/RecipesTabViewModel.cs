@@ -19,7 +19,7 @@ namespace Silmarillion.ViewModels;
 /// <see cref="AllRecipes"/> on the UI thread, preserving the current selection by
 /// <see cref="Recipe.InternalName"/>.
 /// </summary>
-public sealed partial class RecipesTabViewModel : ObservableObject
+public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewModel
 {
     /// <summary>
     /// Reflected schema for <see cref="RecipeListRow"/> exposed to <c>MithrilQueryBox.Schema</c>
@@ -29,6 +29,9 @@ public sealed partial class RecipesTabViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
         ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow)));
+
+    public string TabHeader => "Recipes";
+    public int TabOrder => 1;
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
