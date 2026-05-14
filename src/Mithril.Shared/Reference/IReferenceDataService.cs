@@ -133,6 +133,29 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, AreaEntry> Areas { get; }
 
     /// <summary>
+    /// Area key (e.g. <c>"AreaSerbule"</c>) → list of <see cref="Landmark"/> POCOs that
+    /// live in that area. Mirrors the bundled <c>landmarks.json</c> shape directly
+    /// (no projection / no slim envelope — the POCO already carries display + Type + Combo).
+    /// Powers Silmarillion's Area-detail "Landmarks in this area" section. Defaults to empty
+    /// so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Landmark>> Landmarks => EmptyLandmarkIndex;
+
+    /// <summary>
+    /// Reverse index from area key → NPCs whose <see cref="Mithril.Reference.Models.Npcs.Npc.AreaName"/>
+    /// matches the key. Powers Silmarillion's Area-detail "NPCs in this area" chip cluster without
+    /// scanning every NPC on each Area selection. Built whenever <c>npcs.json</c> or
+    /// <c>areas.json</c> reloads. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> NpcsByArea => EmptyNpcByAreaIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Landmark>> EmptyLandmarkIndex
+        = new Dictionary<string, IReadOnlyList<Landmark>>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> EmptyNpcByAreaIndex
+        = new Dictionary<string, IReadOnlyList<NpcEntry>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Item InternalName → sources describing how the item can be obtained
     /// (Vendor / Recipe / Quest / Monster / HangOut / NpcGift / Barter / Angling / …).
     /// Pulled from <c>sources_items.json</c>.
