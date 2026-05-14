@@ -192,10 +192,11 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         BarterService barter when barter.AdditionalUnlocks is { Count: > 0 } =>
             BuildLabeledLines(("Unlocks at higher favor", barter.AdditionalUnlocks)),
 
+        // Consignment.ItemTypes is a raw item-keyword tuple (Equipment, CorpseTrophy, …) — same
+        // shape as Store cap-increase keywords from PR #294, so lift it into a chip strip via
+        // BuildKeywordChips. Unlocks are favor tiers and stay text-only.
         ConsignmentService consignment =>
-            BuildLabeledLines(
-                ("Items", consignment.ItemTypes),
-                ("Unlocks at higher favor", consignment.Unlocks)),
+            BuildConsignmentDetails(consignment),
 
         InstallAugmentsService install when install.LevelRange is { Count: > 0 } =>
             BuildLabeledLines(("Levels", install.LevelRange)),
@@ -229,6 +230,23 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
             if (items is null || items.Count == 0) continue;
             lines.Add(NpcServiceDetailLine.TextOnly($"{label}: {string.Join(", ", items)}"));
         }
+        return lines;
+    }
+
+    /// <summary>
+    /// Build the Consignment service detail lines. The <c>Items</c> row carries a label-only prose
+    /// (<c>"Items:"</c>) plus a per-line keyword chip strip — each chip targets the Items tab via
+    /// <see cref="EntityKind.ItemKeyword"/>, mirroring the Store cap-keyword pattern from PR #294.
+    /// Empty groups drop out so a Consignment with only <c>Unlocks</c> (or only <c>ItemTypes</c>)
+    /// still renders cleanly.
+    /// </summary>
+    private IReadOnlyList<NpcServiceDetailLine> BuildConsignmentDetails(ConsignmentService consignment)
+    {
+        var lines = new List<NpcServiceDetailLine>(2);
+        if (consignment.ItemTypes is { Count: > 0 } itemTypes)
+            lines.Add(new NpcServiceDetailLine("Items:", BuildKeywordChips(itemTypes)));
+        if (consignment.Unlocks is { Count: > 0 } unlocks)
+            lines.Add(NpcServiceDetailLine.TextOnly($"Unlocks at higher favor: {string.Join(", ", unlocks)}"));
         return lines;
     }
 
