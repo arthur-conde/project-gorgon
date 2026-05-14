@@ -25,7 +25,7 @@ namespace Silmarillion.ViewModels;
 /// sections) and rebuilds <see cref="AllNpcs"/> on the UI thread, preserving the current
 /// selection by <see cref="NpcListRow.InternalName"/>.
 /// </summary>
-public sealed partial class NpcsTabViewModel : ObservableObject
+public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
 {
     /// <summary>
     /// Reflected schema for <see cref="NpcListRow"/> exposed to <c>MithrilQueryBox.Schema</c>
@@ -35,6 +35,9 @@ public sealed partial class NpcsTabViewModel : ObservableObject
     /// </summary>
     public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
         ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow)));
+
+    public string TabHeader => "NPCs";
+    public int TabOrder => 2;
 
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;

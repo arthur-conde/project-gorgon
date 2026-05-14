@@ -104,7 +104,7 @@ public sealed class SilmarillionViewModelTests
             new RecordingTarget(EntityKind.Recipe, tabIndex: 1),
         });
 
-        var act = () => new SilmarillionViewModel(items: null!, recipes: null!, npcs: null!, quests: null!, nav, targets);
+        var act = () => new SilmarillionViewModel(Array.Empty<ITabViewModel>(), nav, targets);
 
         act.Should().Throw<InvalidOperationException>()
            .WithMessage("*Duplicate IReferenceKindTarget*Item*");
@@ -114,10 +114,9 @@ public sealed class SilmarillionViewModelTests
         IReferenceKindTarget[] targets)
     {
         var nav = new SilmarillionReferenceNavigator(targets);
-        // Empty/null tab VMs are fine — the tests only exercise the dispatch path,
-        // not the tab VMs themselves (those are tested separately).
-        // Pass null-forgiving stubs; SilmarillionViewModel never reads .Items / .Recipes / .Npcs here.
-        var vm = new SilmarillionViewModel(items: null!, recipes: null!, npcs: null!, quests: null!, nav, targets);
+        // Tab VMs aren't exercised by the dispatch-path tests — the IReferenceKindTarget
+        // registry is what handles tab selection. Empty tabs sequence is fine.
+        var vm = new SilmarillionViewModel(Array.Empty<ITabViewModel>(), nav, targets);
         return (vm, nav);
     }
 
