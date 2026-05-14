@@ -79,7 +79,7 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               FontSize="{DynamicResource AppFontSizeHint}"
                                                                TextWrapping="Wrap" Margin="0,0,0,1"/>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
