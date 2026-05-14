@@ -124,3 +124,21 @@ Items 1, 3, and 9 are the highest-friction items — addressing them in the cook
 
 This isn't friction, just a note: the only pre-existing `EntityRef.Ability(...)` call sites were in `QuestDetailProjector` (`LearnAbility` reward, ability requirement chip) — both correctly wired through `_navigator.CanOpen(...)`. So the new Ability tab's shipment automatically lit them up without any chip-builder edits. The cookbook's "Audit existing surfaces" rule worked exactly as designed.
 
+## A5. Card-row secondary-line format: no unit suffixes ("L", "lvl", "x", etc.)
+
+**Friction (review-spotted):** First-pass Abilities card secondary line rendered as `"Sword L7"` (skill + literal "L" + level). Reviewer flagged this against the Recipes/NPCs/Quests precedent, which all use `"<primary> <secondary>"` with no unit decoration — Recipes is `"Cooking 30"`, NPCs is the area name, Quests is location-or-favor-NPC. Single-line fix (drop the `<Run Text=" L"/>`) but the rule wasn't called out.
+
+**Cookbook addition:** in the master-list / card-row section, add a sub-bullet under "Secondary line format": *"Plain `'<primary> <secondary>'` separated by a space — no unit-letter prefixes ('L' for level, 'x' for count, etc.) and no parenthetical decoration. Match the Items / Recipes / NPCs / Quests card precedent. Unit context is conveyed by the primary token (`'Cooking 30'` reads as a skill level; `'Sword 7'` reads the same way) without spelling out the unit each row."*
+
+## A6. Editorial duplication between Description prose and sibling display fields
+
+**Friction (review-spotted):** AcidBolt1 (and ~76% of ammo-using abilities) renders ammo information twice — once inline in `Description` ("Fire an acid-covered bolt that destroys armor. **Uses a Beginner's Dense Arrow.**") and once in the Ammo section's standalone `AmmoDescription` line ("Beginner's Dense Arrow"). PG bakes the friendly ammo name into the description prose, and the detail VM dutifully echoes it. The cookbook's *Default-value noise filtering* rule doesn't cover *editorial* duplication — only universal-default suppression.
+
+**Cookbook addition:** in the *Default-value noise filtering* section, add a sibling sub-bullet: *"**Editorial duplication suppression**: when a POCO has both a `Description` field that PG editorialises (free-form prose) and a sibling display field (e.g. `AmmoDescription`, `Caster requirements text`, `Effect tooltip`) that the prose verbatim contains, suppress the sibling line and either drop it or fold it into a chip label. Verify quantitatively against bundled data before locking in the suppression — the substring check should hide the duplicate in the common case but leave the line visible when the prose is generic and the sibling carries unique tier-specific info (e.g. `MushroomTurret`'s generic description + tier-specific ammo)."*
+
+## A7. Keyword-vs-Item chip discrimination: `<KeywordName>N` slug pattern
+
+**Friction (review-spotted):** First-pass Ammo section rendered each `AbilityAmmoKeyword.ItemKeyword` as plain text — looked tier-specific (`"DenseArrow1"`, `"SporeBomb3"`) but wasn't clickable. Two follow-up review comments resolved it: (a) it could be a chip; (b) "DenseArrow1 can match multiple items" — so it's `EntityRef.ItemKeyword(...)`, not `EntityRef.Item(...)`. The discrimination rule isn't obvious from the field name alone (`ItemKeyword` could plausibly mean either), but the data shape makes it clear: tier-suffixed slugs in POCO fields like `ItemKeyword`, `KeywordRef`, `ReqKeyword` are item *keywords* (filter chip, opens Items tab with `Keywords CONTAINS`), not item InternalNames.
+
+**Cookbook addition:** in the cross-link chip conventions section, add a sub-bullet under *EntityRef factory normalisation*: *"**Keyword-vs-Item discrimination**: a JSON field whose value reads like a tier-suffixed item slug (`'DenseArrow1'`, `'SporeBomb3'`, `'Crystal2'`) is almost always an item *keyword*, not an item InternalName. Use `EntityRef.ItemKeyword(...)` (the #270 pattern). Heuristic: if the value matches multiple items in `ItemsByInternalName.Keywords` rather than appearing as a single `Item.InternalName`, it's a keyword. Field-name clues: `ItemKeyword`, `<X>Keyword`, `ReqKeyword`, `KeywordRef`, `*Keywords` — all keyword-typed."*
+
