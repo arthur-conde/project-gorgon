@@ -28,6 +28,7 @@ public sealed record ItemDetailContext(
     IReadOnlyList<EntityChipVm>? ProducedByRecipes = null,
     IReadOnlyList<EntityChipVm>? ConsumedByRecipes = null,
     IReadOnlyList<EntityChipVm>? ConsumedAsKeywordIn = null,
+    IReadOnlyList<EntityChipVm>? AwardedByQuests = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null,
     // Overflow pill for "Used in" when ConsumedByRecipes is already capped.
     // Non-null only when the underlying recipe count exceeds the cap; renders as a

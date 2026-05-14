@@ -246,10 +246,14 @@ public sealed partial class RecipesTabViewModel : ObservableObject
         if (!_refData.RecipeSources.TryGetValue(recipe.InternalName!, out var sources) || sources.Count == 0)
             return null;
 
+        // Mirror of ItemsTabViewModel.BuildSourceChips — see that file for the rationale
+        // on Quest-context navigability. Recipe-as-quest-reward is the common case here
+        // (a quest teaches you a recipe), so the Quest chip flip is load-bearing for this
+        // tab.
         return sources
             .Select(s =>
             {
-                var reference = string.IsNullOrEmpty(s.Npc) ? null : EntityRef.Npc(s.Npc!);
+                var reference = ResolveSourceReference(s);
                 return new ItemSourceChipVm(
                     DisplayName: FormatSourceDisplayName(s),
                     Detail: s.Context,
@@ -260,8 +264,20 @@ public sealed partial class RecipesTabViewModel : ObservableObject
             .ToList();
     }
 
-    private string FormatSourceDisplayName(RecipeSource s) =>
-        string.IsNullOrEmpty(s.Npc)
-            ? s.Type
-            : $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
+    private static EntityRef? ResolveSourceReference(RecipeSource s)
+    {
+        if (!string.IsNullOrEmpty(s.Npc)) return EntityRef.Npc(s.Npc!);
+        if (string.Equals(s.Type, "Quest", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return EntityRef.Quest(s.Context!);
+        return null;
+    }
+
+    private string FormatSourceDisplayName(RecipeSource s)
+    {
+        if (!string.IsNullOrEmpty(s.Npc))
+            return $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
+        if (string.Equals(s.Type, "Quest", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return $"Quest: {_nameResolver.Resolve(EntityRef.Quest(s.Context!))}";
+        return s.Type;
+    }
 }

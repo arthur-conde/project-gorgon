@@ -59,6 +59,7 @@ public sealed partial class ItemDetailViewModel
         ConsumedByRecipes = context.ConsumedByRecipes ?? [];
         MoreRecipesChip = context.MoreRecipesChip;
         ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
+        AwardedByQuests = context.AwardedByQuests ?? [];
         Sources = context.Sources ?? [];
         _poolPresenter = poolPresenter;
     }
@@ -117,6 +118,13 @@ public sealed partial class ItemDetailViewModel
     /// to the Recipes tab pre-filtered via QueryText = IngredientKeywords CONTAINS "&lt;keyword&gt;".
     /// </summary>
     public IReadOnlyList<EntityChipVm> ConsumedAsKeywordIn { get; }
+
+    /// <summary>
+    /// Quests that include this item in <c>Rewards_Items</c>. Populated from
+    /// <c>IReferenceDataService.QuestsRewardingItem</c> by the Silmarillion master-detail
+    /// flow; quest chips become navigable when the Quests tab is registered (#242).
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> AwardedByQuests { get; }
 
     /// <summary>
     /// Item sources (NPC vendors, monster drops, quest rewards, …) — rendered as a list of
