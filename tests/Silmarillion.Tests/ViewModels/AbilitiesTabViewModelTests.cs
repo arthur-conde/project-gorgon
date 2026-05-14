@@ -288,16 +288,20 @@ public sealed class AbilitiesTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_AmmoSection_ProjectsKeywordsAndChances()
+    public void DetailViewModel_AmmoSection_SingleKeyword_FoldsAmmoDescriptionIntoChipLabel()
     {
+        // Single-keyword ammo abilities (96% of the corpus) get a friendly chip label sourced
+        // from AmmoDescription, and the standalone AmmoDescription line is suppressed to avoid
+        // duplicating what's already in the chip (and usually in Description prose too).
         var ability = new Ability
         {
             InternalName = "FireArrow",
             Name = "Fire Arrow",
+            Description = "Fire a flaming arrow. Uses a Beginner's Arrow.",
             Skill = "Archery",
             Level = 5,
-            AmmoDescription = "Requires arrows.",
-            AmmoKeywords = [new AbilityAmmoKeyword { ItemKeyword = "Arrow", Count = 1 }],
+            AmmoDescription = "Beginner's Arrow",
+            AmmoKeywords = [new AbilityAmmoKeyword { ItemKeyword = "Arrow1", Count = 1 }],
             AmmoStickChance = 0.5,
             AmmoConsumeChance = 1.0,
         };
@@ -308,11 +312,78 @@ public sealed class AbilitiesTabViewModelTests
         var detail = vm.DetailViewModel!;
 
         detail.HasAmmoSection.Should().BeTrue();
-        detail.AmmoDescription.Should().Be("Requires arrows.");
+        detail.AmmoDescription.Should().Be("Beginner's Arrow");
+        detail.ShowAmmoDescription.Should().BeFalse(because: "single-keyword case folds AmmoDescription into the chip label");
         detail.AmmoKeywordRows.Should().ContainSingle();
-        detail.AmmoKeywordRows[0].ItemKeyword.Should().Be("Arrow");
+        var row = detail.AmmoKeywordRows[0];
+        row.Chip.DisplayName.Should().Be("Beginner's Arrow", because: "AmmoDescription is the friendly label for the keyword");
+        row.Chip.Reference.Should().Be(EntityRef.ItemKeyword("Arrow1"), because: "the chip routes to Items tab filtered by Keywords CONTAINS 'Arrow1' — keyword, not item");
+        row.Count.Should().Be(1);
         detail.AmmoStickChance.Should().Be(0.5);
         detail.AmmoConsumeChance.Should().Be(1.0);
+    }
+
+    [Fact]
+    public void DetailViewModel_AmmoSection_MultiKeyword_KeepsAmmoDescriptionAndPerKeywordChips()
+    {
+        // Multi-keyword ammo abilities (~48 cases like HamstringThrow) carry OR-substitution
+        // context in AmmoDescription ("Simple Throwing Knife (or Crystal Ice x2)") that no
+        // single chip can convey. The standalone line stays; each chip keeps its raw ItemKeyword.
+        var ability = new Ability
+        {
+            InternalName = "HamstringThrow1",
+            Name = "Hamstring Throw",
+            Description = "A thrown blade. Consumes 1 Simple Throwing Knife.",
+            Skill = "Knife",
+            Level = 5,
+            AmmoDescription = "Simple Throwing Knife (or Crystal Ice x2)",
+            AmmoKeywords =
+            [
+                new AbilityAmmoKeyword { ItemKeyword = "ThrowingKnife1", Count = 1 },
+                new AbilityAmmoKeyword { ItemKeyword = "CrystalIce", Count = 2 },
+            ],
+        };
+        var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
+        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.ShowAmmoDescription.Should().BeTrue(because: "multi-keyword case keeps the line — AmmoDescription carries OR-substitution context the chips alone can't convey");
+        detail.AmmoKeywordRows.Select(r => r.Chip.DisplayName).Should().Equal("ThrowingKnife1", "CrystalIce");
+        detail.AmmoKeywordRows.Select(r => r.Chip.Reference).Should().BeEquivalentTo(new[]
+        {
+            EntityRef.ItemKeyword("ThrowingKnife1"),
+            EntityRef.ItemKeyword("CrystalIce"),
+        });
+    }
+
+    [Fact]
+    public void DetailViewModel_AmmoSection_MultiKeyword_SuppressesAmmoDescriptionWhenContainedInDescription()
+    {
+        // Belt-and-braces edge case: if a multi-keyword ability's AmmoDescription happens to be
+        // a substring of Description, drop the standalone line — chips carry the actionable bits.
+        var ability = new Ability
+        {
+            InternalName = "MultiAmmo",
+            Name = "Multi Ammo",
+            Description = "Uses ammo Combined Pack",
+            Skill = "Test",
+            Level = 1,
+            AmmoDescription = "Combined Pack",
+            AmmoKeywords =
+            [
+                new AbilityAmmoKeyword { ItemKeyword = "Ammo1", Count = 1 },
+                new AbilityAmmoKeyword { ItemKeyword = "Ammo2", Count = 1 },
+            ],
+        };
+        var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
+        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.ShowAmmoDescription.Should().BeFalse();
     }
 
     [Fact]

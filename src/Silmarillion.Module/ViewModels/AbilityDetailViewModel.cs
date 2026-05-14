@@ -50,7 +50,7 @@ public sealed class AbilityDetailViewModel
 
         CostRows = BuildCostRows(ability.Costs);
         ConditionalKeywordRows = BuildConditionalKeywordRows(ability.ConditionalKeywords);
-        AmmoKeywordRows = BuildAmmoKeywordRows(ability.AmmoKeywords);
+        AmmoKeywordRows = BuildAmmoKeywordRows(ability.AmmoKeywords, ability.AmmoDescription, navigator);
 
         EnvironmentalFlags = BuildEnvironmentalFlags(ability);
         SpecialTargetingFlags = BuildSpecialTargetingFlags(ability);
@@ -112,6 +112,21 @@ public sealed class AbilityDetailViewModel
     public IReadOnlyList<EntityChipVm> SourceChips { get; }
 
     public string? AmmoDescription => Ability.AmmoDescription;
+
+    /// <summary>
+    /// Whether to render <see cref="AmmoDescription"/> as a standalone line. The single-keyword
+    /// case (96% of ammo abilities) folds AmmoDescription into the chip label, so this is false
+    /// there — no duplication of "Beginner's Dense Arrow" between description prose, standalone
+    /// ammo line, and chip. The multi-keyword case (~48 abilities) keeps the standalone line
+    /// when present and not already contained in <see cref="Description"/>: AmmoDescription
+    /// carries the OR-substitution context ("Simple Throwing Knife (or Crystal Ice x2)") that
+    /// the individual ItemKeyword chips can't.
+    /// </summary>
+    public bool ShowAmmoDescription =>
+        !string.IsNullOrEmpty(AmmoDescription)
+        && AmmoKeywordRows.Count > 1
+        && (string.IsNullOrEmpty(Description) || Description!.IndexOf(AmmoDescription!, StringComparison.Ordinal) < 0);
+
     public double? AmmoStickChance => Ability.AmmoStickChance;
     public double? AmmoConsumeChance => Ability.AmmoConsumeChance;
     public bool HasAmmoSection =>
@@ -265,17 +280,41 @@ public sealed class AbilityDetailViewModel
         return list;
     }
 
+    /// <summary>
+    /// Build ammo-keyword chip rows. Each row holds an <see cref="EntityChipVm"/> keyed by
+    /// <see cref="EntityRef.ItemKeyword(string)"/> — not <see cref="EntityRef.Item(string)"/> —
+    /// because the JSON field (<c>"DenseArrow1"</c>, <c>"SporeBomb1"</c>) is a *keyword* that
+    /// matches multiple ammo items at that tier, so the chip opens the Items tab filtered by
+    /// <c>Keywords CONTAINS</c> rather than landing on a single item.
+    /// <para>
+    /// When the ability has exactly one ammo keyword and a non-empty <see cref="Ability.AmmoDescription"/>,
+    /// the chip's display label folds in the friendly description (e.g. <c>"Beginner's Dense Arrow"</c>
+    /// instead of <c>"DenseArrow1"</c>). This collapses the duplicated "Uses a Beginner's Dense Arrow"
+    /// line that PG bakes into ~76% of ammo-using ability descriptions. Multi-keyword abilities
+    /// keep their raw <see cref="AbilityAmmoKeyword.ItemKeyword"/> as the chip label since the single
+    /// shared AmmoDescription text would be ambiguous across rows; their AmmoDescription surfaces
+    /// via <see cref="ShowAmmoDescription"/> instead.
+    /// </para>
+    /// </summary>
     private static IReadOnlyList<AbilityAmmoKeywordRow> BuildAmmoKeywordRows(
-        IReadOnlyList<AbilityAmmoKeyword>? ammoKeywords)
+        IReadOnlyList<AbilityAmmoKeyword>? ammoKeywords,
+        string? ammoDescription,
+        IReferenceNavigator navigator)
     {
         if (ammoKeywords is null || ammoKeywords.Count == 0) return [];
+        var useDescriptionAsLabel = ammoKeywords.Count == 1 && !string.IsNullOrEmpty(ammoDescription);
         var list = new List<AbilityAmmoKeywordRow>(ammoKeywords.Count);
         foreach (var a in ammoKeywords)
         {
             if (a is null) continue;
-            list.Add(new AbilityAmmoKeywordRow(
-                ItemKeyword: a.ItemKeyword ?? "(any)",
-                Count: a.Count));
+            var keyword = a.ItemKeyword ?? "(any)";
+            var reference = EntityRef.ItemKeyword(keyword);
+            var chip = new EntityChipVm(
+                DisplayName: useDescriptionAsLabel ? ammoDescription! : keyword,
+                IconId: 0,
+                Reference: reference,
+                IsNavigable: navigator.CanOpen(reference));
+            list.Add(new AbilityAmmoKeywordRow(Chip: chip, Count: a.Count));
         }
         return list;
     }
@@ -506,8 +545,9 @@ public sealed record AbilityCostRow(string Currency, int Price);
 /// <summary>One row in <see cref="AbilityDetailViewModel.ConditionalKeywordRows"/>.</summary>
 public sealed record AbilityConditionalKeywordRow(string Keyword, string Condition);
 
-/// <summary>One row in <see cref="AbilityDetailViewModel.AmmoKeywordRows"/>.</summary>
-public sealed record AbilityAmmoKeywordRow(string ItemKeyword, int Count);
+/// <summary>One row in <see cref="AbilityDetailViewModel.AmmoKeywordRows"/>. The chip is keyed by
+/// <see cref="EntityRef.ItemKeyword(string)"/>; clicking opens the Items tab filtered by that keyword.</summary>
+public sealed record AbilityAmmoKeywordRow(EntityChipVm Chip, int Count);
 
 /// <summary>Generic label-value row used by environmental / pet / internal / PvE-stat blocks.</summary>
 public sealed record AbilityFlagRow(string Label, string Value);

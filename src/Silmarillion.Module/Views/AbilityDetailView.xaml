@@ -44,15 +44,22 @@
                 </Border>
             </DataTemplate>
 
-            <!-- Ammo keyword row (keyword + count). -->
+            <!-- Ammo keyword row (clickable keyword chip + count). The chip opens the Items tab
+                 filtered by Keywords CONTAINS <keyword> (e.g. clicking "Beginner's Dense Arrow"
+                 lists every item that carries the DenseArrow1 keyword). -->
             <DataTemplate DataType="{x:Type vm:AbilityAmmoKeywordRow}">
-                <TextBlock Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           TextWrapping="Wrap" Margin="0,0,0,2">
-                    <Run Text="{Binding ItemKeyword, Mode=OneWay}"/>
-                    <Run Text=" × "/>
-                    <Run Text="{Binding Count, Mode=OneWay}"/>
-                </TextBlock>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                    <ContentControl Content="{Binding Chip}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
+                    <TextBlock Text="{Binding Count, StringFormat=' × {0}'}" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="4,0,0,0"/>
+                </StackPanel>
             </DataTemplate>
 
             <!-- Generic label/value flag row, shared by environmental / pet / internal / PvE stats. -->
@@ -318,7 +325,7 @@
                     <TextBlock c:FormattedText.Text="{Binding AmmoDescription}" Foreground="#CCFFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"
                                Margin="0,0,0,3"
-                               Visibility="{Binding AmmoDescription, Converter={StaticResource NullOrEmptyToVis}}"/>
+                               Visibility="{Binding ShowAmmoDescription, Converter={StaticResource BoolToVis}}"/>
                     <ItemsControl ItemsSource="{Binding AmmoKeywordRows}" Margin="0,0,0,3"
                                   Visibility="{Binding AmmoKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
                     <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
