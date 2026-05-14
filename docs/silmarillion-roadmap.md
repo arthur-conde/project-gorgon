@@ -57,7 +57,7 @@ Totals: 2 + 9 + 10 + 8 = 29, and Bucket A + Bucket B covers every `EntityKind` v
 
 **Why deferred together:** Abilities (8.7 MB) and Effects (6.5 MB) are paired — items and abilities already reference effect strings, so neither tab is complete without the other. Both are large enough that the master-detail spike needs a real design pass, not a copy-paste from Recipes.
 
-**Likely approach:** Sequence Abilities first (so Effects' cross-link chips have destinations on both ends), then Effects. Sub-tables (`abilitykeywords`, `abilitydynamicdots`, `abilitydynamicspecialvalues`) fold into the Abilities tab as filter facets and detail sections.
+**Likely approach:** Sequence Abilities first (so Effects' cross-link chips have destinations on both ends), then Effects. The three conditional-rule sub-tables (`abilitykeywords`, `abilitydynamicdots`, `abilitydynamicspecialvalues`) fold into the **Effects tab**, not Abilities — they're predicate-shaped rules engines (`ReqAbilityKeywords` / `ReqEffectKeywords` / `ReqActiveSkill` → attribute deltas / DoTs / tooltip values), more naturally consumed effect-side than ability-side. Plumbing tracked separately as #288.
 
 ### Areas and Landmarks
 
@@ -89,9 +89,9 @@ Totals: 2 + 9 + 10 + 8 = 29, and Bucket A + Bucket B covers every `EntityKind` v
 | `itemuses` | Items tab | "Where is this consumed" reverse-lookup section |
 | `lorebookinfo` | Lorebooks tab (when shipped) | Title / category metadata sidecar |
 | `directedgoals` | Quests tab (when shipped) | Filter chip alongside regular quests |
-| `abilitykeywords` | Abilities tab (when shipped) | Filter facets and detail sections |
-| `abilitydynamicdots` | Abilities tab (when shipped) | Sub-table in ability detail |
-| `abilitydynamicspecialvalues` | Abilities tab (when shipped) | Sub-table in ability detail |
+| `abilitykeywords` | Effects tab (when shipped) | Conditional attribute-delta rules predicated on `MustHaveAbilityKeywords` — effect-side, not ability-side. Tracked: #288 |
+| `abilitydynamicdots` | Effects tab (when shipped) | Conditional DoT rules predicated on `ReqAbilityKeywords` + `ReqActiveSkill` + `ReqEffectKeywords`. Tracked: #288 |
+| `abilitydynamicspecialvalues` | Effects tab (when shipped) | Conditional ability-tooltip values predicated on `ReqAbilityKeywords` + `ReqEffectKeywords`. Tracked: #288 |
 | `skills` | Recipes + Abilities tabs | Filter chips and skill-level metadata; small enough (~30 skills) that a dedicated tab adds little |
 
 These would each require their own master-detail just to render a row count and a few fields — better as enrichment of a parent entity.
@@ -115,3 +115,4 @@ These would each require their own master-detail just to render a row count and 
 
 - **2026-05-13** — v1 shipped (PR #236, Items + Recipes tabs, cross-link navigator, master-detail scaffold). Bucketing rationale captured in this doc; per-tab follow-ups filed against `module:silmarillion` on the [Roadmap Project](https://github.com/users/arthur-conde/projects/3/views/1?filterQuery=module%3A%22Silmarillion%22).
 - **2026-05-13** — `EntityKind` grew the synthetic `RecipeIngredientKeyword` variant via PR #259 (keyword-collapse design for the item-detail "Used as" section, replacing a naive fan-out widening of `RecipesByIngredientItem`). Sets the precedent for "deep-link to a tab with pre-filled query" as a kind-target shape distinct from "select a row by name."
+- **2026-05-14** — Bucket C reclassification: `abilitykeywords`, `abilitydynamicdots`, `abilitydynamicspecialvalues` move from "folds into Abilities tab" to "folds into Effects tab" (#288). Data-shape verification during the #243 Abilities handoff drafting showed these are predicate-keyed conditional rules engines, not per-ability metadata; their natural rendering destination is effect-side, not ability-side. Bucket math unchanged (still 10 entries in C, 29 total).
