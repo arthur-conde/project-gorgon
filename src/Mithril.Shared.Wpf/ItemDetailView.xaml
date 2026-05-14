@@ -48,9 +48,9 @@
                     </StackPanel>
                 </DockPanel>
 
-                <!-- Description + optional food effect -->
+                <!-- Description + optional food effect (FormattedText parses any inline <i>/<b> markup). -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF"
+                    <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
                                FontStyle="Italic" FontSize="{DynamicResource AppFontSize}"
                                TextWrapping="Wrap" MaxWidth="460"
                                HorizontalAlignment="Left"

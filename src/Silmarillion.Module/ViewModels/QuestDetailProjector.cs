@@ -251,17 +251,14 @@ public static class QuestDetailProjector
 
             case HasEffectKeywordRequirement h:
                 {
-                    // Effect keywords are tags on entries in effects.json (one keyword may be
-                    // attached to multiple effects). Build a chip stub anchored on
-                    // EntityRef.Effect(keyword); _navigator.CanOpen returns false today since
-                    // the Effects tab (#244) isn't registered, so the chip degrades to plain
-                    // text. The moment the Effects kind target ships, every HasEffectKeyword
-                    // requirement across the catalogue flips to navigable without further
-                    // changes here.
+                    // A "Has effect keyword X" requirement is a predicate over effect keywords,
+                    // not a single effect row — many effects may carry the same keyword. Anchor
+                    // the chip on EntityRef.EffectKeyword(...) so clicking it filters the Effects
+                    // tab to entries whose Keywords list contains the tag.
                     if (string.IsNullOrEmpty(h.Keyword))
                         return new QuestRequirementDisplay("Has effect: (unknown)", null, false);
                     var chipName = SplitCamelCase(h.Keyword);
-                    var reference = EntityRef.Effect(h.Keyword!);
+                    var reference = EntityRef.EffectKeyword(h.Keyword!);
                     return new QuestRequirementDisplay(
                         Text: $"Has effect: {chipName}",
                         Reference: reference,

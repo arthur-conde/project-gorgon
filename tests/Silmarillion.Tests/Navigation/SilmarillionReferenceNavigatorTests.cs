@@ -348,6 +348,99 @@ public sealed class SilmarillionReferenceNavigatorTests
         recipesVm.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
     }
 
+    [Fact]
+    public void Open_Effect_SwitchesToEffectsTab_AndSelects()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddEffect(new Mithril.Reference.Models.Effects.Effect { InternalName = "effect_10003", Name = "Sticky!", IconId = 42 });
+        var settings = new Silmarillion.SilmarillionSettings();
+        var effectsVm = new EffectsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var effectsTarget = new EffectsKindTarget(effectsVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            effectsTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { effectsVm }, nav, targets);
+
+        nav.Open(EntityRef.Effect("effect_10003"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(5);
+        effectsVm.SelectedRow.Should().NotBeNull();
+        effectsVm.SelectedRow!.EnvelopeKey.Should().Be("effect_10003");
+    }
+
+    [Fact]
+    public void Open_EffectKeyword_SwitchesToEffectsTab_AndSetsQueryText()
+    {
+        var refData = new FakeReferenceData();
+        var settings = new Silmarillion.SilmarillionSettings();
+        var effectsVm = new EffectsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var keywordTarget = new EffectKeywordKindTarget(effectsVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            keywordTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { effectsVm }, nav, targets);
+
+        nav.Open(EntityRef.EffectKeyword("FrostShard"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(5);
+        effectsVm.QueryText.Should().Be("Keywords CONTAINS \"FrostShard\"");
+    }
+
+    [Fact]
+    public void Open_AbilityByEffectKeyword_SwitchesToAbilitiesTab_AndSetsQueryText()
+    {
+        var refData = new FakeReferenceData();
+        var abilitiesVm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+        var pillTarget = new AbilityByEffectKeywordKindTarget(abilitiesVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            pillTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { abilitiesVm }, nav, targets);
+
+        nav.Open(EntityRef.AbilityByEffectKeyword("FrostShard"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(4);
+        abilitiesVm.QueryText.Should().Be("EffectKeywordReqs CONTAINS \"FrostShard\"");
+    }
+
+    [Fact]
+    public void Constructor_DuplicateGuard_TripsForEffectAndEffectKeyword()
+    {
+        // Verifies the duplicate-registration guard still trips with the new kinds in the mix.
+        var dupEffect = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Effect),
+            new StubTarget(EntityKind.Effect),
+        };
+        Action act1 = () => new SilmarillionReferenceNavigator(dupEffect);
+        act1.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate IReferenceKindTarget*Effect*");
+
+        var dupEffectKeyword = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.EffectKeyword),
+            new StubTarget(EntityKind.EffectKeyword),
+        };
+        Action act2 = () => new SilmarillionReferenceNavigator(dupEffectKeyword);
+        act2.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate IReferenceKindTarget*EffectKeyword*");
+    }
+
     private static IEnumerable<IReferenceKindTarget> NavTargets() => new IReferenceKindTarget[]
     {
         new StubTarget(EntityKind.Item),
@@ -369,6 +462,8 @@ public sealed class SilmarillionReferenceNavigatorTests
         private readonly Dictionary<string, Recipe> _recipesByInternalName = new(StringComparer.Ordinal);
         private readonly Dictionary<long, Item> _itemsById = new();
         private readonly Dictionary<string, Item> _itemsByInternalName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Mithril.Reference.Models.Effects.Effect> _effects = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Mithril.Reference.Models.Abilities.Ability> _abilitiesByInternalName = new(StringComparer.Ordinal);
 
         public void AddRecipe(Recipe recipe)
         {
@@ -380,6 +475,16 @@ public sealed class SilmarillionReferenceNavigatorTests
         {
             _itemsById[item.Id] = item;
             if (item.InternalName is not null) _itemsByInternalName[item.InternalName] = item;
+        }
+
+        public void AddEffect(Mithril.Reference.Models.Effects.Effect effect)
+        {
+            if (effect.InternalName is not null) _effects[effect.InternalName] = effect;
+        }
+
+        public void AddAbility(Mithril.Reference.Models.Abilities.Ability ability)
+        {
+            if (ability.InternalName is not null) _abilitiesByInternalName[ability.InternalName] = ability;
         }
 
         public IReadOnlyList<string> Keys => Array.Empty<string>();
@@ -399,6 +504,9 @@ public sealed class SilmarillionReferenceNavigatorTests
         public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
         public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Effects.Effect> Effects => _effects;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Effects.Effect> EffectsByInternalName => _effects;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Abilities.Ability> AbilitiesByInternalName => _abilitiesByInternalName;
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
         public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;

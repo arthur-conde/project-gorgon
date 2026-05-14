@@ -246,7 +246,7 @@ public sealed class AbilitiesTabViewModelTests
             EffectKeywordReqs = ["BattleRage"],
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword, EntityKind.EffectKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
@@ -256,7 +256,13 @@ public sealed class AbilitiesTabViewModelTests
         chip.DisplayName.Should().Be("Sword");
         chip.Reference.Kind.Should().Be(EntityKind.ItemKeyword);
         chip.IsNavigable.Should().BeTrue();
-        detail.EffectKeywordReqs.Should().Equal(["BattleRage"]);
+
+        detail.EffectKeywordReqChips.Should().ContainSingle();
+        var effectChip = detail.EffectKeywordReqChips[0];
+        effectChip.DisplayName.Should().Be("BattleRage");
+        effectChip.Reference.Kind.Should().Be(EntityKind.EffectKeyword);
+        effectChip.Reference.InternalName.Should().Be("BattleRage");
+        effectChip.IsNavigable.Should().BeTrue();
     }
 
     [Fact]
@@ -275,7 +281,7 @@ public sealed class AbilitiesTabViewModelTests
             },
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.EffectKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var rows = vm.DetailViewModel!.ConditionalKeywordRows;
@@ -283,8 +289,15 @@ public sealed class AbilitiesTabViewModelTests
         rows.Should().HaveCount(2);
         rows[0].Keyword.Should().Be("Melee");
         rows[0].Condition.Should().Be("Default");
+        rows[0].EffectKeywordChip.Should().BeNull();
         rows[1].Keyword.Should().Be("Burst");
-        rows[1].Condition.Should().Be("When effect keyword present: ManyCutsAoE");
+        rows[1].Condition.Should().Be("When effect keyword present:");
+        var burstChip = rows[1].EffectKeywordChip;
+        burstChip.Should().NotBeNull();
+        burstChip!.DisplayName.Should().Be("ManyCutsAoE");
+        burstChip.Reference.Kind.Should().Be(EntityKind.EffectKeyword);
+        burstChip.Reference.InternalName.Should().Be("ManyCutsAoE");
+        burstChip.IsNavigable.Should().BeTrue();
     }
 
     [Fact]

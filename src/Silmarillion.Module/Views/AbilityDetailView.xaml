@@ -27,13 +27,27 @@
                 </TextBlock>
             </DataTemplate>
 
-            <!-- Conditional-keyword row (trigger + applied keyword). -->
+            <!-- Conditional-keyword row (trigger + applied keyword). The trigger half is a
+                 prefix string + an optional EffectKeyword chip (rendered when the row's
+                 EffectKeywordChip is non-null); the applied half is the keyword tag the
+                 ability adds when the condition is met. -->
             <DataTemplate DataType="{x:Type vm:AbilityConditionalKeywordRow}">
                 <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
                         CornerRadius="3" Padding="6,4" Margin="0,0,0,3">
                     <StackPanel>
-                        <TextBlock Text="{Binding Condition}" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Condition}" Foreground="#88FFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeSmall}"
+                                       VerticalAlignment="Center"/>
+                            <ContentControl Content="{Binding EffectKeywordChip}" Margin="4,0,0,0"
+                                            VerticalAlignment="Center">
+                                <ContentControl.Resources>
+                                    <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                    </DataTemplate>
+                                </ContentControl.Resources>
+                            </ContentControl>
+                        </StackPanel>
                         <TextBlock Foreground="#CCFFFFFF"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    TextWrapping="Wrap" Margin="0,2,0,0">
@@ -194,7 +208,7 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── 4. Prerequisites: Prerequisite chip + UpgradeOf chip + ItemKeywordReqs chips + EffectKeywordReqs text + SpecialCasterRequirements text ─── -->
+                <!-- ─── 4. Prerequisites: Prerequisite chip + UpgradeOf chip + ItemKeywordReqs chips + EffectKeywordReqChips + SpecialCasterRequirements text ─── -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -209,7 +223,7 @@
                                 <DataTrigger Binding="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding EffectKeywordReqs.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding EffectKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
@@ -261,12 +275,19 @@
                         </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
-                                Visibility="{Binding EffectKeywordReqs.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap">
-                            <Run Text="Required effect keywords: " Foreground="#88FFFFFF"/>
-                            <Run Text="{Binding EffectKeywordReqsDisplay, Mode=OneWay}"/>
-                        </TextBlock>
+                                Visibility="{Binding EffectKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Required effect keywords:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding EffectKeywordReqChips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
                                 Visibility="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}">
@@ -351,11 +372,38 @@
                 </StackPanel>
 
                 <!-- ─── 9. Special targeting tags ─── -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}">
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Special targeting" FontWeight="SemiBold" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SpecialTargetingFlags}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
+                                Visibility="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Target effect keyword:" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding TargetEffectKeywordReqChip}"
+                                        VerticalAlignment="Center">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding SpecialTargetingFlags}"
+                                  Visibility="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}"/>
                 </StackPanel>
 
                 <!-- ─── 10. Pet-related ─── -->

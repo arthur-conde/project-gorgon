@@ -5,16 +5,15 @@ using System.Text.Json.Serialization;
 namespace Silmarillion;
 
 /// <summary>
-/// Persisted preferences for the Silmarillion module. v1 only exposes
-/// <see cref="UsedInChipCap"/>; the class exists primarily as scaffolding so future
-/// settings (default tab, hide-empty-sections, …) can land as small follow-ups.
-/// <see cref="SchemaVersion"/> is stamped from day one per the project's
-/// versioned-JSON convention — cheap forward-compat without committing to the
-/// <c>IVersionedState</c> migration path yet.
+/// Persisted preferences for the Silmarillion module. Exposes per-tab chip caps that
+/// trade off detail-pane chip density against the overflow pill's deep-link route.
+/// <see cref="SchemaVersion"/> is stamped from day one per the project's versioned-JSON
+/// convention — cheap forward-compat without committing to the <c>IVersionedState</c>
+/// migration path yet.
 /// </summary>
 public sealed class SilmarillionSettings : INotifyPropertyChanged
 {
-    /// <summary>Lowest valid cap. Zero collapses every "Used in" chip into the overflow pill.</summary>
+    /// <summary>Lowest valid cap. Zero collapses every chip into the overflow pill.</summary>
     public const int MinUsedInChipCap = 0;
 
     /// <summary>Highest valid cap. Above ~100 the section becomes unbrowsable regardless of perf.</summary>
@@ -23,8 +22,12 @@ public sealed class SilmarillionSettings : INotifyPropertyChanged
     /// <summary>Default cap: cheap case stays cheap, long tail collapses behind the overflow pill.</summary>
     public const int DefaultUsedInChipCap = 12;
 
+    /// <summary>Default cap for the Effects-tab "Required by abilities" chip cluster.</summary>
+    public const int DefaultRequiredByAbilitiesChipCap = 12;
+
     private int _schemaVersion = 1;
     private int _usedInChipCap = DefaultUsedInChipCap;
+    private int _requiredByAbilitiesChipCap = DefaultRequiredByAbilitiesChipCap;
 
     /// <summary>
     /// Persisted schema version. Always written so a future <c>IVersionedState</c> migration
@@ -45,6 +48,20 @@ public sealed class SilmarillionSettings : INotifyPropertyChanged
     {
         get => _usedInChipCap;
         set => Set(ref _usedInChipCap, Math.Clamp(value, MinUsedInChipCap, MaxUsedInChipCap));
+    }
+
+    /// <summary>
+    /// Maximum number of per-ability chips rendered in the effect-detail
+    /// "Required by abilities" section before collapsing the rest behind a
+    /// <c>+N more →</c> overflow pill. The pill deep-links to the Abilities tab
+    /// filtered by <c>EffectKeywordReqs CONTAINS "&lt;tag&gt;"</c> via the
+    /// <see cref="Mithril.Shared.Reference.EntityKind.AbilityByEffectKeyword"/>
+    /// synthetic kind. Clamped to <see cref="MinUsedInChipCap"/>..<see cref="MaxUsedInChipCap"/>.
+    /// </summary>
+    public int RequiredByAbilitiesChipCap
+    {
+        get => _requiredByAbilitiesChipCap;
+        set => Set(ref _requiredByAbilitiesChipCap, Math.Clamp(value, MinUsedInChipCap, MaxUsedInChipCap));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

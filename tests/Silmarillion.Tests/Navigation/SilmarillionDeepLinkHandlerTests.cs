@@ -85,6 +85,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
     [InlineData("npc/Marna", EntityKind.Npc, "Marna")]
     [InlineData("ability/Hatchet", EntityKind.Ability, "Hatchet")]
     [InlineData("quest/RuminationsOfAYoungMan", EntityKind.Quest, "RuminationsOfAYoungMan")]
+    [InlineData("effect/effect_10003", EntityKind.Effect, "effect_10003")]
     public void TryHandle_DispatchesAnyEntityKindTheNavigatorAccepts(
         string subPath, EntityKind expectedKind, string expectedName)
     {

@@ -54,6 +54,11 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<NpcsTabViewModel>();
         services.AddSingleton<QuestsTabViewModel>();
         services.AddSingleton<AbilitiesTabViewModel>();
+        services.AddSingleton<EffectsTabViewModel>(sp => new EffectsTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<IEntityNameResolver>(),
+            sp.GetRequiredService<SilmarillionSettings>()));
         // Forward each concrete tab VM to ITabViewModel so SilmarillionViewModel can compose
         // its Tabs collection from IEnumerable<ITabViewModel>. Adding a future tab is a single
         // pair of registrations here — no SilmarillionViewModel ctor change (refactor #243).
@@ -62,6 +67,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<NpcsTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<QuestsTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<AbilitiesTabViewModel>());
+        services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<EffectsTabViewModel>());
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -91,6 +97,18 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientItemKindTarget(
             sp.GetRequiredService<RecipesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new EffectsKindTarget(
+            sp.GetRequiredService<EffectsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new EffectKeywordKindTarget(
+            sp.GetRequiredService<EffectsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new AbilityByEffectKeywordKindTarget(
+            sp.GetRequiredService<AbilitiesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new EffectByStackingTypeKindTarget(
+            sp.GetRequiredService<EffectsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).

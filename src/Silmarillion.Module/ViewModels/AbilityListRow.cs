@@ -24,5 +24,6 @@ public sealed record AbilityListRow(
     int Level,
     string? Rank,
     IReadOnlyList<IngredientKeywordValue> Keywords,
+    IReadOnlyList<IngredientKeywordValue> EffectKeywordReqs,
     double ResetTimeSeconds,
     int IconID);

@@ -141,7 +141,7 @@
                                 <TextBlock Text="{Binding Index}" Foreground="#FFD4A847"
                                            FontSize="{DynamicResource AppFontSizeSmall}"/>
                             </Border>
-                            <TextBlock Text="{Binding Description}" Foreground="#FFFFFFFF"
+                            <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#FFFFFFFF"
                                        FontSize="{DynamicResource AppFontSizeHint}"
                                        TextWrapping="Wrap" VerticalAlignment="Center"/>
                         </DockPanel>

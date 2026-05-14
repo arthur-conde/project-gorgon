@@ -221,12 +221,13 @@ public sealed class ReferenceDataEntityNameResolverTests
     [Fact]
     public void UnknownKind_ReturnsInternalNameVerbatim()
     {
-        // Kinds the resolver doesn't yet have a case for (e.g. Effect/Area/PlayerTitle —
-        // not tabbed yet) return InternalName unchanged so callers render *something*
-        // readable rather than empty.
+        // Kinds the resolver doesn't yet have a case for (e.g. Area/PlayerTitle — not tabbed
+        // yet) return InternalName unchanged so callers render *something* readable rather
+        // than empty. EffectKeyword is a synthetic payload-as-display kind (the keyword tag
+        // is itself the display string), so it falls through the same path.
         var resolver = new ReferenceDataEntityNameResolver(new ResolverStub());
 
-        resolver.Resolve(EntityRef.Effect("FrostShard")).Should().Be("FrostShard");
+        resolver.Resolve(EntityRef.EffectKeyword("FrostShard")).Should().Be("FrostShard");
     }
 
     [Fact]

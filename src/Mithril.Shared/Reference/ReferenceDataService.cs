@@ -7,6 +7,7 @@ using Mithril.Reference.Serialization;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Diagnostics.Performance;
 using Ability = Mithril.Reference.Models.Abilities.Ability;
+using Effect = Mithril.Reference.Models.Effects.Effect;
 using Item = Mithril.Reference.Models.Items.Item;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
@@ -201,6 +202,24 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyList<AbilityDynamicSpecialValue> _abilityDynamicSpecialValues = Array.Empty<AbilityDynamicSpecialValue>();
     private ReferenceFileSnapshot _abilityDynamicSpecialValuesSnapshot;
 
+    // Effects (effects.json) — keyed by "effect_N" plus a sibling InternalName lookup
+    // (envelope key === InternalName, lifted by ParseEffects). Derived keyword and
+    // stacking indices plus the bidirectional ability×effect-keyword cross-link indices
+    // power Silmarillion's Effects tab.
+    private IReadOnlyDictionary<string, Effect> _effects =
+        new Dictionary<string, Effect>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Effect> _effectsByInternalName =
+        new Dictionary<string, Effect>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Effect>> _effectsByKeyword =
+        new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Effect>> _effectsByStackingType =
+        new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesByEffectKeyword =
+        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Effect>> _effectsByTriggeringAbilityKeyword =
+        new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _effectsSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
@@ -233,6 +252,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _abilityKeywordRulesSnapshot = new ReferenceFileSnapshot("abilitykeywords", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _abilityDynamicDotsSnapshot = new ReferenceFileSnapshot("abilitydynamicdots", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _abilityDynamicSpecialValuesSnapshot = new ReferenceFileSnapshot("abilitydynamicspecialvalues", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _effectsSnapshot = new ReferenceFileSnapshot("effects", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -244,6 +264,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadItemSources();
         LoadRecipeSources();
         LoadAbilities();           // Must run before LoadAbilitySources — ParseAndSwapAbilitySources keys by Ability.InternalName.
+                                   // Also must run before LoadEffects so BuildEffectAbilityCrossLinkIndices sees both sides.
         LoadAbilitySources();
         LoadAttributes();
         LoadPowers();
@@ -253,9 +274,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadAbilityKeywords();
         LoadAbilityDynamicDots();
         LoadAbilityDynamicSpecialValues();
+        LoadEffects();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -293,6 +315,12 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyList<AbilityKeyword> AbilityKeywordRules => _abilityKeywordRules;
     public IReadOnlyList<AbilityDynamicDot> AbilityDynamicDots => _abilityDynamicDots;
     public IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => _abilityDynamicSpecialValues;
+    public IReadOnlyDictionary<string, Effect> Effects => _effects;
+    public IReadOnlyDictionary<string, Effect> EffectsByInternalName => _effectsByInternalName;
+    public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByKeyword => _effectsByKeyword;
+    public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByStackingType => _effectsByStackingType;
+    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeyword => _abilitiesByEffectKeyword;
+    public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByTriggeringAbilityKeyword => _effectsByTriggeringAbilityKeyword;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -316,6 +344,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "abilitykeywords" => _abilityKeywordRulesSnapshot,
         "abilitydynamicdots" => _abilityDynamicDotsSnapshot,
         "abilitydynamicspecialvalues" => _abilityDynamicSpecialValuesSnapshot,
+        "effects" => _effectsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -342,6 +371,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "abilitykeywords" => RefreshFileAsync("abilitykeywords", ReferenceDeserializer.ParseAbilityKeywords, ParseAndSwapAbilityKeywords, ct),
         "abilitydynamicdots" => RefreshFileAsync("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots, ct),
         "abilitydynamicspecialvalues" => RefreshFileAsync("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues, ct),
+        "effects" => RefreshFileAsync("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -366,6 +396,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("abilitykeywords", ct).ConfigureAwait(false);
         await RefreshAsync("abilitydynamicdots", ct).ConfigureAwait(false);
         await RefreshAsync("abilitydynamicspecialvalues", ct).ConfigureAwait(false);
+        await RefreshAsync("effects", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -550,6 +581,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadAbilityKeywords() => LoadFile("abilitykeywords", ReferenceDeserializer.ParseAbilityKeywords, ParseAndSwapAbilityKeywords);
     private void LoadAbilityDynamicDots() => LoadFile("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots);
     private void LoadAbilityDynamicSpecialValues() => LoadFile("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues);
+    private void LoadEffects() => LoadFile("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -1046,6 +1078,131 @@ public sealed class ReferenceDataService : IReferenceDataService
         BuildAbilityCrossLinkIndices();
         // Re-derive AbilitiesTaughtByNpc when the ability set itself changes.
         BuildNpcCrossLinkIndices();
+        // Re-derive AbilitiesByEffectKeyword — keyed on Ability.EffectKeywordReqs ∪
+        // EffectKeywordsIndicatingEnabled ∪ TargetEffectKeywordReq, so any abilities-file
+        // refresh changes the membership of those sets.
+        BuildEffectAbilityCrossLinkIndices();
+    }
+
+    private void ParseAndSwapEffects(IReadOnlyDictionary<string, Effect> raw, ReferenceFileMetadata meta)
+    {
+        var byKey = new Dictionary<string, Effect>(raw.Count, StringComparer.Ordinal);
+        var byInternalName = new Dictionary<string, Effect>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, effect) in raw)
+        {
+            if (effect is null) continue;
+            byKey[key] = effect;
+            // ParseEffects lifts the envelope key onto effect.InternalName; the InternalName
+            // and envelope-key dictionaries therefore carry the same entries with the same
+            // keys, but the sibling lookup mirrors the shape of ItemsByInternalName /
+            // AbilitiesByInternalName so resolver and kind-target code paths don't special-case.
+            if (!string.IsNullOrEmpty(effect.InternalName))
+                byInternalName[effect.InternalName!] = effect;
+        }
+        _effects = byKey;
+        _effectsByInternalName = byInternalName;
+        _effectsSnapshot = new ReferenceFileSnapshot("effects", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildEffectAbilityCrossLinkIndices();
+    }
+
+    /// <summary>
+    /// Builds the four effect/ability cross-link indices: <see cref="_effectsByKeyword"/>,
+    /// <see cref="_effectsByStackingType"/>, <see cref="_effectsByTriggeringAbilityKeyword"/>,
+    /// and <see cref="_abilitiesByEffectKeyword"/>. The last index reads ability fields and
+    /// must rebuild when either <c>effects.json</c> or <c>abilities.json</c> reloads — both
+    /// <see cref="ParseAndSwapEffects"/> and <see cref="ParseAndSwapAbilities"/> call this.
+    /// Abilities with <see cref="Ability.InternalAbility"/> = <c>true</c> are excluded from
+    /// <see cref="_abilitiesByEffectKeyword"/> per the on-detail chip-cluster contract.
+    /// </summary>
+    private void BuildEffectAbilityCrossLinkIndices()
+    {
+        var byKeyword = new Dictionary<string, List<Effect>>(StringComparer.Ordinal);
+        var byStacking = new Dictionary<string, List<Effect>>(StringComparer.Ordinal);
+        var byTriggeringAbilityKeyword = new Dictionary<string, List<Effect>>(StringComparer.Ordinal);
+
+        foreach (var effect in _effects.Values)
+        {
+            if (effect.Keywords is { Count: > 0 } keywords)
+            {
+                foreach (var tag in keywords)
+                {
+                    if (string.IsNullOrEmpty(tag)) continue;
+                    if (!byKeyword.TryGetValue(tag, out var list))
+                    {
+                        list = new List<Effect>();
+                        byKeyword[tag] = list;
+                    }
+                    list.Add(effect);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(effect.StackingType))
+            {
+                if (!byStacking.TryGetValue(effect.StackingType!, out var list))
+                {
+                    list = new List<Effect>();
+                    byStacking[effect.StackingType!] = list;
+                }
+                list.Add(effect);
+            }
+
+            if (effect.AbilityKeywords is { Count: > 0 } abilityKeywords)
+            {
+                foreach (var tag in abilityKeywords)
+                {
+                    if (string.IsNullOrEmpty(tag)) continue;
+                    if (!byTriggeringAbilityKeyword.TryGetValue(tag, out var list))
+                    {
+                        list = new List<Effect>();
+                        byTriggeringAbilityKeyword[tag] = list;
+                    }
+                    list.Add(effect);
+                }
+            }
+        }
+
+        var byEffectKeyword = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+        foreach (var ability in _abilities.Values)
+        {
+            if (ability.InternalAbility == true) continue;
+
+            // Union: EffectKeywordReqs ∪ EffectKeywordsIndicatingEnabled ∪ {TargetEffectKeywordReq}.
+            // Dedupe per ability so a tag mentioned in multiple slots doesn't double-count the
+            // ability in the index.
+            HashSet<string>? tagsForAbility = null;
+            void Mark(string? tag)
+            {
+                if (string.IsNullOrEmpty(tag)) return;
+                tagsForAbility ??= new HashSet<string>(StringComparer.Ordinal);
+                tagsForAbility.Add(tag);
+            }
+
+            if (ability.EffectKeywordReqs is { Count: > 0 } reqs)
+                foreach (var tag in reqs) Mark(tag);
+            if (ability.EffectKeywordsIndicatingEnabled is { Count: > 0 } enabled)
+                foreach (var tag in enabled) Mark(tag);
+            Mark(ability.TargetEffectKeywordReq);
+
+            if (tagsForAbility is null) continue;
+            foreach (var tag in tagsForAbility)
+            {
+                if (!byEffectKeyword.TryGetValue(tag, out var list))
+                {
+                    list = new List<Ability>();
+                    byEffectKeyword[tag] = list;
+                }
+                list.Add(ability);
+            }
+        }
+
+        _effectsByKeyword = byKeyword.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Effect>)kv.Value, StringComparer.Ordinal);
+        _effectsByStackingType = byStacking.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Effect>)kv.Value, StringComparer.Ordinal);
+        _effectsByTriggeringAbilityKeyword = byTriggeringAbilityKeyword.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Effect>)kv.Value, StringComparer.Ordinal);
+        _abilitiesByEffectKeyword = byEffectKeyword.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
     }
 
     private void ParseAndSwapAbilitySources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)

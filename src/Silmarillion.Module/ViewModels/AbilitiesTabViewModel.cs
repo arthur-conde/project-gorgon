@@ -120,6 +120,13 @@ public sealed partial class AbilitiesTabViewModel : ObservableObject, ITabViewMo
             .Where(k => !string.IsNullOrEmpty(k))
             .Select(k => new IngredientKeywordValue(k))
             .ToList();
+        // Surface EffectKeywordReqs as a CONTAINS-queryable collection so the
+        // AbilityByEffectKeyword synthetic kind target can deep-link via
+        // `EffectKeywordReqs CONTAINS "<tag>"`.
+        var effectKeywordReqs = (ability.EffectKeywordReqs ?? (IReadOnlyList<string>)[])
+            .Where(k => !string.IsNullOrEmpty(k))
+            .Select(k => new IngredientKeywordValue(k))
+            .ToList();
 
         return new AbilityListRow(
             Ability: ability,
@@ -129,6 +136,7 @@ public sealed partial class AbilitiesTabViewModel : ObservableObject, ITabViewMo
             Level: ability.Level,
             Rank: ability.Rank,
             Keywords: keywords,
+            EffectKeywordReqs: effectKeywordReqs,
             ResetTimeSeconds: ability.ResetTime,
             IconID: ability.IconID);
     }
