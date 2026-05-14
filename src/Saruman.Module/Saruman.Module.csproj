@@ -16,6 +16,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\saruman.ico" />
-    <Resource Include="Resources\saruman.jpg" />
   </ItemGroup>
 </Project>

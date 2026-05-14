@@ -16,6 +16,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\bilbo.ico" />
-    <Resource Include="Resources\bilbo.jpg" />
   </ItemGroup>
 </Project>

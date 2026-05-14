@@ -17,6 +17,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\elrond.ico" />
-    <Resource Include="Resources\elrond.jpg" />
   </ItemGroup>
 </Project>

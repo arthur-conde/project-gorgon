@@ -17,6 +17,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\palantir.ico" />
-    <Resource Include="Resources\palantir.jpg" />
   </ItemGroup>
 </Project>

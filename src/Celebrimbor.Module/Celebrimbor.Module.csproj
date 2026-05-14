@@ -16,6 +16,5 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\celebrimbor.ico" />
-    <Resource Include="Resources\celebrimbor.jpg" />
   </ItemGroup>
 </Project>
