@@ -49,6 +49,8 @@ body:
         - smaug
         - celebrimbor
         - palantir
+        - silmarillion
+        - mithril.gamestate
         - mithril.reference
         - cross-module / unsure
     validations:
