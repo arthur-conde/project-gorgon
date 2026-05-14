@@ -54,6 +54,23 @@ public sealed class ItemsKindTargetTests
         target.TryOpenInWindow().Should().BeFalse();
     }
 
+    [Fact]
+    public void TrySelectByInternalName_ClearsResidualQueryText_SoTargetItemIsVisible()
+    {
+        // Direct link to an item must clear any leftover filter — otherwise the target
+        // row might be filtered out of the visible ListBox and the selection would land
+        // on an invisible row.
+        var item = new Item { Id = 5010, InternalName = "Tomato", Name = "Tomato" };
+        var (target, vm, _) = BuildTarget(item);
+        vm.QueryText = "Name STARTSWITH 'XYZ'";
+
+        var ok = target.TrySelectByInternalName("Tomato");
+
+        ok.Should().BeTrue();
+        vm.QueryText.Should().BeEmpty(because: "the kind target clears any prior filter before selecting");
+        vm.SelectedItem.Should().Be(item);
+    }
+
     private static (ItemsKindTarget Target, ItemsTabViewModel Vm, FakeReferenceData RefData) BuildTarget(
         params Item[] items)
     {

@@ -52,6 +52,23 @@ public sealed class RecipesKindTargetTests
     }
 
     [Fact]
+    public void TrySelectByInternalName_ClearsResidualQueryText_SoTargetRowIsVisible()
+    {
+        // Direct link to a recipe must clear any leftover filter — otherwise the target
+        // row might be filtered out of the visible list and the selection would land
+        // on an invisible row. Reproduces the keyword-chip → direct-recipe-link sequence.
+        var recipe = new Recipe { Key = "recipe_123", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] };
+        var (target, vm, _) = BuildTarget(recipe);
+        vm.QueryText = "IngredientKeywords CONTAINS \"Crystal\"";
+
+        var ok = target.TrySelectByInternalName("MakeSalsa");
+
+        ok.Should().BeTrue();
+        vm.QueryText.Should().BeEmpty(because: "the kind target clears any prior filter before selecting");
+        vm.SelectedRecipe.Should().Be(recipe);
+    }
+
+    [Fact]
     public void TrySelectByInternalName_AfterRefresh_ResolvesFreshInstance()
     {
         // Simulates a background reference-data refresh: refData hands out a NEW

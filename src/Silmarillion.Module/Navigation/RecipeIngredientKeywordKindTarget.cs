@@ -32,6 +32,10 @@ public sealed class RecipeIngredientKeywordKindTarget : IReferenceKindTarget
         // doesn't break the query parser.
         var query = $"IngredientKeywords CONTAINS \"{internalName}\"";
         _diag?.Info("Silmarillion.Nav", $"RecipeIngredientKeyword.TrySelect '{internalName}' → setting QueryText.");
+        // Clear any prior row selection: this navigation expresses a *filter*, not a
+        // specific recipe pick. A residual SelectedRow from earlier in-tab navigation
+        // would otherwise linger as a stale selection on top of the new filtered list.
+        _vm.SelectedRow = null;
         _vm.QueryText = query;
         return true;
     }
