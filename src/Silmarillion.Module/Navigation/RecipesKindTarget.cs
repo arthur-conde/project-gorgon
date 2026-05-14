@@ -36,6 +36,11 @@ public sealed class RecipesKindTarget : IReferenceKindTarget
             return false;
         }
         _diag?.Info("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → found, selecting.");
+        // Clear any residual filter so the target row isn't filtered out of the visible
+        // ListBox. See ItemsKindTarget for the symptom — particularly relevant now that
+        // the item-detail "Used as" keyword chip leaves an IngredientKeywords filter in
+        // the box; a subsequent recipe-link navigation needs to land cleanly.
+        _vm.QueryText = "";
         _vm.SelectedRow = row;
         return true;
     }

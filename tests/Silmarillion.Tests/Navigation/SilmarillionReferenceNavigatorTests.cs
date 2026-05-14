@@ -238,6 +238,37 @@ public sealed class SilmarillionReferenceNavigatorTests
         silmarillionVm.Recipes.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
     }
 
+    [Fact]
+    public void Open_RecipeIngredientKeyword_ClearsResidualSelectedRow()
+    {
+        // Keyword-chip navigation expresses a *filter*, not a specific recipe pick. Any
+        // SelectedRow lingering from earlier in-tab navigation must be cleared so the
+        // new filtered list doesn't render with a stale (and possibly filter-excluded)
+        // selection.
+        var refData = new FakeReferenceData();
+        // Seed a recipe so SelectedRow has something to point at before navigation.
+        refData.AddRecipe(new Recipe { Key = "recipe_1", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] });
+        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+        recipesVm.SelectedRow = recipesVm.AllRecipes.Single();
+        recipesVm.SelectedRow.Should().NotBeNull(); // precondition
+
+        var keywordTarget = new RecipeIngredientKeywordKindTarget(recipesVm);
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            keywordTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        _ = new SilmarillionViewModel(items: null!, recipes: recipesVm, nav, targets);
+
+        nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
+
+        recipesVm.SelectedRow.Should().BeNull(
+            because: "keyword-chip navigation is a filter action; prior row selection must clear");
+        recipesVm.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
+    }
+
     private static IEnumerable<IReferenceKindTarget> NavTargets() => new IReferenceKindTarget[]
     {
         new StubTarget(EntityKind.Item),
@@ -255,12 +286,21 @@ public sealed class SilmarillionReferenceNavigatorTests
 
     private sealed class FakeReferenceData : IReferenceDataService
     {
+        private readonly Dictionary<string, Recipe> _recipes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Recipe> _recipesByInternalName = new(StringComparer.Ordinal);
+
+        public void AddRecipe(Recipe recipe)
+        {
+            _recipes[recipe.Key] = recipe;
+            if (recipe.InternalName is not null) _recipesByInternalName[recipe.InternalName] = recipe;
+        }
+
         public IReadOnlyList<string> Keys => Array.Empty<string>();
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
         public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
-        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByInternalName;
         public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();

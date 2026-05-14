@@ -4,6 +4,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
+using Mithril.Shared.Wpf.Query;
 
 namespace Silmarillion.ViewModels;
 
@@ -23,6 +24,15 @@ namespace Silmarillion.ViewModels;
 /// </summary>
 public sealed partial class ItemsTabViewModel : ObservableObject
 {
+    /// <summary>
+    /// Reflected schema for <see cref="Item"/> exposed to <c>MithrilQueryBox.Schema</c> so the
+    /// query box can offer completion and highlight known column names. <c>QueryFilter</c> on
+    /// the bound ListBox reflects the same surface from the item type at attach time, so the
+    /// suggestions stay in sync with what actually filters.
+    /// </summary>
+    public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
+        ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(Item)));
+
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
@@ -117,13 +127,17 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             return null;
         var used = _refData.KeywordsUsedInRecipeSlots;
         if (used.Count == 0) return null;
+        var displayNames = _refData.KeywordDisplayNames;
         var chips = item.Keywords
             .Where(k => used.Contains(k.Tag))
             .Select(k =>
             {
                 var reference = EntityRef.RecipeIngredientKeyword(k.Tag);
+                var display = displayNames.TryGetValue(k.Tag, out var friendly)
+                    ? friendly
+                    : CamelCaseSplitConverter.Split(k.Tag);
                 return new EntityChipVm(
-                    DisplayName: k.Tag,
+                    DisplayName: display,
                     IconId: 0,
                     Reference: reference,
                     IsNavigable: _navigator.CanOpen(reference));

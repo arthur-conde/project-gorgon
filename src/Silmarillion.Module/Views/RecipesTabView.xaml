@@ -32,8 +32,9 @@
 
         <Border Grid.Row="0" Grid.ColumnSpan="2" Padding="8,6" Background="#FF252525">
             <StackPanel>
-                <wpf:MithrilQueryBox QueryText="{Binding QueryText, Mode=TwoWay}"
-                                     Watermark="bare text, or e.g. Skill = 'Cooking' AND SkillLevelReq &gt;= 30"/>
+                <wpf:MithrilQueryBox Schema="{x:Static vm:RecipesTabViewModel.SchemaSnapshot}"
+                                     QueryText="{Binding QueryText, Mode=TwoWay}"
+                                     Watermark="bare text, or e.g. SkillDisplayName = 'Cooking' AND SkillLevelReq &gt;= 30"/>
                 <TextBlock Text="{Binding QueryError}"
                            Foreground="#FFD96A6A" FontStyle="Italic"
                            FontSize="{DynamicResource AppFontSizeHint}"

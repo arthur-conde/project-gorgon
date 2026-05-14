@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
+using Mithril.Shared.Wpf.Query;
 
 namespace Silmarillion.ViewModels;
 
@@ -19,6 +20,15 @@ namespace Silmarillion.ViewModels;
 /// </summary>
 public sealed partial class RecipesTabViewModel : ObservableObject
 {
+    /// <summary>
+    /// Reflected schema for <see cref="RecipeListRow"/> exposed to <c>MithrilQueryBox.Schema</c>
+    /// so the query box can offer completion and highlight known column names. <c>QueryFilter</c>
+    /// on the bound ListBox reflects the same surface from the item type at attach time, so the
+    /// suggestions stay in sync with what actually filters.
+    /// </summary>
+    public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
+        ColumnBindingHelper.ToSchema(ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow)));
+
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;

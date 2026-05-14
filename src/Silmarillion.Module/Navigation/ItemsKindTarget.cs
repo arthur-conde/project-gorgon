@@ -44,6 +44,11 @@ public sealed class ItemsKindTarget : IReferenceKindTarget
             return false;
         }
         _diag?.Info("Silmarillion.Nav", $"Items.TrySelect '{internalName}' → found, selecting.");
+        // Clear any residual filter so the target item isn't filtered out of the visible
+        // ListBox — without this, a deep-link arriving while the user (or a previous
+        // navigation) had a query in the box would set SelectedItem to a row that's
+        // hidden by the filter, and the selection wouldn't be visible.
+        _vm.QueryText = "";
         _vm.SelectedItem = item;
         return true;
     }

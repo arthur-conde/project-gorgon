@@ -88,10 +88,65 @@ public sealed class ItemsTabViewModelTests
         chips.Single().Reference.Should().Be(EntityRef.RecipeIngredientKeyword("Crystal"));
     }
 
+    [Fact]
+    public void Keyword_chip_uses_KeywordDisplayNames_when_present()
+    {
+        var item = new Item
+        {
+            Id = 99,
+            InternalName = "ShinyArmor",
+            Name = "Shiny Armor",
+            Keywords = [new ItemKeyword("MetalArmor", 0)],
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["ShinyArmor"] = item },
+            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "MetalArmor" },
+            KeywordDisplays = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["MetalArmor"] = "Metal Armor",  // friendly form sourced from a recipe slot
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedAsKeywordIn.Single().DisplayName
+            .Should().Be("Metal Armor", because: "KeywordDisplayNames lookup wins over the raw tag");
+    }
+
+    [Fact]
+    public void Keyword_chip_falls_back_to_CamelCaseSplit_when_no_friendly_display_name()
+    {
+        // Mirrors the GreenCrystal case: no recipe carries a friendly singleton Desc for the keyword,
+        // so the map has no entry. CamelCaseSplit on the raw tag is the visible result.
+        var item = new Item
+        {
+            Id = 99,
+            InternalName = "Tourmaline",
+            Name = "Tourmaline",
+            Keywords = [new ItemKeyword("GreenCrystal", 0)],
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["Tourmaline"] = item },
+            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "GreenCrystal" },
+            // KeywordDisplays intentionally empty — no friendly display name available.
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()));
+
+        vm.SelectedItem = item;
+
+        vm.DetailViewModel!.ConsumedAsKeywordIn.Single().DisplayName
+            .Should().Be("Green Crystal",
+                because: "CamelCaseSplit splits PascalCase tokens at the camel-hump");
+    }
+
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
         public IReadOnlyCollection<string> KeywordsInRecipeSlots { get; init; } = [];
+        public IReadOnlyDictionary<string, string> KeywordDisplays { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
@@ -112,6 +167,7 @@ public sealed class ItemsTabViewModelTests
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
 
         public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => KeywordsInRecipeSlots;
+        public IReadOnlyDictionary<string, string> KeywordDisplayNames => KeywordDisplays;
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

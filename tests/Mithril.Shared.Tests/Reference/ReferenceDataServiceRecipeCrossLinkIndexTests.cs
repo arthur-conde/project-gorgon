@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
@@ -210,6 +211,254 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
 
         svc.KeywordsUsedInRecipeSlots.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_uses_recipes_json_Desc_when_strings_all_absent()
+    {
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_777": {
+                "Name": "R", "InternalName": "R", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Metal Armor", "ItemKeys": ["MetalArmor"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("MetalArmor")
+            .WhoseValue.Should().Be("Metal Armor",
+                because: "the slot is a singleton and its recipes.json Desc is a friendly form of the raw tag");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_prefers_strings_all_over_recipes_json_Desc()
+    {
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"),
+            """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.json"),
+            """
+            {
+              "recipe_888": {
+                "Name": "R", "InternalName": "R", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Main-Hand Weapon", "ItemKeys": ["MainHandWeapon"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "recipes.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "strings_all.json"),
+            """{ "recipe_888_Ingredients_0_Desc": "Main-Hand Item" }""");
+        File.WriteAllText(Path.Combine(_bundledDir, "strings_all.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("MainHandWeapon")
+            .WhoseValue.Should().Be("Main-Hand Item",
+                because: "strings_all takes precedence over recipes.json's Desc — it's the in-game wording");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_omits_keywords_whose_Desc_is_the_raw_tag()
+    {
+        // recipe_9008's GreenCrystal slot has Desc = "GreenCrystal" — same as the raw tag.
+        // The map should NOT contain GreenCrystal so the caller knows to apply a CamelCaseSplit fallback.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_9008": {
+                "Name": "R", "InternalName": "R", "Skill": "Teleportation",
+                "Ingredients": [
+                  { "Desc": "GreenCrystal", "ItemKeys": ["GreenCrystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordsUsedInRecipeSlots.Should().Contain("GreenCrystal");
+        svc.KeywordDisplayNames.Should().NotContainKey("GreenCrystal",
+            because: "a Desc identical to the raw tag adds no value over a CamelCase-split fallback");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_ignores_composite_tuple_slots()
+    {
+        // Composite slots like ["EquipmentSlot:MainHand", "MinTSysPrereq:0"] have Descs that
+        // describe the AND-matched composite ("Main-Hand Item"), not any single keyword tag.
+        // Surfacing the composite's Desc for either tag would be misleading.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_555": {
+                "Name": "R", "InternalName": "R", "Skill": "Augmentation",
+                "Ingredients": [
+                  { "Desc": "Main-Hand Item", "ItemKeys": ["EquipmentSlot:MainHand", "MinTSysPrereq:0"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().NotContainKey("EquipmentSlot:MainHand");
+        svc.KeywordDisplayNames.Should().NotContainKey("MinTSysPrereq:0");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_most_common_Desc_wins_across_singleton_slots()
+    {
+        // Three recipes use CheapMeat as a singleton slot with two distinct friendly Descs.
+        // The dominant Desc ("Cheap Meat", 2 occurrences) should be picked over the variant
+        // ("Cheap Meat (stack of 25)", 1 occurrence) — mirroring the bundled-data shape.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_100": {
+                "Name": "R1", "InternalName": "R1", "Skill": "Cooking",
+                "Ingredients": [
+                  { "Desc": "Cheap Meat (stack of 25)", "ItemKeys": ["CheapMeat"], "StackSize": 25 }
+                ]
+              },
+              "recipe_200": {
+                "Name": "R2", "InternalName": "R2", "Skill": "Cooking",
+                "Ingredients": [
+                  { "Desc": "Cheap Meat", "ItemKeys": ["CheapMeat"], "StackSize": 1 }
+                ]
+              },
+              "recipe_300": {
+                "Name": "R3", "InternalName": "R3", "Skill": "Cooking",
+                "Ingredients": [
+                  { "Desc": "Cheap Meat", "ItemKeys": ["CheapMeat"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().ContainKey("CheapMeat")
+            .WhoseValue.Should().Be("Cheap Meat",
+                because: "the most-common Desc across singleton slots wins (2 vs 1)");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_override_suppresses_lookup_to_force_consumer_fallback()
+    {
+        // The Crystal keyword's singleton slots are labelled by their slot ROLE ("Primary Crystal",
+        // "Auxiliary Crystal") rather than describing what a Crystal is. The override table maps
+        // Crystal to null, which suppresses the slot-walk for this tag — the consumer's
+        // CamelCaseSplit fallback then yields the raw "Crystal" instead of a misleading slot label.
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Boots", "InternalName": "Boots" } }""",
+            recipesJson: """
+            {
+              "recipe_100": {
+                "Name": "R1", "InternalName": "R1", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Primary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              },
+              "recipe_200": {
+                "Name": "R2", "InternalName": "R2", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Auxiliary Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.KeywordDisplayNames.Should().NotContainKey("Crystal",
+            because: "Crystal is in the suppression override — let the consumer's fallback handle it");
+    }
+
+    [Fact]
+    public void KeywordDisplayNames_real_bundled_data_no_unreviewed_divergent_display_names()
+    {
+        // Drift detector. Walks the picked display names for the real bundled recipes.json +
+        // strings_all.json and verifies each shares at least one length-≥3 token with the
+        // camel-case-split keyword tag. When this fails, the slot-Desc resolution has produced
+        // a label that's recipe-context-specific (the "Item to Copy Appearance From" pattern that
+        // bit us on the Equipment keyword). Each new failure means either:
+        //   - The keyword belongs in ReferenceDataService.KeywordDisplayOverrides (null to
+        //     suppress, or a friendly value to pin).
+        //   - The divergence is acceptable game-side wording (e.g. "Trophy Skin or Hide" for
+        //     FlawlessSkin), in which case allowlist it below.
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "recipes.json"))) return;
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: realBundled);
+
+        // Allowlist for cases where the divergent name is the right in-game wording. Audited
+        // 2026-05-14. Re-audit any time this list grows.
+        var allowlistExact = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "FlawlessSkin",     // → "Trophy Skin or Hide" — the dominant in-game labelling.
+            "MainHandAugment",  // → "Weapon Augment" — dominant in-game labelling.
+            "EnergyBow",        // → "Faebow" — two recipes deliberately label by the weapon class.
+            "Edible",           // → "Food or Drink" — both edible-keyword recipes label it this way.
+            "VendorTrash",      // → "Miscellaneous Junk" — natural in-game term.
+            "NecroFuel",        // → "Any Decent-Sized Bone" — natural enumeration.
+        };
+        // Pattern allowlist. Brewing*<Level> tags (e.g. BrewingGarnishA2, BrewingFlowersW6) are
+        // opaque shorthand for kind-keyed slots; the slot Descs enumerate the actual accepted
+        // items ("Beet, Squash, Broccoli, or Carrot") which is the right in-game wording.
+        bool IsAllowed(string tag) =>
+            allowlistExact.Contains(tag) || tag.StartsWith("Brewing", StringComparison.Ordinal);
+
+        // Audit scope: only keywords that could actually surface as a chip — i.e. those present
+        // in some raw item.Keywords list. Synthesized/virtual keywords (e.g. EquipmentSlot:Hands)
+        // appear in recipe slots but never on items directly, so a divergent display name there
+        // doesn't reach the UI.
+        var chipSurfacingKeywords = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in svc.Items.Values)
+        {
+            if (item.Keywords is null) continue;
+            foreach (var kw in item.Keywords)
+                chipSurfacingKeywords.Add(kw.Tag);
+        }
+
+        var tokenSplitter = new Regex("[A-Z][a-z0-9]*|[a-z0-9]+", RegexOptions.Compiled);
+        var failures = new List<string>();
+        foreach (var (tag, display) in svc.KeywordDisplayNames)
+        {
+            if (!chipSurfacingKeywords.Contains(tag)) continue;
+            if (IsAllowed(tag)) continue;
+
+            HashSet<string> Tokens(string s) =>
+                tokenSplitter.Matches(s).Select(m => m.Value.ToLowerInvariant())
+                    .Where(t => t.Length >= 3)
+                    .ToHashSet(StringComparer.Ordinal);
+
+            var tagTokens = Tokens(tag);
+            var displayTokens = Tokens(display);
+            if (tagTokens.Count == 0 || displayTokens.Count == 0) continue;
+            if (!tagTokens.Overlaps(displayTokens))
+                failures.Add($"'{tag}' → '{display}' (no shared length-≥3 token)");
+        }
+
+        if (failures.Count > 0)
+        {
+            var lines = string.Join(Environment.NewLine, failures.Select(f => "  • " + f));
+            throw new Xunit.Sdk.XunitException(
+                $"Keyword display names diverge from their tags without a corresponding override:{Environment.NewLine}{lines}{Environment.NewLine}" +
+                "Each entry is a chip-surfacing keyword whose resolved Desc shares no length-≥3 token with the camel-case-split tag. " +
+                "Add to ReferenceDataService.KeywordDisplayOverrides (null to suppress, or pin a value), " +
+                "or extend this test's allowlist if the wording is intentional.");
+        }
     }
 
     [Fact]
