@@ -595,13 +595,17 @@
 
     <!-- Themed TabItem with optional notification badge. Set
          c:TabBadge.Count="<int>" on a TabItem to render a small accent pill
-         next to the header; the pill is hidden when Count <= 0. Apply via
-         <TabControl.ItemContainerStyle> or per-item Style. -->
+         next to the header; the pill is hidden when Count <= 0.
+
+         Applied implicitly app-wide via the unkeyed style below. The keyed
+         style is kept for callers that bind ItemContainerStyle explicitly
+         (Arwen/Elrond) or want to base derived styles on it. -->
     <Style x:Key="MithrilTabItemStyle" TargetType="TabItem">
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
         <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeMedium}"/>
         <Setter Property="Padding"    Value="14,6"/>
+        <Setter Property="Margin"    Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
@@ -634,6 +638,32 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Implicit app-wide TabItem style. Merged at App.Resources via
+         Mithril.Shared.Wpf/Resources.xaml, so any TabControl in the app
+         inherits the Mithril look without per-module boilerplate. Modules
+         that want a different look can still scope a local
+         TabControl.Resources style (see IngredientSourcesWindow).
+
+         Used by Bilbo and Silmarillion which still hard-code their TabItems
+         in XAML. Modules that bind TabControl.ItemsSource to a collection of
+         ModuleTab (Samwise/Smaug/Palantir/Arwen/Gandalf) set
+         ItemContainerStyle="{StaticResource MithrilTabItemStyle}" explicitly,
+         which is the right hook for WPF-generated containers. -->
+    <Style TargetType="TabItem" BasedOn="{StaticResource MithrilTabItemStyle}"/>
+
+    <!-- Default DataTemplate for ModuleTab tab-strip headers. Binds Font* and
+         Foreground via RelativeSource to the ancestor TabItem so the header
+         text follows MithrilTabItemStyle (and its IsSelected trigger) rather
+         than picking up the implicit TextBlock style's AppFontSize/TextPrimary,
+         which would otherwise pin every tab header to 12pt and full-bright
+         regardless of selection. -->
+    <DataTemplate x:Key="ModuleTabHeaderTemplate">
+        <TextBlock Text="{Binding Header}"
+                   FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=TabItem}}"
+                   FontFamily="{Binding FontFamily, RelativeSource={RelativeSource AncestorType=TabItem}}"
+                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
+    </DataTemplate>
 
     <!-- ═══════════════════ MithrilQueryBox ═══════════════════ -->
 

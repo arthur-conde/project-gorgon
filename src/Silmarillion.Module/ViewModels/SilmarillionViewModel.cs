@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 
 namespace Silmarillion.ViewModels;
 
@@ -30,6 +31,11 @@ public sealed partial class SilmarillionViewModel : ObservableObject
     {
         Items = items;
         Recipes = recipes;
+        Tabs = new[]
+        {
+            new ModuleTab("Items",   items),
+            new ModuleTab("Recipes", recipes),
+        };
         _navigator = navigator;
         _diag = diag;
 
@@ -54,6 +60,9 @@ public sealed partial class SilmarillionViewModel : ObservableObject
 
     public ItemsTabViewModel Items { get; }
     public RecipesTabViewModel Recipes { get; }
+
+    /// <summary>The tab descriptors bound to <c>TabControl.ItemsSource</c>.</summary>
+    public IReadOnlyList<ModuleTab> Tabs { get; }
 
     /// <summary>0 = Items, 1 = Recipes. Two-way bound to the TabControl in the view.</summary>
     [ObservableProperty]

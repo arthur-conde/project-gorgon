@@ -53,16 +53,10 @@ public sealed class SmaugModule : IMithrilModule
         services.AddSingleton<SellPricesViewModel>();
         services.AddSingleton<CalibrationViewModel>();
 
-        services.AddSingleton<SmaugView>(sp =>
+        services.AddSingleton<SmaugShellViewModel>();
+        services.AddSingleton<SmaugView>(sp => new SmaugView
         {
-            var view = new SmaugView();
-            view.AddTab("Vendor Shop", new VendorShopTab { DataContext = sp.GetRequiredService<VendorShopViewModel>() });
-            view.AddTab("Storage Sellback", new StorageSellbackTab { DataContext = sp.GetRequiredService<StorageSellbackViewModel>() });
-            view.AddTab("Sell Planner", new SellPlannerTab { DataContext = sp.GetRequiredService<SellPlannerViewModel>() });
-            view.AddTab("Vendor Catalog", new VendorCatalogTab { DataContext = sp.GetRequiredService<VendorCatalogViewModel>() });
-            view.AddTab("Sell Prices", new SellPricesTab { DataContext = sp.GetRequiredService<SellPricesViewModel>() });
-            view.AddTab("Calibration", new CalibrationTab { DataContext = sp.GetRequiredService<CalibrationViewModel>() });
-            return view;
+            DataContext = sp.GetRequiredService<SmaugShellViewModel>(),
         });
         services.AddSingleton<SmaugSettingsView>(sp => new SmaugSettingsView
         {

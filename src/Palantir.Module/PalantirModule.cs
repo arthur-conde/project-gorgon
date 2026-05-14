@@ -22,26 +22,16 @@ public sealed class PalantirModule : IMithrilModule
     public void Register(IServiceCollection services)
     {
         services.AddSingleton<LiveInventoryViewModel>();
-        services.AddSingleton<LiveInventoryView>(sp => new LiveInventoryView
-        {
-            DataContext = sp.GetRequiredService<LiveInventoryViewModel>(),
-        });
 
         services.AddSingleton<PalantirAttentionSource>();
         services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<PalantirAttentionSource>());
 
         services.AddSingleton<NotificationTesterViewModel>();
-        services.AddSingleton<NotificationTesterView>(sp => new NotificationTesterView
-        {
-            DataContext = sp.GetRequiredService<NotificationTesterViewModel>(),
-        });
 
-        services.AddSingleton<PalantirView>(sp =>
+        services.AddSingleton<PalantirShellViewModel>();
+        services.AddSingleton<PalantirView>(sp => new PalantirView
         {
-            var view = new PalantirView();
-            view.AddTab("Live Inventory", sp.GetRequiredService<LiveInventoryView>());
-            view.AddTab("Notification Tester", sp.GetRequiredService<NotificationTesterView>());
-            return view;
+            DataContext = sp.GetRequiredService<PalantirShellViewModel>(),
         });
     }
 }

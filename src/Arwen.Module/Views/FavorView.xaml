@@ -1,10 +1,14 @@
 <UserControl x:Class="Arwen.Views.FavorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:vm="clr-namespace:Arwen.ViewModels"
+             xmlns:local="clr-namespace:Arwen.Views"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:FavorShellViewModel}"
              Background="#FF1A1A1A">
 
     <UserControl.Resources>
@@ -12,11 +16,35 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate DataType="{x:Type vm:FavorDashboardViewModel}">
+                <local:NpcDashboardTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:FavorCalculatorViewModel}">
+                <local:FavorCalculatorTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:GiftScannerViewModel}">
+                <local:GiftScannerTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:ItemLookupViewModel}">
+                <local:ItemLookupTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:StorageGiftsViewModel}">
+                <local:StorageGiftsTab/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:CalibrationViewModel}">
+                <local:CalibrationTab/>
+            </DataTemplate>
+            <!-- Editor and Calibration share VM state but render different views;
+                 the wrapper distinguishes them by type. Unwrap to the inner VM
+                 so the existing ObservationsEditorTab bindings keep working. -->
+            <DataTemplate DataType="{x:Type vm:ObservationsEditorViewModel}">
+                <local:ObservationsEditorTab DataContext="{Binding Calibration}"/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <!-- Header -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Arwen.Module;component/Resources/arwen.ico"
@@ -26,7 +54,20 @@
             </StackPanel>
         </DockPanel>
 
-        <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0" Padding="0"
-                    ItemContainerStyle="{StaticResource MithrilTabItemStyle}"/>
+        <TabControl ItemsSource="{Binding Tabs}"
+                    SelectedItem="{Binding SelectedTab, Mode=TwoWay}"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    ItemTemplate="{StaticResource ModuleTabHeaderTemplate}">
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="TabItem" BasedOn="{StaticResource MithrilTabItemStyle}">
+                    <Setter Property="c:TabBadge.Count" Value="{Binding BadgeCount}"/>
+                </Style>
+            </TabControl.ItemContainerStyle>
+            <TabControl.ContentTemplate>
+                <DataTemplate>
+                    <ContentControl Content="{Binding Content}"/>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
+        </TabControl>
     </DockPanel>
 </UserControl>
