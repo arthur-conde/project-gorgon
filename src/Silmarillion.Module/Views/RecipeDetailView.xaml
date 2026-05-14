@@ -48,8 +48,8 @@
                            FontSize="{DynamicResource AppFontSizeHint}"/>
             </Border>
 
-            <!-- Description -->
-            <TextBlock Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
+            <!-- Description (FormattedText parses any inline <i>/<b> markup). -->
+            <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
                        FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
                        MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
                        Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>

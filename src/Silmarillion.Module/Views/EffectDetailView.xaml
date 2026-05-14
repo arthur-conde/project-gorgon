@@ -15,6 +15,25 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Conditional sub-table rows (DoT layered by ability + tooltip special-value). -->
+            <DataTemplate DataType="{x:Type vm:EffectConditionalDotRow}">
+                <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:EffectConditionalSpecialValueRow}">
+                <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:EffectProcsFromAbilityKeywordRow}">
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
+                    <TextBlock Text="{Binding Tag}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeSmall}"/>
+                </Border>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -49,6 +68,154 @@
                            FontSize="{DynamicResource AppFontSizeHint}"
                            TextWrapping="Wrap" Margin="0,0,0,10"
                            Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                <!-- ─── 3. Metadata strip: duration / stacking / display mode ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding DurationLabel, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding StackingType, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding DisplayMode, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,0,0,2"
+                               Visibility="{Binding DurationLabel, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="Duration: " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding DurationLabel, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,0,0,2"
+                               Visibility="{Binding StackingType, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="Stacking type: " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding StackingType, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,0,0,2"
+                               Visibility="{Binding DisplayMode, Converter={StaticResource NullOrEmptyToVis}}">
+                        <Run Text="Display mode: " Foreground="#88FFFFFF"/>
+                        <Run Text="{Binding DisplayMode, Mode=OneWay}"/>
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- ─── 4. Keywords ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding KeywordChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Keywords" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding KeywordChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ─── 5. Conditional rules (DoTs + Special values) ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding HasConditionalRuleRows, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Conditional rules" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <StackPanel Margin="0,0,0,4"
+                                Visibility="{Binding ConditionalDotRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="DoT effects layered on by abilities" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ConditionalDotRows}"/>
+                    </StackPanel>
+                    <StackPanel
+                                Visibility="{Binding ConditionalSpecialValueRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Tooltip values surfaced by abilities" Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ConditionalSpecialValueRows}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ─── 6. Stacks with ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding StacksWithChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Stacks with" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding StacksWithChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ─── 7. Required by abilities ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RequiredByAbilityChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Required by abilities" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding RequiredByAbilityChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ContentControl Content="{Binding RequiredByAbilitiesOverflowPill}"
+                                    Margin="0,4,0,0"
+                                    Visibility="{Binding RequiredByAbilitiesOverflowPill, Converter={StaticResource NullOrEmptyToVis}}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
+                </StackPanel>
+
+                <!-- ─── 8. Procs from abilities with keyword ─── -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding ProcsFromAbilityKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Procs from abilities with keyword" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding ProcsFromAbilityKeywordRows}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ─── 9. Spew text — combat float text shown on effect application/refresh ─── -->
+                <TextBlock Margin="0,0,0,10"
+                           Foreground="#88FFFFFF" FontStyle="Italic"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding SpewText, Converter={StaticResource NullOrEmptyToVis}}">
+                    <Run Text="Combat float text: "/>
+                    <Run Text="{Binding SpewText, Mode=OneWay}"/>
+                </TextBlock>
             </StackPanel>
         </DockPanel>
     </Border>

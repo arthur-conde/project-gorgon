@@ -35,6 +35,24 @@
                 tab pre-filtered to recipes using this item. Default 12. Set to 0 to always
                 collapse; raise to 100 to show everything.
             </TextBlock>
+
+            <!-- Effect detail · 'Required by abilities' chip cap -->
+            <TextBlock Text="Effect detail · 'Required by abilities' chips" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <DockPanel Margin="0,0,0,4">
+                <TextBlock DockPanel.Dock="Left" Text="Show at most" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="60"
+                           Text="{Binding RequiredByAbilitiesChipCap, StringFormat={}{0} chips}"/>
+                <Slider Minimum="0" Maximum="100" TickFrequency="4" IsSnapToTickEnabled="True"
+                        Value="{Binding RequiredByAbilitiesChipCap, Mode=TwoWay}"
+                        VerticalAlignment="Center" Margin="0,0,8,0"/>
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,24">
+                Effects with broad keywords (e.g. &quot;Buff&quot;) appear on hundreds of abilities;
+                rendering every one as a chip makes the section unscannable. Above the cap, the
+                remainder collapses into a single &quot;+N more →&quot; pill that opens the
+                Abilities tab pre-filtered to abilities requiring this effect keyword. Default
+                12. Set to 0 to always collapse; raise to 100 to show everything.
+            </TextBlock>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

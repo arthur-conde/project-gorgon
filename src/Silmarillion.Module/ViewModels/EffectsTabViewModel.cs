@@ -39,13 +39,19 @@ public sealed partial class EffectsTabViewModel : ObservableObject, ITabViewMode
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
     private readonly IEntityNameResolver _nameResolver;
+    private readonly Silmarillion.SilmarillionSettings _settings;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
-    public EffectsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver)
+    public EffectsTabViewModel(
+        IReferenceDataService refData,
+        IReferenceNavigator navigator,
+        IEntityNameResolver nameResolver,
+        Silmarillion.SilmarillionSettings settings)
     {
         _refData = refData;
         _navigator = navigator;
         _nameResolver = nameResolver;
+        _settings = settings;
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         _allEffects = BuildAllEffects(refData);
         refData.FileUpdated += OnFileUpdated;
@@ -135,5 +141,6 @@ public sealed partial class EffectsTabViewModel : ObservableObject, ITabViewMode
             _refData,
             _navigator,
             _nameResolver,
+            _settings,
             _openEntityCommand);
 }
