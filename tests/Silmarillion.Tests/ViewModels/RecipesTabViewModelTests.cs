@@ -368,7 +368,8 @@ public sealed class RecipesTabViewModelTests
         vm.DetailViewModel!.Sources.Should().NotBeNull();
         vm.DetailViewModel.Sources!.Should().ContainSingle();
         var chip = vm.DetailViewModel.Sources![0];
-        chip.DisplayName.Should().Be("Training: NPC_Marna");
+        // No NPC POCO seeded → NpcNameResolver strips the "NPC_" prefix.
+        chip.DisplayName.Should().Be("Training: Marna");
         chip.EntityReference.Should().Be(EntityRef.Npc("NPC_Marna"));
         chip.IsNavigable.Should().BeFalse();
     }
@@ -409,7 +410,7 @@ public sealed class RecipesTabViewModelTests
         var sources = vm.DetailViewModel!.Sources!;
         sources.Should().HaveCount(3);
 
-        sources[0].DisplayName.Should().Be("Training: NPC_Fritz");
+        sources[0].DisplayName.Should().Be("Training: Fritz");
         sources[0].EntityReference.Should().Be(EntityRef.Npc("NPC_Fritz"));
         sources[0].IsNavigable.Should().BeFalse();
 

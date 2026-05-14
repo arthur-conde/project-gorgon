@@ -236,6 +236,136 @@ public sealed class ItemsTabViewModelTests
             .ToList();
 
     [Fact]
+    public void SourceChips_NpcVendorSource_AttachesNpcEntityRef_Navigable_WhenNpcKindRegistered()
+    {
+        // Symmetric to RecipesTabViewModel.SourceChips: an Item's NPC vendor source must carry an
+        // EntityRef.Npc(...) and be navigable once the NPCs kind target is registered (#241). Pre-fix,
+        // ItemsTabViewModel hardcoded EntityReference: null / IsNavigable: false on every source, so
+        // the chip stayed plain-text even after the NPCs tab shipped.
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["Apple"] = apple },
+            ItemSourcesByName =
+            {
+                ["Apple"] = new[]
+                {
+                    new ItemSource("Vendor", "NPC_Joeh", null),
+                },
+            },
+        };
+        // Navigator with the Npc kind registered — matches the post-#241 ship state.
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+
+        vm.SelectedItem = apple;
+
+        vm.DetailViewModel!.Sources.Should().ContainSingle();
+        var chip = vm.DetailViewModel.Sources![0];
+        // No NPC POCO seeded → NpcNameResolver falls back to stripping the "NPC_" prefix
+        // (envelope-key heuristic), so "NPC_Joeh" reads as "Joeh" on the chip.
+        chip.DisplayName.Should().Be("Vendor: Joeh");
+        chip.EntityReference.Should().Be(EntityRef.Npc("NPC_Joeh"));
+        chip.IsNavigable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SourceChips_NpcVendorSource_ResolvesNpcFriendlyName_WhenNpcPocoIsRegistered()
+    {
+        // When the NPC POCO ships a Name (the common case for the named cast — Joeh, Marna,
+        // Velkort), the chip uses Name verbatim rather than the envelope key. Mirrors what
+        // the NPCs-tab master list does.
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["Apple"] = apple },
+            ItemSourcesByName =
+            {
+                ["Apple"] = new[] { new ItemSource("Vendor", "NPC_Joeh", null) },
+            },
+            NpcsByKey =
+            {
+                ["NPC_Joeh"] = new Mithril.Reference.Models.Npcs.Npc { Name = "Joeh of Serbule" },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+
+        vm.SelectedItem = apple;
+
+        vm.DetailViewModel!.Sources!.Single().DisplayName.Should().Be("Vendor: Joeh of Serbule");
+    }
+
+    [Fact]
+    public void SourceChips_NonNpcSource_LeavesEntityReferenceNull_AndChipNotNavigable()
+    {
+        // Source kinds without an Npc field (Monster drop, Recipe, Quest, Skill, …) leave the
+        // chip's EntityReference null so the UI renders them as plain text in a transparent frame.
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["Apple"] = apple },
+            ItemSourcesByName =
+            {
+                ["Apple"] = new[]
+                {
+                    new ItemSource("Monster", null, "Hippo"),
+                },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }));
+
+        vm.SelectedItem = apple;
+
+        var chip = vm.DetailViewModel!.Sources!.Single();
+        chip.EntityReference.Should().BeNull();
+        chip.IsNavigable.Should().BeFalse();
+    }
+
+    private sealed class StubKindTarget : IReferenceKindTarget
+    {
+        public StubKindTarget(EntityKind kind) => Kind = kind;
+        public EntityKind Kind { get; }
+        public int TabIndex => 0;
+        public bool TrySelectByInternalName(string internalName) => true;
+        public bool TryOpenInWindow() => false;
+    }
+
+    // Slim stub with ItemSources + NpcsByInternalName support — the main StubReferenceData omits both.
+    private sealed class ItemSourceStub : IReferenceDataService
+    {
+        public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<ItemSource>> ItemSourcesByName { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Mithril.Reference.Models.Npcs.Npc> NpcsByKey { get; } = new(StringComparer.Ordinal);
+
+        public IReadOnlyList<string> Keys { get; } = [];
+        public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => ItemsByName;
+        public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Npcs.Npc> NpcsByInternalName => NpcsByKey;
+        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => ItemSourcesByName;
+        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
+        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
+
+        public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated { add { } remove { } }
+    }
+
+    [Fact]
     public void Keyword_chip_falls_back_to_CamelCaseSplit_when_no_friendly_display_name()
     {
         // Mirrors the GreenCrystal case: no recipe carries a friendly singleton Desc for the keyword,

@@ -244,16 +244,26 @@ public sealed partial class ItemsTabViewModel : ObservableObject
         {
             return null;
         }
+        // NPC-anchored source kinds (Vendor / Barter / NpcGift / HangOut / Training) carry an
+        // <see cref="EntityRef.Npc"/> so they're navigable the moment the NPCs kind target ships
+        // (#241). Other source kinds (Monster drop, Recipe, Quest, Skill, …) leave the reference
+        // null and render as plain-text in the source chip. Mirrors RecipesTabViewModel.BuildSourceChips.
         return sources
-            .Select(s => new ItemSourceChipVm(
-                DisplayName: FormatSourceDisplayName(s),
-                Detail: s.Context,
-                IconId: null,
-                EntityReference: null,
-                IsNavigable: false))
+            .Select(s =>
+            {
+                var reference = string.IsNullOrEmpty(s.Npc) ? null : EntityRef.Npc(s.Npc!);
+                return new ItemSourceChipVm(
+                    DisplayName: FormatSourceDisplayName(s),
+                    Detail: s.Context,
+                    IconId: null,
+                    EntityReference: reference,
+                    IsNavigable: reference is not null && _navigator.CanOpen(reference));
+            })
             .ToList();
     }
 
-    private static string FormatSourceDisplayName(ItemSource s) =>
-        string.IsNullOrEmpty(s.Npc) ? s.Type : $"{s.Type}: {s.Npc}";
+    private string FormatSourceDisplayName(ItemSource s) =>
+        string.IsNullOrEmpty(s.Npc)
+            ? s.Type
+            : $"{s.Type}: {NpcNameResolver.Resolve(_refData, s.Npc!)}";
 }

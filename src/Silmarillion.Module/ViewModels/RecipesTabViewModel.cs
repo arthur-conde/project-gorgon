@@ -258,6 +258,8 @@ public sealed partial class RecipesTabViewModel : ObservableObject
             .ToList();
     }
 
-    private static string FormatSourceDisplayName(RecipeSource s) =>
-        string.IsNullOrEmpty(s.Npc) ? s.Type : $"{s.Type}: {s.Npc}";
+    private string FormatSourceDisplayName(RecipeSource s) =>
+        string.IsNullOrEmpty(s.Npc)
+            ? s.Type
+            : $"{s.Type}: {NpcNameResolver.Resolve(_refData, s.Npc!)}";
 }
