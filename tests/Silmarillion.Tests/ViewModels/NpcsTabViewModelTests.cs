@@ -354,9 +354,11 @@ public sealed class NpcsTabViewModelTests
         vm.SelectedRow = vm.AllNpcs.Single();
 
         var training = vm.DetailViewModel!.Services.Single();
-        training.Details.Should().Equal(
+        training.Details.Select(d => d.Text).Should().Equal(
             "Skills: Unarmed, Lore",
             "Unlocks at higher favor: Neutral, Comfortable, Friends");
+        training.Details.Should().AllSatisfy(d => d.Chips.Should().BeEmpty(
+            because: "Training rows are text-only; only Store cap-increase rows surface chips."));
     }
 
     [Fact]
@@ -380,12 +382,81 @@ public sealed class NpcsTabViewModelTests
         vm.SelectedRow = vm.AllNpcs.Single();
 
         vm.DetailViewModel!.Services.Single().Details
-            .Should().Equal("Skills: Unarmed");
+            .Select(d => d.Text).Should().Equal("Skills: Unarmed");
     }
+
+    [Fact]
+    public void DetailViewModel_TrainingService_SkillsResolveToFriendlyDisplayName_FromSkillsJson()
+    {
+        // Bug from #292: training.Skills carries raw skills.json keys ("NonfictionWriting"),
+        // which were being passed straight to string.Join. The resolver should map PascalCase
+        // keys to their SkillEntry.DisplayName ("Non-Fiction Writing"). Skills whose key already
+        // matches their display name (Toolcrafting, Carpentry) round-trip unchanged.
+        var npc = new Npc
+        {
+            Name = "Hulon",
+            Services = new NpcServicePoco[]
+            {
+                new NpcTrainingServicePoco
+                {
+                    Type = "Training",
+                    Skills = ["Toolcrafting", "NonfictionWriting", "Carpentry"],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Hulon"] = npc },
+            SkillsByKey =
+            {
+                ["Toolcrafting"] = MakeSkill("Toolcrafting", "Toolcrafting"),
+                ["NonfictionWriting"] = MakeSkill("NonfictionWriting", "Non-Fiction Writing"),
+                ["Carpentry"] = MakeSkill("Carpentry", "Carpentry"),
+            },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.Services.Single().Details
+            .Select(d => d.Text).Should().Equal("Skills: Toolcrafting, Non-Fiction Writing, Carpentry");
+    }
+
+    [Fact]
+    public void DetailViewModel_TrainingService_UnknownSkillKey_FallsThroughToRawKey()
+    {
+        // Defensive — if a Training service references a skill that isn't in skills.json
+        // (stale or out-of-sync data), surface the raw key rather than crash or render blank.
+        var npc = new Npc
+        {
+            Name = "Trainer",
+            Services = new NpcServicePoco[]
+            {
+                new NpcTrainingServicePoco { Type = "Training", Skills = ["UnknownSkillFromTheFuture"] },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Trainer"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.Services.Single().Details
+            .Select(d => d.Text).Should().Equal("Skills: UnknownSkillFromTheFuture");
+    }
+
+    private static SkillEntry MakeSkill(string key, string displayName) =>
+        new(key, displayName, Id: 0, Combat: false, XpTable: "", MaxBonusLevels: 0,
+            Parents: Array.Empty<string>(), Rewards: new Dictionary<string, SkillRewardEntry>());
 
     [Fact]
     public void DetailViewModel_ServiceDetails_StoreCapIncreases_FormattedWithTierGoldKeywords()
     {
+        // Prose stays the tier+gold form; keywords move to a per-line chip strip (covered by
+        // the dedicated chip test below). The parenthesised "(Armor, Weapon)" tail is gone now
+        // that chips replace it.
         var npc = new Npc
         {
             Name = "Joeh",
@@ -416,9 +487,90 @@ public sealed class NpcsTabViewModelTests
         store.Type.Should().Be("Store");
         store.MinFavorTier.Should().Be("Neutral");
         store.Details.Should().HaveCount(3);
-        store.Details[0].Should().Be("Despised → 5,000g (Armor, Weapon)");
-        store.Details[1].Should().Be("Comfortable → 50,000g");
-        store.Details[2].Should().Be("Friends → 200,000g");
+        store.Details[0].Text.Should().Be("Despised → 5,000g");
+        store.Details[1].Text.Should().Be("Comfortable → 50,000g");
+        store.Details[2].Text.Should().Be("Friends → 200,000g");
+    }
+
+    [Fact]
+    public void DetailViewModel_ServiceDetails_StoreCapKeywords_EmitChips_Navigable_WhenItemKeywordKindRegistered()
+    {
+        // Bug from #292: the per-tier keyword tuple should be navigable chips that flip to the
+        // Items tab pre-filtered, mirroring the recipe-detail "Used as" pattern from #270.
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new NpcStoreServicePoco
+                {
+                    Type = "Store",
+                    CapIncreases =
+                    [
+                        "Despised:10000:Food,CookingIngredient,AlchemyIngredient,Potion",
+                        "Comfortable:50000:",
+                    ],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var store = vm.DetailViewModel!.Services.Single();
+        store.Details.Should().HaveCount(2);
+
+        var firstLine = store.Details[0];
+        firstLine.Chips.Should().HaveCount(4);
+        firstLine.Chips.Select(c => c.Reference).Should().Equal(
+            EntityRef.ItemKeyword("Food"),
+            EntityRef.ItemKeyword("CookingIngredient"),
+            EntityRef.ItemKeyword("AlchemyIngredient"),
+            EntityRef.ItemKeyword("Potion"));
+        firstLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeTrue(
+            because: "ItemKeyword kind is registered, so each cap-keyword chip should route to the Items tab."));
+        // Friendly chip labels fall back to a CamelCase split when KeywordDisplayNames has no
+        // entry — mirrors the existing item-detail "Used as" chip behaviour from PR #267.
+        firstLine.Chips.Select(c => c.DisplayName).Should().Equal(
+            "Food", "Cooking Ingredient", "Alchemy Ingredient", "Potion");
+
+        // The empty-keyword row has no chips.
+        store.Details[1].Chips.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DetailViewModel_ServiceDetails_StoreCapKeywords_NonNavigable_WhenItemKeywordKindNotRegistered()
+    {
+        // Mirror image: in a context where ItemKeyword routing isn't wired (e.g. tests, or a
+        // future host that swaps out the navigator), chips should still render but degrade to
+        // plain-text via IsNavigable=false. Validates EntityChipVm's graceful-degradation contract.
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new NpcStoreServicePoco
+                {
+                    Type = "Store",
+                    CapIncreases = ["Despised:10000:Food,Potion"],
+                },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = npc },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var chips = vm.DetailViewModel!.Services.Single().Details[0].Chips;
+        chips.Should().HaveCount(2);
+        chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeFalse());
     }
 
     [Fact]
@@ -472,6 +624,7 @@ public sealed class NpcsTabViewModelTests
         public Dictionary<string, IReadOnlyList<Ability>> AbilitiesTaughtByNpcMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> QuestsByGiverNpcMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, SkillEntry> SkillsByKey { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -479,7 +632,7 @@ public sealed class NpcsTabViewModelTests
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills => SkillsByKey;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, Npc> NpcsByInternalName => NpcsByKey;

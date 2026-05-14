@@ -22,6 +22,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Npc => ResolveNpc(reference.InternalName),
         EntityKind.Quest => ResolveQuest(reference.InternalName),
         EntityKind.Ability => ResolveAbility(reference.InternalName),
+        EntityKind.Skill => ResolveSkill(reference.InternalName),
         _ => reference.InternalName,
     };
 
@@ -58,6 +59,18 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         _refData.AbilitiesByInternalName.TryGetValue(internalName, out var ability) && !string.IsNullOrEmpty(ability.Name)
             ? ability.Name!
             : internalName;
+
+    /// <summary>
+    /// Skill keys are ASCII identifier-safe (matches <c>[A-Za-z0-9_]+</c>) and frequently
+    /// PascalCase (<c>"NonfictionWriting"</c>, <c>"BattleChemistry"</c>). The slim
+    /// <see cref="SkillEntry"/> projection carries the human-readable
+    /// <see cref="SkillEntry.DisplayName"/>; fall back to the raw key when no entry is
+    /// registered (defensive — every PG skill ships with a name).
+    /// </summary>
+    private string ResolveSkill(string skillKey) =>
+        _refData.Skills.TryGetValue(skillKey, out var skill) && !string.IsNullOrEmpty(skill.DisplayName)
+            ? skill.DisplayName
+            : skillKey;
 
     private static string StripNpcPrefix(string internalName) =>
         internalName.StartsWith("NPC_", StringComparison.Ordinal)

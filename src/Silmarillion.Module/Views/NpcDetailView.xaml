@@ -78,9 +78,25 @@
                                                       Visibility="{Binding Details.Count, Converter={StaticResource PositiveIntToVis}}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                                               FontSize="{DynamicResource AppFontSizeHint}"
-                                                               TextWrapping="Wrap" Margin="0,0,0,1"/>
+                                                    <StackPanel Margin="0,0,0,1">
+                                                        <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
+                                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                                   TextWrapping="Wrap"/>
+                                                        <!-- Per-line chip strip — Store cap rows surface their keyword tuple
+                                                             as ItemKeyword chips (filter the Items tab on click). Hidden when
+                                                             the line carries no chips (every non-Store row). -->
+                                                        <ItemsControl ItemsSource="{Binding Chips}" Margin="0,2,0,0"
+                                                                      Visibility="{Binding Chips.Count, Converter={StaticResource PositiveIntToVis}}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>

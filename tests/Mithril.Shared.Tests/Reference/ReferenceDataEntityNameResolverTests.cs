@@ -229,6 +229,51 @@ public sealed class ReferenceDataEntityNameResolverTests
         resolver.Resolve(EntityRef.Effect("FrostShard")).Should().Be("FrostShard");
     }
 
+    [Fact]
+    public void Skill_ResolvesDisplayName_WhenSkillEntryPresent()
+    {
+        // skills.json keys are PascalCase identifiers ("NonfictionWriting"); the SkillEntry
+        // carries the human-readable form ("Non-Fiction Writing") that the NPC trainer view
+        // and other surfaces need.
+        var refData = new ResolverStub
+        {
+            SkillsByKey =
+            {
+                ["NonfictionWriting"] = MakeSkill("NonfictionWriting", "Non-Fiction Writing"),
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Skill("NonfictionWriting")).Should().Be("Non-Fiction Writing");
+    }
+
+    [Fact]
+    public void Skill_FallsBackToKey_WhenSkillEntryAbsent()
+    {
+        var resolver = new ReferenceDataEntityNameResolver(new ResolverStub());
+
+        resolver.Resolve(EntityRef.Skill("UnknownSkill")).Should().Be("UnknownSkill");
+    }
+
+    [Fact]
+    public void Skill_FallsBackToKey_WhenDisplayNameIsEmpty()
+    {
+        var refData = new ResolverStub
+        {
+            SkillsByKey =
+            {
+                ["Nameless"] = MakeSkill("Nameless", ""),
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Skill("Nameless")).Should().Be("Nameless");
+    }
+
+    private static SkillEntry MakeSkill(string key, string displayName) =>
+        new(key, displayName, Id: 0, Combat: false, XpTable: "", MaxBonusLevels: 0,
+            Parents: Array.Empty<string>(), Rewards: new Dictionary<string, SkillRewardEntry>());
+
     private sealed class ResolverStub : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByInternalNameMap { get; } = new(StringComparer.Ordinal);
@@ -236,6 +281,7 @@ public sealed class ReferenceDataEntityNameResolverTests
         public Dictionary<string, Npc> NpcsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Quest> QuestsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Ability> AbilitiesByInternalNameMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, SkillEntry> SkillsByKey { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -243,7 +289,7 @@ public sealed class ReferenceDataEntityNameResolverTests
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => RecipesByInternalNameMap;
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills => SkillsByKey;
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, Npc> NpcsByInternalName => NpcsByInternalNameMap;

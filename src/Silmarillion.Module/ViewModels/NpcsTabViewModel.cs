@@ -159,7 +159,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
             _openEntityCommand);
     }
 
-    private static IReadOnlyList<NpcServiceRow> BuildServiceRows(Npc npc)
+    private IReadOnlyList<NpcServiceRow> BuildServiceRows(Npc npc)
     {
         if (npc.Services is null || npc.Services.Count == 0) return [];
         return npc.Services
@@ -178,13 +178,14 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     /// Flatten each NpcService subclass to display-relevant payload lines. Lines are pre-labeled
     /// per sub-list (e.g. <c>"Skills: Unarmed, Lore"</c> / <c>"Unlocks at higher favor: Neutral,
     /// Comfortable, ..."</c>) so the detail view can render them in a single linear strip and the
-    /// viewer can tell skill names apart from favor-tier unlocks. Plain strings — richer per-row
-    /// chips are a #229-style polish follow-up.
+    /// viewer can tell skill names apart from favor-tier unlocks. Store cap-increase rows carry
+    /// a chip strip on top of the prose (per-tier keyword tuple as <see cref="EntityKind.ItemKeyword"/>
+    /// chips); other rows are text-only.
     /// </summary>
-    private static IReadOnlyList<string> BuildServiceDetails(NpcServicePoco service) => service switch
+    private IReadOnlyList<NpcServiceDetailLine> BuildServiceDetails(NpcServicePoco service) => service switch
     {
         // Store caps are kept one-per-row: each tier raises a distinct gold cap and the per-row
-        // keyword tuple disambiguates which category the cap applies to.
+        // keyword tuple is surfaced as a chip strip that flips to the Items tab pre-filtered.
         StoreService store when store.CapIncreases is { Count: > 0 } =>
             store.CapIncreases.Select(FormatCapIncrease).ToList(),
 
@@ -204,9 +205,13 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
                 ("Items", storage.ItemDescs),
                 ("Space increases at", storage.SpaceIncreases)),
 
+        // Skills are raw skills.json keys (e.g. "NonfictionWriting"); resolve through the
+        // entity-name resolver so PascalCase keys render with their friendly DisplayName
+        // ("Non-Fiction Writing"). Single-word keys ("Toolcrafting", "Carpentry") pass through
+        // unchanged because their key matches their display name.
         TrainingService training =>
             BuildLabeledLines(
-                ("Skills", training.Skills),
+                ("Skills", training.Skills?.Select(s => _nameResolver.Resolve(EntityRef.Skill(s))).ToList()),
                 ("Unlocks at higher favor", training.Unlocks)),
 
         _ => [],
@@ -216,35 +221,64 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     /// Join each non-empty sub-list into a single labeled line so Skills and Unlocks (etc.) stay
     /// visually distinct in the detail pane. Empty groups drop out entirely.
     /// </summary>
-    private static IReadOnlyList<string> BuildLabeledLines(params (string Label, IReadOnlyList<string>? Items)[] groups)
+    private static IReadOnlyList<NpcServiceDetailLine> BuildLabeledLines(params (string Label, IReadOnlyList<string>? Items)[] groups)
     {
-        var lines = new List<string>(groups.Length);
+        var lines = new List<NpcServiceDetailLine>(groups.Length);
         foreach (var (label, items) in groups)
         {
             if (items is null || items.Count == 0) continue;
-            lines.Add($"{label}: {string.Join(", ", items)}");
+            lines.Add(NpcServiceDetailLine.TextOnly($"{label}: {string.Join(", ", items)}"));
         }
         return lines;
     }
 
     /// <summary>
-    /// Format one Store cap-increase entry as <c>"Tier → 5,000g (Kw1, Kw2)"</c>, falling back to
-    /// the tier + gold form when no keywords are listed. Mirrors the parser shape in
-    /// <see cref="Mithril.Shared.Reference.ReferenceDataService"/> (the colon-separated raw form
-    /// is already decomposed into tier/gold/keywords by the time it reaches the slim NpcEntry,
-    /// but we're rendering off the raw POCO here, so we re-split.).
+    /// Format one Store cap-increase entry. Prose is <c>"Tier → 5,000g"</c>; the keyword tuple
+    /// (when present) becomes the per-line chip strip — each chip targets the Items tab via
+    /// <see cref="EntityKind.ItemKeyword"/>, mirroring the recipe-detail "Used as" pattern from
+    /// PR #267 / #270. Mirrors the colon-separated parser shape in
+    /// <see cref="Mithril.Shared.Reference.ReferenceDataService"/>.
     /// </summary>
-    private static string FormatCapIncrease(string raw)
+    private NpcServiceDetailLine FormatCapIncrease(string raw)
     {
         // Raw line shape: "Despised:5000:Armor,Weapon,CorpseTrophy". Three colon-separated parts;
         // last part may be empty.
         var parts = raw.Split(':', 3);
-        if (parts.Length < 2) return raw;
+        if (parts.Length < 2) return NpcServiceDetailLine.TextOnly(raw);
         var tier = parts[0];
         var gold = int.TryParse(parts[1], out var g) ? g.ToString("N0") + "g" : parts[1];
-        if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[2])) return $"{tier} → {gold}";
+        var prose = $"{tier} → {gold}";
+        if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[2]))
+            return NpcServiceDetailLine.TextOnly(prose);
         var keywords = parts[2].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        return keywords.Length == 0 ? $"{tier} → {gold}" : $"{tier} → {gold} ({string.Join(", ", keywords)})";
+        if (keywords.Length == 0) return NpcServiceDetailLine.TextOnly(prose);
+        var chips = BuildKeywordChips(keywords);
+        return new NpcServiceDetailLine(prose, chips);
+    }
+
+    /// <summary>
+    /// Wrap each Store-cap keyword tag as a navigable chip targeting the Items tab via
+    /// <see cref="EntityKind.ItemKeyword"/>. Friendly chip labels come from
+    /// <see cref="IReferenceDataService.KeywordDisplayNames"/>; unmapped tags fall back to a
+    /// CamelCase split (matching the item-detail "Used as" chip behavior from PR #267).
+    /// </summary>
+    private IReadOnlyList<EntityChipVm> BuildKeywordChips(IReadOnlyList<string> keywordTags)
+    {
+        var displayNames = _refData.KeywordDisplayNames;
+        var chips = new List<EntityChipVm>(keywordTags.Count);
+        foreach (var tag in keywordTags)
+        {
+            var reference = EntityRef.ItemKeyword(tag);
+            var display = displayNames.TryGetValue(tag, out var friendly)
+                ? friendly
+                : CamelCaseSplitConverter.Split(tag);
+            chips.Add(new EntityChipVm(
+                DisplayName: display,
+                IconId: 0,
+                Reference: reference,
+                IsNavigable: _navigator.CanOpen(reference)));
+        }
+        return chips;
     }
 
     private IReadOnlyList<EntityChipVm> BuildTaughtRecipeChips(string npcInternalName)
