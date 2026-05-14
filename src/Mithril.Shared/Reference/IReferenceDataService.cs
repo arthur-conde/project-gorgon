@@ -1,4 +1,5 @@
 using Mithril.Reference.Models.Abilities;
+using Mithril.Reference.Models.Effects;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
@@ -307,6 +308,70 @@ public interface IReferenceDataService
     /// Defaults to empty so test fakes don't need to opt in.
     /// </summary>
     IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => Array.Empty<AbilityDynamicSpecialValue>();
+
+    /// <summary>
+    /// Effect envelope key (e.g. <c>"effect_10003"</c>) → <see cref="Effect"/> POCO from
+    /// <c>effects.json</c>. Carries the full effect metadata surface (description, keywords,
+    /// duration, stacking type, spew text, particle name, triggering-ability-keyword gate)
+    /// consumed by Silmarillion's Effects tab. Defaults to empty so test fakes don't need
+    /// to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Effect> Effects => EmptyEffectMap;
+
+    /// <summary>
+    /// Effect <c>InternalName</c> → <see cref="Effect"/>. Mirrors <see cref="Effects"/> for
+    /// kinds where the envelope key and the InternalName coincide (the deserializer lifts
+    /// the envelope key onto <see cref="Effect.InternalName"/>). Same shape as
+    /// <see cref="ItemsByInternalName"/> / <see cref="AbilitiesByInternalName"/>.
+    /// </summary>
+    IReadOnlyDictionary<string, Effect> EffectsByInternalName => EmptyEffectMap;
+
+    /// <summary>
+    /// Effect <see cref="Effect.Keywords"/> tag → effects carrying that tag. Powers the
+    /// <c>EntityKind.EffectKeyword</c> synthetic deep-link target (Effects tab filtered to
+    /// <c>Keywords CONTAINS "&lt;tag&gt;"</c>) and the on-detail "Other effects with this
+    /// keyword" cross-link. Built whenever <c>effects.json</c> reloads. Defaults to empty.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByKeyword => EmptyEffectIndex;
+
+    /// <summary>
+    /// Effect <see cref="Effect.StackingType"/> → all effects sharing that stacking group.
+    /// Powers the on-detail "Stacks with" section. Built whenever <c>effects.json</c>
+    /// reloads. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByStackingType => EmptyEffectIndex;
+
+    /// <summary>
+    /// Effect-keyword tag → abilities whose
+    /// <see cref="Ability.EffectKeywordReqs"/> ∪
+    /// <see cref="Ability.EffectKeywordsIndicatingEnabled"/> ∪
+    /// <see cref="Ability.TargetEffectKeywordReq"/> contains that tag.
+    /// <para>
+    /// <b>Excludes</b> abilities with <see cref="Ability.InternalAbility"/> = <c>true</c>
+    /// — engine-internal scaffolding (mob skills, mount transitions) with no player-facing
+    /// display name that would otherwise pollute the on-detail chip cluster.
+    /// </para>
+    /// Built whenever <c>abilities.json</c> or <c>effects.json</c> reloads. Powers the
+    /// on-detail "Required by abilities" section and the <c>EntityKind.AbilityByEffectKeyword</c>
+    /// overflow-pill deep-link. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeyword => EmptyAbilityIndex;
+
+    /// <summary>
+    /// Ability-keyword tag → effects whose <see cref="Effect.AbilityKeywords"/> list
+    /// contains it. Powers the on-detail "Procs from abilities with keyword" section
+    /// (which abilities can trigger this effect's behaviour). Reverse of
+    /// <see cref="AbilitiesByEffectKeyword"/> — that one says "abilities that gate on
+    /// having this effect", this one says "abilities that trigger this effect's
+    /// behaviour". Built whenever <c>effects.json</c> reloads. Defaults to empty.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByTriggeringAbilityKeyword => EmptyEffectIndex;
+
+    private static readonly IReadOnlyDictionary<string, Effect> EmptyEffectMap
+        = new Dictionary<string, Effect>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Effect>> EmptyEffectIndex
+        = new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
 
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their

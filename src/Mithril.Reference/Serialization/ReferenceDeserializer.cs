@@ -247,6 +247,14 @@ public static class ReferenceDeserializer
         return result ?? new Dictionary<string, Ability>();
     }
 
+    /// <summary>
+    /// Deserializes the contents of <c>effects.json</c> into a dictionary of
+    /// <see cref="Effect"/> POCOs keyed by the JSON envelope's effect_id strings
+    /// (e.g. <c>"effect_10003"</c>). The envelope key is lifted onto
+    /// <see cref="Effect.InternalName"/> for every entry — there is no human-form
+    /// name in the source data, so the envelope key is the only stable identifier
+    /// and serves as the InternalName for cross-link / deep-link purposes.
+    /// </summary>
     public static IReadOnlyDictionary<string, Effect> ParseEffects(string json)
     {
         var settings = SerializerSettings.Build();
@@ -254,7 +262,12 @@ public static class ReferenceDeserializer
         settings.Converters.Add(new SingleOrArrayConverter<string>());
 
         var result = JsonConvert.DeserializeObject<Dictionary<string, Effect>>(json, settings);
-        return result ?? new Dictionary<string, Effect>();
+        if (result is null) return new Dictionary<string, Effect>();
+
+        foreach (var pair in result)
+            pair.Value.InternalName = pair.Key;
+
+        return result;
     }
 
     /// <summary>

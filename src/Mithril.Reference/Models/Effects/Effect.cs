@@ -7,6 +7,14 @@ namespace Mithril.Reference.Models.Effects;
 /// </summary>
 public sealed class Effect
 {
+    /// <summary>
+    /// Lifted from the envelope key by <c>ReferenceDeserializer.ParseEffects</c>
+    /// (e.g. <c>"effect_10003"</c>). Source JSON has no human-form name field that
+    /// could play this role; the envelope key is the only stable identifier.
+    /// Mirrors the lift pattern on <c>Item.Id</c> / <c>Recipe.Key</c>.
+    /// </summary>
+    public string? InternalName { get; set; }
+
     public string? Desc { get; set; }
     public string? DisplayMode { get; set; }
     public int IconId { get; set; }
