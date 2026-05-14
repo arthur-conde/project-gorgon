@@ -101,6 +101,46 @@ public sealed class AbilitiesTabViewModelTests
     }
 
     [Fact]
+    public void AbilityListRow_SkillLevelDisplay_CombinesSkillAndLevel()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability { InternalName = "SwordSlash", Name = "Sword Slash", Skill = "Sword", Level = 7 },
+                ["ability_2"] = new Ability { InternalName = "Mystery", Name = "Mystery", Skill = null, Level = 3 },
+            },
+        };
+        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.AllAbilities.Single(r => r.InternalName == "SwordSlash").SkillLevelDisplay.Should().Be("Sword 7");
+        // Null-skill fallback chains through AbilityListRow.Skill's "(unknown)" projection.
+        vm.AllAbilities.Single(r => r.InternalName == "Mystery").SkillLevelDisplay.Should().Be("(unknown) 3");
+    }
+
+    [Fact]
+    public void DetailViewModel_SkillLevelDisplay_FallsBackToLevelOnly_WhenSkillMissing()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability { InternalName = "SwordSlash", Name = "Sword Slash", Skill = "Sword", Level = 7 },
+                ["ability_2"] = new Ability { InternalName = "Mystery", Name = "Mystery", Skill = null, Level = 3 },
+            },
+        };
+        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllAbilities.Single(r => r.InternalName == "SwordSlash");
+        vm.DetailViewModel!.SkillLevelDisplay.Should().Be("Sword 7");
+
+        vm.SelectedRow = vm.AllAbilities.Single(r => r.InternalName == "Mystery");
+        // Detail VM keeps SkillDisplayName nullable (unlike the list row's "(unknown)" projection)
+        // so the combined chip falls back to "Level N" rather than "(unknown) N".
+        vm.DetailViewModel!.SkillLevelDisplay.Should().Be("Level 3");
+    }
+
+    [Fact]
     public void AbilityListRow_NameFallsBackToInternalName_WhenPocoNameMissing()
     {
         var refData = new StubReferenceData

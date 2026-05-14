@@ -77,6 +77,16 @@ public sealed class AbilityDetailViewModel
     public int IconID => Ability.IconID;
     public string? SkillDisplayName { get; }
     public int Level => Ability.Level;
+
+    /// <summary>
+    /// Combined skill + level chip text — "Sword 7" when skill is known, "Level 7" otherwise.
+    /// Matches the cookbook's master-list precedent so the list-card "Sword 7" reads the same
+    /// when promoted into the detail header chip.
+    /// </summary>
+    public string SkillLevelDisplay =>
+        string.IsNullOrEmpty(SkillDisplayName)
+            ? $"Level {Level}"
+            : $"{SkillDisplayName} {Level}";
     public string? Rank => Ability.Rank;
     public string? AbilityGroupDisplayName { get; }
 

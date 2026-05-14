@@ -91,13 +91,10 @@
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
                            Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
                            FontSize="{DynamicResource AppFontSizeHint}"/>
-                <TextBlock Foreground="#88FFFFFF"
+                <TextBlock Text="{Binding SkillLevelDisplay, Mode=OneWay}"
+                           Foreground="#88FFFFFF"
                            FontSize="{DynamicResource AppFontSizeSmall}"
-                           TextTrimming="CharacterEllipsis">
-                    <Run Text="{Binding Skill, Mode=OneWay}"/>
-                    <Run Text=" "/>
-                    <Run Text="{Binding Level, Mode=OneWay}"/>
-                </TextBlock>
+                           TextTrimming="CharacterEllipsis"/>
             </StackPanel>
         </DockPanel>
     </DataTemplate>

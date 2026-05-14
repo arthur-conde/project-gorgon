@@ -132,18 +132,10 @@
                                    FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2"
-                                    Visibility="{Binding SkillDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
-                                <TextBlock Text="{Binding SkillDisplayName}" Foreground="#CCFFFFFF"
+                                    CornerRadius="3" Padding="6,2">
+                                <TextBlock Text="{Binding SkillLevelDisplay, Mode=OneWay}"
+                                           Foreground="#CCFFFFFF"
                                            FontSize="{DynamicResource AppFontSizeHint}"/>
-                            </Border>
-                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0">
-                                <TextBlock Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}">
-                                    <Run Text="Level "/>
-                                    <Run Text="{Binding Level, Mode=OneWay}"/>
-                                </TextBlock>
                             </Border>
                             <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
                                     CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
