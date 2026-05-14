@@ -220,7 +220,7 @@
                      player can verify, and the chip degradation handles missing data. -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding GiverChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding GiverChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Giver:" Foreground="#88FFFFFF" FontWeight="SemiBold"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -233,7 +233,7 @@
                         </ContentControl>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                Visibility="{Binding TurnInChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding TurnInChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Turn in:" Foreground="#88FFFFFF" FontWeight="SemiBold"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
