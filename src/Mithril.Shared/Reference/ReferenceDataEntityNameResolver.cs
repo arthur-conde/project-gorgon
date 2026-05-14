@@ -20,6 +20,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Item => ResolveItem(reference.InternalName),
         EntityKind.Recipe => ResolveRecipe(reference.InternalName),
         EntityKind.Npc => ResolveNpc(reference.InternalName),
+        EntityKind.Quest => ResolveQuest(reference.InternalName),
         _ => reference.InternalName,
     };
 
@@ -37,6 +38,16 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         _refData.NpcsByInternalName.TryGetValue(internalName, out var npc) && !string.IsNullOrEmpty(npc.Name)
             ? npc.Name!
             : StripNpcPrefix(internalName);
+
+    /// <summary>
+    /// Quest InternalNames have no consistent prefix ("KillSkeletons", "GetCatEyeballs"
+    /// — not "Quest_..."), so the InternalName is already reasonable to display when the
+    /// POCO's Name field is missing. No prefix stripping needed.
+    /// </summary>
+    private string ResolveQuest(string internalName) =>
+        _refData.QuestsByInternalName.TryGetValue(internalName, out var quest) && !string.IsNullOrEmpty(quest.Name)
+            ? quest.Name!
+            : internalName;
 
     private static string StripNpcPrefix(string internalName) =>
         internalName.StartsWith("NPC_", StringComparison.Ordinal)
