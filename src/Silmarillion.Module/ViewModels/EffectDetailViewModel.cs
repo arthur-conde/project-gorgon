@@ -38,13 +38,12 @@ public sealed class EffectDetailViewModel
         DisplayName = string.IsNullOrEmpty(effect.Name) ? envelopeKey : effect.Name!;
 
         DurationLabel = FormatDuration(effect.Duration);
-        StackingType = string.IsNullOrEmpty(effect.StackingType) ? null : effect.StackingType;
         DisplayMode = NormaliseDisplayMode(effect.DisplayMode);
 
         KeywordChips = BuildKeywordChips(effect.Keywords, navigator);
         ConditionalDotRows = BuildConditionalDotRows(effect, refData);
         ConditionalSpecialValueRows = BuildConditionalSpecialValueRows(effect, refData);
-        StacksWithChip = BuildStacksWithChip(effect, envelopeKey, refData, navigator);
+        StackingTypeChip = BuildStackingTypeChip(effect, envelopeKey, refData, navigator);
         var (chips, pill) = BuildRequiredByAbilityChips(effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
         RequiredByAbilityChips = chips;
         RequiredByAbilitiesOverflowPill = pill;
@@ -63,7 +62,6 @@ public sealed class EffectDetailViewModel
 
     /// <summary>Formatted duration label or <see langword="null"/> when the duration is missing/zero.</summary>
     public string? DurationLabel { get; }
-    public string? StackingType { get; }
 
     /// <summary>
     /// <see cref="PocoEffect.DisplayMode"/> when non-default. The universal default
@@ -81,15 +79,20 @@ public sealed class EffectDetailViewModel
         ConditionalDotRows.Count > 0 || ConditionalSpecialValueRows.Count > 0;
 
     /// <summary>
-    /// Single collapsed chip representing the stacking group this effect belongs to —
-    /// label is the StackingType value with a peer-count suffix (e.g. <c>"Food (326)"</c>),
-    /// reference is <see cref="EntityRef.EffectByStackingType(string)"/>. Clicking filters
-    /// the Effects tab to <c>StackingType = "&lt;value&gt;"</c>. Null when the effect has
-    /// no StackingType or is the only entry in the group (per #259's keyword-collapse
-    /// precedent — don't fan out to per-effect chips when cardinality could be large; the
-    /// "Food" stacking group alone has hundreds of effects).
+    /// Chip for the metadata strip's <c>"Stacking type:"</c> row — label is the StackingType
+    /// value plus a peer-count suffix (e.g. <c>"Food (325)"</c>), reference is
+    /// <see cref="EntityRef.EffectByStackingType(string)"/>. Clicking filters the Effects
+    /// tab to <c>StackingType = "&lt;value&gt;"</c>. Null when the effect has no StackingType
+    /// or is the sole entry in the stacking group (no peers means no useful filter target,
+    /// per the cookbook's default-value-noise-filtering rule).
+    /// <para>
+    /// Folds what was originally a separate "Stacks with" section into the metadata strip:
+    /// the chip is the StackingType's navigation affordance directly. Per #259's
+    /// keyword-collapse precedent — don't fan out to per-effect chips when cardinality
+    /// could be large (the "Food" stacking group alone has ~326 entries).
+    /// </para>
     /// </summary>
-    public EntityChipVm? StacksWithChip { get; }
+    public EntityChipVm? StackingTypeChip { get; }
     public IReadOnlyList<EntityChipVm> RequiredByAbilityChips { get; }
 
     /// <summary>
@@ -236,14 +239,12 @@ public sealed class EffectDetailViewModel
     }
 
     /// <summary>
-    /// Build the single "Stacks with" chip. Collapses what could be hundreds of per-effect
-    /// chips (the <c>"Food"</c> stacking group alone has ~326 entries) into one chip whose
-    /// label is the StackingType value plus a peer-count suffix; clicking deep-links to
-    /// the Effects tab filtered by <c>StackingType = "&lt;value&gt;"</c>. Mirrors the
-    /// keyword-collapse pattern from #259. Returns <see langword="null"/> when the effect
-    /// has no StackingType or is the only entry in its stacking group.
+    /// Build the metadata-strip StackingType chip. Returns <see langword="null"/> when the
+    /// effect has no StackingType or is the only entry in its stacking group — the entire
+    /// "Stacking type:" row hides in those cases (the chip *is* the row's payload, so
+    /// no chip means no row).
     /// </summary>
-    private static EntityChipVm? BuildStacksWithChip(
+    private static EntityChipVm? BuildStackingTypeChip(
         PocoEffect effect,
         string envelopeKey,
         IReferenceDataService refData,

@@ -69,7 +69,12 @@
                            TextWrapping="Wrap" Margin="0,0,0,10"
                            Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
 
-                <!-- ─── 3. Metadata strip: duration / stacking / display mode ─── -->
+                <!-- ─── 3. Metadata strip: duration / stacking-type chip / display mode.
+                       The stacking-type row carries the navigation affordance (clicking the chip
+                       filters the Effects tab to peers in the same stacking group); the chip
+                       label includes a peer-count suffix so the group's size is visible at glance
+                       time. Per the design folded in from the separate 'Stacks with' section
+                       (#259's keyword-collapse precedent). -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -78,7 +83,7 @@
                                 <DataTrigger Binding="{Binding DurationLabel, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding StackingType, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding StackingTypeChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding DisplayMode, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
@@ -93,12 +98,19 @@
                         <Run Text="Duration: " Foreground="#88FFFFFF"/>
                         <Run Text="{Binding DurationLabel, Mode=OneWay}"/>
                     </TextBlock>
-                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                               Margin="0,0,0,2"
-                               Visibility="{Binding StackingType, Converter={StaticResource NullOrEmptyToVis}}">
-                        <Run Text="Stacking type: " Foreground="#88FFFFFF"/>
-                        <Run Text="{Binding StackingType, Mode=OneWay}"/>
-                    </TextBlock>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                Visibility="{Binding StackingTypeChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Stacking type: " Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center"/>
+                        <ContentControl Content="{Binding StackingTypeChip}" VerticalAlignment="Center">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </StackPanel>
                     <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                                Margin="0,0,0,2"
                                Visibility="{Binding DisplayMode, Converter={StaticResource NullOrEmptyToVis}}">
@@ -143,21 +155,9 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── 6. Stacks with — single chip per StackingType (collapsed). Clicking
-                       filters the Effects tab to peers in the same stacking group. The label
-                       carries the peer-count suffix so the group's size is visible upfront. -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding StacksWithChip, Converter={StaticResource NullOrEmptyToVis}}">
-                    <TextBlock Text="Stacks with" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ContentControl Content="{Binding StacksWithChip}">
-                        <ContentControl.Resources>
-                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
-                            </DataTemplate>
-                        </ContentControl.Resources>
-                    </ContentControl>
-                </StackPanel>
+                <!-- ─── 6. (was 'Stacks with' — folded into Section 3's StackingType chip
+                       since the standalone section was redundant once the metadata strip's
+                       row carried the navigation affordance directly.) ─── -->
 
                 <!-- ─── 7. Required by abilities ─── -->
                 <StackPanel Margin="0,0,0,10">

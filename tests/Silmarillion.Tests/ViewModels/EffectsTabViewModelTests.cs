@@ -128,10 +128,11 @@ public sealed class EffectsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_StacksWith_CollapsesToSingleChipPerStackingType_WithPeerCountSuffix()
+    public void DetailViewModel_StackingType_RendersAsMetadataStripChip_WithPeerCountSuffix()
     {
         // Per #259's keyword-collapse precedent: a stacking group like "Food" (~326 effects)
-        // would produce an unscannable chip wall. Render a single chip whose label includes
+        // would produce an unscannable chip wall. Render a single chip in the metadata strip
+        // (folded in from the original standalone "Stacks with" section) whose label includes
         // the peer count, and whose click filters the Effects tab.
         var sticky = new PocoEffect { InternalName = "effect_1", Name = "Sticky 1", IconId = 1, StackingType = "Sticky" };
         var sticky2 = new PocoEffect { InternalName = "effect_2", Name = "Sticky 2", IconId = 2, StackingType = "Sticky" };
@@ -156,7 +157,7 @@ public sealed class EffectsTabViewModelTests
             new SilmarillionSettings());
 
         vm.SelectedRow = vm.AllEffects.First(r => r.EnvelopeKey == "effect_1");
-        var chip = vm.DetailViewModel!.StacksWithChip;
+        var chip = vm.DetailViewModel!.StackingTypeChip;
 
         chip.Should().NotBeNull();
         chip!.DisplayName.Should().Be("Sticky (2)", because: "the chip carries the StackingType plus a peer-count suffix");
@@ -166,7 +167,7 @@ public sealed class EffectsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_StacksWith_NullWhenNoStackingType()
+    public void DetailViewModel_StackingType_NullWhenNoStackingType()
     {
         var refData = new StubReferenceData
         {
@@ -175,11 +176,11 @@ public sealed class EffectsTabViewModelTests
         var vm = BuildVm(refData);
 
         vm.SelectedRow = vm.AllEffects.Single();
-        vm.DetailViewModel!.StacksWithChip.Should().BeNull();
+        vm.DetailViewModel!.StackingTypeChip.Should().BeNull();
     }
 
     [Fact]
-    public void DetailViewModel_StacksWith_NullWhenSoleMemberOfGroup()
+    public void DetailViewModel_StackingType_NullWhenSoleMemberOfGroup()
     {
         var lone = new PocoEffect { InternalName = "effect_1", Name = "Solo", StackingType = "Unique" };
         var refData = new StubReferenceData
@@ -190,7 +191,7 @@ public sealed class EffectsTabViewModelTests
         var vm = BuildVm(refData);
 
         vm.SelectedRow = vm.AllEffects.Single();
-        vm.DetailViewModel!.StacksWithChip.Should().BeNull(because: "no peers means no useful filter target");
+        vm.DetailViewModel!.StackingTypeChip.Should().BeNull(because: "no peers means no useful filter target");
     }
 
     [Fact]
