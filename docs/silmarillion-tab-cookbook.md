@@ -34,7 +34,7 @@ For tab `X` (e.g. `Npcs`, `Quests`, `Areas`):
    - `src/Silmarillion.Module/ViewModels/<X>TabViewModel.cs`
    - `src/Silmarillion.Module/ViewModels/<X>DetailViewModel.cs` *(or reuse an existing shared detail VM if the entity already has one — e.g. items use `Mithril.Shared.Wpf.ItemDetailViewModel`)*
    - `src/Silmarillion.Module/Navigation/<X>KindTarget.cs`
-   - `src/Silmarillion.Module/<X>NameResolver.cs` — static helper with `Resolve(IReferenceDataService refData, string internalName)` returning the friendly display name with fallback (raw POCO `Name` field, then internal name with prefix-stripping if the kind uses `<Prefix>_<Name>` envelope keys). **Write this first**, before the tab VM. The resolver is consumed by your master-list row projection, your detail header, *and* by any pre-existing chip-builder on a different tab that references this kind's internal name (see *Cross-link chips → audit existing surfaces*, below). Inlining `_refData.<X>sByInternalName[name]?.Name ?? name` in three places is the smell you're avoiding.
+   - **No new resolver class.** Friendly-name resolution lives in a shared DI-registered `IEntityNameResolver` that switches on `EntityKind` (one place to extend, one DI seam to mock in tests). To add support for your new kind, add a case to the resolver's switch with the kind's POCO-name fallback chain (raw POCO `Name` field, then internal name with prefix-stripping if the kind uses `<Prefix>_<Name>` envelope keys like `NPC_Joeh`). Consume the resolver in your master-list row projection, detail header, and any pre-existing chip-builder on a different tab that surfaces the kind's friendly name — see *Cross-link chips → audit existing surfaces*, below. Inlining `_refData.<X>sByInternalName[name]?.Name ?? name` in three places is the smell you're avoiding.
 2. **`SilmarillionModule.Register`** ([src/Silmarillion.Module/SilmarillionModule.cs](../src/Silmarillion.Module/SilmarillionModule.cs)) — three `AddSingleton` lines, **in this order** so DI can resolve:
    ```csharp
    services.AddSingleton<XTabViewModel>();
@@ -78,7 +78,7 @@ Before shipping, grep for:
 - Any `ItemSourceChipVm(..., EntityReference: null, IsNavigable: false)` literal — if the source `Type` could match the new kind (e.g. `"NpcGift"` for NPCs), wire it through `EntityRef.<NewKind>(s.Npc)` and `_navigator.CanOpen(...)`.
 - Any `<TextBlock Text="{Binding ...}"/>` rendering source-style data with a `TODO(stub:#…)` nearby — it's probably an `ItemSourceChip` waiting to happen.
 
-Replace the friendly display name in those builders with `<X>NameResolver.Resolve(refData, internalName)` (per scaffolding step 1).
+Replace the friendly display name in those builders with `_nameResolver.Resolve(EntityRef.<NewKind>(internalName))` from the shared `IEntityNameResolver` (per scaffolding step 1). Until that service exists, NPCs ship through a transitional `NpcNameResolver` static at [src/Silmarillion.Module/ViewModels/NpcNameResolver.cs](../src/Silmarillion.Module/ViewModels/NpcNameResolver.cs); fold it into the shared service when you wire your kind in.
 
 ## Synthetic kinds — deep-linking to a tab with a pre-filled query
 
