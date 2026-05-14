@@ -41,7 +41,7 @@ public sealed partial class QuestCompletedParser : ILogParser
         var idStr = m.Groups["id"].Value;
         if (!int.TryParse(idStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) return null;
 
-        if (!_refData.Quests.TryGetValue($"quest_{id}", out var entry))
+        if (!_refData.Quests.TryGetValue($"quest_{id}", out var entry) || string.IsNullOrEmpty(entry.InternalName))
         {
             // Game-data drift / unknown quest — drop silently. Possible if quests.json
             // is out of date relative to the live client (a new quest landed in a

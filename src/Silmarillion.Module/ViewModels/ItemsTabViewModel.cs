@@ -88,11 +88,12 @@ public sealed partial class ItemsTabViewModel : ObservableObject
 
     private void OnFileUpdated(object? sender, string fileKey)
     {
-        // Items.json is the primary trigger. Recipes.json updates also rebuild
-        // refData's cross-link indices (BuildRecipeCrossLinkIndices runs on both),
-        // which means an open ItemDetailView's "Produced by" / "Used in" chips can
-        // go stale even when items.json itself didn't change. Re-resolve on both.
-        if (fileKey != "items" && fileKey != "recipes") return;
+        // Items.json is the primary trigger. Recipes.json + quests.json updates also
+        // rebuild refData's cross-link indices (BuildRecipeCrossLinkIndices /
+        // BuildQuestCrossLinkIndices run on those), which means an open ItemDetailView's
+        // "Produced by" / "Used in" / "Awarded by" chips can go stale even when items.json
+        // itself didn't change. Re-resolve on all three.
+        if (fileKey is not ("items" or "recipes" or "quests")) return;
 
         UiThread.Run(() =>
         {
@@ -147,8 +148,28 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: consumed,
             ConsumedAsKeywordIn: BuildKeywordChips(item),
+            AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             Sources: BuildSourceChips(item.InternalName!),
             MoreRecipesChip: more);
+    }
+
+    private IReadOnlyList<EntityChipVm>? BuildAwardedByQuestChips(string itemInternalName)
+    {
+        if (!_refData.QuestsRewardingItem.TryGetValue(itemInternalName, out var quests) || quests.Count == 0)
+            return null;
+        return quests
+            .OrderBy(q => q.Name ?? q.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(q =>
+            {
+                var internalName = q.InternalName ?? "";
+                var reference = EntityRef.Quest(internalName);
+                return new EntityChipVm(
+                    DisplayName: _nameResolver.Resolve(reference),
+                    IconId: 0,
+                    Reference: reference,
+                    IsNavigable: _navigator.CanOpen(reference));
+            })
+            .ToList();
     }
 
     /// <summary>
@@ -247,13 +268,16 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             return null;
         }
         // NPC-anchored source kinds (Vendor / Barter / NpcGift / HangOut / Training) carry an
-        // <see cref="EntityRef.Npc"/> so they're navigable the moment the NPCs kind target ships
-        // (#241). Other source kinds (Monster drop, Recipe, Quest, Skill, …) leave the reference
-        // null and render as plain-text in the source chip. Mirrors RecipesTabViewModel.BuildSourceChips.
+        // <see cref="EntityRef.Npc"/> — navigable since #241 shipped the NPCs kind target.
+        // Quest sources resolve s.Context to the quest InternalName via the parser's
+        // ResolveSourceContext; surface them as EntityRef.Quest chips so the moment the Quests
+        // kind target is registered (#242 — this PR), every "Quest reward" chip across the
+        // codebase becomes navigable without further changes. Other source kinds (Monster /
+        // Recipe / Skill / …) leave the reference null and render as plain text.
         return sources
             .Select(s =>
             {
-                var reference = string.IsNullOrEmpty(s.Npc) ? null : EntityRef.Npc(s.Npc!);
+                var reference = ResolveSourceReference(s);
                 return new ItemSourceChipVm(
                     DisplayName: FormatSourceDisplayName(s),
                     Detail: s.Context,
@@ -264,8 +288,24 @@ public sealed partial class ItemsTabViewModel : ObservableObject
             .ToList();
     }
 
-    private string FormatSourceDisplayName(ItemSource s) =>
-        string.IsNullOrEmpty(s.Npc)
-            ? s.Type
-            : $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
+    private static EntityRef? ResolveSourceReference(ItemSource s)
+    {
+        if (!string.IsNullOrEmpty(s.Npc)) return EntityRef.Npc(s.Npc!);
+        if (string.Equals(s.Type, "Quest", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return EntityRef.Quest(s.Context!);
+        if (string.Equals(s.Type, "Recipe", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return EntityRef.Recipe(s.Context!);
+        return null;
+    }
+
+    private string FormatSourceDisplayName(ItemSource s)
+    {
+        if (!string.IsNullOrEmpty(s.Npc))
+            return $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
+        if (string.Equals(s.Type, "Quest", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return $"Quest: {_nameResolver.Resolve(EntityRef.Quest(s.Context!))}";
+        if (string.Equals(s.Type, "Recipe", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
+            return $"Recipe: {_nameResolver.Resolve(EntityRef.Recipe(s.Context!))}";
+        return s.Type;
+    }
 }

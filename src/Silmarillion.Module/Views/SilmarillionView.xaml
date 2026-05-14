@@ -25,6 +25,9 @@
             <DataTemplate DataType="{x:Type vm:NpcsTabViewModel}">
                 <local:NpcsTabView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:QuestsTabViewModel}">
+                <local:QuestsTabView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
     <UserControl.InputBindings>

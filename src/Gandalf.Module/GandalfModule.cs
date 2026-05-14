@@ -116,7 +116,7 @@ public sealed class GandalfModule : IMithrilModule
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
 
-        // Quest source — projects QuestEntry.Reuse* timers from
+        // Quest source — projects Quest POCO ReuseTime_* timers from
         // IQuestService.ActiveQuests ∪ keys-with-progress. Ingestion and
         // per-character journal persistence live in Mithril.GameState; this
         // source is purely a Gandalf-side projector that anchors cooldowns

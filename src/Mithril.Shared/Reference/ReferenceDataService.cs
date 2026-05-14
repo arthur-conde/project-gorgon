@@ -14,9 +14,8 @@ using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
 using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
 using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
-using PocoQuest = Mithril.Reference.Models.Quests.Quest;
-using PocoQuestObjective = Mithril.Reference.Models.Quests.QuestObjective;
-using PocoQuestRequirement = Mithril.Reference.Models.Quests.QuestRequirement;
+using DirectedGoal = Mithril.Reference.Models.Misc.DirectedGoal;
+using Quest = Mithril.Reference.Models.Quests.Quest;
 using Recipe = Mithril.Reference.Models.Recipes.Recipe;
 using PocoSkill = Mithril.Reference.Models.Misc.Skill;
 using PocoSourceEnvelope = Mithril.Reference.Models.Sources.SourceEnvelope;
@@ -145,9 +144,16 @@ public sealed class ReferenceDataService : IReferenceDataService
     private ReferenceFileSnapshot _profilesSnapshot;
 
     // Quests (quests.json) — keyed by "quest_N" plus InternalName secondary lookup.
-    private IReadOnlyDictionary<string, QuestEntry> _quests = new Dictionary<string, QuestEntry>(StringComparer.Ordinal);
-    private IReadOnlyDictionary<string, QuestEntry> _questsByInternalName =
-        new Dictionary<string, QuestEntry>(StringComparer.Ordinal);
+    // Exposes the full Mithril.Reference.Models.Quests.Quest POCO with typed Requirements,
+    // Rewards, Objectives etc. for Silmarillion's Quests tab and Gandalf's repeatable-quest
+    // timer source.
+    private IReadOnlyDictionary<string, Quest> _quests = new Dictionary<string, Quest>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Quest> _questsByInternalName =
+        new Dictionary<string, Quest>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Quest>> _questsByGiverNpc =
+        new Dictionary<string, IReadOnlyList<Quest>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<Quest>> _questsRewardingItem =
+        new Dictionary<string, IReadOnlyList<Quest>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _questsSnapshot;
 
     // strings_all.json — flat dictionary of localizable string IDs → display
@@ -155,6 +161,10 @@ public sealed class ReferenceDataService : IReferenceDataService
     // (see #178 / Player-Log-Signals wiki).
     private IReadOnlyDictionary<string, string> _strings = new Dictionary<string, string>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _stringsSnapshot;
+
+    // directedgoals.json — flat ordered list (category gates + per-area sub-goals).
+    private IReadOnlyList<DirectedGoal> _directedGoals = Array.Empty<DirectedGoal>();
+    private ReferenceFileSnapshot _directedGoalsSnapshot;
 
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
@@ -182,6 +192,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _questsSnapshot = new ReferenceFileSnapshot("quests", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _stringsSnapshot = new ReferenceFileSnapshot("strings_all", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _directedGoalsSnapshot = new ReferenceFileSnapshot("directedgoals", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -196,9 +207,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadPowers();
         LoadProfiles();
         LoadStrings();
+        LoadDirectedGoals();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -221,8 +233,11 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
-    public IReadOnlyDictionary<string, QuestEntry> Quests => _quests;
-    public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName => _questsByInternalName;
+    public IReadOnlyDictionary<string, Quest> Quests => _quests;
+    public IReadOnlyDictionary<string, Quest> QuestsByInternalName => _questsByInternalName;
+    public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsByGiverNpc => _questsByGiverNpc;
+    public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsRewardingItem => _questsRewardingItem;
+    public IReadOnlyList<DirectedGoal> DirectedGoals => _directedGoals;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -240,6 +255,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysprofiles" => _profilesSnapshot,
         "quests" => _questsSnapshot,
         "strings_all" => _stringsSnapshot,
+        "directedgoals" => _directedGoalsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -260,6 +276,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "tsysprofiles" => RefreshFileAsync("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles, ct),
         "quests" => RefreshFileAsync("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests, ct),
         "strings_all" => RefreshFileAsync("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings, ct),
+        "directedgoals" => RefreshFileAsync("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -278,6 +295,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("tsysprofiles", ct).ConfigureAwait(false);
         await RefreshAsync("quests", ct).ConfigureAwait(false);
         await RefreshAsync("strings_all", ct).ConfigureAwait(false);
+        await RefreshAsync("directedgoals", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -456,6 +474,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadProfiles() => LoadFile("tsysprofiles", ReferenceDeserializer.ParseTsysProfiles, ParseAndSwapProfiles);
     private void LoadQuests() => LoadFile("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests);
     private void LoadStrings() => LoadFile("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings);
+    private void LoadDirectedGoals() => LoadFile("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -483,6 +502,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _itemsSnapshot = new ReferenceFileSnapshot("items", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byId.Count);
         BuildRecipeCrossLinkIndices();
         BuildNpcCrossLinkIndices();
+        BuildQuestCrossLinkIndices();
     }
 
     private void ParseAndSwapRecipes(IReadOnlyDictionary<string, Recipe> raw, ReferenceFileMetadata meta)
@@ -783,6 +803,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _npcs = byKey;
         _npcsByInternalName = byInternalName;
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildQuestCrossLinkIndices();
     }
 
     private void ParseAndSwapAreas(IReadOnlyDictionary<string, PocoArea> raw, ReferenceFileMetadata meta)
@@ -796,6 +817,15 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _areas = byKey;
         _areasSnapshot = new ReferenceFileSnapshot("areas", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+    }
+
+    private void ParseAndSwapDirectedGoals(IReadOnlyList<DirectedGoal> raw, ReferenceFileMetadata meta)
+    {
+        // Defensive copy with the same backing-store semantics as the rest of the
+        // service: hand consumers a frozen IReadOnlyList wrapper over a snapshot list.
+        _directedGoals = raw.ToArray();
+        _directedGoalsSnapshot = new ReferenceFileSnapshot(
+            "directedgoals", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _directedGoals.Count);
     }
 
     private void ParseAndSwapStrings(IReadOnlyDictionary<string, string> raw, ReferenceFileMetadata meta)
@@ -984,90 +1014,77 @@ public sealed class ReferenceDataService : IReferenceDataService
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byProfile.Count);
     }
 
-    private void ParseAndSwapQuests(IReadOnlyDictionary<string, PocoQuest> raw, ReferenceFileMetadata meta)
+    private void ParseAndSwapQuests(IReadOnlyDictionary<string, Quest> raw, ReferenceFileMetadata meta)
     {
-        var byKey = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
-        var byName = new Dictionary<string, QuestEntry>(raw.Count, StringComparer.Ordinal);
+        var byKey = new Dictionary<string, Quest>(raw.Count, StringComparer.Ordinal);
+        var byName = new Dictionary<string, Quest>(raw.Count, StringComparer.Ordinal);
         foreach (var (key, v) in raw)
         {
-            var objectives = (v.Objectives ?? (IReadOnlyList<PocoQuestObjective>)[])
-                .Where(o => !string.IsNullOrEmpty(o.Type))
-                .Select(o => new QuestObjective(
-                    o.Type!,
-                    o.Description ?? "",
-                    o.Number,
-                    o.Target is { Count: > 0 } t ? string.Join(" | ", t) : null,
-                    o.ItemName,
-                    o.GroupId))
-                .ToList();
-
-            var requirements = (v.Requirements ?? (IReadOnlyList<PocoQuestRequirement>)[])
-                .Select(ProjectQuestRequirement)
-                .ToList();
-
-            var sustainList = v.RequirementsToSustain ?? (IReadOnlyList<PocoQuestRequirement>)[];
-            var sustain = sustainList.Count > 0 ? ProjectQuestRequirement(sustainList[0]) : null;
-
-            var skillRewards = (v.Rewards ?? (IReadOnlyList<Mithril.Reference.Models.Quests.QuestReward>)[])
-                .OfType<Mithril.Reference.Models.Quests.SkillXpReward>()
-                .Where(r => !string.IsNullOrEmpty(r.Skill))
-                .Select(r => new QuestSkillReward(r.Skill!, r.Xp ?? 0))
-                .ToList();
-
-            var itemRewards = (v.Rewards_Items ?? (IReadOnlyList<Mithril.Reference.Models.Quests.QuestItemRef>)[])
-                .Where(i => !string.IsNullOrEmpty(i.Item))
-                .Select(i => new QuestItemReward(i.Item!, i.StackSize))
-                .ToList();
-
-            var entry = new QuestEntry(
-                Key: key,
-                Name: v.Name ?? "",
-                InternalName: v.InternalName ?? "",
-                Description: v.Description ?? "",
-                DisplayedLocation: string.IsNullOrEmpty(v.DisplayedLocation) ? null : v.DisplayedLocation,
-                FavorNpc: string.IsNullOrEmpty(v.FavorNpc) ? null : v.FavorNpc,
-                Keywords: v.Keywords ?? (IReadOnlyList<string>)[],
-                Objectives: objectives,
-                Requirements: requirements,
-                RequirementsToSustain: sustain,
-                SkillRewards: skillRewards,
-                ItemRewards: itemRewards,
-                FavorReward: v.Reward_Favor ?? v.Rewards_Favor ?? 0,
-                RewardEffects: v.Rewards_Effects ?? (IReadOnlyList<string>)[],
-                RewardLootProfile: string.IsNullOrEmpty(v.Rewards_NamedLootProfile) ? null : v.Rewards_NamedLootProfile,
-                ReuseMinutes: v.ReuseTime_Minutes,
-                ReuseHours: v.ReuseTime_Hours,
-                ReuseDays: v.ReuseTime_Days,
-                PrefaceText: string.IsNullOrEmpty(v.PrefaceText) ? null : v.PrefaceText,
-                SuccessText: string.IsNullOrEmpty(v.SuccessText) ? null : v.SuccessText);
-
-            byKey[key] = entry;
-            if (!string.IsNullOrEmpty(entry.InternalName)) byName[entry.InternalName] = entry;
+            byKey[key] = v;
+            if (!string.IsNullOrEmpty(v.InternalName)) byName[v.InternalName] = v;
         }
         _quests = byKey;
         _questsByInternalName = byName;
         _questsSnapshot = new ReferenceFileSnapshot("quests", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildQuestCrossLinkIndices();
     }
 
     /// <summary>
-    /// Project a polymorphic <see cref="PocoQuestRequirement"/> subclass to the
-    /// flat <see cref="QuestRequirement"/> projection record. Reads only the
-    /// discriminator-relevant fields per concrete type; the rest stay null.
+    /// Builds <see cref="_questsByGiverNpc"/> and <see cref="_questsRewardingItem"/> from the
+    /// current <see cref="_quests"/> + <see cref="_npcsByInternalName"/> + <see cref="_itemsByInternalName"/>.
+    /// Giver index merges <see cref="Quest.QuestNpc"/> and <see cref="Quest.FavorNpc"/> — both
+    /// commonly reference the same NPC and the detail view wants a single "quests this NPC is
+    /// involved in" list. Rewarding-item index walks <see cref="Quest.Rewards_Items"/> only;
+    /// NamedLootProfile is opaque without further parsing. Called from every parse-and-swap whose
+    /// inputs feed either index (quests / npcs / items).
     /// </summary>
-    private static QuestRequirement ProjectQuestRequirement(PocoQuestRequirement r) => r switch
+    private void BuildQuestCrossLinkIndices()
     {
-        Mithril.Reference.Models.Quests.MinSkillLevelRequirement m =>
-            new QuestRequirement(r.T, null, m.Level, null, m.Skill, null),
-        Mithril.Reference.Models.Quests.MinFavorLevelRequirement m =>
-            new QuestRequirement(r.T, null, m.Level, m.Npc, null, null),
-        Mithril.Reference.Models.Quests.QuestCompletedRequirement q =>
-            new QuestRequirement(r.T, q.Quest, null, null, null, null),
-        Mithril.Reference.Models.Quests.HasEffectKeywordRequirement h =>
-            new QuestRequirement(r.T, null, null, null, null, h.Keyword),
-        Mithril.Reference.Models.Quests.MinCombatSkillLevelRequirement c =>
-            new QuestRequirement(r.T, null, c.Level?.ToString(), null, null, null),
-        _ => new QuestRequirement(r.T, null, null, null, null, null),
-    };
+        var byGiver = new Dictionary<string, List<Quest>>(StringComparer.Ordinal);
+        var byRewardItem = new Dictionary<string, List<Quest>>(StringComparer.Ordinal);
+
+        foreach (var quest in _quests.Values)
+        {
+            AddGiverLink(byGiver, quest.QuestNpc, quest);
+            AddGiverLink(byGiver, quest.FavorNpc, quest);
+
+            if (quest.Rewards_Items is { Count: > 0 } rewards)
+            {
+                foreach (var reward in rewards)
+                {
+                    if (string.IsNullOrEmpty(reward.Item)) continue;
+                    if (!_itemsByInternalName.ContainsKey(reward.Item)) continue;
+                    if (!byRewardItem.TryGetValue(reward.Item, out var list))
+                    {
+                        list = new List<Quest>();
+                        byRewardItem[reward.Item] = list;
+                    }
+                    if (!list.Contains(quest))
+                        list.Add(quest);
+                }
+            }
+        }
+
+        _questsByGiverNpc = byGiver.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Quest>)kv.Value, StringComparer.Ordinal);
+        _questsRewardingItem = byRewardItem.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<Quest>)kv.Value, StringComparer.Ordinal);
+
+        void AddGiverLink(Dictionary<string, List<Quest>> map, string? npcInternalName, Quest quest)
+        {
+            if (string.IsNullOrEmpty(npcInternalName)) return;
+            // Drop refs to NPCs the catalog doesn't know about — they can't be
+            // navigated to anyway and the chip would render as plain text.
+            if (!_npcsByInternalName.ContainsKey(npcInternalName)) return;
+            if (!map.TryGetValue(npcInternalName, out var list))
+            {
+                list = new List<Quest>();
+                map[npcInternalName] = list;
+            }
+            if (!list.Contains(quest))
+                list.Add(quest);
+        }
+    }
 
     // ── Shared helpers ───────────────────────────────────────────────────
 

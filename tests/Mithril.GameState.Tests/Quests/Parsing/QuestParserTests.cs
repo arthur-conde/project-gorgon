@@ -58,8 +58,8 @@ public sealed class QuestAcceptedParserTests
     public QuestAcceptedParserTests()
     {
         var refData = new FakeReferenceData([
-            QuestEntryFactory.Repeatable("quest_25211", "Quest_Sample_25211", "Sample 25211", TimeSpan.FromHours(20)),
-            QuestEntryFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample 25212", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_25211", "Quest_Sample_25211", "Sample 25211", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample 25212", TimeSpan.FromHours(20)),
         ]);
         _parser = new QuestAcceptedParser(refData);
     }
@@ -120,9 +120,9 @@ public sealed class QuestCompletedParserTests
     public QuestCompletedParserTests()
     {
         _refData = new FakeReferenceData([
-            QuestEntryFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample 14003", TimeSpan.FromHours(20)),
-            QuestEntryFactory.Repeatable("quest_20803", "Quest_Sample_20803", "Sample 20803", TimeSpan.FromHours(20)),
-            QuestEntryFactory.Repeatable("quest_25010", "Quest_Sample_25010", "Sample 25010", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample 14003", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_20803", "Quest_Sample_20803", "Sample 20803", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_25010", "Quest_Sample_25010", "Sample 25010", TimeSpan.FromHours(20)),
         ]);
         _parser = new QuestCompletedParser(_refData);
     }

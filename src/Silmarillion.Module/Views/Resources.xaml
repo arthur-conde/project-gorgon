@@ -9,6 +9,7 @@
         <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
     </ResourceDictionary.MergedDictionaries>
 
+
     <!-- Compact two-line row for Items tab. Bound DataContext: Mithril.Reference.Models.Items.Item.
          Replaces the card layout in #231; ~36px per row, ~40+ visible. Key name kept as
          "*CardTemplate" to avoid rippling into both tab views — names are wallpaper. -->
@@ -47,6 +48,34 @@
                            FontSize="{DynamicResource AppFontSizeSmall}"
                            TextTrimming="CharacterEllipsis"
                            Visibility="{Binding AreaDisplayName, Converter={StaticResource NullOrEmptyToVis}}"/>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
+    <!-- Compact two-line row for Quests tab. Bound DataContext: Silmarillion.ViewModels.QuestListRow.
+         Quest entries don't ship icon ids; a ScrollText icon stands in (matches the empty-state
+         placeholder on the right pane). Secondary line shows Level + Location chip-style. -->
+    <DataTemplate x:Key="QuestCardTemplate">
+        <DockPanel LastChildFill="True">
+            <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="6,3,6,3"
+                    VerticalAlignment="Center" Background="#FF1F1F1F" CornerRadius="3">
+                <icon:PackIconLucide Kind="ScrollText" Width="14" Height="14" Foreground="#88FFFFFF"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Text>
+                        <PriorityBinding>
+                            <Binding Path="DisplayedLocation"/>
+                            <Binding Path="FavorNpcDisplayName"/>
+                        </PriorityBinding>
+                    </TextBlock.Text>
+                </TextBlock>
             </StackPanel>
         </DockPanel>
     </DataTemplate>

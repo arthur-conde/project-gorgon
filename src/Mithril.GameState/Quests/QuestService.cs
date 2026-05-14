@@ -157,10 +157,10 @@ public sealed class QuestService : BackgroundService, IQuestService
         var stamp = new DateTimeOffset(loaded.Timestamp, TimeSpan.Zero);
         var newActive = new Dictionary<string, QuestJournalEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var id in loaded.WorkOrderQuestIds)
-            if (_refData.Quests.TryGetValue($"quest_{id}", out var q))
+            if (_refData.Quests.TryGetValue($"quest_{id}", out var q) && !string.IsNullOrEmpty(q.InternalName))
                 newActive[q.InternalName] = new QuestJournalEntry(q.InternalName, stamp);
         foreach (var id in loaded.RegularQuestIds)
-            if (_refData.Quests.TryGetValue($"quest_{id}", out var q))
+            if (_refData.Quests.TryGetValue($"quest_{id}", out var q) && !string.IsNullOrEmpty(q.InternalName))
                 newActive[q.InternalName] = new QuestJournalEntry(q.InternalName, stamp);
 
         var events = new List<QuestEvent>();

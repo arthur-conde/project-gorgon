@@ -358,13 +358,12 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
-    public void Quest_requirements_with_polymorphic_T_discriminator_project_correctly()
+    public void Quest_requirements_with_polymorphic_T_discriminator_deserialise_to_concrete_subclasses()
     {
         // Verifies the polymorphic discriminator dispatch in Mithril.Reference's
         // ParseQuests: the JSON's "T" field maps to a concrete QuestRequirement
-        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.)
-        // and ParseAndSwapQuests projects that to the flat QuestRequirement
-        // record exposed on QuestEntry.Requirements.
+        // subclass (MinSkillLevelRequirement, MinFavorLevelRequirement, etc.).
+        // ParseAndSwapQuests exposes the raw POCO; no projection layer.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
         File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
         File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
@@ -402,22 +401,28 @@ public class ReferenceDataServiceTests : IDisposable
         quest.Name.Should().Be("Test Quest");
         quest.DisplayedLocation.Should().Be("Serbule");
         quest.FavorNpc.Should().Be("AreaSerbule/NPC_Joe");
-        quest.FavorReward.Should().Be(100);
+        quest.Reward_Favor.Should().Be(100);
 
         quest.Requirements.Should().HaveCount(2);
-        quest.Requirements[0].Type.Should().Be("QuestCompleted");
-        quest.Requirements[0].Quest.Should().Be("PriorQuest");
-        quest.Requirements[1].Type.Should().Be("MinFavorLevel");
-        quest.Requirements[1].Level.Should().Be("Friends");
-        quest.Requirements[1].Npc.Should().Be("AreaSerbule/NPC_Joe");
+        var completed = quest.Requirements![0].Should()
+            .BeOfType<Mithril.Reference.Models.Quests.QuestCompletedRequirement>().Subject;
+        completed.T.Should().Be("QuestCompleted");
+        completed.Quest.Should().Be("PriorQuest");
+        var favor = quest.Requirements![1].Should()
+            .BeOfType<Mithril.Reference.Models.Quests.MinFavorLevelRequirement>().Subject;
+        favor.T.Should().Be("MinFavorLevel");
+        favor.Level.Should().Be("Friends");
+        favor.Npc.Should().Be("AreaSerbule/NPC_Joe");
 
-        quest.SkillRewards.Should().ContainSingle();
-        quest.SkillRewards[0].Skill.Should().Be("Sword");
-        quest.SkillRewards[0].Xp.Should().Be(750);
+        var skillReward = quest.Rewards.Should()
+            .ContainSingle().Which.Should()
+            .BeOfType<Mithril.Reference.Models.Quests.SkillXpReward>().Subject;
+        skillReward.Skill.Should().Be("Sword");
+        skillReward.Xp.Should().Be(750);
 
-        quest.ItemRewards.Should().ContainSingle();
-        quest.ItemRewards[0].ItemInternalName.Should().Be("Potato");
-        quest.ItemRewards[0].StackSize.Should().Be(5);
+        quest.Rewards_Items.Should().ContainSingle();
+        quest.Rewards_Items![0].Item.Should().Be("Potato");
+        quest.Rewards_Items![0].StackSize.Should().Be(5);
     }
 
     [Fact]
@@ -574,7 +579,7 @@ public class ReferenceDataServiceTests : IDisposable
     public void Quest_item_source_resolves_questId_to_quest_InternalName()
     {
         // sources_items.json carries questId numerically; the parser should look up
-        // the matching QuestEntry and store its InternalName in ItemSource.Context.
+        // the matching Mithril.Reference.Models.Quests.Quest and store its InternalName in ItemSource.Context.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
             {
               "item_700": { "Name": "Cat Eyeball", "InternalName": "CatEyeball" }
@@ -650,6 +655,83 @@ public class ReferenceDataServiceTests : IDisposable
 
         driftWarnings.Should().NotBeEmpty(
             "the unknown discriminator should surface as a Warn through IDiagnosticsSink");
+    }
+
+    [Fact]
+    public void QuestsByGiverNpc_indexes_quests_with_matching_QuestNpc_or_FavorNpc()
+    {
+        // Reverse index that powers the NPCs tab's "Quests" section. Merges both
+        // Quest.QuestNpc (story giver) and Quest.FavorNpc (favor anchor) on the same NPC
+        // so the player sees one combined list. References to NPCs the catalog doesn't
+        // know about are dropped — those would render as plain-text chips anyway.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.json"), """
+            {
+              "NPC_Joeh": { "Name": "Joeh" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_1": { "Name": "Q1", "InternalName": "Q1", "FavorNpc": "NPC_Joeh" },
+              "quest_2": { "Name": "Q2", "InternalName": "Q2", "QuestNpc": "NPC_Joeh" },
+              "quest_3": { "Name": "Q3", "InternalName": "Q3", "QuestNpc": "NPC_Joeh", "FavorNpc": "NPC_Joeh" },
+              "quest_4": { "Name": "Q4", "InternalName": "Q4", "FavorNpc": "NPC_DoesNotExist" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.QuestsByGiverNpc.Should().ContainKey("NPC_Joeh");
+        svc.QuestsByGiverNpc["NPC_Joeh"].Select(q => q.InternalName).Should()
+            .BeEquivalentTo(new[] { "Q1", "Q2", "Q3" },
+                because: "Q3 should appear once even though it matches both QuestNpc and FavorNpc");
+        svc.QuestsByGiverNpc.Should().NotContainKey("NPC_DoesNotExist",
+            because: "the index drops refs to NPCs the catalog doesn't know about");
+    }
+
+    [Fact]
+    public void QuestsRewardingItem_indexes_quests_by_reward_item_InternalName()
+    {
+        // Reverse index that powers the Items-tab "Awarded by" section. Walks Quest.Rewards_Items
+        // and groups by item InternalName. Items the catalog doesn't know about are dropped.
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), """
+            {
+              "item_1": { "Name": "Frost Shard", "InternalName": "FrostShard" },
+              "item_2": { "Name": "Cera", "InternalName": "Cera" }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.json"), """
+            {
+              "quest_1": {
+                "Name": "Q1", "InternalName": "Q1",
+                "Rewards_Items": [
+                  { "Item": "FrostShard", "StackSize": 1 },
+                  { "Item": "Cera", "StackSize": 100 }
+                ]
+              },
+              "quest_2": {
+                "Name": "Q2", "InternalName": "Q2",
+                "Rewards_Items": [
+                  { "Item": "FrostShard", "StackSize": 1 },
+                  { "Item": "UnknownItem", "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.QuestsRewardingItem.Should().ContainKey("FrostShard");
+        svc.QuestsRewardingItem["FrostShard"].Select(q => q.InternalName).Should()
+            .BeEquivalentTo(new[] { "Q1", "Q2" });
+        svc.QuestsRewardingItem.Should().ContainKey("Cera");
+        svc.QuestsRewardingItem["Cera"].Should().ContainSingle();
+        svc.QuestsRewardingItem.Should().NotContainKey("UnknownItem");
     }
 
     [Fact]

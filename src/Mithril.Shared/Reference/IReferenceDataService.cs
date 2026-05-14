@@ -1,5 +1,7 @@
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Npcs;
+using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 
 namespace Mithril.Shared.Reference;
@@ -168,11 +170,49 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; }
 
-    /// <summary>Quest key (e.g. <c>"quest_10001"</c>) → <see cref="QuestEntry"/>.</summary>
-    IReadOnlyDictionary<string, QuestEntry> Quests { get; }
+    /// <summary>
+    /// Quest envelope key (e.g. <c>"quest_10001"</c>) → the full <see cref="Quest"/> POCO from
+    /// <c>quests.json</c>. Carries typed <see cref="Quest.Requirements"/>, <see cref="Quest.Rewards"/>,
+    /// <see cref="Quest.Objectives"/>, follow-ups, NPC refs, reuse timers, and the description /
+    /// success / preface text blocks needed by Silmarillion's Quests tab and Gandalf's repeatable-
+    /// quest timer source.
+    /// </summary>
+    IReadOnlyDictionary<string, Quest> Quests { get; }
 
-    /// <summary>InternalName → <see cref="QuestEntry"/> lookup. Matches Quest sources in <c>sources_items.json</c>.</summary>
-    IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; }
+    /// <summary>
+    /// Quest <c>InternalName</c> → <see cref="Quest"/> POCO. Matches Quest sources in
+    /// <c>sources_items.json</c> and the per-character <c>quests.json</c> active-journal entries.
+    /// </summary>
+    IReadOnlyDictionary<string, Quest> QuestsByInternalName { get; }
+
+    /// <summary>
+    /// Reverse index from NPC <c>InternalName</c> → quests where the NPC is either the giver
+    /// (<see cref="Quest.QuestNpc"/>) or the favor anchor (<see cref="Quest.FavorNpc"/>). Built
+    /// whenever <c>quests.json</c> or <c>npcs.json</c> reloads. Powers the NPCs-tab "Quests
+    /// given" section. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsByGiverNpc => EmptyQuestIndex;
+
+    /// <summary>
+    /// Reverse index from item <c>InternalName</c> → quests whose <see cref="Quest.Rewards_Items"/>
+    /// awards that item. Built whenever <c>quests.json</c> or <c>items.json</c> reloads. Powers the
+    /// Items-tab "Awarded by" section. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsRewardingItem => EmptyQuestIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<Quest>> EmptyQuestIndex
+        = new Dictionary<string, IReadOnlyList<Quest>>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Flat ordered list of every <see cref="DirectedGoal"/> from
+    /// <c>directedgoals.json</c> — the "stuff to do" in-game guidance panel. Mixed-type
+    /// list of category headers (<see cref="DirectedGoal.IsCategoryGate"/> = true,
+    /// e.g. <c>"Anagoge Island"</c>, <c>"Serbule Hills"</c>) and per-area sub-goals
+    /// (e.g. <c>"Grow a potato"</c>, <c>"Meet Nightshade"</c>) keyed to a parent gate
+    /// via <see cref="DirectedGoal.CategoryGateId"/>. Defaults to empty so test fakes
+    /// don't need to opt in.
+    /// </summary>
+    IReadOnlyList<DirectedGoal> DirectedGoals => Array.Empty<DirectedGoal>();
 
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their

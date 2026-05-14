@@ -1,0 +1,397 @@
+<UserControl x:Class="Silmarillion.Views.QuestDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Local converter declaration: keeps the resource scoped to this view (no
+                 cross-view merge of the module's Resources.xaml needed). -->
+            <vm:RequirementChipVmConverter x:Key="RequirementChipVmConverter"/>
+
+            <!-- One projected requirement row. Two render paths chosen by the projector:
+                   - Prefix + ChipName set: "{Prefix} [chip:{ChipName}]" — the entity is a
+                     proper clickable EntityChip when IsNavigable is true; degrades to a
+                     plain pill when the kind isn't tabbed yet. Used for story prerequisites
+                     (Completed: Wolf: Hunt Deer), favor gates (Friends with Joeh (Serbule)),
+                     inventory gates (Has Skinning Knife), etc.
+                   - Otherwise: plain Text only (skill levels, time-of-day, identity, flags). -->
+            <DataTemplate DataType="{x:Type vm:QuestRequirementDisplay}">
+                <Grid Margin="0,0,0,3">
+                    <!-- Chip-rendered path: Prefix + EntityChip. -->
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
+                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
+                    </StackPanel>
+                    <!-- Plain-text path: shown only when ChipName is empty. -->
+                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DataTemplate>
+
+            <!-- One labelled requirement group (e.g. "Skill / ability gates"). Renders the
+                 group header + nested item rows. Empty groups don't reach the renderer — the
+                 projector culls them. -->
+            <DataTemplate DataType="{x:Type vm:QuestRequirementGroup}">
+                <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="8,6" Margin="0,0,0,4">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"
+                                   Foreground="#FFD4A847"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,3"/>
+                        <ItemsControl ItemsSource="{Binding Requirements}"/>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
+            <!-- Reward row: prose path for value-shaped rewards (XP, currency), chip path for
+                 entity-shaped rewards (learned ability, taught recipe, lorebook, title). Same
+                 visibility-switch idiom as the requirement template. -->
+            <DataTemplate DataType="{x:Type vm:QuestRewardDisplay}">
+                <Grid Margin="0,0,0,3">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                   Visibility="{Binding Prefix, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
+                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type vm:QuestRewardGroup}">
+                <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="8,6" Margin="0,0,0,4">
+                    <StackPanel>
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"
+                                   Foreground="#FFD4A847"
+                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,3"/>
+                        <ItemsControl ItemsSource="{Binding Rewards}"/>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type vm:QuestObjectiveRow}">
+                <Border Margin="0,0,0,6" Padding="8,4" Background="#FF1F1F1F"
+                        BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="3">
+                    <StackPanel>
+                        <DockPanel>
+                            <Border DockPanel.Dock="Left" Background="#FF252525" CornerRadius="3"
+                                    Padding="6,1" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Index}" Foreground="#FFD4A847"
+                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                            </Border>
+                            <TextBlock Text="{Binding Description}" Foreground="#FFFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   Margin="32,2,0,0"
+                                   Visibility="{Binding Number, Converter={StaticResource NullOrEmptyToVis}}">
+                            <Run Text="Repeat ×"/>
+                            <Run Text="{Binding Number, Mode=OneWay}"/>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding NestedRequirements}" Margin="32,4,0,0"
+                                      Visibility="{Binding NestedRequirements.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <DockPanel>
+            <!-- Footer: internal name (mono). Repeatability promoted to a header chip so it's
+                 visible at first glance for daily-quest distinction. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       HorizontalAlignment="Right" Margin="0,8,0,0"/>
+
+            <StackPanel>
+                <!-- Header: name + location chip + badges -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
+                               Foreground="#FFD4A847"
+                               FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                CornerRadius="3" Padding="6,2"
+                                Visibility="{Binding Level, Converter={StaticResource NullOrEmptyToVis}}">
+                            <TextBlock Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}">
+                                <Run Text="Level "/>
+                                <Run Text="{Binding Level, Mode=OneWay}"/>
+                            </TextBlock>
+                        </Border>
+                        <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                                CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                Visibility="{Binding LocationDisplay, Converter={StaticResource NullOrEmptyToVis}}">
+                            <TextBlock Text="{Binding LocationDisplay}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                        </Border>
+                        <!-- Repeatability cadence. Gold-tinted to draw the eye — distinguishing
+                             a daily from a one-shot is the first piece of info a player wants. -->
+                        <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
+                                CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                Visibility="{Binding RepeatabilityChip, Converter={StaticResource NullOrEmptyToVis}}">
+                            <TextBlock Text="{Binding RepeatabilityChip}" Foreground="#FFD4A847"
+                                       FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Text="{Binding BadgesDisplay}" Foreground="#88FFFFFF" FontStyle="Italic"
+                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,4,0,0"
+                               Visibility="{Binding BadgesDisplay, Converter={StaticResource NullOrEmptyToVis}}"/>
+                </StackPanel>
+
+                <!-- Description sits high in the layout so it sets context before the player
+                     scans objectives / requirements. Embedded <i>/<b> markup parsed by the
+                     FormattedText attached property. -->
+                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
+                           Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                <!-- Giver / turn-in NPCs. Two labelled chip slots — these typically refer to the
+                     same NPC for repeatable quests (giver = turn-in); render both regardless so the
+                     player can verify, and the chip degradation handles missing data. -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding GiverChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Giver:" Foreground="#88FFFFFF" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding GiverChip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                                Visibility="{Binding TurnInChip, Converter={StaticResource NullOrEmptyToVis}}">
+                        <TextBlock Text="Turn in:" Foreground="#88FFFFFF" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding TurnInChip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Objectives -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding Objectives.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Objectives" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding Objectives}"/>
+                </StackPanel>
+
+                <!-- Requirements -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding RequirementGroups.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding RequirementGroups}"/>
+                </StackPanel>
+
+                <!-- Requirements to sustain — separately labelled so the player can tell apart
+                     "to bestow" from "to keep". Same shape, different label. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding SustainRequirementGroups.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Maintain to keep quest" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding SustainRequirementGroups}"/>
+                </StackPanel>
+
+                <!-- Rewards: items + recipes (clickable chips) + grouped value rewards + favor.
+                     Order matters — clickable cross-link rewards first, value rewards second. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding RewardItemChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Item rewards" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding RewardItemChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding RewardRecipeChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Recipe rewards" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding RewardRecipeChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding RewardGroups.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <ItemsControl ItemsSource="{Binding RewardGroups}"/>
+                </StackPanel>
+
+                <TextBlock Foreground="#FFD4A847" FontStyle="Italic"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,10"
+                           Visibility="{Binding FavorRewardDisplay, Converter={StaticResource NullOrEmptyToVis}}"
+                           Text="{Binding FavorRewardDisplay}"/>
+
+                <!-- Pre-give: items + recipes handed over when the quest is accepted. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding PreGiveItemChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Given when accepted" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding PreGiveItemChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding PreGiveRecipeChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Recipes given when accepted" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding PreGiveRecipeChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Follow-up quests — clickable from day one since they self-reference this tab. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding FollowUpQuestChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Leads to" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ItemsControl ItemsSource="{Binding FollowUpQuestChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- NPC dialogue (preface / midway / completion). Mostly flavor text — tucked
+                     into an Expander that defaults closed so it doesn't dominate the pane. PG's
+                     <i>Speaker:</i> dialogue markup is parsed by the FormattedText attached
+                     property. -->
+                <Expander Header="Quest dialogue"
+                          Foreground="#88FFFFFF" Background="Transparent"
+                          BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
+                          Padding="0,4,0,0" Margin="0,0,0,10"
+                          IsExpanded="False"
+                          Visibility="{Binding HasFlavorText, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Margin="0,6,0,0">
+                        <TextBlock c:FormattedText.Text="{Binding PrefaceFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding PrefaceFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock c:FormattedText.Text="{Binding MidwayFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding MidwayFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock c:FormattedText.Text="{Binding SuccessFormatted}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                                   MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                   Visibility="{Binding SuccessFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

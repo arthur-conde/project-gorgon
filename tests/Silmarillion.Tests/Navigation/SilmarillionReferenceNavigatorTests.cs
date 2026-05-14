@@ -228,7 +228,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, nav, targets);
+        var silmarillionVm = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, quests: null!, nav, targets);
 
         // Act
         nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
@@ -253,7 +253,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, nav, targets);
+        var silmarillionVm = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword("Crystal"));
 
@@ -279,7 +279,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, nav, targets);
+        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "Crystal"]));
 
@@ -308,7 +308,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, nav, targets);
+        _ = new SilmarillionViewModel(items: itemsVm, recipes: null!, npcs: null!, quests: null!, nav, targets);
 
         nav.Open(EntityRef.ItemKeyword("Crystal"));
 
@@ -339,7 +339,7 @@ public sealed class SilmarillionReferenceNavigatorTests
             keywordTarget,
         };
         var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, nav, targets);
+        _ = new SilmarillionViewModel(items: null!, recipes: recipesVm, npcs: null!, quests: null!, nav, targets);
 
         nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
 
@@ -396,8 +396,8 @@ public sealed class SilmarillionReferenceNavigatorTests
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
-        public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
-        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

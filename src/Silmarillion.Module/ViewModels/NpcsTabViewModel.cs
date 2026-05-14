@@ -282,22 +282,28 @@ public sealed partial class NpcsTabViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Quest cross-link list. v1 matches only on <see cref="Mithril.Shared.Reference.QuestEntry.FavorNpc"/>
-    /// — that's the giver/turn-in NPC. Per-objective turn-in detection is deferred to the
-    /// Quests tab handoff (#242). Renders as plain text until that tab ships.
+    /// Quest cross-link list. Reads <see cref="IReferenceDataService.QuestsByGiverNpc"/> —
+    /// merges <see cref="Quest.QuestNpc"/> and <see cref="Quest.FavorNpc"/>, so quests where the
+    /// NPC is the giver, the turn-in, or the favor anchor all surface. Rendered as navigable
+    /// <see cref="EntityChipVm"/> chips that route to the Quests tab via <see cref="EntityRef.Quest"/>.
     /// </summary>
-    private IReadOnlyList<NpcQuestLink> BuildQuestLinks(string npcInternalName)
+    private IReadOnlyList<EntityChipVm> BuildQuestLinks(string npcInternalName)
     {
-        var matches = new List<NpcQuestLink>();
-        foreach (var quest in _refData.Quests.Values)
-        {
-            if (!string.Equals(quest.FavorNpc, npcInternalName, StringComparison.Ordinal)) continue;
-            matches.Add(new NpcQuestLink(
-                DisplayName: string.IsNullOrEmpty(quest.Name) ? quest.InternalName : quest.Name,
-                InternalName: quest.InternalName));
-        }
-        matches.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
-        return matches;
+        if (!_refData.QuestsByGiverNpc.TryGetValue(npcInternalName, out var quests) || quests.Count == 0)
+            return [];
+        return quests
+            .OrderBy(q => q.Name ?? q.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(q =>
+            {
+                var internalName = q.InternalName ?? "";
+                var reference = EntityRef.Quest(internalName);
+                return new EntityChipVm(
+                    DisplayName: q.Name ?? internalName,
+                    IconId: 0,
+                    Reference: reference,
+                    IsNavigable: _navigator.CanOpen(reference));
+            })
+            .ToList();
     }
 
     private static IReadOnlyList<NpcPreferenceRow> BuildPreferenceRows(Npc npc)

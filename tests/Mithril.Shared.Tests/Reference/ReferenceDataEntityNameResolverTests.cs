@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
+using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -137,13 +138,54 @@ public sealed class ReferenceDataEntityNameResolverTests
     }
 
     [Fact]
-    public void UnknownKind_ReturnsInternalNameVerbatim()
+    public void Quest_ResolvesPocoName_WhenQuestPresentWithName()
     {
-        // Kinds the resolver doesn't yet have a case for (e.g. Quest before Quests tab lands)
-        // return InternalName unchanged so callers render *something* readable rather than empty.
+        var refData = new ResolverStub
+        {
+            QuestsByInternalNameMap =
+            {
+                ["KillSkeletons"] = new Quest { InternalName = "KillSkeletons", Name = "Kill Skeletons" },
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Quest("KillSkeletons")).Should().Be("Kill Skeletons");
+    }
+
+    [Fact]
+    public void Quest_FallsBackToInternalName_WhenQuestAbsent()
+    {
         var resolver = new ReferenceDataEntityNameResolver(new ResolverStub());
 
-        resolver.Resolve(EntityRef.Quest("quest_1234")).Should().Be("quest_1234");
+        resolver.Resolve(EntityRef.Quest("UnknownQuest")).Should().Be("UnknownQuest");
+    }
+
+    [Fact]
+    public void Quest_FallsBackToInternalName_WhenPocoNameIsEmpty()
+    {
+        // Same fallback as Items/Recipes — quest InternalNames have no consistent prefix
+        // (KillSkeletons, GetCatEyeballs) so the InternalName already reads sensibly.
+        var refData = new ResolverStub
+        {
+            QuestsByInternalNameMap =
+            {
+                ["Nameless"] = new Quest { InternalName = "Nameless", Name = "" },
+            },
+        };
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        resolver.Resolve(EntityRef.Quest("Nameless")).Should().Be("Nameless");
+    }
+
+    [Fact]
+    public void UnknownKind_ReturnsInternalNameVerbatim()
+    {
+        // Kinds the resolver doesn't yet have a case for (e.g. Effect/Area/PlayerTitle —
+        // not tabbed yet) return InternalName unchanged so callers render *something*
+        // readable rather than empty.
+        var resolver = new ReferenceDataEntityNameResolver(new ResolverStub());
+
+        resolver.Resolve(EntityRef.Effect("FrostShard")).Should().Be("FrostShard");
     }
 
     private sealed class ResolverStub : IReferenceDataService
@@ -151,6 +193,7 @@ public sealed class ReferenceDataEntityNameResolverTests
         public Dictionary<string, Item> ItemsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Recipe> RecipesByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Npc> NpcsByInternalNameMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Quest> QuestsByInternalNameMap { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -167,8 +210,8 @@ public sealed class ReferenceDataEntityNameResolverTests
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
-        public IReadOnlyDictionary<string, QuestEntry> Quests { get; } = new Dictionary<string, QuestEntry>();
-        public IReadOnlyDictionary<string, QuestEntry> QuestsByInternalName { get; } = new Dictionary<string, QuestEntry>();
+        public IReadOnlyDictionary<string, Quest> Quests { get; } = new Dictionary<string, Quest>();
+        public IReadOnlyDictionary<string, Quest> QuestsByInternalName => QuestsByInternalNameMap;
         public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);

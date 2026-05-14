@@ -24,7 +24,7 @@ public sealed class NpcDetailViewModel
         IReadOnlyList<NpcServiceRow> services,
         IReadOnlyList<EntityChipVm> taughtRecipes,
         IReadOnlyList<EntityChipVm> soldItems,
-        IReadOnlyList<NpcQuestLink> quests,
+        IReadOnlyList<EntityChipVm> quests,
         IReadOnlyList<NpcPreferenceRow> preferences,
         IReadOnlyList<string> giftSentimentTiers,
         ICommand? openEntityCommand = null)
@@ -51,7 +51,7 @@ public sealed class NpcDetailViewModel
     public IReadOnlyList<NpcServiceRow> Services { get; }
     public IReadOnlyList<EntityChipVm> TaughtRecipes { get; }
     public IReadOnlyList<EntityChipVm> SoldItems { get; }
-    public IReadOnlyList<NpcQuestLink> Quests { get; }
+    public IReadOnlyList<EntityChipVm> Quests { get; }
     public IReadOnlyList<NpcPreferenceRow> Preferences { get; }
     public IReadOnlyList<string> GiftSentimentTiers { get; }
 
