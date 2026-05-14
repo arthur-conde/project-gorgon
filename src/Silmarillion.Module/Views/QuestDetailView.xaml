@@ -79,10 +79,44 @@
                 </Border>
             </DataTemplate>
 
+            <!-- Reward row: prose path for value-shaped rewards (XP, currency), chip path for
+                 entity-shaped rewards (learned ability, taught recipe, lorebook, title). Same
+                 visibility-switch idiom as the requirement template. -->
             <DataTemplate DataType="{x:Type vm:QuestRewardDisplay}">
-                <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                <Grid Margin="0,0,0,3">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                   Visibility="{Binding Prefix, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
+                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </DataTemplate>
 
             <DataTemplate DataType="{x:Type vm:QuestRewardGroup}">

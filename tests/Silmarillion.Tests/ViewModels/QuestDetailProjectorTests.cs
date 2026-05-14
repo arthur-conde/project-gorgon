@@ -304,7 +304,7 @@ public sealed class QuestDetailProjectorTests
             Rewards = new QuestReward[] { new SkillXpReward { T = "SkillXp", Skill = "Sword", Xp = 1500 } },
         };
 
-        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData);
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
 
         groups.Should().ContainSingle(g => g.Label == "Experience")
             .Which.Rewards.Single().Text.Should().Be("Sword: 1,500 XP");
@@ -319,7 +319,7 @@ public sealed class QuestDetailProjectorTests
             Rewards = new QuestReward[] { new CurrencyReward { T = "Currency", Currency = "Councils", Amount = 1500 } },
         };
 
-        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData);
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
 
         groups.Should().ContainSingle(g => g.Label == "Currency")
             .Which.Rewards.Single().Text.Should().Be("1,500 Councils");
@@ -334,23 +334,99 @@ public sealed class QuestDetailProjectorTests
             Rewards = new QuestReward[] { new GuildCreditsReward { T = "GuildCredits", Credits = 100 } },
         };
 
-        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData);
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
 
         groups.Should().ContainSingle(g => g.Label == "Currency")
             .Which.Rewards.Single().Text.Should().Be("100 guild credits");
     }
 
     [Fact]
-    public void RewardsEffects_BucketedAsEffects()
+    public void RewardsEffects_GiveXp_ParsesMethodCallShape()
     {
+        // Regression for the Kalrod4 quest screenshot: "GiveXP(Carpentry,11000)" used to
+        // CamelCase-split into "Give XP( Carpentry,11000)". Now: properly parsed.
         var refData = new StubRefData();
-        var quest = new Quest { Rewards_Effects = new[] { "PsychologicalDamage" } };
+        refData.Skills["Carpentry"] = new SkillEntry("Carpentry", "Carpentry", 1, false, "TypicalNoncombatSkill", 0, [],
+            new Dictionary<string, SkillRewardEntry>(StringComparer.Ordinal));
+        var quest = new Quest { Rewards_Effects = new[] { "GiveXP(Carpentry,11000)" } };
 
-        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData);
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
 
         groups.Should().ContainSingle(g => g.Label == "Effects")
-            .Which.Rewards.Single().Text.Should().Be("Psychological Damage",
-                because: "effect internal names are camel-case-split for legibility");
+            .Which.Rewards.Single().Text.Should().Be("Carpentry: +11,000 XP");
+    }
+
+    [Fact]
+    public void RewardsEffects_DeltaNpcFavor_ResolvesSlug_AndFallsBackToAreaForEventNpcs()
+    {
+        // Second half of the Kalrod4 regression: "DeltaNpcFavor(AreaCasino/LiveNpc_Orran,10)"
+        // The LiveNpc_Orran entry doesn't exist in npcs.json (event-only scripted NPC), so the
+        // fallback path resolves the area via areas.json + strips the LiveNpc_ prefix from
+        // the display name.
+        var refData = new StubRefData();
+        refData.AreasMap["AreaCasino"] = new AreaEntry("AreaCasino", "Red Wing Casino", "Casino");
+        var quest = new Quest { Rewards_Effects = new[] { "DeltaNpcFavor(AreaCasino/LiveNpc_Orran,10)" } };
+
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData,
+            new ReferenceDataEntityNameResolver(refData), NoOpNavigator);
+
+        groups.Should().ContainSingle(g => g.Label == "Effects")
+            .Which.Rewards.Single().Text.Should().Be("+10 favor with Orran (Red Wing Casino)");
+    }
+
+    [Fact]
+    public void RewardsEffects_BestowRecipe_EmitsChipStub_ForTheRecipeTab()
+    {
+        // Chip-shape reward: a quest that teaches a recipe. Recipe is already a tabbed kind, so
+        // the chip lights up immediately. ChipName resolves via the entity-name resolver.
+        var refData = new StubRefData();
+        refData.RecipesByInternalNameMap["BakeBread"] = new Recipe { Key = "recipe_1", InternalName = "BakeBread", Name = "Bake Bread" };
+        var nav = new SilmarillionReferenceNavigator(new[] { (IReferenceKindTarget)new RecordingTarget(EntityKind.Recipe) });
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+        var quest = new Quest { Rewards_Effects = new[] { "BestowRecipe(BakeBread)" } };
+
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, resolver, nav);
+
+        var reward = groups.Should().ContainSingle(g => g.Label == "Effects")
+            .Which.Rewards.Single();
+        reward.Prefix.Should().Be("Teaches recipe:");
+        reward.ChipName.Should().Be("Bake Bread");
+        reward.Reference!.Kind.Should().Be(EntityKind.Recipe);
+        reward.IsNavigable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RewardsEffects_LearnAbility_EmitsChipStub_ThatDegradesUntilAbilityTabShips()
+    {
+        // Abilities don't have a tab yet (#243). The chip is still constructed — IsNavigable
+        // is false so the EntityChip renders as plain pill text, but flips to clickable the
+        // moment #243 registers an Ability kind target.
+        var refData = new StubRefData();
+        var quest = new Quest { Rewards_Effects = new[] { "LearnAbility(SwordPunish4)" } };
+
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
+
+        var reward = groups.Should().ContainSingle(g => g.Label == "Effects")
+            .Which.Rewards.Single();
+        reward.Prefix.Should().Be("Teaches ability:");
+        reward.ChipName.Should().Be("Sword Punish4");
+        reward.Reference!.Kind.Should().Be(EntityKind.Ability);
+        reward.IsNavigable.Should().BeFalse("the Ability kind target isn't registered until #243");
+    }
+
+    [Fact]
+    public void RewardsEffects_InternalScriptEffect_RendersVerbatim()
+    {
+        // Developer-facing effects (SetInteractionFlag, DeltaScriptAtomicInt, ...) aren't
+        // gameplay rewards. Render the raw method-call string so a curious dev can see what
+        // the quest does internally without it being CamelCase-split into junk.
+        var refData = new StubRefData();
+        var quest = new Quest { Rewards_Effects = new[] { "SetInteractionFlag(LiveEvent_Kalrod_Done)" } };
+
+        var groups = QuestDetailProjector.BuildRewardGroups(quest, refData, NoOpResolver, NoOpNavigator);
+
+        groups.Should().ContainSingle(g => g.Label == "Effects")
+            .Which.Rewards.Single().Text.Should().Be("SetInteractionFlag(LiveEvent_Kalrod_Done)");
     }
 
     [Fact]
@@ -455,7 +531,7 @@ public sealed class QuestDetailProjectorTests
         sustain.Should().ContainSingle(g => g.Label == "Time & moon")
             .Which.Requirements.Single().Text.Should().Contain("Full Moon");
 
-        var rewardGroups = QuestDetailProjector.BuildRewardGroups(quest, svc);
+        var rewardGroups = QuestDetailProjector.BuildRewardGroups(quest, svc, resolver, nav);
         rewardGroups.Select(g => g.Label).Should().Contain("Effects");
     }
 
@@ -477,7 +553,7 @@ public sealed class QuestDetailProjectorTests
         var quest = svc.Quests["quest_1"];
         var objectives = QuestDetailProjector.BuildObjectives(quest, svc, resolver, nav);
         var requirements = QuestDetailProjector.BuildRequirementGroups(quest.Requirements, svc, resolver, nav);
-        var rewards = QuestDetailProjector.BuildRewardGroups(quest, svc);
+        var rewards = QuestDetailProjector.BuildRewardGroups(quest, svc, resolver, nav);
 
         quest.Name.Should().NotBeNullOrEmpty();
         objectives.Should().NotBeEmpty(because: "KillSkeletons has at least one Kill objective");
@@ -497,6 +573,13 @@ public sealed class QuestDetailProjectorTests
             throw new InvalidOperationException("HTTP must not be called from a sanity-walk test.");
     }
 
+    // Stub navigator/resolver helpers used by Format and Build tests that don't care about
+    // cross-link navigation. The navigator returns false for CanOpen on every kind so chip
+    // stubs render as plain pill text in these tests.
+    private static readonly SilmarillionReferenceNavigator NoOpNavigator =
+        new(Array.Empty<IReferenceKindTarget>());
+    private static readonly IEntityNameResolver NoOpResolver = new ReferenceDataEntityNameResolver(new StubRefData());
+
     private sealed class StubRefData : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByInternalNameMap { get; } = new(StringComparer.Ordinal);
@@ -504,6 +587,7 @@ public sealed class QuestDetailProjectorTests
         public Dictionary<string, Npc> NpcsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Quest> QuestsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, SkillEntry> Skills { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, AreaEntry> AreasMap { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -515,7 +599,7 @@ public sealed class QuestDetailProjectorTests
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, Npc> NpcsByInternalName => NpcsByInternalNameMap;
-        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
+        public IReadOnlyDictionary<string, AreaEntry> Areas => AreasMap;
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();

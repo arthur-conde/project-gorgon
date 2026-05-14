@@ -250,7 +250,25 @@ public static class QuestDetailProjector
                     null, false);
 
             case HasEffectKeywordRequirement h:
-                return new QuestRequirementDisplay($"Has effect: {SplitCamelCase(h.Keyword)}", null, false);
+                {
+                    // Effect keywords are tags on entries in effects.json (one keyword may be
+                    // attached to multiple effects). Build a chip stub anchored on
+                    // EntityRef.Effect(keyword); _navigator.CanOpen returns false today since
+                    // the Effects tab (#244) isn't registered, so the chip degrades to plain
+                    // text. The moment the Effects kind target ships, every HasEffectKeyword
+                    // requirement across the catalogue flips to navigable without further
+                    // changes here.
+                    if (string.IsNullOrEmpty(h.Keyword))
+                        return new QuestRequirementDisplay("Has effect: (unknown)", null, false);
+                    var chipName = SplitCamelCase(h.Keyword);
+                    var reference = EntityRef.Effect(h.Keyword!);
+                    return new QuestRequirementDisplay(
+                        Text: $"Has effect: {chipName}",
+                        Reference: reference,
+                        IsNavigable: navigator.CanOpen(reference),
+                        Prefix: "Has effect:",
+                        ChipName: chipName);
+                }
 
             case TimeOfDayRequirement t:
                 if (!string.IsNullOrEmpty(t.Hours))
@@ -364,7 +382,9 @@ public static class QuestDetailProjector
     /// </summary>
     public static IReadOnlyList<QuestRewardGroup> BuildRewardGroups(
         Quest quest,
-        IReferenceDataService refData)
+        IReferenceDataService refData,
+        IEntityNameResolver resolver,
+        IReferenceNavigator navigator)
     {
         var xp = new List<QuestRewardDisplay>();
         var currency = new List<QuestRewardDisplay>();
@@ -399,7 +419,7 @@ public static class QuestDetailProjector
                         currency.Add(new QuestRewardDisplay($"{gc.Credits:N0} guild credits"));
                         break;
                     case AbilityReward ar:
-                        abilities.Add(new QuestRewardDisplay(SplitCamelCase(ar.Ability)));
+                        abilities.Add(BuildAbilityChipReward(ar.Ability, navigator));
                         break;
                     case UnknownQuestReward u:
                         effects.Add(new QuestRewardDisplay($"Unrecognised: {u.DiscriminatorValue}"));
@@ -414,7 +434,7 @@ public static class QuestDetailProjector
         {
             foreach (var e in rewardEffects)
                 if (!string.IsNullOrEmpty(e))
-                    effects.Add(new QuestRewardDisplay(SplitCamelCase(e)));
+                    effects.Add(FormatRewardEffect(e, refData, resolver, navigator));
         }
 
         var groups = new List<QuestRewardGroup>();
@@ -483,12 +503,159 @@ public static class QuestDetailProjector
         if (string.IsNullOrEmpty(npcInternalName)) return "(unknown NPC)";
         var canonical = EntityRef.Npc(npcInternalName!).InternalName;
         var name = resolver.Resolve(EntityRef.Npc(npcInternalName!));
+
+        // Primary path: NPC is in npcs.json and has an AreaFriendlyName populated.
         if (refData.NpcsByInternalName.TryGetValue(canonical, out var npc)
             && !string.IsNullOrEmpty(npc.AreaFriendlyName))
         {
             return $"{name} ({npc.AreaFriendlyName})";
         }
+
+        // Fallback: NPC not in npcs.json (event-only NPCs like AreaCasino/LiveNpc_Orran are
+        // common — they're scripted entities, not full POCOs). Look up the area portion of the
+        // slug via areas.json and strip recognizable NPC-key prefixes from the resolved name so
+        // "LiveNpc_Orran" reads as "Orran" rather than as the raw envelope key.
+        var slashIdx = npcInternalName!.LastIndexOf('/');
+        if (slashIdx > 0)
+        {
+            var areaKey = npcInternalName!.Substring(0, slashIdx);
+            if (refData.Areas.TryGetValue(areaKey, out var area)
+                && !string.IsNullOrEmpty(area.FriendlyName))
+            {
+                return $"{StripNpcKeyPrefixes(name)} ({area.FriendlyName})";
+            }
+        }
         return name;
+    }
+
+    private static string StripNpcKeyPrefixes(string name)
+    {
+        if (name.StartsWith("LiveNpc_", System.StringComparison.Ordinal)) return name.Substring("LiveNpc_".Length);
+        if (name.StartsWith("NPC_", System.StringComparison.Ordinal)) return name.Substring("NPC_".Length);
+        return name;
+    }
+
+    // ─── Reward-effect strings ─────────────────────────────────────────────────────────
+    //
+    // Rewards_Effects ships method-call-style strings (e.g. "GiveXP(Carpentry,11000)") —
+    // the same dialect as recipe ResultEffects. Naive CamelCase-splitting turns these into
+    // unreadable junk ("Give XP( Carpentry,11000)"), so route each effect through a focused
+    // parser that handles the top player-facing prefixes and renders unknowns verbatim.
+    //
+    // Top prefix vocabulary in quests.json (counted via grep):
+    //   239  DeltaNpcFavor
+    //   162  SetInteractionFlag    (developer-facing — verbatim)
+    //    94  GiveXP
+    //    72  DeltaScriptAtomicInt  (developer-facing — verbatim)
+    //    29  ClearInteractionFlag  (developer-facing — verbatim)
+    //    15  RaiseSkillToLevel
+    //    17  BestowTitle
+    //    14  AdvanceScriptedQuestObjective  (developer-facing — verbatim)
+    //    10  LearnAbility
+    //     6  EnsureLoreBookKnown
+    //     2  BestowRecipe
+
+    public static QuestRewardDisplay FormatRewardEffect(
+        string raw,
+        IReferenceDataService refData,
+        IEntityNameResolver resolver,
+        IReferenceNavigator navigator)
+    {
+        if (string.IsNullOrEmpty(raw)) return new QuestRewardDisplay(raw);
+        // No "(" → either a no-arg effect ("GiveWerewolfBuffPoint") or unknown shape. CamelCase
+        // split is friendlier than the raw identifier; no chip target.
+        var parenIdx = raw.IndexOf('(');
+        if (parenIdx < 0) return new QuestRewardDisplay(SplitCamelCase(raw));
+
+        var prefix = raw.Substring(0, parenIdx);
+        var argsEnd = raw.LastIndexOf(')');
+        if (argsEnd <= parenIdx) return new QuestRewardDisplay(raw);
+        var argsRaw = raw.Substring(parenIdx + 1, argsEnd - parenIdx - 1);
+        var args = SplitArgs(argsRaw);
+
+        switch (prefix)
+        {
+            // Value-shaped effects: stay on the prose path.
+            case "GiveXP" when args.Count == 2:
+                return new QuestRewardDisplay($"{ResolveSkillName(refData, args[0])}: +{FormatNumber(args[1])} XP");
+            case "DeltaNpcFavor" when args.Count == 2:
+                return new QuestRewardDisplay(
+                    $"{FormatSignedAmount(args[1])} favor with {ResolveNpcDisplayWithArea(refData, resolver, args[0])}");
+            case "RaiseSkillToLevel" when args.Count == 2:
+                return new QuestRewardDisplay($"Raise {ResolveSkillName(refData, args[0])} to level {args[1]}");
+
+            // Entity-shaped effects: chip stubs. Each lights up the moment its target tab ships;
+            // until then the chip degrades to plain-text via _navigator.CanOpen.
+            case "BestowTitle" when args.Count >= 1:
+                return BuildEntityChipReward("Earns title:", EntityRef.PlayerTitle(args[0]), SplitCamelCase(args[0]), navigator);
+            case "LearnAbility" when args.Count >= 1:
+                return BuildEntityChipReward("Teaches ability:", EntityRef.Ability(args[0]), SplitCamelCase(args[0]), navigator);
+            case "BestowRecipe" when args.Count >= 1:
+                {
+                    var reference = EntityRef.Recipe(args[0]);
+                    return BuildEntityChipReward("Teaches recipe:", reference, resolver.Resolve(reference), navigator);
+                }
+            case "EnsureLoreBookKnown" when args.Count >= 1:
+                return BuildEntityChipReward("Lorebook:", EntityRef.Lorebook(args[0]), SplitCamelCase(args[0]), navigator);
+
+            // Developer-facing effects render verbatim — they're not gameplay rewards, but the
+            // player / curious dev can see *that* the quest tweaks internal state.
+            default:
+                return new QuestRewardDisplay(raw);
+        }
+    }
+
+    private static QuestRewardDisplay BuildEntityChipReward(
+        string prefix,
+        EntityRef reference,
+        string chipName,
+        IReferenceNavigator navigator) =>
+        new(
+            Text: $"{prefix} {chipName}",
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference),
+            Prefix: prefix,
+            ChipName: chipName);
+
+    private static QuestRewardDisplay BuildAbilityChipReward(string? ability, IReferenceNavigator navigator)
+    {
+        if (string.IsNullOrEmpty(ability)) return new QuestRewardDisplay("(unknown ability)");
+        var chipName = SplitCamelCase(ability);
+        var reference = EntityRef.Ability(ability!);
+        return new QuestRewardDisplay(
+            Text: chipName,
+            Reference: reference,
+            IsNavigable: navigator.CanOpen(reference),
+            Prefix: null,         // no label — the group header says "Abilities (learned)"
+            ChipName: chipName);
+    }
+
+    /// <summary>
+    /// Split a comma-separated argument list, trimming surrounding whitespace from each piece.
+    /// Doesn't try to handle nested commas (PG's effect strings don't nest), keeps it cheap.
+    /// </summary>
+    private static IReadOnlyList<string> SplitArgs(string args)
+    {
+        if (string.IsNullOrEmpty(args)) return System.Array.Empty<string>();
+        var parts = args.Split(',');
+        var result = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++) result[i] = parts[i].Trim();
+        return result;
+    }
+
+    private static string FormatNumber(string raw) =>
+        long.TryParse(raw, System.Globalization.NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+            ? n.ToString("N0", CultureInfo.InvariantCulture)
+            : raw;
+
+    private static string FormatSignedAmount(string raw)
+    {
+        if (long.TryParse(raw, System.Globalization.NumberStyles.Integer | System.Globalization.NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture, out var n))
+        {
+            return n >= 0 ? $"+{n:N0}" : n.ToString("N0", CultureInfo.InvariantCulture);
+        }
+        return raw;
     }
 
     private static EntityRef? BuildNpcRef(string? npcInternalName, IReferenceNavigator navigator, out bool isNavigable)

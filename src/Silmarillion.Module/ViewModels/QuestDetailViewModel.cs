@@ -51,7 +51,7 @@ public sealed class QuestDetailViewModel
         RequirementGroups = QuestDetailProjector.BuildRequirementGroups(quest.Requirements, refData, nameResolver, navigator);
         SustainRequirementGroups = QuestDetailProjector.BuildRequirementGroups(quest.RequirementsToSustain, refData, nameResolver, navigator);
 
-        RewardGroups = QuestDetailProjector.BuildRewardGroups(quest, refData);
+        RewardGroups = QuestDetailProjector.BuildRewardGroups(quest, refData, nameResolver, navigator);
         RewardItemChips = BuildItemChips(quest.Rewards_Items, refData, nameResolver, navigator);
         RewardRecipeChips = BuildRecipeRewardChips(quest, refData, nameResolver, navigator);
         FollowUpQuestChips = BuildQuestChips(quest.FollowUpQuests, nameResolver, navigator);
