@@ -225,6 +225,49 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
+    public void RealBundledEffects_KnownEntries_ProjectSensibly()
+    {
+        // Cookbook verification-ladder step 4: walk 2-3 real entries from the bundled JSON for
+        // the kind and confirm each projects legibly with real data. Skips when the bundled
+        // file isn't co-located (some CI shapes strip them); a real failure means a future
+        // bundled-data update broke the projection contract for these entries.
+        var bundledPath = LocateBundledEffects();
+        if (bundledPath is null) return;
+
+        var json = File.ReadAllText(bundledPath);
+        var parsed = Mithril.Reference.Serialization.ReferenceDeserializer.ParseEffects(json);
+
+        // effect_10003 is Sticky! — known canonical entry referenced in the handoff doc and
+        // featuring the -2 duration sentinel that the projector maps to "Until removed".
+        parsed.Should().ContainKey("effect_10003");
+        var sticky = parsed["effect_10003"];
+        sticky.InternalName.Should().Be("effect_10003", because: "the deserializer lifts the envelope key onto InternalName");
+        sticky.Name.Should().NotBeNullOrEmpty();
+        sticky.Name.Should().NotContain("(unknown)");
+
+        // Every effect should round-trip with a populated InternalName after the lift.
+        parsed.Values.Should().OnlyContain(e => !string.IsNullOrEmpty(e.InternalName));
+
+        // The bundled set should be large enough to be meaningful — ~23k entries per the
+        // handoff. A small sanity check below catches the case where the file shipped empty
+        // (e.g. a botched CDN refresh).
+        parsed.Count.Should().BeGreaterThan(10_000);
+    }
+
+    private static string? LocateBundledEffects()
+    {
+        // Walk up from the test binary toward the repo root looking for the bundled file.
+        var dir = AppContext.BaseDirectory;
+        for (var i = 0; i < 10 && dir is not null; i++)
+        {
+            var candidate = Path.Combine(dir, "src", "Mithril.Shared", "Reference", "BundledData", "effects.json");
+            if (File.Exists(candidate)) return candidate;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        return null;
+    }
+
+    [Fact]
     public void RefreshEffects_RebuildsEffectKeywordIndices()
     {
         // Single-shot construction verifies the effect-side indices rebuild when
