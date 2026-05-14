@@ -83,7 +83,7 @@
                                 <DataTrigger Binding="{Binding DurationLabel, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding StackingTypeChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding StackingTypeChip, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding DisplayMode, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
@@ -99,7 +99,7 @@
                         <Run Text="{Binding DurationLabel, Mode=OneWay}"/>
                     </TextBlock>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
-                                Visibility="{Binding StackingTypeChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding StackingTypeChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Stacking type: " Foreground="#88FFFFFF"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center"/>
@@ -185,7 +185,7 @@
                     </ItemsControl>
                     <ContentControl Content="{Binding RequiredByAbilitiesOverflowPill}"
                                     Margin="0,4,0,0"
-                                    Visibility="{Binding RequiredByAbilitiesOverflowPill, Converter={StaticResource NullOrEmptyToVis}}">
+                                    Visibility="{Binding RequiredByAbilitiesOverflowPill, Converter={StaticResource NullToVis}}">
                         <ContentControl.Resources>
                             <DataTemplate DataType="{x:Type c:EntityChipVm}">
                                 <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>

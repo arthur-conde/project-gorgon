@@ -377,7 +377,7 @@
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
@@ -389,7 +389,7 @@
                     <TextBlock Text="Special targeting" FontWeight="SemiBold" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullOrEmptyToVis}}">
+                                Visibility="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}">
                         <TextBlock Text="Target effect keyword:" Foreground="#88FFFFFF"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
