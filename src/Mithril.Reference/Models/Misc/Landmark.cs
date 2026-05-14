@@ -12,4 +12,18 @@ public sealed class Landmark
 
     /// <summary>Position string (typically <c>"x:N y:N z:N"</c>); parse at consumption time.</summary>
     public string? Loc { get; set; }
+
+    /// <summary>
+    /// Landmark category. Always populated on every landmark in the bundled corpus; one of
+    /// <c>Portal</c> (180/280), <c>MeditationPillar</c> (55/280), <c>TeleportationPlatform</c>
+    /// (45/280). Drives the per-area grouped rendering on Area-detail.
+    /// </summary>
+    public string? Type { get; set; }
+
+    /// <summary>
+    /// The four-digit meditation-pillar combo (e.g. <c>"4017"</c>). Populated only when
+    /// <see cref="Type"/> is <c>"MeditationPillar"</c> (55 entries in the bundled corpus);
+    /// <see langword="null"/> for portals and teleportation platforms.
+    /// </summary>
+    public string? Combo { get; set; }
 }
