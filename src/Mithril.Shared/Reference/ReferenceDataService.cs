@@ -16,6 +16,9 @@ using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
 using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
 using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
 using DirectedGoal = Mithril.Reference.Models.Misc.DirectedGoal;
+using AbilityKeyword = Mithril.Reference.Models.Misc.AbilityKeyword;
+using AbilityDynamicDot = Mithril.Reference.Models.Misc.AbilityDynamicDot;
+using AbilityDynamicSpecialValue = Mithril.Reference.Models.Misc.AbilityDynamicSpecialValue;
 using Quest = Mithril.Reference.Models.Quests.Quest;
 using Recipe = Mithril.Reference.Models.Recipes.Recipe;
 using PocoSkill = Mithril.Reference.Models.Misc.Skill;
@@ -189,6 +192,15 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyList<DirectedGoal> _directedGoals = Array.Empty<DirectedGoal>();
     private ReferenceFileSnapshot _directedGoalsSnapshot;
 
+    // abilitykeywords.json / abilitydynamicdots.json / abilitydynamicspecialvalues.json —
+    // flat lists of conditional rules keyed by Req*Keywords predicates. See #288.
+    private IReadOnlyList<AbilityKeyword> _abilityKeywordRules = Array.Empty<AbilityKeyword>();
+    private ReferenceFileSnapshot _abilityKeywordRulesSnapshot;
+    private IReadOnlyList<AbilityDynamicDot> _abilityDynamicDots = Array.Empty<AbilityDynamicDot>();
+    private ReferenceFileSnapshot _abilityDynamicDotsSnapshot;
+    private IReadOnlyList<AbilityDynamicSpecialValue> _abilityDynamicSpecialValues = Array.Empty<AbilityDynamicSpecialValue>();
+    private ReferenceFileSnapshot _abilityDynamicSpecialValuesSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
@@ -218,6 +230,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         _questsSnapshot = new ReferenceFileSnapshot("quests", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _stringsSnapshot = new ReferenceFileSnapshot("strings_all", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _directedGoalsSnapshot = new ReferenceFileSnapshot("directedgoals", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _abilityKeywordRulesSnapshot = new ReferenceFileSnapshot("abilitykeywords", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _abilityDynamicDotsSnapshot = new ReferenceFileSnapshot("abilitydynamicdots", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _abilityDynamicSpecialValuesSnapshot = new ReferenceFileSnapshot("abilitydynamicspecialvalues", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -235,9 +250,12 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadProfiles();
         LoadStrings();
         LoadDirectedGoals();
+        LoadAbilityKeywords();
+        LoadAbilityDynamicDots();
+        LoadAbilityDynamicSpecialValues();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -272,6 +290,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsByGiverNpc => _questsByGiverNpc;
     public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsRewardingItem => _questsRewardingItem;
     public IReadOnlyList<DirectedGoal> DirectedGoals => _directedGoals;
+    public IReadOnlyList<AbilityKeyword> AbilityKeywordRules => _abilityKeywordRules;
+    public IReadOnlyList<AbilityDynamicDot> AbilityDynamicDots => _abilityDynamicDots;
+    public IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => _abilityDynamicSpecialValues;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -292,6 +313,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         "quests" => _questsSnapshot,
         "strings_all" => _stringsSnapshot,
         "directedgoals" => _directedGoalsSnapshot,
+        "abilitykeywords" => _abilityKeywordRulesSnapshot,
+        "abilitydynamicdots" => _abilityDynamicDotsSnapshot,
+        "abilitydynamicspecialvalues" => _abilityDynamicSpecialValuesSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -315,6 +339,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         "quests" => RefreshFileAsync("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests, ct),
         "strings_all" => RefreshFileAsync("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings, ct),
         "directedgoals" => RefreshFileAsync("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals, ct),
+        "abilitykeywords" => RefreshFileAsync("abilitykeywords", ReferenceDeserializer.ParseAbilityKeywords, ParseAndSwapAbilityKeywords, ct),
+        "abilitydynamicdots" => RefreshFileAsync("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots, ct),
+        "abilitydynamicspecialvalues" => RefreshFileAsync("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -336,6 +363,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("quests", ct).ConfigureAwait(false);
         await RefreshAsync("strings_all", ct).ConfigureAwait(false);
         await RefreshAsync("directedgoals", ct).ConfigureAwait(false);
+        await RefreshAsync("abilitykeywords", ct).ConfigureAwait(false);
+        await RefreshAsync("abilitydynamicdots", ct).ConfigureAwait(false);
+        await RefreshAsync("abilitydynamicspecialvalues", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -517,6 +547,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadQuests() => LoadFile("quests", ReferenceDeserializer.ParseQuests, ParseAndSwapQuests);
     private void LoadStrings() => LoadFile("strings_all", ReferenceDeserializer.ParseStringsAll, ParseAndSwapStrings);
     private void LoadDirectedGoals() => LoadFile("directedgoals", ReferenceDeserializer.ParseDirectedGoals, ParseAndSwapDirectedGoals);
+    private void LoadAbilityKeywords() => LoadFile("abilitykeywords", ReferenceDeserializer.ParseAbilityKeywords, ParseAndSwapAbilityKeywords);
+    private void LoadAbilityDynamicDots() => LoadFile("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots);
+    private void LoadAbilityDynamicSpecialValues() => LoadFile("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -888,6 +921,27 @@ public sealed class ReferenceDataService : IReferenceDataService
         _directedGoals = raw.ToArray();
         _directedGoalsSnapshot = new ReferenceFileSnapshot(
             "directedgoals", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _directedGoals.Count);
+    }
+
+    private void ParseAndSwapAbilityKeywords(IReadOnlyList<AbilityKeyword> raw, ReferenceFileMetadata meta)
+    {
+        _abilityKeywordRules = raw.ToArray();
+        _abilityKeywordRulesSnapshot = new ReferenceFileSnapshot(
+            "abilitykeywords", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _abilityKeywordRules.Count);
+    }
+
+    private void ParseAndSwapAbilityDynamicDots(IReadOnlyList<AbilityDynamicDot> raw, ReferenceFileMetadata meta)
+    {
+        _abilityDynamicDots = raw.ToArray();
+        _abilityDynamicDotsSnapshot = new ReferenceFileSnapshot(
+            "abilitydynamicdots", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _abilityDynamicDots.Count);
+    }
+
+    private void ParseAndSwapAbilityDynamicSpecialValues(IReadOnlyList<AbilityDynamicSpecialValue> raw, ReferenceFileMetadata meta)
+    {
+        _abilityDynamicSpecialValues = raw.ToArray();
+        _abilityDynamicSpecialValuesSnapshot = new ReferenceFileSnapshot(
+            "abilitydynamicspecialvalues", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, _abilityDynamicSpecialValues.Count);
     }
 
     private void ParseAndSwapStrings(IReadOnlyDictionary<string, string> raw, ReferenceFileMetadata meta)

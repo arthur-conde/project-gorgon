@@ -282,6 +282,33 @@ public interface IReferenceDataService
     IReadOnlyList<DirectedGoal> DirectedGoals => Array.Empty<DirectedGoal>();
 
     /// <summary>
+    /// Flat list of conditional "if an ability has these keywords, the listed
+    /// attributes apply" rules from <c>abilitykeywords.json</c>. The predicate is
+    /// <see cref="AbilityKeyword.MustHaveAbilityKeywords"/>; the consequents are the
+    /// <c>AttributesThat*</c> lists. Defaults to empty so test fakes don't need to
+    /// opt in. Consumed by the Effects tab (#244) — not folded into per-ability
+    /// detail, since the rules are keyed by keyword predicate, not by ability InternalName.
+    /// </summary>
+    IReadOnlyList<AbilityKeyword> AbilityKeywordRules => Array.Empty<AbilityKeyword>();
+
+    /// <summary>
+    /// Flat list of conditional damage-over-time rules from <c>abilitydynamicdots.json</c>
+    /// that layer on top of an ability at runtime when <see cref="AbilityDynamicDot.ReqAbilityKeywords"/>,
+    /// <see cref="AbilityDynamicDot.ReqActiveSkill"/>, and <see cref="AbilityDynamicDot.ReqEffectKeywords"/>
+    /// predicates match. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyList<AbilityDynamicDot> AbilityDynamicDots => Array.Empty<AbilityDynamicDot>();
+
+    /// <summary>
+    /// Flat list of conditional tooltip-value rules from
+    /// <c>abilitydynamicspecialvalues.json</c> that layer a labelled value onto an
+    /// ability's tooltip when <see cref="AbilityDynamicSpecialValue.ReqAbilityKeywords"/>
+    /// and <see cref="AbilityDynamicSpecialValue.ReqEffectKeywords"/> predicates match.
+    /// Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => Array.Empty<AbilityDynamicSpecialValue>();
+
+    /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their
     /// dotted/slashed string ID. Primary use today is friendly-name resolution
     /// for chest / NPC / cow / tree prefabs via the
