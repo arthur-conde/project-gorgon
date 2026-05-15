@@ -41,13 +41,23 @@
                 </StackPanel>
             </DockPanel>
 
-            <!-- Skill requirement chip -->
-            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                    CornerRadius="3" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,0,10"
-                    Visibility="{Binding SkillRequirementChip, Converter={StaticResource NullOrEmptyToVis}}">
-                <TextBlock Text="{Binding SkillRequirementChip}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"/>
-            </Border>
+            <!-- Recipe attribute chips: skill requirement + (Research-only) lifetime
+                 use cap. WrapPanel keeps them on one line and wraps if cramped. Each
+                 chip self-hides on an empty string via NullOrEmptyToVis. -->
+            <WrapPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,6,0"
+                        Visibility="{Binding SkillRequirementChip, Converter={StaticResource NullOrEmptyToVis}}">
+                    <TextBlock Text="{Binding SkillRequirementChip}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                </Border>
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,6,0"
+                        Visibility="{Binding MaxUsesChip, Converter={StaticResource NullOrEmptyToVis}}">
+                    <TextBlock Text="{Binding MaxUsesChip}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                </Border>
+            </WrapPanel>
 
             <!-- Description (FormattedText parses any inline <i>/<b> markup). -->
             <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
