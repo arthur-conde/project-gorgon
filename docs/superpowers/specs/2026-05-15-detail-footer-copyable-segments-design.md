@@ -40,9 +40,11 @@ Add one public dependency property:
   dim middot (`·`). When null, the existing `FooterText` single-button path renders
   exactly as today.
 
-`FooterText` and its `FooterCopied` ack are **untouched**. All six non-Lorebook views
-and their image-export sizing keep working with zero changes — they never set
-`FooterSegments`.
+`FooterText` and its `FooterCopied` ack are **untouched**. All eight non-Lorebook views
+keep working with zero changes — they never set `FooterSegments`. Six of those views
+(Ability, Area, Npc, PlayerTitle, Quest, Recipe) bind `FooterText` and are wholly
+unaffected; two (Effect, StorageVault) bind neither footer property and are likewise
+unaffected. Image-export sizing is unchanged for all eight.
 
 Internally the host projects the strings into small private item objects, each
 carrying its own `Copied` flag. The public API stays `IEnumerable<string>`; callers
