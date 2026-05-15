@@ -78,6 +78,15 @@ public class QueryCompilerOrderTests
         act.Should().Throw<QueryException>();
     }
 
+    [Fact]
+    public void Case_sensitive_matching_case_still_compiles()
+    {
+        var result = QueryCompiler.CompileOrder(
+            new[] { new OrderSpec("Cost", OrderDirection.Ascending) }, Schema, caseSensitive: true);
+        result.Should().HaveCount(1);
+        result[0].PropertyName.Should().Be("Cost");
+    }
+
     private sealed record NonComparableRow(object Blob);
 
     [Fact]
@@ -88,5 +97,17 @@ public class QueryCompilerOrderTests
             new[] { new OrderSpec("Blob", OrderDirection.Ascending) }, schema);
         act.Should().Throw<QueryException>()
             .WithMessage("*not sortable*");
+    }
+
+    private sealed record NullableRow(int? Maybe);
+
+    [Fact]
+    public void Nullable_value_type_is_sortable()
+    {
+        var schema = ColumnBindingHelper.BuildFromProperties(typeof(NullableRow));
+        var result = QueryCompiler.CompileOrder(
+            new[] { new OrderSpec("Maybe", OrderDirection.Ascending) }, schema);
+        result.Should().HaveCount(1);
+        result[0].PropertyName.Should().Be("Maybe");
     }
 }
