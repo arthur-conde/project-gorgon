@@ -602,7 +602,11 @@ public sealed class RecipesTabViewModelTests
         };
         var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
-        // The exact query string produced by RecipeIngredientKeywordKindTarget.TrySelectByInternalName.
+        // The IngredientKeywords-CONTAINS query plumbing (collection-CONTAINS via
+        // IQueryStringValue, #261) — still live for hand-typed queries and the reserved
+        // ProvenancePopupViewModel.ToQueryCommand projection. (The synthetic
+        // RecipeIngredientKeyword kind target that used to emit this was retired in #318
+        // slice 4 surface 2; the "Used as" surface is now a provenance popup.)
         const string queryString = "IngredientKeywords CONTAINS \"Crystal\"";
 
         var columns = ColumnBindingHelper.BuildFromProperties(typeof(RecipeListRow));

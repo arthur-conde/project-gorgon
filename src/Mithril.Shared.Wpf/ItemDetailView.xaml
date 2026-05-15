@@ -222,9 +222,28 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Used as: keyword chips — items that satisfy keyword-based slots in recipes -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding ConsumedAsKeywordIn.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Used as: recipes that consume this item via a keyword-ingredient slot.
+                     #318 slice 4, surface 2 — the per-keyword RecipeIngredientKeyword
+                     synthetic-kind ActionChips are retired. Mirrors the "Used in" section:
+                     a chip cluster capped at SilmarillionSettings.UsedInChipCap plus a
+                     trailing always-visible "View all N →" affordance that opens the shared
+                     provenance popup fed the source index (RecipesByIngredientKeywordWithReason)
+                     directly — no query re-derivation, so the count cannot diverge from the
+                     index. Single-reason (KeywordIngredientSlot) ⇒ the popup is a flat list. -->
+                <StackPanel Margin="0,10,0,0">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ConsumedAsKeywordIn.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ConsumedAsKeywordInPopup, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Used as" FontWeight="SemiBold"
                                Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
@@ -238,6 +257,47 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <!-- "View all N →" — opens the shared provenance popup (#318). Always
+                         visible whenever any recipe consumes the item via a keyword slot
+                         (independent of the chip cap), styled like ActionChip (ghost fill,
+                         ListFilter glyph). Mirrors the surface-1 "Used in" affordance. -->
+                    <Button Margin="0,4,0,0" Padding="6,2"
+                            HorizontalAlignment="Left" Cursor="Hand"
+                            Command="{Binding ShowConsumedAsKeywordInPopupCommand}"
+                            Visibility="{Binding ConsumedAsKeywordInPopup, Converter={StaticResource NullToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="#66D4A847"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="Foreground" Value="#FFD4A847"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#22D4A847"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
+                                                             Foreground="{TemplateBinding Foreground}"
+                                                             Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                        <TextBlock Foreground="{TemplateBinding Foreground}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center">
+                                            <Run Text="View all "/><Run Text="{Binding ConsumedAsKeywordInTotal, Mode=OneWay}"/><Run Text=" →"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                 </StackPanel>
 
                 <!-- Skill requirements (hidden when empty) -->

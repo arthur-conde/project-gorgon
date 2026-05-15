@@ -13,8 +13,11 @@ namespace Silmarillion.Navigation;
 /// the resulting filter (clearing any prior <see cref="ItemsTabViewModel.SelectedItem"/>
 /// so the filtered list doesn't render with a stale selection).
 ///
-/// Closes the symmetry started by <see cref="RecipeIngredientKeywordKindTarget"/>
-/// for the reverse direction (item-detail "Used as" chips).
+/// The reverse direction — the item-detail "Used as" surface — was a per-keyword
+/// <c>RecipeIngredientKeyword</c> deep link until #318 slice 4 (surface 2) migrated it
+/// to a provenance popup fed <c>RecipesByIngredientKeywordWithReason</c> directly. This
+/// target (recipe-detail keyword chip → filtered Items tab) remains the legitimate
+/// single-keyword filter-pivot direction (#270).
 /// </summary>
 public sealed class ItemKeywordKindTarget : IReferenceKindTarget
 {

@@ -6,14 +6,10 @@ namespace Mithril.Shared.Tests.Reference;
 
 public class EntityRefTests
 {
-    [Fact]
-    public void RecipeIngredientKeyword_factory_produces_expected_kind_and_internalname()
-    {
-        var reference = EntityRef.RecipeIngredientKeyword("Crystal");
-
-        reference.Kind.Should().Be(EntityKind.RecipeIngredientKeyword);
-        reference.InternalName.Should().Be("Crystal");
-    }
+    // EntityRef.RecipeIngredientKeyword / EntityKind.RecipeIngredientKeyword were retired
+    // in #318 slice 4 (surface 2) — the item-detail "Used as" 1:N surface is now a
+    // provenance popup fed RecipesByIngredientKeywordWithReason directly — so its factory
+    // test is removed with it (mirrors the surface-1 RecipeIngredientItem removal).
 
     [Fact]
     public void ItemKeyword_singleton_factory_produces_kind_and_internalname()

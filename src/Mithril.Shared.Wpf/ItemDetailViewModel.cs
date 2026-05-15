@@ -79,6 +79,11 @@ public sealed partial class ItemDetailViewModel
             () => ProvenancePopupOpener(ConsumedByRecipesPopup!, OpenEntityCommand),
             () => ConsumedByRecipesPopup is not null);
         ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
+        ConsumedAsKeywordInPopup = context.ConsumedAsKeywordInPopup;
+        ConsumedAsKeywordInTotal = context.ConsumedAsKeywordInPopup?.TotalCount ?? 0;
+        ShowConsumedAsKeywordInPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(ConsumedAsKeywordInPopup!, OpenEntityCommand),
+            () => ConsumedAsKeywordInPopup is not null);
         AwardedByQuests = context.AwardedByQuests ?? [];
         BestowsLorebook = context.BestowsLorebook;
         Sources = context.Sources ?? [];
@@ -154,11 +159,45 @@ public sealed partial class ItemDetailViewModel
     public ICommand ShowConsumedByRecipesPopupCommand { get; }
 
     /// <summary>
-    /// Per-keyword chips for the item-detail "Used as" section. One chip per keyword the
-    /// item carries that also appears in some recipe's keyword-slot tuple. Clicking deep-links
-    /// to the Recipes tab pre-filtered via QueryText = IngredientKeywords CONTAINS "&lt;keyword&gt;".
+    /// Recipes that consume this item via a keyword-ingredient slot, for the item-detail
+    /// "Used as" section (#318 slice 4, surface 2 — <c>RecipeIngredientKeyword</c> #259).
+    /// Capped at <c>SilmarillionSettings.UsedInChipCap</c>; the full set + provenance is
+    /// always reachable via the "View all N →" affordance that opens
+    /// <see cref="ConsumedAsKeywordInPopup"/>. Replaces the retired per-keyword
+    /// <c>RecipeIngredientKeyword</c> synthetic-kind deep-link chips — there is no query
+    /// re-derivation, so the displayed set cannot diverge from the index.
     /// </summary>
     public IReadOnlyList<EntityChipVm> ConsumedAsKeywordIn { get; }
+
+    /// <summary>
+    /// The "Used as" provenance popup VM opened by
+    /// <see cref="ShowConsumedAsKeywordInPopupCommand"/>, or <see langword="null"/> when no
+    /// recipe consumes this item via a keyword slot (#318 slice 4, surface 2). Built from
+    /// <c>IReferenceDataService.RecipesByIngredientKeywordWithReason</c> directly
+    /// (membership + provenance), replacing the retired <c>RecipeIngredientKeyword</c>
+    /// synthetic-kind deep links — there is no query re-derivation, so the displayed set
+    /// cannot diverge from the index. The relationship is single-reason
+    /// (<c>KeywordIngredientSlot</c>) so the popup collapses to a flat list (#318
+    /// Discipline).
+    /// </summary>
+    public ProvenancePopupViewModel? ConsumedAsKeywordInPopup { get; }
+
+    /// <summary>
+    /// Distinct count of recipes that consume this item via a keyword-ingredient slot —
+    /// equals <see cref="ProvenancePopupViewModel.TotalCount"/> of
+    /// <see cref="ConsumedAsKeywordInPopup"/>. Drives the "View all N →" label. 0 ⇒ no
+    /// relationship and the whole "Used as" section hides.
+    /// </summary>
+    public int ConsumedAsKeywordInTotal { get; }
+
+    /// <summary>
+    /// Opens <see cref="ConsumedAsKeywordInPopup"/> via <see cref="ProvenancePopupOpener"/>.
+    /// Bound to the always-visible "View all N →" affordance. The popup is a window shown
+    /// directly — opening it pushes no navigator history (#229 contract; mirrors the
+    /// surface-1 <see cref="ShowConsumedByRecipesPopupCommand"/> / the slice-2
+    /// <c>EffectDetailViewModel.ShowRequiredByAbilitiesPopupCommand</c>).
+    /// </summary>
+    public ICommand ShowConsumedAsKeywordInPopupCommand { get; }
 
     /// <summary>
     /// Quests that include this item in <c>Rewards_Items</c>. Populated from

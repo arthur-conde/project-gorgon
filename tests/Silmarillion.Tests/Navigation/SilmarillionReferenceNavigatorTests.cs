@@ -211,31 +211,12 @@ public sealed class SilmarillionReferenceNavigatorTests
         nav.CanGoForward.Should().BeTrue();
     }
 
-    [Fact]
-    public void Open_RecipeIngredientKeyword_SwitchesToRecipesTab_AndSetsQueryText()
-    {
-        // Arrange: build a real RecipeIngredientKeywordKindTarget backed by a
-        // RecipesTabViewModel so we can assert on both SelectedTabIndex and QueryText.
-        var refData = new FakeReferenceData();
-        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
-        var keywordTarget = new RecipeIngredientKeywordKindTarget(recipesVm);
-
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            keywordTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { recipesVm }, nav, targets);
-
-        // Act
-        nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
-
-        // Assert
-        silmarillionVm.SelectedTabIndex.Should().Be(1);
-        recipesVm.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
-    }
+    // Open_RecipeIngredientKeyword_SwitchesToRecipesTab_AndSetsQueryText and
+    // Open_RecipeIngredientKeyword_ClearsResidualSelectedRow were removed in #318 slice 4
+    // (surface 2): the synthetic RecipeIngredientKeyword kind / its kind target / its
+    // mithril://silmarillion/RecipeIngredientKeyword/… route are deleted. The item-detail
+    // "Used as" surface is now a provenance popup fed RecipesByIngredientKeywordWithReason
+    // directly (covered in ItemsTabViewModelTests; route-rejection covered below).
 
     [Fact]
     public void Open_ItemKeyword_SwitchesToItemsTab_AndSetsQueryText()
@@ -314,37 +295,6 @@ public sealed class SilmarillionReferenceNavigatorTests
         itemsVm.SelectedItem.Should().BeNull(
             because: "keyword-chip navigation is a filter action; prior item selection must clear");
         itemsVm.QueryText.Should().Be("Keywords CONTAINS \"Crystal\"");
-    }
-
-    [Fact]
-    public void Open_RecipeIngredientKeyword_ClearsResidualSelectedRow()
-    {
-        // Keyword-chip navigation expresses a *filter*, not a specific recipe pick. Any
-        // SelectedRow lingering from earlier in-tab navigation must be cleared so the
-        // new filtered list doesn't render with a stale (and possibly filter-excluded)
-        // selection.
-        var refData = new FakeReferenceData();
-        // Seed a recipe so SelectedRow has something to point at before navigation.
-        refData.AddRecipe(new Recipe { Key = "recipe_1", InternalName = "MakeSalsa", Name = "Make Salsa", Ingredients = [] });
-        var recipesVm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
-        recipesVm.SelectedRow = recipesVm.AllRecipes.Single();
-        recipesVm.SelectedRow.Should().NotBeNull(); // precondition
-
-        var keywordTarget = new RecipeIngredientKeywordKindTarget(recipesVm);
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            keywordTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(new ITabViewModel[] { recipesVm }, nav, targets);
-
-        nav.Open(EntityRef.RecipeIngredientKeyword("Crystal"));
-
-        recipesVm.SelectedRow.Should().BeNull(
-            because: "keyword-chip navigation is a filter action; prior row selection must clear");
-        recipesVm.QueryText.Should().Be("IngredientKeywords CONTAINS \"Crystal\"");
     }
 
     [Fact]

@@ -41,6 +41,10 @@ public sealed class SilmarillionDeepLinkHandlerTests
     [InlineData("item/has space")]       // illegal payload char
     [InlineData("item/has-hyphen")]      // hyphen rejected by EntityPayloadPattern
     [InlineData("item/extra/segment")]   // extra path segments forbidden
+    // #318 slice 4 (surface 2): the RecipeIngredientKeyword synthetic kind was deleted, so
+    // its mithril://silmarillion/RecipeIngredientKeyword/… route is retired automatically —
+    // Enum.TryParse<EntityKind> no longer recognises the name (no handler edit needed).
+    [InlineData("recipeingredientkeyword/Crystal")]
     public void TryHandle_Malformed_ReturnsFalse_AndDoesNotDispatch(string subPath)
     {
         var nav = new RecordingNavigator();
