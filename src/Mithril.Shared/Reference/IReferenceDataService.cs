@@ -84,6 +84,31 @@ public interface IReferenceDataService
     IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => Array.Empty<string>();
 
     /// <summary>
+    /// Provenance-retaining reverse index for the item-detail "Used as" surface (#318
+    /// slice 4, surface 2 — <c>RecipeIngredientKeyword</c> #259): keyword tag → the
+    /// recipes that consume <em>any item carrying that tag</em> via a
+    /// <see cref="RecipeKeywordIngredient"/> slot. Same membership semantics the retired
+    /// <c>RecipeIngredientKeyword</c> deep link expressed as the query
+    /// <c>IngredientKeywords CONTAINS "&lt;tag&gt;"</c> — but materialized once, with each
+    /// member a <see cref="RecipeIngredientKeywordMatch"/> retaining <em>why</em> it
+    /// qualified, so the provenance popup renders membership <em>and</em> provenance from
+    /// the index directly with no second (query-string) derivation that could silently
+    /// diverge (the #318 invariant). The relationship is single-reason
+    /// (<see cref="RecipeIngredientKeywordMatchReason.KeywordIngredientSlot"/>), so the
+    /// popup collapses to a flat list per the #318 Discipline rule. A recipe is carried
+    /// once per tag even if it lists that tag in several keyword slots — a distinct-member
+    /// count equals the displayed "View all N". Derived from the <em>same</em>
+    /// keyword-slot accumulation that builds <see cref="KeywordsUsedInRecipeSlots"/>, so
+    /// the two surfaces cannot diverge. Built whenever recipes.json reloads. Defaults to
+    /// empty so test fakes don't need to opt into cross-linking.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>> RecipesByIngredientKeywordWithReason
+        => EmptyRecipeIngredientKeywordMatchIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>> EmptyRecipeIngredientKeywordMatchIndex
+        = new Dictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Friendly display names for keyword tags, sourced from singleton-slot Descs in recipes
     /// (looked up via <c>strings_all["recipe_&lt;id&gt;_Ingredients_&lt;idx&gt;_Desc"]</c>, falling
     /// back to <see cref="RecipeKeywordIngredient.Desc"/> from recipes.json). Only singleton slots

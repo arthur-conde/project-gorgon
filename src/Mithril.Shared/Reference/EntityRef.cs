@@ -25,12 +25,12 @@ public enum EntityKind
     /// resolver covers the rendering case while leaving navigation as a follow-up.
     /// </summary>
     Skill,
-    /// <summary>
-    /// Not an entity per se — a deep-link target for "open the Recipes tab filtered to recipes
-    /// whose ingredient list mentions this keyword tag." InternalName carries the keyword
-    /// (e.g. "Crystal"). Dispatched by RecipeIngredientKeywordKindTarget.
-    /// </summary>
-    RecipeIngredientKeyword,
+    // EntityKind.RecipeIngredientKeyword retired in #318 slice 4 (surface 2) — the
+    // item-detail "Used as" 1:N surface is now a provenance popup fed
+    // RecipesByIngredientKeywordWithReason directly (no synthetic-kind deep link /
+    // query re-derivation). Its mithril://silmarillion/RecipeIngredientKeyword/… route
+    // is retired automatically: SilmarillionDeepLinkHandler's generic
+    // Enum.TryParse<EntityKind> now rejects the deleted name.
 
     /// <summary>
     /// Not an entity per se — a deep-link target for "open the Items tab filtered to items
@@ -115,7 +115,9 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
     public static EntityRef Skill(string skillKey) => new(EntityKind.Skill, skillKey);
-    public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
+    // EntityRef.RecipeIngredientKeyword retired in #318 slice 4 (surface 2) — the
+    // item-detail "Used as" 1:N surface is now a provenance popup fed
+    // RecipesByIngredientKeywordWithReason directly.
     public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
     public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
     // EntityRef.RecipeIngredientItem retired in #318 slice 4 — the Items "Used in" 1:N

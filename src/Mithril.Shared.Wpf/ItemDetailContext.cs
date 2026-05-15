@@ -27,6 +27,14 @@ public sealed record ItemDetailContext(
     // ── Cross-link sections (populated by the Silmarillion module; null/empty for other callers) ──
     IReadOnlyList<EntityChipVm>? ProducedByRecipes = null,
     IReadOnlyList<EntityChipVm>? ConsumedByRecipes = null,
+    // #318 slice 4, surface 2 — Items "Used as" (RecipeIngredientKeyword #259). The
+    // capped recipe-chip cluster for the "Used as" section: the first
+    // SilmarillionSettings.UsedInChipCap recipes that consume this item via a keyword
+    // ingredient slot. The full set + provenance lives in ConsumedAsKeywordInPopup
+    // (below); both are projected from the same materialized index collection
+    // (IReferenceDataService.RecipesByIngredientKeywordWithReason) so the displayed set
+    // cannot diverge. Replaces the retired per-keyword RecipeIngredientKeyword
+    // synthetic-kind deep-link chips.
     IReadOnlyList<EntityChipVm>? ConsumedAsKeywordIn = null,
     IReadOnlyList<EntityChipVm>? AwardedByQuests = null,
     // Inbound 1:1 cross-link (#247): the lorebook this item bestows on use, resolved from
@@ -43,7 +51,19 @@ public sealed record ItemDetailContext(
     // single-reason (DirectIngredient) so the popup collapses to a flat list (#318
     // Discipline). There is no query re-derivation — the displayed set cannot diverge
     // from the index.
-    ProvenancePopupViewModel? ConsumedByRecipesPopup = null)
+    ProvenancePopupViewModel? ConsumedByRecipesPopup = null,
+    // #318 slice 4, surface 2 — Items "Used as" (RecipeIngredientKeyword #259). The
+    // reverse-lookup ("recipes that use this item via a keyword-ingredient slot") is now a
+    // provenance popup fed the source index (RecipesByIngredientKeywordWithReason)
+    // directly, replacing the retired per-keyword RecipeIngredientKeyword synthetic-kind
+    // ActionChips that each deep-linked to `IngredientKeywords CONTAINS "<tag>"`. Non-null
+    // whenever any recipe consumes the item via a keyword slot; the popup is the
+    // count-bearing surface, opened by
+    // ItemDetailViewModel.ShowConsumedAsKeywordInPopupCommand. The relationship is
+    // single-reason (KeywordIngredientSlot) so the popup collapses to a flat list (#318
+    // Discipline). There is no query re-derivation — the displayed set cannot diverge from
+    // the index.
+    ProvenancePopupViewModel? ConsumedAsKeywordInPopup = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }

@@ -321,6 +321,110 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
+    public void RecipesByIngredientKeywordWithReason_membership_tracksKeywordSlots_singleReason_dedupedByRecipe()
+    {
+        // #318 slice 4, surface 2 — Gate C (reference-layer half). The provenance-retaining
+        // "Used as" index must be derived from the SAME keyword-slot walk that builds
+        // KeywordsUsedInRecipeSlots (single materialization — the #318 invariant: the
+        // popup is a view over the index, never a re-derivation), and because the
+        // relationship is single-reason every member carries exactly the
+        // KeywordIngredientSlot flag. A regression that let the keyword set and the
+        // reverse index drift (the original dual-derivation bug class) fails here. A
+        // recipe listing the SAME tag in several keyword slots is carried once.
+        WriteFixture(
+            itemsJson: """
+            { "item_100": { "Name": "Filler", "InternalName": "Filler" } }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Enchant Ring", "InternalName": "EnchantRing", "Skill": "Enchanting",
+                "Ingredients": [
+                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 },
+                  { "Desc": "Second Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              },
+              "recipe_2": {
+                "Name": "Cut Gem", "InternalName": "CutGem", "Skill": "Jewelry",
+                "Ingredients": [
+                  { "Desc": "Any Gem", "ItemKeys": ["Gem"], "StackSize": 1 }
+                ]
+              },
+              "recipe_3": {
+                "Name": "Fuse Gemstone", "InternalName": "FuseGemstone", "Skill": "Jewelry",
+                "Ingredients": [
+                  { "Desc": "A Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 },
+                  { "Desc": "A Gem", "ItemKeys": ["Gem"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // Same tag set as KeywordsUsedInRecipeSlots (single materialization — cannot drift).
+        svc.RecipesByIngredientKeywordWithReason.Keys.Should().BeEquivalentTo(
+            svc.KeywordsUsedInRecipeSlots);
+
+        // Crystal: recipe_1 (two Crystal slots → carried ONCE) + recipe_3.
+        var crystal = svc.RecipesByIngredientKeywordWithReason["Crystal"];
+        crystal.Select(m => m.Recipe.InternalName).Should().BeEquivalentTo(
+            new[] { "EnchantRing", "FuseGemstone" },
+            because: "a recipe listing the tag in several keyword slots is one member");
+        crystal.Should().OnlyContain(
+            m => m.Reason == RecipeIngredientKeywordMatchReason.KeywordIngredientSlot);
+
+        // Gem: recipe_2 + recipe_3.
+        svc.RecipesByIngredientKeywordWithReason["Gem"]
+            .Select(m => m.Recipe.InternalName)
+            .Should().BeEquivalentTo(new[] { "CutGem", "FuseGemstone" });
+        svc.RecipesByIngredientKeywordWithReason["Gem"].Should().OnlyContain(
+            m => m.Reason == RecipeIngredientKeywordMatchReason.KeywordIngredientSlot);
+    }
+
+    [Fact]
+    public void RecipesByIngredientKeywordWithReason_recipeQualifyingViaNonFirstSlot_stillCarriedOnce()
+    {
+        // #318 Gate C — the load-bearing regression. A recipe that references the tag via
+        // a *non-primary* slot (here: the SECOND ingredient slot; the first being a direct
+        // item slot that feeds the separate "Used in" index) must still appear, once, with
+        // KeywordIngredientSlot provenance. The original dual-derivation bug surfaced
+        // exactly when a member qualified via something other than what a re-derived query
+        // inspected; the popup-from-index has no query, so the member is present by
+        // construction.
+        WriteFixture(
+            itemsJson: """
+            { "item_200": { "Name": "Iron Bar", "InternalName": "IronBar" } }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Forge Blade", "InternalName": "ForgeBlade", "Skill": "Smithing",
+                "Ingredients": [
+                  { "ItemCode": 200, "StackSize": 2 },
+                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // The recipe qualifies for "Crystal" only via its SECOND (keyword) slot.
+        svc.RecipesByIngredientKeywordWithReason.Should().ContainKey("Crystal");
+        var members = svc.RecipesByIngredientKeywordWithReason["Crystal"];
+        members.Select(m => m.Recipe.InternalName).Should().BeEquivalentTo(
+            new[] { "ForgeBlade" },
+            because: "membership is by keyword slot regardless of slot position");
+        members.Should().OnlyContain(
+            m => m.Reason == RecipeIngredientKeywordMatchReason.KeywordIngredientSlot);
+
+        // The direct item slot does NOT leak into the keyword index (it's the separate
+        // "Used in" surface, RecipesByIngredientItemWithReason).
+        svc.RecipesByIngredientKeywordWithReason.Should().NotContainKey("IronBar");
+    }
+
+    [Fact]
     public void KeywordDisplayNames_uses_recipes_json_Desc_when_strings_all_absent()
     {
         WriteFixture(

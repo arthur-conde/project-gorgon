@@ -62,59 +62,223 @@ public sealed class ItemsTabViewModelTests
         vm.DetailViewModel.Should().BeNull();
     }
 
+    // ── #318 slice 4, surface 2 — Items "Used as" provenance popup ──────────────
+    // The item-detail "Used as" surface (recipes that consume this item via a
+    // keyword-ingredient slot) is now a recipe-chip cluster + ProvenancePopupViewModel
+    // fed IReferenceDataService.RecipesByIngredientKeywordWithReason directly; the retired
+    // per-keyword RecipeIngredientKeyword synthetic-kind ActionChips are gone. These tests
+    // assert the #318 invariant: popup membership == index collection (unioned across the
+    // item's keyword tags, deduped by recipe), "View all N" == distinct members,
+    // single-reason ⇒ flat, and opening pushes no navigator history.
+
     [Fact]
-    public void BuildCrossLinkContext_emits_keyword_chips_for_intersection_of_item_Keywords_and_KeywordsUsedInRecipeSlots()
+    public void UsedAs_unionsRecipesAcrossItemKeywords_dedupedByRecipe_andBuildsFlatPopup()
     {
+        // Massive Tourmaline carries Crystal + Gem; both tags map to recipes. A recipe
+        // matching via *both* of the item's tags must appear once (deduped by recipe).
         var tourmaline = new Item
         {
             Id = 99,
             InternalName = "MassiveTourmaline",
             Name = "Massive Tourmaline",
             IconId = 0,
-            Keywords = [new ItemKeyword("Crystal", 0), new ItemKeyword("Bogus", 0)],
+            Keywords = [new ItemKeyword("Crystal", 0), new ItemKeyword("Gem", 0), new ItemKeyword("Bogus", 0)],
         };
+        var rEnchant = new Recipe { Key = "recipe_1", InternalName = "EnchantRing", Name = "Enchant Ring" };
+        var rCut = new Recipe { Key = "recipe_2", InternalName = "CutGem", Name = "Cut Gem" };
+        var rBoth = new Recipe { Key = "recipe_3", InternalName = "FuseGemstone", Name = "Fuse Gemstone" };
         var refData = new StubReferenceData
         {
             ItemsByName = { ["MassiveTourmaline"] = tourmaline },
-            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "Crystal" },
+            // rBoth qualifies via both Crystal and Gem — must be carried once.
+            RecipesByIngredientKeyword =
+            {
+                ["Crystal"] = new[] { rEnchant, rBoth },
+                ["Gem"] = new[] { rCut, rBoth },
+                // "Bogus" is one of the item's keywords but maps to no recipe slot.
+            },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = tourmaline;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel.Should().NotBeNull();
-        var chips = vm.DetailViewModel!.ConsumedAsKeywordIn;
-        chips.Should().ContainSingle();
-        chips.Single().DisplayName.Should().Be("Crystal");
-        chips.Single().IconId.Should().Be(0);
-        chips.Single().Reference.Should().Be(EntityRef.RecipeIngredientKeyword("Crystal"));
+        detail.ConsumedAsKeywordIn.Should().HaveCount(3);
+        detail.ConsumedAsKeywordInPopup.Should().NotBeNull();
+        var popup = detail.ConsumedAsKeywordInPopup!;
+        popup.TotalCount.Should().Be(3, because: "FuseGemstone matched via two of the item's tags but is one member");
+        detail.ConsumedAsKeywordInTotal.Should().Be(3);
+        detail.ShowConsumedAsKeywordInPopupCommand.CanExecute(null).Should().BeTrue();
+        popup.IsFlat.Should().BeTrue(because: "one trivial reason (KeywordIngredientSlot) is noise — collapse to flat");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            new[] { "EnchantRing", "CutGem", "FuseGemstone" },
+            because: "popup membership == the unioned, deduped index collection (no second derivation)");
     }
 
     [Fact]
-    public void Keyword_chip_uses_KeywordDisplayNames_when_present()
+    public void UsedAs_itemWithNoMatchingKeyword_popupIsNull_andSectionHidden()
     {
         var item = new Item
         {
             Id = 99,
-            InternalName = "ShinyArmor",
-            Name = "Shiny Armor",
-            Keywords = [new ItemKeyword("MetalArmor", 0)],
+            InternalName = "Tourmaline",
+            Name = "Tourmaline",
+            Keywords = [new ItemKeyword("Bogus", 0)],
         };
         var refData = new StubReferenceData
         {
-            ItemsByName = { ["ShinyArmor"] = item },
-            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "MetalArmor" },
-            KeywordDisplays = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["MetalArmor"] = "Metal Armor",  // friendly form sourced from a recipe slot
-            },
+            ItemsByName = { ["Tourmaline"] = item },
+            RecipesByIngredientKeyword = { ["Crystal"] = new[] { new Recipe { Key = "r", InternalName = "X", Name = "X" } } },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel!.ConsumedAsKeywordIn.Single().DisplayName
-            .Should().Be("Metal Armor", because: "KeywordDisplayNames lookup wins over the raw tag");
+        detail.ConsumedAsKeywordIn.Should().BeEmpty();
+        detail.ConsumedAsKeywordInPopup.Should().BeNull(
+            because: "no recipe consumes the item via any of its keyword tags — the 'Used as' section hides");
+        detail.ConsumedAsKeywordInTotal.Should().Be(0);
+        detail.ShowConsumedAsKeywordInPopupCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [Fact]
+    public void UsedAs_aboveCap_capsChips_butPopupCarriesFullDistinctSet()
+    {
+        var item = new Item
+        {
+            Id = 1,
+            InternalName = "CommonReagent",
+            Name = "Common Reagent",
+            Keywords = [new ItemKeyword("Reagent", 0)],
+        };
+        var recipes = MakeRecipeList(count: 40);
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["CommonReagent"] = item },
+            RecipesByIngredientKeyword = { ["Reagent"] = recipes },
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
+
+        detail.ConsumedAsKeywordIn.Should().HaveCount(12,
+            because: "cap 12 means the first dozen show as chips; the rest are reachable via the popup");
+        var popup = detail.ConsumedAsKeywordInPopup!;
+        // The defining #318 assertion: "View all N" == distinct index members, NOT the cap.
+        popup.TotalCount.Should().Be(40);
+        detail.ConsumedAsKeywordInTotal.Should().Be(40);
+        popup.FlatChips.Should().HaveCount(40,
+            because: "the popup carries the full set fed from the index, not the capped cluster");
+    }
+
+    [Fact]
+    public void UsedAs_recipeQualifyingOnlyViaNonPrimaryIndexEntry_appearsInPopup_withCorrectProvenance()
+    {
+        // #318 Gate C — the load-bearing regression that would have caught the original
+        // dual-derivation bug for THIS surface. The pre-#318 "Used as" surface rendered
+        // per-keyword chips that deep-linked via RecipeIngredientKeyword, whose kind target
+        // re-derived the set as the query `IngredientKeywords CONTAINS "<tag>"`. If the
+        // index ever carried a member the query string did NOT, the chip opened a list
+        // missing it. The popup-from-index has no query between the set and the screen, so
+        // a member present ONLY in the index must still appear — with its
+        // KeywordIngredientSlot provenance — and the count must equal the distinct index
+        // membership exactly. Here `direct` is the obvious member; `indexOnly` is seeded
+        // into the provenance index for a tag with NO matching recipe re-derivable from a
+        // naive keyword query (the non-primary analogue) and must still surface.
+        var item = new Item
+        {
+            Id = 1,
+            InternalName = "Widget",
+            Name = "Widget",
+            Keywords = [new ItemKeyword("Alpha", 0), new ItemKeyword("Beta", 0)],
+        };
+        var direct = new Recipe { Key = "recipe_001", InternalName = "DirectUser", Name = "Direct User" };
+        var indexOnly = new Recipe { Key = "recipe_002", InternalName = "IndexOnlyUser", Name = "Index Only User" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["Widget"] = item },
+            // Seed the provenance index directly. `direct` is reachable for tag Alpha;
+            // `indexOnly` only via tag Beta — both must appear, deduped, in the popup,
+            // independent of any query.
+            RecipesByIngredientKeywordWithReasonOverride =
+            {
+                ["Alpha"] = new[]
+                {
+                    new RecipeIngredientKeywordMatch(direct, RecipeIngredientKeywordMatchReason.KeywordIngredientSlot),
+                },
+                ["Beta"] = new[]
+                {
+                    new RecipeIngredientKeywordMatch(indexOnly, RecipeIngredientKeywordMatchReason.KeywordIngredientSlot),
+                },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+        var popup = vm.DetailViewModel!.ConsumedAsKeywordInPopup;
+
+        popup.Should().NotBeNull();
+        popup!.TotalCount.Should().Be(2, because: "View all N == distinct index members across the item's tags");
+        popup.IsFlat.Should().BeTrue(because: "single reason (KeywordIngredientSlot) ⇒ flat list");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            new[] { "DirectUser", "IndexOnlyUser" },
+            because: "every index member appears — there is no query that could drop one");
+        popup.Sections.Should().ContainSingle().Which.Label.Should().Be("Used as");
+        popup.Sections.Single().Chips.Select(c => c.Reference.InternalName).Should()
+            .BeEquivalentTo(new[] { "DirectUser", "IndexOnlyUser" });
+    }
+
+    [Fact]
+    public void UsedAs_openingPopup_doesNotTouchNavigator_noHistoryPushed()
+    {
+        // #318 — opening the popup must NOT push navigator back/forward history (the #229
+        // non-navigating contract). Swap the opener for a capturing no-op so no window
+        // spawns; assert navigator state is pristine before and after.
+        var item = new Item
+        {
+            Id = 1,
+            InternalName = "MassiveTourmaline",
+            Name = "Massive Tourmaline",
+            Keywords = [new ItemKeyword("Crystal", 0)],
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MassiveTourmaline"] = item },
+            RecipesByIngredientKeyword = { ["Crystal"] = MakeRecipeList(count: 4) },
+        };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new ItemsTabViewModel(refData, nav, new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        var prior = ItemDetailViewModel.ProvenancePopupOpener;
+        ProvenancePopupViewModel? captured = null;
+        ItemDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            vm.SelectedItem = item;
+            var detail = vm.DetailViewModel!;
+
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+
+            detail.ShowConsumedAsKeywordInPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull(because: "the command invoked the opener with the built popup VM");
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+        }
+        finally
+        {
+            ItemDetailViewModel.ProvenancePopupOpener = prior;
+        }
     }
 
     // ── #318 slice 4, surface 1 — Items "Used in" provenance popup ──────────────
@@ -484,37 +648,27 @@ public sealed class ItemsTabViewModelTests
         public event EventHandler<string>? FileUpdated { add { } remove { } }
     }
 
-    [Fact]
-    public void Keyword_chip_falls_back_to_CamelCaseSplit_when_no_friendly_display_name()
-    {
-        // Mirrors the GreenCrystal case: no recipe carries a friendly singleton Desc for the keyword,
-        // so the map has no entry. CamelCaseSplit on the raw tag is the visible result.
-        var item = new Item
-        {
-            Id = 99,
-            InternalName = "Tourmaline",
-            Name = "Tourmaline",
-            Keywords = [new ItemKeyword("GreenCrystal", 0)],
-        };
-        var refData = new StubReferenceData
-        {
-            ItemsByName = { ["Tourmaline"] = item },
-            KeywordsInRecipeSlots = new HashSet<string>(StringComparer.Ordinal) { "GreenCrystal" },
-            // KeywordDisplays intentionally empty — no friendly display name available.
-        };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
-
-        vm.SelectedItem = item;
-
-        vm.DetailViewModel!.ConsumedAsKeywordIn.Single().DisplayName
-            .Should().Be("Green Crystal",
-                because: "CamelCaseSplit splits PascalCase tokens at the camel-hump");
-    }
+    // Keyword_chip_falls_back_to_CamelCaseSplit_when_no_friendly_display_name was removed
+    // in #318 slice 4 (surface 2): the "Used as" section no longer renders per-keyword
+    // chips (whose label was the keyword's friendly/CamelCaseSplit display name) — it
+    // renders the recipe-chip cluster + provenance popup fed
+    // RecipesByIngredientKeywordWithReason. Recipe display-name resolution is covered by
+    // the surface-1 "Used in" tests; keyword-display-name resolution
+    // (KeywordDisplayNames / CamelCaseSplit) is still exercised where it remains live
+    // (recipe-detail keyword chips).
 
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Recipe>> RecipesByIngredient { get; } = new(StringComparer.Ordinal);
+        // #318 slice 4, surface 2: keyword tag → recipes matching that tag via a keyword
+        // slot. Convenience: when set, the provenance index (RecipesByIngredientKeyword-
+        // WithReason) is derived from it with the single KeywordIngredientSlot reason,
+        // mirroring production. For Gate C use RecipesByIngredientKeywordWithReasonOverride
+        // to seed the provenance index independently (prove popup == index, no query).
+        public Dictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientKeyword { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>> RecipesByIngredientKeywordWithReasonOverride { get; }
+            = new(StringComparer.Ordinal);
         public IReadOnlyCollection<string> KeywordsInRecipeSlots { get; init; } = [];
         public IReadOnlyDictionary<string, string> KeywordDisplays { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -538,6 +692,16 @@ public sealed class ItemsTabViewModelTests
                     kv => kv.Key,
                     kv => (IReadOnlyList<RecipeIngredientItemMatch>)kv.Value
                         .Select(r => new RecipeIngredientItemMatch(r, RecipeIngredientItemMatchReason.DirectIngredient))
+                        .ToList(),
+                    StringComparer.Ordinal);
+
+        public IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>> RecipesByIngredientKeywordWithReason =>
+            RecipesByIngredientKeywordWithReasonOverride.Count > 0
+                ? RecipesByIngredientKeywordWithReasonOverride
+                : RecipesByIngredientKeyword.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<RecipeIngredientKeywordMatch>)kv.Value
+                        .Select(r => new RecipeIngredientKeywordMatch(r, RecipeIngredientKeywordMatchReason.KeywordIngredientSlot))
                         .ToList(),
                     StringComparer.Ordinal);
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());

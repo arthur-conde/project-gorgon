@@ -147,14 +147,16 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
             return ItemDetailContext.Empty;
         }
         var (consumed, popup) = BuildConsumedBy(item);
+        var (consumedAsKeyword, keywordPopup) = BuildConsumedAsKeyword(item);
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: consumed,
-            ConsumedAsKeywordIn: BuildKeywordChips(item),
+            ConsumedAsKeywordIn: consumedAsKeyword,
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             BestowsLorebook: BuildBestowsLorebookChip(item),
             Sources: BuildSourceChips(item.InternalName!),
-            ConsumedByRecipesPopup: popup);
+            ConsumedByRecipesPopup: popup,
+            ConsumedAsKeywordInPopup: keywordPopup);
     }
 
     /// <summary>
@@ -260,29 +262,94 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         return (capped, popup);
     }
 
-    private IReadOnlyList<EntityChipVm>? BuildKeywordChips(Item item)
+    /// <summary>
+    /// Build the item-detail "Used as" surface (#318 slice 4, surface 2 —
+    /// <c>RecipeIngredientKeyword</c> #259) from
+    /// <see cref="IReferenceDataService.RecipesByIngredientKeywordWithReason"/>
+    /// <b>directly</b>: the capped recipe-chip cluster (first
+    /// <see cref="SilmarillionSettings.UsedInChipCap"/> by name) <em>and</em> the
+    /// provenance popup VM. The 1:N relationship is "recipes that consume <em>this item</em>
+    /// via a keyword-ingredient slot" — the union, over every keyword tag the item carries
+    /// that is used in a recipe slot, of the recipes matched for that tag. A recipe that
+    /// matches via several of the item's tags is carried <b>once</b> (deduped by recipe),
+    /// so a distinct-member count equals the displayed "View all N". Both the cluster and
+    /// the popup are projected from the <em>same</em> materialized member list — there is
+    /// no query re-derivation, so the popup's count and membership cannot diverge from the
+    /// index (the #318 invariant). Replaces the retired per-keyword
+    /// <c>RecipeIngredientKeyword</c> synthetic-kind ActionChips that each deep-linked to
+    /// <c>IngredientKeywords CONTAINS "&lt;tag&gt;"</c>.
+    /// <para>
+    /// The relationship is <b>single-reason</b>: a recipe qualifies only via a
+    /// <see cref="RecipeKeywordIngredient"/> slot (the sole structural mechanic; which of
+    /// the item's tags matched is data, not a structural reason — the analogue of
+    /// surface 1's single <c>DirectIngredient</c> decision), so the index carries one
+    /// <see cref="RecipeIngredientKeywordMatchReason.KeywordIngredientSlot"/> flag per
+    /// member and the popup is built with a single section —
+    /// <see cref="ProvenancePopupViewModel"/> collapses that to a flat list (a single
+    /// trivial reason is noise, #318 Discipline). Returns <c>(null, null)</c> only when no
+    /// recipe consumes the item via any of its keyword tags.
+    /// </para>
+    /// </summary>
+    private (IReadOnlyList<EntityChipVm>? Chips, ProvenancePopupViewModel? Popup) BuildConsumedAsKeyword(Item item)
     {
         if (item.Keywords is null || item.Keywords.Count == 0)
-            return null;
-        var used = _refData.KeywordsUsedInRecipeSlots;
-        if (used.Count == 0) return null;
-        var displayNames = _refData.KeywordDisplayNames;
-        var chips = item.Keywords
-            .Where(k => used.Contains(k.Tag))
-            .Select(k =>
+            return (null, null);
+        var index = _refData.RecipesByIngredientKeywordWithReason;
+        if (index.Count == 0) return (null, null);
+
+        // Single materialization: union the per-tag index members for every keyword tag
+        // the item carries, deduping by recipe (a recipe matching via several of the
+        // item's tags is one member). Dedup on the recipe's stable identity. Both the
+        // popup and the capped cluster are views over this exact ordered list — no second
+        // derivation.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var members = new List<Recipe>();
+        foreach (var kw in item.Keywords)
+        {
+            if (!index.TryGetValue(kw.Tag, out var matches)) continue;
+            foreach (var m in matches)
             {
-                var reference = EntityRef.RecipeIngredientKeyword(k.Tag);
-                var display = displayNames.TryGetValue(k.Tag, out var friendly)
-                    ? friendly
-                    : CamelCaseSplitConverter.Split(k.Tag);
-                return new EntityChipVm(
-                    DisplayName: display,
-                    IconId: 0,
-                    Reference: reference,
-                    IsNavigable: _navigator.CanOpen(reference));
-            })
+                var id = m.Recipe.InternalName ?? m.Recipe.Key;
+                if (seen.Add(id))
+                    members.Add(m.Recipe);
+            }
+        }
+        if (members.Count == 0) return (null, null);
+
+        var ordered = members
+            .OrderBy(r => r.Name ?? r.InternalName ?? r.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        return chips.Count == 0 ? null : chips;
+
+        EntityChipVm Chip(Recipe r)
+        {
+            var reference = EntityRef.Recipe(r.InternalName ?? r.Key);
+            return new EntityChipVm(
+                DisplayName: r.Name ?? r.InternalName ?? r.Key,
+                IconId: r.IconId > 0 ? r.IconId : ResolveRecipeFallbackIcon(r),
+                Reference: reference,
+                IsNavigable: _navigator.CanOpen(reference));
+        }
+
+        var allChips = ordered.Select(Chip).ToList();
+
+        var cap = _settings.UsedInChipCap;
+        var capped = cap == 0
+            ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>()
+            : allChips.Take(cap).ToList();
+
+        // Single-reason ⇒ exactly one section ⇒ ProvenancePopupViewModel renders a flat
+        // list (no reason header). ToQueryCommand intentionally unset (mirrors surface 1 /
+        // the slice-2 effect→abilities decision): the popup-from-index is the
+        // count-bearing surface; the labeled-lossy To-Query projection is a deliberate
+        // fast-follow.
+        var popup = new ProvenancePopupViewModel(
+            title: $"Recipes that use {item.Name ?? item.InternalName} as an ingredient keyword",
+            sections: new List<ProvenancePopupSection>
+            {
+                new("Used as", allChips),
+            });
+
+        return (capped, popup);
     }
 
     private IReadOnlyList<EntityChipVm>? BuildRecipeChips(
