@@ -17,17 +17,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost FooterText="{Binding InternalName}">
+
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer docks to bottom; body StackPanel fills the rest. When the host
-                 ContentControl has MinHeight=viewport, this pins the footer to the bottom
-                 of the pane even for short recipes. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"/>
+            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
             <StackPanel>
             <!-- Header: icon + name. Internal name goes in the footer bottom-right per the
                  detail-view convention (matches ItemDetailView). -->
@@ -197,4 +191,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

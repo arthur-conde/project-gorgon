@@ -17,18 +17,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost FooterText="{Binding InternalName}">
+
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer pins to the bottom of the DockPanel. With the
-                 host ContentControl bound to ScrollViewer.ViewportHeight, the
-                 DockPanel stretches to viewport and the footer pins to the bottom
-                 of the right pane even for sparse items. Matches the pattern
-                 already used by RecipeDetailView. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"/>
+            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
             <StackPanel>
                 <!-- children below, reordered: cross-links float up to right
                      after Description (was rows 19-21, now rows 2-4). -->
@@ -676,4 +669,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

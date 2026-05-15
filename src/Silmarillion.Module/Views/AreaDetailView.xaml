@@ -115,15 +115,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost FooterText="{Binding InternalName}">
+
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer: internal name (mono, bottom-right) — per detail-view convention. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"/>
+            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
 
             <StackPanel>
                 <!-- ─── Header: friendly name + optional short form ─── -->
@@ -193,4 +189,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

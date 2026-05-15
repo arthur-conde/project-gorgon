@@ -18,17 +18,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <wpf:DetailExportHost FooterText="{Binding FooterText}">
+
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer: "Title_5018" — mono, bottom-right, per the detail-view
-                 internal-name footer convention. The POCO carries no InternalName,
-                 so the footer is just the single envelope key. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding FooterText}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,12,0,0" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"/>
+            <!-- Footer ("Title_NNNN") is owned by the wrapping DetailExportHost (FooterText). -->
 
             <StackPanel>
                 <!-- ─── Header: clean title ─── -->
@@ -92,4 +86,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </wpf:DetailExportHost>
 </UserControl>
