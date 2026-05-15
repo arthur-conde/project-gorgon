@@ -58,3 +58,23 @@ public sealed record DateTimeValue(DateTime Value) : ValueNode;
 public sealed record BoolValue(bool Value) : ValueNode;
 
 public sealed record NullValue : ValueNode;
+
+public enum OrderDirection
+{
+    Ascending,
+    Descending,
+}
+
+public sealed record OrderSpec(string Column, OrderDirection Direction);
+
+/// <summary>
+/// Top-level parse result. <see cref="Predicate"/> is the WHERE-side AST
+/// (null when the query has no predicate). <see cref="Order"/> is the
+/// ORDER BY clause (empty when the query has no sort).
+/// </summary>
+public sealed record ParsedQuery(QueryNode? Predicate, IReadOnlyList<OrderSpec> Order)
+{
+    public static ParsedQuery Empty { get; } = new(null, Array.Empty<OrderSpec>());
+
+    public bool IsEmpty => Predicate is null && Order.Count == 0;
+}
