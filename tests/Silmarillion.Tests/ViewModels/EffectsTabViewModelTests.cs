@@ -195,7 +195,7 @@ public sealed class EffectsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_RequiredByAbilities_BuildsChipsFromIndex_AndAddsOverflowPillBeyondCap()
+    public void DetailViewModel_RequiredByAbilities_BuildsChipsFromIndex_AndAddsAbilitiesTabShortcut()
     {
         var effect = new PocoEffect { InternalName = "effect_1", Name = "X", IconId = 1, Keywords = ["FrostShard"] };
         var abilities = Enumerable.Range(1, 15)
@@ -217,15 +217,15 @@ public sealed class EffectsTabViewModelTests
         var detail = vm.DetailViewModel!;
 
         detail.RequiredByAbilityChips.Should().HaveCount(12);
-        detail.RequiredByAbilitiesOverflowPill.Should().NotBeNull();
-        detail.RequiredByAbilitiesOverflowPill!.DisplayName.Should().Be("+3 more →");
-        detail.RequiredByAbilitiesOverflowPill.Reference.Kind.Should().Be(EntityKind.AbilityByEffectKeyword);
-        detail.RequiredByAbilitiesOverflowPill.Reference.InternalName.Should().Be("FrostShard");
-        detail.RequiredByAbilitiesOverflowPill.IsNavigable.Should().BeTrue();
+        detail.RequiredByAbilitiesTabShortcut.Should().NotBeNull();
+        detail.RequiredByAbilitiesTabShortcut!.DisplayName.Should().Be("View all 15 in Abilities tab →");
+        detail.RequiredByAbilitiesTabShortcut.Reference.Kind.Should().Be(EntityKind.AbilityByEffectKeyword);
+        detail.RequiredByAbilitiesTabShortcut.Reference.InternalName.Should().Be("FrostShard");
+        detail.RequiredByAbilitiesTabShortcut.IsNavigable.Should().BeTrue();
     }
 
     [Fact]
-    public void DetailViewModel_RequiredByAbilities_NoOverflowPill_WhenCountWithinCap()
+    public void DetailViewModel_RequiredByAbilities_StillEmitsShortcut_WhenCountWithinCap()
     {
         var effect = new PocoEffect { InternalName = "effect_1", Name = "X", IconId = 1, Keywords = ["FrostShard"] };
         var refData = new StubReferenceData
@@ -245,7 +245,9 @@ public sealed class EffectsTabViewModelTests
         var detail = vm.DetailViewModel!;
 
         detail.RequiredByAbilityChips.Should().ContainSingle();
-        detail.RequiredByAbilitiesOverflowPill.Should().BeNull();
+        detail.RequiredByAbilitiesTabShortcut.Should().NotBeNull(
+            because: "the navigable summary chip is always shown, even when every ability fits as a chip");
+        detail.RequiredByAbilitiesTabShortcut!.DisplayName.Should().Be("View all 1 in Abilities tab →");
     }
 
     [Fact]

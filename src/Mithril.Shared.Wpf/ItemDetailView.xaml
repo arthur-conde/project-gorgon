@@ -125,9 +125,10 @@
 
                 <!-- Used in recipes — cross-link to recipes that consume this item. Capped at
                      SilmarillionSettings.UsedInChipCap to keep selection-change cheap (long-tail
-                     items like MetalSlab1 ship 60+ recipes). The trailing pill collapses the
-                     overflow into a single chip that deep-links to the Recipes tab filtered to
-                     Ingredients CONTAINS "<itemInternalName>" — same total reach, one paint. -->
+                     items like MetalSlab1 ship 60+ recipes). The trailing always-visible
+                     ActionChip summary chip deep-links to the Recipes tab filtered to
+                     Ingredients CONTAINS "<itemInternalName>" — full reach in one paint,
+                     and a jump to the sortable Recipes view even when nothing overflowed. -->
                 <StackPanel Margin="0,10,0,0">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -136,7 +137,7 @@
                                 <DataTrigger Binding="{Binding ConsumedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding MoreRecipesChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding RecipesTabShortcut, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -157,10 +158,16 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <c:EntityChip DataContext="{Binding MoreRecipesChip}"
-                                  ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"
-                                  Visibility="{Binding Converter={StaticResource NullToVis}}"
-                                  HorizontalAlignment="Left"/>
+                    <ContentControl Content="{Binding RecipesTabShortcut}"
+                                    Margin="0,4,0,0"
+                                    HorizontalAlignment="Left"
+                                    Visibility="{Binding RecipesTabShortcut, Converter={StaticResource NullToVis}}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:ActionChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
                 </StackPanel>
 
                 <!-- Used as: keyword chips — items that satisfy keyword-based slots in recipes -->

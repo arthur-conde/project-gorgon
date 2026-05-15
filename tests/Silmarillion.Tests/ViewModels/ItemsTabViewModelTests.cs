@@ -117,7 +117,7 @@ public sealed class ItemsTabViewModelTests
     }
 
     [Fact]
-    public void UsedIn_belowCap_emitsAllChips_andNoMoreRecipesChip()
+    public void UsedIn_belowCap_emitsAllChips_andRecipesTabShortcut()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
@@ -134,11 +134,14 @@ public sealed class ItemsTabViewModelTests
         vm.SelectedItem = item;
 
         vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(5);
-        vm.DetailViewModel.MoreRecipesChip.Should().BeNull();
+        var shortcut = vm.DetailViewModel.RecipesTabShortcut;
+        shortcut.Should().NotBeNull(because: "the navigable summary chip is always shown, even at counts within the cap");
+        shortcut!.DisplayName.Should().Be("View all 5 in Recipes tab →");
+        shortcut.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
     }
 
     [Fact]
-    public void UsedIn_aboveCap_capsChips_andEmitsMoreRecipesPill()
+    public void UsedIn_aboveCap_capsChips_andEmitsRecipesTabShortcut()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab", IconId = 4242 };
         var refData = new StubReferenceData
@@ -156,17 +159,17 @@ public sealed class ItemsTabViewModelTests
         vm.SelectedItem = item;
 
         vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12,
-            because: "cap 12 means the first dozen show as chips and the rest collapse behind the pill");
+            because: "cap 12 means the first dozen show as chips and the rest are reachable via the summary chip");
 
-        var pill = vm.DetailViewModel.MoreRecipesChip;
-        pill.Should().NotBeNull();
-        pill!.DisplayName.Should().Be("+57 more →");
-        pill.IconId.Should().Be(4242, because: "pill carries the item's own icon for visual continuity");
-        pill.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
+        var shortcut = vm.DetailViewModel.RecipesTabShortcut;
+        shortcut.Should().NotBeNull();
+        shortcut!.DisplayName.Should().Be("View all 69 in Recipes tab →");
+        shortcut.IconId.Should().Be(0, because: "the ActionChip renders its own ListFilter glyph, not the item icon");
+        shortcut.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
     }
 
     [Fact]
-    public void UsedIn_capZero_collapsesEverythingIntoPill()
+    public void UsedIn_capZero_collapsesEverythingIntoShortcut()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
@@ -180,12 +183,12 @@ public sealed class ItemsTabViewModelTests
         vm.SelectedItem = item;
 
         vm.DetailViewModel!.ConsumedByRecipes.Should().BeEmpty();
-        vm.DetailViewModel.MoreRecipesChip.Should().NotBeNull();
-        vm.DetailViewModel.MoreRecipesChip!.DisplayName.Should().Be("+3 more →");
+        vm.DetailViewModel.RecipesTabShortcut.Should().NotBeNull();
+        vm.DetailViewModel.RecipesTabShortcut!.DisplayName.Should().Be("View all 3 in Recipes tab →");
     }
 
     [Fact]
-    public void UsedIn_capExactlyMatchesCount_noOverflowPill()
+    public void UsedIn_capExactlyMatchesCount_stillEmitsShortcut()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
@@ -199,16 +202,17 @@ public sealed class ItemsTabViewModelTests
         vm.SelectedItem = item;
 
         vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12);
-        vm.DetailViewModel.MoreRecipesChip.Should().BeNull(
-            because: "the pill appears only when count exceeds the cap, not when they're equal");
+        vm.DetailViewModel.RecipesTabShortcut.Should().NotBeNull(
+            because: "the navigable summary chip is always shown regardless of count vs cap");
+        vm.DetailViewModel.RecipesTabShortcut!.DisplayName.Should().Be("View all 12 in Recipes tab →");
     }
 
     [Fact]
     public void UsedInChipCap_change_liveRebuilds_DetailViewModel()
     {
         // The user drags the slider; the open detail view should re-cap on the spot. We
-        // verify by changing the cap and checking that ConsumedByRecipes / MoreRecipesChip
-        // reflect the new value.
+        // verify by changing the cap and checking that ConsumedByRecipes reflects the new
+        // value. The summary chip stays present throughout (always-visible by design).
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
         {
@@ -221,14 +225,17 @@ public sealed class ItemsTabViewModelTests
 
         var before = vm.DetailViewModel!;
         before.ConsumedByRecipes.Should().HaveCount(12);
-        before.MoreRecipesChip.Should().NotBeNull();
+        before.RecipesTabShortcut.Should().NotBeNull();
+        before.RecipesTabShortcut!.DisplayName.Should().Be("View all 20 in Recipes tab →");
 
         settings.UsedInChipCap = 25;
 
         var after = vm.DetailViewModel!;
         after.Should().NotBeSameAs(before, because: "live-update rebuilds the detail VM on slider drag");
         after.ConsumedByRecipes.Should().HaveCount(20);
-        after.MoreRecipesChip.Should().BeNull();
+        after.RecipesTabShortcut.Should().NotBeNull(
+            because: "the summary chip is always present even when every recipe now fits as a chip");
+        after.RecipesTabShortcut!.DisplayName.Should().Be("View all 20 in Recipes tab →");
     }
 
     private static IReadOnlyList<Recipe> MakeRecipeList(int count) =>

@@ -183,12 +183,12 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <ContentControl Content="{Binding RequiredByAbilitiesOverflowPill}"
+                    <ContentControl Content="{Binding RequiredByAbilitiesTabShortcut}"
                                     Margin="0,4,0,0"
-                                    Visibility="{Binding RequiredByAbilitiesOverflowPill, Converter={StaticResource NullToVis}}">
+                                    Visibility="{Binding RequiredByAbilitiesTabShortcut, Converter={StaticResource NullToVis}}">
                         <ContentControl.Resources>
                             <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
+                                <c:ActionChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
                             </DataTemplate>
                         </ContentControl.Resources>
                     </ContentControl>

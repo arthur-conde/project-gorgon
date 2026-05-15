@@ -30,11 +30,12 @@ public sealed record ItemDetailContext(
     IReadOnlyList<EntityChipVm>? ConsumedAsKeywordIn = null,
     IReadOnlyList<EntityChipVm>? AwardedByQuests = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null,
-    // Overflow pill for "Used in" when ConsumedByRecipes is already capped.
-    // Non-null only when the underlying recipe count exceeds the cap; renders as a
-    // RecipeIngredientItem-kind chip that deep-links to the Recipes tab filtered to
-    // "Ingredients CONTAINS <itemInternalName>". DisplayName carries the "+N more →" label.
-    EntityChipVm? MoreRecipesChip = null)
+    // Always-visible navigable summary chip for the "Used in" section. Non-null whenever
+    // the item is consumed by any recipe (independent of the chip cap); renders as a
+    // RecipeIngredientItem-kind ActionChip that deep-links to the Recipes tab filtered to
+    // "Ingredients CONTAINS <itemInternalName>". DisplayName carries the
+    // "View all N in Recipes tab →" label.
+    EntityChipVm? RecipesTabShortcut = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }
