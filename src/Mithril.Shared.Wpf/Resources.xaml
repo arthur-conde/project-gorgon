@@ -936,8 +936,14 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type c:DetailExportHost}">
-                    <Grid HorizontalAlignment="Left" VerticalAlignment="Top">
-                        <DockPanel x:Name="PART_ExportContent">
+                    <Grid>
+                        <!-- PART_ExportContent is Top-aligned so the footer sits directly
+                             under the body (no pane filler) in-app AND in the capture;
+                             width stays Stretch so the inline card keeps a stable
+                             pane-width footprint (no per-selection width jiggle). The
+                             exporter crops to drawn-content bounds, so the capture is
+                             tight regardless of this Stretch width. -->
+                        <DockPanel x:Name="PART_ExportContent" VerticalAlignment="Top">
                             <!-- Internal-name footer: mono, bottom-right, hidden when
                                  FooterText is empty (NullOrEmptyToVis is string-only —
                                  FooterText is a string, so it is correct here). Click

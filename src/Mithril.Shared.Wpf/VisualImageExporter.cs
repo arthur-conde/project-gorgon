@@ -89,23 +89,40 @@ public static class VisualImageExporter
             PixelFormats.Pbgra32);
         elementBitmap.Render(target);
 
+        // Crop to what is actually drawn. The element is arranged to its (stretched)
+        // pane size, but GetDescendantBounds gives the union of its descendants'
+        // rendered geometry — the real content box. Cropping to it makes the export
+        // tight in BOTH dimensions regardless of how the pane stretched the live view
+        // (no layout disturbance), and drops the card's own empty Border padding so
+        // the only margin is this method's `padding` — not stacked → not "doubled".
+        var bounds = VisualTreeHelper.GetDescendantBounds(target);
+        if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0)
+            bounds = new Rect(0, 0, width, height);
+
+        var cropX = Math.Clamp((int)Math.Floor(bounds.X * scale), 0, elementBitmap.PixelWidth - 1);
+        var cropY = Math.Clamp((int)Math.Floor(bounds.Y * scale), 0, elementBitmap.PixelHeight - 1);
+        var cropW = Math.Clamp((int)Math.Ceiling(bounds.Width * scale), 1, elementBitmap.PixelWidth - cropX);
+        var cropH = Math.Clamp((int)Math.Ceiling(bounds.Height * scale), 1, elementBitmap.PixelHeight - cropY);
+        var content = new CroppedBitmap(elementBitmap, new Int32Rect(cropX, cropY, cropW, cropH));
+
         if (padding <= 0)
         {
-            elementBitmap.Freeze();
-            return elementBitmap;
+            content.Freeze();
+            return content;
         }
 
-        // Compose the captured element onto a padding-inset, backfill-filled canvas.
-        // DrawImage into a width×height DIP rect at the same 96·scale DPI keeps the
-        // pixels 1:1 with elementBitmap — no second resample, no blur.
-        var canvasWidth = width + 2 * padding;
-        var canvasHeight = height + 2 * padding;
+        // Compose the cropped content onto a padding-inset, backfill-filled canvas.
+        // DrawImage at the same 96·scale DPI keeps pixels 1:1 — no resample, no blur.
+        var contentWidth = cropW / scale;
+        var contentHeight = cropH / scale;
+        var canvasWidth = contentWidth + 2 * padding;
+        var canvasHeight = contentHeight + 2 * padding;
         var composed = new DrawingVisual();
         using (var dc = composed.RenderOpen())
         {
             dc.DrawRectangle(new SolidColorBrush(background), pen: null,
                 new Rect(0, 0, canvasWidth, canvasHeight));
-            dc.DrawImage(elementBitmap, new Rect(padding, padding, width, height));
+            dc.DrawImage(content, new Rect(padding, padding, contentWidth, contentHeight));
         }
 
         var rtb = new RenderTargetBitmap(

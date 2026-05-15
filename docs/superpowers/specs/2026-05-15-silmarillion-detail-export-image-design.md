@@ -166,12 +166,17 @@ space; not "sized to what's needed".
   hidden via NullOrEmptyToVis when FooterText empty)] + [ContentPresenter]`. The footer
   is **inside** the capture (user decision: internal name travels with the image) and is
   click-to-copy with a ~1.2 s "copied ✓" ack (`FooterCopied` DataTrigger).
-- The template's **outer Grid is `HorizontalAlignment=Left VerticalAlignment=Top`**, so
-  it sizes to the card's desired extent. The capture target `PART_ExportContent` is
-  therefore content-sized regardless of how tall/wide the pane stretches the host — the
-  dead space disappears **by construction**, with no change to the 10 `*TabView`
-  `MinHeight` pins (left intact; lower regression surface — they only affect the in-app
-  pane, not the snapshot).
+- `PART_ExportContent` is `VerticalAlignment=Top` (footer sits directly under the body,
+  no filler gap), but **width stays `Stretch`** so the inline card keeps a stable
+  pane-width footprint — an earlier `Left`-aligned grid made the card shrink-wrap and
+  its width jiggle per selection (user disliked it). Tightness of the *export* is
+  instead achieved in `VisualImageExporter`: it crops the render to
+  `VisualTreeHelper.GetDescendantBounds(target)` (the union of actually-drawn geometry),
+  so the image is tight in **both** dimensions regardless of the stretched arranged size,
+  with no live-layout disturbance. Cropping also drops the card's own empty
+  `Border Padding="14,12"` from the capture, so the only margin is the exporter's single
+  `padding` (no "doubled" padding). The 10 `*TabView` `MinHeight` pins are left intact
+  (they only affect the in-app pane, not the snapshot).
 - The 8 per-view footers (`Ability/Quest/Npc/Area/Recipe/Item` → `InternalName`;
   `PlayerTitle/Lorebook` → `FooterText`) are deleted; each wrapper passes
   `FooterText="{Binding …}"`. `Effect`/`StorageVault` pass nothing → no footer
