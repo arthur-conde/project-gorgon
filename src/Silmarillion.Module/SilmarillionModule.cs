@@ -143,6 +143,7 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new PlayerTitlesKindTarget(
             sp.GetRequiredService<PlayerTitlesTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new StorageVaultsKindTarget(
             sp.GetRequiredService<StorageVaultsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));

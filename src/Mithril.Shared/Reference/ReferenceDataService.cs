@@ -351,14 +351,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadLorebooks();           // After LoadItems so BuildLorebookItemCrossLinkIndex sees
                                    // the final item set on first build.
         LoadPlayerTitles();        // Independent file; no cross-link index (#248).
-    }
-
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "playertitles"];
         LoadStorageVaults();       // Independent of every other file (#249 cross-links are
                                    // 1:1 chips resolved lazily at detail-build, not an index).
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "storagevaults"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "playertitles", "storagevaults"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
