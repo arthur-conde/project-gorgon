@@ -178,6 +178,10 @@ public sealed class SilmarillionDeepLinkHandlerTests
     [InlineData("quest/RuminationsOfAYoungMan", EntityKind.Quest, "RuminationsOfAYoungMan")]
     [InlineData("effect/effect_10003", EntityKind.Effect, "effect_10003")]
     [InlineData("area/AreaSerbule", EntityKind.Area, "AreaSerbule")]
+    // #327: the restored single-keyword Items filter-pivot kind. Distinct route name
+    // from the retired #270 ItemKeyword fan-out (locked-rejected just above) — this is
+    // the symmetric Items-side twin of effectkeyword/… .
+    [InlineData("itembykeyword/Sword", EntityKind.ItemByKeyword, "Sword")]
     public void TryHandle_DispatchesAnyEntityKindTheNavigatorAccepts(
         string subPath, EntityKind expectedKind, string expectedName)
     {

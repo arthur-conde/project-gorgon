@@ -286,19 +286,21 @@ public sealed class AbilitiesTabViewModelTests
             EffectKeywordReqs = ["BattleRage"],
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.EffectKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.EffectKeyword, EntityKind.ItemByKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
 
-        // #318 slice 4: EntityKind.ItemKeyword was retired (surface 3). This
-        // single-keyword Items filter pivot now degrades to a non-navigable plain-text
-        // chip (keyword still shown) — its symmetric Items-keyword pivot is a follow-up,
-        // out of scope for surface 3.
+        // #327: restored the single-keyword Items filter pivot via EntityKind.ItemByKeyword
+        // (the symmetric Items-side twin of EffectKeyword). #326 had degraded this chip to
+        // non-navigable plain text when the double-duty ItemKeyword kind was retired for
+        // its fan-out use.
         detail.ItemKeywordReqChips.Should().ContainSingle();
         var chip = detail.ItemKeywordReqChips[0];
         chip.DisplayName.Should().Be("Sword");
-        chip.IsNavigable.Should().BeFalse();
+        chip.Reference.Kind.Should().Be(EntityKind.ItemByKeyword);
+        chip.Reference.InternalName.Should().Be("Sword");
+        chip.IsNavigable.Should().BeTrue();
 
         detail.EffectKeywordReqChips.Should().ContainSingle();
         var effectChip = detail.EffectKeywordReqChips[0];
@@ -435,7 +437,7 @@ public sealed class AbilitiesTabViewModelTests
             AmmoConsumeChance = 1.0,
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemByKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
@@ -446,10 +448,12 @@ public sealed class AbilitiesTabViewModelTests
         detail.AmmoKeywordRows.Should().ContainSingle();
         var row = detail.AmmoKeywordRows[0];
         row.Chip.DisplayName.Should().Be("Beginner's Arrow", because: "AmmoDescription is the friendly label for the keyword");
-        // #318 slice 4: EntityKind.ItemKeyword retired (surface 3). The ammo-keyword chip
-        // is a single-keyword Items filter pivot that now degrades to non-navigable
-        // plain-text (label preserved) pending the symmetric Items-keyword pivot.
-        row.Chip.IsNavigable.Should().BeFalse();
+        // #327: ammo-keyword chip is a single-keyword Items filter pivot, restored via
+        // EntityKind.ItemByKeyword. The label folds in AmmoDescription, but the deep-link
+        // payload carries the raw keyword tag so the Items filter is Keywords CONTAINS.
+        row.Chip.IsNavigable.Should().BeTrue();
+        row.Chip.Reference.Kind.Should().Be(EntityKind.ItemByKeyword);
+        row.Chip.Reference.InternalName.Should().Be("Arrow1");
         row.Count.Should().Be(1);
         detail.AmmoStickChance.Should().Be(0.5);
         detail.AmmoConsumeChance.Should().Be(1.0);
@@ -476,16 +480,21 @@ public sealed class AbilitiesTabViewModelTests
             ],
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemByKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
 
         detail.ShowAmmoDescription.Should().BeTrue(because: "multi-keyword case keeps the line — AmmoDescription carries OR-substitution context the chips alone can't convey");
         detail.AmmoKeywordRows.Select(r => r.Chip.DisplayName).Should().Equal("ThrowingKnife1", "CrystalIce");
-        // #318 slice 4: EntityKind.ItemKeyword retired (surface 3) — these single-keyword
-        // Items pivots degrade to non-navigable plain-text chips (labels preserved).
-        detail.AmmoKeywordRows.Should().OnlyContain(r => !r.Chip.IsNavigable);
+        // #327: each ammo keyword is a single-keyword Items filter pivot, restored via
+        // EntityKind.ItemByKeyword (each chip is its own 1:1 pivot — multi-keyword here
+        // means multiple independent chips, NOT a fan-out / composite slot).
+        detail.AmmoKeywordRows.Should().OnlyContain(r => r.Chip.IsNavigable);
+        detail.AmmoKeywordRows.Select(r => r.Chip.Reference.Kind)
+            .Should().AllBeEquivalentTo(EntityKind.ItemByKeyword);
+        detail.AmmoKeywordRows.Select(r => r.Chip.Reference.InternalName)
+            .Should().Equal("ThrowingKnife1", "CrystalIce");
     }
 
     [Fact]

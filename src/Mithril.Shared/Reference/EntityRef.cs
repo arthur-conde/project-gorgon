@@ -37,6 +37,28 @@ public enum EntityKind
     // IReferenceDataService.ItemsByRecipeKeywordSlotWithReason directly (membership +
     // provenance, no query re-derivation). SilmarillionDeepLinkHandler's generic
     // Enum.TryParse<EntityKind> now rejects the "ItemKeyword" route name automatically.
+    // NOTE: ItemKeyword was *double-duty* — besides that fan-out, it also backed two
+    // legitimate single-keyword 1:1 Items-filter pivots (Ability-detail ItemKeywordReqs /
+    // ammo, NPCs-tab Store-cap / Consignment). Those pivots are NOT fan-out and were
+    // restored in #327 via the distinct ItemByKeyword kind below — a deliberately
+    // different name so the retired ItemKeyword route stays dead.
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the Items tab filtered to items
+    /// whose <c>Keywords</c> list contains this tag." InternalName carries a single keyword
+    /// tag (e.g. <c>"Sword"</c>, <c>"DenseArrow1"</c>, <c>"Armor"</c>). Dispatched by
+    /// ItemByKeywordKindTarget. This is a single-keyword *filter pivot* (one tag → one
+    /// filtered view) — a legitimate 1:1 per the #318 chip-vs-popup rule, the symmetric
+    /// Items-side twin of <see cref="EffectKeyword"/>. It is **not** the retired #270
+    /// <c>ItemKeyword</c> fan-out kind (recipe-slot keyword sets — that is a provenance
+    /// popup fed <c>ItemsByRecipeKeywordSlotWithReason</c>; do not reintroduce it). Use
+    /// this — not <see cref="Item"/> — when a chip's natural target is a keyword filter
+    /// rather than a specific item row. Singleton-payload only (no '+'-joined composite):
+    /// the recipe-slot composite form belonged to the retired fan-out kind. Restored in
+    /// #327 (the pivot uses degraded to non-navigable plain text in #326 when the shared
+    /// ItemKeyword kind was retired for its fan-out use).
+    /// </summary>
+    ItemByKeyword,
 
     /// <summary>
     /// Not an entity per se — a deep-link target for "open the Effects tab filtered to effects
@@ -122,6 +144,13 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     // EntityRef.RecipeIngredientItem retired in #318 slice 4 — the Items "Used in" 1:N
     // surface is now a provenance popup fed RecipesByIngredientItemWithReason directly.
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
+    /// <summary>
+    /// Single-keyword Items filter pivot — see <see cref="EntityKind.ItemByKeyword"/>.
+    /// Symmetric twin of <see cref="EffectKeyword"/>; restored in #327. NOT the retired
+    /// #270 <c>EntityRef.ItemKeyword</c> fan-out factory (recipe-slot keyword sets are a
+    /// provenance popup).
+    /// </summary>
+    public static EntityRef ItemByKeyword(string keyword) => new(EntityKind.ItemByKeyword, keyword);
     public static EntityRef EffectByStackingType(string stackingType) => new(EntityKind.EffectByStackingType, stackingType);
     // EntityRef.NpcByArea retired in #318 slice 4, surface 4 — the Areas "NPCs in this
     // area" 1:N surface is now a provenance popup fed NpcsByAreaWithReason directly.

@@ -277,9 +277,9 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     /// <summary>
     /// Format one Store cap-increase entry. Prose is <c>"Tier → 5,000g"</c>; the keyword tuple
     /// (when present) becomes the per-line chip strip — each chip targets the Items tab via
-    /// <see cref="EntityKind.ItemKeyword"/>, mirroring the recipe-detail "Used as" pattern from
-    /// PR #267 / #270. Mirrors the colon-separated parser shape in
-    /// <see cref="Mithril.Shared.Reference.ReferenceDataService"/>.
+    /// <see cref="EntityKind.ItemByKeyword"/> (the single-keyword Items filter pivot restored
+    /// in #327; not the retired #270 fan-out kind). Mirrors the colon-separated parser shape
+    /// in <see cref="Mithril.Shared.Reference.ReferenceDataService"/>.
     /// </summary>
     private NpcServiceDetailLine FormatCapIncrease(string raw)
     {
@@ -300,7 +300,8 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
 
     /// <summary>
     /// Wrap each Store-cap keyword tag as a navigable chip targeting the Items tab via
-    /// <see cref="EntityKind.ItemKeyword"/>. Friendly chip labels come from
+    /// <see cref="EntityKind.ItemByKeyword"/> (single-keyword 1:1 filter pivot, #327).
+    /// Friendly chip labels come from
     /// <see cref="IReferenceDataService.KeywordDisplayNames"/>; unmapped tags fall back to a
     /// CamelCase split (matching the item-detail "Used as" chip behavior from PR #267).
     /// </summary>
@@ -313,18 +314,18 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
             var display = displayNames.TryGetValue(tag, out var friendly)
                 ? friendly
                 : CamelCaseSplitConverter.Split(tag);
-            // #318 slice 4: EntityKind.ItemKeyword retired (surface 3 — recipe-detail
-            // fan-out → popup). This Store-cap keyword chip is a single-keyword Items
-            // filter pivot (legitimate 1:1 per the #318 rule) but its backing kind is
-            // gone and the symmetric Items-keyword pivot isn't built yet — degrade to a
-            // non-navigable plain-text chip (keyword still shown; inert Reference since
-            // EntityChip skips the click when IsNavigable is false). Follow-up owed:
-            // Items-side single-keyword filter-pivot kind (out of scope here).
+            // #327: Store-cap / Consignment keyword chip is a single-keyword Items filter
+            // pivot (1:1 per the #318 chip-vs-popup rule — one tag → "open the Items tab
+            // filtered to this keyword"). Restored via the symmetric
+            // EntityKind.ItemByKeyword (NOT the retired #270 ItemKeyword recipe-slot
+            // fan-out kind); #326 had degraded it to non-navigable plain text when the
+            // double-duty ItemKeyword kind was retired for its fan-out use.
+            var reference = EntityRef.ItemByKeyword(tag);
             chips.Add(new EntityChipVm(
                 DisplayName: display,
                 IconId: 0,
-                Reference: EntityRef.Item(tag),
-                IsNavigable: false));
+                Reference: reference,
+                IsNavigable: _navigator.CanOpen(reference)));
         }
         return chips;
     }
