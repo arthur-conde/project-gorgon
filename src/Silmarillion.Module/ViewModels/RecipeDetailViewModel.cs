@@ -75,6 +75,18 @@ public sealed class RecipeDetailViewModel
         string.IsNullOrEmpty(SkillDisplayName) ? "" : $"{SkillDisplayName} {Recipe.SkillLevelReq}";
 
     /// <summary>
+    /// Per-character lifetime use cap, e.g. "Limited to 2 uses". Only Research-keyword
+    /// recipes (WeatherWitching/FireMagic/IceMagic) carry <see cref="Recipe.MaxUses"/>;
+    /// it is never per-day/per-session. Empty string when absent or non-positive — the
+    /// view hides the chip on empty (string-only <c>NullOrEmptyToVis</c>, matching
+    /// <see cref="SkillRequirementChip"/>). <c>MaxUses == 1</c> renders singular.
+    /// </summary>
+    public string MaxUsesChip =>
+        Recipe.MaxUses is int n && n > 0
+            ? $"Limited to {n} use{(n == 1 ? "" : "s")}"
+            : "";
+
+    /// <summary>
     /// Direct item-ingredient chips only (1:1 <see cref="EntityRef.Item"/> references) —
     /// keyword slots are <em>not</em> in this list any more (#318 slice 4, surface 3):
     /// a keyword slot is a 1:N fan-out and now surfaces via <see cref="KeywordSlots"/>'s

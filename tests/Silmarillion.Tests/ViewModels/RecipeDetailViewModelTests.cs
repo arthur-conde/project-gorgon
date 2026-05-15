@@ -14,7 +14,8 @@ public sealed class RecipeDetailViewModelTests
         string? skill = "Cooking",
         int skillLevel = 12,
         string? description = null,
-        IReadOnlyList<string>? resultEffects = null) => new()
+        IReadOnlyList<string>? resultEffects = null,
+        int? maxUses = null) => new()
     {
         Key = "recipe_1",
         InternalName = internalName,
@@ -25,6 +26,7 @@ public sealed class RecipeDetailViewModelTests
         IconId = 4242,
         Ingredients = [],
         ResultEffects = resultEffects,
+        MaxUses = maxUses,
     };
 
     [Fact]
@@ -115,5 +117,23 @@ public sealed class RecipeDetailViewModelTests
         var vm = new RecipeDetailViewModel(SampleRecipe(), [], produced, []);
 
         vm.ProducedItems.Should().BeEquivalentTo(produced);
+    }
+
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData(0, "")]
+    [InlineData(1, "Limited to 1 use")]
+    [InlineData(4, "Limited to 4 uses")]
+    public void MaxUsesChip_RendersLifetimeCap_OrEmptyWhenAbsent(int? maxUses, string expected)
+    {
+        // MaxUses appears only on Research-keyword recipes; it is a per-character
+        // lifetime cap. Absent (null) or non-positive => no chip. 1 => singular.
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(maxUses: maxUses),
+            ingredients: [],
+            producedItems: [],
+            resultEffectsText: []);
+
+        vm.MaxUsesChip.Should().Be(expected);
     }
 }
