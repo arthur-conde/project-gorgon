@@ -34,6 +34,38 @@ public sealed class LorebookDetailViewModelTests
     }
 
     [Fact]
+    public void FooterSegments_DivergentKeyAndName_AreTwoIndependentSegments()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("Book_101", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "TheWastedWishes",
+            Title = "The Wasted Wishes", Text = "x",
+        });
+        var vm = BuildDetail(refData, "TheWastedWishes");
+
+        // Each is its own atomic copyable identifier (no " / " mashup).
+        vm.FooterSegments.Should().Equal("Book_101", "TheWastedWishes");
+        // Back-compat: joined FooterText preserved for non-UI consumers.
+        vm.FooterText.Should().Be("Book_101 / TheWastedWishes");
+    }
+
+    [Fact]
+    public void FooterSegments_KeyEqualsName_IsSingleSegment()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("SameName", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "SameName",
+            Title = "Same", Text = "x",
+        });
+        var vm = BuildDetail(refData, "SameName");
+
+        vm.FooterSegments.Should().ContainSingle().Which.Should().Be("SameName");
+        vm.FooterText.Should().Be("SameName");
+    }
+
+    [Fact]
     public void AreaChip_ResolvesFromFirstMatchingKeyword()
     {
         var refData = new FakeReferenceData();
