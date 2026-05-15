@@ -188,4 +188,22 @@ public class QueryableSourceTests
         var rows = new[] { new Row2("a", 1), new Row2("b", 2), new Row2("c", 1) };
         src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("c", "a", "b");
     }
+
+    [Fact]
+    public void ApplyOrdered_works_when_bindings_dict_uses_ordinal_comparer()
+    {
+        // Build a binding dict with Ordinal comparer (NOT OrdinalIgnoreCase — that's
+        // what BuildFromProperties returns by default). QueryCompiler's NormalizeColumns
+        // handles this asymmetry; ApplyOrdered must too.
+        var ordinalBindings = new Dictionary<string, ColumnBinding>(StringComparer.Ordinal)
+        {
+            ["Name"] = new("Name", typeof(string), o => ((Row2)o).Name),
+            ["Cost"] = new("Cost", typeof(int), o => ((Row2)o).Cost),
+        };
+        var src = new QueryableSource<Row2>(ordinalBindings);
+        src.QueryText = "ORDER BY cost"; // lowercase — would mismatch Ordinal lookup
+        var rows = new[] { new Row2("a", 3), new Row2("b", 1), new Row2("c", 7) };
+        // No KeyNotFoundException; sort works.
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("b", "a", "c");
+    }
 }

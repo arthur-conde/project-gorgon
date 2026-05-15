@@ -29,6 +29,7 @@ namespace Mithril.Shared.Wpf.Query;
 public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
 {
     private readonly IReadOnlyDictionary<string, ColumnBinding> _bindings;
+    private Dictionary<string, ColumnBinding> _normalizedBindings;
     private string? _queryText;
     private bool _caseSensitive;
     private Func<T, bool>? _predicate;
@@ -45,6 +46,19 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         _bindings = columns ?? throw new ArgumentNullException(nameof(columns));
         Schema = ColumnBindingHelper.ToSchema(_bindings);
         _caseSensitive = caseSensitive;
+        _normalizedBindings = BuildNormalized(_bindings, _caseSensitive);
+    }
+
+    private static Dictionary<string, ColumnBinding> BuildNormalized(
+        IReadOnlyDictionary<string, ColumnBinding> bindings, bool caseSensitive)
+    {
+        var cmp = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+        var map = new Dictionary<string, ColumnBinding>(cmp);
+        foreach (var (key, value) in bindings)
+        {
+            map[key] = value;
+        }
+        return map;
     }
 
     public IReadOnlyList<ColumnSchema> Schema { get; }
@@ -68,6 +82,7 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         {
             if (_caseSensitive == value) return;
             _caseSensitive = value;
+            _normalizedBindings = BuildNormalized(_bindings, _caseSensitive);
             OnPropertyChanged();
             Recompile();
         }
@@ -154,9 +169,9 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         for (int i = 0; i < _order.Count; i++)
         {
             var spec = _order[i];
-            // ResolveColumn returns the canonical binding; resolution is case-insensitive
-            // unless _caseSensitive is true (matches QueryCompiler).
-            var key = _bindings[spec.Column];
+            // _normalizedBindings is built with the same comparer QueryCompiler uses,
+            // so lookup matches CompileOrder's resolution (case-insensitive by default).
+            var key = _normalizedBindings[spec.Column];
             Func<T, object?> selector = item => key.GetValue(item!);
             if (ordered is null)
             {
