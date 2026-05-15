@@ -66,12 +66,16 @@ Behaviour of `RenderToBitmap`:
 - Read `target.ActualWidth` / `ActualHeight`. If either is non-positive, fall back to a
   `Measure(infinite)`/`Arrange` pass so a not-yet-arranged element still renders (defensive;
   the live case is always already arranged).
-- Build a `DrawingVisual`; in its `DrawingContext` draw a filled `background` rectangle
-  then the `target` via a `VisualBrush`, scaled by `scale`. This yields crisp text at
-  higher-than-screen resolution and guarantees a non-transparent surface so the pasted
-  image isn't see-through.
-- `RenderTargetBitmap` at `ceil(width*scale) × ceil(height*scale)`, DPI `96*scale`,
-  `Pbgra32`. `Render(drawingVisual)`, `Freeze()`, return.
+- Capture the element with `RenderTargetBitmap.Render(target)` directly (1:1 in its own
+  coordinate space, whitespace included, **no stretch**). A `VisualBrush` is deliberately
+  *not* used: its `Stretch=Fill` maps the visual's content bounding box onto the
+  destination, distorting sparse cards (little content in a tall pane). Direct render is
+  the standard "export this element" path (cf. `PippinShareCardRenderer`).
+- If `padding > 0`, compose that bitmap onto a `background`-filled canvas inset by
+  `padding`, via a `DrawingVisual` (`DrawRectangle` backfill + `DrawImage` at the same
+  `96*scale` DPI so pixels stay 1:1 — no second resample). Final `RenderTargetBitmap` at
+  `ceil(canvas*scale)`, DPI `96*scale`, `Pbgra32`, `Freeze()`, return. `padding == 0`
+  returns the element bitmap directly.
 
 `CopyToClipboard`:
 

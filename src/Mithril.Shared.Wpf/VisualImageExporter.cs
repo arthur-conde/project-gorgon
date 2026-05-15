@@ -77,20 +77,35 @@ public static class VisualImageExporter
         if (width <= 0 || height <= 0)
             throw new InvalidOperationException("Export target has no renderable size.");
 
+        // Capture the element exactly as arranged: RenderTargetBitmap.Render(target)
+        // paints it 1:1 in its own coordinate space (whitespace included, NO stretch).
+        // A VisualBrush would Fill — stretching the visual's content bounding box to
+        // the destination and distorting sparse cards — so we render directly, the
+        // standard "export this element" path (cf. PippinShareCardRenderer).
+        var elementBitmap = new RenderTargetBitmap(
+            (int)Math.Ceiling(width * scale),
+            (int)Math.Ceiling(height * scale),
+            96 * scale, 96 * scale,
+            PixelFormats.Pbgra32);
+        elementBitmap.Render(target);
+
+        if (padding <= 0)
+        {
+            elementBitmap.Freeze();
+            return elementBitmap;
+        }
+
+        // Compose the captured element onto a padding-inset, backfill-filled canvas.
+        // DrawImage into a width×height DIP rect at the same 96·scale DPI keeps the
+        // pixels 1:1 with elementBitmap — no second resample, no blur.
         var canvasWidth = width + 2 * padding;
         var canvasHeight = height + 2 * padding;
-        var canvasRect = new Rect(0, 0, canvasWidth, canvasHeight);
-        var contentRect = new Rect(padding, padding, width, height);
-
-        // Fill the whole padded canvas with the backfill, then paint the live visual
-        // via a VisualBrush inset by `padding`. The brush references the in-tree
-        // element read-only; contentRect equals its size so the paint is 1:1 (all
-        // upscaling is done by the RenderTargetBitmap DPI).
         var composed = new DrawingVisual();
         using (var dc = composed.RenderOpen())
         {
-            dc.DrawRectangle(new SolidColorBrush(background), pen: null, canvasRect);
-            dc.DrawRectangle(new VisualBrush(target), pen: null, contentRect);
+            dc.DrawRectangle(new SolidColorBrush(background), pen: null,
+                new Rect(0, 0, canvasWidth, canvasHeight));
+            dc.DrawImage(elementBitmap, new Rect(padding, padding, width, height));
         }
 
         var rtb = new RenderTargetBitmap(
