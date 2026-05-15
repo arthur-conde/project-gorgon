@@ -75,6 +75,40 @@ public interface IReferenceDataService
         = new Dictionary<string, IReadOnlyList<RecipeIngredientItemMatch>>(StringComparer.Ordinal);
 
     /// <summary>
+    /// Provenance-retaining index for the recipe-detail <em>keyword</em> surface (#318
+    /// slice 4, surface 3 — retiring the synthetic <c>ItemKeyword</c> #270 deep link).
+    /// Keyed by a recipe keyword slot's <see cref="RecipeKeywordIngredient.ItemKeys"/>
+    /// list <c>'+'</c>-joined (the exact encoding the retired <c>EntityRef.ItemKeyword</c>
+    /// factory used, so the key form is stable across the migration). The value is the
+    /// items that satisfy that slot — i.e. exactly what
+    /// <see cref="ItemKeywordIndex.ItemsMatching"/> returns for the slot's keys (the
+    /// single set materialization) — each wrapped in a <see cref="RecipeKeywordItemMatch"/>
+    /// retaining <em>why</em> it qualified. The provenance popup renders membership
+    /// <em>and</em> provenance from this index directly: there is no second
+    /// (query-string) derivation that could silently diverge from the materialized set
+    /// (the #318 invariant; this is precisely the dual-derivation fault the
+    /// <c>ItemKeyword</c> + <c>ItemKeywordQueryMapper</c> pair had — the mapper failed
+    /// whole-slot on <c>MinTSysPrereq:</c>/<c>SkillPrereq:</c> keys the synthesized
+    /// keyword index nonetheless matched).
+    /// <para>
+    /// The relationship is single-reason
+    /// (<see cref="RecipeKeywordItemMatchReason.KeywordMatch"/>) — an item qualifies iff
+    /// it carries every (synthesized) tag in the slot — so the popup collapses to a flat
+    /// list per the #318 Discipline rule. Each item is carried once per slot key
+    /// (<see cref="ItemKeywordIndex.ItemsMatching"/> already dedups), so a distinct-member
+    /// count equals the displayed "View all N". Built whenever items.json or recipes.json
+    /// reloads (same triggers as <see cref="KeywordsUsedInRecipeSlots"/>, from the same
+    /// slot accumulation, so the two cannot drift). Defaults to empty so test fakes don't
+    /// need to opt into cross-linking.
+    /// </para>
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> ItemsByRecipeKeywordSlotWithReason
+        => EmptyRecipeKeywordItemMatchIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> EmptyRecipeKeywordItemMatchIndex
+        = new Dictionary<string, IReadOnlyList<RecipeKeywordItemMatch>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// The flat set of every distinct keyword tag that appears in any
     /// <see cref="RecipeKeywordIngredient.ItemKeys"/> across all recipes. Powers the item-detail
     /// "Used as" section: an item's chip set is <c>item.Keywords ∩ KeywordsUsedInRecipeSlots</c>,

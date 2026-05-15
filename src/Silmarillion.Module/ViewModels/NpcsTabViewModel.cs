@@ -310,15 +310,21 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         var chips = new List<EntityChipVm>(keywordTags.Count);
         foreach (var tag in keywordTags)
         {
-            var reference = EntityRef.ItemKeyword(tag);
             var display = displayNames.TryGetValue(tag, out var friendly)
                 ? friendly
                 : CamelCaseSplitConverter.Split(tag);
+            // #318 slice 4: EntityKind.ItemKeyword retired (surface 3 — recipe-detail
+            // fan-out → popup). This Store-cap keyword chip is a single-keyword Items
+            // filter pivot (legitimate 1:1 per the #318 rule) but its backing kind is
+            // gone and the symmetric Items-keyword pivot isn't built yet — degrade to a
+            // non-navigable plain-text chip (keyword still shown; inert Reference since
+            // EntityChip skips the click when IsNavigable is false). Follow-up owed:
+            // Items-side single-keyword filter-pivot kind (out of scope here).
             chips.Add(new EntityChipVm(
                 DisplayName: display,
                 IconId: 0,
-                Reference: reference,
-                IsNavigable: _navigator.CanOpen(reference)));
+                Reference: EntityRef.Item(tag),
+                IsNavigable: false));
         }
         return chips;
     }

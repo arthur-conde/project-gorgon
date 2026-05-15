@@ -701,6 +701,213 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
         svc.RecipesByIngredientItem.Should().BeEmpty();
     }
 
+    // ---- #318 slice 4, surface 3 — Gate C (merge-blocking). ItemsByRecipeKeywordSlotWithReason
+    // is the provenance index backing the recipe-detail keyword surface (retiring the
+    // synthetic ItemKeyword #270 deep link). These tests would have caught the original
+    // dual-derivation bug for THIS surface: the index set must equal the SAME materialization
+    // the rest of Mithril uses (KeywordIndex.ItemsMatching — no second query derivation), it
+    // must be single-reason (KeywordMatch), "View all N" must equal the distinct membership,
+    // and — the load-bearing case — a member qualifying ONLY via a synthesized keyword the
+    // old ItemKeywordQueryMapper failed whole-slot on (MinTSysPrereq:/SkillPrereq:/
+    // EquipmentSlot:) must still appear with correct provenance.
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_membership_equals_KeywordIndex_singleReason()
+    {
+        // Single-keyword slot. The provenance index for "Crystal" must be exactly the
+        // items KeywordIndex.ItemsMatching(["Crystal"]) returns — same instances, same
+        // order — because both are the one materialization (the #318 invariant: the
+        // popup is a view over the index, never a re-derivation). Every member carries
+        // exactly KeywordMatch (single-reason ⇒ flat popup).
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "Keywords": ["Crystal"] },
+              "item_101": { "Name": "Fine Crystal", "InternalName": "FineCrystal", "Keywords": ["Crystal", "Tier2"] },
+              "item_102": { "Name": "Iron Bar", "InternalName": "IronBar", "Keywords": ["Metal"] }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Enchant", "InternalName": "Enchant", "Skill": "Enchanting",
+                "Ingredients": [ { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().ContainKey("Crystal");
+        var members = svc.ItemsByRecipeKeywordSlotWithReason["Crystal"];
+
+        // Same set, same instances, same order as the canonical single materialization.
+        var canonical = svc.KeywordIndex.ItemsMatching(["Crystal"]);
+        members.Select(m => m.Item).Should().Equal(canonical,
+            because: "the provenance index is a view over KeywordIndex.ItemsMatching — no second derivation");
+        members.Select(m => m.Item.InternalName)
+            .Should().BeEquivalentTo(new[] { "RoughCrystal", "FineCrystal" });
+        // Single-reason: every member is exactly KeywordMatch (⇒ a distinct-member count
+        // equals the displayed "View all N", and the popup collapses to a flat list).
+        members.Should().OnlyContain(m => m.Reason == RecipeKeywordItemMatchReason.KeywordMatch);
+        // The non-matching item is absent.
+        members.Select(m => m.Item.InternalName).Should().NotContain("IronBar");
+    }
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_compositeSlotKey_isPlusJoined_andAndMatched()
+    {
+        // Composite slot ["Crystal","Tier2"] is keyed by the '+'-join "Crystal+Tier2"
+        // (the retired EntityRef.ItemKeyword encoding, kept stable across the migration)
+        // and AND-matched — only items carrying BOTH tags qualify, matching
+        // KeywordIndex.ItemsMatching's intersection.
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "Keywords": ["Crystal"] },
+              "item_101": { "Name": "Fine Crystal", "InternalName": "FineCrystal", "Keywords": ["Crystal", "Tier2"] }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Enchant T2", "InternalName": "EnchantT2", "Skill": "Enchanting",
+                "Ingredients": [ { "Desc": "T2 Crystal", "ItemKeys": ["Crystal", "Tier2"], "StackSize": 1 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().ContainKey("Crystal+Tier2");
+        var members = svc.ItemsByRecipeKeywordSlotWithReason["Crystal+Tier2"];
+        members.Select(m => m.Item).Should().Equal(svc.KeywordIndex.ItemsMatching(["Crystal", "Tier2"]));
+        members.Select(m => m.Item.InternalName).Should().BeEquivalentTo(new[] { "FineCrystal" },
+            because: "AND-match: only the item carrying both Crystal and Tier2 qualifies");
+        members.Should().OnlyContain(m => m.Reason == RecipeKeywordItemMatchReason.KeywordMatch);
+    }
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_memberQualifyingViaSynthesizedKeyword_stillAppears_withProvenance()
+    {
+        // THE load-bearing Gate-C regression. The old ItemKeyword/ItemKeywordQueryMapper
+        // pair was a *dual derivation*: the chip deep-linked through a kind target that
+        // re-derived the set as a query string, and the mapper FAILED WHOLE-SLOT on keys
+        // it couldn't express (MinTSysPrereq:/SkillPrereq:) even though the synthesized
+        // KeywordIndex matched items on exactly those keys. So the "View all N" surface
+        // diverged from the real set. The popup-from-index has no query between the set
+        // and the screen, so an item qualifying ONLY via a synthesized keyword (here the
+        // EquipmentSlot:MainHand virtual tag from ItemKeywordSynthesis — never present in
+        // raw item.Keywords) is present by construction, with KeywordMatch provenance.
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Iron Sword", "InternalName": "IronSword", "EquipSlot": "MainHand" },
+              "item_101": { "Name": "Wooden Shield", "InternalName": "WoodenShield", "EquipSlot": "OffHand" }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Decompose Main-Hand", "InternalName": "DecomposeMainHand",
+                "Skill": "WeaponAugmentBrewing",
+                "Ingredients": [
+                  { "Desc": "Main-Hand Item", "ItemKeys": ["EquipmentSlot:MainHand"], "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // IronSword carries NO raw Keywords; it qualifies purely via the synthesized
+        // EquipmentSlot:MainHand tag — exactly the key class the old mapper rejected.
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().ContainKey("EquipmentSlot:MainHand");
+        var members = svc.ItemsByRecipeKeywordSlotWithReason["EquipmentSlot:MainHand"];
+        members.Select(m => m.Item.InternalName).Should().BeEquivalentTo(new[] { "IronSword" },
+            because: "the member qualifies via a synthesized keyword the retired query-mapper failed whole-slot on; the popup-from-index has no query so it's present by construction");
+        members.Should().OnlyContain(m => m.Reason == RecipeKeywordItemMatchReason.KeywordMatch);
+        members.Should().Equal(
+            svc.KeywordIndex.ItemsMatching(["EquipmentSlot:MainHand"])
+                .Select(i => new RecipeKeywordItemMatch(i, RecipeKeywordItemMatchReason.KeywordMatch)),
+            because: "View all N == the distinct KeywordIndex membership, single materialization");
+    }
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_emptyResultSlot_isStillKeyed_withEmptyList()
+    {
+        // A slot whose constraint no item currently satisfies is still keyed (with an
+        // empty list) so the consumer can distinguish "no matching items" (render the
+        // row, 'View all 0') from "unknown slot" (skip the row).
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Bread", "InternalName": "Bread", "Keywords": ["Food"] } }""",
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Mystery", "InternalName": "Mystery", "Skill": "Cooking",
+                "Ingredients": [ { "Desc": "Unobtanium", "ItemKeys": ["Unobtanium"], "StackSize": 1 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().ContainKey("Unobtanium");
+        svc.ItemsByRecipeKeywordSlotWithReason["Unobtanium"].Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_realBundledData_everySlotMatchesKeywordIndex_singleReason()
+    {
+        // Real-data lock (#318 Gate C, corpus half). Walks every keyword slot in the
+        // bundled recipes.json and asserts the provenance index for that slot equals the
+        // canonical KeywordIndex.ItemsMatching materialization, member-for-member, all
+        // single-reason. Catches a real-data divergence the synthetic fixtures can't —
+        // e.g. a composite slot whose '+'-join collides, or a synthesized-keyword slot
+        // (the class the retired query-mapper silently failed on). Skipped when bundled
+        // data isn't co-located so CI shapes that strip it stay green.
+        var realBundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
+        if (!File.Exists(Path.Combine(realBundled, "recipes.json"))) return;
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: realBundled);
+
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().NotBeEmpty(
+            because: "the bundled recipes.json ships *E enchant recipes with keyword slots");
+
+        foreach (var (slotKey, members) in svc.ItemsByRecipeKeywordSlotWithReason)
+        {
+            var keys = slotKey.Split('+');
+            var canonical = svc.KeywordIndex.ItemsMatching(keys);
+            members.Select(m => m.Item).Should().Equal(canonical,
+                because: $"slot '{slotKey}' must be a view over KeywordIndex.ItemsMatching — single materialization, no divergence");
+            // Empty-result slots are legitimate (keyed with an empty list so the consumer
+            // can distinguish "no matching items" from "unknown slot") — OnlyContain
+            // requires a non-empty collection, so guard it. The Equal(canonical) check
+            // above already covers the empty case (empty == empty).
+            if (members.Count > 0)
+                members.Should().OnlyContain(m => m.Reason == RecipeKeywordItemMatchReason.KeywordMatch);
+        }
+    }
+
+    [Fact]
+    public void ItemsByRecipeKeywordSlot_isEmpty_whenNoRecipeHasKeywordSlots()
+    {
+        WriteFixture(
+            itemsJson: """{ "item_100": { "Name": "Bread", "InternalName": "Bread" } }""",
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "R", "InternalName": "R", "Skill": "Cooking",
+                "Ingredients": [ { "ItemCode": 100, "StackSize": 1 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.ItemsByRecipeKeywordSlotWithReason.Should().BeEmpty();
+    }
+
     private sealed class ThrowingHandler(string message) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

@@ -232,12 +232,21 @@ public sealed class AbilityDetailViewModel
                 gateValues.Add(kw);
                 continue;
             }
-            var reference = EntityRef.ItemKeyword(kw);
+            // #318 slice 4: EntityKind.ItemKeyword (the recipe-detail fan-out kind) was
+            // retired (surface 3). This is a *single-keyword* Items filter pivot, a
+            // legitimate 1:1 per the #318 chip-vs-popup rule — but its backing kind is
+            // gone and the symmetric Items-keyword pivot (the twin of the surviving
+            // RecipeIngredientKeyword) is not yet built. Until it is, this degrades to a
+            // non-navigable plain-text chip (the keyword is still shown — no information
+            // loss, no dead-click). The Reference is an inert carrier: EntityChip does
+            // not wire the click when IsNavigable is false. Follow-up: an Items-side
+            // single-keyword filter-pivot kind (out of scope for surface 3 — one
+            // surface, one PR).
             chips.Add(new EntityChipVm(
                 DisplayName: kw,
                 IconId: 0,
-                Reference: reference,
-                IsNavigable: navigator.CanOpen(reference)));
+                Reference: EntityRef.Item(kw),
+                IsNavigable: false));
         }
 
         if (gateValues.Count == 0) return (chips, []);
@@ -425,12 +434,18 @@ public sealed class AbilityDetailViewModel
         {
             if (a is null) continue;
             var keyword = a.ItemKeyword ?? "(any)";
-            var reference = EntityRef.ItemKeyword(keyword);
+            // #318 slice 4: EntityKind.ItemKeyword retired (surface 3 — recipe-detail
+            // fan-out → popup). This ammo-keyword chip is a single-keyword Items filter
+            // pivot (legitimate 1:1 per the #318 rule) but its backing kind is gone and
+            // the symmetric Items-keyword pivot isn't built yet — degrade to a
+            // non-navigable plain-text chip (keyword still shown; inert Reference since
+            // EntityChip skips the click when IsNavigable is false). Follow-up owed:
+            // Items-side single-keyword filter-pivot kind (out of scope here).
             var chip = new EntityChipVm(
                 DisplayName: useDescriptionAsLabel ? ammoDescription! : keyword,
                 IconId: 0,
-                Reference: reference,
-                IsNavigable: navigator.CanOpen(reference));
+                Reference: EntityRef.Item(keyword),
+                IsNavigable: false);
             list.Add(new AbilityAmmoKeywordRow(Chip: chip, Count: a.Count));
         }
         return list;

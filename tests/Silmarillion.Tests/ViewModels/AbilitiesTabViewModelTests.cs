@@ -286,16 +286,19 @@ public sealed class AbilitiesTabViewModelTests
             EffectKeywordReqs = ["BattleRage"],
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword, EntityKind.EffectKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.EffectKeyword), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
 
+        // #318 slice 4: EntityKind.ItemKeyword was retired (surface 3). This
+        // single-keyword Items filter pivot now degrades to a non-navigable plain-text
+        // chip (keyword still shown) — its symmetric Items-keyword pivot is a follow-up,
+        // out of scope for surface 3.
         detail.ItemKeywordReqChips.Should().ContainSingle();
         var chip = detail.ItemKeywordReqChips[0];
         chip.DisplayName.Should().Be("Sword");
-        chip.Reference.Kind.Should().Be(EntityKind.ItemKeyword);
-        chip.IsNavigable.Should().BeTrue();
+        chip.IsNavigable.Should().BeFalse();
 
         detail.EffectKeywordReqChips.Should().ContainSingle();
         var effectChip = detail.EffectKeywordReqChips[0];
@@ -325,7 +328,7 @@ public sealed class AbilitiesTabViewModelTests
             ItemKeywordReqErrorMessage = errorMessage,
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
@@ -347,7 +350,7 @@ public sealed class AbilitiesTabViewModelTests
             ItemKeywordReqErrorMessage = null,
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
@@ -368,7 +371,7 @@ public sealed class AbilitiesTabViewModelTests
             ItemKeywordReqs = ["Sword"],
         };
         var refData = new StubReferenceData { AbilitiesByKey = { ["ability_1"] = ability } };
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllAbilities.Single();
         var detail = vm.DetailViewModel!;
@@ -443,7 +446,10 @@ public sealed class AbilitiesTabViewModelTests
         detail.AmmoKeywordRows.Should().ContainSingle();
         var row = detail.AmmoKeywordRows[0];
         row.Chip.DisplayName.Should().Be("Beginner's Arrow", because: "AmmoDescription is the friendly label for the keyword");
-        row.Chip.Reference.Should().Be(EntityRef.ItemKeyword("Arrow1"), because: "the chip routes to Items tab filtered by Keywords CONTAINS 'Arrow1' — keyword, not item");
+        // #318 slice 4: EntityKind.ItemKeyword retired (surface 3). The ammo-keyword chip
+        // is a single-keyword Items filter pivot that now degrades to non-navigable
+        // plain-text (label preserved) pending the symmetric Items-keyword pivot.
+        row.Chip.IsNavigable.Should().BeFalse();
         row.Count.Should().Be(1);
         detail.AmmoStickChance.Should().Be(0.5);
         detail.AmmoConsumeChance.Should().Be(1.0);
@@ -477,11 +483,9 @@ public sealed class AbilitiesTabViewModelTests
 
         detail.ShowAmmoDescription.Should().BeTrue(because: "multi-keyword case keeps the line — AmmoDescription carries OR-substitution context the chips alone can't convey");
         detail.AmmoKeywordRows.Select(r => r.Chip.DisplayName).Should().Equal("ThrowingKnife1", "CrystalIce");
-        detail.AmmoKeywordRows.Select(r => r.Chip.Reference).Should().BeEquivalentTo(new[]
-        {
-            EntityRef.ItemKeyword("ThrowingKnife1"),
-            EntityRef.ItemKeyword("CrystalIce"),
-        });
+        // #318 slice 4: EntityKind.ItemKeyword retired (surface 3) — these single-keyword
+        // Items pivots degrade to non-navigable plain-text chips (labels preserved).
+        detail.AmmoKeywordRows.Should().OnlyContain(r => !r.Chip.IsNavigable);
     }
 
     [Fact]
@@ -702,7 +706,7 @@ public sealed class AbilitiesTabViewModelTests
         var refData = BuildRealRefData(bundled);
         if (refData is null) return;
 
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Ability, EntityKind.Npc, EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Ability, EntityKind.Npc), new ReferenceDataEntityNameResolver(refData));
 
         var row = vm.AllAbilities.FirstOrDefault(r => r.InternalName == "SwordSlash2");
         row.Should().NotBeNull("SwordSlash2 is a stable ability in bundled abilities.json");
@@ -726,7 +730,7 @@ public sealed class AbilitiesTabViewModelTests
         var refData = BuildRealRefData(bundled);
         if (refData is null) return;
 
-        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Ability, EntityKind.Npc, EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new AbilitiesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Ability, EntityKind.Npc), new ReferenceDataEntityNameResolver(refData));
 
         var row = vm.AllAbilities.FirstOrDefault(r => r.InternalName == "ManyCuts");
         row.Should().NotBeNull("ManyCuts is a stable Sword ability in bundled abilities.json");
