@@ -107,6 +107,10 @@ public static class QueryParser
         Null,
         True,
         False,
+        OrderBy,        // single token: lexer joins "ORDER" + "BY"
+        SortBy,         // single token: lexer joins "SORT" + "BY"
+        Asc,
+        Desc,
         Error,
         Eof,
     }
@@ -128,6 +132,10 @@ public static class QueryParser
         ["NULL"] = TokenKind.Null,
         ["TRUE"] = TokenKind.True,
         ["FALSE"] = TokenKind.False,
+        ["ASC"] = TokenKind.Asc,
+        ["ASCENDING"] = TokenKind.Asc,
+        ["DESC"] = TokenKind.Desc,
+        ["DESCENDING"] = TokenKind.Desc,
         // English-aliased comparison operators, most useful for DateTime columns
         // (`Timestamp BEFORE NOW()`) but work for any orderable type.
         ["BEFORE"] = TokenKind.Lt,
@@ -284,6 +292,31 @@ public static class QueryParser
             }
             throw new QueryException($"Unexpected character '{c}'.", i);
         }
+
+        var joined = new List<Token>(tokens.Count);
+        for (int t = 0; t < tokens.Count; t++)
+        {
+            if (t + 1 < tokens.Count
+                && tokens[t].Kind == TokenKind.Identifier
+                && tokens[t + 1].Kind == TokenKind.Identifier
+                && string.Equals(tokens[t + 1].Text, "BY", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(tokens[t].Text, "ORDER", StringComparison.OrdinalIgnoreCase))
+                {
+                    joined.Add(new Token(TokenKind.OrderBy, "ORDER BY", tokens[t].Position));
+                    t++;
+                    continue;
+                }
+                if (string.Equals(tokens[t].Text, "SORT", StringComparison.OrdinalIgnoreCase))
+                {
+                    joined.Add(new Token(TokenKind.SortBy, "SORT BY", tokens[t].Position));
+                    t++;
+                    continue;
+                }
+            }
+            joined.Add(tokens[t]);
+        }
+        tokens = joined;
 
         tokens.Add(new Token(TokenKind.Eof, string.Empty, source.Length));
         return tokens;
