@@ -2,7 +2,8 @@
              x:Name="Self"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting">
+             xmlns:sort="clr-namespace:Mithril.Shared.Wpf.Sorting"
+             xmlns:query="clr-namespace:Mithril.Shared.Wpf.Query">
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -34,32 +35,22 @@
             <DockPanel>
                 <!-- Hint -->
                 <TextBlock DockPanel.Dock="Bottom"
-                           Text="Click a chip to flip direction. ✕ removes."
+                           Text="Click a chip to toggle. Active chips show direction; click again to flip; click a third time to remove."
                            Foreground="{StaticResource TextTertiaryBrush}"
                            FontSize="{DynamicResource AppFontSizeSmall}"
                            Margin="0,8,0,0"
                            TextWrapping="Wrap"/>
 
-                <!-- Chip surface — looks like a TextBox; chips wrap inside -->
+                <!-- Chip surface — all available chips render here; active ones carry a
+                     direction glyph, inactive ones read as "add" affordances. -->
                 <Border BorderBrush="{StaticResource BorderSubtleBrush}"
                         BorderThickness="1"
                         CornerRadius="3"
                         Background="{StaticResource BgRecessedBrush}"
                         Padding="3"
                         MinHeight="34">
-                    <Grid>
-                        <!-- Centered placeholder, shown when there are no chips. -->
-                        <TextBlock x:Name="EmptyPlaceholder"
-                                   Text="No sort applied · list shows the source's default order"
-                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                   FontStyle="Italic"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Margin="6,0"
-                                   Visibility="Collapsed"/>
-                        <ItemsControl x:Name="TagsList"
-                                      KeyboardNavigation.TabNavigation="Cycle">
+                    <ItemsControl x:Name="TagsList"
+                                  KeyboardNavigation.TabNavigation="Cycle">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
@@ -67,144 +58,99 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="2" CornerRadius="10"
-                                        BorderBrush="{StaticResource BorderSubtleBrush}"
-                                        BorderThickness="1"
-                                        Background="{StaticResource BgSurfaceHoverBrush}"
-                                        SnapsToDevicePixels="True">
+                                <!-- One chip: a Button whose visual state differs based on IsActive.
+                                     Inactive chips read as "add" (faded text + a +). Active chips
+                                     show the direction glyph in the accent colour and read as
+                                     "currently sorting by this". Click always routes to
+                                     ToggleChip(Key.Id). -->
+                                <Button Click="OnChipClick"
+                                        Cursor="Hand"
+                                        Margin="2"
+                                        Padding="8,3"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        ToolTip="Click to add / flip / remove this sort key">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="ChipBd"
+                                                    CornerRadius="10"
+                                                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                    BorderThickness="1"
+                                                    Background="{StaticResource BgSurfaceBrush}"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    SnapsToDevicePixels="True">
+                                                <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                    <Setter TargetName="ChipBd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
+                                                    <Setter TargetName="ChipBd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                </DataTrigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ChipBd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <!-- Tag body: glyph + label. Click flips; ↑/↓ reorder; Delete removes. -->
-                                        <Button Click="OnTagBodyClick"
-                                                KeyDown="OnTagKeyDown"
-                                                Cursor="Hand"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Padding="8,3"
-                                                Foreground="{StaticResource TextPrimaryBrush}"
-                                                ToolTip="Click or Space/Enter to flip · ↑/↓ reorder · Delete removes">
-                                            <Button.Template>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter VerticalAlignment="Center"
-                                                                          HorizontalAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Button.Template>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding IndicatorGlyph}"
-                                                           Foreground="{StaticResource AccentBrush}"
-                                                           FontWeight="SemiBold"
-                                                           Margin="0,0,5,0"/>
-                                                <TextBlock Text="{Binding DisplayName}"/>
-                                            </StackPanel>
-                                        </Button>
-
-                                        <!-- × remove -->
-                                        <Button Click="OnRemoveClick"
-                                                Cursor="Hand"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Padding="4,3,7,3"
-                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                ToolTip="Remove sort key">
-                                            <Button.Template>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Button.Template>
-                                            <TextBlock Text="✕" FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                        </Button>
+                                        <!-- Active: direction glyph (▲/▼). Inactive: + sign.
+                                             Default text is "+"; IsActive=True overrides to ▲ (ascending);
+                                             Direction==Descending then overrides to ▼. Order of triggers
+                                             matters in WPF: later triggers win. -->
+                                        <TextBlock Foreground="{StaticResource AccentBrush}"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,0,5,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="+"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Text" Value="▲"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Direction}" Value="{x:Static query:OrderDirection.Descending}">
+                                                            <Setter Property="Text" Value="▼"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Key.DisplayName}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <!-- Order index badge for multi-key sorts. Small "#N"
+                                             only shown when active. -->
+                                        <TextBlock Foreground="{StaticResource TextTertiaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   Margin="4,0,0,0"
+                                                   VerticalAlignment="Bottom">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Setter Property="Text" Value=""/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Setter Property="Text" Value="{Binding OrderIndex, StringFormat=#{0}}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
-                                </Border>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
-
-                        </ItemsControl>
-                    </Grid>
+                    </ItemsControl>
                 </Border>
-
-                <!-- + Add chip lives outside the surface (right-aligned) so it doesn't shift the chip flow -->
-                <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
-                    <Button x:Name="AddBtn"
-                            DockPanel.Dock="Right"
-                            Style="{StaticResource MithrilToolbarButtonStyle}"
-                            Click="OnAddSortKeyClick"
-                            ToolTip="Add another sort key">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="+ " Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"/>
-                            <TextBlock Text="Add sort key"/>
-                        </StackPanel>
-                    </Button>
-                </DockPanel>
-
-                <!-- Themed sub-popup — replaces the unstyled ContextMenu. -->
-                <Popup x:Name="AddPopup"
-                       PlacementTarget="{Binding ElementName=AddBtn}"
-                       Placement="Bottom"
-                       StaysOpen="False"
-                       AllowsTransparency="True"
-                       PopupAnimation="Fade"
-                       VerticalOffset="2">
-                    <Border Background="{StaticResource BgSurfaceBrush}"
-                            BorderBrush="{StaticResource BorderStrongBrush}"
-                            BorderThickness="1"
-                            CornerRadius="3"
-                            Padding="2"
-                            SnapsToDevicePixels="True">
-                        <Border.Effect>
-                            <DropShadowEffect Color="Black" BlurRadius="8" ShadowDepth="2" Opacity="0.5"/>
-                        </Border.Effect>
-                        <ListBox x:Name="UnusedKeysList"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 Padding="0"
-                                 MinWidth="160"
-                                 MaxHeight="240"
-                                 KeyboardNavigation.TabNavigation="Cycle"
-                                 SelectionChanged="OnUnusedKeysListSelectionChanged">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="8,4"/>
-                                    <Setter Property="Cursor" Value="Hand"/>
-                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="ListBoxItem">
-                                                <Border x:Name="Bd"
-                                                        Background="Transparent"
-                                                        Padding="{TemplateBinding Padding}"
-                                                        SnapsToDevicePixels="True">
-                                                    <ContentPresenter VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSurfaceHoverBrush}"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                                        <Setter Property="Foreground" Value="{StaticResource AccentSoftTextBrush}"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Border>
-                </Popup>
             </DockPanel>
         </Border>
     </Popup>

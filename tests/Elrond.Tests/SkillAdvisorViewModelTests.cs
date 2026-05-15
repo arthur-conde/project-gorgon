@@ -136,6 +136,133 @@ public class SkillAdvisorViewModelTests
             because: "an unknown skill key should not steal a valid selection");
     }
 
+    // ── Query box ↔ sort chips ───────────────────────────────────────────
+
+    [Fact]
+    public void DefaultQueryText_SeedsEffectiveXpDescending()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        // No persisted settings → default seed.
+        vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC");
+        vm.RecipesView.SortDescriptions.Should().ContainSingle();
+        vm.RecipesView.SortDescriptions[0].PropertyName.Should().Be("EffectiveXp");
+        vm.RecipesView.SortDescriptions[0].Direction
+            .Should().Be(System.ComponentModel.ListSortDirection.Descending);
+    }
+
+    [Fact]
+    public void SettingQueryText_DrivesSortDescriptions()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        vm.QueryText = "ORDER BY RecipeName";
+
+        vm.RecipesView.SortDescriptions.Should().ContainSingle();
+        vm.RecipesView.SortDescriptions[0].PropertyName.Should().Be("RecipeName");
+        vm.RecipesView.SortDescriptions[0].Direction
+            .Should().Be(System.ComponentModel.ListSortDirection.Ascending);
+        vm.QueryError.Should().BeNull();
+    }
+
+    [Fact]
+    public void ToggleChipCommand_AppendsOrderByClause()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        // Start from a clean slate so the toggle result is unambiguous.
+        vm.QueryText = "";
+        vm.ToggleChipCommand.Execute("EffectiveXp");
+
+        vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC");
+    }
+
+    [Fact]
+    public void ToggleChipCommand_Twice_FlipsThenRemoves()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        vm.QueryText = "";
+        vm.ToggleChipCommand.Execute("RecipeName");      // append ascending (RecipeName default asc)
+        vm.QueryText.Should().Be("ORDER BY RecipeName");
+
+        vm.ToggleChipCommand.Execute("RecipeName");      // flip to descending
+        vm.QueryText.Should().Be("ORDER BY RecipeName DESC");
+
+        vm.ToggleChipCommand.Execute("RecipeName");      // remove
+        vm.QueryText.Should().Be("");
+    }
+
+    [Fact]
+    public void Chips_ReflectActiveOrderState()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        vm.QueryText = "ORDER BY Complexity";
+
+        var complexity = vm.Chips.Single(c => c.Key.Id == "Complexity");
+        complexity.IsActive.Should().BeTrue();
+        complexity.OrderIndex.Should().Be(0);
+        vm.Chips.Single(c => c.Key.Id == "RecipeName").IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void InvalidQuery_SetsQueryErrorAndKeepsPreviousSort()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        vm.QueryText = "ORDER BY RecipeName";
+        vm.RecipesView.SortDescriptions.Should().ContainSingle();
+
+        vm.QueryText = "LevelRequired >>> 5";   // malformed
+
+        vm.QueryError.Should().NotBeNull();
+        // Previous sort retained — controller never received a new parsed order.
+        vm.RecipesView.SortDescriptions.Should().ContainSingle()
+            .Which.PropertyName.Should().Be("RecipeName");
+    }
+
+    [Fact]
+    public void QueryText_MigratesFromLegacyActiveSortKeys()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", parents: []);
+        refData.AddRecipe(rewardSkill: "Cooking");
+        var characterSvc = new FakeActiveCharacterService();
+        characterSvc.SetCharacter(new CharacterSnapshot(
+            "C", "S", DateTimeOffset.UtcNow,
+            new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            new Dictionary<string, int>(), new Dictionary<string, string>()));
+
+        var settings = new ElrondSettings
+        {
+            ActiveSortKeys =
+            [
+                new("EffectiveXp", System.ComponentModel.ListSortDirection.Descending),
+                new("RecipeName",  System.ComponentModel.ListSortDirection.Ascending),
+            ],
+        };
+        var engine = new SkillAdvisorEngine(refData);
+        var sim = new LevelingSimulator(refData, engine);
+        var vm = new SkillAdvisorViewModel(engine, sim, characterSvc, refData, settings);
+
+        vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
+        settings.ActiveSortKeys.Should().BeEmpty("legacy field cleared after migration");
+        settings.LastQueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
+    }
+
     // ── Fixture ──────────────────────────────────────────────────────────
 
     private static (SkillAdvisorViewModel vm, FakeRefData refData, FakeActiveCharacterService characterSvc, ElrondSettings settings)

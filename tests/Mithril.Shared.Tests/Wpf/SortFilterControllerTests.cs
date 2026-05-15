@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows.Data;
 using FluentAssertions;
 using Mithril.Shared.Wpf.Filtering;
+using Mithril.Shared.Wpf.Query;
 using Mithril.Shared.Wpf.Sorting;
 using Xunit;
 
@@ -12,30 +13,40 @@ public class SortFilterControllerTests
 {
     private sealed record Item(string Name, int Value);
 
+    private static SortKey<Item> NameKey() => new("Name", "Name");
+    private static SortKey<Item> ValueKey() => new("Value", "Value", DefaultDescending: true);
+
     private static (ListCollectionView View,
                     ObservableCollection<Item> Source,
-                    ObservableCollection<ActiveSortKey<Item>> ActiveSortKeys,
-                    IReadOnlyList<FilterPredicate<Item>> Filters)
+                    List<OrderSpec> LastRewrite)
         CreateRig(IEnumerable<Item> seed)
     {
         var coll = new ObservableCollection<Item>(seed);
         var view = new ListCollectionView(coll);
-        var active = new ObservableCollection<ActiveSortKey<Item>>();
-        var filters = new List<FilterPredicate<Item>>();
-        return (view, coll, active, filters);
+        return (view, coll, new List<OrderSpec>());
     }
 
-    private static SortKey<Item> NameKey() => new("Name", "Name", "Name");
-    private static SortKey<Item> ValueKey() => new("Value", "Value", "Value", DefaultDescending: true);
+    private static SortFilterController<Item> Build(
+        ListCollectionView view,
+        IReadOnlyList<FilterPredicate<Item>> filters,
+        Action<IReadOnlyList<OrderSpec>>? capture = null)
+        => new(
+            view,
+            [NameKey(), ValueKey()],
+            filters,
+            capture ?? (_ => { }));
 
     [Fact]
-    public void TwoActiveSortKeys_YieldSortDescriptionsInOrder()
+    public void OnParsedOrderChanged_TwoSpecs_YieldSortDescriptionsInOrder()
     {
-        var (view, _, active, filters) = CreateRig([new("a", 2), new("b", 1)]);
-        active.Add(new(ValueKey(), ListSortDirection.Descending));
-        active.Add(new(NameKey(),  ListSortDirection.Ascending));
+        var (view, _, _) = CreateRig([new("a", 2), new("b", 1)]);
+        using var c = Build(view, []);
 
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        c.OnParsedOrderChanged(
+        [
+            new OrderSpec("Value", OrderDirection.Descending),
+            new OrderSpec("Name", OrderDirection.Ascending),
+        ]);
 
         view.SortDescriptions.Should().HaveCount(2);
         view.SortDescriptions[0].PropertyName.Should().Be("Value");
@@ -45,56 +56,96 @@ public class SortFilterControllerTests
     }
 
     [Fact]
-    public void FlippingDirection_RebuildsSortDescriptions()
+    public void OnParsedOrderChanged_Empty_ClearsSortDescriptions()
     {
-        var (view, _, active, filters) = CreateRig([]);
-        var entry = new ActiveSortKey<Item>(ValueKey(), ListSortDirection.Descending);
-        active.Add(entry);
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        var (view, _, _) = CreateRig([]);
+        using var c = Build(view, []);
+        c.OnParsedOrderChanged([new OrderSpec("Value", OrderDirection.Descending)]);
+        view.SortDescriptions.Should().ContainSingle();
 
-        entry.FlipDirection();
+        c.OnParsedOrderChanged([]);
 
-        view.SortDescriptions.Single().Direction.Should().Be(ListSortDirection.Ascending);
+        view.SortDescriptions.Should().BeEmpty();
     }
 
     [Fact]
-    public void RemovingActiveSortKey_RemovesSortDescription()
+    public void OnParsedOrderChanged_UnknownColumn_LeavesSortDescriptionsEmpty()
     {
-        var (view, _, active, filters) = CreateRig([]);
-        active.Add(new(ValueKey(), ListSortDirection.Descending));
-        active.Add(new(NameKey(),  ListSortDirection.Ascending));
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        var (view, _, _) = CreateRig([]);
+        using var c = Build(view, []);
 
-        active.RemoveAt(0);
+        c.OnParsedOrderChanged([new OrderSpec("NoSuchColumn", OrderDirection.Ascending)]);
 
-        view.SortDescriptions.Should().ContainSingle()
-            .Which.PropertyName.Should().Be("Name");
+        view.SortDescriptions.Should().BeEmpty();
     }
 
     [Fact]
-    public void MovingActiveSortKey_ReordersSortDescriptions()
+    public void Chips_ProjectActiveAndInactiveKeys()
     {
-        var (view, _, active, filters) = CreateRig([]);
-        active.Add(new(ValueKey(), ListSortDirection.Descending));
-        active.Add(new(NameKey(),  ListSortDirection.Ascending));
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        var (view, _, _) = CreateRig([]);
+        using var c = Build(view, []);
 
-        active.Move(0, 1);
+        c.OnParsedOrderChanged([new OrderSpec("Value", OrderDirection.Descending)]);
 
-        view.SortDescriptions[0].PropertyName.Should().Be("Name");
-        view.SortDescriptions[1].PropertyName.Should().Be("Value");
+        var chips = c.Chips;
+        chips.Should().HaveCount(2);
+        chips.Single(x => x.Key.Id == "Value").IsActive.Should().BeTrue();
+        chips.Single(x => x.Key.Id == "Value").Direction.Should().Be(OrderDirection.Descending);
+        chips.Single(x => x.Key.Id == "Name").IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToggleChip_NotPresent_AppendsAtDefaultDirection()
+    {
+        var (view, _, captured) = CreateRig([]);
+        IReadOnlyList<OrderSpec> last = [];
+        using var c = Build(view, [], o => last = o);
+
+        c.ToggleChip("Value");
+
+        last.Should().ContainSingle();
+        last[0].Column.Should().Be("Value");
+        last[0].Direction.Should().Be(OrderDirection.Descending, "ValueKey has DefaultDescending: true");
+    }
+
+    [Fact]
+    public void ToggleChip_AtDefaultDirection_Flips()
+    {
+        var (view, _, _) = CreateRig([]);
+        IReadOnlyList<OrderSpec> last = [];
+        using var c = Build(view, [], o => last = o);
+        c.OnParsedOrderChanged([new OrderSpec("Value", OrderDirection.Descending)]);
+
+        c.ToggleChip("Value");
+
+        last.Should().ContainSingle();
+        last[0].Direction.Should().Be(OrderDirection.Ascending);
+    }
+
+    [Fact]
+    public void ToggleChip_AtFlippedDirection_Removes()
+    {
+        var (view, _, _) = CreateRig([]);
+        IReadOnlyList<OrderSpec> last = [new OrderSpec("placeholder", OrderDirection.Ascending)];
+        using var c = Build(view, [], o => last = o);
+        // Value's default is Descending; Ascending is the "flipped" state → next toggle removes.
+        c.OnParsedOrderChanged([new OrderSpec("Value", OrderDirection.Ascending)]);
+
+        c.ToggleChip("Value");
+
+        last.Should().BeEmpty();
     }
 
     [Fact]
     public void ActiveFilter_NarrowsTheView()
     {
         var items = new[] { new Item("a", 1), new Item("b", 2), new Item("c", 3) };
-        var (view, _, active, _) = CreateRig(items);
+        var (view, _, _) = CreateRig(items);
         var filters = new List<FilterPredicate<Item>>
         {
             new("EvenValue", "Even", x => x.Value % 2 == 0, isActive: true),
         };
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        using var c = Build(view, filters);
 
         view.Cast<Item>().Select(x => x.Name).Should().Equal("b");
     }
@@ -103,12 +154,12 @@ public class SortFilterControllerTests
     public void InactiveFilter_DoesNotNarrow()
     {
         var items = new[] { new Item("a", 1), new Item("b", 2) };
-        var (view, _, active, _) = CreateRig(items);
+        var (view, _, _) = CreateRig(items);
         var filters = new List<FilterPredicate<Item>>
         {
             new("Always", "Always false", _ => false, isActive: false),
         };
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        using var c = Build(view, filters);
 
         view.Cast<Item>().Should().HaveCount(2);
     }
@@ -117,10 +168,10 @@ public class SortFilterControllerTests
     public void TogglingIsActive_RefreshesView()
     {
         var items = new[] { new Item("a", 1), new Item("b", 2) };
-        var (view, _, active, _) = CreateRig(items);
+        var (view, _, _) = CreateRig(items);
         var filter = new FilterPredicate<Item>("EvenValue", "Even", x => x.Value % 2 == 0, isActive: false);
         var filters = new List<FilterPredicate<Item>> { filter };
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        using var c = Build(view, filters);
 
         view.Cast<Item>().Should().HaveCount(2);
         filter.IsActive = true;
@@ -132,23 +183,18 @@ public class SortFilterControllerTests
     [Fact]
     public void InvertedFilter_AppliesWhenInactive()
     {
-        // "Show unknown"-style predicate: r => r.Value > 0 means "value-bearing rows".
-        // Inverted=true → predicate applies when toggle is OFF (default), hiding zeros.
-        // Toggling ON suppresses the predicate, revealing zero-value rows too.
         var items = new[] { new Item("a", 0), new Item("b", 1), new Item("c", 2) };
-        var (view, _, active, _) = CreateRig(items);
+        var (view, _, _) = CreateRig(items);
         var filter = new FilterPredicate<Item>(
             "ShowZeroes", "Show zeroes",
             x => x.Value > 0,
             inverted: true,
             isActive: false);
         var filters = new List<FilterPredicate<Item>> { filter };
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        using var c = Build(view, filters);
 
-        // Off (default): predicate applies, zero hidden
         view.Cast<Item>().Select(i => i.Name).Should().Equal("b", "c");
 
-        // On: predicate suppressed, all rows visible
         filter.IsActive = true;
         view.Cast<Item>().Select(i => i.Name).Should().Equal("a", "b", "c");
     }
@@ -160,32 +206,29 @@ public class SortFilterControllerTests
         {
             new Item("a", 2), new Item("b", 4), new Item("aa", 4), new Item("bb", 6),
         };
-        var (view, _, active, _) = CreateRig(items);
+        var (view, _, _) = CreateRig(items);
         var filters = new List<FilterPredicate<Item>>
         {
             new("Even", "Even", x => x.Value % 2 == 0, isActive: true),
             new("ShortName", "Single-char name", x => x.Name.Length == 1, isActive: true),
         };
-        using var _c = new SortFilterController<Item>(view, active, filters);
+        using var c = Build(view, filters);
 
         view.Cast<Item>().Select(i => i.Name).Should().Equal("a", "b");
     }
 
     [Fact]
-    public void Dispose_StopsListening()
+    public void Dispose_StopsListeningToFilters()
     {
-        var (view, _, active, _) = CreateRig([]);
-        var entry = new ActiveSortKey<Item>(ValueKey(), ListSortDirection.Descending);
-        active.Add(entry);
-        var ctrl = new SortFilterController<Item>(view, active, new List<FilterPredicate<Item>>());
+        var items = new[] { new Item("a", 1), new Item("b", 2) };
+        var (view, _, _) = CreateRig(items);
+        var filter = new FilterPredicate<Item>("EvenValue", "Even", x => x.Value % 2 == 0, isActive: false);
+        var ctrl = Build(view, [filter]);
 
         ctrl.Dispose();
-        entry.FlipDirection();
-        active.Add(new(NameKey(), ListSortDirection.Ascending));
+        filter.IsActive = true;
 
-        // Direction flip + new key arrived after Dispose; SortDescriptions snapshot
-        // from before Dispose still has the original Descending Value.
-        view.SortDescriptions.Should().ContainSingle()
-            .Which.Direction.Should().Be(ListSortDirection.Descending);
+        // Filter event no longer wired post-Dispose → the view was not refreshed.
+        view.Cast<Item>().Should().HaveCount(2);
     }
 }

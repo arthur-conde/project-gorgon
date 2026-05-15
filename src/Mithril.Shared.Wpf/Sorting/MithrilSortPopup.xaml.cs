@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -8,11 +7,12 @@ namespace Mithril.Shared.Wpf.Sorting;
 
 /// <summary>
 /// Toolbar popup that lets the user manage an ordered, multi-key sort over an
-/// <see cref="ISortableViewModel"/>. The popup interior reads as a TextBox-like
-/// surface holding sort-key chips: each chip is <c>[ ▼/▲ DisplayName ✕ ]</c>;
-/// clicking the body flips the direction, ✕ removes. A "+ Add sort key"
-/// button opens a themed sub-popup (not the system ContextMenu) listing the
-/// keys not currently active.
+/// <see cref="ISortableViewModel"/>. The popup interior reads as a chip strip:
+/// each chip is one available <see cref="SortKey{T}"/> projected through
+/// <see cref="ChipState{T}"/>. Active chips show their direction glyph;
+/// inactive chips read as "add" affordances. Clicking always routes through
+/// <see cref="ISortableViewModel.ToggleChip"/>, which rewrites the query
+/// box's <c>ORDER BY</c> clause.
 /// </summary>
 public partial class MithrilSortPopup : UserControl
 {
@@ -54,13 +54,11 @@ public partial class MithrilSortPopup : UserControl
     {
         var p = (MithrilSortPopup)d;
         // Bind ItemsSource via direct interface call rather than XAML, because the
-        // non-generic facets (AvailableSortKeysUntyped / ActiveSortKeysUntyped) are
-        // default-interface members. WPF's reflection-based binding pipeline cannot
-        // see DIM-only properties on the runtime class — interface vtable dispatch
-        // here works regardless.
+        // non-generic facet (ChipsUntyped) is a default-interface member. WPF's
+        // reflection-based binding pipeline cannot see DIM-only properties on the
+        // runtime class — interface vtable dispatch here works regardless.
         if (e.NewValue is ISortableViewModel src)
-            p.TagsList.ItemsSource = src.ActiveSortKeysUntyped;
-        p.RefreshEmptyHint();
+            p.TagsList.ItemsSource = src.ChipsUntyped;
     }
 
     private static void OnIsOpenChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -68,25 +66,20 @@ public partial class MithrilSortPopup : UserControl
         var p = (MithrilSortPopup)d;
         if ((bool)e.NewValue)
         {
-            // Re-bind on every open in case the consumer assigned Source after the
-            // initial OnSourceChanged callback fired (or DIM resolution missed it).
-            if (p.Source is { } src) p.TagsList.ItemsSource = src.ActiveSortKeysUntyped;
-            p.RefreshEmptyHint();
-            // Focus the first chip when the popup pops, so keyboard users land
+            // Re-bind on every open — Chips is a derived view that recomputes on
+            // every ORDER BY edit, so a fresh IEnumerable instance may have replaced
+            // the one we captured at OnSourceChanged.
+            if (p.Source is { } src) p.TagsList.ItemsSource = src.ChipsUntyped;
+            // Focus the first chip when the popup pops so keyboard users land
             // somewhere actionable rather than on the popup root.
             p.Dispatcher.BeginInvoke(new Action(p.FocusFirstChip), DispatcherPriority.Input);
-        }
-        else
-        {
-            p.AddPopup.IsOpen = false;
         }
     }
 
     private void FocusFirstChip()
     {
-        if (TagsList.Items.Count == 0) { AddBtn.Focus(); return; }
+        if (TagsList.Items.Count == 0) return;
         if (TagsList.ItemContainerGenerator.ContainerFromIndex(0) is not FrameworkElement container) return;
-        // Walk to the inner Button (the chip body) so Space/Enter flips immediately.
         var button = FindChild<Button>(container);
         button?.Focus();
     }
@@ -103,115 +96,23 @@ public partial class MithrilSortPopup : UserControl
         return null;
     }
 
-    private void RefreshEmptyHint()
-    {
-        if (!IsLoaded) return;
-        var hasItems = Source?.ActiveSortKeysUntyped.Count > 0;
-        EmptyPlaceholder.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void OnTagBodyClick(object sender, RoutedEventArgs e)
-    {
-        if (((FrameworkElement)sender).DataContext is { } dc)
-            ((dynamic)dc).FlipDirection();
-        // Stop the click bubbling — Popup.StaysOpen=False can interpret a bubbling
-        // Click whose ancestor chain reaches outside the popup as "click outside".
-        e.Handled = true;
-    }
-
-    private void OnRemoveClick(object sender, RoutedEventArgs e)
+    private void OnChipClick(object sender, RoutedEventArgs e)
     {
         if (Source is not { } src) return;
         if (((FrameworkElement)sender).DataContext is not { } dc) return;
-        var index = src.ActiveSortKeysUntyped.IndexOf(dc);
-        if (index >= 0) src.RemoveSortKeyAt(index);
-        RefreshEmptyHint();
+        // ChipsUntyped is IEnumerable<ChipState<T>> for some T — but the popup is
+        // non-generic. Read the Key.Id via dynamic to bridge to ToggleChip(string).
+        var id = (string)((dynamic)dc).Key.Id;
+        src.ToggleChip(id);
+        // Re-pull ItemsSource so the new derived projection drives the next render.
+        TagsList.ItemsSource = src.ChipsUntyped;
         e.Handled = true;
-    }
-
-    private void OnTagKeyDown(object sender, KeyEventArgs e)
-    {
-        if (Source is not { } src) return;
-        if (((FrameworkElement)sender).DataContext is not { } dc) return;
-        var index = src.ActiveSortKeysUntyped.IndexOf(dc);
-        if (index < 0) return;
-
-        switch (e.Key)
-        {
-            case Key.Up:
-                if (index > 0)
-                {
-                    src.MoveSortKey(index, index - 1);
-                    Dispatcher.BeginInvoke(() => FocusChipAt(index - 1), DispatcherPriority.Input);
-                }
-                e.Handled = true;
-                break;
-            case Key.Down:
-                if (index < src.ActiveSortKeysUntyped.Count - 1)
-                {
-                    src.MoveSortKey(index, index + 1);
-                    Dispatcher.BeginInvoke(() => FocusChipAt(index + 1), DispatcherPriority.Input);
-                }
-                e.Handled = true;
-                break;
-            case Key.Delete:
-                src.RemoveSortKeyAt(index);
-                RefreshEmptyHint();
-                Dispatcher.BeginInvoke(FocusFirstChip, DispatcherPriority.Input);
-                e.Handled = true;
-                break;
-        }
-    }
-
-    private void FocusChipAt(int index)
-    {
-        if ((uint)index >= (uint)TagsList.Items.Count) return;
-        if (TagsList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container) return;
-        FindChild<Button>(container)?.Focus();
     }
 
     private void OnPopupKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
-        if (AddPopup.IsOpen) AddPopup.IsOpen = false;
-        else IsOpen = false;
+        IsOpen = false;
         e.Handled = true;
-    }
-
-    private void OnAddSortKeyClick(object sender, RoutedEventArgs e)
-    {
-        if (Source is not { } src) return;
-
-        var activeIds = new HashSet<string>();
-        foreach (var active in src.ActiveSortKeysUntyped)
-        {
-            if (active is null) continue;
-            activeIds.Add((string)((dynamic)active).Id);
-        }
-
-        var unused = new List<object>();
-        foreach (var key in src.AvailableSortKeysUntyped)
-        {
-            if (key is null) continue;
-            var id = (string)((dynamic)key).Id;
-            if (!activeIds.Contains(id)) unused.Add(key);
-        }
-
-        UnusedKeysList.ItemsSource = unused;
-        UnusedKeysList.SelectedIndex = -1;
-        AddPopup.IsOpen = unused.Count > 0;
-    }
-
-    private void OnUnusedKeysListSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (Source is not { } src) return;
-        if (UnusedKeysList.SelectedItem is not { } selected) return;
-
-        var id = (string)((dynamic)selected).Id;
-        src.AddSortKeyById(id);
-
-        AddPopup.IsOpen = false;
-        UnusedKeysList.SelectedIndex = -1;
-        RefreshEmptyHint();
     }
 }

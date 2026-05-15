@@ -235,6 +235,23 @@
                                 </Grid.ColumnDefinitions>
 
                                 <DockPanel Grid.Column="0">
+                                    <!-- Query box: the canonical filter + ORDER BY source. The sort
+                                         chips below are a derived view of its parsed ORDER BY clause;
+                                         clicking a chip rewrites the ORDER BY segment here. -->
+                                    <wpf:MithrilQueryBox DockPanel.Dock="Top" Margin="0,0,0,6"
+                                                         QueryText="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}"
+                                                         Schema="{Binding Schema}"
+                                                         Watermark="Filter recipes… (e.g. LevelRequired &lt;= 30 ORDER BY EffectiveXp DESC)"/>
+                                    <Border DockPanel.Dock="Top" Margin="0,0,0,6"
+                                            Background="#22C84B4B" BorderBrush="#55C84B4B" BorderThickness="1"
+                                            CornerRadius="3" Padding="6,3"
+                                            Visibility="{Binding QueryError, Converter={x:Static vm:NullToVisConverter.Instance}}">
+                                        <TextBlock Text="{Binding QueryError}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   TextWrapping="Wrap"/>
+                                    </Border>
+
                                     <!-- Toolbar: Sort button (opens popup) + view-mode toggle -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
                                         <wpf:ViewModeToggle DockPanel.Dock="Right"
