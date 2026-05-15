@@ -605,6 +605,21 @@ public interface IReferenceDataService
     // "Quests awarding this title" popup-from-index surface is intentionally NOT
     // built; no index, no Gate-C test (the test is merge-blocking only IF the popup
     // ships). See the PR body for the data finding.
+    // ── StorageVaults (#249) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// StorageVault envelope key → <see cref="StorageVault"/> POCO from
+    /// <c>storagevaults.json</c>. The envelope key is the operator NPC's internal name
+    /// (e.g. <c>"NPC_CharlesThompson"</c>), or a <c>"*"</c>-prefixed account-wide form
+    /// (e.g. <c>"*AccountStorage_Serbule"</c> — a transfer chest, no operator NPC). The
+    /// envelope key is the selection / deep-link contract (matches the existing
+    /// <see cref="EntityRef.StorageVault(string)"/> factory). Defaults to empty so test
+    /// fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, StorageVault> StorageVaults => EmptyStorageVaultMap;
+
+    private static readonly IReadOnlyDictionary<string, StorageVault> EmptyStorageVaultMap
+        = new Dictionary<string, StorageVault>(StringComparer.Ordinal);
 
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their

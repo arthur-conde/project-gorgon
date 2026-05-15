@@ -73,6 +73,54 @@ public sealed class SilmarillionDeepLinkHandlerTests
         nav.LastOpened.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("storagevault/NPC_CharlesThompson", "NPC_CharlesThompson")]
+    [InlineData("storagevault/*AccountStorage_Serbule", "*AccountStorage_Serbule")]
+    [InlineData("StorageVault/*AdminStorage", "*AdminStorage")]
+    public void TryHandle_StorageVault_AcceptsStarPrefixedEnvelopeKey(string subPath, string expectedName)
+    {
+        // #249: StorageVault account-wide / transfer-chest keys carry a meaningful leading
+        // '*'. The handler validates with IsValidEnvelopeKey (IsValidInternalName + an
+        // optional single leading '*'), so the literal '*' round-trips. Bare internal-name
+        // routes (every other kind) are unaffected — they're a strict subset of the grammar.
+        var nav = new PermissiveNavigator();
+        var handler = new SilmarillionDeepLinkHandler(nav);
+
+        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.StorageVault(expectedName));
+    }
+
+    [Fact]
+    public void DeepLinkRouter_UrlEncodedStar_DecodesAndDispatchesToStorageVault()
+    {
+        // End-to-end: mithril://silmarillion/storagevault/%2AAccountStorage_Serbule —
+        // Uri.AbsolutePath decodes %2A → '*', the Silmarillion handler accepts it.
+        var nav = new PermissiveNavigator();
+        var router = new Mithril.Shared.Modules.DeepLinkRouter(
+            new[] { new SilmarillionDeepLinkHandler(nav) });
+
+        router.Handle("mithril://silmarillion/storagevault/%2AAccountStorage_Serbule")
+            .Should().BeTrue();
+        nav.LastOpened.Should().Be(EntityRef.StorageVault("*AccountStorage_Serbule"));
+    }
+
+    [Fact]
+    public void DeepLinkPayload_StillRejectsSeparatorsAndWhitespace_EvenWithStarAllowed()
+    {
+        // The '*'-permissive envelope-key grammar must NOT regress the URI-safety intent:
+        // separators / whitespace / a non-leading or doubled '*' stay rejected. The
+        // original strict internal-name grammar (every other handler) is unchanged.
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("*AccountStorage_Serbule").Should().BeTrue();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("NPC_Joeh").Should().BeTrue();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("a*b").Should().BeFalse("'*' is only valid as a single leading char");
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("**x").Should().BeFalse();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("has space").Should().BeFalse();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("a/b").Should().BeFalse();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("").Should().BeFalse();
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidEnvelopeKey("*").Should().BeFalse("a lone '*' has no key body");
+        Mithril.Shared.Modules.DeepLinkPayload.IsValidInternalName("*AccountStorage_Serbule").Should().BeFalse();
+    }
+
     [Fact]
     public void TryHandle_PayloadOverLengthCap_IsRejected()
     {

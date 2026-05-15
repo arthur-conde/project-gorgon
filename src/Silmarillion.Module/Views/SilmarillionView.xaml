@@ -43,6 +43,9 @@
             <DataTemplate DataType="{x:Type vm:PlayerTitlesTabViewModel}">
                 <local:PlayerTitlesTabView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:StorageVaultsTabViewModel}">
+                <local:StorageVaultsTabView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
     <UserControl.InputBindings>
