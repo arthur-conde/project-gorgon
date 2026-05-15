@@ -182,7 +182,18 @@ public class MithrilQueryBox : Control
         var newText = (e.NewValue as string) ?? string.Empty;
         if (!string.Equals(box._editor.Text, newText, StringComparison.Ordinal))
         {
-            box._editor.Text = newText;
+            // Suppress the inner OnEditorTextChanged so it doesn't republish ParsedQuery /
+            // re-run highlighting — this outer handler owns publish duty for programmatic
+            // QueryText writes (e.g. RewriteOrderClause from sort chips / header clicks).
+            box._suppressTextSync = true;
+            try
+            {
+                box._editor.Text = newText;
+            }
+            finally
+            {
+                box._suppressTextSync = false;
+            }
         }
         box.UpdateHighlighting();
         box.PublishParsedQuery(newText);
@@ -212,6 +223,10 @@ public class MithrilQueryBox : Control
     private void OnEditorTextChanged(object? sender, TextChangedEventArgs e)
     {
         if (_editor is null) return;
+        // Programmatic write originating from OnQueryTextChanged: the outer handler
+        // already owns highlighting + publish, so bail to avoid double-publishing
+        // ParsedQueryChanged on each chip / header click that calls RewriteOrderClause.
+        if (_suppressTextSync) return;
         _suppressTextSync = true;
         try
         {
