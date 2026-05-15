@@ -326,4 +326,21 @@ public class QueryParserTests
         QueryParser.Parse("crop contains 'x'")?.Predicate.Should().BeOfType<StringMatchNode>();
         QueryParser.Parse("crop StartsWith 'x'")?.Predicate.Should().BeOfType<StringMatchNode>();
     }
+
+    [Theory]
+    [InlineData("ORDER BY Name")]
+    [InlineData("Cost > 10 ORDER BY Cost DESC")]
+    [InlineData("SORT BY Cost")]
+    public void LooksLikeGrammar_recognises_order_by(string input)
+    {
+        QueryParser.LooksLikeGrammar(input).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("order new chair")]
+    [InlineData("sort the wheat")]
+    public void LooksLikeGrammar_ignores_order_word_without_BY(string input)
+    {
+        QueryParser.LooksLikeGrammar(input).Should().BeFalse();
+    }
 }

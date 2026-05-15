@@ -26,6 +26,7 @@ public static class QueryParser
         "AND", "OR", "NOT", "LIKE", "IN", "BETWEEN", "IS", "NULL", "TRUE", "FALSE",
         "BEFORE", "AFTER",
         "CONTAINS", "STARTSWITH", "ENDSWITH",
+        "ASC", "ASCENDING", "DESC", "DESCENDING",
     };
 
     /// <summary>
@@ -52,6 +53,7 @@ public static class QueryParser
             }
         }
         int i = 0;
+        string? lastWordUpper = null;
         while (i < query!.Length)
         {
             if (!IsIdentStart(query[i]))
@@ -69,10 +71,16 @@ public static class QueryParser
             {
                 return true;
             }
+            // ORDER BY / SORT BY pair detection — both halves must be uppercase.
+            if (lastWordUpper is "ORDER" or "SORT" && word == "BY")
+            {
+                return true;
+            }
             if (knownColumns is not null && knownColumns.Contains(word))
             {
                 return true;
             }
+            lastWordUpper = word == word.ToUpperInvariant() ? word : null;
         }
         return false;
     }
