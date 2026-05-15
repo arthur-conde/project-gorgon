@@ -161,4 +161,37 @@ public class QueryCompletionProviderTests
         var results = Suggest("crop = ", 7, sampler);
         results.Should().ContainSingle(r => r.Label == "'O''Malley'");
     }
+
+    [Fact]
+    public void After_order_by_suggests_columns()
+    {
+        var schema = new[]
+        {
+            new ColumnSchema("Cost", typeof(int), false),
+            new ColumnSchema("Name", typeof(string), false),
+        };
+        var results = QueryCompletionProvider.Suggest("ORDER BY ", 9, schema);
+        results.Select(r => r.Label).Should().Contain(new[] { "Cost", "Name" });
+    }
+
+    [Fact]
+    public void After_order_by_column_suggests_direction_and_comma()
+    {
+        var schema = new[] { new ColumnSchema("Cost", typeof(int), false) };
+        var results = QueryCompletionProvider.Suggest("ORDER BY Cost ", 14, schema);
+        results.Select(r => r.Label).Should().Contain("ASC");
+        results.Select(r => r.Label).Should().Contain("DESC");
+    }
+
+    [Fact]
+    public void After_order_comma_suggests_columns_again()
+    {
+        var schema = new[]
+        {
+            new ColumnSchema("Cost", typeof(int), false),
+            new ColumnSchema("Name", typeof(string), false),
+        };
+        var results = QueryCompletionProvider.Suggest("ORDER BY Cost, ", 15, schema);
+        results.Select(r => r.Label).Should().Contain(new[] { "Cost", "Name" });
+    }
 }
