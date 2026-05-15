@@ -125,6 +125,29 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- Compact two-line row for Areas tab. Bound DataContext: Mithril.Shared.Reference.AreaEntry.
+         Areas don't ship icon ids; a Map icon stands in. Secondary line shows the area key for
+         technical disambiguation (FriendlyName "Serbule" exists alongside "Serbule Hills" /
+         "Serbule Caves" — the key tells the three apart at glance). -->
+    <DataTemplate x:Key="AreaCardTemplate">
+        <DockPanel LastChildFill="True">
+            <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="6,3,6,3"
+                    VerticalAlignment="Center" Background="#FF1F1F1F" CornerRadius="3">
+                <icon:PackIconLucide Kind="Map" Width="14" Height="14" Foreground="#88FFFFFF"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding FriendlyName}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Text="{Binding Key}" Foreground="#88FFFFFF"
+                           FontFamily="{DynamicResource AppMonoFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
     <!-- Compact two-line row for Recipes tab. Bound DataContext: Silmarillion.ViewModels.RecipeListRow. -->
     <DataTemplate x:Key="RecipeCardTemplate">
         <DockPanel LastChildFill="True">

@@ -121,6 +121,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         Npc: npc,
         InternalName: internalName,
         Name: _nameResolver.Resolve(EntityRef.Npc(internalName)),
+        AreaName: npc.AreaName ?? "",
         AreaDisplayName: npc.AreaFriendlyName ?? npc.AreaName ?? "(unknown)",
         ServiceTypes: BuildServiceTypes(npc));
 
@@ -144,6 +145,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         var quests = BuildQuestLinks(row.InternalName);
         var preferences = BuildPreferenceRows(row.Npc);
         var giftTiers = row.Npc.ItemGifts ?? (IReadOnlyList<string>)[];
+        var areaChip = BuildAreaChip(row.Npc);
 
         return new NpcDetailViewModel(
             row.Npc,
@@ -156,7 +158,29 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
             quests,
             preferences,
             giftTiers,
+            areaChip,
             _openEntityCommand);
+    }
+
+    /// <summary>
+    /// Build the navigable area chip for an NPC's home area. Uses <see cref="Npc.AreaName"/>
+    /// (envelope-key form, e.g. <c>"AreaSerbule"</c>) as the navigation key and
+    /// <see cref="Npc.AreaFriendlyName"/> as the display label, falling back to AreaName when
+    /// FriendlyName is missing. <c>IsNavigable</c> is gated by the navigator's
+    /// <c>CanOpen</c> — the chip degrades to plain text when the Areas tab isn't registered
+    /// (per cookbook *Cross-link chips → audit existing surfaces*; flips to clickable the
+    /// moment Areas ships, #245).
+    /// </summary>
+    private EntityChipVm? BuildAreaChip(Npc npc)
+    {
+        if (string.IsNullOrEmpty(npc.AreaName)) return null;
+        var reference = EntityRef.Area(npc.AreaName);
+        var label = string.IsNullOrEmpty(npc.AreaFriendlyName) ? npc.AreaName : npc.AreaFriendlyName;
+        return new EntityChipVm(
+            DisplayName: label,
+            IconId: 0,
+            Reference: reference,
+            IsNavigable: _navigator.CanOpen(reference));
     }
 
     private IReadOnlyList<NpcServiceRow> BuildServiceRows(Npc npc)

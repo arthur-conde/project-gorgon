@@ -34,6 +34,9 @@
             <DataTemplate DataType="{x:Type vm:EffectsTabViewModel}">
                 <local:EffectsTabView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:AreasTabViewModel}">
+                <local:AreasTabView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
     <UserControl.InputBindings>

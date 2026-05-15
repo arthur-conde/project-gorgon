@@ -11,6 +11,7 @@ using Effect = Mithril.Reference.Models.Effects.Effect;
 using Item = Mithril.Reference.Models.Items.Item;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
+using PocoLandmark = Mithril.Reference.Models.Misc.Landmark;
 using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
@@ -121,7 +122,16 @@ public sealed class ReferenceDataService : IReferenceDataService
 
     // Areas (areas.json) — area code → friendly display names.
     private IReadOnlyDictionary<string, AreaEntry> _areas = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> _npcsByArea =
+        new Dictionary<string, IReadOnlyList<NpcEntry>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _areasSnapshot;
+
+    // Landmarks (landmarks.json) — area key → in-area landmark list. Mirrors the file's
+    // nested dictionary shape; no slim projection (the POCO already carries Name + Desc + Loc
+    // + Type + Combo, all of which Area-detail renders directly). Powers #245.
+    private IReadOnlyDictionary<string, IReadOnlyList<PocoLandmark>> _landmarks =
+        new Dictionary<string, IReadOnlyList<PocoLandmark>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _landmarksSnapshot;
 
     // Item sources (sources_items.json)
     private IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> _itemSources =
@@ -239,6 +249,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _xpTablesSnapshot = new ReferenceFileSnapshot("xptables", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _areasSnapshot = new ReferenceFileSnapshot("areas", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _landmarksSnapshot = new ReferenceFileSnapshot("landmarks", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _itemSourcesSnapshot = new ReferenceFileSnapshot("sources_items", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _recipeSourcesSnapshot = new ReferenceFileSnapshot("sources_recipes", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _abilitiesSnapshot = new ReferenceFileSnapshot("abilities", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
@@ -260,6 +271,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadXpTables();
         LoadNpcs();
         LoadAreas();
+        LoadLandmarks();           // After LoadNpcs / LoadAreas so the area-key set is final; landmark parse uses the same area-key shape.
         LoadQuests();              // Must run before LoadItemSources / LoadRecipeSources / LoadAbilitySources — ResolveSourceContext reads _quests.
         LoadItemSources();
         LoadRecipeSources();
@@ -277,7 +289,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadEffects();
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -295,6 +307,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesTaughtByNpc => _recipesTaughtByNpc;
     public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsSoldByNpc => _itemsSoldByNpc;
     public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
+    public IReadOnlyDictionary<string, IReadOnlyList<PocoLandmark>> Landmarks => _landmarks;
+    public IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> NpcsByArea => _npcsByArea;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
     public IReadOnlyDictionary<string, Ability> Abilities => _abilities;
@@ -331,6 +345,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "xptables" => _xpTablesSnapshot,
         "npcs" => _npcsSnapshot,
         "areas" => _areasSnapshot,
+        "landmarks" => _landmarksSnapshot,
         "sources_items" => _itemSourcesSnapshot,
         "sources_recipes" => _recipeSourcesSnapshot,
         "abilities" => _abilitiesSnapshot,
@@ -358,6 +373,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "xptables" => RefreshFileAsync("xptables", ReferenceDeserializer.ParseXpTables, ParseAndSwapXpTables, ct),
         "npcs" => RefreshFileAsync("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs, ct),
         "areas" => RefreshFileAsync("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas, ct),
+        "landmarks" => RefreshFileAsync("landmarks", ReferenceDeserializer.ParseLandmarks, ParseAndSwapLandmarks, ct),
         "sources_items" => RefreshFileAsync("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources, ct),
         "sources_recipes" => RefreshFileAsync("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources, ct),
         "abilities" => RefreshFileAsync("abilities", ReferenceDeserializer.ParseAbilities, ParseAndSwapAbilities, ct),
@@ -383,6 +399,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("xptables", ct).ConfigureAwait(false);
         await RefreshAsync("npcs", ct).ConfigureAwait(false);
         await RefreshAsync("areas", ct).ConfigureAwait(false);
+        await RefreshAsync("landmarks", ct).ConfigureAwait(false);
         await RefreshAsync("sources_items", ct).ConfigureAwait(false);
         await RefreshAsync("sources_recipes", ct).ConfigureAwait(false);
         await RefreshAsync("abilities", ct).ConfigureAwait(false);
@@ -568,6 +585,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadXpTables() => LoadFile("xptables", ReferenceDeserializer.ParseXpTables, ParseAndSwapXpTables);
     private void LoadNpcs() => LoadFile("npcs", ReferenceDeserializer.ParseNpcs, ParseAndSwapNpcs);
     private void LoadAreas() => LoadFile("areas", ReferenceDeserializer.ParseAreas, ParseAndSwapAreas);
+    private void LoadLandmarks() => LoadFile("landmarks", ReferenceDeserializer.ParseLandmarks, ParseAndSwapLandmarks);
     private void LoadItemSources() => LoadFile("sources_items", ReferenceDeserializer.ParseSources, ParseAndSwapItemSources);
     private void LoadRecipeSources() => LoadFile("sources_recipes", ReferenceDeserializer.ParseSources, ParseAndSwapRecipeSources);
     private void LoadAbilities() => LoadFile("abilities", ReferenceDeserializer.ParseAbilities, ParseAndSwapAbilities);
@@ -931,6 +949,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _npcsByInternalName = byInternalName;
         _npcsSnapshot = new ReferenceFileSnapshot("npcs", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
         BuildQuestCrossLinkIndices();
+        BuildAreaNpcCrossLinkIndex();
     }
 
     private void ParseAndSwapAreas(IReadOnlyDictionary<string, PocoArea> raw, ReferenceFileMetadata meta)
@@ -944,6 +963,50 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _areas = byKey;
         _areasSnapshot = new ReferenceFileSnapshot("areas", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildAreaNpcCrossLinkIndex();
+    }
+
+    private void ParseAndSwapLandmarks(IReadOnlyDictionary<string, IReadOnlyList<PocoLandmark>> raw, ReferenceFileMetadata meta)
+    {
+        // Defensive copy of the nested dictionary so the service owns the storage rather
+        // than retaining a reference to the deserializer's allocation. Per-area lists are
+        // already IReadOnlyList<Landmark>, which is the surface we expose; defer the inner
+        // copy unless a consumer reports tearing on background refresh (none yet).
+        var byArea = new Dictionary<string, IReadOnlyList<PocoLandmark>>(raw.Count, StringComparer.Ordinal);
+        var landmarkCount = 0;
+        foreach (var (key, list) in raw)
+        {
+            byArea[key] = list;
+            landmarkCount += list.Count;
+        }
+        _landmarks = byArea;
+        _landmarksSnapshot = new ReferenceFileSnapshot("landmarks", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, landmarkCount);
+    }
+
+    /// <summary>
+    /// Builds <see cref="_npcsByArea"/> from <see cref="_npcsByInternalName"/>: groups NPCs
+    /// whose <see cref="PocoNpc.AreaName"/> is set, keyed by the area key. Area keys without
+    /// any NPCs are absent. Called from <see cref="ParseAndSwapNpcs"/> (NPC list changed)
+    /// and <see cref="ParseAndSwapAreas"/> (area-key set changed — defensive even though the
+    /// index doesn't gate on a known-area set today). Mirror of <see cref="BuildNpcCrossLinkIndices"/>'s
+    /// reverse-lookup pattern.
+    /// </summary>
+    private void BuildAreaNpcCrossLinkIndex()
+    {
+        var byArea = new Dictionary<string, List<NpcEntry>>(StringComparer.Ordinal);
+        foreach (var (internalName, poco) in _npcsByInternalName)
+        {
+            if (string.IsNullOrEmpty(poco.AreaName)) continue;
+            if (!_npcs.TryGetValue(internalName, out var entry)) continue;
+            if (!byArea.TryGetValue(poco.AreaName, out var list))
+            {
+                list = new List<NpcEntry>();
+                byArea[poco.AreaName] = list;
+            }
+            list.Add(entry);
+        }
+        _npcsByArea = byArea.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<NpcEntry>)kv.Value, StringComparer.Ordinal);
     }
 
     private void ParseAndSwapDirectedGoals(IReadOnlyList<DirectedGoal> raw, ReferenceFileMetadata meta)

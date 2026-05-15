@@ -164,6 +164,79 @@ public sealed class NpcsTabViewModelTests
     }
 
     [Fact]
+    public void DetailViewModel_AreaChip_PopulatedFromAreaName_NavigableWhenAreaKindRegistered()
+    {
+        // Cookbook *Cross-link chips → audit existing surfaces*: when the Areas tab ships
+        // (#245), this previously-stub plain-text field flips to a navigable chip.
+        var refData = new StubReferenceData
+        {
+            NpcsByKey =
+            {
+                ["NPC_Joeh"] = new Npc { Name = "Joeh", AreaName = "AreaSerbule", AreaFriendlyName = "Serbule" },
+            },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Area), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var chip = vm.DetailViewModel!.AreaChip;
+        chip.Should().NotBeNull();
+        chip!.DisplayName.Should().Be("Serbule", because: "AreaFriendlyName is the chip's display label");
+        chip.Reference.Should().Be(EntityRef.Area("AreaSerbule"), because: "AreaName is the navigation key");
+        chip.IsNavigable.Should().BeTrue(because: "the Areas kind is registered in this fixture");
+    }
+
+    [Fact]
+    public void DetailViewModel_AreaChip_DegradesToNonNavigable_WhenAreaKindNotRegistered()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey =
+            {
+                ["NPC_Joeh"] = new Npc { Name = "Joeh", AreaName = "AreaSerbule", AreaFriendlyName = "Serbule" },
+            },
+        };
+        // Empty navigator — no kind targets registered, so CanOpen returns false.
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.AreaChip.Should().NotBeNull();
+        vm.DetailViewModel.AreaChip!.IsNavigable.Should().BeFalse(
+            because: "the chip degrades to plain text in EntityChip's fallback rendering when the kind isn't registered");
+    }
+
+    [Fact]
+    public void DetailViewModel_AreaChip_FallsBackToAreaName_WhenFriendlyNameEmpty()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_X"] = new Npc { Name = "X", AreaName = "AreaSerbule" } },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Area), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.AreaChip!.DisplayName.Should().Be("AreaSerbule",
+            because: "the chip's label falls back to the raw area key when AreaFriendlyName is missing");
+    }
+
+    [Fact]
+    public void DetailViewModel_AreaChip_NullWhenNpcHasNoArea()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Wandering"] = new Npc { Name = "Wandering" } },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Area), new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        vm.DetailViewModel!.AreaChip.Should().BeNull(
+            because: "no AreaName on the POCO means no area chip — XAML hides the row via NullToVis");
+    }
+
+    [Fact]
     public void DetailViewModel_TaughtRecipes_ProjectsRecipesTaughtByNpc_ToChips_Navigable_WhenRecipeKindRegistered()
     {
         var recipe = new Recipe

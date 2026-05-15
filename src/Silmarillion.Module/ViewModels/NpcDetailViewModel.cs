@@ -28,6 +28,7 @@ public sealed class NpcDetailViewModel
         IReadOnlyList<EntityChipVm> quests,
         IReadOnlyList<NpcPreferenceRow> preferences,
         IReadOnlyList<string> giftSentimentTiers,
+        EntityChipVm? areaChip = null,
         ICommand? openEntityCommand = null)
     {
         Npc = npc;
@@ -40,13 +41,22 @@ public sealed class NpcDetailViewModel
         Quests = quests;
         Preferences = preferences;
         GiftSentimentTiers = giftSentimentTiers;
+        AreaChip = areaChip;
         OpenEntityCommand = openEntityCommand;
     }
 
     public Npc Npc { get; }
     public string InternalName { get; }
     public string DisplayName => _nameResolver.Resolve(EntityRef.Npc(InternalName));
-    public string? AreaDisplayName => Npc.AreaFriendlyName ?? Npc.AreaName;
+
+    /// <summary>
+    /// Navigable chip to this NPC's home area (<see cref="EntityRef.Area(string)"/>). Null when
+    /// the NPC has no <see cref="Npc.AreaName"/> set. Was a plain string (<c>AreaDisplayName</c>)
+    /// before #245 shipped the Areas tab — the migration follows cookbook *Cross-link chips →
+    /// audit existing surfaces*: once a kind ships, pre-existing call sites that surfaced its
+    /// friendly name as plain text need to flip to <c>EntityChip</c> + <see cref="IReferenceNavigator.CanOpen"/>.
+    /// </summary>
+    public EntityChipVm? AreaChip { get; }
     public string? Pos => Npc.Pos;
     public string? Description => Npc.Desc;
 
