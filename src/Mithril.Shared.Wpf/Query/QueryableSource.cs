@@ -32,6 +32,7 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
     private string? _queryText;
     private bool _caseSensitive;
     private Func<T, bool>? _predicate;
+    private IReadOnlyList<OrderSpec> _order = Array.Empty<OrderSpec>();
     private string? _error;
 
     public QueryableSource(bool caseSensitive = false)
@@ -104,8 +105,26 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         }
     }
 
+    /// <summary>
+    /// Parsed ORDER BY clause for the current <see cref="QueryText"/>, or
+    /// empty when the query has no sort clause. Empty also when parsing fails
+    /// (see <see cref="Error"/>).
+    /// </summary>
+    public IReadOnlyList<OrderSpec> Order
+    {
+        get => _order;
+        private set
+        {
+            if (ReferenceEquals(_order, value)) return;
+            _order = value;
+            OnPropertyChanged();
+            OrderChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? PredicateChanged;
+    public event EventHandler? OrderChanged;
 
     /// <summary>
     /// Convenience: filter <paramref name="source"/> by the current
@@ -118,26 +137,61 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         return p is null ? source : source.Where(p);
     }
 
+    /// <summary>
+    /// Filter <paramref name="source"/> by the current <see cref="Predicate"/>
+    /// (if any) and then sort by the current <see cref="Order"/>. When no order
+    /// clause is set, the filtered enumerable is returned in iteration order.
+    /// </summary>
+    public IEnumerable<T> ApplyOrdered(IEnumerable<T> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var filtered = Apply(source);
+        if (_order.Count == 0)
+        {
+            return filtered;
+        }
+        // Single composite comparer: per-key selector + direction + (for string keys)
+        // natural-sort comparer. Routes through the same path the WPF surfaces use via
+        // ListCollectionView.CustomSort.
+        var comparer = QueryCompiler.CompileOrderComparer(_order, _bindings, _caseSensitive);
+        return filtered.OrderBy(item => (object)item!, comparer);
+    }
+
     private void Recompile()
     {
         if (string.IsNullOrWhiteSpace(_queryText))
         {
             Error = null;
             Predicate = null;
+            Order = Array.Empty<OrderSpec>();
             return;
         }
         try
         {
-            var compiled = QueryCompiler.Compile(_queryText!, _bindings, _caseSensitive);
+            var parsed = QueryParser.Parse(_queryText!);
+            if (parsed is null)
+            {
+                Error = null;
+                Predicate = null;
+                Order = Array.Empty<OrderSpec>();
+                return;
+            }
+            Func<T, bool>? predicate = null;
+            if (parsed.Predicate is not null)
+            {
+                var compiled = QueryCompiler.Compile(parsed.Predicate, _bindings, _caseSensitive);
+                predicate = item => compiled(item);
+            }
+            // Compile order eagerly so unknown-column errors surface here, not at Apply time.
+            _ = QueryCompiler.CompileOrder(parsed.Order, _bindings, _caseSensitive);
             Error = null;
-            Predicate = compiled is null ? null : item => compiled(item);
+            Predicate = predicate;
+            Order = parsed.Order;
         }
         catch (QueryException ex)
         {
             Error = ex.Message;
-            // Intentionally keep last-good Predicate so the UI doesn't flicker
-            // mid-typing; the error string is the signal that the live query
-            // didn't take effect.
+            // Keep last-good Predicate + Order so UI doesn't flicker mid-typing.
         }
     }
 

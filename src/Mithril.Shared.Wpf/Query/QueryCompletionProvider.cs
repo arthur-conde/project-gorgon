@@ -78,6 +78,15 @@ public static class QueryCompletionProvider
                 AddKeywordIfStartsWith(results, "AND", context);
                 AddKeywordIfStartsWith(results, "OR", context);
                 break;
+            case Expecting.OrderColumn:
+                AddColumnSuggestions(results, context, columns);
+                break;
+            case Expecting.OrderDirection:
+                AddKeywordIfStartsWith(results, "ASC", context);
+                AddKeywordIfStartsWith(results, "DESC", context);
+                break;
+            case Expecting.None:
+                break;
         }
 
         // Filter by the prefix the user has already typed, preserving insertion point.
@@ -101,6 +110,9 @@ public static class QueryCompletionProvider
         Value,          // after a comparison op / LIKE / between-value / IN-value
         AndConnector,   // between the low and high of a BETWEEN
         Combinator,     // after a complete predicate — AND / OR
+        OrderColumn,    // after ORDER BY / SORT BY / `,` inside an ORDER list
+        OrderDirection, // after a column identifier inside an ORDER list
+        None,           // nothing useful to suggest (e.g. after ASC/DESC)
     }
 
     internal readonly record struct Context(
@@ -187,6 +199,39 @@ public static class QueryCompletionProvider
     private static (Expecting, ColumnSchema?) ClassifyExpecting(
         List<QueryParser.Token> effective, IReadOnlyList<ColumnSchema> columns)
     {
+        // ORDER BY context detection: once an ORDER BY / SORT BY token appears in the
+        // effective token stream, every subsequent token belongs to the ordering clause
+        // (the grammar runs the clause to end of input — predicate scope cannot resume).
+        // The last token relative to the caret tells us what's expected next.
+        bool insideOrderClause = false;
+        foreach (var tok in effective)
+        {
+            if (tok.Kind == QueryParser.TokenKind.OrderBy || tok.Kind == QueryParser.TokenKind.SortBy)
+            {
+                insideOrderClause = true;
+            }
+        }
+        if (insideOrderClause)
+        {
+            var lastOrderTok = effective[^1];
+            switch (lastOrderTok.Kind)
+            {
+                case QueryParser.TokenKind.OrderBy:
+                case QueryParser.TokenKind.SortBy:
+                case QueryParser.TokenKind.Comma:
+                    return (Expecting.OrderColumn, null);
+                case QueryParser.TokenKind.Identifier:
+                    return (Expecting.OrderDirection, null);
+                case QueryParser.TokenKind.Asc:
+                case QueryParser.TokenKind.Desc:
+                    // After a direction the only legal continuation is `,` or end of input;
+                    // nothing useful to suggest.
+                    return (Expecting.None, null);
+                default:
+                    return (Expecting.OrderColumn, null);
+            }
+        }
+
         if (effective.Count == 0)
         {
             return (Expecting.ColumnOrBool, null);

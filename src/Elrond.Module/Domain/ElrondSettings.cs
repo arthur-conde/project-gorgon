@@ -21,9 +21,22 @@ public sealed class ElrondSettings : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Active sort keys in precedence order. Each entry is a stable
-    /// <see cref="PersistedSortEntry.Id"/> (looked up against the VM's
-    /// AvailableSortKeys at load time) plus its current direction.
+    /// The canonical query text for the recipe list — predicate + ORDER BY.
+    /// The sort chips are a derived view of the parsed ORDER BY clause, so
+    /// persisting the query text alone restores both filter intent and sort
+    /// order on next launch.
+    /// </summary>
+    private string _lastQueryText = "";
+    public string LastQueryText
+    {
+        get => _lastQueryText;
+        set => Set(ref _lastQueryText, value ?? "");
+    }
+
+    /// <summary>
+    /// Legacy: ordered sort keys from the pre-query-box schema. Still deserialized
+    /// so an upgrading user's file isn't a data-loss event — the VM migrates these
+    /// into <see cref="LastQueryText"/> once on first launch, then clears them.
     /// </summary>
     private List<PersistedSortEntry> _activeSortKeys = [];
     public List<PersistedSortEntry> ActiveSortKeys
@@ -33,10 +46,8 @@ public sealed class ElrondSettings : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Legacy single-key sort field. Read on first launch after upgrade so the
-    /// new <see cref="ActiveSortKeys"/> is seeded with the user's previous
-    /// choice; ignored thereafter. Deserializer keeps this populated for
-    /// backwards compatibility — the migration runs on VM construction.
+    /// Legacy single-key sort field (pre-popup schema). Read once for migration,
+    /// then cleared. Deserializer keeps it for backwards compatibility.
     /// </summary>
     private string? _legacySortKey;
     public string? SortKey
@@ -117,9 +128,9 @@ public sealed class ElrondSettings : INotifyPropertyChanged
 }
 
 /// <summary>
-/// One persisted entry in <see cref="ElrondSettings.ActiveSortKeys"/>.
-/// Stored as JSON (id + direction); the VM resolves <paramref name="Id"/> back
-/// to a typed <c>SortKey&lt;RecipeAnalysis&gt;</c> at load time.
+/// One persisted entry in the legacy <see cref="ElrondSettings.ActiveSortKeys"/>.
+/// Retained for backwards-compatible deserialization; the VM migrates these into
+/// <see cref="ElrondSettings.LastQueryText"/> at load time.
 /// </summary>
 public sealed record PersistedSortEntry(string Id, System.ComponentModel.ListSortDirection Direction);
 

@@ -7,7 +7,7 @@ namespace Mithril.Shared.Wpf.Query;
 
 public static class QueryParser
 {
-    public static QueryNode? Parse(string query)
+    public static ParsedQuery? Parse(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -16,9 +16,9 @@ public static class QueryParser
 
         var tokens = Lex(query);
         var parser = new Parser(tokens);
-        var node = parser.ParseExpression();
+        var (predicate, order) = parser.ParseFull();
         parser.ExpectEof();
-        return node;
+        return new ParsedQuery(predicate, order);
     }
 
     private static readonly HashSet<string> UppercaseKeywords = new(StringComparer.Ordinal)
@@ -26,6 +26,7 @@ public static class QueryParser
         "AND", "OR", "NOT", "LIKE", "IN", "BETWEEN", "IS", "NULL", "TRUE", "FALSE",
         "BEFORE", "AFTER",
         "CONTAINS", "STARTSWITH", "ENDSWITH",
+        "ASC", "ASCENDING", "DESC", "DESCENDING",
     };
 
     /// <summary>
@@ -52,6 +53,7 @@ public static class QueryParser
             }
         }
         int i = 0;
+        string? lastWordUpper = null;
         while (i < query!.Length)
         {
             if (!IsIdentStart(query[i]))
@@ -69,10 +71,16 @@ public static class QueryParser
             {
                 return true;
             }
+            // ORDER BY / SORT BY pair detection — both halves must be uppercase.
+            if (lastWordUpper is "ORDER" or "SORT" && word == "BY")
+            {
+                return true;
+            }
             if (knownColumns is not null && knownColumns.Contains(word))
             {
                 return true;
             }
+            lastWordUpper = word == word.ToUpperInvariant() ? word : null;
         }
         return false;
     }
@@ -107,6 +115,10 @@ public static class QueryParser
         Null,
         True,
         False,
+        OrderBy,        // single token: lexer joins "ORDER" + "BY"
+        SortBy,         // single token: lexer joins "SORT" + "BY"
+        Asc,
+        Desc,
         Error,
         Eof,
     }
@@ -128,6 +140,10 @@ public static class QueryParser
         ["NULL"] = TokenKind.Null,
         ["TRUE"] = TokenKind.True,
         ["FALSE"] = TokenKind.False,
+        ["ASC"] = TokenKind.Asc,
+        ["ASCENDING"] = TokenKind.Asc,
+        ["DESC"] = TokenKind.Desc,
+        ["DESCENDING"] = TokenKind.Desc,
         // English-aliased comparison operators, most useful for DateTime columns
         // (`Timestamp BEFORE NOW()`) but work for any orderable type.
         ["BEFORE"] = TokenKind.Lt,
@@ -284,6 +300,31 @@ public static class QueryParser
             }
             throw new QueryException($"Unexpected character '{c}'.", i);
         }
+
+        var joined = new List<Token>(tokens.Count);
+        for (int t = 0; t < tokens.Count; t++)
+        {
+            if (t + 1 < tokens.Count
+                && tokens[t].Kind == TokenKind.Identifier
+                && tokens[t + 1].Kind == TokenKind.Identifier
+                && string.Equals(tokens[t + 1].Text, "BY", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(tokens[t].Text, "ORDER", StringComparison.OrdinalIgnoreCase))
+                {
+                    joined.Add(new Token(TokenKind.OrderBy, "ORDER BY", tokens[t].Position));
+                    t++;
+                    continue;
+                }
+                if (string.Equals(tokens[t].Text, "SORT", StringComparison.OrdinalIgnoreCase))
+                {
+                    joined.Add(new Token(TokenKind.SortBy, "SORT BY", tokens[t].Position));
+                    t++;
+                    continue;
+                }
+            }
+            joined.Add(tokens[t]);
+        }
+        tokens = joined;
 
         tokens.Add(new Token(TokenKind.Eof, string.Empty, source.Length));
         return tokens;
@@ -467,7 +508,57 @@ public static class QueryParser
             }
         }
 
+        public (QueryNode? Predicate, IReadOnlyList<OrderSpec> Order) ParseFull()
+        {
+            QueryNode? predicate = null;
+            // Predicate is optional: a query of just "ORDER BY ..." has no predicate.
+            if (Peek.Kind != TokenKind.OrderBy && Peek.Kind != TokenKind.SortBy && Peek.Kind != TokenKind.Eof)
+            {
+                predicate = ParseOr();
+            }
+            IReadOnlyList<OrderSpec> order = Array.Empty<OrderSpec>();
+            if (Peek.Kind == TokenKind.OrderBy || Peek.Kind == TokenKind.SortBy)
+            {
+                Consume();
+                order = ParseOrderList();
+            }
+            return (predicate, order);
+        }
+
+        // Kept for nested expressions (e.g. inside parentheses).
         public QueryNode ParseExpression() => ParseOr();
+
+        private IReadOnlyList<OrderSpec> ParseOrderList()
+        {
+            var list = new List<OrderSpec>();
+            list.Add(ParseOrderSpec());
+            while (Peek.Kind == TokenKind.Comma)
+            {
+                Consume();
+                list.Add(ParseOrderSpec());
+            }
+            return list;
+        }
+
+        private OrderSpec ParseOrderSpec()
+        {
+            if (Peek.Kind != TokenKind.Identifier)
+            {
+                throw new QueryException($"Expected column name after ORDER BY but found '{Peek.Text}'.", Peek.Position);
+            }
+            var column = Consume().Text;
+            var dir = OrderDirection.Ascending;
+            if (Peek.Kind == TokenKind.Asc)
+            {
+                Consume();
+            }
+            else if (Peek.Kind == TokenKind.Desc)
+            {
+                Consume();
+                dir = OrderDirection.Descending;
+            }
+            return new OrderSpec(column, dir);
+        }
 
         private QueryNode ParseOr()
         {

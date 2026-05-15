@@ -141,4 +141,86 @@ public class QueryableSourceTests
         // result, and the helper doesn't crash.
         qs.Error.Should().NotBeNull();
     }
+
+    private sealed record Row2(string Name, int Cost) { public Row2() : this("", 0) { } }
+
+    [Fact]
+    public void Order_property_reflects_parsed_clause()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Cost DESC";
+        src.Order.Should().HaveCount(1);
+        src.Order[0].Column.Should().Be("Cost");
+        src.Order[0].Direction.Should().Be(OrderDirection.Descending);
+    }
+
+    [Fact]
+    public void Order_empty_when_no_clause()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 5";
+        src.Order.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyOrdered_sorts_filtered_results()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 0 ORDER BY Cost DESC";
+        var rows = new[] { new Row2("a", 3), new Row2("b", 0), new Row2("c", 7), new Row2("d", 1) };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("c", "a", "d");
+    }
+
+    [Fact]
+    public void ApplyOrdered_with_no_order_returns_filter_only()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 0";
+        var rows = new[] { new Row2("a", 3), new Row2("b", 0), new Row2("c", 7) };
+        src.ApplyOrdered(rows).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ApplyOrdered_multi_key_uses_thenby()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Cost, Name DESC";
+        var rows = new[] { new Row2("a", 1), new Row2("b", 2), new Row2("c", 1) };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("c", "a", "b");
+    }
+
+    [Fact]
+    public void ApplyOrdered_string_key_natural_sorts()
+    {
+        // Issue #317 repro at the headless surface — same outcome as the WPF surfaces.
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Name";
+        var rows = new[]
+        {
+            new Row2("Bite",     2),
+            new Row2("Bite 11",  125),
+            new Row2("Bite 2",   10),
+            new Row2("Bite 10",  116),
+        };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal(
+            "Bite", "Bite 2", "Bite 10", "Bite 11");
+    }
+
+    [Fact]
+    public void ApplyOrdered_works_when_bindings_dict_uses_ordinal_comparer()
+    {
+        // Build a binding dict with Ordinal comparer (NOT OrdinalIgnoreCase — that's
+        // what BuildFromProperties returns by default). QueryCompiler's NormalizeColumns
+        // handles this asymmetry; ApplyOrdered must too.
+        var ordinalBindings = new Dictionary<string, ColumnBinding>(StringComparer.Ordinal)
+        {
+            ["Name"] = new("Name", typeof(string), o => ((Row2)o).Name),
+            ["Cost"] = new("Cost", typeof(int), o => ((Row2)o).Cost),
+        };
+        var src = new QueryableSource<Row2>(ordinalBindings);
+        src.QueryText = "ORDER BY cost"; // lowercase — would mismatch Ordinal lookup
+        var rows = new[] { new Row2("a", 3), new Row2("b", 1), new Row2("c", 7) };
+        // No KeyNotFoundException; sort works.
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("b", "a", "c");
+    }
 }

@@ -18,7 +18,8 @@ public class QueryParserTests
     [Fact]
     public void Simple_equality_comparison()
     {
-        var ast = QueryParser.Parse("crop = 'red'");
+        var parsed = QueryParser.Parse("crop = 'red'");
+        var ast = parsed?.Predicate;
         ast.Should().BeOfType<ComparisonNode>();
         var c = (ComparisonNode)ast!;
         c.Column.Should().Be("crop");
@@ -40,7 +41,8 @@ public class QueryParserTests
             ("samples >= 5", ComparisonOp.Gte),
         })
         {
-            var ast = QueryParser.Parse(text);
+            var parsed = QueryParser.Parse(text);
+            var ast = parsed?.Predicate;
             var c = ast.Should().BeOfType<ComparisonNode>().Subject;
             c.Op.Should().Be(op, $"operator in '{text}'");
             c.Value.Should().BeOfType<NumberValue>().Which.Value.Should().Be(5d);
@@ -50,7 +52,8 @@ public class QueryParserTests
     [Fact]
     public void Duration_literal_parses_into_timespan()
     {
-        var ast = QueryParser.Parse("avg > 1m30s");
+        var parsed = QueryParser.Parse("avg > 1m30s");
+        var ast = parsed?.Predicate;
         var c = ast.Should().BeOfType<ComparisonNode>().Subject;
         c.Value.Should().BeOfType<DurationValue>().Which.Value.Should().Be(TimeSpan.FromSeconds(90));
     }
@@ -58,15 +61,15 @@ public class QueryParserTests
     [Fact]
     public void Duration_single_unit()
     {
-        QueryParser.Parse("avg = 30s").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("avg = 30s")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<DurationValue>()
             .Which.Value.Should().Be(TimeSpan.FromSeconds(30));
 
-        QueryParser.Parse("dur = 2h").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("dur = 2h")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<DurationValue>()
             .Which.Value.Should().Be(TimeSpan.FromHours(2));
 
-        QueryParser.Parse("dur = 150ms").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("dur = 150ms")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<DurationValue>()
             .Which.Value.Should().Be(TimeSpan.FromMilliseconds(150));
     }
@@ -75,7 +78,8 @@ public class QueryParserTests
     public void And_left_associative_with_higher_precedence_than_or()
     {
         // a OR b AND c  →  a OR (b AND c)
-        var ast = QueryParser.Parse("a = 1 OR b = 2 AND c = 3");
+        var parsed = QueryParser.Parse("a = 1 OR b = 2 AND c = 3");
+        var ast = parsed?.Predicate;
         var or = ast.Should().BeOfType<OrNode>().Subject;
         or.Left.Should().BeOfType<ComparisonNode>().Which.Column.Should().Be("a");
         or.Right.Should().BeOfType<AndNode>();
@@ -85,7 +89,8 @@ public class QueryParserTests
     public void Parens_override_precedence()
     {
         // (a OR b) AND c
-        var ast = QueryParser.Parse("(a = 1 OR b = 2) AND c = 3");
+        var parsed = QueryParser.Parse("(a = 1 OR b = 2) AND c = 3");
+        var ast = parsed?.Predicate;
         var and = ast.Should().BeOfType<AndNode>().Subject;
         and.Left.Should().BeOfType<OrNode>();
         and.Right.Should().BeOfType<ComparisonNode>().Which.Column.Should().Be("c");
@@ -94,7 +99,8 @@ public class QueryParserTests
     [Fact]
     public void Unary_not_wraps_predicate()
     {
-        var ast = QueryParser.Parse("NOT a = 1");
+        var parsed = QueryParser.Parse("NOT a = 1");
+        var ast = parsed?.Predicate;
         ast.Should().BeOfType<NotNode>()
             .Which.Inner.Should().BeOfType<ComparisonNode>();
     }
@@ -102,12 +108,12 @@ public class QueryParserTests
     [Fact]
     public void Like_and_not_like()
     {
-        var likeAst = QueryParser.Parse("crop LIKE '%aster%'");
+        var likeAst = QueryParser.Parse("crop LIKE '%aster%'")?.Predicate;
         likeAst.Should().BeOfType<LikeNode>()
             .Which.Negated.Should().BeFalse();
         ((LikeNode)likeAst!).Pattern.Should().Be("%aster%");
 
-        var notLikeAst = QueryParser.Parse("crop NOT LIKE '%aster%'");
+        var notLikeAst = QueryParser.Parse("crop NOT LIKE '%aster%'")?.Predicate;
         notLikeAst.Should().BeOfType<LikeNode>()
             .Which.Negated.Should().BeTrue();
     }
@@ -115,7 +121,7 @@ public class QueryParserTests
     [Fact]
     public void In_list_parses_multiple_values()
     {
-        var ast = QueryParser.Parse("char IN ('Emraell', 'Bob', 'Cindy')");
+        var ast = QueryParser.Parse("char IN ('Emraell', 'Bob', 'Cindy')")?.Predicate;
         var inNode = ast.Should().BeOfType<InNode>().Subject;
         inNode.Negated.Should().BeFalse();
         inNode.Values.Should().HaveCount(3);
@@ -125,14 +131,14 @@ public class QueryParserTests
     [Fact]
     public void Not_in_list()
     {
-        var ast = QueryParser.Parse("char NOT IN ('Emraell')");
+        var ast = QueryParser.Parse("char NOT IN ('Emraell')")?.Predicate;
         ast.Should().BeOfType<InNode>().Which.Negated.Should().BeTrue();
     }
 
     [Fact]
     public void Between_requires_low_and_high()
     {
-        var ast = QueryParser.Parse("avg BETWEEN 30s AND 2m");
+        var ast = QueryParser.Parse("avg BETWEEN 30s AND 2m")?.Predicate;
         var b = ast.Should().BeOfType<BetweenNode>().Subject;
         b.Low.Should().BeOfType<DurationValue>();
         b.High.Should().BeOfType<DurationValue>();
@@ -141,20 +147,20 @@ public class QueryParserTests
     [Fact]
     public void Is_null_and_is_not_null()
     {
-        QueryParser.Parse("config IS NULL").Should().BeOfType<IsNullNode>()
+        QueryParser.Parse("config IS NULL")?.Predicate.Should().BeOfType<IsNullNode>()
             .Which.Negated.Should().BeFalse();
-        QueryParser.Parse("config IS NOT NULL").Should().BeOfType<IsNullNode>()
+        QueryParser.Parse("config IS NOT NULL")?.Predicate.Should().BeOfType<IsNullNode>()
             .Which.Negated.Should().BeTrue();
     }
 
     [Fact]
     public void Quoted_strings_support_both_quote_styles_and_escaped_quotes()
     {
-        QueryParser.Parse("crop = 'Red ''Aster'''").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("crop = 'Red ''Aster'''")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<StringValue>()
             .Which.Text.Should().Be("Red 'Aster'");
 
-        QueryParser.Parse("crop = \"Red\"").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("crop = \"Red\"")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<StringValue>()
             .Which.Text.Should().Be("Red");
     }
@@ -162,18 +168,18 @@ public class QueryParserTests
     [Fact]
     public void Keywords_are_case_insensitive()
     {
-        var ast = QueryParser.Parse("a = 1 and B like '%x%' or not c in (1)");
+        var ast = QueryParser.Parse("a = 1 and B like '%x%' or not c in (1)")?.Predicate;
         ast.Should().BeOfType<OrNode>();
     }
 
     [Fact]
     public void Boolean_and_null_literals()
     {
-        QueryParser.Parse("flag = TRUE").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("flag = TRUE")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<BoolValue>().Which.Value.Should().BeTrue();
-        QueryParser.Parse("flag = FALSE").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("flag = FALSE")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<BoolValue>().Which.Value.Should().BeFalse();
-        QueryParser.Parse("flag = NULL").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("flag = NULL")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<NullValue>();
     }
 
@@ -202,14 +208,14 @@ public class QueryParserTests
     [Fact]
     public void Negative_numbers()
     {
-        QueryParser.Parse("delta > -5").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("delta > -5")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<NumberValue>().Which.Value.Should().Be(-5d);
     }
 
     [Fact]
     public void Decimal_number()
     {
-        QueryParser.Parse("ratio >= 0.75").Should().BeOfType<ComparisonNode>()
+        QueryParser.Parse("ratio >= 0.75")?.Predicate.Should().BeOfType<ComparisonNode>()
             .Which.Value.Should().BeOfType<NumberValue>().Which.Value.Should().Be(0.75);
     }
 
@@ -251,10 +257,10 @@ public class QueryParserTests
     [Fact]
     public void Before_and_After_parse_as_comparison_operators()
     {
-        var ast = QueryParser.Parse("Timestamp BEFORE '2026-04-22'");
+        var ast = QueryParser.Parse("Timestamp BEFORE '2026-04-22'")?.Predicate;
         ast.Should().BeOfType<ComparisonNode>().Which.Op.Should().Be(ComparisonOp.Lt);
 
-        var ast2 = QueryParser.Parse("Timestamp AFTER '2026-04-22'");
+        var ast2 = QueryParser.Parse("Timestamp AFTER '2026-04-22'")?.Predicate;
         ast2.Should().BeOfType<ComparisonNode>().Which.Op.Should().Be(ComparisonOp.Gt);
     }
 
@@ -262,7 +268,7 @@ public class QueryParserTests
     public void Now_function_parses_to_DateTimeValue()
     {
         var before = DateTime.Now;
-        var ast = QueryParser.Parse("Timestamp BEFORE NOW()");
+        var ast = QueryParser.Parse("Timestamp BEFORE NOW()")?.Predicate;
         var after = DateTime.Now;
         var c = ast.Should().BeOfType<ComparisonNode>().Subject;
         var dt = c.Value.Should().BeOfType<DateTimeValue>().Subject;
@@ -272,7 +278,7 @@ public class QueryParserTests
     [Fact]
     public void Today_function_parses_to_midnight()
     {
-        var ast = QueryParser.Parse("Timestamp AFTER TODAY()");
+        var ast = QueryParser.Parse("Timestamp AFTER TODAY()")?.Predicate;
         var c = ast.Should().BeOfType<ComparisonNode>().Subject;
         c.Value.Should().BeOfType<DateTimeValue>().Which.Value.Should().Be(DateTime.Today);
     }
@@ -288,7 +294,7 @@ public class QueryParserTests
     [Fact]
     public void Contains_parses_to_StringMatchNode()
     {
-        var ast = QueryParser.Parse("crop CONTAINS 'aster'");
+        var ast = QueryParser.Parse("crop CONTAINS 'aster'")?.Predicate;
         var n = ast.Should().BeOfType<StringMatchNode>().Subject;
         n.Column.Should().Be("crop");
         n.Text.Should().Be("aster");
@@ -299,17 +305,17 @@ public class QueryParserTests
     [Fact]
     public void Not_Contains_is_negated()
     {
-        var ast = QueryParser.Parse("crop NOT CONTAINS 'aster'");
+        var ast = QueryParser.Parse("crop NOT CONTAINS 'aster'")?.Predicate;
         ast.Should().BeOfType<StringMatchNode>().Which.Negated.Should().BeTrue();
     }
 
     [Fact]
     public void Startswith_and_Endswith_parse()
     {
-        QueryParser.Parse("crop STARTSWITH 'Red'")
+        QueryParser.Parse("crop STARTSWITH 'Red'")?.Predicate
             .Should().BeOfType<StringMatchNode>()
             .Which.Kind.Should().Be(StringMatchKind.StartsWith);
-        QueryParser.Parse("crop ENDSWITH 'Rye'")
+        QueryParser.Parse("crop ENDSWITH 'Rye'")?.Predicate
             .Should().BeOfType<StringMatchNode>()
             .Which.Kind.Should().Be(StringMatchKind.EndsWith);
     }
@@ -317,7 +323,24 @@ public class QueryParserTests
     [Fact]
     public void String_match_keywords_are_case_insensitive()
     {
-        QueryParser.Parse("crop contains 'x'").Should().BeOfType<StringMatchNode>();
-        QueryParser.Parse("crop StartsWith 'x'").Should().BeOfType<StringMatchNode>();
+        QueryParser.Parse("crop contains 'x'")?.Predicate.Should().BeOfType<StringMatchNode>();
+        QueryParser.Parse("crop StartsWith 'x'")?.Predicate.Should().BeOfType<StringMatchNode>();
+    }
+
+    [Theory]
+    [InlineData("ORDER BY Name")]
+    [InlineData("Cost > 10 ORDER BY Cost DESC")]
+    [InlineData("SORT BY Cost")]
+    public void LooksLikeGrammar_recognises_order_by(string input)
+    {
+        QueryParser.LooksLikeGrammar(input).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("order new chair")]
+    [InlineData("sort the wheat")]
+    public void LooksLikeGrammar_ignores_order_word_without_BY(string input)
+    {
+        QueryParser.LooksLikeGrammar(input).Should().BeFalse();
     }
 }

@@ -120,6 +120,7 @@ public static class QueryFilter
         private readonly DispatcherTimer _debounce;
         private ICollectionView? _attachedView;
         private Predicate<object>? _vmFilter;
+        private SortDescription[] _vmSortDescriptions = Array.Empty<SortDescription>();
         private Dictionary<string, ColumnBinding> _columns = new(StringComparer.OrdinalIgnoreCase);
         private Predicate<object>? _lastGoodInputPredicate;
         private bool _attached;
@@ -196,6 +197,9 @@ public static class QueryFilter
 
             _attachedView = CollectionViewSource.GetDefaultView(_control.ItemsSource);
             _vmFilter = _attachedView?.Filter;
+            _vmSortDescriptions = _attachedView is null
+                ? Array.Empty<SortDescription>()
+                : _attachedView.SortDescriptions.ToArray();
             _attached = true;
             RebuildFilter();
         }
@@ -205,9 +209,15 @@ public static class QueryFilter
             if (_attachedView is not null)
             {
                 _attachedView.Filter = _vmFilter;
+                _attachedView.SortDescriptions.Clear();
+                foreach (var sd in _vmSortDescriptions)
+                {
+                    _attachedView.SortDescriptions.Add(sd);
+                }
                 _attachedView = null;
             }
             _vmFilter = null;
+            _vmSortDescriptions = Array.Empty<SortDescription>();
             _attached = false;
         }
 
@@ -216,45 +226,103 @@ public static class QueryFilter
             if (_attachedView is null) return;
             var input = GetQueryText(_control);
             var caseSensitive = GetCaseSensitive(_control);
-            var queryPredicate = BuildInputPredicate(input, caseSensitive);
-            var vm = _vmFilter;
 
-            _attachedView.Filter = item =>
+            var (queryPredicate, parsedOrder) = BuildInputPredicateAndOrder(input, caseSensitive);
+            var vm = _vmFilter;
+            var vmSort = _vmSortDescriptions;
+
+            using (_attachedView.DeferRefresh())
             {
-                if (vm is not null && !vm(item)) return false;
-                if (queryPredicate is not null && !queryPredicate(item)) return false;
-                return true;
-            };
+                _attachedView.Filter = item =>
+                {
+                    if (vm is not null && !vm(item)) return false;
+                    if (queryPredicate is not null && !queryPredicate(item)) return false;
+                    return true;
+                };
+
+                var lcv = _attachedView as ListCollectionView;
+                if (lcv is not null) lcv.CustomSort = null;
+                _attachedView.SortDescriptions.Clear();
+                if (parsedOrder.Count > 0)
+                {
+                    try
+                    {
+                        if (lcv is not null)
+                        {
+                            // CustomSort drives the actual comparison (natural-sort on strings)
+                            // and clears SortDescriptions implicitly — they're mutex in WPF.
+                            lcv.CustomSort = (System.Collections.IComparer)QueryCompiler.CompileOrderComparer(
+                                parsedOrder, _columns, caseSensitive);
+                        }
+                        else
+                        {
+                            // Non-LCV view: fall back to SortDescriptions (lex on strings).
+                            foreach (var sd in QueryCompiler.CompileOrder(parsedOrder, _columns, caseSensitive))
+                            {
+                                _attachedView.SortDescriptions.Add(sd);
+                            }
+                        }
+                    }
+                    catch (QueryException ex)
+                    {
+                        // Filter was already applied above; we accept the half-applied
+                        // state because the predicate compiled fine — only the sort failed.
+                        SetQueryError(_control, ex.Message);
+                        if (lcv is not null) lcv.CustomSort = null;
+                        foreach (var sd in vmSort)
+                        {
+                            _attachedView.SortDescriptions.Add(sd);
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var sd in vmSort)
+                    {
+                        _attachedView.SortDescriptions.Add(sd);
+                    }
+                }
+            }
         }
 
-        private Predicate<object>? BuildInputPredicate(string? text, bool caseSensitive)
+        private (Predicate<object>? Predicate, IReadOnlyList<OrderSpec> Order) BuildInputPredicateAndOrder(
+            string? text, bool caseSensitive)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
                 SetQueryError(_control, null);
-                return null;
+                return (null, Array.Empty<OrderSpec>());
             }
             var knownColumns = new HashSet<string>(_columns.Keys, StringComparer.OrdinalIgnoreCase);
             if (QueryParser.LooksLikeGrammar(text, knownColumns))
             {
                 try
                 {
-                    var compiled = QueryCompiler.Compile(text!, _columns, caseSensitive);
+                    var parsed = QueryParser.Parse(text);
                     SetQueryError(_control, null);
-                    var predicate = compiled is null ? null : (Predicate<object>)(item => compiled(item));
+                    Predicate<object>? predicate = null;
+                    if (parsed?.Predicate is not null)
+                    {
+                        var compiled = QueryCompiler.Compile(parsed.Predicate, _columns, caseSensitive);
+                        predicate = item => compiled(item);
+                    }
                     _lastGoodInputPredicate = predicate;
-                    return predicate;
+                    return (predicate, parsed?.Order ?? Array.Empty<OrderSpec>());
                 }
                 catch (QueryException ex)
                 {
+                    // Predicate caches last-good (no row-set flicker mid-typing); order
+                    // does not — it returns empty so SortDescriptions clears to the VM's
+                    // captured baseline. Two clauses, two consumer surfaces; the predicate
+                    // protects the *visible filter*, the order falls back to a stable default.
                     SetQueryError(_control, ex.Message);
-                    return _lastGoodInputPredicate;
+                    return (_lastGoodInputPredicate, Array.Empty<OrderSpec>());
                 }
             }
             SetQueryError(_control, null);
             var bareTextPredicate = BuildBareTextPredicate(text!, caseSensitive);
             _lastGoodInputPredicate = bareTextPredicate;
-            return bareTextPredicate;
+            return (bareTextPredicate, Array.Empty<OrderSpec>());
         }
 
         private Predicate<object>? BuildBareTextPredicate(string text, bool caseSensitive)
