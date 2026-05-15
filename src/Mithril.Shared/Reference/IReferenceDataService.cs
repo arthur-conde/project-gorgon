@@ -236,6 +236,9 @@ public interface IReferenceDataService
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Ability>> EmptyAbilityIndex
         = new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
 
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> EmptyEffectAbilityMatchIndex
+        = new Dictionary<string, IReadOnlyList<EffectAbilityMatch>>(StringComparer.Ordinal);
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<AbilitySource>> EmptyAbilitySourceIndex
         = new Dictionary<string, IReadOnlyList<AbilitySource>>(StringComparer.Ordinal);
 
@@ -377,8 +380,19 @@ public interface IReferenceDataService
     /// Built whenever <c>abilities.json</c> or <c>effects.json</c> reloads. Powers the
     /// on-detail "Required by abilities" section and the <c>EntityKind.AbilityByEffectKeyword</c>
     /// overflow-pill deep-link. Defaults to empty so test fakes don't need to opt in.
+    /// <para>
+    /// Each value member is an <see cref="EffectAbilityMatch"/> carrying the qualifying
+    /// <see cref="Ability"/> <b>and</b> the <see cref="EffectAbilityMatchReason"/> flags
+    /// recording which of the three unioned fields matched. The set is materialized
+    /// exactly once here, retaining provenance, so a reverse-lookup surface renders
+    /// membership <i>and</i> reason without a second derivation (see
+    /// <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>). An ability
+    /// qualifying via several fields appears <b>once</b> with several reason flags set,
+    /// so a distinct-member count equals the displayed "View all N".
+    /// </para>
     /// </summary>
-    IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeyword => EmptyAbilityIndex;
+    IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword
+        => EmptyEffectAbilityMatchIndex;
 
     /// <summary>
     /// Ability-keyword tag → effects whose <see cref="Effect.AbilityKeywords"/> list

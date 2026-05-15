@@ -224,8 +224,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IReadOnlyList<Effect>> _effectsByStackingType =
         new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
-    private IReadOnlyDictionary<string, IReadOnlyList<Ability>> _abilitiesByEffectKeyword =
-        new Dictionary<string, IReadOnlyList<Ability>>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> _abilitiesByEffectKeyword =
+        new Dictionary<string, IReadOnlyList<EffectAbilityMatch>>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IReadOnlyList<Effect>> _effectsByTriggeringAbilityKeyword =
         new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _effectsSnapshot;
@@ -333,7 +333,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, Effect> EffectsByInternalName => _effectsByInternalName;
     public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByKeyword => _effectsByKeyword;
     public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByStackingType => _effectsByStackingType;
-    public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeyword => _abilitiesByEffectKeyword;
+    public IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword => _abilitiesByEffectKeyword;
     public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByTriggeringAbilityKeyword => _effectsByTriggeringAbilityKeyword;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
@@ -1176,6 +1176,14 @@ public sealed class ReferenceDataService : IReferenceDataService
     /// <see cref="ParseAndSwapEffects"/> and <see cref="ParseAndSwapAbilities"/> call this.
     /// Abilities with <see cref="Ability.InternalAbility"/> = <c>true</c> are excluded from
     /// <see cref="_abilitiesByEffectKeyword"/> per the on-detail chip-cluster contract.
+    /// <para>
+    /// <see cref="_abilitiesByEffectKeyword"/> retains <i>why</i> each ability qualified:
+    /// its members are <see cref="EffectAbilityMatch"/> records carrying
+    /// <see cref="EffectAbilityMatchReason"/> flags for the matching field(s). A
+    /// multi-field ability is carried once with its reason flags OR'd, so the index is
+    /// still dedup'd by ability (a distinct-member count equals the displayed
+    /// "View all N").
+    /// </para>
     /// </summary>
     private void BuildEffectAbilityCrossLinkIndices()
     {
@@ -1224,38 +1232,42 @@ public sealed class ReferenceDataService : IReferenceDataService
             }
         }
 
-        var byEffectKeyword = new Dictionary<string, List<Ability>>(StringComparer.Ordinal);
+        // tag → ability internal name → accumulated match reason flags. The reason is
+        // accumulated (OR'd) per (tag, ability) so an ability qualifying via several of
+        // the three unioned fields is carried ONCE with multiple reason flags set —
+        // dedup intent preserved (a distinct-member count equals the displayed
+        // "View all N"), provenance complete (the popup can section by reason).
+        var byEffectKeyword =
+            new Dictionary<string, Dictionary<string, (Ability Ability, EffectAbilityMatchReason Reason)>>(
+                StringComparer.Ordinal);
+
         foreach (var ability in _abilities.Values)
         {
             if (ability.InternalAbility == true) continue;
+            if (string.IsNullOrEmpty(ability.InternalName)) continue;
 
             // Union: EffectKeywordReqs ∪ EffectKeywordsIndicatingEnabled ∪ {TargetEffectKeywordReq}.
-            // Dedupe per ability so a tag mentioned in multiple slots doesn't double-count the
-            // ability in the index.
-            HashSet<string>? tagsForAbility = null;
-            void Mark(string? tag)
+            // Unlike the old flatten-to-HashSet<Ability>, the matching field is retained as a
+            // reason flag — this is the provenance the index used to discard.
+            void Mark(string? tag, EffectAbilityMatchReason reason)
             {
                 if (string.IsNullOrEmpty(tag)) return;
-                tagsForAbility ??= new HashSet<string>(StringComparer.Ordinal);
-                tagsForAbility.Add(tag);
+                if (!byEffectKeyword.TryGetValue(tag!, out var perAbility))
+                {
+                    perAbility = new Dictionary<string, (Ability, EffectAbilityMatchReason)>(StringComparer.Ordinal);
+                    byEffectKeyword[tag!] = perAbility;
+                }
+                if (perAbility.TryGetValue(ability.InternalName!, out var existing))
+                    perAbility[ability.InternalName!] = (existing.Ability, existing.Reason | reason);
+                else
+                    perAbility[ability.InternalName!] = (ability, reason);
             }
 
             if (ability.EffectKeywordReqs is { Count: > 0 } reqs)
-                foreach (var tag in reqs) Mark(tag);
+                foreach (var tag in reqs) Mark(tag, EffectAbilityMatchReason.Requires);
             if (ability.EffectKeywordsIndicatingEnabled is { Count: > 0 } enabled)
-                foreach (var tag in enabled) Mark(tag);
-            Mark(ability.TargetEffectKeywordReq);
-
-            if (tagsForAbility is null) continue;
-            foreach (var tag in tagsForAbility)
-            {
-                if (!byEffectKeyword.TryGetValue(tag, out var list))
-                {
-                    list = new List<Ability>();
-                    byEffectKeyword[tag] = list;
-                }
-                list.Add(ability);
-            }
+                foreach (var tag in enabled) Mark(tag, EffectAbilityMatchReason.EnabledBy);
+            Mark(ability.TargetEffectKeywordReq, EffectAbilityMatchReason.Targets);
         }
 
         _effectsByKeyword = byKeyword.ToDictionary(
@@ -1265,7 +1277,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         _effectsByTriggeringAbilityKeyword = byTriggeringAbilityKeyword.ToDictionary(
             kv => kv.Key, kv => (IReadOnlyList<Effect>)kv.Value, StringComparer.Ordinal);
         _abilitiesByEffectKeyword = byEffectKeyword.ToDictionary(
-            kv => kv.Key, kv => (IReadOnlyList<Ability>)kv.Value, StringComparer.Ordinal);
+            kv => kv.Key,
+            kv => (IReadOnlyList<EffectAbilityMatch>)kv.Value.Values
+                .Select(v => new EffectAbilityMatch(v.Ability, v.Reason))
+                .ToList(),
+            StringComparer.Ordinal);
     }
 
     private void ParseAndSwapAbilitySources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)
