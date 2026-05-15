@@ -411,6 +411,59 @@ public interface IReferenceDataService
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Effect>> EmptyEffectIndex
         = new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
 
+    // ── Lorebooks (#247) ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lorebook envelope key (e.g. <c>"Book_101"</c>) → <see cref="Lorebook"/> POCO from
+    /// <c>lorebooks.json</c>. The envelope key and <see cref="Lorebook.InternalName"/> are
+    /// <i>different</i> identifiers (same divergence as Recipe's <c>recipe_NNNN</c> vs
+    /// human-form InternalName). Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Lorebook> Lorebooks => EmptyLorebookMap;
+
+    /// <summary>
+    /// Lorebook <see cref="Lorebook.InternalName"/> (e.g. <c>"TheWastedWishes"</c>) →
+    /// <see cref="Lorebook"/>. The kind target's selection contract follows the cookbook
+    /// InternalName convention and matches the existing <see cref="EntityRef.Lorebook(string)"/>
+    /// factory. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, Lorebook> LorebooksByInternalName => EmptyLorebookMap;
+
+    /// <summary>
+    /// Numeric Book id (101, 102, …) → <see cref="Lorebook"/>. The id is lifted from the
+    /// numeric suffix of the envelope key (<c>"Book_101"</c> → <c>101</c>). Powers the
+    /// inbound reverse lookup from <see cref="Item.BestowLoreBook"/> (an <c>int?</c>) on
+    /// Item detail. Defaults to empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<int, Lorebook> LorebooksById => EmptyLorebookByIdMap;
+
+    /// <summary>
+    /// Lorebook <see cref="Lorebook.InternalName"/> → items whose
+    /// <see cref="Item.BestowLoreBook"/> matches this book's numeric id. The single
+    /// materialization for the #318 popup-from-index "Items that bestow this book" surface
+    /// (single-reason — an item qualifies exactly one way). Built whenever
+    /// <c>lorebooks.json</c> or <c>items.json</c> reloads. Defaults to empty so test fakes
+    /// don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsBestowingLorebook => EmptyItemIndex;
+
+    /// <summary>
+    /// Sidecar metadata from <c>lorebookinfo.json</c>: category key (e.g. <c>"Gods"</c>) →
+    /// display info (Title / SubTitle / SortTitle). Drives the master-list group headers
+    /// and category facet. Built whenever <c>lorebookinfo.json</c> reloads. Defaults to
+    /// empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, LorebookCategoryInfo> LorebookCategories => EmptyLorebookCategoryMap;
+
+    private static readonly IReadOnlyDictionary<string, Lorebook> EmptyLorebookMap
+        = new Dictionary<string, Lorebook>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<int, Lorebook> EmptyLorebookByIdMap
+        = new Dictionary<int, Lorebook>();
+
+    private static readonly IReadOnlyDictionary<string, LorebookCategoryInfo> EmptyLorebookCategoryMap
+        = new Dictionary<string, LorebookCategoryInfo>(StringComparer.Ordinal);
+
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their
     /// dotted/slashed string ID. Primary use today is friendly-name resolution
