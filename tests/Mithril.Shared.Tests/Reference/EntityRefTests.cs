@@ -44,14 +44,9 @@ public class EntityRefTests
         EntityRef.ItemKeyword(["Crystal"]).Should().Be(EntityRef.ItemKeyword("Crystal"));
     }
 
-    [Fact]
-    public void RecipeIngredientItem_factory_produces_expected_kind_and_internalname()
-    {
-        var reference = EntityRef.RecipeIngredientItem("MetalSlab1");
-
-        reference.Kind.Should().Be(EntityKind.RecipeIngredientItem);
-        reference.InternalName.Should().Be("MetalSlab1");
-    }
+    // EntityRef.RecipeIngredientItem / EntityKind.RecipeIngredientItem were retired in
+    // #318 slice 4 (the Items "Used in" 1:N surface is now a provenance popup fed
+    // RecipesByIngredientItemWithReason directly) — its factory test is removed with it.
 
     [Fact]
     public void Npc_factory_strips_area_prefix_from_slug_form()

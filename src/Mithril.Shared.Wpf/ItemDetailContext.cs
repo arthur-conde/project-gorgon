@@ -34,12 +34,16 @@ public sealed record ItemDetailContext(
     // doesn't bestow a book, or the id doesn't resolve. A single navigable EntityChip.
     EntityChipVm? BestowsLorebook = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null,
-    // Always-visible navigable summary chip for the "Used in" section. Non-null whenever
-    // the item is consumed by any recipe (independent of the chip cap); renders as a
-    // RecipeIngredientItem-kind ActionChip that deep-links to the Recipes tab filtered to
-    // "Ingredients CONTAINS <itemInternalName>". DisplayName carries the
-    // "View all N in Recipes tab →" label.
-    EntityChipVm? RecipesTabShortcut = null)
+    // #318 slice 4, surface 1 — Items "Used in". The reverse-lookup ("recipes that
+    // consume this item") is now a provenance popup fed the source index
+    // (IReferenceDataService.RecipesByIngredientItemWithReason) directly, replacing the
+    // retired RecipeIngredientItem synthetic-kind ActionChip. Non-null whenever the item
+    // is consumed by any recipe; the popup is the count-bearing surface, opened by
+    // ItemDetailViewModel.ShowConsumedByRecipesPopupCommand. The relationship is
+    // single-reason (DirectIngredient) so the popup collapses to a flat list (#318
+    // Discipline). There is no query re-derivation — the displayed set cannot diverge
+    // from the index.
+    ProvenancePopupViewModel? ConsumedByRecipesPopup = null)
 {
     public static ItemDetailContext Empty { get; } = new();
 }

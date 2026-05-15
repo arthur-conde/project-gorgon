@@ -75,6 +75,9 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IReadOnlyList<Recipe>> _recipesByIngredientItem =
         new Dictionary<string, IReadOnlyList<Recipe>>(StringComparer.Ordinal);
+    // Provenance-retaining sibling of _recipesByIngredientItem (#318 slice 4, surface 1).
+    private IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> _recipesByIngredientItemWithReason =
+        new Dictionary<string, IReadOnlyList<RecipeIngredientItemMatch>>(StringComparer.Ordinal);
     private IReadOnlyCollection<string> _keywordsUsedInRecipeSlots = Array.Empty<string>();
     private IReadOnlyDictionary<string, string> _keywordDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -325,6 +328,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByInternalName;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByProducedItem;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => _recipesByIngredientItem;
+    public IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> RecipesByIngredientItemWithReason => _recipesByIngredientItemWithReason;
     public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => _keywordsUsedInRecipeSlots;
     public IReadOnlyDictionary<string, string> KeywordDisplayNames => _keywordDisplayNames;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
@@ -803,6 +807,19 @@ public sealed class ReferenceDataService : IReferenceDataService
 
         _recipesByProducedItem = produced.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
         _recipesByIngredientItem = ingredient.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Recipe>)kv.Value, StringComparer.Ordinal);
+        // Provenance-retaining sibling (#318 slice 4, surface 1 — Items "Used in"). The
+        // relationship is single-reason: AddIngredientRecipe only ever added direct
+        // RecipeItemIngredient matches (keyword slots feed keywordSet, a separate surface),
+        // and the per-item list is already dedup'd by recipe — so every member is exactly
+        // one (recipe, DirectIngredient) record and a distinct-member count equals the
+        // displayed "View all N". Derived from the same `ingredient` accumulation so the
+        // two indices cannot diverge (single materialization — the #318 invariant).
+        _recipesByIngredientItemWithReason = ingredient.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<RecipeIngredientItemMatch>)kv.Value
+                .Select(r => new RecipeIngredientItemMatch(r, RecipeIngredientItemMatchReason.DirectIngredient))
+                .ToList(),
+            StringComparer.Ordinal);
         _keywordsUsedInRecipeSlots = keywordSet;
         _keywordDisplayNames = displayNames;
 

@@ -107,9 +107,9 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemKeywordKindTarget(
             sp.GetRequiredService<ItemsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
-        services.AddSingleton<IReferenceKindTarget>(sp => new RecipeIngredientItemKindTarget(
-            sp.GetRequiredService<RecipesTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+        // RecipeIngredientItemKindTarget retired in #318 slice 4 — the Items "Used in"
+        // 1:N surface is now a provenance popup fed RecipesByIngredientItemWithReason
+        // directly (no synthetic-kind deep link / query re-derivation).
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectsKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));

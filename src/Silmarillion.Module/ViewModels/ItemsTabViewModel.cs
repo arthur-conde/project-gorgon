@@ -146,7 +146,7 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         {
             return ItemDetailContext.Empty;
         }
-        var (consumed, shortcut) = BuildConsumedByChips(_refData.RecipesByIngredientItem, item);
+        var (consumed, popup) = BuildConsumedBy(item);
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: consumed,
@@ -154,7 +154,7 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             BestowsLorebook: BuildBestowsLorebookChip(item),
             Sources: BuildSourceChips(item.InternalName!),
-            RecipesTabShortcut: shortcut);
+            ConsumedByRecipesPopup: popup);
     }
 
     /// <summary>
@@ -196,32 +196,68 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
     }
 
     /// <summary>
-    /// Apply <see cref="SilmarillionSettings.UsedInChipCap"/> to the "Used in" chip list.
-    /// Returns the first N chips plus an always-visible navigable summary chip that
-    /// deep-links to the symmetric recipe-tab filter
-    /// (<c>Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>). The summary chip is
-    /// emitted whenever the item is consumed by any recipe — at counts within the cap it
-    /// still offers a jump to the sortable/filterable Recipes-tab view (the navigable
-    /// summary chip pattern; rendered as <c>ActionChip</c>). Returns
-    /// <c>(null, null)</c> only when no recipe consumes the item.
+    /// Build the item-detail "Used in" surface (#318 slice 4, surface 1) from
+    /// <see cref="IReferenceDataService.RecipesByIngredientItemWithReason"/> <b>directly</b>:
+    /// the capped chip cluster (first <see cref="SilmarillionSettings.UsedInChipCap"/> by
+    /// name) <em>and</em> the provenance popup VM. Both are projected from the <em>same</em>
+    /// materialized index collection — there is no query re-derivation, so the popup's
+    /// "View all N" count and membership cannot diverge from the index (the #318
+    /// invariant). Replaces the retired <c>RecipeIngredientItem</c> synthetic-kind
+    /// ActionChip deep link.
+    /// <para>
+    /// The relationship is <b>single-reason</b>: a recipe qualifies only via a direct
+    /// <see cref="RecipeItemIngredient"/> (keyword slots are a separate surface), so the
+    /// index carries one <see cref="RecipeIngredientItemMatchReason.DirectIngredient"/>
+    /// flag per member and the popup is built with a single section —
+    /// <see cref="ProvenancePopupViewModel"/> collapses that to a flat list (a single
+    /// trivial reason is noise, #318 Discipline). Returns <c>(null, null)</c> only when no
+    /// recipe consumes the item.
+    /// </para>
     /// </summary>
-    private (IReadOnlyList<EntityChipVm>? Chips, EntityChipVm? Shortcut) BuildConsumedByChips(
-        IReadOnlyDictionary<string, IReadOnlyList<Recipe>> index,
-        Item item)
+    private (IReadOnlyList<EntityChipVm>? Chips, ProvenancePopupViewModel? Popup) BuildConsumedBy(Item item)
     {
         var itemName = item.InternalName!;
-        var all = BuildRecipeChips(index, itemName);
-        if (all is null) return (null, null);
+        if (!_refData.RecipesByIngredientItemWithReason.TryGetValue(itemName, out var matches)
+            || matches.Count == 0)
+        {
+            return (null, null);
+        }
+
+        // Single materialization: order the index members once; both the popup and the
+        // capped cluster are views over this exact list.
+        var ordered = matches
+            .OrderBy(m => m.Recipe.Name ?? m.Recipe.InternalName ?? m.Recipe.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        EntityChipVm Chip(Recipe r)
+        {
+            var reference = EntityRef.Recipe(r.InternalName ?? r.Key);
+            return new EntityChipVm(
+                DisplayName: r.Name ?? r.InternalName ?? r.Key,
+                IconId: r.IconId > 0 ? r.IconId : ResolveRecipeFallbackIcon(r),
+                Reference: reference,
+                IsNavigable: _navigator.CanOpen(reference));
+        }
+
+        var allChips = ordered.Select(m => Chip(m.Recipe)).ToList();
 
         var cap = _settings.UsedInChipCap;
-        var capped = cap == 0 ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>() : all.Take(cap).ToList();
-        var reference = EntityRef.RecipeIngredientItem(itemName);
-        var shortcut = new EntityChipVm(
-            DisplayName: $"View all {all.Count} in Recipes tab →",
-            IconId: 0,
-            Reference: reference,
-            IsNavigable: _navigator.CanOpen(reference));
-        return (capped, shortcut);
+        var capped = cap == 0
+            ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>()
+            : allChips.Take(cap).ToList();
+
+        // Single-reason ⇒ exactly one section ⇒ ProvenancePopupViewModel renders a flat
+        // list (no reason header). ToQueryCommand intentionally unset (mirrors the slice-2
+        // effect→abilities decision): the popup-from-index is the count-bearing surface;
+        // the labeled-lossy To-Query projection is a deliberate fast-follow.
+        var popup = new ProvenancePopupViewModel(
+            title: $"Recipes that use {item.Name ?? itemName}",
+            sections: new List<ProvenancePopupSection>
+            {
+                new("Used in", allChips),
+            });
+
+        return (capped, popup);
     }
 
     private IReadOnlyList<EntityChipVm>? BuildKeywordChips(Item item)

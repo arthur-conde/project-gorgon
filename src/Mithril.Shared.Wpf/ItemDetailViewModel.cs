@@ -14,6 +14,22 @@ public sealed partial class ItemDetailViewModel
 {
     private readonly IAugmentPoolPresenter? _poolPresenter;
 
+    /// <summary>
+    /// Host-supplied opener for the "Used in" (consumed-by-recipes) provenance popup
+    /// (#318 slice 4, surface 1). Defaults to <see cref="ShowProvenancePopupWindow"/>
+    /// (creates + <c>Show()</c>s a <see cref="ProvenancePopupWindow"/>). Tests swap in a
+    /// capturing delegate so the VM is fully assertable without spawning a window. Opening
+    /// the popup this way never calls <c>IReferenceNavigator</c>, so it pushes no
+    /// back/forward history — identical non-navigating contract to
+    /// <c>IReferenceKindTarget.TryOpenInWindow</c> and to
+    /// <c>EffectDetailViewModel.ProvenancePopupOpener</c> (the slice-2 reference).
+    /// </summary>
+    public static Action<ProvenancePopupViewModel, ICommand?> ProvenancePopupOpener { get; set; }
+        = ShowProvenancePopupWindow;
+
+    private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
+        new ProvenancePopupWindow { DataContext = vm, ChipClickCommand = chipClick }.Show();
+
     public ItemDetailViewModel(Item item, IReferenceDataService refData)
         : this(item, refData, ItemDetailContext.Empty, poolPresenter: null)
     {
@@ -57,7 +73,11 @@ public sealed partial class ItemDetailViewModel
         UnpreviewableExtractions = context.UnpreviewableExtractions ?? [];
         ProducedByRecipes = context.ProducedByRecipes ?? [];
         ConsumedByRecipes = context.ConsumedByRecipes ?? [];
-        RecipesTabShortcut = context.RecipesTabShortcut;
+        ConsumedByRecipesPopup = context.ConsumedByRecipesPopup;
+        ConsumedByRecipesTotal = context.ConsumedByRecipesPopup?.TotalCount ?? 0;
+        ShowConsumedByRecipesPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(ConsumedByRecipesPopup!, OpenEntityCommand),
+            () => ConsumedByRecipesPopup is not null);
         ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
         AwardedByQuests = context.AwardedByQuests ?? [];
         BestowsLorebook = context.BestowsLorebook;
@@ -101,18 +121,37 @@ public sealed partial class ItemDetailViewModel
     /// Recipes that consume this item as an ingredient. Same lifecycle as
     /// <see cref="ProducedByRecipes"/>. Capped at
     /// <c>SilmarillionSettings.UsedInChipCap</c>; the full set is always reachable via
-    /// <see cref="RecipesTabShortcut"/>.
+    /// the "View all N →" affordance that opens <see cref="ConsumedByRecipesPopup"/>.
     /// </summary>
     public IReadOnlyList<EntityChipVm> ConsumedByRecipes { get; }
 
     /// <summary>
-    /// Always-visible navigable summary chip for the "Used in" section. Non-null whenever
-    /// the item is consumed by any recipe (independent of the cap); clicking deep-links to
-    /// the Recipes tab pre-filtered via
-    /// <c>QueryText = Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>. Bound visibility
-    /// on the XAML side hides it when this is null (item used in no recipe).
+    /// The "Used in" provenance popup VM opened by
+    /// <see cref="ShowConsumedByRecipesPopupCommand"/>, or <see langword="null"/> when no
+    /// recipe consumes this item (#318 slice 4, surface 1). Built from
+    /// <c>IReferenceDataService.RecipesByIngredientItemWithReason</c> directly (membership
+    /// + provenance), replacing the retired <c>RecipeIngredientItem</c> synthetic-kind
+    /// deep link — there is no query re-derivation, so the displayed set cannot diverge
+    /// from the index. The relationship is single-reason (<c>DirectIngredient</c>) so the
+    /// popup collapses to a flat list (#318 Discipline).
     /// </summary>
-    public EntityChipVm? RecipesTabShortcut { get; }
+    public ProvenancePopupViewModel? ConsumedByRecipesPopup { get; }
+
+    /// <summary>
+    /// Distinct count of recipes that consume this item as a direct ingredient — equals
+    /// <see cref="ProvenancePopupViewModel.TotalCount"/> of
+    /// <see cref="ConsumedByRecipesPopup"/>. Drives the "View all N →" label. 0 ⇒ no
+    /// relationship and the whole "Used in" section hides.
+    /// </summary>
+    public int ConsumedByRecipesTotal { get; }
+
+    /// <summary>
+    /// Opens <see cref="ConsumedByRecipesPopup"/> via <see cref="ProvenancePopupOpener"/>.
+    /// Bound to the always-visible "View all N →" affordance. The popup is a window shown
+    /// directly — opening it pushes no navigator history (#229 contract; mirrors the
+    /// slice-2 <c>EffectDetailViewModel.ShowRequiredByAbilitiesPopupCommand</c>).
+    /// </summary>
+    public ICommand ShowConsumedByRecipesPopupCommand { get; }
 
     /// <summary>
     /// Per-keyword chips for the item-detail "Used as" section. One chip per keyword the
