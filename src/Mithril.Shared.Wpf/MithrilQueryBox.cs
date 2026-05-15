@@ -51,6 +51,28 @@ public class MithrilQueryBox : Control
         nameof(DistinctValueSampler), typeof(Func<string, IReadOnlyList<string>>), typeof(MithrilQueryBox),
         new FrameworkPropertyMetadata((Func<string, IReadOnlyList<string>>?)null));
 
+    public static readonly DependencyProperty ParsedQueryProperty = DependencyProperty.Register(
+        nameof(ParsedQuery), typeof(ParsedQuery), typeof(MithrilQueryBox),
+        new FrameworkPropertyMetadata(null));
+
+    /// <summary>
+    /// Most recent successful parse of <see cref="QueryText"/>, or <c>null</c> when the
+    /// current text is empty or fails to parse. Downstream consumers (e.g.
+    /// <see cref="MithrilDataGrid"/> column-header click handlers, sort chips) subscribe
+    /// to <see cref="ParsedQueryChanged"/> to observe ORDER BY edits without re-parsing
+    /// themselves.
+    /// </summary>
+    public ParsedQuery? ParsedQuery
+    {
+        get => (ParsedQuery?)GetValue(ParsedQueryProperty);
+        private set => SetValue(ParsedQueryProperty, value);
+    }
+
+    /// <summary>
+    /// Raised after <see cref="ParsedQuery"/> has been updated in response to a text change.
+    /// </summary>
+    public event EventHandler? ParsedQueryChanged;
+
     public string QueryText
     {
         get => (string)GetValue(QueryTextProperty);
@@ -149,7 +171,13 @@ public class MithrilQueryBox : Control
     private static void OnQueryTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not MithrilQueryBox box) return;
-        if (box._editor is null) return;
+        if (box._editor is null)
+        {
+            // Publish even before the template is applied so consumers binding ParsedQuery
+            // see the initial value derived from QueryText.
+            box.PublishParsedQuery((e.NewValue as string) ?? string.Empty);
+            return;
+        }
         if (box._suppressTextSync) return;
         var newText = (e.NewValue as string) ?? string.Empty;
         if (!string.Equals(box._editor.Text, newText, StringComparison.Ordinal))
@@ -157,6 +185,7 @@ public class MithrilQueryBox : Control
             box._editor.Text = newText;
         }
         box.UpdateHighlighting();
+        box.PublishParsedQuery(newText);
     }
 
     private static void OnGridChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -193,8 +222,42 @@ public class MithrilQueryBox : Control
             _suppressTextSync = false;
         }
         UpdateHighlighting();
+        PublishParsedQuery(_editor.Text);
         _popupDismissedByUser = false;
         RefreshCompletion();
+    }
+
+    /// <summary>
+    /// Parse <paramref name="text"/> and publish the result as <see cref="ParsedQuery"/>,
+    /// firing <see cref="ParsedQueryChanged"/>. Malformed input publishes <c>null</c>;
+    /// the existing highlight overlay continues to surface the syntax error.
+    /// </summary>
+    private void PublishParsedQuery(string? text)
+    {
+        ParsedQuery? parsed;
+        try
+        {
+            parsed = QueryParser.Parse(text ?? string.Empty);
+        }
+        catch (QueryException)
+        {
+            parsed = null;
+        }
+        ParsedQuery = parsed;
+        ParsedQueryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Replace the ORDER BY clause in the current <see cref="QueryText"/> with the
+    /// given specs. An empty list strips the clause entirely. Used by sort chips
+    /// and DataGrid header-click handlers to keep the query box authoritative —
+    /// mutating <see cref="QueryText"/> re-runs the standard text-change pipeline,
+    /// which republishes <see cref="ParsedQuery"/>.
+    /// </summary>
+    public void RewriteOrderClause(IReadOnlyList<OrderSpec> newOrder)
+    {
+        var current = QueryText ?? string.Empty;
+        QueryText = OrderClauseRewriter.Rewrite(current, newOrder);
     }
 
     private void OnEditorSelectionChanged(object? sender, RoutedEventArgs e)
