@@ -121,7 +121,7 @@
                                     Visibility="{Binding NpcsTabShortcut, Converter={StaticResource NullToVis}}">
                         <ContentControl.Resources>
                             <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
+                                <c:ActionChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
                             </DataTemplate>
                         </ContentControl.Resources>
                     </ContentControl>
