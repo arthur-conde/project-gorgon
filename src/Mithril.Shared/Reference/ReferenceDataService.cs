@@ -16,6 +16,7 @@ using Lorebook = Mithril.Reference.Models.Misc.Lorebook;
 using LorebookInfo = Mithril.Reference.Models.Misc.LorebookInfo;
 using LorebookCategoryInfo = Mithril.Reference.Models.Misc.LorebookCategoryInfo;
 using PlayerTitle = Mithril.Reference.Models.Misc.PlayerTitle;
+using StorageVault = Mithril.Reference.Models.Misc.StorageVault;
 using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
@@ -276,6 +277,12 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, PlayerTitle> _playerTitles =
         new Dictionary<string, PlayerTitle>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _playerTitlesSnapshot;
+    // StorageVaults (storagevaults.json) — keyed by the operator NPC internal name, or a
+    // "*"-prefixed account-wide form (transfer chests). Plain reference dictionary; no
+    // cross-link index (all #249 cross-links are 1:1 chips resolved at detail-build time).
+    private IReadOnlyDictionary<string, StorageVault> _storageVaults =
+        new Dictionary<string, StorageVault>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _storageVaultsSnapshot;
 
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
@@ -314,6 +321,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _lorebooksSnapshot = new ReferenceFileSnapshot("lorebooks", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _lorebookInfoSnapshot = new ReferenceFileSnapshot("lorebookinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _playerTitlesSnapshot = new ReferenceFileSnapshot("playertitles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _storageVaultsSnapshot = new ReferenceFileSnapshot("storagevaults", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -346,6 +354,11 @@ public sealed class ReferenceDataService : IReferenceDataService
     }
 
     public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "playertitles"];
+        LoadStorageVaults();       // Independent of every other file (#249 cross-links are
+                                   // 1:1 chips resolved lazily at detail-build, not an index).
+    }
+
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "storagevaults"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -401,6 +414,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsBestowingLorebook => _itemsBestowingLorebook;
     public IReadOnlyDictionary<string, LorebookCategoryInfo> LorebookCategories => _lorebookCategories;
     public IReadOnlyDictionary<string, PlayerTitle> PlayerTitles => _playerTitles;
+    public IReadOnlyDictionary<string, StorageVault> StorageVaults => _storageVaults;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -429,6 +443,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "lorebooks" => _lorebooksSnapshot,
         "lorebookinfo" => _lorebookInfoSnapshot,
         "playertitles" => _playerTitlesSnapshot,
+        "storagevaults" => _storageVaultsSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -460,6 +475,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "lorebooks" => RefreshFileAsync("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks, ct),
         "lorebookinfo" => RefreshFileAsync("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo, ct),
         "playertitles" => RefreshFileAsync("playertitles", ReferenceDeserializer.ParsePlayerTitles, ParseAndSwapPlayerTitles, ct),
+        "storagevaults" => RefreshFileAsync("storagevaults", ReferenceDeserializer.ParseStorageVaults, ParseAndSwapStorageVaults, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -489,6 +505,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("lorebookinfo", ct).ConfigureAwait(false);
         await RefreshAsync("lorebooks", ct).ConfigureAwait(false);
         await RefreshAsync("playertitles", ct).ConfigureAwait(false);
+        await RefreshAsync("storagevaults", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -678,6 +695,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadLorebooks() => LoadFile("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks);
     private void LoadLorebookInfo() => LoadFile("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo);
     private void LoadPlayerTitles() => LoadFile("playertitles", ReferenceDeserializer.ParsePlayerTitles, ParseAndSwapPlayerTitles);
+    private void LoadStorageVaults() => LoadFile("storagevaults", ReferenceDeserializer.ParseStorageVaults, ParseAndSwapStorageVaults);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -1205,6 +1223,19 @@ public sealed class ReferenceDataService : IReferenceDataService
         _lorebooksById = byId;
         _lorebooksSnapshot = new ReferenceFileSnapshot("lorebooks", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
         BuildLorebookItemCrossLinkIndex();
+    }
+
+    private void ParseAndSwapStorageVaults(IReadOnlyDictionary<string, StorageVault> raw, ReferenceFileMetadata meta)
+    {
+        // Envelope key is the operator NPC internal name (or a "*"-prefixed account-wide
+        // form). Preserve it verbatim — it's the deep-link / selection contract and the
+        // leading "*" is meaningful (account-wide transfer chest). Ordinal comparer keeps
+        // the "*"-prefixed keys distinct from any same-suffix NPC key.
+        var byKey = new Dictionary<string, StorageVault>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, v) in raw)
+            byKey[key] = v;
+        _storageVaults = byKey;
+        _storageVaultsSnapshot = new ReferenceFileSnapshot("storagevaults", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
     private void ParseAndSwapLorebookInfo(LorebookInfo raw, ReferenceFileMetadata meta)

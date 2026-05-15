@@ -25,6 +25,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Effect => ResolveEffect(reference.InternalName),
         EntityKind.Skill => ResolveSkill(reference.InternalName),
         EntityKind.Lorebook => ResolveLorebook(reference.InternalName),
+        EntityKind.StorageVault => ResolveStorageVault(reference.InternalName),
         _ => reference.InternalName,
     };
 
@@ -95,6 +96,18 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         _refData.LorebooksByInternalName.TryGetValue(internalName, out var book) && !string.IsNullOrEmpty(book.Title)
             ? book.Title!
             : internalName;
+
+    /// <summary>
+    /// StorageVault keys are the operator NPC internal name (e.g. <c>"NPC_CharlesThompson"</c>)
+    /// or a <c>"*"</c>-prefixed account-wide form (e.g. <c>"*AccountStorage_Serbule"</c>).
+    /// The display label is <see cref="Mithril.Reference.Models.Misc.StorageVault.NpcFriendlyName"/>;
+    /// fall back to the key with any leading <c>"*"</c> / <c>"NPC_"</c> stripped so an
+    /// unnamed entry reads sensibly rather than as the raw envelope key.
+    /// </summary>
+    private string ResolveStorageVault(string envelopeKey) =>
+        _refData.StorageVaults.TryGetValue(envelopeKey, out var vault) && !string.IsNullOrEmpty(vault.NpcFriendlyName)
+            ? vault.NpcFriendlyName!
+            : StripNpcPrefix(envelopeKey.StartsWith('*') ? envelopeKey[1..] : envelopeKey);
 
     private static string StripNpcPrefix(string internalName) =>
         internalName.StartsWith("NPC_", StringComparison.Ordinal)

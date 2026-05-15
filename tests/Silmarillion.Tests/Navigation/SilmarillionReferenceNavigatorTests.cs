@@ -337,6 +337,93 @@ public sealed class SilmarillionReferenceNavigatorTests
     }
 
     [Fact]
+    public void Open_StorageVault_SwitchesToStorageVaultsTab_AndSelects()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddVault("NPC_CharlesThompson", new Mithril.Reference.Models.Misc.StorageVault
+        {
+            NpcFriendlyName = "Charles Thompson", NumSlots = 24,
+        });
+        var settings = new Silmarillion.SilmarillionSettings();
+        var vaultsVm = new StorageVaultsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var vaultsTarget = new StorageVaultsKindTarget(vaultsVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            vaultsTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { vaultsVm }, nav, targets);
+
+        nav.Open(EntityRef.StorageVault("NPC_CharlesThompson"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(8);
+        vaultsVm.SelectedVault.Should().NotBeNull();
+        vaultsVm.SelectedVault!.EnvelopeKey.Should().Be("NPC_CharlesThompson");
+    }
+
+    [Fact]
+    public void Open_StorageVault_StarPrefixedAccountWideKey_RoundTrips()
+    {
+        // The '*'-prefixed account-wide envelope key must select via the navigator
+        // unchanged — the literal '*' is the deep-link / selection contract.
+        var refData = new FakeReferenceData();
+        refData.AddVault("*AccountStorage_Serbule", new Mithril.Reference.Models.Misc.StorageVault
+        {
+            NpcFriendlyName = "Serbule Transfer Chest", HasAssociatedNpc = false, NumSlots = 0,
+        });
+        var settings = new Silmarillion.SilmarillionSettings();
+        var vaultsVm = new StorageVaultsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StorageVaultsKindTarget(vaultsVm),
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { vaultsVm }, nav, targets);
+
+        nav.Open(EntityRef.StorageVault("*AccountStorage_Serbule"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(8);
+        vaultsVm.SelectedVault.Should().NotBeNull();
+        vaultsVm.SelectedVault!.EnvelopeKey.Should().Be("*AccountStorage_Serbule");
+        vaultsVm.SelectedVault.IsAccountWide.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Open_StorageVault_UnknownKey_DoesNotSelect()
+    {
+        var refData = new FakeReferenceData();
+        var settings = new Silmarillion.SilmarillionSettings();
+        var vaultsVm = new StorageVaultsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StorageVaultsKindTarget(vaultsVm),
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+
+        nav.Open(EntityRef.StorageVault("NPC_NoSuchVault"));
+
+        vaultsVm.SelectedVault.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_DuplicateGuard_TripsForStorageVault()
+    {
+        var dup = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.StorageVault),
+            new StubTarget(EntityKind.StorageVault),
+        };
+        Action act = () => new SilmarillionReferenceNavigator(dup);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate IReferenceKindTarget*StorageVault*");
+    }
+
+    [Fact]
     public void Open_Lorebook_UnknownName_DoesNotSelect()
     {
         var refData = new FakeReferenceData();
@@ -514,6 +601,9 @@ public sealed class SilmarillionReferenceNavigatorTests
         public void AddPlayerTitle(string envelopeKey, Mithril.Reference.Models.Misc.PlayerTitle title)
             => _playerTitles[envelopeKey] = title;
         public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.PlayerTitle> PlayerTitles => _playerTitles;
+        private readonly Dictionary<string, Mithril.Reference.Models.Misc.StorageVault> _storageVaults = new(StringComparer.Ordinal);
+        public void AddVault(string envelopeKey, Mithril.Reference.Models.Misc.StorageVault vault) => _storageVaults[envelopeKey] = vault;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.StorageVault> StorageVaults => _storageVaults;
 
         public IReadOnlyList<string> Keys => Array.Empty<string>();
         public IReadOnlyDictionary<long, Item> Items => _itemsById;

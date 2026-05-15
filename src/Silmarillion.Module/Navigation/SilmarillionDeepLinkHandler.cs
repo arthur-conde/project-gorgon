@@ -42,9 +42,19 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         }
 
         var kind = parts[0];
-        var name = parts[1];
+        // Uri.AbsolutePath (the DeepLinkRouter source) leaves percent-encoding intact, so a
+        // '*'-prefixed StorageVault key arrives URL-encoded as "%2A...". Decode the name
+        // segment before validation. This is safe: a decoded URI separator or whitespace
+        // would simply fail IsValidEnvelopeKey below (the grammar is the gate, not the
+        // decode), and bare internal names (no '%') are unaffected by the round-trip.
+        var name = Uri.UnescapeDataString(parts[1]);
 
-        if (!DeepLinkPayload.IsValidInternalName(name))
+        // IsValidEnvelopeKey == IsValidInternalName plus an optional single leading '*'
+        // (StorageVault account-wide / transfer-chest keys like "*AccountStorage_Serbule";
+        // URL-encoded as %2A, decoded back by Uri.AbsolutePath in DeepLinkRouter). Bare
+        // internal names — every other kind — are a strict subset, so this stays a no-op
+        // for item/recipe/npc/etc. routes.
+        if (!DeepLinkPayload.IsValidEnvelopeKey(name))
         {
             diag?.Info("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
             return false;

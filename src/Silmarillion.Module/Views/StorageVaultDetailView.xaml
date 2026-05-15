@@ -1,0 +1,193 @@
+<UserControl x:Class="Silmarillion.Views.StorageVaultDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:StorageVaultDetailViewModel}"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- One capacity row: favor tier (or event key) — mono slot count (gold). -->
+            <DataTemplate DataType="{x:Type vm:StorageVaultCapacityRow}">
+                <Grid Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding Tier}"
+                               Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Slots}"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                               Foreground="#FFD4A847"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="12,0,0,0"/>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Plain item-keyword tag (NOT navigable — these are keyword tags, not entities). -->
+            <DataTemplate x:Key="ItemKeywordTagTemplate">
+                <Border Background="#FF2A2A2A" CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
+                    <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeSmall}"/>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <DockPanel>
+            <!-- Footer: envelope key (mono, bottom-right) — per detail-view convention. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding EnvelopeKey}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       Margin="0,8,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
+
+            <StackPanel>
+                <!-- ─── Header ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeXLarge}"
+                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- ─── Metadata row ─── -->
+                <WrapPanel Margin="0,0,0,10">
+                    <!-- Account-wide badge: rendered only when true (noise-filter default). -->
+                    <Border Background="#332E7DD2" BorderBrush="#662E7DD2" BorderThickness="1"
+                            CornerRadius="3" Padding="6,2" Margin="0,0,6,4"
+                            Visibility="{Binding IsAccountWide, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Account-wide" Foreground="#FF9CC3EA"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,6,4"
+                                Visibility="{Binding HasArea, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Area: " Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ContentControl Content="{Binding AreaChip}">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,6,4"
+                                Visibility="{Binding HasOperatorNpc, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Operator: " Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ContentControl Content="{Binding OperatorNpcChip}">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </StackPanel>
+                </WrapPanel>
+
+                <!-- ─── Capacity ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="Capacity" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+
+                    <!-- Favor-scaled: ordered favor-tier table. -->
+                    <ItemsControl ItemsSource="{Binding CapacityRows}"
+                                  Visibility="{Binding HasCapacityTable, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Flat slot count. -->
+                    <TextBlock Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Visibility="{Binding HasFlatSlots, Converter={StaticResource BoolToVis}}">
+                        <Run Text="{Binding FlatSlots, Mode=OneWay}"/><Run Text=" slots"/>
+                    </TextBlock>
+
+                    <!-- Dynamic / script-atomic range. -->
+                    <TextBlock Text="{Binding ScriptAtomicRange}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,2,0,0"
+                               Visibility="{Binding HasScriptAtomicRange, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                    <!-- Rare event-gated overrides. -->
+                    <StackPanel Margin="0,6,0,0"
+                                Visibility="{Binding HasEventLevels, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Event-gated capacity" Foreground="#88FFFFFF"
+                                   FontStyle="Italic"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding EventLevelRows}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ─── Access requirements ─── -->
+                <StackPanel Visibility="{Binding HasAccessRequirements, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Access requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+
+                    <TextBlock Text="{Binding RequirementDescription}"
+                               Foreground="#CCFFFFFF" FontStyle="Italic"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" Margin="0,0,0,4"
+                               Visibility="{Binding RequirementDescription, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                    <ItemsControl ItemsSource="{Binding ItemKeywordTags}"
+                                  ItemTemplate="{StaticResource ItemKeywordTagTemplate}"
+                                  Margin="0,0,0,4"
+                                  Visibility="{Binding HasItemKeywordTags, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Quest-completed requirements → 1:1 navigable Quest chips. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                                Visibility="{Binding HasQuestRequirements, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Completed: " Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ItemsControl ItemsSource="{Binding QuestRequirementChips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Non-quest polymorphic requirements as human labels (incl. the
+                         graceful "(unrecognised requirement)" degrade). -->
+                    <ItemsControl ItemsSource="{Binding RequirementLines}"
+                                  Visibility="{Binding HasRequirementLines, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

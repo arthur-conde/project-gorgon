@@ -71,6 +71,11 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetRequiredService<SilmarillionSettings>()));
         services.AddSingleton<PlayerTitlesTabViewModel>(sp => new PlayerTitlesTabViewModel(
             sp.GetRequiredService<IReferenceDataService>()));
+        services.AddSingleton<StorageVaultsTabViewModel>(sp => new StorageVaultsTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<IEntityNameResolver>(),
+            sp.GetRequiredService<SilmarillionSettings>()));
         // Forward each concrete tab VM to ITabViewModel so SilmarillionViewModel can compose
         // its Tabs collection from IEnumerable<ITabViewModel>. Adding a future tab is a single
         // pair of registrations here — no SilmarillionViewModel ctor change (refactor #243).
@@ -83,6 +88,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<AreasTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<LorebooksTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<PlayerTitlesTabViewModel>());
+        services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<StorageVaultsTabViewModel>());
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -137,6 +143,8 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new PlayerTitlesKindTarget(
             sp.GetRequiredService<PlayerTitlesTabViewModel>(),
+        services.AddSingleton<IReferenceKindTarget>(sp => new StorageVaultsKindTarget(
+            sp.GetRequiredService<StorageVaultsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).

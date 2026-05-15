@@ -216,4 +216,28 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- Compact two-line row for StorageVaults tab. Bound DataContext:
+         Silmarillion.ViewModels.StorageVaultListRow. Secondary line is the plain
+         '<area-or-grouping> <slot-summary>' shape per the cookbook card
+         secondary-line convention (no unit prefixes / parentheticals). -->
+    <DataTemplate x:Key="StorageVaultCardTemplate">
+        <DockPanel LastChildFill="True">
+            <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="6,3,6,3"
+                    VerticalAlignment="Center" Background="#FF1F1F1F" CornerRadius="3">
+                <icon:PackIconLucide Kind="Vault" Width="14" Height="14" Foreground="#88FFFFFF"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding SlotSummary, Mode=OneWay}"/>
+                </TextBlock>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
 </ResourceDictionary>
