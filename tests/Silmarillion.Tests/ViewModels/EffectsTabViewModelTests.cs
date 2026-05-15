@@ -6,6 +6,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -195,8 +196,10 @@ public sealed class EffectsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_RequiredByAbilities_BuildsChipsFromIndex_AndAddsAbilitiesTabShortcut()
+    public void DetailViewModel_RequiredByAbilities_PopupMembership_EqualsIndexCollection_AndCountIsDistinct()
     {
+        // #318 Gate C — the invariant. The popup is a view over the index; its membership
+        // == the index members, and "View all N" == DISTINCT members.
         var effect = new PocoEffect { InternalName = "effect_1", Name = "X", IconId = 1, Keywords = ["FrostShard"] };
         var abilities = Enumerable.Range(1, 15)
             .Select(i => new Ability { InternalName = $"Strike{i}", Name = $"Strike {i}", Skill = "Sword", Level = i, IconID = 100 + i })
@@ -209,23 +212,34 @@ public sealed class EffectsTabViewModelTests
         var settings = new SilmarillionSettings { RequiredByAbilitiesChipCap = 12 };
         var vm = new EffectsTabViewModel(
             refData,
-            NavFactory.WithKinds(EntityKind.Ability, EntityKind.AbilityByEffectKeyword),
+            NavFactory.WithKinds(EntityKind.Ability),
             new ReferenceDataEntityNameResolver(refData),
             settings);
 
         vm.SelectedRow = vm.AllEffects.Single();
         var detail = vm.DetailViewModel!;
 
+        // Capped chip cluster unchanged.
         detail.RequiredByAbilityChips.Should().HaveCount(12);
-        detail.RequiredByAbilitiesTabShortcut.Should().NotBeNull();
-        detail.RequiredByAbilitiesTabShortcut!.DisplayName.Should().Be("View all 15 in Abilities tab →");
-        detail.RequiredByAbilitiesTabShortcut.Reference.Kind.Should().Be(EntityKind.AbilityByEffectKeyword);
-        detail.RequiredByAbilitiesTabShortcut.Reference.InternalName.Should().Be("FrostShard");
-        detail.RequiredByAbilitiesTabShortcut.IsNavigable.Should().BeTrue();
+
+        // The popup carries the *full* set (not the cap), == the index membership.
+        detail.RequiredByAbilitiesPopup.Should().NotBeNull();
+        var popup = detail.RequiredByAbilitiesPopup!;
+        popup.TotalCount.Should().Be(15, because: "View all N == distinct index members");
+        detail.RequiredByAbilitiesTotal.Should().Be(15);
+
+        var popupMembers = popup.IsFlat
+            ? popup.FlatChips.Select(c => c.Reference.InternalName)
+            : popup.Sections.SelectMany(s => s.Chips).Select(c => c.Reference.InternalName).Distinct();
+        popupMembers.Should().BeEquivalentTo(abilities.Select(a => a.InternalName));
+
+        // Single reason (the stub tags everything Requires) ⇒ flat list, no section chrome.
+        popup.IsFlat.Should().BeTrue(because: "one trivial reason is noise — collapse to flat (#318 Discipline)");
+        popup.FlatChips.Should().HaveCount(15);
     }
 
     [Fact]
-    public void DetailViewModel_RequiredByAbilities_StillEmitsShortcut_WhenCountWithinCap()
+    public void DetailViewModel_RequiredByAbilities_PopupAlwaysBuilt_EvenWhenCountWithinCap()
     {
         var effect = new PocoEffect { InternalName = "effect_1", Name = "X", IconId = 1, Keywords = ["FrostShard"] };
         var refData = new StubReferenceData
@@ -245,9 +259,139 @@ public sealed class EffectsTabViewModelTests
         var detail = vm.DetailViewModel!;
 
         detail.RequiredByAbilityChips.Should().ContainSingle();
-        detail.RequiredByAbilitiesTabShortcut.Should().NotBeNull(
-            because: "the navigable summary chip is always shown, even when every ability fits as a chip");
-        detail.RequiredByAbilitiesTabShortcut!.DisplayName.Should().Be("View all 1 in Abilities tab →");
+        detail.RequiredByAbilitiesPopup.Should().NotBeNull(
+            because: "the View-all affordance is always shown, even when every ability fits as a chip");
+        detail.RequiredByAbilitiesTotal.Should().Be(1);
+        detail.ShowRequiredByAbilitiesPopupCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetailViewModel_RequiredByAbilities_NonPrimaryFieldOnlyTag_AppearsInPopup_WithCorrectProvenance()
+    {
+        // #318 Gate C — the load-bearing regression. This is the BloodMist case lifted to
+        // the popup/VM level: a tag carried ONLY by a non-primary field (EnabledBy) must
+        // still appear in the popup, with NO Requires section. The pre-#318 synthetic
+        // deep-link queried EffectKeywordReqs only, so such a tag opened an empty list.
+        var effect = new PocoEffect { InternalName = "effect_bm", Name = "Blood Mist", IconId = 1, Keywords = ["BloodMist"] };
+        var enabledOnly = Enumerable.Range(1, 9)
+            .Select(i => new Ability { InternalName = $"BloodMist{i}", Name = $"Blood Mist {i}", Skill = "Necromancy", Level = i })
+            .ToList();
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_bm"] = effect },
+            AbilitiesByEffectMatchMap =
+            {
+                ["BloodMist"] = enabledOnly
+                    .Select(a => new EffectAbilityMatch(a, EffectAbilityMatchReason.EnabledBy))
+                    .ToList(),
+            },
+        };
+        var vm = new EffectsTabViewModel(
+            refData,
+            NavFactory.WithKinds(EntityKind.Ability),
+            new ReferenceDataEntityNameResolver(refData),
+            new SilmarillionSettings());
+
+        vm.SelectedRow = vm.AllEffects.Single();
+        var popup = vm.DetailViewModel!.RequiredByAbilitiesPopup;
+
+        popup.Should().NotBeNull(because: "an EnabledBy-only tag still relates 9 abilities");
+        popup!.TotalCount.Should().Be(9);
+        popup.IsFlat.Should().BeTrue(because: "one reason ⇒ flat (a section header would be noise)");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            enabledOnly.Select(a => a.InternalName));
+        // The lone section is the EnabledBy one (the VM still carries it for the count
+        // derivation), but IsFlat drives the popup to render FlatChips with no section
+        // chrome — and crucially there is NO Requires section. The pre-#318 bug would have
+        // produced an *empty* set here (the deep-link queried EffectKeywordReqs only).
+        popup.Sections.Should().ContainSingle().Which.Label.Should().Be("Enabled by");
+        popup.Sections.Should().NotContain(s => s.Label == "Requires",
+            because: "no ability requires this tag — the divergence the original bug produced");
+    }
+
+    [Fact]
+    public void DetailViewModel_RequiredByAbilities_MultiReason_SectionsByReason_MemberCountedOnce()
+    {
+        // A tag whose abilities span more than one reason ⇒ sectioned popup (Requires /
+        // Enabled by / Targets) in canonical order. A member qualifying for two reasons
+        // appears in both sections but is counted ONCE in TotalCount.
+        var effect = new PocoEffect { InternalName = "effect_1", Name = "Frost", IconId = 1, Keywords = ["FrostShard"] };
+        var req = new Ability { InternalName = "Req", Name = "Req", Skill = "Ice", Level = 1 };
+        var both = new Ability { InternalName = "Both", Name = "Both", Skill = "Ice", Level = 2 };
+        var tgt = new Ability { InternalName = "Tgt", Name = "Tgt", Skill = "Ice", Level = 3 };
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_1"] = effect },
+            AbilitiesByEffectMatchMap =
+            {
+                ["FrostShard"] = new[]
+                {
+                    new EffectAbilityMatch(req, EffectAbilityMatchReason.Requires),
+                    new EffectAbilityMatch(both, EffectAbilityMatchReason.Requires | EffectAbilityMatchReason.Targets),
+                    new EffectAbilityMatch(tgt, EffectAbilityMatchReason.Targets),
+                },
+            },
+        };
+        var vm = new EffectsTabViewModel(
+            refData,
+            NavFactory.WithKinds(EntityKind.Ability),
+            new ReferenceDataEntityNameResolver(refData),
+            new SilmarillionSettings());
+
+        vm.SelectedRow = vm.AllEffects.Single();
+        var popup = vm.DetailViewModel!.RequiredByAbilitiesPopup!;
+
+        popup.IsFlat.Should().BeFalse(because: "two reasons present ⇒ keep section chrome");
+        popup.Sections.Select(s => s.Label).Should().Equal("Requires", "Targets");
+        popup.Sections.Single(s => s.Label == "Requires").Chips
+            .Select(c => c.Reference.InternalName).Should().BeEquivalentTo("Req", "Both");
+        popup.Sections.Single(s => s.Label == "Targets").Chips
+            .Select(c => c.Reference.InternalName).Should().BeEquivalentTo("Both", "Tgt");
+        popup.TotalCount.Should().Be(3, because: "a multi-reason member is counted once");
+    }
+
+    [Fact]
+    public void DetailViewModel_RequiredByAbilities_OpeningPopup_DoesNotTouchNavigator_NoHistoryPushed()
+    {
+        // #318 — opening the popup must NOT push navigator back/forward history (the #229
+        // non-navigating contract, mirroring TryOpenInWindow). The opener is swapped for a
+        // capturing no-op so no window spawns; assert navigator state is pristine.
+        var effect = new PocoEffect { InternalName = "effect_1", Name = "X", IconId = 1, Keywords = ["FrostShard"] };
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_1"] = effect },
+            AbilitiesByEffectKeywordMap =
+            {
+                ["FrostShard"] = new[] { new Ability { InternalName = "Strike", Name = "Strike", Skill = "Sword", Level = 1 } },
+            },
+        };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new EffectsTabViewModel(refData, nav, new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings());
+
+        var prior = EffectDetailViewModel.ProvenancePopupOpener;
+        ProvenancePopupViewModel? captured = null;
+        EffectDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            vm.SelectedRow = vm.AllEffects.Single();
+            var detail = vm.DetailViewModel!;
+
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+
+            detail.ShowRequiredByAbilitiesPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull(because: "the command invoked the opener with the built popup VM");
+            // The defining assertion: opening the popup pushed no navigator state.
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+        }
+        finally
+        {
+            EffectDetailViewModel.ProvenancePopupOpener = prior;
+        }
     }
 
     [Fact]
@@ -358,6 +502,13 @@ public sealed class EffectsTabViewModelTests
         public Dictionary<string, PocoEffect> EffectsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<PocoEffect>> EffectsByStackingTypeMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeywordMap { get; } = new(StringComparer.Ordinal);
+
+        // Optional explicit-provenance override: a tag present here supersedes
+        // AbilitiesByEffectKeywordMap for that tag, letting a test model EnabledBy-only /
+        // multi-reason cases (#318 Gate C). Plain AbilitiesByEffectKeywordMap entries
+        // default every member to Requires (sufficient for membership/count assertions).
+        public Dictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectMatchMap { get; } = new(StringComparer.Ordinal);
+
         public List<AbilityDynamicDot> DotRules { get; } = new();
         public List<AbilityDynamicSpecialValue> SpecialValueRules { get; } = new();
 
@@ -385,26 +536,33 @@ public sealed class EffectsTabViewModelTests
         // raw InternalName and tests asserting DisplayName silently regress (cookbook caveat).
         public IReadOnlyDictionary<string, Ability> Abilities { get; } = new Dictionary<string, Ability>();
         public IReadOnlyDictionary<string, Ability> AbilitiesByInternalName =>
-            AbilitiesByEffectKeywordMap.Values
-                .SelectMany(v => v)
+            AbilitiesByEffectKeywordMap.Values.SelectMany(v => v)
+                .Concat(AbilitiesByEffectMatchMap.Values.SelectMany(v => v.Select(m => m.Ability)))
                 .GroupBy(a => a.InternalName!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         public IReadOnlyDictionary<string, PocoEffect> Effects => EffectsByKey;
         public IReadOnlyDictionary<string, PocoEffect> EffectsByInternalName => EffectsByKey;
         public IReadOnlyDictionary<string, IReadOnlyList<PocoEffect>> EffectsByStackingType => EffectsByStackingTypeMap;
-        // The stub map is keyed by Ability for test ergonomics; the interface shape now
-        // carries provenance (#318 slice 1). These ViewModel tests only assert membership
-        // / counts, so a uniform Requires reason is sufficient — the provenance regression
-        // is asserted against real bundled data in
-        // ReferenceDataServiceEffectCrossLinkIndexTests.
-        public IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword =>
-            AbilitiesByEffectKeywordMap.ToDictionary(
-                kv => kv.Key,
-                kv => (IReadOnlyList<EffectAbilityMatch>)kv.Value
-                    .Select(a => new EffectAbilityMatch(a, EffectAbilityMatchReason.Requires))
-                    .ToList(),
-                StringComparer.Ordinal);
+        // Plain map entries default every member to Requires (enough for membership/count
+        // assertions). AbilitiesByEffectMatchMap entries carry explicit reasons and
+        // supersede the plain map for that tag — used by the #318 Gate-C provenance tests
+        // (EnabledBy-only, multi-reason). The real provenance regression is also asserted
+        // against bundled data in ReferenceDataServiceEffectCrossLinkIndexTests.
+        public IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword
+        {
+            get
+            {
+                var result = new Dictionary<string, IReadOnlyList<EffectAbilityMatch>>(StringComparer.Ordinal);
+                foreach (var kv in AbilitiesByEffectKeywordMap)
+                    result[kv.Key] = kv.Value
+                        .Select(a => new EffectAbilityMatch(a, EffectAbilityMatchReason.Requires))
+                        .ToList();
+                foreach (var kv in AbilitiesByEffectMatchMap)
+                    result[kv.Key] = kv.Value;
+                return result;
+            }
+        }
         public IReadOnlyList<AbilityDynamicDot> AbilityDynamicDots => DotRules;
         public IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => SpecialValueRules;
 

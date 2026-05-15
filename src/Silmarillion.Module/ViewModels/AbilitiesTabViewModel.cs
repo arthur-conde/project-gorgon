@@ -120,9 +120,11 @@ public sealed partial class AbilitiesTabViewModel : ObservableObject, ITabViewMo
             .Where(k => !string.IsNullOrEmpty(k))
             .Select(k => new IngredientKeywordValue(k))
             .ToList();
-        // Surface EffectKeywordReqs as a CONTAINS-queryable collection so the
-        // AbilityByEffectKeyword synthetic kind target can deep-link via
-        // `EffectKeywordReqs CONTAINS "<tag>"`.
+        // Surface EffectKeywordReqs as a CONTAINS-queryable collection so a user can
+        // hand-filter the Abilities tab by `EffectKeywordReqs CONTAINS "<tag>"`. (This
+        // also backed the retired AbilityByEffectKeyword synthetic deep link, removed in
+        // #318 — the effect->abilities surface now opens a provenance popup fed the index
+        // directly, no query re-derivation.)
         var effectKeywordReqs = (ability.EffectKeywordReqs ?? (IReadOnlyList<string>)[])
             .Where(k => !string.IsNullOrEmpty(k))
             .Select(k => new IngredientKeywordValue(k))

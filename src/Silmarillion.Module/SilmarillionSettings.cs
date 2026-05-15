@@ -52,11 +52,11 @@ public sealed class SilmarillionSettings : INotifyPropertyChanged
 
     /// <summary>
     /// Maximum number of per-ability chips rendered in the effect-detail
-    /// "Required by abilities" section before collapsing the rest behind a
-    /// <c>+N more →</c> overflow pill. The pill deep-links to the Abilities tab
-    /// filtered by <c>EffectKeywordReqs CONTAINS "&lt;tag&gt;"</c> via the
-    /// <see cref="Mithril.Shared.Reference.EntityKind.AbilityByEffectKeyword"/>
-    /// synthetic kind. Clamped to <see cref="MinUsedInChipCap"/>..<see cref="MaxUsedInChipCap"/>.
+    /// "Required by abilities" section before the rest are reachable via the always-visible
+    /// "View all N →" affordance. That affordance opens the shared provenance popup fed
+    /// <see cref="Mithril.Shared.Reference.IReferenceDataService.AbilitiesByEffectKeyword"/>
+    /// directly (#318) — no synthetic-kind deep link, no query re-derivation. Clamped to
+    /// <see cref="MinUsedInChipCap"/>..<see cref="MaxUsedInChipCap"/>.
     /// </summary>
     public int RequiredByAbilitiesChipCap
     {

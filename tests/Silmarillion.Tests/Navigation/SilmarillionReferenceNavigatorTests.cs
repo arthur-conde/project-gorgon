@@ -395,27 +395,10 @@ public sealed class SilmarillionReferenceNavigatorTests
         effectsVm.QueryText.Should().Be("Keywords CONTAINS \"FrostShard\"");
     }
 
-    [Fact]
-    public void Open_AbilityByEffectKeyword_SwitchesToAbilitiesTab_AndSetsQueryText()
-    {
-        var refData = new FakeReferenceData();
-        var abilitiesVm = new AbilitiesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
-        var pillTarget = new AbilityByEffectKeywordKindTarget(abilitiesVm);
-
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            pillTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { abilitiesVm }, nav, targets);
-
-        nav.Open(EntityRef.AbilityByEffectKeyword("FrostShard"));
-
-        silmarillionVm.SelectedTabIndex.Should().Be(4);
-        abilitiesVm.QueryText.Should().Be("EffectKeywordReqs CONTAINS \"FrostShard\"");
-    }
+    // (Removed) Open_AbilityByEffectKeyword_… — the AbilityByEffectKeyword synthetic kind
+    // + its kind target were deleted in #318. The effect→abilities 1:N surface now opens a
+    // provenance popup fed the index directly (no navigator round-trip, no query
+    // re-derivation). Popup-level coverage lives in EffectsTabViewModelTests.
 
     [Fact]
     public void Open_Area_SwitchesToAreasTab_AndSelects()
