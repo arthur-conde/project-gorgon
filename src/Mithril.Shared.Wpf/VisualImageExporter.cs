@@ -24,6 +24,10 @@ public static class VisualImageExporter
     /// a fixed factor (not live monitor DPI) keeps the result deterministic.</summary>
     private const double Scale = 2.0;
 
+    /// <summary>Uniform breathing room (device-independent px) drawn in the backfill
+    /// colour around the card so the content isn't flush against the image edges.</summary>
+    private const double Padding = 16.0;
+
     /// <summary>
     /// Renders <paramref name="target"/> and places the bitmap on the clipboard.
     /// Returns <c>true</c> on success; <c>false</c> if rendering or the clipboard
@@ -34,7 +38,7 @@ public static class VisualImageExporter
     {
         try
         {
-            var bitmap = RenderToBitmap(target, Scale, CardSurface);
+            var bitmap = RenderToBitmap(target, Scale, CardSurface, Padding);
             // copy: true persists the bitmap past Mithril's process lifetime — the
             // user can copy, close Mithril, and still paste in Discord. Established
             // Pippin/Legolas share-card pattern.
@@ -49,10 +53,12 @@ public static class VisualImageExporter
 
     /// <summary>
     /// Renders <paramref name="target"/> at <paramref name="scale"/>× over a solid
-    /// <paramref name="background"/> backfill. Factored out from
+    /// <paramref name="background"/> backfill, inset by <paramref name="padding"/>
+    /// device-independent px on every side. Factored out from
     /// <see cref="CopyToClipboard"/> for clarity/reuse.
     /// </summary>
-    public static BitmapSource RenderToBitmap(FrameworkElement target, double scale, Color background)
+    public static BitmapSource RenderToBitmap(
+        FrameworkElement target, double scale, Color background, double padding = 0)
     {
         var width = target.ActualWidth;
         var height = target.ActualHeight;
@@ -71,21 +77,25 @@ public static class VisualImageExporter
         if (width <= 0 || height <= 0)
             throw new InvalidOperationException("Export target has no renderable size.");
 
-        var bounds = new Rect(0, 0, width, height);
+        var canvasWidth = width + 2 * padding;
+        var canvasHeight = height + 2 * padding;
+        var canvasRect = new Rect(0, 0, canvasWidth, canvasHeight);
+        var contentRect = new Rect(padding, padding, width, height);
 
-        // Draw the backfill, then the live visual via a VisualBrush. The brush
-        // references the in-tree element read-only; the rectangle equals its size so
-        // the paint is 1:1 (all upscaling is done by the RenderTargetBitmap DPI).
+        // Fill the whole padded canvas with the backfill, then paint the live visual
+        // via a VisualBrush inset by `padding`. The brush references the in-tree
+        // element read-only; contentRect equals its size so the paint is 1:1 (all
+        // upscaling is done by the RenderTargetBitmap DPI).
         var composed = new DrawingVisual();
         using (var dc = composed.RenderOpen())
         {
-            dc.DrawRectangle(new SolidColorBrush(background), pen: null, bounds);
-            dc.DrawRectangle(new VisualBrush(target), pen: null, bounds);
+            dc.DrawRectangle(new SolidColorBrush(background), pen: null, canvasRect);
+            dc.DrawRectangle(new VisualBrush(target), pen: null, contentRect);
         }
 
         var rtb = new RenderTargetBitmap(
-            (int)Math.Ceiling(width * scale),
-            (int)Math.Ceiling(height * scale),
+            (int)Math.Ceiling(canvasWidth * scale),
+            (int)Math.Ceiling(canvasHeight * scale),
             96 * scale, 96 * scale,
             PixelFormats.Pbgra32);
         rtb.Render(composed);

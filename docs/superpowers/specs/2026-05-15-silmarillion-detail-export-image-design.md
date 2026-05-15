@@ -55,9 +55,9 @@ public static class VisualImageExporter
     public static bool CopyToClipboard(FrameworkElement target);
 
     /// The render half, factored out for clarity/reuse. Backfills `background`
-    /// behind the visual and renders at `scale`× for crisp text.
+    /// behind the visual, inset by `padding` px on every side, at `scale`×.
     public static BitmapSource RenderToBitmap(
-        FrameworkElement target, double scale, Color background);
+        FrameworkElement target, double scale, Color background, double padding = 0);
 }
 ```
 
@@ -76,7 +76,8 @@ Behaviour of `RenderToBitmap`:
 `CopyToClipboard`:
 
 - `scale = 2.0`, `background = #FF1A1A1A` (the detail-card surface colour, matching the
-  window Border so the export looks like the on-screen card).
+  window Border so the export looks like the on-screen card), `padding = 16` px of
+  backfill-coloured breathing room on every side so the card isn't flush to the edges.
 - `Clipboard.SetDataObject(new DataObject(DataFormats.Bitmap, bmp), copy: true)`.
   `copy: true` persists the bitmap past Mithril's process lifetime — established
   Pippin/Legolas pattern; lets the user copy, close Mithril, and still paste in Discord.
