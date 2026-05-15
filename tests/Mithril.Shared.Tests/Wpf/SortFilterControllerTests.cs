@@ -37,9 +37,12 @@ public class SortFilterControllerTests
             capture ?? (_ => { }));
 
     [Fact]
-    public void OnParsedOrderChanged_TwoSpecs_YieldSortDescriptionsInOrder()
+    public void OnParsedOrderChanged_TwoSpecs_AppliesMultiKeySort()
     {
-        var (view, _, _) = CreateRig([new("a", 2), new("b", 1)]);
+        // ORDER BY Value DESC, Name ASC: primary by Value descending, ties broken by
+        // Name ascending. Group items by Value first, then sort within each tier.
+        var items = new[] { new Item("b", 1), new Item("a", 2), new Item("a", 1) };
+        var (view, _, _) = CreateRig(items);
         using var c = Build(view, []);
 
         c.OnParsedOrderChanged(
@@ -48,28 +51,29 @@ public class SortFilterControllerTests
             new OrderSpec("Name", OrderDirection.Ascending),
         ]);
 
-        view.SortDescriptions.Should().HaveCount(2);
-        view.SortDescriptions[0].PropertyName.Should().Be("Value");
-        view.SortDescriptions[0].Direction.Should().Be(ListSortDirection.Descending);
-        view.SortDescriptions[1].PropertyName.Should().Be("Name");
-        view.SortDescriptions[1].Direction.Should().Be(ListSortDirection.Ascending);
+        view.Cast<Item>().Select(x => (x.Name, x.Value)).Should().Equal(
+            ("a", 2), ("a", 1), ("b", 1));
     }
 
     [Fact]
-    public void OnParsedOrderChanged_Empty_ClearsSortDescriptions()
+    public void OnParsedOrderChanged_Empty_ClearsAllSortState()
     {
+        // ORDER BY drives ListCollectionView.CustomSort (not SortDescriptions — the two
+        // are mutex in WPF). Empty order must clear CustomSort *and* leave SortDescriptions
+        // empty so the view is restored to source order.
         var (view, _, _) = CreateRig([]);
         using var c = Build(view, []);
         c.OnParsedOrderChanged([new OrderSpec("Value", OrderDirection.Descending)]);
-        view.SortDescriptions.Should().ContainSingle();
+        view.CustomSort.Should().NotBeNull();
 
         c.OnParsedOrderChanged([]);
 
+        view.CustomSort.Should().BeNull();
         view.SortDescriptions.Should().BeEmpty();
     }
 
     [Fact]
-    public void OnParsedOrderChanged_UnknownColumn_LeavesSortDescriptionsEmpty()
+    public void OnParsedOrderChanged_UnknownColumn_LeavesNoSortState()
     {
         var (view, _, _) = CreateRig([]);
         using var c = Build(view, []);
@@ -77,6 +81,28 @@ public class SortFilterControllerTests
         c.OnParsedOrderChanged([new OrderSpec("NoSuchColumn", OrderDirection.Ascending)]);
 
         view.SortDescriptions.Should().BeEmpty();
+        view.CustomSort.Should().BeNull();
+    }
+
+    [Fact]
+    public void OnParsedOrderChanged_StringKey_NaturalSorts()
+    {
+        // Lycanthropy-style tiered names: lex sort gives "Bite 10" before "Bite 2";
+        // natural sort gives them in the order users expect.
+        var items = new[]
+        {
+            new Item("Bite",    1),
+            new Item("Bite 10", 1),
+            new Item("Bite 11", 1),
+            new Item("Bite 2",  1),
+        };
+        var (view, _, _) = CreateRig(items);
+        using var c = Build(view, []);
+
+        c.OnParsedOrderChanged([new OrderSpec("Name", OrderDirection.Ascending)]);
+
+        view.Cast<Item>().Select(x => x.Name).Should().Equal(
+            "Bite", "Bite 2", "Bite 10", "Bite 11");
     }
 
     [Fact]

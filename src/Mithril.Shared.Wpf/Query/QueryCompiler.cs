@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -635,5 +636,38 @@ public static class QueryCompiler
         // String is IComparable; this catches arbitrary reference types like `object`.
         throw new QueryException(
             $"Column '{binding.Name}' is type {underlying.Name} and is not sortable.", 0);
+    }
+
+    /// <summary>
+    /// Compile a parsed ORDER BY clause to an <see cref="IComparer"/> suitable for
+    /// <see cref="System.Windows.Data.ListCollectionView.CustomSort"/> or
+    /// <c>IEnumerable&lt;T&gt;.OrderBy(x =&gt; (object)x, comparer)</c>. The comparer applies
+    /// <see cref="NaturalStringComparer"/> to string-typed keys (so "Bite 2" &lt; "Bite 10")
+    /// and <see cref="Comparer{T}.Default"/> to everything else.
+    /// </summary>
+    /// <remarks>
+    /// Companion to <see cref="CompileOrder"/>: callers typically use both — the
+    /// <see cref="SortDescription"/>s drive header-arrow chrome on DataGrid /
+    /// chip-state projections, while this <see cref="IComparer"/> drives the actual
+    /// comparison via <c>CustomSort</c>. An empty <paramref name="order"/> list yields
+    /// a no-op comparer that returns 0 for any pair.
+    /// </remarks>
+    public static IComparer<object> CompileOrderComparer(
+        IReadOnlyList<OrderSpec> order,
+        IReadOnlyDictionary<string, ColumnBinding> columns,
+        bool caseSensitive = false)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        ArgumentNullException.ThrowIfNull(columns);
+        var normalized = NormalizeColumns(columns, caseSensitive);
+        // Validate each key the same way CompileOrder does (unknown column, non-sortable).
+        for (int i = 0; i < order.Count; i++)
+        {
+            var binding = ResolveColumn(order[i].Column, normalized);
+            EnsureSortable(binding);
+        }
+        // Concrete type also implements the non-generic IComparer so callers passing the
+        // returned instance to ListCollectionView.CustomSort just cast.
+        return new OrderComparer(order, normalized, caseSensitive);
     }
 }

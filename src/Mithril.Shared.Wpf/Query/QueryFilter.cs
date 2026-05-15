@@ -240,14 +240,27 @@ public static class QueryFilter
                     return true;
                 };
 
+                var lcv = _attachedView as ListCollectionView;
+                if (lcv is not null) lcv.CustomSort = null;
                 _attachedView.SortDescriptions.Clear();
                 if (parsedOrder.Count > 0)
                 {
                     try
                     {
-                        foreach (var sd in QueryCompiler.CompileOrder(parsedOrder, _columns, caseSensitive))
+                        if (lcv is not null)
                         {
-                            _attachedView.SortDescriptions.Add(sd);
+                            // CustomSort drives the actual comparison (natural-sort on strings)
+                            // and clears SortDescriptions implicitly — they're mutex in WPF.
+                            lcv.CustomSort = (System.Collections.IComparer)QueryCompiler.CompileOrderComparer(
+                                parsedOrder, _columns, caseSensitive);
+                        }
+                        else
+                        {
+                            // Non-LCV view: fall back to SortDescriptions (lex on strings).
+                            foreach (var sd in QueryCompiler.CompileOrder(parsedOrder, _columns, caseSensitive))
+                            {
+                                _attachedView.SortDescriptions.Add(sd);
+                            }
                         }
                     }
                     catch (QueryException ex)
@@ -255,6 +268,7 @@ public static class QueryFilter
                         // Filter was already applied above; we accept the half-applied
                         // state because the predicate compiled fine — only the sort failed.
                         SetQueryError(_control, ex.Message);
+                        if (lcv is not null) lcv.CustomSort = null;
                         foreach (var sd in vmSort)
                         {
                             _attachedView.SortDescriptions.Add(sd);

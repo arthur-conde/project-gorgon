@@ -190,6 +190,23 @@ public class QueryableSourceTests
     }
 
     [Fact]
+    public void ApplyOrdered_string_key_natural_sorts()
+    {
+        // Issue #317 repro at the headless surface — same outcome as the WPF surfaces.
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Name";
+        var rows = new[]
+        {
+            new Row2("Bite",     2),
+            new Row2("Bite 11",  125),
+            new Row2("Bite 2",   10),
+            new Row2("Bite 10",  116),
+        };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal(
+            "Bite", "Bite 2", "Bite 10", "Bite 11");
+    }
+
+    [Fact]
     public void ApplyOrdered_works_when_bindings_dict_uses_ordinal_comparer()
     {
         // Build a binding dict with Ordinal comparer (NOT OrdinalIgnoreCase — that's

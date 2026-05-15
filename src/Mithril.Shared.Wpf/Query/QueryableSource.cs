@@ -29,7 +29,6 @@ namespace Mithril.Shared.Wpf.Query;
 public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
 {
     private readonly IReadOnlyDictionary<string, ColumnBinding> _bindings;
-    private Dictionary<string, ColumnBinding> _normalizedBindings;
     private string? _queryText;
     private bool _caseSensitive;
     private Func<T, bool>? _predicate;
@@ -46,19 +45,6 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         _bindings = columns ?? throw new ArgumentNullException(nameof(columns));
         Schema = ColumnBindingHelper.ToSchema(_bindings);
         _caseSensitive = caseSensitive;
-        _normalizedBindings = BuildNormalized(_bindings, _caseSensitive);
-    }
-
-    private static Dictionary<string, ColumnBinding> BuildNormalized(
-        IReadOnlyDictionary<string, ColumnBinding> bindings, bool caseSensitive)
-    {
-        var cmp = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
-        var map = new Dictionary<string, ColumnBinding>(cmp);
-        foreach (var (key, value) in bindings)
-        {
-            map[key] = value;
-        }
-        return map;
     }
 
     public IReadOnlyList<ColumnSchema> Schema { get; }
@@ -82,7 +68,6 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         {
             if (_caseSensitive == value) return;
             _caseSensitive = value;
-            _normalizedBindings = BuildNormalized(_bindings, _caseSensitive);
             OnPropertyChanged();
             Recompile();
         }
@@ -165,28 +150,11 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         {
             return filtered;
         }
-        IOrderedEnumerable<T>? ordered = null;
-        for (int i = 0; i < _order.Count; i++)
-        {
-            var spec = _order[i];
-            // _normalizedBindings is built with the same comparer QueryCompiler uses,
-            // so lookup matches CompileOrder's resolution (case-insensitive by default).
-            var key = _normalizedBindings[spec.Column];
-            Func<T, object?> selector = item => key.GetValue(item!);
-            if (ordered is null)
-            {
-                ordered = spec.Direction == OrderDirection.Ascending
-                    ? filtered.OrderBy(selector, NullSafeComparer.Instance)
-                    : filtered.OrderByDescending(selector, NullSafeComparer.Instance);
-            }
-            else
-            {
-                ordered = spec.Direction == OrderDirection.Ascending
-                    ? ordered.ThenBy(selector, NullSafeComparer.Instance)
-                    : ordered.ThenByDescending(selector, NullSafeComparer.Instance);
-            }
-        }
-        return ordered!;
+        // Single composite comparer: per-key selector + direction + (for string keys)
+        // natural-sort comparer. Routes through the same path the WPF surfaces use via
+        // ListCollectionView.CustomSort.
+        var comparer = QueryCompiler.CompileOrderComparer(_order, _bindings, _caseSensitive);
+        return filtered.OrderBy(item => (object)item!, comparer);
     }
 
     private void Recompile()
@@ -229,20 +197,4 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
 
     private void OnPropertyChanged([CallerMemberName] string? property = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
-
-    private sealed class NullSafeComparer : IComparer<object?>
-    {
-        public static readonly NullSafeComparer Instance = new();
-        public int Compare(object? x, object? y)
-        {
-            if (ReferenceEquals(x, y)) return 0;
-            if (x is null) return -1;
-            if (y is null) return 1;
-            if (x is IComparable xc && x.GetType() == y.GetType()) return xc.CompareTo(y);
-            return string.Compare(
-                System.Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture),
-                System.Convert.ToString(y, System.Globalization.CultureInfo.InvariantCulture),
-                System.StringComparison.OrdinalIgnoreCase);
-        }
-    }
 }
