@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Mithril.Reference.Models.Misc;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
@@ -53,9 +54,11 @@ public sealed class StorageVaultDetailViewModel
         StorageVaultListRow row,
         IReferenceDataService refData,
         IReferenceNavigator navigator,
-        IEntityNameResolver nameResolver)
+        IEntityNameResolver nameResolver,
+        ICommand? openEntityCommand = null)
     {
         Row = row;
+        OpenEntityCommand = openEntityCommand;
         var vault = row.Vault;
         DisplayName = row.DisplayName;
         EnvelopeKey = row.EnvelopeKey;
@@ -116,6 +119,14 @@ public sealed class StorageVaultDetailViewModel
 
     public StorageVaultListRow Row { get; }
     public string DisplayName { get; }
+
+    /// <summary>
+    /// Cross-link navigation command, supplied by the hosting tab. Bound by every
+    /// <see cref="EntityChip"/> in the view (Area, operator NPC, quest-requirement).
+    /// Null when constructed outside the tab (e.g. design-time / unit fixtures) — the
+    /// chips then render as inert, which is the correct degrade.
+    /// </summary>
+    public ICommand? OpenEntityCommand { get; }
 
     /// <summary>
     /// Envelope key (operator NPC internal name, or a <c>"*"</c>-prefixed account-wide
