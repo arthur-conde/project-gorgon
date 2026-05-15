@@ -20,7 +20,19 @@ public sealed class DiscoveredModules(IReadOnlyList<IMithrilModule> modules)
 
 public static class ShellServiceCollectionExtensions
 {
-    public static IServiceCollection AddMithrilModules(this IServiceCollection services)
+    /// <summary>
+    /// Informational version (Nerdbank.GitVersioning <c>X.Y.Z.N+sha</c>) of an
+    /// assembly, falling back to the plain assembly version. Used for the
+    /// shell/module version dump in boot.log so a stale or mismatched module
+    /// is visible at a glance.
+    /// </summary>
+    internal static string InformationalVersion(this Assembly asm) =>
+        asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? asm.GetName().Version?.ToString()
+        ?? "unknown";
+
+    public static IServiceCollection AddMithrilModules(
+        this IServiceCollection services, Action<string>? log = null)
     {
         var modulesDir = Path.Combine(AppContext.BaseDirectory, "modules");
         var modules = new List<IMithrilModule>();
@@ -49,6 +61,8 @@ public static class ShellServiceCollectionExtensions
         {
             module.Register(services);
             services.AddSingleton<IMithrilModule>(module);
+            var asm = module.GetType().Assembly;
+            log?.Invoke($"module loaded: {module.Id} [{asm.GetName().Name}] {asm.InformationalVersion()}");
         }
 
         services.AddSingleton(new DiscoveredModules(modules));
