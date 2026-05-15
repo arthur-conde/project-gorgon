@@ -579,6 +579,33 @@ public interface IReferenceDataService
     private static readonly IReadOnlyDictionary<string, LorebookCategoryInfo> EmptyLorebookCategoryMap
         = new Dictionary<string, LorebookCategoryInfo>(StringComparer.Ordinal);
 
+    // ── Player titles (#248) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Player-title envelope key (e.g. <c>"Title_5018"</c>) → <see cref="PlayerTitle"/>
+    /// POCO from <c>playertitles.json</c> (~679 entries). The envelope key is the only
+    /// identifier the POCO carries — there is no separate InternalName, so the kind
+    /// target's selection contract is the <c>"Title_N"</c> envelope key itself (matches
+    /// the existing <see cref="EntityRef.PlayerTitle(string)"/> factory). Defaults to
+    /// empty so test fakes don't need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, PlayerTitle> PlayerTitles => EmptyPlayerTitleMap;
+
+    private static readonly IReadOnlyDictionary<string, PlayerTitle> EmptyPlayerTitleMap
+        = new Dictionary<string, PlayerTitle>(StringComparer.Ordinal);
+
+    // NOTE (#248): no QuestsAwardingTitle reverse index. Quests do grant titles
+    // (Rewards_Effects "BestowTitle(<arg>)", 17 occurrences in bundled quests.json),
+    // but the BestowTitle argument is a free-form slug in a *different namespace*
+    // (e.g. "Warsmith", "ScionOfPaullus", "Event_DidMyPart") with no structured key
+    // relationship to the "Title_N" envelope keys — the PlayerTitle POCO carries no
+    // matching identifier. Linking them would require a lossy
+    // strip-colour→strip-punctuation→fuzzy-compare heuristic against a sometimes-
+    // prefixed slug, i.e. exactly the synthesised linkage #248 forbids. So the
+    // "Quests awarding this title" popup-from-index surface is intentionally NOT
+    // built; no index, no Gate-C test (the test is merge-blocking only IF the popup
+    // ships). See the PR body for the data finding.
+
     /// <summary>
     /// All localizable strings from <c>strings_all.json</c>, keyed by their
     /// dotted/slashed string ID. Primary use today is friendly-name resolution

@@ -1,0 +1,95 @@
+<UserControl x:Class="Silmarillion.Views.PlayerTitleDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:PlayerTitleDetailViewModel}"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <DockPanel>
+            <!-- Footer: "Title_5018" — mono, bottom-right, per the detail-view
+                 internal-name footer convention. The POCO carries no InternalName,
+                 so the footer is just the single envelope key. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding FooterText}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       Margin="0,12,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
+
+            <StackPanel>
+                <!-- ─── Header: clean title ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeXLarge}"
+                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- ─── Scope / obtainability badges ───
+                     Account-wide / Soul-wide only render when true (false/null
+                     default is noise). "Not currently obtainable" flags the
+                     Lint_* dev/non-earnable family without hiding it. -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <Border Background="#222E7D32" BorderBrush="#664CAF50" BorderThickness="1"
+                            CornerRadius="3" Padding="6,2" Margin="0,0,6,0"
+                            Visibility="{Binding AccountWide, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Account-wide" Foreground="#FF81C784"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </Border>
+                    <Border Background="#22283593" BorderBrush="#665C6BC0" BorderThickness="1"
+                            CornerRadius="3" Padding="6,2" Margin="0,0,6,0"
+                            Visibility="{Binding SoulWide, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Soul-wide" Foreground="#FF9FA8DA"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </Border>
+                    <Border Background="#22B71C1C" BorderBrush="#66E57373" BorderThickness="1"
+                            CornerRadius="3" Padding="6,2"
+                            Visibility="{Binding IsNotObtainable, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Not currently obtainable" Foreground="#FFE57373"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- ─── How to earn ─── -->
+                <Border Margin="0,0,0,10">
+                    <Grid>
+                        <TextBlock wpf:FormattedText.Text="{Binding Tooltip}"
+                                   Foreground="#EEFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeLarge}"
+                                   TextWrapping="Wrap" LineHeight="22"
+                                   Visibility="{Binding HasTooltip, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="No description of how this title is earned."
+                                   Foreground="#88FFFFFF" FontStyle="Italic"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasTooltip}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

@@ -40,6 +40,9 @@
             <DataTemplate DataType="{x:Type vm:LorebooksTabViewModel}">
                 <local:LorebooksTabView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:PlayerTitlesTabViewModel}">
+                <local:PlayerTitlesTabView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
     <UserControl.InputBindings>
