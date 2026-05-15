@@ -145,16 +145,15 @@ public class SkillAdvisorViewModelTests
             characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
             register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
 
-        // No persisted settings → default seed.
+        // No persisted settings → default seed. The ORDER BY clause drives
+        // ListCollectionView.CustomSort (not SortDescriptions, which are mutex with
+        // CustomSort in WPF). Inspect CustomSort instead.
         vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC");
-        vm.RecipesView.SortDescriptions.Should().ContainSingle();
-        vm.RecipesView.SortDescriptions[0].PropertyName.Should().Be("EffectiveXp");
-        vm.RecipesView.SortDescriptions[0].Direction
-            .Should().Be(System.ComponentModel.ListSortDirection.Descending);
+        ((System.Windows.Data.ListCollectionView)vm.RecipesView).CustomSort.Should().NotBeNull();
     }
 
     [Fact]
-    public void SettingQueryText_DrivesSortDescriptions()
+    public void SettingQueryText_DrivesCustomSort()
     {
         var (vm, _, _, _) = MakeFixture(
             characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
@@ -162,10 +161,7 @@ public class SkillAdvisorViewModelTests
 
         vm.QueryText = "ORDER BY RecipeName";
 
-        vm.RecipesView.SortDescriptions.Should().ContainSingle();
-        vm.RecipesView.SortDescriptions[0].PropertyName.Should().Be("RecipeName");
-        vm.RecipesView.SortDescriptions[0].Direction
-            .Should().Be(System.ComponentModel.ListSortDirection.Ascending);
+        ((System.Windows.Data.ListCollectionView)vm.RecipesView).CustomSort.Should().NotBeNull();
         vm.QueryError.Should().BeNull();
     }
 
@@ -224,14 +220,16 @@ public class SkillAdvisorViewModelTests
             register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
 
         vm.QueryText = "ORDER BY RecipeName";
-        vm.RecipesView.SortDescriptions.Should().ContainSingle();
+        var lcv = (System.Windows.Data.ListCollectionView)vm.RecipesView;
+        var goodSort = lcv.CustomSort;
+        goodSort.Should().NotBeNull();
 
         vm.QueryText = "LevelRequired >>> 5";   // malformed
 
         vm.QueryError.Should().NotBeNull();
-        // Previous sort retained — controller never received a new parsed order.
-        vm.RecipesView.SortDescriptions.Should().ContainSingle()
-            .Which.PropertyName.Should().Be("RecipeName");
+        // Previous sort retained — controller never received a new parsed order, so
+        // CustomSort is unchanged.
+        lcv.CustomSort.Should().BeSameAs(goodSort);
     }
 
     [Fact]

@@ -136,8 +136,12 @@ public class QueryFilterTests
     }
 
     [Fact]
-    public void Order_clause_writes_sort_descriptions()
+    public void Order_clause_applies_sort_via_custom_sort()
     {
+        // ORDER BY drives ListCollectionView.CustomSort (so string keys natural-sort);
+        // SortDescriptions becomes empty as a side effect (WPF mutex). Verify the
+        // observable behavior — the view is sorted in the requested order — rather
+        // than the internal SortDescriptions state.
         RunOnSta(() =>
         {
             var rows = new ObservableCollection<Row>(Dataset);
@@ -145,9 +149,8 @@ public class QueryFilterTests
             QueryFilter.SetQueryText(listBox, "ORDER BY Samples DESC");
             QueryFilter.ForceAttachForTests(listBox);
 
-            var view = CollectionViewSource.GetDefaultView(rows);
-            view.SortDescriptions.Should().ContainSingle()
-                .Which.Should().BeEquivalentTo(new SortDescription("Samples", ListSortDirection.Descending));
+            var view = (ListCollectionView)CollectionViewSource.GetDefaultView(rows);
+            view.CustomSort.Should().NotBeNull();
             view.Cast<Row>().Select(r => r.Samples).Should().BeInDescendingOrder();
         });
     }
@@ -171,24 +174,52 @@ public class QueryFilterTests
     }
 
     [Fact]
+    public void Order_by_string_column_natural_sorts()
+    {
+        // Repro for issue #317: tiered ability names like "Bite", "Bite 2", …, "Bite 11"
+        // would lex-sort to ["Bite", "Bite 10", "Bite 11", "Bite 2"]. Natural-sort
+        // comparison restores the obvious order.
+        RunOnSta(() =>
+        {
+            var rows = new ObservableCollection<Row>(new[]
+            {
+                new Row("Bite",     2,   true),
+                new Row("Bite 11",  125, true),
+                new Row("Bite 2",   10,  true),
+                new Row("Bite 10",  116, true),
+            });
+            var listBox = new ListBox { ItemsSource = rows };
+            QueryFilter.SetQueryText(listBox, "ORDER BY Crop");
+            QueryFilter.ForceAttachForTests(listBox);
+
+            var view = CollectionViewSource.GetDefaultView(rows);
+            view.Cast<Row>().Select(r => r.Crop).Should().Equal(
+                "Bite", "Bite 2", "Bite 10", "Bite 11");
+        });
+    }
+
+    [Fact]
     public void Vm_set_sort_descriptions_restored_on_detach()
     {
         RunOnSta(() =>
         {
             var rows = new ObservableCollection<Row>(Dataset);
             var listBox = new ListBox { ItemsSource = rows };
-            var view = CollectionViewSource.GetDefaultView(rows);
+            var view = (ListCollectionView)CollectionViewSource.GetDefaultView(rows);
             view.SortDescriptions.Add(new SortDescription("Crop", ListSortDirection.Ascending));
 
             QueryFilter.ForceAttachForTests(listBox);
             QueryFilter.SetQueryText(listBox, "ORDER BY Samples DESC");
             QueryFilter.FlushPendingRebuildForTests(listBox);
 
-            view.SortDescriptions.Should().ContainSingle()
-                .Which.PropertyName.Should().Be("Samples");
+            // Mid-attach: ORDER BY drives CustomSort; SortDescriptions is empty because
+            // the two are mutex in ListCollectionView. Check the visible sort instead.
+            view.CustomSort.Should().NotBeNull();
+            view.Cast<Row>().Select(r => r.Samples).Should().BeInDescendingOrder();
 
             QueryFilter.ForceDetachForTests(listBox);
 
+            view.CustomSort.Should().BeNull("Detach restores the VM's SortDescriptions baseline");
             view.SortDescriptions.Should().ContainSingle()
                 .Which.PropertyName.Should().Be("Crop");
             view.Cast<Row>().Select(r => r.Crop).Should().BeInAscendingOrder();

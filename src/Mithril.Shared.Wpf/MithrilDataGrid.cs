@@ -445,20 +445,68 @@ public class MithrilDataGrid : DataGrid
         var order = parsed?.Order ?? Array.Empty<OrderSpec>();
         try
         {
-            var descs = QueryCompiler.CompileOrder(order, _columns, FilterCaseSensitive);
+            // Validate the order eagerly so QueryException surfaces here before we touch the view.
+            var comparer = order.Count > 0
+                ? (System.Collections.IComparer)QueryCompiler.CompileOrderComparer(order, _columns, FilterCaseSensitive)
+                : null;
             using (view.DeferRefresh())
             {
-                view.SortDescriptions.Clear();
-                foreach (var sd in descs)
+                if (view is ListCollectionView lcv)
                 {
-                    view.SortDescriptions.Add(sd);
+                    // Setting CustomSort clears SortDescriptions (they're mutex in WPF) — that's
+                    // why we drive header-arrow chrome manually via DataGridColumn.SortDirection
+                    // below instead of seeding SortDescriptions.
+                    lcv.CustomSort = comparer;
+                }
+                else
+                {
+                    // Non-LCV view: fall back to SortDescriptions (lex on strings; rare path).
+                    view.SortDescriptions.Clear();
+                    foreach (var sd in QueryCompiler.CompileOrder(order, _columns, FilterCaseSensitive))
+                    {
+                        view.SortDescriptions.Add(sd);
+                    }
                 }
             }
+            ApplyColumnSortDirections(order);
         }
         catch (QueryException)
         {
             // Column resolution error already surfaces via the predicate-side error UI.
-            // Leave SortDescriptions untouched to avoid losing the prior good sort.
+            // Leave existing sort state untouched to avoid losing the prior good sort.
+        }
+    }
+
+    /// <summary>
+    /// Drive each <see cref="DataGridColumn.SortDirection"/> from the parsed
+    /// <see cref="OrderSpec"/> list so header arrows render even though the view's
+    /// <see cref="ICollectionView.SortDescriptions"/> is empty (because the sort
+    /// is being applied via <see cref="ListCollectionView.CustomSort"/>, which is
+    /// mutex with <c>SortDescriptions</c>).
+    /// </summary>
+    private void ApplyColumnSortDirections(IReadOnlyList<OrderSpec> order)
+    {
+        if (Columns.Count == 0) return;
+        foreach (var col in Columns)
+        {
+            var member = col.SortMemberPath ?? GetQueryName(col);
+            if (string.IsNullOrEmpty(member))
+            {
+                col.SortDirection = null;
+                continue;
+            }
+            ListSortDirection? direction = null;
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (string.Equals(order[i].Column, member, StringComparison.OrdinalIgnoreCase))
+                {
+                    direction = order[i].Direction == OrderDirection.Ascending
+                        ? ListSortDirection.Ascending
+                        : ListSortDirection.Descending;
+                    break;
+                }
+            }
+            col.SortDirection = direction;
         }
     }
 

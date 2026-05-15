@@ -57,18 +57,32 @@ public sealed class SortFilterController<T> : IDisposable, INotifyPropertyChange
 
         using (_view.DeferRefresh())
         {
+            var lcv = _view as ListCollectionView;
+            if (lcv is not null) lcv.CustomSort = null;
             _view.SortDescriptions.Clear();
+            if (_currentOrder.Count == 0) { RecomputeChips(); return; }
             try
             {
-                foreach (var sd in QueryCompiler.CompileOrder(_currentOrder, _columns))
+                if (lcv is not null)
                 {
-                    _view.SortDescriptions.Add(sd);
+                    // CustomSort drives the actual comparison (natural-sort on strings) and
+                    // clears SortDescriptions implicitly — they're mutex in WPF. Chip state
+                    // is computed from _currentOrder so it's unaffected.
+                    lcv.CustomSort = (System.Collections.IComparer)QueryCompiler.CompileOrderComparer(_currentOrder, _columns);
+                }
+                else
+                {
+                    foreach (var sd in QueryCompiler.CompileOrder(_currentOrder, _columns))
+                    {
+                        _view.SortDescriptions.Add(sd);
+                    }
                 }
             }
             catch (QueryException)
             {
-                // Bad column name: leave descriptors empty; the predicate-side error
+                // Bad column name: leave sort state empty; the predicate-side error
                 // surface (query-box error chrome) shows the diagnostic.
+                if (lcv is not null) lcv.CustomSort = null;
             }
         }
         RecomputeChips();
