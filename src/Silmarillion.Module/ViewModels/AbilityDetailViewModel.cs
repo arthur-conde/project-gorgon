@@ -232,21 +232,22 @@ public sealed class AbilityDetailViewModel
                 gateValues.Add(kw);
                 continue;
             }
-            // #318 slice 4: EntityKind.ItemKeyword (the recipe-detail fan-out kind) was
-            // retired (surface 3). This is a *single-keyword* Items filter pivot, a
-            // legitimate 1:1 per the #318 chip-vs-popup rule — but its backing kind is
-            // gone and the symmetric Items-keyword pivot (the twin of the surviving
-            // RecipeIngredientKeyword) is not yet built. Until it is, this degrades to a
-            // non-navigable plain-text chip (the keyword is still shown — no information
-            // loss, no dead-click). The Reference is an inert carrier: EntityChip does
-            // not wire the click when IsNavigable is false. Follow-up: an Items-side
-            // single-keyword filter-pivot kind (out of scope for surface 3 — one
-            // surface, one PR).
+            // #327: single-keyword Items filter pivot (1:1 per the #318 chip-vs-popup
+            // rule — one tag → "open the Items tab filtered to this keyword"). Restored
+            // via EntityKind.ItemByKeyword (the symmetric Items-side twin of EffectKeyword),
+            // NOT the retired #270 ItemKeyword recipe-slot fan-out kind. #326 had degraded
+            // this to non-navigable plain text when the double-duty ItemKeyword kind was
+            // retired for its fan-out use. NOTE: #332 separately owes partitioning the
+            // HasHands/Unarmed hand-state pseudo-keywords out of this array — they match
+            // zero items so they pivot to an empty list. That pre-existing data-
+            // classification defect is intentionally NOT fixed here (#327 is navigation-
+            // mechanism only); restoring navigability re-exposes it as expected.
+            var reference = EntityRef.ItemByKeyword(kw);
             chips.Add(new EntityChipVm(
                 DisplayName: kw,
                 IconId: 0,
-                Reference: EntityRef.Item(kw),
-                IsNavigable: false));
+                Reference: reference,
+                IsNavigable: navigator.CanOpen(reference)));
         }
 
         if (gateValues.Count == 0) return (chips, []);
@@ -408,7 +409,7 @@ public sealed class AbilityDetailViewModel
 
     /// <summary>
     /// Build ammo-keyword chip rows. Each row holds an <see cref="EntityChipVm"/> keyed by
-    /// <see cref="EntityRef.ItemKeyword(string)"/> — not <see cref="EntityRef.Item(string)"/> —
+    /// <see cref="EntityRef.ItemByKeyword(string)"/> — not <see cref="EntityRef.Item(string)"/> —
     /// because the JSON field (<c>"DenseArrow1"</c>, <c>"SporeBomb1"</c>) is a *keyword* that
     /// matches multiple ammo items at that tier, so the chip opens the Items tab filtered by
     /// <c>Keywords CONTAINS</c> rather than landing on a single item.
@@ -434,18 +435,18 @@ public sealed class AbilityDetailViewModel
         {
             if (a is null) continue;
             var keyword = a.ItemKeyword ?? "(any)";
-            // #318 slice 4: EntityKind.ItemKeyword retired (surface 3 — recipe-detail
-            // fan-out → popup). This ammo-keyword chip is a single-keyword Items filter
-            // pivot (legitimate 1:1 per the #318 rule) but its backing kind is gone and
-            // the symmetric Items-keyword pivot isn't built yet — degrade to a
-            // non-navigable plain-text chip (keyword still shown; inert Reference since
-            // EntityChip skips the click when IsNavigable is false). Follow-up owed:
-            // Items-side single-keyword filter-pivot kind (out of scope here).
+            // #327: ammo-keyword chip is a single-keyword Items filter pivot (1:1 per the
+            // #318 chip-vs-popup rule — the JSON field is a *keyword* matching multiple
+            // ammo items at a tier, so the chip opens the Items tab filtered by
+            // Keywords CONTAINS rather than landing on one item). Restored via the
+            // symmetric EntityKind.ItemByKeyword (NOT the retired #270 ItemKeyword fan-out
+            // kind); #326 had degraded it to non-navigable plain text.
+            var reference = EntityRef.ItemByKeyword(keyword);
             var chip = new EntityChipVm(
                 DisplayName: useDescriptionAsLabel ? ammoDescription! : keyword,
                 IconId: 0,
-                Reference: EntityRef.Item(keyword),
-                IsNavigable: false);
+                Reference: reference,
+                IsNavigable: navigator.CanOpen(reference));
             list.Add(new AbilityAmmoKeywordRow(Chip: chip, Count: a.Count));
         }
         return list;

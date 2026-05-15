@@ -115,9 +115,11 @@ public sealed class SilmarillionModule : IMithrilModule
         // RecipesByIngredientKeywordWithReason directly (no synthetic-kind deep link /
         // query re-derivation).
         // ItemKeywordKindTarget retired in #318 slice 4 (surface 3) — the recipe-detail
-        // keyword surface is now a provenance popup fed
+        // keyword *fan-out* surface is now a provenance popup fed
         // ItemsByRecipeKeywordSlotWithReason directly (no synthetic-kind deep link /
-        // query re-derivation).
+        // query re-derivation). Its double-duty single-keyword 1:1 filter-pivot use is
+        // NOT a fan-out and was restored in #327 as the distinct ItemByKeyword kind
+        // (registered below, next to its EffectKeyword twin).
         // RecipeIngredientItemKindTarget retired in #318 slice 4 (surface 1) — the Items
         // "Used in" 1:N surface is now a provenance popup fed
         // RecipesByIngredientItemWithReason directly (no synthetic-kind deep link / query
@@ -127,6 +129,12 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectKeywordKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        // #327: symmetric Items-side single-keyword filter pivot (1:1, not a fan-out —
+        // distinct from the retired #270 ItemKeyword recipe-slot fan-out kind). Restores
+        // navigability to the Ability-detail / NPCs-tab keyword chips degraded in #326.
+        services.AddSingleton<IReferenceKindTarget>(sp => new ItemByKeywordKindTarget(
+            sp.GetRequiredService<ItemsTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectByStackingTypeKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),

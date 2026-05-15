@@ -13,11 +13,34 @@ public class EntityRefTests
 
     // EntityRef.ItemKeyword(string) / ItemKeyword(IReadOnlyList<string>) +
     // EntityKind.ItemKeyword were retired in #318 slice 4 (surface 3 — the recipe-detail
-    // keyword surface is now a provenance popup fed
+    // keyword *fan-out* surface is now a provenance popup fed
     // IReferenceDataService.ItemsByRecipeKeywordSlotWithReason directly). Their factory
     // tests are removed with them; SilmarillionDeepLinkHandler's generic
     // Enum.TryParse<EntityKind> now rejects the "ItemKeyword" route name (covered by the
-    // deep-link handler tests).
+    // deep-link handler tests). #327 added the distinct EntityKind.ItemByKeyword /
+    // EntityRef.ItemByKeyword for the legitimate single-keyword 1:1 *filter pivot* (NOT
+    // a re-add of the retired fan-out kind) — covered below.
+
+    [Fact]
+    public void ItemByKeyword_factory_carries_the_tag_as_internal_name()
+    {
+        var reference = EntityRef.ItemByKeyword("Sword");
+
+        reference.Kind.Should().Be(EntityKind.ItemByKeyword);
+        reference.InternalName.Should().Be("Sword");
+    }
+
+    [Fact]
+    public void Retired_ItemKeyword_fanout_kind_stays_dead_while_ItemByKeyword_is_the_distinct_pivot_kind()
+    {
+        // #327 deliberately uses a different name (ItemByKeyword) so the #326 retirement
+        // of the fan-out "ItemKeyword" route name is NOT silently reversed. If a future
+        // change re-adds "ItemKeyword", the deep-link rejection lock breaks — pin both.
+        Enum.TryParse<EntityKind>("ItemKeyword", ignoreCase: true, out _).Should().BeFalse();
+        Enum.GetNames<EntityKind>().Should().NotContain("ItemKeyword");
+        Enum.TryParse<EntityKind>("ItemByKeyword", ignoreCase: true, out var k).Should().BeTrue();
+        k.Should().Be(EntityKind.ItemByKeyword);
+    }
 
     // EntityRef.RecipeIngredientItem / EntityKind.RecipeIngredientItem were retired in
     // #318 slice 4 (the Items "Used in" 1:N surface is now a provenance popup fed
