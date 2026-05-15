@@ -1,0 +1,170 @@
+<Window x:Class="Mithril.Shared.Wpf.ProvenancePopupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mithril.Shared.Wpf"
+        xmlns:local="clr-namespace:Mithril.Shared.Wpf"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance c:ProvenancePopupViewModel}"
+        Title="{Binding Title}"
+        SizeToContent="WidthAndHeight"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        FontFamily="{DynamicResource AppFontFamily}"
+        FontSize="{DynamicResource AppFontSize}">
+    <!-- Shared 1:N provenance popup (#318). Renders membership AND provenance for a
+         reverse-lookup relationship, fed the source index collection directly. Opened
+         via Window.Show() and never touches IReferenceNavigator, so by construction it
+         pushes NO back/forward history (same non-navigating contract as every
+         IReferenceKindTarget.TryOpenInWindow detail window). -->
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Section chip-list. Vertical single-column list of EntityChips. Virtualized
+                 with a recycling VirtualizingStackPanel: high-cardinality precedent is the
+                 #259 Massive Tourmaline ~547-row case. The VirtualizingWrapPanel NuGet is
+                 for variable-WIDTH wrap virtualization; these are single-column vertical
+                 lists, so a recycling virtualizing stack is the right primitive (and the
+                 in-repo MithrilVirtualizingWrapPanel is sunset per project memory). -->
+            <Style x:Key="ProvenanceChipListStyle" TargetType="ItemsControl">
+                <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+                <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True"/>
+                <Setter Property="VirtualizingStackPanel.VirtualizationMode" Value="Recycling"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ItemsControl">
+                            <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+                                <ItemsPresenter/>
+                            </ScrollViewer>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="ItemsPanel">
+                    <Setter.Value>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Orientation="Vertical"/>
+                        </ItemsPanelTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="ItemTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <c:EntityChip ClickCommand="{Binding DataContext.ChipClickCommand,
+                                              RelativeSource={RelativeSource AncestorType={x:Type local:ProvenancePopupWindow}}}"/>
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6"
+            MinWidth="360" MaxWidth="560" MaxHeight="640">
+        <DockPanel>
+            <!-- Title bar: draggable, distinct-count subtitle, close. -->
+            <Border DockPanel.Dock="Top" Background="#FF202020" CornerRadius="6,6,0,0"
+                    Padding="14,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Width="24" Height="24" Padding="0"
+                            Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            ToolTip="Close" Click="CloseButton_Click">
+                        <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
+                    </Button>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}"
+                                   FontFamily="{DynamicResource AppHeaderFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeXLarge}"
+                                   Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                        <TextBlock Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   Margin="0,2,0,0">
+                            <Run Text="{Binding TotalCount, Mode=OneWay}"/><Run Text=" total"/>
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <Border Padding="14,12">
+                <Grid>
+                    <!-- Flat (single-reason) path: no section chrome. A lone trivial
+                         reason is noise per #318 Discipline. -->
+                    <ItemsControl ItemsSource="{Binding FlatChips}"
+                                  Style="{StaticResource ProvenanceChipListStyle}"
+                                  MaxHeight="560"
+                                  Visibility="{Binding IsFlat, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Sectioned (multi-reason) path: reason header + optional To-Query
+                         affordance per section, then the section's chips. -->
+                    <ItemsControl ItemsSource="{Binding Sections}">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFlat}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.Template>
+                            <ControlTemplate TargetType="ItemsControl">
+                                <ScrollViewer Focusable="False"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              MaxHeight="560">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type c:ProvenancePopupSection}">
+                                <StackPanel Margin="0,0,0,12">
+                                    <DockPanel Margin="0,0,0,4">
+                                        <!-- Per-section To-Query button. Hidden unless the
+                                             host wired both a command and a projection token
+                                             (effect->abilities ships without it this PR). -->
+                                        <Button DockPanel.Dock="Right"
+                                                Content="To Query"
+                                                Command="{Binding DataContext.ToQueryCommand,
+                                                          RelativeSource={RelativeSource AncestorType={x:Type local:ProvenancePopupWindow}}}"
+                                                CommandParameter="{Binding QueryProjection}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource MithrilToolbarButtonStyle}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding DataContext.HasToQuery,
+                                                                     RelativeSource={RelativeSource AncestorType={x:Type local:ProvenancePopupWindow}}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                        <TextBlock Text="{Binding Label}"
+                                                   FontWeight="SemiBold" Foreground="#88FFFFFF"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <ItemsControl ItemsSource="{Binding Chips}"
+                                                  Style="{StaticResource ProvenanceChipListStyle}"
+                                                  MaxHeight="320"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </DockPanel>
+    </Border>
+</Window>

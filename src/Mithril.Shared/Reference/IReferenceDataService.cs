@@ -378,8 +378,9 @@ public interface IReferenceDataService
     /// display name that would otherwise pollute the on-detail chip cluster.
     /// </para>
     /// Built whenever <c>abilities.json</c> or <c>effects.json</c> reloads. Powers the
-    /// on-detail "Required by abilities" section and the <c>EntityKind.AbilityByEffectKeyword</c>
-    /// overflow-pill deep-link. Defaults to empty so test fakes don't need to opt in.
+    /// on-detail "Required by abilities" chip cluster and the "View all N" provenance
+    /// popup that replaced the retired <c>AbilityByEffectKeyword</c> synthetic deep-link
+    /// (#318). Defaults to empty so test fakes don't need to opt in.
     /// <para>
     /// Each value member is an <see cref="EffectAbilityMatch"/> carrying the qualifying
     /// <see cref="Ability"/> <b>and</b> the <see cref="EffectAbilityMatchReason"/> flags

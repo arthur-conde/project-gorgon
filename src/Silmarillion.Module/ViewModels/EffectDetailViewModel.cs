@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Abilities;
 using Mithril.Reference.Models.Misc;
 using Mithril.Shared.Reference;
@@ -18,12 +19,34 @@ namespace Silmarillion.ViewModels;
 /// <see cref="IReferenceDataService.AbilityDynamicDots"/> and
 /// <see cref="IReferenceDataService.AbilityDynamicSpecialValues"/>, stacks-with cluster
 /// (other effects sharing <see cref="PocoEffect.StackingType"/>), required-by-abilities
-/// cluster with cap + overflow pill, procs-from-abilities-with-keyword rows, and a
-/// SpewText footer.
+/// cluster with cap + a "View all N" provenance-popup affordance,
+/// procs-from-abilities-with-keyword rows, and a SpewText footer.
+/// </para>
+/// <para>
+/// <b>#318 — effect&#8594;abilities is the migrated 1:N surface.</b> The "View all N"
+/// affordance no longer deep-links via the retired <c>AbilityByEffectKeyword</c>
+/// synthetic kind (which re-derived the set from one of three unioned fields and
+/// silently diverged — 23 of 24 tags hit an empty list). It opens a
+/// <see cref="ProvenancePopupViewModel"/> fed
+/// <see cref="IReferenceDataService.AbilitiesByEffectKeyword"/> directly, sectioned by
+/// <see cref="EffectAbilityMatchReason"/>. The set is materialized once, in the index,
+/// retaining provenance — there is no second derivation, so the bug class is dissolved
+/// (see <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
 /// </para>
 /// </summary>
 public sealed class EffectDetailViewModel
 {
+    /// <summary>
+    /// Host-supplied opener for the required-by-abilities provenance popup. Defaults to
+    /// <see cref="ShowProvenancePopupWindow"/> (creates + <c>Show()</c>s a
+    /// <see cref="ProvenancePopupWindow"/>). Tests swap in a capturing delegate so the VM
+    /// is fully assertable without spawning a window. Opening the popup this way never
+    /// calls <c>IReferenceNavigator</c>, so it pushes no back/forward history — same
+    /// non-navigating contract as <c>IReferenceKindTarget.TryOpenInWindow</c>.
+    /// </summary>
+    public static Action<ProvenancePopupViewModel, ICommand?> ProvenancePopupOpener { get; set; }
+        = ShowProvenancePopupWindow;
+
     public EffectDetailViewModel(
         PocoEffect effect,
         string envelopeKey,
@@ -44,15 +67,23 @@ public sealed class EffectDetailViewModel
         ConditionalDotRows = BuildConditionalDotRows(effect, refData);
         ConditionalSpecialValueRows = BuildConditionalSpecialValueRows(effect, refData);
         StackingTypeChip = BuildStackingTypeChip(effect, envelopeKey, refData, navigator);
-        var (chips, shortcut) = BuildRequiredByAbilityChips(effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
+        var (chips, total, popup) = BuildRequiredByAbilities(
+            effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
         RequiredByAbilityChips = chips;
-        RequiredByAbilitiesTabShortcut = shortcut;
+        RequiredByAbilitiesTotal = total;
+        RequiredByAbilitiesPopup = popup;
         ProcsFromAbilityKeywordRows = BuildProcsFromAbilityKeywordRows(effect.AbilityKeywords);
 
         SpewText = string.IsNullOrEmpty(effect.SpewText) ? null : effect.SpewText;
 
         OpenEntityCommand = openEntityCommand;
+        ShowRequiredByAbilitiesPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(RequiredByAbilitiesPopup!, OpenEntityCommand),
+            () => RequiredByAbilitiesPopup is not null);
     }
+
+    private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
+        new ProvenancePopupWindow { DataContext = vm, ChipClickCommand = chipClick }.Show();
 
     public PocoEffect Effect { get; }
     public string EnvelopeKey { get; }
@@ -96,14 +127,29 @@ public sealed class EffectDetailViewModel
     public IReadOnlyList<EntityChipVm> RequiredByAbilityChips { get; }
 
     /// <summary>
-    /// Always-visible navigable summary chip rendered after the capped
-    /// <see cref="RequiredByAbilityChips"/>. Non-null whenever the effect is required by
-    /// any ability (independent of <c>SilmarillionSettings.RequiredByAbilitiesChipCap</c>).
-    /// Anchored on <see cref="EntityRef.AbilityByEffectKeyword"/> so clicking opens the
-    /// Abilities tab filtered by <c>EffectKeywordReqs CONTAINS "&lt;tag&gt;"</c>; rendered
-    /// as <c>ActionChip</c>.
+    /// Distinct count of abilities related to this effect (membership of
+    /// <see cref="IReferenceDataService.AbilitiesByEffectKeyword"/> across the effect's
+    /// keywords, multi-reason members counted once). Drives the "View all N →" label.
+    /// 0 ⇒ no relationship and the whole section hides.
     /// </summary>
-    public EntityChipVm? RequiredByAbilitiesTabShortcut { get; }
+    public int RequiredByAbilitiesTotal { get; }
+
+    /// <summary>
+    /// The provenance popup VM opened by <see cref="ShowRequiredByAbilitiesPopupCommand"/>,
+    /// or <see langword="null"/> when no ability relates to this effect. Built from the
+    /// index directly (membership + provenance), sectioned by
+    /// <see cref="EffectAbilityMatchReason"/>; single-reason collapses to a flat list. This
+    /// replaces the retired <c>AbilityByEffectKeyword</c> synthetic-kind deep link — there
+    /// is no query re-derivation, so the displayed set cannot diverge from the index.
+    /// </summary>
+    public ProvenancePopupViewModel? RequiredByAbilitiesPopup { get; }
+
+    /// <summary>
+    /// Opens <see cref="RequiredByAbilitiesPopup"/> via <see cref="ProvenancePopupOpener"/>.
+    /// Bound to the always-visible "View all N →" affordance. The popup is a window shown
+    /// directly — opening it pushes no navigator history (#229 contract).
+    /// </summary>
+    public ICommand ShowRequiredByAbilitiesPopupCommand { get; }
 
     public IReadOnlyList<EffectProcsFromAbilityKeywordRow> ProcsFromAbilityKeywordRows { get; }
     public string? SpewText { get; }
@@ -273,83 +319,117 @@ public sealed class EffectDetailViewModel
     }
 
     /// <summary>
-    /// Build the cap-limited "Required by abilities" chip list plus an always-visible
-    /// navigable summary chip (the shortcut into the filtered Abilities tab). Reads the
-    /// union of <c>AbilitiesByEffectKeyword[tag]</c> across every tag in
+    /// Build the cap-limited "Required by abilities" chip cluster, the distinct member
+    /// count, and the provenance popup VM — all from
+    /// <see cref="IReferenceDataService.AbilitiesByEffectKeyword"/> directly (#318). Reads
+    /// the union of <c>AbilitiesByEffectKeyword[tag]</c> across every tag in
     /// <see cref="PocoEffect.Keywords"/> (the index excludes
-    /// <see cref="Ability.InternalAbility"/> rows already). Dedupes by InternalName and
-    /// sorts by Skill then Level so the chip cluster reads consistently. The shortcut is
-    /// emitted whenever any ability requires the effect — even within the cap it offers a
-    /// jump to the sortable/filterable Abilities-tab view.
+    /// <see cref="Ability.InternalAbility"/> rows already and is dedup'd per tag).
+    /// <para>
+    /// Provenance is preserved across tags: an ability that qualifies under several tags /
+    /// fields is carried <b>once</b>, OR-ing its <see cref="EffectAbilityMatchReason"/>
+    /// flags — so the distinct count equals the displayed "View all N" and the popup's
+    /// section membership is exactly the index membership (no second derivation). The chip
+    /// cluster shows the first <paramref name="cap"/> by Skill→Level; the popup carries the
+    /// full set sectioned Requires / Enabled by / Targets, collapsing to a flat list when
+    /// only one reason is present.
+    /// </para>
     /// </summary>
-    private static (IReadOnlyList<EntityChipVm> Chips, EntityChipVm? Shortcut) BuildRequiredByAbilityChips(
-        PocoEffect effect,
-        IReferenceDataService refData,
-        IEntityNameResolver nameResolver,
-        IReferenceNavigator navigator,
-        int cap)
+    private static (IReadOnlyList<EntityChipVm> Chips, int Total, ProvenancePopupViewModel? Popup)
+        BuildRequiredByAbilities(
+            PocoEffect effect,
+            IReferenceDataService refData,
+            IEntityNameResolver nameResolver,
+            IReferenceNavigator navigator,
+            int cap)
     {
-        if (effect.Keywords is null || effect.Keywords.Count == 0) return ([], null);
+        if (effect.Keywords is null || effect.Keywords.Count == 0) return ([], 0, null);
 
-        var ordered = new List<Ability>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        // Capture the first matching keyword for the shortcut payload — picking
-        // *some* keyword is unavoidable, and "first" is stable and matches the order
-        // the player sees in the Keywords chip strip immediately above.
-        string? shortcutKeyword = null;
-
+        // Distinct-by-InternalName across tags, OR-accumulating the reason flags so a
+        // member that qualified under several tags/fields is carried once with complete
+        // provenance. This is the single materialization — the popup is a view over it.
+        var byName = new Dictionary<string, (Ability Ability, EffectAbilityMatchReason Reason)>(
+            StringComparer.Ordinal);
         foreach (var tag in effect.Keywords)
         {
             if (string.IsNullOrEmpty(tag)) continue;
             if (!refData.AbilitiesByEffectKeyword.TryGetValue(tag, out var matches)) continue;
-            shortcutKeyword ??= tag;
             foreach (var match in matches)
             {
-                // Slice 1 (#318): the index now carries provenance
-                // (EffectAbilityMatch.Reason). This reader is adapted minimally —
-                // membership and the "View all N" count are unchanged. Distinct-by-
-                // InternalName across tags is preserved here; the index is already
-                // dedup'd per tag, so the count equals distinct members. The
-                // provenance is surfaced by the popup in slice 2.
                 var ability = match.Ability;
                 if (ability.InternalName is null) continue;
-                if (!seen.Add(ability.InternalName)) continue;
-                ordered.Add(ability);
+                if (byName.TryGetValue(ability.InternalName, out var existing))
+                    byName[ability.InternalName] = (existing.Ability, existing.Reason | match.Reason);
+                else
+                    byName[ability.InternalName] = (ability, match.Reason);
             }
         }
 
-        if (ordered.Count == 0) return ([], null);
+        if (byName.Count == 0) return ([], 0, null);
 
+        var ordered = byName.Values.ToList();
         ordered.Sort(static (a, b) =>
         {
-            var skillCmp = StringComparer.OrdinalIgnoreCase.Compare(a.Skill, b.Skill);
+            var skillCmp = StringComparer.OrdinalIgnoreCase.Compare(a.Ability.Skill, b.Ability.Skill);
             if (skillCmp != 0) return skillCmp;
-            return a.Level.CompareTo(b.Level);
+            return a.Ability.Level.CompareTo(b.Ability.Level);
         });
+
+        EntityChipVm Chip(Ability ability)
+        {
+            var reference = EntityRef.Ability(ability.InternalName!);
+            return new EntityChipVm(
+                DisplayName: nameResolver.Resolve(reference),
+                IconId: ability.IconID,
+                Reference: reference,
+                IsNavigable: navigator.CanOpen(reference));
+        }
 
         var visibleCount = Math.Min(cap, ordered.Count);
         var chips = new List<EntityChipVm>(visibleCount);
         for (var i = 0; i < visibleCount; i++)
-        {
-            var ability = ordered[i];
-            var reference = EntityRef.Ability(ability.InternalName!);
-            chips.Add(new EntityChipVm(
-                DisplayName: nameResolver.Resolve(reference),
-                IconId: ability.IconID,
-                Reference: reference,
-                IsNavigable: navigator.CanOpen(reference)));
-        }
+            chips.Add(Chip(ordered[i].Ability));
 
-        // shortcutKeyword is guaranteed non-null here: ordered.Count > 0 implies at least
-        // one keyword matched and set it before its abilities were appended.
-        var shortcutReference = EntityRef.AbilityByEffectKeyword(shortcutKeyword!);
-        var shortcut = new EntityChipVm(
-            DisplayName: $"View all {ordered.Count} in Abilities tab →",
-            IconId: 0,
-            Reference: shortcutReference,
-            IsNavigable: navigator.CanOpen(shortcutReference));
+        // Build the provenance sections: one section per reason that has members, in the
+        // canonical Requires → Enabled by → Targets order. Members already sorted; section
+        // chips inherit that order. ProvenancePopupViewModel collapses to a flat list when
+        // only one section results (a single trivial reason is noise — #318 Discipline).
+        var sections = new List<ProvenancePopupSection>(3);
+        AddSection(sections, ordered, EffectAbilityMatchReason.Requires, "Requires", Chip);
+        AddSection(sections, ordered, EffectAbilityMatchReason.EnabledBy, "Enabled by", Chip);
+        AddSection(sections, ordered, EffectAbilityMatchReason.Targets, "Targets", Chip);
 
-        return (chips, shortcut);
+        // ToQueryCommand intentionally unset (#318 orchestrator decision): the API surface
+        // is final so later slices reuse ProvenancePopupViewModel unchanged, but the
+        // effect→abilities To-Query projection logic is a deliberate fast-follow — the
+        // popup-from-index is already the correct, count-bearing surface.
+        var popup = new ProvenancePopupViewModel(
+            title: $"Abilities related to {DisplayNameOf(effect)}",
+            sections: sections);
+
+        return (chips, byName.Count, popup);
+    }
+
+    private static void AddSection(
+        List<ProvenancePopupSection> sections,
+        List<(Ability Ability, EffectAbilityMatchReason Reason)> ordered,
+        EffectAbilityMatchReason reason,
+        string label,
+        Func<Ability, EntityChipVm> chip)
+    {
+        var members = ordered
+            .Where(m => m.Reason.HasFlag(reason))
+            .Select(m => chip(m.Ability))
+            .ToList();
+        if (members.Count == 0) return;
+        sections.Add(new ProvenancePopupSection(label, members));
+    }
+
+    private static string DisplayNameOf(PocoEffect effect)
+    {
+        if (!string.IsNullOrEmpty(effect.Name)) return effect.Name!;
+        if (!string.IsNullOrEmpty(effect.InternalName)) return effect.InternalName!;
+        return "this effect";
     }
 
     private static IReadOnlyList<EffectProcsFromAbilityKeywordRow> BuildProcsFromAbilityKeywordRows(
@@ -378,8 +458,8 @@ public sealed record EffectConditionalSpecialValueRow(string Display, IReadOnlyL
 
 /// <summary>
 /// One row in <see cref="EffectDetailViewModel.ProcsFromAbilityKeywordRows"/>. The
-/// <paramref name="Tag"/> is rendered as plain text in v1 — no synthetic kind exists
-/// yet for the abilities-keyword pivot (<see cref="EntityKind.AbilityByEffectKeyword"/>
-/// is for a different field), so navigation deferred to a follow-up.
+/// <paramref name="Tag"/> is rendered as plain text — this is the reverse direction
+/// ("abilities whose keyword triggers this effect") and has no navigable surface yet;
+/// navigation is deferred to a follow-up.
 /// </summary>
 public sealed record EffectProcsFromAbilityKeywordRow(string Tag);

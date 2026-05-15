@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -183,15 +184,49 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <ContentControl Content="{Binding RequiredByAbilitiesTabShortcut}"
-                                    Margin="0,4,0,0"
-                                    Visibility="{Binding RequiredByAbilitiesTabShortcut, Converter={StaticResource NullToVis}}">
-                        <ContentControl.Resources>
-                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:ActionChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:EffectDetailView}}}"/>
-                            </DataTemplate>
-                        </ContentControl.Resources>
-                    </ContentControl>
+                    <!-- "View all N →" — opens the shared provenance popup fed the index
+                         directly (#318). No longer a synthetic-kind deep link: the popup
+                         renders membership AND provenance with no second derivation.
+                         Always visible whenever any ability relates (independent of the
+                         chip cap), styled like ActionChip (ghost fill, ListFilter glyph)
+                         so it reads as "go see the full set", not "open an entity". -->
+                    <Button Margin="0,4,0,0" Padding="6,2"
+                            HorizontalAlignment="Left" Cursor="Hand"
+                            Command="{Binding ShowRequiredByAbilitiesPopupCommand}"
+                            Visibility="{Binding RequiredByAbilitiesPopup, Converter={StaticResource NullToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="#66D4A847"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="Foreground" Value="#FFD4A847"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#22D4A847"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
+                                                             Foreground="{TemplateBinding Foreground}"
+                                                             Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                        <TextBlock Foreground="{TemplateBinding Foreground}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center">
+                                            <Run Text="View all "/><Run Text="{Binding RequiredByAbilitiesTotal, Mode=OneWay}"/><Run Text=" →"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                 </StackPanel>
 
                 <!-- ─── 8. Procs from abilities with keyword ─── -->
