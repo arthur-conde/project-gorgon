@@ -60,6 +60,7 @@ public sealed partial class ItemDetailViewModel
         RecipesTabShortcut = context.RecipesTabShortcut;
         ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
         AwardedByQuests = context.AwardedByQuests ?? [];
+        BestowsLorebook = context.BestowsLorebook;
         Sources = context.Sources ?? [];
         _poolPresenter = poolPresenter;
     }
@@ -126,6 +127,15 @@ public sealed partial class ItemDetailViewModel
     /// flow; quest chips become navigable when the Quests tab is registered (#242).
     /// </summary>
     public IReadOnlyList<EntityChipVm> AwardedByQuests { get; }
+
+    /// <summary>
+    /// The lorebook this item bestows on use (<see cref="Item.BestowLoreBook"/> resolved via
+    /// <c>LorebooksById</c>), or null when the item bestows no book. A single navigable
+    /// <see cref="EntityChip"/> — the inbound 1:1 cross-link that's the natural payoff of
+    /// the Lorebooks tab shipping (#247). Becomes clickable once the Lorebooks kind target
+    /// is registered; degrades to plain text otherwise.
+    /// </summary>
+    public EntityChipVm? BestowsLorebook { get; }
 
     /// <summary>
     /// Item sources (NPC vendors, monster drops, quest rewards, …) — rendered as a list of
