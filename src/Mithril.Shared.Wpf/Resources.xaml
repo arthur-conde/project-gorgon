@@ -953,8 +953,18 @@
                                     HorizontalAlignment="Right" Cursor="Hand"
                                     Background="Transparent" BorderThickness="0" Padding="0"
                                     Margin="0,8,14,12"
-                                    ToolTip="Click to copy the internal name"
-                                    Visibility="{Binding FooterText, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource NullOrEmptyToVis}}">
+                                    ToolTip="Click to copy the internal name">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Visibility"
+                                                Value="{Binding FooterText, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource NullOrEmptyToVis}}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasFooterSegments, RelativeSource={RelativeSource TemplatedParent}}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
                                         <ContentPresenter/>
@@ -976,6 +986,68 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Button>
+                            <!-- Segment footer (#Lorebook): N independent click-to-copy
+                                 chips joined by an inert middot. Shown only when
+                                 FooterSegments is set; mutually exclusive with
+                                 PART_FooterButton. Single-line → export height
+                                 unchanged. -->
+                            <ItemsControl x:Name="PART_FooterSegments"
+                                          DockPanel.Dock="Bottom"
+                                          HorizontalAlignment="Right"
+                                          Margin="0,8,14,12"
+                                          ItemsSource="{Binding FooterSegmentItems, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Visibility="{Binding HasFooterSegments, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="  ·  " Foreground="#55FFFFFF"
+                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFirst}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <Button Command="{Binding CopyCommand}" Cursor="Hand"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Padding="0" ToolTip="Click to copy">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <ContentPresenter/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                                <TextBlock FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="{Binding Text}"/>
+                                                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Copied}" Value="True">
+                                                                    <Setter Property="Text" Value="copied ✓"/>
+                                                                    <Setter Property="Foreground" Value="#FFD4A847"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <ContentPresenter/>
                         </DockPanel>
                         <Button x:Name="PART_ExportButton"
