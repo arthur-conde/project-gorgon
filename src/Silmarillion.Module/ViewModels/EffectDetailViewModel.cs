@@ -44,9 +44,9 @@ public sealed class EffectDetailViewModel
         ConditionalDotRows = BuildConditionalDotRows(effect, refData);
         ConditionalSpecialValueRows = BuildConditionalSpecialValueRows(effect, refData);
         StackingTypeChip = BuildStackingTypeChip(effect, envelopeKey, refData, navigator);
-        var (chips, pill) = BuildRequiredByAbilityChips(effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
+        var (chips, shortcut) = BuildRequiredByAbilityChips(effect, refData, nameResolver, navigator, settings.RequiredByAbilitiesChipCap);
         RequiredByAbilityChips = chips;
-        RequiredByAbilitiesOverflowPill = pill;
+        RequiredByAbilitiesTabShortcut = shortcut;
         ProcsFromAbilityKeywordRows = BuildProcsFromAbilityKeywordRows(effect.AbilityKeywords);
 
         SpewText = string.IsNullOrEmpty(effect.SpewText) ? null : effect.SpewText;
@@ -96,12 +96,14 @@ public sealed class EffectDetailViewModel
     public IReadOnlyList<EntityChipVm> RequiredByAbilityChips { get; }
 
     /// <summary>
-    /// Overflow pill rendered after the capped <see cref="RequiredByAbilityChips"/> when the
-    /// total exceeds <c>SilmarillionSettings.RequiredByAbilitiesChipCap</c>. Anchored on
-    /// <see cref="EntityRef.AbilityByEffectKeyword"/> so clicking opens the Abilities tab
-    /// filtered by <c>EffectKeywordReqs CONTAINS "&lt;tag&gt;"</c>.
+    /// Always-visible navigable summary chip rendered after the capped
+    /// <see cref="RequiredByAbilityChips"/>. Non-null whenever the effect is required by
+    /// any ability (independent of <c>SilmarillionSettings.RequiredByAbilitiesChipCap</c>).
+    /// Anchored on <see cref="EntityRef.AbilityByEffectKeyword"/> so clicking opens the
+    /// Abilities tab filtered by <c>EffectKeywordReqs CONTAINS "&lt;tag&gt;"</c>; rendered
+    /// as <c>ActionChip</c>.
     /// </summary>
-    public EntityChipVm? RequiredByAbilitiesOverflowPill { get; }
+    public EntityChipVm? RequiredByAbilitiesTabShortcut { get; }
 
     public IReadOnlyList<EffectProcsFromAbilityKeywordRow> ProcsFromAbilityKeywordRows { get; }
     public string? SpewText { get; }
@@ -271,13 +273,16 @@ public sealed class EffectDetailViewModel
     }
 
     /// <summary>
-    /// Build the cap-limited "Required by abilities" chip list plus an optional overflow
-    /// pill. Reads the union of <c>AbilitiesByEffectKeyword[tag]</c> across every tag in
+    /// Build the cap-limited "Required by abilities" chip list plus an always-visible
+    /// navigable summary chip (the shortcut into the filtered Abilities tab). Reads the
+    /// union of <c>AbilitiesByEffectKeyword[tag]</c> across every tag in
     /// <see cref="PocoEffect.Keywords"/> (the index excludes
     /// <see cref="Ability.InternalAbility"/> rows already). Dedupes by InternalName and
-    /// sorts by Skill then Level so the chip cluster reads consistently.
+    /// sorts by Skill then Level so the chip cluster reads consistently. The shortcut is
+    /// emitted whenever any ability requires the effect — even within the cap it offers a
+    /// jump to the sortable/filterable Abilities-tab view.
     /// </summary>
-    private static (IReadOnlyList<EntityChipVm> Chips, EntityChipVm? Pill) BuildRequiredByAbilityChips(
+    private static (IReadOnlyList<EntityChipVm> Chips, EntityChipVm? Shortcut) BuildRequiredByAbilityChips(
         PocoEffect effect,
         IReferenceDataService refData,
         IEntityNameResolver nameResolver,
@@ -288,16 +293,16 @@ public sealed class EffectDetailViewModel
 
         var ordered = new List<Ability>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        // Capture the first matching keyword for the overflow-pill payload — picking
+        // Capture the first matching keyword for the shortcut payload — picking
         // *some* keyword is unavoidable, and "first" is stable and matches the order
         // the player sees in the Keywords chip strip immediately above.
-        string? pillKeyword = null;
+        string? shortcutKeyword = null;
 
         foreach (var tag in effect.Keywords)
         {
             if (string.IsNullOrEmpty(tag)) continue;
             if (!refData.AbilitiesByEffectKeyword.TryGetValue(tag, out var abilities)) continue;
-            pillKeyword ??= tag;
+            shortcutKeyword ??= tag;
             foreach (var ability in abilities)
             {
                 if (ability.InternalName is null) continue;
@@ -328,19 +333,16 @@ public sealed class EffectDetailViewModel
                 IsNavigable: navigator.CanOpen(reference)));
         }
 
-        EntityChipVm? pill = null;
-        if (ordered.Count > cap && !string.IsNullOrEmpty(pillKeyword))
-        {
-            var overflow = ordered.Count - cap;
-            var reference = EntityRef.AbilityByEffectKeyword(pillKeyword!);
-            pill = new EntityChipVm(
-                DisplayName: $"+{overflow} more →",
-                IconId: effect.IconId,
-                Reference: reference,
-                IsNavigable: navigator.CanOpen(reference));
-        }
+        // shortcutKeyword is guaranteed non-null here: ordered.Count > 0 implies at least
+        // one keyword matched and set it before its abilities were appended.
+        var shortcutReference = EntityRef.AbilityByEffectKeyword(shortcutKeyword!);
+        var shortcut = new EntityChipVm(
+            DisplayName: $"View all {ordered.Count} in Abilities tab →",
+            IconId: 0,
+            Reference: shortcutReference,
+            IsNavigable: navigator.CanOpen(shortcutReference));
 
-        return (chips, pill);
+        return (chips, shortcut);
     }
 
     private static IReadOnlyList<EffectProcsFromAbilityKeywordRow> BuildProcsFromAbilityKeywordRows(

@@ -146,14 +146,14 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         {
             return ItemDetailContext.Empty;
         }
-        var (consumed, more) = BuildConsumedByChips(_refData.RecipesByIngredientItem, item);
+        var (consumed, shortcut) = BuildConsumedByChips(_refData.RecipesByIngredientItem, item);
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: consumed,
             ConsumedAsKeywordIn: BuildKeywordChips(item),
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             Sources: BuildSourceChips(item.InternalName!),
-            MoreRecipesChip: more);
+            RecipesTabShortcut: shortcut);
     }
 
     private IReadOnlyList<EntityChipVm>? BuildAwardedByQuestChips(string itemInternalName)
@@ -177,12 +177,15 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
 
     /// <summary>
     /// Apply <see cref="SilmarillionSettings.UsedInChipCap"/> to the "Used in" chip list.
-    /// When the underlying recipe count exceeds the cap, returns the first N chips plus a
-    /// pill chip pointing to the symmetric recipe-tab filter
-    /// (<c>Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>). Pill carries the item's own
-    /// icon for visual continuity with the detail header.
+    /// Returns the first N chips plus an always-visible navigable summary chip that
+    /// deep-links to the symmetric recipe-tab filter
+    /// (<c>Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>). The summary chip is
+    /// emitted whenever the item is consumed by any recipe — at counts within the cap it
+    /// still offers a jump to the sortable/filterable Recipes-tab view (the navigable
+    /// summary chip pattern; rendered as <c>ActionChip</c>). Returns
+    /// <c>(null, null)</c> only when no recipe consumes the item.
     /// </summary>
-    private (IReadOnlyList<EntityChipVm>? Chips, EntityChipVm? More) BuildConsumedByChips(
+    private (IReadOnlyList<EntityChipVm>? Chips, EntityChipVm? Shortcut) BuildConsumedByChips(
         IReadOnlyDictionary<string, IReadOnlyList<Recipe>> index,
         Item item)
     {
@@ -191,17 +194,14 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         if (all is null) return (null, null);
 
         var cap = _settings.UsedInChipCap;
-        if (all.Count <= cap) return (all, null);
-
         var capped = cap == 0 ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>() : all.Take(cap).ToList();
-        var overflow = all.Count - cap;
         var reference = EntityRef.RecipeIngredientItem(itemName);
-        var pill = new EntityChipVm(
-            DisplayName: $"+{overflow} more →",
-            IconId: item.IconId,
+        var shortcut = new EntityChipVm(
+            DisplayName: $"View all {all.Count} in Recipes tab →",
+            IconId: 0,
             Reference: reference,
             IsNavigable: _navigator.CanOpen(reference));
-        return (capped, pill);
+        return (capped, shortcut);
     }
 
     private IReadOnlyList<EntityChipVm>? BuildKeywordChips(Item item)

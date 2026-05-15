@@ -57,7 +57,7 @@ public sealed partial class ItemDetailViewModel
         UnpreviewableExtractions = context.UnpreviewableExtractions ?? [];
         ProducedByRecipes = context.ProducedByRecipes ?? [];
         ConsumedByRecipes = context.ConsumedByRecipes ?? [];
-        MoreRecipesChip = context.MoreRecipesChip;
+        RecipesTabShortcut = context.RecipesTabShortcut;
         ConsumedAsKeywordIn = context.ConsumedAsKeywordIn ?? [];
         AwardedByQuests = context.AwardedByQuests ?? [];
         Sources = context.Sources ?? [];
@@ -99,18 +99,19 @@ public sealed partial class ItemDetailViewModel
     /// <summary>
     /// Recipes that consume this item as an ingredient. Same lifecycle as
     /// <see cref="ProducedByRecipes"/>. Capped at
-    /// <c>SilmarillionSettings.UsedInChipCap</c>; the overflow lives on
-    /// <see cref="MoreRecipesChip"/>.
+    /// <c>SilmarillionSettings.UsedInChipCap</c>; the full set is always reachable via
+    /// <see cref="RecipesTabShortcut"/>.
     /// </summary>
     public IReadOnlyList<EntityChipVm> ConsumedByRecipes { get; }
 
     /// <summary>
-    /// Overflow pill for the "Used in" section. Non-null only when the underlying recipe
-    /// count exceeds the cap; clicking deep-links to the Recipes tab pre-filtered via
+    /// Always-visible navigable summary chip for the "Used in" section. Non-null whenever
+    /// the item is consumed by any recipe (independent of the cap); clicking deep-links to
+    /// the Recipes tab pre-filtered via
     /// <c>QueryText = Ingredients CONTAINS "&lt;itemInternalName&gt;"</c>. Bound visibility
-    /// on the XAML side hides the pill when this is null.
+    /// on the XAML side hides it when this is null (item used in no recipe).
     /// </summary>
-    public EntityChipVm? MoreRecipesChip { get; }
+    public EntityChipVm? RecipesTabShortcut { get; }
 
     /// <summary>
     /// Per-keyword chips for the item-detail "Used as" section. One chip per keyword the
