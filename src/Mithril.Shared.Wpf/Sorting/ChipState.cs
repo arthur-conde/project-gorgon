@@ -13,7 +13,11 @@ public sealed record ChipState<T>(
     SortKey<T> Key,
     bool IsActive,
     OrderDirection? Direction,
-    int OrderIndex);
+    int OrderIndex)
+{
+    /// <summary>1-based position for display (badge); <see cref="OrderIndex"/> stays a 0-based array index.</summary>
+    public int DisplayOrder => OrderIndex < 0 ? -1 : OrderIndex + 1;
+}
 
 public static class ChipState
 {

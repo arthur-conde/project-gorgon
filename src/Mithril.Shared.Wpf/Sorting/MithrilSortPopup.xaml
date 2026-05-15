@@ -139,7 +139,7 @@
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsActive}" Value="True">
                                                             <Setter Property="Visibility" Value="Visible"/>
-                                                            <Setter Property="Text" Value="{Binding OrderIndex, StringFormat=#{0}}"/>
+                                                            <Setter Property="Text" Value="{Binding DisplayOrder, StringFormat=#{0}}"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

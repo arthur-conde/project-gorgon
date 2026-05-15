@@ -38,7 +38,7 @@ public sealed class SortFilterController<T> : IDisposable, INotifyPropertyChange
         _filters = filters ?? throw new ArgumentNullException(nameof(filters));
         _rewriteOrder = rewriteOrder ?? throw new ArgumentNullException(nameof(rewriteOrder));
 
-        _columns = BuildSchemaFromKeys(availableKeys);
+        _columns = ColumnBindingHelper.BuildFromProperties(typeof(T));
         _view.Filter = MatchesActiveFilters;
         foreach (var f in _filters)
             f.PropertyChanged += OnFilterPropertyChanged;
@@ -154,26 +154,5 @@ public sealed class SortFilterController<T> : IDisposable, INotifyPropertyChange
     {
         Chips = ChipState.Project(_availableKeys, _currentOrder);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Chips)));
-    }
-
-    private static IReadOnlyDictionary<string, ColumnBinding> BuildSchemaFromKeys(
-        IReadOnlyList<SortKey<T>> keys)
-    {
-        var map = ColumnBindingHelper.BuildFromProperties(typeof(T));
-        foreach (var k in keys)
-        {
-            if (k.KeySelector is null) continue;
-            var captured = k.KeySelector;
-            map[k.Id] = new ColumnBinding(k.Id, typeof(object), item =>
-            {
-                if (item is T typed)
-                {
-                    try { return captured(typed); }
-                    catch { return null; }
-                }
-                return null;
-            });
-        }
-        return map;
     }
 }
