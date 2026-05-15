@@ -252,6 +252,8 @@ public static class QueryFilter
                     }
                     catch (QueryException ex)
                     {
+                        // Filter was already applied above; we accept the half-applied
+                        // state because the predicate compiled fine — only the sort failed.
                         SetQueryError(_control, ex.Message);
                         foreach (var sd in vmSort)
                         {
@@ -295,6 +297,10 @@ public static class QueryFilter
                 }
                 catch (QueryException ex)
                 {
+                    // Predicate caches last-good (no row-set flicker mid-typing); order
+                    // does not — it returns empty so SortDescriptions clears to the VM's
+                    // captured baseline. Two clauses, two consumer surfaces; the predicate
+                    // protects the *visible filter*, the order falls back to a stable default.
                     SetQueryError(_control, ex.Message);
                     return (_lastGoodInputPredicate, Array.Empty<OrderSpec>());
                 }

@@ -148,6 +148,7 @@ public class QueryFilterTests
             var view = CollectionViewSource.GetDefaultView(rows);
             view.SortDescriptions.Should().ContainSingle()
                 .Which.Should().BeEquivalentTo(new SortDescription("Samples", ListSortDirection.Descending));
+            view.Cast<Row>().Select(r => r.Samples).Should().BeInDescendingOrder();
         });
     }
 
@@ -190,6 +191,7 @@ public class QueryFilterTests
 
             view.SortDescriptions.Should().ContainSingle()
                 .Which.PropertyName.Should().Be("Crop");
+            view.Cast<Row>().Select(r => r.Crop).Should().BeInAscendingOrder();
         });
     }
 
