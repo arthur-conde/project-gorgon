@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Mithril.Shared.Wpf;
 
 namespace Silmarillion.Views;
 
@@ -16,4 +17,7 @@ public partial class RecipeDetailWindow : Window
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void ExportImageButton_Click(object sender, RoutedEventArgs e)
+        => DetailExportFeedback.Run(VisualImageExporter.CopyToClipboard(DetailBody), ExportImageButton);
 }
