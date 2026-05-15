@@ -163,10 +163,17 @@ public sealed class RecipesTabViewModelTests
         chip.DisplayName.Should().Contain("3");
     }
 
+    // #318 slice 4, surface 3 — the recipe-detail keyword surface is now a provenance
+    // popup, not a synthetic-kind chip. Keyword slots are NO LONGER in Ingredients (which
+    // is item-ingredient chips only, 1:1); they surface as DetailViewModel.KeywordSlots
+    // rows fed IReferenceDataService.ItemsByRecipeKeywordSlotWithReason directly. The
+    // retired ItemKeyword EntityKind / ItemKeywordQueryMapper tests are deleted with them.
+
     [Fact]
-    public void IngredientChips_IncludeKeywordIngredient_AlongsideItemIngredient()
+    public void Ingredients_ItemSlotsOnly_KeywordSlotsExcluded()
     {
         var tomato = new Item { Id = 100, InternalName = "Tomato", Name = "Tomato", IconId = 1 };
+        var crystal = new Item { Id = 200, InternalName = "RoughCrystal", Name = "Rough Crystal" };
         var recipe = new Recipe
         {
             Key = "r1",
@@ -183,26 +190,35 @@ public sealed class RecipesTabViewModelTests
         {
             ItemsByCode = { [100] = tomato },
             RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Crystal"] = new[] { new RecipeKeywordItemMatch(crystal, RecipeKeywordItemMatchReason.KeywordMatch) },
+            },
         };
         var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
-        vm.DetailViewModel!.Ingredients.Should().HaveCount(2);
-
-        var keywordChip = vm.DetailViewModel.Ingredients[1];
-        keywordChip.DisplayName.Should().Be("Auxiliary Crystal");
-        keywordChip.IsNavigable.Should().BeFalse();
-        keywordChip.IconId.Should().Be(0);
+        // Only the item ingredient chip is in Ingredients — the keyword slot moved out.
+        vm.DetailViewModel!.Ingredients.Should().ContainSingle()
+            .Which.Reference.Should().Be(EntityRef.Item("Tomato"));
+        vm.DetailViewModel.KeywordSlots.Should().ContainSingle();
+        var slot = vm.DetailViewModel.KeywordSlots[0];
+        slot.Label.Should().Be("Auxiliary Crystal");
+        slot.MatchCount.Should().Be(1);
+        slot.Popup.IsFlat.Should().BeTrue(because: "single-reason ⇒ flat list (#318 Discipline)");
+        slot.Popup.FlatChips.Should().ContainSingle()
+            .Which.Reference.Should().Be(EntityRef.Item("RoughCrystal"));
     }
 
     [Fact]
-    public void IngredientChips_SingletonKeywordSlot_WithItemKeywordKindRegistered_IsNavigable()
+    public void KeywordSlot_PopupMembership_EqualsIndex_AndChipsAreNavigableWhenItemKindRegistered()
     {
-        // Symmetric to the item-detail "Used as" chip → recipe-tab filter direction
-        // (PR #267): a recipe's singleton keyword slot now navigates back to the Items
-        // tab filtered by that keyword. Chip stays inert (existing test above) when
-        // the ItemKeyword kind isn't registered with the navigator.
+        // Membership == the index collection (no query re-derivation — the #318
+        // invariant). Chips inside the popup are 1:1 Item references, navigable iff the
+        // Items kind is registered.
+        var a = new Item { Id = 1, InternalName = "ZItem", Name = "Z Item", IconId = 9 };
+        var b = new Item { Id = 2, InternalName = "AItem", Name = "A Item" };
         var recipe = new Recipe
         {
             Key = "r1",
@@ -214,54 +230,38 @@ public sealed class RecipesTabViewModelTests
                 new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Auxiliary Crystal", StackSize = 1 },
             },
         };
-        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
-
-        vm.SelectedRecipe = recipe;
-
-        var chip = vm.DetailViewModel!.Ingredients.Single();
-        chip.IsNavigable.Should().BeTrue();
-        chip.Reference.Should().Be(EntityRef.ItemKeyword("Crystal"));
-        chip.DisplayName.Should().Be("Auxiliary Crystal");
-    }
-
-    [Fact]
-    public void IngredientChips_CompositeKeywordSlot_AllMappable_IsNavigable()
-    {
-        // Composite slot every key of which is translatable (bare tag + EquipmentSlot:)
-        // → mapper succeeds → AND-joined query, chip is navigable. Today's catalogue
-        // doesn't ship a slot of this exact shape but the mapping covers any future one.
-        var recipe = new Recipe
+        var refData = new StubReferenceData
         {
-            Key = "r1",
-            InternalName = "Hypothetical",
-            Name = "Hypothetical",
-            Skill = "Augmentation",
-            Ingredients = new RecipeIngredient[]
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
             {
-                new RecipeKeywordIngredient { ItemKeys = ["EquipmentSlot:MainHand", "Crystal"], Desc = "Crystal Main-Hand", StackSize = 1 },
+                ["Crystal"] = new[]
+                {
+                    new RecipeKeywordItemMatch(a, RecipeKeywordItemMatchReason.KeywordMatch),
+                    new RecipeKeywordItemMatch(b, RecipeKeywordItemMatchReason.KeywordMatch),
+                },
             },
         };
-        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
-        var chip = vm.DetailViewModel!.Ingredients.Single();
-        chip.IsNavigable.Should().BeTrue();
-        chip.Reference.Should().Be(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "Crystal"]));
-        chip.DisplayName.Should().Be("Crystal Main-Hand");
+        var slot = vm.DetailViewModel!.KeywordSlots.Single();
+        // Distinct count == index members; popup chips are exactly the index items
+        // (ordered by display name), all 1:1 navigable Item refs.
+        slot.MatchCount.Should().Be(2);
+        slot.Popup.TotalCount.Should().Be(2);
+        slot.Popup.FlatChips.Select(c => c.Reference)
+            .Should().Equal(EntityRef.Item("AItem"), EntityRef.Item("ZItem"));
+        slot.Popup.FlatChips.Should().OnlyContain(c => c.IsNavigable);
     }
 
     [Fact]
-    public void IngredientChips_CompositeKeywordSlot_WithUnmappableKey_StaysNonNavigable()
+    public void KeywordSlot_CompositeSlotKey_IsJoinedWithPlus_ForIndexLookup()
     {
-        // Real catalogue pattern: Decompose Main-Hand Weapon's slot is
-        // ["EquipmentSlot:MainHand", "MinTSysPrereq:0"]. MinTSysPrereq:N has no item-side
-        // analogue today, so the mapper fails and the chip stays inert even with the
-        // ItemKeyword kind target registered. The Reference is still emitted so a future
-        // mapping expansion (e.g. item-side TSys prereq exposure) flips the chip live
-        // with no chip-builder change.
+        // The slot key is the ItemKeys list '+'-joined (the retired EntityRef.ItemKeyword
+        // encoding, kept stable across the migration so the index key form doesn't shift).
+        var match = new Item { Id = 1, InternalName = "Wand", Name = "Wand" };
         var recipe = new Recipe
         {
             Key = "r1",
@@ -273,19 +273,27 @@ public sealed class RecipesTabViewModelTests
                 new RecipeKeywordIngredient { ItemKeys = ["EquipmentSlot:MainHand", "MinTSysPrereq:0"], Desc = "Main-Hand Item", StackSize = 1 },
             },
         };
-        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
-        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new FakeEntityNameResolver());
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["EquipmentSlot:MainHand+MinTSysPrereq:0"] =
+                    new[] { new RecipeKeywordItemMatch(match, RecipeKeywordItemMatchReason.KeywordMatch) },
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
-        var chip = vm.DetailViewModel!.Ingredients.Single();
-        chip.IsNavigable.Should().BeFalse(because: "MinTSysPrereq:0 has no item-side mapping");
-        chip.Reference.Should().Be(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "MinTSysPrereq:0"]));
-        chip.DisplayName.Should().Be("Main-Hand Item");
+        var slot = vm.DetailViewModel!.KeywordSlots.Single();
+        slot.Label.Should().Be("Main-Hand Item");
+        slot.MatchCount.Should().Be(1);
+        slot.Popup.FlatChips.Single().Reference.Should().Be(EntityRef.Item("Wand"));
     }
 
     [Fact]
-    public void IngredientChips_KeywordIngredient_WithoutDesc_FallsBackToHumanisedItemKeys()
+    public void KeywordSlot_WithoutDesc_LabelFallsBackToHumanisedItemKeys()
     {
         var recipe = new Recipe
         {
@@ -301,17 +309,19 @@ public sealed class RecipesTabViewModelTests
         var refData = new StubReferenceData
         {
             RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches = { ["Crystal+Tier3"] = Array.Empty<RecipeKeywordItemMatch>() },
         };
         var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
-        vm.DetailViewModel!.Ingredients.Should().ContainSingle()
-            .Which.DisplayName.Should().Be("any Crystal + Tier3");
+        var slot = vm.DetailViewModel!.KeywordSlots.Should().ContainSingle().Which;
+        slot.Label.Should().Be("any Crystal + Tier3");
+        slot.MatchCount.Should().Be(0, because: "the slot is keyed in the index with an empty match list");
     }
 
     [Fact]
-    public void IngredientChips_KeywordIngredient_WithEmptyItemKeys_IsSkipped()
+    public void KeywordSlot_EmptyItemKeys_IsSkipped()
     {
         var recipe = new Recipe
         {
@@ -324,15 +334,93 @@ public sealed class RecipesTabViewModelTests
                 new RecipeKeywordIngredient { ItemKeys = [], Desc = null, StackSize = 1 },
             },
         };
-        var refData = new StubReferenceData
-        {
-            RecipesByKey = { ["r1"] = recipe },
-        };
+        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
         var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
 
         vm.SelectedRecipe = recipe;
 
         vm.DetailViewModel!.Ingredients.Should().BeEmpty();
+        vm.DetailViewModel.KeywordSlots.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void KeywordSlot_NotInIndex_IsSkipped_NoDeadRow()
+    {
+        // A slot whose keys aren't in the provenance index (data shifted between
+        // item/recipe loads) is skipped rather than rendering a dead row.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "Mystery",
+            Name = "Mystery",
+            Skill = "Cooking",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["UnknownKw"], Desc = "Unknown", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData { RecipesByKey = { ["r1"] = recipe } };
+        var vm = new RecipesTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.KeywordSlots.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void KeywordSlot_OpeningPopup_PushesNoNavigatorHistory()
+    {
+        // #318 #229 — opening the popup must NOT push navigator back/forward history.
+        // The opener is swapped for a capturing no-op so no window spawns; navigator
+        // state is pristine before and after (mirrors the surface-1 ItemDetail test).
+        var match = new Item { Id = 1, InternalName = "Wand", Name = "Wand" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "EnchantCrystal",
+            Name = "Enchant Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Auxiliary Crystal", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Crystal"] = new[] { new RecipeKeywordItemMatch(match, RecipeKeywordItemMatchReason.KeywordMatch) },
+            },
+        };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new RecipesTabViewModel(refData, nav, new FakeEntityNameResolver());
+
+        var prior = RecipeDetailViewModel.ProvenancePopupOpener;
+        Mithril.Shared.Wpf.ProvenancePopupViewModel? captured = null;
+        RecipeDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            vm.SelectedRecipe = recipe;
+            var slot = vm.DetailViewModel!.KeywordSlots.Single();
+
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+
+            slot.ShowPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull(because: "the command invoked the opener with the built popup VM");
+            captured!.Should().BeSameAs(slot.Popup);
+            // The defining assertion: opening the popup pushed no navigator state.
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+        }
+        finally
+        {
+            RecipeDetailViewModel.ProvenancePopupOpener = prior;
+        }
     }
 
     [Fact]
@@ -627,12 +715,15 @@ public sealed class RecipesTabViewModelTests
         public Dictionary<string, Recipe> RecipesByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, SkillEntry> SkillsByKey { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<RecipeSource>> RecipeSourcesByName { get; } = new(StringComparer.Ordinal);
+        // Surface-3 provenance index (#318 slice 4): slot-keys '+'-joined → matching items.
+        public Dictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> KeywordSlotMatches { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByCode;
         public IReadOnlyDictionary<string, Item> ItemsByInternalName =>
             ItemsByCode.Values.Where(i => i.InternalName is not null).ToDictionary(i => i.InternalName!);
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
+        public IReadOnlyDictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> ItemsByRecipeKeywordSlotWithReason => KeywordSlotMatches;
         public IReadOnlyDictionary<string, Recipe> Recipes => RecipesByKey;
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, SkillEntry> Skills => SkillsByKey;

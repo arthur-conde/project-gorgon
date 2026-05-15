@@ -218,84 +218,14 @@ public sealed class SilmarillionReferenceNavigatorTests
     // "Used as" surface is now a provenance popup fed RecipesByIngredientKeywordWithReason
     // directly (covered in ItemsTabViewModelTests; route-rejection covered below).
 
-    [Fact]
-    public void Open_ItemKeyword_SwitchesToItemsTab_AndSetsQueryText()
-    {
-        var refData = new FakeReferenceData();
-        var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
-        var keywordTarget = new ItemKeywordKindTarget(itemsVm);
-
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            keywordTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
-
-        nav.Open(EntityRef.ItemKeyword("Crystal"));
-
-        silmarillionVm.SelectedTabIndex.Should().Be(0);
-        itemsVm.QueryText.Should().Be("Keywords CONTAINS \"Crystal\"");
-    }
-
-    [Fact]
-    public void Open_ItemKeyword_CompositeSlotWithEquipmentSlot_SetsAndJoinedQuery()
-    {
-        // Composite slot every key of which is mappable → AND-joined fragments.
-        // Validates the EntityRef.ItemKeyword(IReadOnlyList<string>) overload encodes
-        // the slot as '+'-joined InternalName and the kind target reconstitutes it.
-        var refData = new FakeReferenceData();
-        var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
-        var keywordTarget = new ItemKeywordKindTarget(itemsVm);
-
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            keywordTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
-
-        nav.Open(EntityRef.ItemKeyword(["EquipmentSlot:MainHand", "Crystal"]));
-
-        itemsVm.QueryText.Should().Be("EquipSlot = \"MainHand\" AND Keywords CONTAINS \"Crystal\"");
-    }
-
-    [Fact]
-    public void Open_ItemKeyword_ClearsResidualSelectedItem()
-    {
-        // Keyword-chip navigation expresses a *filter*, not a specific item pick. Any
-        // SelectedItem lingering from earlier in-tab navigation must clear so the new
-        // filtered list doesn't render with a stale (and possibly filter-excluded)
-        // selection.
-        var refData = new FakeReferenceData();
-        refData.AddItem(new Item { Id = 100, InternalName = "RawCrystal", Name = "Raw Crystal" });
-        var navStub = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
-        var itemsVm = new ItemsTabViewModel(refData, navStub, new ReferenceDataEntityNameResolver(refData));
-        itemsVm.SelectedItem = itemsVm.AllItems.Single();
-        itemsVm.SelectedItem.Should().NotBeNull(); // precondition
-
-        var keywordTarget = new ItemKeywordKindTarget(itemsVm);
-        var targets = new IReferenceKindTarget[]
-        {
-            new StubTarget(EntityKind.Item),
-            new StubTarget(EntityKind.Recipe),
-            keywordTarget,
-        };
-        var nav = new SilmarillionReferenceNavigator(targets);
-        _ = new SilmarillionViewModel(new ITabViewModel[] { itemsVm }, nav, targets);
-
-        nav.Open(EntityRef.ItemKeyword("Crystal"));
-
-        itemsVm.SelectedItem.Should().BeNull(
-            because: "keyword-chip navigation is a filter action; prior item selection must clear");
-        itemsVm.QueryText.Should().Be("Keywords CONTAINS \"Crystal\"");
-    }
+    // #318 slice 4 (surface 3): the recipe-detail keyword surface is now a provenance
+    // popup fed IReferenceDataService.ItemsByRecipeKeywordSlotWithReason directly; the
+    // EntityKind.ItemKeyword synthetic kind + ItemKeywordKindTarget were deleted, so the
+    // three Open_ItemKeyword_* navigator tests (query-string re-derivation behaviour) are
+    // removed with them. The popup-from-index path is covered by
+    // RecipesTabViewModelTests (KeywordSlot_* — membership == index, no-history) and
+    // ReferenceDataServiceRecipeCrossLinkIndexTests (Gate C). The deep-link route is
+    // covered by SilmarillionDeepLinkHandlerTests.TryHandle_RetiredItemKeywordRoute_IsRejected.
 
     [Fact]
     public void Open_Effect_SwitchesToEffectsTab_AndSelects()

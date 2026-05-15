@@ -54,6 +54,25 @@ public sealed class SilmarillionDeepLinkHandlerTests
         nav.LastOpened.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("itemkeyword/Crystal")]
+    [InlineData("ItemKeyword/Crystal")]
+    [InlineData("itemkeyword/EquipmentSlot:MainHand")]
+    public void TryHandle_RetiredItemKeywordRoute_IsRejected(string subPath)
+    {
+        // #318 slice 4 (surface 3): EntityKind.ItemKeyword was deleted (the recipe-detail
+        // keyword surface is now a provenance popup). The generic
+        // Enum.TryParse<EntityKind> in SilmarillionDeepLinkHandler now rejects the
+        // "ItemKeyword" route name automatically — no handler change was needed, and this
+        // locks the retirement so a future re-add of the enum value can't silently
+        // resurrect a dead-end deep link.
+        var nav = new RecordingNavigator();
+        var handler = new SilmarillionDeepLinkHandler(nav);
+
+        handler.TryHandle(subPath, diag: null).Should().BeFalse();
+        nav.LastOpened.Should().BeNull();
+    }
+
     [Fact]
     public void TryHandle_PayloadOverLengthCap_IsRejected()
     {

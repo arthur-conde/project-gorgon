@@ -78,6 +78,13 @@ public sealed class ReferenceDataService : IReferenceDataService
     // Provenance-retaining sibling of _recipesByIngredientItem (#318 slice 4, surface 1).
     private IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> _recipesByIngredientItemWithReason =
         new Dictionary<string, IReadOnlyList<RecipeIngredientItemMatch>>(StringComparer.Ordinal);
+    // Provenance-retaining index for the recipe-detail keyword surface (#318 slice 4,
+    // surface 3). Keyed by a keyword slot's ItemKeys '+'-joined; value is the items
+    // ItemKeywordIndex.ItemsMatching returns for that slot, each wrapped with the
+    // single-reason KeywordMatch. Built from the same slot accumulation as
+    // _keywordsUsedInRecipeSlots in BuildRecipeCrossLinkIndices so the two cannot drift.
+    private IReadOnlyDictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> _itemsByRecipeKeywordSlotWithReason =
+        new Dictionary<string, IReadOnlyList<RecipeKeywordItemMatch>>(StringComparer.Ordinal);
     private IReadOnlyCollection<string> _keywordsUsedInRecipeSlots = Array.Empty<string>();
     // Provenance-retaining reverse index for the item-detail "Used as" surface (#318
     // slice 4, surface 2). keyword tag → recipes with a matching RecipeKeywordIngredient
@@ -338,6 +345,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByProducedItem;
     public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => _recipesByIngredientItem;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> RecipesByIngredientItemWithReason => _recipesByIngredientItemWithReason;
+    public IReadOnlyDictionary<string, IReadOnlyList<RecipeKeywordItemMatch>> ItemsByRecipeKeywordSlotWithReason => _itemsByRecipeKeywordSlotWithReason;
     public IReadOnlyCollection<string> KeywordsUsedInRecipeSlots => _keywordsUsedInRecipeSlots;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientKeywordMatch>> RecipesByIngredientKeywordWithReason => _recipesByIngredientKeywordWithReason;
     public IReadOnlyDictionary<string, string> KeywordDisplayNames => _keywordDisplayNames;
@@ -729,6 +737,13 @@ public sealed class ReferenceDataService : IReferenceDataService
         // fills keywordSet, so the "Used as" set and KeywordsUsedInRecipeSlots are the
         // same materialization and cannot diverge (the #318 invariant).
         var keywordRecipes = new Dictionary<string, List<Recipe>>(StringComparer.Ordinal);
+        // Distinct recipe keyword-slot key-tuples, keyed by the slot's ItemKeys '+'-joined
+        // (the encoding the retired EntityRef.ItemKeyword used). Accumulated from the SAME
+        // RecipeKeywordIngredient walk that feeds keywordSet so the surface-3 provenance
+        // index (#318 slice 4) cannot drift from the keyword data — single accumulation.
+        // The value is the slot's original ItemKeys list, retained so the post-walk
+        // materialization can run ItemKeywordIndex.ItemsMatching once per slot.
+        var keywordSlots = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         // tag → Desc → occurrence count. Used after the walk to pick the most-common Desc
         // for each keyword. Most-common-wins handles cases where one Desc dominates across
         // recipes; ties broken by first-encountered (dictionary insertion order is stable).
@@ -779,6 +794,15 @@ public sealed class ReferenceDataService : IReferenceDataService
                             }
                             if (!kwList.Contains(recipe))
                                 kwList.Add(recipe);
+                        }
+                        // Record the distinct slot key-tuple for the surface-3 provenance
+                        // index (#318 slice 4). The '+'-join is the retired
+                        // EntityRef.ItemKeyword encoding, kept stable across the migration.
+                        if (kwIng.ItemKeys.Count > 0)
+                        {
+                            var slotKey = string.Join('+', kwIng.ItemKeys);
+                            if (!keywordSlots.ContainsKey(slotKey))
+                                keywordSlots[slotKey] = kwIng.ItemKeys;
                         }
                         // Only singleton slots feed display-name resolution. Composite tuples
                         // (e.g. ["EquipmentSlot:MainHand","MinTSysPrereq:0"]) carry Descs that
@@ -868,6 +892,25 @@ public sealed class ReferenceDataService : IReferenceDataService
                 .ToList(),
             StringComparer.Ordinal);
         _keywordDisplayNames = displayNames;
+        // Surface-3 provenance index (#318 slice 4 — the recipe-detail keyword surface).
+        // Each distinct slot key-tuple is materialized exactly once via the canonical
+        // ItemKeywordIndex (_keywordIndex) — the SAME object the rest of Mithril uses for
+        // "items matching these keys". There is no second derivation between the set and
+        // the popup, so the displayed "View all N" cannot diverge from the index (the
+        // #318 invariant; this is precisely the divergence the retired
+        // ItemKeyword/ItemKeywordQueryMapper pair suffered, where the mapper failed
+        // whole-slot on prereq keys ItemKeywordIndex nonetheless matched). The
+        // relationship is single-reason: ItemsMatching membership is the only mechanism,
+        // and it already dedups, so every member is exactly one (item, KeywordMatch)
+        // record and a distinct-member count equals the displayed count. Empty-result
+        // slots are still keyed (with an empty list) so the consumer can tell
+        // "no matching items" from "unknown slot".
+        _itemsByRecipeKeywordSlotWithReason = keywordSlots.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<RecipeKeywordItemMatch>)_keywordIndex.ItemsMatching(kv.Value)
+                .Select(i => new RecipeKeywordItemMatch(i, RecipeKeywordItemMatchReason.KeywordMatch))
+                .ToList(),
+            StringComparer.Ordinal);
 
         static void AddIngredientRecipe(Dictionary<string, List<Recipe>> map, string internalName, Recipe recipe)
         {

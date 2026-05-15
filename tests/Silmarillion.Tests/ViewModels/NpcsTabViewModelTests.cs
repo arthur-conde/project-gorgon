@@ -566,10 +566,15 @@ public sealed class NpcsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_ServiceDetails_StoreCapKeywords_EmitChips_Navigable_WhenItemKeywordKindRegistered()
+    public void DetailViewModel_ServiceDetails_StoreCapKeywords_EmitChips_NonNavigablePlainText_AfterItemKeywordRetired()
     {
-        // Bug from #292: the per-tier keyword tuple should be navigable chips that flip to the
-        // Items tab pre-filtered, mirroring the recipe-detail "Used as" pattern from #270.
+        // #292 lifted the per-tier keyword tuple into chips. #318 slice 4 (surface 3)
+        // retired EntityKind.ItemKeyword (the recipe-detail fan-out kind); these are
+        // single-keyword Items filter pivots — legitimate 1:1 per the #318 rule — but
+        // their backing kind is gone and the symmetric Items-keyword pivot isn't built
+        // yet, so the chips degrade to non-navigable plain text (label preserved, no
+        // information loss, no dead click). Follow-up owed: Items-side single-keyword
+        // filter-pivot kind (out of scope for surface 3 — one surface, one PR).
         var npc = new Npc
         {
             Name = "Joeh",
@@ -590,7 +595,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -599,13 +604,8 @@ public sealed class NpcsTabViewModelTests
 
         var firstLine = store.Details[0];
         firstLine.Chips.Should().HaveCount(4);
-        firstLine.Chips.Select(c => c.Reference).Should().Equal(
-            EntityRef.ItemKeyword("Food"),
-            EntityRef.ItemKeyword("CookingIngredient"),
-            EntityRef.ItemKeyword("AlchemyIngredient"),
-            EntityRef.ItemKeyword("Potion"));
-        firstLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeTrue(
-            because: "ItemKeyword kind is registered, so each cap-keyword chip should route to the Items tab."));
+        firstLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeFalse(
+            because: "EntityKind.ItemKeyword was retired (#318 slice 4); the chip degrades to non-navigable plain text."));
         // Friendly chip labels fall back to a CamelCase split when KeywordDisplayNames has no
         // entry — mirrors the existing item-detail "Used as" chip behaviour from PR #267.
         firstLine.Chips.Select(c => c.DisplayName).Should().Equal(
@@ -647,12 +647,14 @@ public sealed class NpcsTabViewModelTests
     }
 
     [Fact]
-    public void DetailViewModel_ServiceDetails_ConsignmentItemTypes_EmitChips_Navigable_WhenItemKeywordKindRegistered()
+    public void DetailViewModel_ServiceDetails_ConsignmentItemTypes_EmitChips_NonNavigablePlainText_AfterItemKeywordRetired()
     {
         // Follow-up to #292 / PR #294: ConsignmentService.ItemTypes is an array of raw
         // item-keyword tags (e.g. Equipment, CorpseTrophy, Tool) — same shape as Store cap
-        // keyword tuples. Lift them out of the comma-joined "Items:" prose into a per-line
-        // chip strip that routes the Items tab via EntityKind.ItemKeyword, matching #270.
+        // keyword tuples, lifted into a per-line chip strip. #318 slice 4 (surface 3)
+        // retired EntityKind.ItemKeyword; these single-keyword Items pivots degrade to
+        // non-navigable plain-text chips (labels preserved) pending the symmetric
+        // Items-keyword pivot (follow-up, out of scope for surface 3).
         var npc = new Npc
         {
             Name = "Joeh",
@@ -670,7 +672,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 
@@ -680,12 +682,8 @@ public sealed class NpcsTabViewModelTests
         var itemsLine = consignment.Details[0];
         itemsLine.Text.Should().Be("Items:", because: "the label is preserved as prose so the chip strip reads as a labeled list, matching the Store cap-increase visual rhythm");
         itemsLine.Chips.Should().HaveCount(3);
-        itemsLine.Chips.Select(c => c.Reference).Should().Equal(
-            EntityRef.ItemKeyword("Equipment"),
-            EntityRef.ItemKeyword("CorpseTrophy"),
-            EntityRef.ItemKeyword("AugmentationRelated"));
-        itemsLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeTrue(
-            because: "ItemKeyword kind is registered, so each consignment chip should route to the Items tab."));
+        itemsLine.Chips.Should().AllSatisfy(c => c.IsNavigable.Should().BeFalse(
+            because: "EntityKind.ItemKeyword was retired (#318 slice 4); the chip degrades to non-navigable plain text."));
         // CamelCase split fallback when KeywordDisplayNames has no entry (default test stub).
         itemsLine.Chips.Select(c => c.DisplayName).Should().Equal(
             "Equipment", "Corpse Trophy", "Augmentation Related");
@@ -714,7 +712,7 @@ public sealed class NpcsTabViewModelTests
         {
             NpcsByKey = { ["NPC_Joeh"] = npc },
         };
-        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.ItemKeyword), new ReferenceDataEntityNameResolver(refData));
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
 
         vm.SelectedRow = vm.AllNpcs.Single();
 

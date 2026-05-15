@@ -4,7 +4,6 @@ using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.Query;
-using Silmarillion.Navigation;
 
 namespace Silmarillion.ViewModels;
 
@@ -95,8 +94,9 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var produced = BuildProducedChips(recipe);
         var effects = recipe.ResultEffects ?? Array.Empty<string>();
         var sources = BuildSourceChips(recipe);
+        var keywordSlots = BuildKeywordSlots(recipe);
         DetailViewModel = new RecipeDetailViewModel(
-            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources);
+            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots);
     }
 
     private void OnFileUpdated(object? sender, string fileKey)
@@ -189,25 +189,76 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
             .Select(c => c!)
             .ToList();
 
+    // Item-ingredient chips only. Keyword slots are a 1:N fan-out (one slot → N matching
+    // items): per the #318 chip-vs-popup rule (slice 4, surface 3) they no longer emit a
+    // synthetic-kind EntityRef.ItemKeyword chip here — they surface via the recipe-detail
+    // "Keyword ingredients" section's provenance popup (BuildKeywordSlots, below).
     private EntityChipVm? BuildIngredientChip(RecipeIngredient ingredient) => ingredient switch
     {
         RecipeItemIngredient itemIng => BuildItemChip(itemIng.ItemCode, itemIng.StackSize, percentChance: null),
-        RecipeKeywordIngredient kwIng when kwIng.ItemKeys.Count > 0 => BuildKeywordChip(kwIng),
         _ => null,
     };
 
-    // The chip's Reference is always the slot's keys encoded as EntityRef.ItemKeyword; IsNavigable
-    // gates two ways: (a) the kind target is registered with the navigator, AND (b) every slot key
-    // is mappable to a query clause via ItemKeywordQueryMapper. Either failing → inert chip, but the
-    // reference is still well-formed so a future mapping/registration expansion flips the chip live
-    // with no chip-builder change.
-    private EntityChipVm BuildKeywordChip(RecipeKeywordIngredient kwIng)
+    /// <summary>
+    /// Build the recipe-detail keyword-slot rows (#318 slice 4, surface 3 — retiring the
+    /// synthetic <c>ItemKeyword</c> #270 deep link). Each <see cref="RecipeKeywordIngredient"/>
+    /// slot is a 1:N fan-out; per the #318 chip-vs-popup rule it surfaces as a provenance
+    /// popup fed <see cref="IReferenceDataService.ItemsByRecipeKeywordSlotWithReason"/>
+    /// <b>directly</b> — there is no query re-derivation, so the popup's "View all N" count
+    /// and membership cannot diverge from the index (the #318 invariant; this is exactly
+    /// the divergence the old <c>ItemKeywordQueryMapper</c> suffered — it failed whole-slot
+    /// on prereq keys the keyword index nonetheless matched). The relationship is
+    /// single-reason (<see cref="RecipeKeywordItemMatchReason.KeywordMatch"/>) so each
+    /// popup is a single section — <see cref="ProvenancePopupViewModel"/> collapses that to
+    /// a flat list (a single trivial reason is noise, #318 Discipline). Slots whose keys
+    /// aren't in the index (the data shifted between item/recipe loads) are skipped rather
+    /// than rendering a dead row.
+    /// </summary>
+    private IReadOnlyList<RecipeKeywordSlotVm> BuildKeywordSlots(Recipe recipe)
     {
-        var label = kwIng.Desc ?? $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}";
-        var reference = EntityRef.ItemKeyword(kwIng.ItemKeys);
-        var canMap = ItemKeywordQueryMapper.TryBuildQuery(kwIng.ItemKeys, out _);
-        var isNavigable = canMap && _navigator.CanOpen(reference);
-        return new EntityChipVm(label, IconId: 0, Reference: reference, IsNavigable: isNavigable);
+        var ingredients = recipe.Ingredients;
+        if (ingredients is null) return [];
+
+        var rows = new List<RecipeKeywordSlotVm>();
+        foreach (var kwIng in ingredients.OfType<RecipeKeywordIngredient>())
+        {
+            if (kwIng.ItemKeys.Count == 0) continue;
+            var slotKey = string.Join('+', kwIng.ItemKeys);
+            if (!_refData.ItemsByRecipeKeywordSlotWithReason.TryGetValue(slotKey, out var matches))
+                continue;
+
+            // Single materialization: order the index members once; the popup is a view
+            // over this exact list.
+            var ordered = matches
+                .OrderBy(m => m.Item.Name ?? m.Item.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            EntityChipVm Chip(Mithril.Reference.Models.Items.Item item)
+            {
+                var reference = EntityRef.Item(item.InternalName ?? "");
+                return new EntityChipVm(
+                    DisplayName: item.Name ?? item.InternalName ?? "",
+                    IconId: item.IconId,
+                    Reference: reference,
+                    IsNavigable: _navigator.CanOpen(reference));
+            }
+
+            var chips = ordered.Select(m => Chip(m.Item)).ToList();
+            var label = kwIng.Desc ?? $"any {ItemKeywordIndex.Humanise(kwIng.ItemKeys)}";
+
+            // Single-reason ⇒ exactly one section ⇒ ProvenancePopupViewModel renders a
+            // flat list (no reason header). ToQueryCommand intentionally unset (mirrors
+            // the surface-1 decision): the popup-from-index is the count-bearing surface.
+            var popup = new ProvenancePopupViewModel(
+                title: $"Items matching {label}",
+                sections: new List<ProvenancePopupSection>
+                {
+                    new(label, chips),
+                });
+
+            rows.Add(new RecipeKeywordSlotVm(label, popup, _openEntityCommand));
+        }
+        return rows;
     }
 
     private IReadOnlyList<EntityChipVm> BuildProducedChips(Recipe recipe)

@@ -32,13 +32,11 @@ public enum EntityKind
     // is retired automatically: SilmarillionDeepLinkHandler's generic
     // Enum.TryParse<EntityKind> now rejects the deleted name.
 
-    /// <summary>
-    /// Not an entity per se — a deep-link target for "open the Items tab filtered to items
-    /// that satisfy this recipe-slot's keyword constraint." InternalName carries the slot's
-    /// <c>ItemKeys</c> list, '+'-joined (singleton slots collapse to a single token).
-    /// Dispatched by ItemKeywordKindTarget.
-    /// </summary>
-    ItemKeyword,
+    // EntityKind.ItemKeyword retired in #318 slice 4 (surface 3) — the recipe-detail
+    // keyword surface is now a provenance popup fed
+    // IReferenceDataService.ItemsByRecipeKeywordSlotWithReason directly (membership +
+    // provenance, no query re-derivation). SilmarillionDeepLinkHandler's generic
+    // Enum.TryParse<EntityKind> now rejects the "ItemKeyword" route name automatically.
 
     /// <summary>
     /// Not an entity per se — a deep-link target for "open the Effects tab filtered to effects
@@ -118,8 +116,9 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     // EntityRef.RecipeIngredientKeyword retired in #318 slice 4 (surface 2) — the
     // item-detail "Used as" 1:N surface is now a provenance popup fed
     // RecipesByIngredientKeywordWithReason directly.
-    public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
-    public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
+    // EntityRef.ItemKeyword(string) / ItemKeyword(IReadOnlyList<string>) retired in #318
+    // slice 4 (surface 3) — the recipe-detail keyword surface is now a provenance popup
+    // fed ItemsByRecipeKeywordSlotWithReason directly.
     // EntityRef.RecipeIngredientItem retired in #318 slice 4 — the Items "Used in" 1:N
     // surface is now a provenance popup fed RecipesByIngredientItemWithReason directly.
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
