@@ -95,4 +95,15 @@ public class QueryHighlighterTests
         At("CROP = 1", 0).Should().Be(HighlightKind.Column);
         At("Crop = 1", 0).Should().Be(HighlightKind.Column);
     }
+
+    [Fact]
+    public void Order_by_keywords_highlight_as_keyword()
+    {
+        var spans = QueryHighlighter.Highlight("Cost > 10 ORDER BY Cost DESC",
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Cost" });
+        // ORDER BY is one token; expect a keyword span covering "ORDER BY".
+        spans.Should().Contain(s => s.Kind == HighlightKind.Keyword);
+        // And a keyword span for DESC.
+        spans.Where(s => s.Kind == HighlightKind.Keyword).Should().HaveCountGreaterThanOrEqualTo(2);
+    }
 }
