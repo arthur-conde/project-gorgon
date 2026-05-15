@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Windows.Controls;
@@ -131,6 +132,64 @@ public class QueryFilterTests
             QueryFilter.GetQueryError(listBox).Should().NotBeNullOrEmpty();
             var view = CollectionViewSource.GetDefaultView(listBox.ItemsSource);
             view.Cast<Row>().Select(r => r.Crop).Should().BeEquivalentTo("Red Aster", "Pumpkin");
+        });
+    }
+
+    [Fact]
+    public void Order_clause_writes_sort_descriptions()
+    {
+        RunOnSta(() =>
+        {
+            var rows = new ObservableCollection<Row>(Dataset);
+            var listBox = new ListBox { ItemsSource = rows };
+            QueryFilter.SetQueryText(listBox, "ORDER BY Samples DESC");
+            QueryFilter.ForceAttachForTests(listBox);
+
+            var view = CollectionViewSource.GetDefaultView(rows);
+            view.SortDescriptions.Should().ContainSingle()
+                .Which.Should().BeEquivalentTo(new SortDescription("Samples", ListSortDirection.Descending));
+        });
+    }
+
+    [Fact]
+    public void Clearing_order_clears_sort_descriptions()
+    {
+        RunOnSta(() =>
+        {
+            var rows = new ObservableCollection<Row>(Dataset);
+            var listBox = new ListBox { ItemsSource = rows };
+            QueryFilter.SetQueryText(listBox, "ORDER BY Samples");
+            QueryFilter.ForceAttachForTests(listBox);
+
+            QueryFilter.SetQueryText(listBox, "");
+            QueryFilter.FlushPendingRebuildForTests(listBox);
+
+            var view = CollectionViewSource.GetDefaultView(rows);
+            view.SortDescriptions.Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void Vm_set_sort_descriptions_restored_on_detach()
+    {
+        RunOnSta(() =>
+        {
+            var rows = new ObservableCollection<Row>(Dataset);
+            var listBox = new ListBox { ItemsSource = rows };
+            var view = CollectionViewSource.GetDefaultView(rows);
+            view.SortDescriptions.Add(new SortDescription("Crop", ListSortDirection.Ascending));
+
+            QueryFilter.ForceAttachForTests(listBox);
+            QueryFilter.SetQueryText(listBox, "ORDER BY Samples DESC");
+            QueryFilter.FlushPendingRebuildForTests(listBox);
+
+            view.SortDescriptions.Should().ContainSingle()
+                .Which.PropertyName.Should().Be("Samples");
+
+            QueryFilter.ForceDetachForTests(listBox);
+
+            view.SortDescriptions.Should().ContainSingle()
+                .Which.PropertyName.Should().Be("Crop");
         });
     }
 
