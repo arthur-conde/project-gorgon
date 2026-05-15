@@ -36,12 +36,6 @@
                             ToolTip="Close" Click="CloseButton_Click">
                         <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
                     </Button>
-                    <Button x:Name="ExportImageButton" DockPanel.Dock="Right"
-                            Width="24" Height="24" Padding="0" Margin="0,0,4,0"
-                            Background="Transparent" BorderThickness="0" Cursor="Hand"
-                            ToolTip="Copy as image" Click="ExportImageButton_Click">
-                        <icon:PackIconLucide Kind="Camera" Width="14" Height="14" Foreground="#88FFFFFF"/>
-                    </Button>
                     <TextBlock Text="{Binding DisplayName}"
                                FontFamily="{DynamicResource AppHeaderFontFamily}"
                                FontSize="{DynamicResource AppFontSizeXLarge}"
@@ -50,7 +44,7 @@
             </Border>
 
             <!-- Body: shared UserControl. -->
-            <local:RecipeDetailView x:Name="DetailBody"/>
+            <local:RecipeDetailView/>
         </DockPanel>
     </Border>
 </Window>

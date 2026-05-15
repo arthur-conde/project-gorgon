@@ -14,7 +14,4 @@ public partial class ItemDetailWindow : Window
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
-
-    private void ExportImageButton_Click(object sender, RoutedEventArgs e)
-        => DetailExportFeedback.Run(VisualImageExporter.CopyToClipboard(DetailBody), ExportImageButton);
 }

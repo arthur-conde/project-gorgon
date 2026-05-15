@@ -109,6 +109,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Footer: internal name (mono, bottom-right). -->
@@ -508,4 +510,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

@@ -17,6 +17,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Footer docks to bottom; body StackPanel fills the rest. With the host
@@ -232,4 +234,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

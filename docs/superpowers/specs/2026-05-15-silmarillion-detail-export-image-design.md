@@ -18,11 +18,13 @@ exactly the card content.
 In scope:
 
 - A reusable visual→clipboard image exporter in `Mithril.Shared.Wpf`.
-- A camera button added to the title bar of all 10 detail windows:
-  - 9 Silmarillion-local: `AbilityDetailWindow`, `QuestDetailWindow`, `NpcDetailWindow`,
-    `EffectDetailWindow`, `AreaDetailWindow`, `LorebookDetailWindow`,
-    `PlayerTitleDetailWindow`, `StorageVaultDetailWindow`, `RecipeDetailWindow`.
-  - 1 shared: `Mithril.Shared.Wpf/ItemDetailWindow`.
+- A reusable `DetailExportHost` wrapper that overlays the camera button, wrapped around
+  the content of all 10 detail **views** (so the affordance shows in both the inline
+  master-detail pane and the popup windows):
+  - 9 Silmarillion-local: `AbilityDetailView`, `QuestDetailView`, `NpcDetailView`,
+    `EffectDetailView`, `AreaDetailView`, `LorebookDetailView`,
+    `PlayerTitleDetailView`, `StorageVaultDetailView`, `RecipeDetailView`.
+  - 1 shared: `Mithril.Shared.Wpf/ItemDetailView`.
 
 Out of scope (explicitly):
 
@@ -84,47 +86,75 @@ No off-screen STA worker thread (the Pippin renderer needs that only because it 
 a control tree from scratch; here the visual is already live, laid out, and on the UI
 thread).
 
-### 2. Title-bar button
+### Design revision — host-wrapper, not title-bar (2026-05-15)
 
-Each `*DetailWindow.xaml` already has a title-bar `DockPanel` with a `DockPanel.Dock="Right"`
-Close button. Add, immediately before the Close button:
+The first implementation (PR #338) put the camera button in each `*DetailWindow`
+**title bar**. That was wrong: the Silmarillion tabs render the detail view **inline as
+a master-detail pane** (`<ContentControl Content="{Binding DetailViewModel}">` in each
+`*TabView`), not via the popup window. The `*DetailWindow` popups only open from
+cross-link chips / deep links. So in the everyday flow the title bar — and the button —
+never appears. The affordance has to live on the **detail view itself**, which is shared
+by both the inline pane and the popups.
 
-```xml
-<Button DockPanel.Dock="Right" Width="24" Height="24" Padding="0"
-        Background="Transparent" BorderThickness="0" Cursor="Hand"
-        ToolTip="Copy as image" Click="ExportImageButton_Click"
-        x:Name="ExportImageButton">
-    <icon:PackIconLucide Kind="Camera" Width="14" Height="14" Foreground="#88FFFFFF"/>
-</Button>
-```
+### 2. `DetailExportHost` (new — `src/Mithril.Shared.Wpf/DetailExportHost.cs`)
 
-The inner detail view element gets `x:Name="DetailBody"`.
+A `sealed class DetailExportHost : ContentControl` (templated control; mirrors the
+existing `ViewModeToggle` pattern — `DefaultStyleKeyProperty.OverrideMetadata`, default
+style in `Mithril.Shared.Wpf/Resources.xaml`). Its `ControlTemplate` is a `Grid` with:
 
-### 3. Wiring (code-behind)
+- `<ContentPresenter x:Name="PART_ExportContent"/>` — the wrapped detail card.
+- `<Button x:Name="PART_ExportButton">` — a top-right overlaid camera button
+  (`PackIconLucide Kind="Camera"`, semi-opaque, brightens on hover, `Panel.ZIndex=1`).
 
-Each window's `.xaml.cs` gets a one-line handler delegating to a shared static so the
-copy/feedback logic is written once:
+`OnApplyTemplate` wires the button's `Click` to snapshot **`PART_ExportContent` only**.
+Because the button is a *sibling* of the content presenter in the template (not a child),
+it is intrinsically excluded from the capture — no hide/restore dance, no title-bar
+chrome, works identically in the inline pane and the popup.
 
 ```csharp
-private void ExportImageButton_Click(object sender, RoutedEventArgs e)
-    => DetailExportFeedback.Run(VisualImageExporter.CopyToClipboard(DetailBody),
-                                ExportImageButton);
+private void OnExportClick(object sender, RoutedEventArgs e)
+{
+    if (GetTemplateChild("PART_ExportContent") is not FrameworkElement content
+        || _exportButton is null) return;
+    var ok = VisualImageExporter.CopyToClipboard(content);
+    DetailExportFeedback.Run(ok, _exportButton);
+}
 ```
 
-`DetailExportFeedback` (new, `Mithril.Shared.Wpf`) is a tiny static that, given the
-success bool and the button, swaps the button's `PackIconLucide.Kind` to `Check`
-(success) or `AlertTriangle` (failure) for ~1.2s via a `DispatcherTimer`, then restores
-`Camera`. No shared toast infrastructure exists, so the button itself is the affordance.
+`DetailExportFeedback` (new, `Mithril.Shared.Wpf`) swaps the button's
+`PackIconLucide.Kind` to `Check` (success) or `TriangleAlert` (failure) for ~1.2 s via a
+`DispatcherTimer`, then restores `Camera`. No shared toast infra exists, so the button
+itself is the affordance.
+
+### 3. Wiring (XAML only — no code-behind)
+
+Each of the 10 `*DetailView.xaml` wraps its existing single root element in the host,
+between `</UserControl.Resources>` and `</UserControl>`:
+
+```xml
+</UserControl.Resources>
+
+<c:DetailExportHost>
+    <Border Padding="14,12"> … existing card … </Border>
+</c:DetailExportHost>
+</UserControl>
+```
+
+(`c:` is each view's existing `Mithril.Shared.Wpf` xmlns alias; `PlayerTitleDetailView`
+uses `wpf:`.) The 10 `*DetailWindow` files are **unchanged** (reverted to `main`) — the
+wrapped view carries the affordance into the popup automatically. `DataContext` and
+`RelativeSource AncestorType={x:Type local:XDetailView}` bindings still resolve: the
+`UserControl` remains a visual ancestor of the wrapped content through the host template.
 
 ## Data flow
 
 ```
-user clicks Camera button (title bar, not captured)
-  → ExportImageButton_Click
-  → VisualImageExporter.CopyToClipboard(DetailBody)
-      → RenderToBitmap(DetailBody, 2.0, #FF1A1A1A)
+user clicks the overlaid camera button (sibling of content, not captured)
+  → DetailExportHost.OnExportClick
+  → VisualImageExporter.CopyToClipboard(PART_ExportContent)
+      → RenderToBitmap(content, 2.0, #FF1A1A1A)
       → Clipboard.SetDataObject(Bitmap, copy:true)
-  → DetailExportFeedback.Run(success, button)  // 1.2s icon swap
+  → DetailExportFeedback.Run(success, PART_ExportButton)  // 1.2s icon swap
 ```
 
 ## Error handling

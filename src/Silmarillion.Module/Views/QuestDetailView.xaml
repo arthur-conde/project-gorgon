@@ -160,6 +160,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Footer: internal name (mono). Repeatability promoted to a header chip so it's
@@ -394,4 +396,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

@@ -17,6 +17,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Internal-name footer pins to the bottom of the DockPanel. With the
@@ -676,4 +678,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>

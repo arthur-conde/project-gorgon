@@ -18,6 +18,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <wpf:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Footer: "Title_5018" — mono, bottom-right, per the detail-view
@@ -92,4 +94,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </wpf:DetailExportHost>
 </UserControl>

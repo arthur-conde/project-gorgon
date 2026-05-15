@@ -20,6 +20,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <c:DetailExportHost>
+
     <Border Padding="14,12">
         <DockPanel>
             <!-- Footer: "Book_101 / TheWastedWishes" — mono, bottom-right, per the
@@ -137,4 +139,5 @@
             </StackPanel>
         </DockPanel>
     </Border>
+    </c:DetailExportHost>
 </UserControl>
