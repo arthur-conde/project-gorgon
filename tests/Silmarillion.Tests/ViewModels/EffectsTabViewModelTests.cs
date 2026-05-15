@@ -393,7 +393,18 @@ public sealed class EffectsTabViewModelTests
         public IReadOnlyDictionary<string, PocoEffect> Effects => EffectsByKey;
         public IReadOnlyDictionary<string, PocoEffect> EffectsByInternalName => EffectsByKey;
         public IReadOnlyDictionary<string, IReadOnlyList<PocoEffect>> EffectsByStackingType => EffectsByStackingTypeMap;
-        public IReadOnlyDictionary<string, IReadOnlyList<Ability>> AbilitiesByEffectKeyword => AbilitiesByEffectKeywordMap;
+        // The stub map is keyed by Ability for test ergonomics; the interface shape now
+        // carries provenance (#318 slice 1). These ViewModel tests only assert membership
+        // / counts, so a uniform Requires reason is sufficient — the provenance regression
+        // is asserted against real bundled data in
+        // ReferenceDataServiceEffectCrossLinkIndexTests.
+        public IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword =>
+            AbilitiesByEffectKeywordMap.ToDictionary(
+                kv => kv.Key,
+                kv => (IReadOnlyList<EffectAbilityMatch>)kv.Value
+                    .Select(a => new EffectAbilityMatch(a, EffectAbilityMatchReason.Requires))
+                    .ToList(),
+                StringComparer.Ordinal);
         public IReadOnlyList<AbilityDynamicDot> AbilityDynamicDots => DotRules;
         public IReadOnlyList<AbilityDynamicSpecialValue> AbilityDynamicSpecialValues => SpecialValueRules;
 

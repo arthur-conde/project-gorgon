@@ -301,10 +301,17 @@ public sealed class EffectDetailViewModel
         foreach (var tag in effect.Keywords)
         {
             if (string.IsNullOrEmpty(tag)) continue;
-            if (!refData.AbilitiesByEffectKeyword.TryGetValue(tag, out var abilities)) continue;
+            if (!refData.AbilitiesByEffectKeyword.TryGetValue(tag, out var matches)) continue;
             shortcutKeyword ??= tag;
-            foreach (var ability in abilities)
+            foreach (var match in matches)
             {
+                // Slice 1 (#318): the index now carries provenance
+                // (EffectAbilityMatch.Reason). This reader is adapted minimally —
+                // membership and the "View all N" count are unchanged. Distinct-by-
+                // InternalName across tags is preserved here; the index is already
+                // dedup'd per tag, so the count equals distinct members. The
+                // provenance is surfaced by the popup in slice 2.
+                var ability = match.Ability;
                 if (ability.InternalName is null) continue;
                 if (!seen.Add(ability.InternalName)) continue;
                 ordered.Add(ability);

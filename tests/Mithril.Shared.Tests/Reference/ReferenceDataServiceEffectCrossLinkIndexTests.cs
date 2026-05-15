@@ -123,12 +123,20 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
 
         svc.AbilitiesByEffectKeyword.Should().ContainKey("FrostShard");
-        svc.AbilitiesByEffectKeyword["FrostShard"].Select(a => a.InternalName)
+        svc.AbilitiesByEffectKeyword["FrostShard"].Select(m => m.Ability.InternalName)
             .Should().BeEquivalentTo(["Req", "Enabled", "TargetReq"]);
+
+        // #318 slice 1: the index retains *which field* matched. Each single-field member
+        // carries exactly its own reason flag.
+        var byName = svc.AbilitiesByEffectKeyword["FrostShard"]
+            .ToDictionary(m => m.Ability.InternalName!, m => m.Reason);
+        byName["Req"].Should().Be(EffectAbilityMatchReason.Requires);
+        byName["Enabled"].Should().Be(EffectAbilityMatchReason.EnabledBy);
+        byName["TargetReq"].Should().Be(EffectAbilityMatchReason.Targets);
     }
 
     [Fact]
-    public void AbilitiesByEffectKeyword_DedupesWhenSameTagAppearsInMultipleFields()
+    public void AbilitiesByEffectKeyword_MultiFieldMember_CarriedOnceWithOredReasonFlags()
     {
         WriteFixture(
             effectsJson: "{ }",
@@ -145,8 +153,16 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
 
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
 
-        svc.AbilitiesByEffectKeyword["FrostShard"].Should().ContainSingle()
-            .Which.InternalName.Should().Be("Double");
+        // Dedup intent preserved: a single member (so a distinct-member count == the
+        // displayed "View all N"), but provenance is complete — all three reason flags
+        // are OR'd onto the one record. (No multi-reason member exists in bundled data
+        // today, so this is the synthetic guard for the OR-accumulation path.)
+        var match = svc.AbilitiesByEffectKeyword["FrostShard"].Should().ContainSingle().Which;
+        match.Ability.InternalName.Should().Be("Double");
+        match.Reason.Should().Be(
+            EffectAbilityMatchReason.Requires
+            | EffectAbilityMatchReason.EnabledBy
+            | EffectAbilityMatchReason.Targets);
     }
 
     [Fact]
@@ -164,7 +180,7 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
 
         svc.AbilitiesByEffectKeyword["FrostShard"].Should().ContainSingle()
-            .Which.InternalName.Should().Be("Player");
+            .Which.Ability.InternalName.Should().Be("Player");
     }
 
     [Fact]
@@ -204,7 +220,7 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
             """);
 
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
-        svc.AbilitiesByEffectKeyword["FrostShard"].Select(a => a.InternalName)
+        svc.AbilitiesByEffectKeyword["FrostShard"].Select(m => m.Ability.InternalName)
             .Should().BeEquivalentTo(["Strike"]);
 
         // Refresh abilities.json with a second ability now requiring FrostShard. The
@@ -219,7 +235,7 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
 
         // Force re-load of abilities from cache.
         var reloaded = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
-        reloaded.AbilitiesByEffectKeyword["FrostShard"].Select(a => a.InternalName)
+        reloaded.AbilitiesByEffectKeyword["FrostShard"].Select(m => m.Ability.InternalName)
             .Should().BeEquivalentTo(["Strike", "Slash"]);
         await Task.CompletedTask;
     }
@@ -254,17 +270,79 @@ public sealed class ReferenceDataServiceEffectCrossLinkIndexTests : IDisposable
         parsed.Count.Should().BeGreaterThan(10_000);
     }
 
-    private static string? LocateBundledEffects()
+    private static string? LocateBundledEffects() => LocateBundled("effects.json");
+
+    private static string? LocateBundledData()
+    {
+        var effects = LocateBundled("effects.json");
+        return effects is null ? null : Path.GetDirectoryName(effects);
+    }
+
+    private static string? LocateBundled(string file)
     {
         // Walk up from the test binary toward the repo root looking for the bundled file.
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 10 && dir is not null; i++)
         {
-            var candidate = Path.Combine(dir, "src", "Mithril.Shared", "Reference", "BundledData", "effects.json");
+            var candidate = Path.Combine(dir, "src", "Mithril.Shared", "Reference", "BundledData", file);
             if (File.Exists(candidate)) return candidate;
             dir = Directory.GetParent(dir)?.FullName;
         }
         return null;
+    }
+
+    [Fact]
+    public void RealBundled_NonPrimaryFieldOnlyTag_RetainsProvenance_WouldHaveCaughtTheBug()
+    {
+        // #318 slice 1 — the load-bearing regression test.
+        //
+        // The original bug: the synthetic AbilityByEffectKeyword kind target re-derived the
+        // set as `EffectKeywordReqs CONTAINS "<tag>"` — one of the three fields the index
+        // unions. Quantified on bundled data: of 24 distinct effect-keyword tags,
+        // EffectKeywordReqs carries exactly 1 (GraffitiSpot); EffectKeywordsIndicatingEnabled
+        // carries 21; TargetEffectKeywordReq carries 2. So 23/24 tags deep-linked to an empty
+        // list. This test pins a concrete non-primary-field-only tag — "BloodMist", carried
+        // ONLY by EffectKeywordsIndicatingEnabled — and asserts it is present in the index
+        // *with the correct provenance reason*. Pre-#318 the value shape discarded the field;
+        // there was nowhere for this assertion to live. It now would.
+        var bundledDir = LocateBundledData();
+        if (bundledDir is null) return; // CI shapes that strip bundled data stay green.
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: bundledDir);
+
+        svc.AbilitiesByEffectKeyword.Should().ContainKey("BloodMist",
+            because: "BloodMist appears only in EffectKeywordsIndicatingEnabled, not EffectKeywordReqs — "
+                + "the field the old synthetic deep-link queried");
+
+        var members = svc.AbilitiesByEffectKeyword["BloodMist"];
+        members.Should().NotBeEmpty();
+
+        // Every BloodMist member qualified via EnabledBy and ONLY EnabledBy in bundled data.
+        members.Should().OnlyContain(
+            m => m.Reason == EffectAbilityMatchReason.EnabledBy,
+            because: "BloodMist is not in any ability's EffectKeywordReqs or TargetEffectKeywordReq");
+
+        // None carry the Requires flag — this is exactly the divergence the bug produced:
+        // a 'Requires CONTAINS BloodMist' query returns empty while the index (correctly)
+        // has 9 EnabledBy members.
+        members.Should().OnlyContain(m => !m.Reason.HasFlag(EffectAbilityMatchReason.Requires));
+
+        // The concrete ability set, pinned so a future bundled-data change that drops the
+        // relationship surfaces as a failure here rather than a silent empty popup.
+        members.Select(m => m.Ability.InternalName).Should().BeEquivalentTo(
+            ["BloodMist1", "BloodMist2", "BloodMist3", "BloodMist4", "BloodMist5",
+             "BloodMist6", "BloodMist7", "BloodMist8", "BloodMist9"]);
+
+        // And the single primary-field tag still classifies as Requires — proving the
+        // index distinguishes the fields rather than tagging everything uniformly.
+        svc.AbilitiesByEffectKeyword.Should().ContainKey("GraffitiSpot");
+        svc.AbilitiesByEffectKeyword["GraffitiSpot"].Should().OnlyContain(
+            m => m.Reason == EffectAbilityMatchReason.Requires);
+
+        // And a TargetEffectKeywordReq-only tag classifies as Targets.
+        svc.AbilitiesByEffectKeyword.Should().ContainKey("MindRevealed");
+        svc.AbilitiesByEffectKeyword["MindRevealed"].Should().OnlyContain(
+            m => m.Reason == EffectAbilityMatchReason.Targets);
     }
 
     [Fact]
