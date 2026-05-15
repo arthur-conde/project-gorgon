@@ -140,30 +140,42 @@ of just `ORDER BY Name` has no WHERE side.
 
 The parsed query is the single source of truth. `QueryParser.Parse` returns
 `ParsedQuery(QueryNode? Predicate, IReadOnlyList<OrderSpec> Order)` — `Order`
-is empty when there's no sort clause. `QueryCompiler.CompileOrder` turns that
-order list into `IReadOnlyList<SortDescription>`, resolving each column
-case-insensitively by default (ordinal when `CaseSensitive`) to its canonical
-binding name, and throwing `QueryException` for an unknown column or a
-non-`IComparable` (non-sortable) one.
+is empty when there's no sort clause. The compiler offers two compatible
+factories that share validation (unknown column / non-sortable type both
+throw `QueryException`):
+
+- `QueryCompiler.CompileOrder` → `IReadOnlyList<SortDescription>` — used for
+  surfaces that read `ICollectionView.SortDescriptions` (or for sort-intent
+  serialization), and to drive `DataGridColumn.SortDirection` for header
+  arrows.
+- `QueryCompiler.CompileOrderComparer` → `IComparer<object>` — a composite
+  comparer that picks `NaturalStringComparer` for string columns (so
+  `"Bite 2" < "Bite 10"`) and `Comparer<object>.Default` for everything
+  else, applies direction by negation, and is null-safe.
 
 How each consumer surface honours it:
 
-- **`MithrilDataGrid`**: when bound to a `MithrilQueryBox`, it applies the
-  `SortDescription`s compiled from the box's `ParsedQuery.Order` to the
-  view, and column-header clicks *rewrite the box's `ORDER BY` segment*
-  rather than sorting the view directly (Shift-click composes a multi-key
-  order). On first attach it seeds: any pre-existing default
-  `SortDescriptions` (typical when a VM seeded the view before adopting the
-  query box) are serialised back into the query text via
-  `RewriteOrderClause`, so modules with a default sort keep it.
-- **`QueryFilter` attached behaviour**: writes the parsed order into the
-  bound `ICollectionView.SortDescriptions`, and captures/restores the VM's
-  own sort descriptors on attach/detach (same capture-and-compose contract
-  as the filter side).
+- **`MithrilDataGrid`**: when bound to a `MithrilQueryBox`, it sets the
+  compiled `IComparer` on the view via
+  `ListCollectionView.CustomSort` (which clears `SortDescriptions` — they're
+  mutex in WPF) and drives each `DataGridColumn.SortDirection` directly from
+  the parsed order list so header arrows still render. Column-header clicks
+  *rewrite the box's `ORDER BY` segment* rather than sorting the view
+  directly (Shift-click composes a multi-key order). On first attach it
+  seeds: any pre-existing default `SortDescriptions` (typical when a VM
+  seeded the view before adopting the query box) are serialised back into
+  the query text via `RewriteOrderClause`, so modules with a default sort
+  keep it.
+- **`QueryFilter` attached behaviour**: sets `CustomSort` on the bound view
+  for a non-empty order; restores the VM's captured baseline
+  `SortDescriptions` on detach (the `Add` calls clear `CustomSort` as a side
+  effect, which is the desired outcome). Non-`ListCollectionView` views
+  (rare) fall back to `SortDescriptions` and get lex sort on strings.
 - **`QueryableSource<T>`**: exposes `Order` (the parsed `OrderSpec` list,
   last-good-retained on parse failure like `Predicate`) plus
-  `ApplyOrdered(IEnumerable<T>)`, which filters then `OrderBy`/`ThenBy`s with
-  a null-safe comparer. Headless — no WPF, no `SortDescription`.
+  `ApplyOrdered(IEnumerable<T>)`, which filters then sorts with the same
+  composite `IComparer<object>` (so natural-sort holds at the headless
+  surface too). No WPF, no `SortDescription`.
 
 Sort chips are a *view* of the parsed `ORDER BY`, not a parallel model.
 `SortFilterController<T>` takes the VM's declarative `IReadOnlyList<SortKey<T>>`
@@ -201,6 +213,17 @@ implement this.
 ### `ORDER BY` is the canonical sort state
 
 Header clicks on `MithrilDataGrid` and chip clicks in any `ISortableViewModel<T>` view both *rewrite the bound query-box's `ORDER BY` segment* (via `OrderClauseRewriter`). The query text is the single source of truth; sort UIs are editors and views of it, not parallel state. A `MithrilDataGrid` embedded *without* a `MithrilQueryBox` keeps native WPF header-sort behaviour. `QueryableSource<T>` has no bare-text fallback and no chip surface — it exposes `Order` and `ApplyOrdered` for headless VMs to consume directly.
+
+### String columns natural-sort by default
+
+A string `ORDER BY` key sorts via [`NaturalStringComparer`](../src/Mithril.Shared.Wpf/Query/NaturalStringComparer.cs) (digit runs compare numerically), so `Bite, Bite 2, Bite 3, …, Bite 11` is the default order — common pattern for tiered names in Project Gorgon reference data. Numeric / `DateTime` / `TimeSpan` / enum columns are unaffected (they route through `Comparer<object>.Default`). The comparer is ordinal — case-insensitive by default, case-sensitive when the surface's `CaseSensitive` flag is set — matching the rest of the query system. No locale awareness; no per-column opt-out.
+
+### `SortDescriptions` is empty while `ORDER BY` is active
+
+WPF's `ListCollectionView.CustomSort` and `SortDescriptions` are mutex (setting one clears the other). The query system uses `CustomSort` so it can apply the natural-sort comparer, so a view with an active `ORDER BY` clause has empty `SortDescriptions`. Two downstream consequences:
+
+- **DataGrid header arrows** are driven from `DataGridColumn.SortDirection` directly (by `MithrilDataGrid.ApplyColumnSortDirections`), not from `SortDescriptions`. Custom views/controls that read `SortDescriptions` to render their own chrome won't see the active order — read `ParsedQuery.Order` from the bound `MithrilQueryBox` instead.
+- **VM-set `SortDescriptions`** are still captured and restored on detach (any `SortDescriptions.Add` post-detach clears `CustomSort` as a side effect, restoring the VM baseline cleanly).
 
 ### Bare-text fallback (UI surfaces only)
 
@@ -259,7 +282,9 @@ force a synchronous rebuild.
 |---|---|
 | [`QueryParser.cs`](../src/Mithril.Shared.Wpf/Query/QueryParser.cs) | Lexer + recursive-descent parser → AST; also `LooksLikeGrammar` classifier |
 | [`QueryAst.cs`](../src/Mithril.Shared.Wpf/Query/QueryAst.cs) | AST node + value records; `ParsedQuery` / `OrderSpec` / `OrderDirection` |
-| [`QueryCompiler.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompiler.cs) | AST → `Func<object, bool>`; `CompileOrder` → `IReadOnlyList<SortDescription>` |
+| [`QueryCompiler.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompiler.cs) | AST → `Func<object, bool>`; `CompileOrder` → `IReadOnlyList<SortDescription>`; `CompileOrderComparer` → `IComparer<object>` |
+| [`NaturalStringComparer.cs`](../src/Mithril.Shared.Wpf/Query/NaturalStringComparer.cs) | Ordinal natural-sort `IComparer<string>` — digit runs compare numerically (`Bite 2` < `Bite 10`) |
+| [`OrderComparer.cs`](../src/Mithril.Shared.Wpf/Query/OrderComparer.cs) | Composite `IComparer` over `OrderSpec[]` — string keys → natural sort, others → default |
 | [`ColumnBindingHelper.cs`](../src/Mithril.Shared.Wpf/Query/ColumnBindingHelper.cs) | Reflection → `ColumnBinding` + `ColumnSchema` |
 | [`QueryHighlighter.cs`](../src/Mithril.Shared.Wpf/Query/QueryHighlighter.cs) | Permissive lex → syntax-colour runs |
 | [`QueryCompletionProvider.cs`](../src/Mithril.Shared.Wpf/Query/QueryCompletionProvider.cs) | Context-aware autocomplete; defines `ColumnSchema` |
