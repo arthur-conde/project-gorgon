@@ -85,6 +85,8 @@ public class MithrilDataGrid : DataGrid
     private Dictionary<string, ColumnBinding> _columns = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, List<string>> _distinctValues = new(StringComparer.OrdinalIgnoreCase);
     private Type? _itemType;
+    private MithrilQueryBox? _boundQueryBox;
+    private bool _suppressOrderEcho;
 
     /// <summary>
     /// Snapshot of the grid's filterable columns — query name, CLR type, nullability.
@@ -121,6 +123,34 @@ public class MithrilDataGrid : DataGrid
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        Sorting += OnGridSorting;
+    }
+
+    /// <summary>
+    /// Called by <see cref="MithrilQueryBox"/> when its <see cref="MithrilQueryBox.Grid"/>
+    /// property changes — establishes (or tears down) the back-reference that lets the grid
+    /// apply <c>ORDER BY</c> from the box's parsed query and route header-click sort edits
+    /// back into the query text.
+    /// </summary>
+    internal void SetBoundQueryBox(MithrilQueryBox? box)
+    {
+        if (ReferenceEquals(_boundQueryBox, box)) return;
+
+        if (_boundQueryBox is not null)
+        {
+            _boundQueryBox.ParsedQueryChanged -= OnQueryBoxParsedQueryChanged;
+        }
+        _boundQueryBox = box;
+        if (_boundQueryBox is not null)
+        {
+            _boundQueryBox.ParsedQueryChanged += OnQueryBoxParsedQueryChanged;
+            // If the grid already has default sort descriptors (typical: VM seeded the view
+            // before the query box bound), serialize them into the query text so the chips /
+            // header arrows / query box all share one source of truth.
+            TrySeedOrderClauseFromExistingDescriptors();
+            // Then apply the (possibly just-seeded) order to the view.
+            ApplyOrderFromQueryBox();
+        }
     }
 
     private static void OnModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -197,6 +227,13 @@ public class MithrilDataGrid : DataGrid
         _vmFilter = _attachedView?.Filter;
         RebuildDistinctValues();
         RebuildFilter();
+        // If a query box is already bound, seed from any pre-existing default sort and
+        // apply the (possibly just-seeded) order to the freshly attached view.
+        if (_boundQueryBox is not null)
+        {
+            TrySeedOrderClauseFromExistingDescriptors();
+            ApplyOrderFromQueryBox();
+        }
         SchemaChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -386,6 +423,152 @@ public class MithrilDataGrid : DataGrid
     }
 
     private Predicate<object>? _lastGoodInputPredicate;
+
+    private void OnQueryBoxParsedQueryChanged(object? sender, EventArgs e)
+    {
+        if (_suppressOrderEcho) return;
+        ApplyOrderFromQueryBox();
+    }
+
+    /// <summary>
+    /// Compile the bound query box's current <c>ORDER BY</c> clause into
+    /// <see cref="SortDescription"/>s and apply them to the attached view. Failures
+    /// (e.g. unknown column) are swallowed — the predicate-side error UI already
+    /// surfaces the same error; leaving the prior good sort intact avoids flicker.
+    /// </summary>
+    private void ApplyOrderFromQueryBox()
+    {
+        if (_boundQueryBox is null) return;
+        var view = _attachedView ?? (ItemsSource is not null ? CollectionViewSource.GetDefaultView(ItemsSource) : null);
+        if (view is null) return;
+        var parsed = _boundQueryBox.ParsedQuery;
+        var order = parsed?.Order ?? Array.Empty<OrderSpec>();
+        try
+        {
+            var descs = QueryCompiler.CompileOrder(order, _columns, FilterCaseSensitive);
+            using (view.DeferRefresh())
+            {
+                view.SortDescriptions.Clear();
+                foreach (var sd in descs)
+                {
+                    view.SortDescriptions.Add(sd);
+                }
+            }
+        }
+        catch (QueryException)
+        {
+            // Column resolution error already surfaces via the predicate-side error UI.
+            // Leave SortDescriptions untouched to avoid losing the prior good sort.
+        }
+    }
+
+    private void OnGridSorting(object? sender, DataGridSortingEventArgs e)
+    {
+        var box = _boundQueryBox;
+        if (box is null) return;  // standalone grid: keep native WPF sort behaviour
+
+        e.Handled = true;
+        var clicked = e.Column.SortMemberPath ?? e.Column.Header?.ToString();
+        if (string.IsNullOrEmpty(clicked)) return;
+
+        var current = box.ParsedQuery?.Order ?? (IReadOnlyList<OrderSpec>)Array.Empty<OrderSpec>();
+        var newOrder = ToggleColumnInOrder(
+            current,
+            clicked!,
+            modifierKeyShift: Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+
+        _suppressOrderEcho = true;
+        try
+        {
+            box.RewriteOrderClause(newOrder);
+        }
+        finally
+        {
+            _suppressOrderEcho = false;
+        }
+        // Re-apply sort descriptors from the new parsed order so header arrows reflect it.
+        ApplyOrderFromQueryBox();
+    }
+
+    private static IReadOnlyList<OrderSpec> ToggleColumnInOrder(
+        IReadOnlyList<OrderSpec> current, string column, bool modifierKeyShift)
+    {
+        var existing = -1;
+        for (int i = 0; i < current.Count; i++)
+        {
+            if (string.Equals(current[i].Column, column, StringComparison.OrdinalIgnoreCase))
+            {
+                existing = i;
+                break;
+            }
+        }
+
+        if (!modifierKeyShift)
+        {
+            // Replace clause: if column was already the sole/primary key with ASC,
+            // flip to DESC; otherwise become ASC.
+            var dir = (existing >= 0 && current[existing].Direction == OrderDirection.Ascending)
+                ? OrderDirection.Descending
+                : OrderDirection.Ascending;
+            return new[] { new OrderSpec(column, dir) };
+        }
+
+        // Shift-click: keep existing keys; add or toggle this one in place.
+        var list = new List<OrderSpec>(current);
+        if (existing >= 0)
+        {
+            var flipped = list[existing].Direction == OrderDirection.Ascending
+                ? OrderDirection.Descending
+                : OrderDirection.Ascending;
+            list[existing] = new OrderSpec(column, flipped);
+        }
+        else
+        {
+            list.Add(new OrderSpec(column, OrderDirection.Ascending));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Migration helper: if the bound query box has no ORDER BY clause yet, but the
+    /// underlying view already has <see cref="SortDescription"/>s (typical when a VM
+    /// seeded a default sort before adopting the query box), serialize those descriptors
+    /// into the query text so chips / header arrows / query-box text all agree.
+    /// </summary>
+    private void TrySeedOrderClauseFromExistingDescriptors()
+    {
+        var box = _boundQueryBox;
+        if (box is null) return;
+        var parsed = box.ParsedQuery;
+        if (parsed is not null && parsed.Order.Count > 0) return;  // user-typed order wins
+
+        var view = _attachedView ?? (ItemsSource is not null ? CollectionViewSource.GetDefaultView(ItemsSource) : null);
+        if (view is null) return;
+        if (view.SortDescriptions.Count == 0) return;
+
+        var seeded = new List<OrderSpec>(view.SortDescriptions.Count);
+        foreach (var sd in view.SortDescriptions)
+        {
+            if (string.IsNullOrEmpty(sd.PropertyName)) continue;
+            seeded.Add(new OrderSpec(
+                sd.PropertyName,
+                sd.Direction == ListSortDirection.Ascending
+                    ? OrderDirection.Ascending
+                    : OrderDirection.Descending));
+        }
+        if (seeded.Count > 0)
+        {
+            _suppressOrderEcho = true;
+            try
+            {
+                box.RewriteOrderClause(seeded);
+            }
+            finally
+            {
+                _suppressOrderEcho = false;
+            }
+        }
+    }
 
     /// <summary>
     /// Bare-text fallback: matches rows whose string columns contain <paramref name="text"/>

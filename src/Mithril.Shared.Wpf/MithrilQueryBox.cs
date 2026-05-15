@@ -205,10 +205,12 @@ public class MithrilQueryBox : Control
         if (e.OldValue is MithrilDataGrid oldGrid)
         {
             oldGrid.SchemaChanged -= box.OnGridSchemaChanged;
+            oldGrid.SetBoundQueryBox(null);
         }
         if (e.NewValue is MithrilDataGrid newGrid)
         {
             newGrid.SchemaChanged += box.OnGridSchemaChanged;
+            newGrid.SetBoundQueryBox(box);
         }
         box.UpdateHighlighting();
     }
