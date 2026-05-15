@@ -1009,10 +1009,13 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <!-- Separator drawn as a centered Ellipse, not a
-                                                 font glyph: U+00B7 sits on the baseline in the
-                                                 mono font and reads as a period. A shape is
-                                                 font-independent and always vertically centered. -->
+                                            <!-- All three row items (Ellipse + both chip Buttons)
+                                                 are VerticalAlignment=Center so the dot sits at
+                                                 the text's optical centre. Without centring, the
+                                                 chip text stretches and draws from the top of its
+                                                 line box while a centred dot lands near the
+                                                 baseline — reading as a period. The separator is a
+                                                 shape, not a glyph, so it is also font-independent. -->
                                             <Ellipse Width="3" Height="3" Margin="7,0"
                                                      VerticalAlignment="Center" Fill="#88FFFFFF">
                                                 <Ellipse.Style>
@@ -1028,14 +1031,16 @@
                                             </Ellipse>
                                             <Button Command="{Binding CopyCommand}" Cursor="Hand"
                                                     Background="Transparent" BorderThickness="0"
-                                                    Padding="0" ToolTip="Click to copy">
+                                                    Padding="0" VerticalAlignment="Center"
+                                                    ToolTip="Click to copy">
                                                 <Button.Template>
                                                     <ControlTemplate TargetType="Button">
                                                         <ContentPresenter/>
                                                     </ControlTemplate>
                                                 </Button.Template>
                                                 <TextBlock FontFamily="{DynamicResource AppMonoFontFamily}"
-                                                           FontSize="{DynamicResource AppFontSizeSmall}">
+                                                           FontSize="{DynamicResource AppFontSizeSmall}"
+                                                           VerticalAlignment="Center">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
                                                             <Setter Property="Text" Value="{Binding Text}"/>
