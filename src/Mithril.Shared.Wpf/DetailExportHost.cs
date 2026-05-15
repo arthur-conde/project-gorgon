@@ -96,13 +96,15 @@ public sealed class DetailExportHost : ContentControl
         var host = (DetailExportHost)d;
         var segments = (e.NewValue as IEnumerable<string>)?
             .Where(s => !string.IsNullOrEmpty(s))
-            .ToList() ?? new List<string>();
+            .ToList() ?? [];
 
         var items = new List<FooterSegmentItem>(segments.Count);
         for (var i = 0; i < segments.Count; i++)
         {
-            var item = new FooterSegmentItem(segments[i], isFirst: i == 0);
-            item.CopyCommand = new RelayCommand(() => host.CopySegment(item));
+            FooterSegmentItem? item = null;
+            item = new FooterSegmentItem(
+                segments[i], isFirst: i == 0,
+                new RelayCommand(() => host.CopySegment(item!)));
             items.Add(item);
         }
 
@@ -219,10 +221,11 @@ public sealed class DetailExportHost : ContentControl
 /// </summary>
 public sealed partial class FooterSegmentItem : ObservableObject
 {
-    public FooterSegmentItem(string text, bool isFirst)
+    public FooterSegmentItem(string text, bool isFirst, IRelayCommand copyCommand)
     {
         Text = text;
         IsFirst = isFirst;
+        CopyCommand = copyCommand;
     }
 
     /// <summary>The atomic identifier shown and copied verbatim.</summary>
@@ -234,7 +237,7 @@ public sealed partial class FooterSegmentItem : ObservableObject
     [ObservableProperty]
     private bool _copied;
 
-    /// <summary>Set by the host immediately after construction; copies
-    /// <see cref="Text"/> and triggers this segment's ack.</summary>
-    public IRelayCommand CopyCommand { get; set; } = null!;
+    /// <summary>Copies <see cref="Text"/> and triggers this segment's ack.
+    /// Injected by the host at construction.</summary>
+    public IRelayCommand CopyCommand { get; }
 }
