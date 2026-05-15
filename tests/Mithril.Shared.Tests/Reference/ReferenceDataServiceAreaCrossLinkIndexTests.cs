@@ -175,6 +175,71 @@ public sealed class ReferenceDataServiceAreaCrossLinkIndexTests : IDisposable
             "an areas-only refresh still has both NPCs from the npcs cache, and the index must be rebuilt to surface them.");
     }
 
+    [Fact]
+    public void NpcsByAreaWithReason_MirrorsNpcsByArea_SameMembershipSingleReason()
+    {
+        // #318 slice 4, surface 4 — the provenance-retaining index must be derived from
+        // the SAME accumulation as NpcsByArea so the two cannot diverge (the #318
+        // invariant). Membership identical; every member carries exactly the InArea
+        // reason; a distinct-member count equals NpcsByArea's per-area list size.
+        WriteFixture(npcsJson: """
+        {
+          "NPC_Joeh": { "Name": "Joeh", "AreaName": "AreaSerbule", "AreaFriendlyName": "Serbule" },
+          "NPC_Marna": { "Name": "Marna", "AreaName": "AreaSerbule", "AreaFriendlyName": "Serbule" },
+          "NPC_Norbert": { "Name": "Norbert", "AreaName": "AreaEltibule", "AreaFriendlyName": "Eltibule" },
+          "NPC_Wandering": { "Name": "Wandering" }
+        }
+        """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // Membership equality with the non-provenance sibling — same objects, same keys.
+        svc.NpcsByAreaWithReason.Keys.Should().BeEquivalentTo(svc.NpcsByArea.Keys);
+        foreach (var (areaKey, npcs) in svc.NpcsByArea)
+        {
+            var withReason = svc.NpcsByAreaWithReason[areaKey];
+            withReason.Select(m => m.Npc).Should().BeEquivalentTo(npcs,
+                "the provenance index is a view over the SAME accumulation — membership cannot diverge.");
+            withReason.Should().OnlyContain(m => m.Reason == NpcByAreaMatchReason.InArea,
+                "single-reason relationship — every member qualifies via the area-name match only.");
+        }
+
+        // A distinct-member count equals the displayed 'View all N'.
+        svc.NpcsByAreaWithReason["AreaSerbule"].Select(m => m.Npc.Key).Distinct()
+            .Should().BeEquivalentTo(["NPC_Joeh", "NPC_Marna"]);
+        svc.NpcsByAreaWithReason.Values.SelectMany(v => v).Select(m => m.Npc.Key)
+            .Should().NotContain("NPC_Wandering",
+                "an NPC without an AreaName is in neither index.");
+    }
+
+    [Fact]
+    public void RefreshNpcsOrAreas_RebuildsNpcsByAreaWithReason()
+    {
+        // The provenance index must rebuild on the same triggers as NpcsByArea — a CDN
+        // refresh of either npcs.json or areas.json must not leave it stale.
+        WriteFixture(
+            npcsJson: """
+            {
+              "NPC_Joeh": { "Name": "Joeh", "AreaName": "AreaSerbule" }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+        svc.NpcsByAreaWithReason["AreaSerbule"].Should().ContainSingle();
+
+        File.WriteAllText(Path.Combine(_cacheDir, "npcs.json"), """
+        {
+          "NPC_Joeh": { "Name": "Joeh", "AreaName": "AreaSerbule" },
+          "NPC_Marna": { "Name": "Marna", "AreaName": "AreaSerbule" }
+        }
+        """);
+        File.WriteAllText(Path.Combine(_cacheDir, "npcs.meta.json"), "{\"cdnVersion\":\"v2\",\"source\":1}");
+
+        var after = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+        after.NpcsByAreaWithReason["AreaSerbule"].Select(m => m.Npc.Key)
+            .Should().BeEquivalentTo(["NPC_Joeh", "NPC_Marna"]);
+    }
+
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

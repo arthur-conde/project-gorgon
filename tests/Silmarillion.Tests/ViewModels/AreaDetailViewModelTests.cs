@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using FluentAssertions;
 using Mithril.Reference.Models.Abilities;
@@ -7,6 +8,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -60,7 +62,7 @@ public sealed class AreaDetailViewModelTests
     }
 
     [Fact]
-    public void NpcChips_CappedAtUsedInChipCap_ShortcutReportsTotalCount()
+    public void NpcChips_CappedAtUsedInChipCap_PopupReportsTotalCount()
     {
         var npcs = Enumerable.Range(1, 30)
             .Select(i => new NpcEntry($"NPC_{i:000}", $"NPC {i:000}", "Serbule", [], [], []))
@@ -72,16 +74,104 @@ public sealed class AreaDetailViewModelTests
         var settings = new SilmarillionSettings { UsedInChipCap = 12 };
         var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub, settings);
 
-        vm.NpcChips.Should().HaveCount(12);
-        vm.NpcsTabShortcut.Should().NotBeNull();
-        vm.NpcsTabShortcut!.DisplayName.Should().Be("View all 30 in NPCs tab →",
-            "the shortcut carries the total count so the user knows the chip strip is capped.");
-        vm.NpcsTabShortcut.Reference.Should().Be(EntityRef.NpcByArea("AreaSerbule"));
+        vm.NpcChips.Should().HaveCount(12, "the in-pane cluster is capped");
+        vm.NpcsTotal.Should().Be(30);
+        vm.NpcsPopup.Should().NotBeNull();
+        // The defining #318 assertion: "View all N" == distinct index members, NOT the cap.
+        vm.NpcsPopup!.TotalCount.Should().Be(30,
+            "the popup is fed the index directly — the cap never affects its count.");
+        vm.ShowNpcsPopupCommand.CanExecute(null).Should().BeTrue();
     }
 
     [Fact]
-    public void NpcsTabShortcut_AlwaysPresentWhenAnyNpcs_EvenBelowCap()
+    public void NpcsPopup_IsFlat_SingleReasonInArea()
     {
+        var stub = new StubReferenceData
+        {
+            NpcsByAreaMap =
+            {
+                ["AreaSerbule"] = new[]
+                {
+                    new NpcEntry("NPC_Joeh", "Joeh", "Serbule", [], [], []),
+                    new NpcEntry("NPC_Marna", "Marna", "Serbule", [], [], []),
+                },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        var popup = vm.NpcsPopup!;
+        popup.IsFlat.Should().BeTrue("single reason (InArea) ⇒ flat list, #318 Discipline");
+        popup.Sections.Should().ContainSingle().Which.Label.Should().Be("NPCs in this area");
+        popup.FlatChips.Select(c => c.Reference.InternalName)
+            .Should().BeEquivalentTo(new[] { "NPC_Joeh", "NPC_Marna" });
+    }
+
+    [Fact]
+    public void NpcsPopup_NullWhenNoNpcsInArea()
+    {
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        vm.NpcChips.Should().BeEmpty();
+        vm.NpcsPopup.Should().BeNull("no NPCs means no popup — the affordance hides.");
+        vm.NpcsTotal.Should().Be(0);
+        vm.HasNpcs.Should().BeFalse();
+        vm.ShowNpcsPopupCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    // ── #318 Gate C (merge-blocking) — NPCs surface ────────────────────────────
+
+    [Fact]
+    public void GateC_NpcsPopup_MembershipEqualsIndex_MemberOnlyInIndexStillAppears()
+    {
+        // The load-bearing regression that would have caught the original dual-derivation
+        // bug for THIS surface. The pre-#318 "NPCs in this area" deep-linked via the
+        // NpcByArea synthetic kind, whose kind target re-derived the set as the query
+        // string `AreaName = "<areaKey>"`. If the index ever carried a member the query
+        // string did NOT (an NPC present in NpcsByAreaWithReason but not re-derivable
+        // from a naive AreaName filter), the chip opened a list missing that member. The
+        // popup-from-index has no query between the set and the screen, so a member
+        // present ONLY in the index must still appear — with its InArea provenance — and
+        // the count must equal the distinct index membership exactly.
+        var direct = new NpcEntry("NPC_Joeh", "Joeh", "Serbule", [], [], []);
+        // An NPC whose membership comes from a match record only — the "non-primary path"
+        // analogue: it lives in the provenance index, never re-derivable from a naive
+        // AreaName query. It must still surface in the popup.
+        var indexOnly = new NpcEntry("NPC_IndexOnly", "Index Only", "Serbule", [], [], []);
+        var stub = new StubReferenceData
+        {
+            // Seed the provenance index directly with BOTH members so the test asserts
+            // popup membership == index membership, independent of any query.
+            NpcsByAreaWithReasonOverride =
+            {
+                ["AreaSerbule"] = new[]
+                {
+                    new NpcByAreaMatch(direct, NpcByAreaMatchReason.InArea),
+                    new NpcByAreaMatch(indexOnly, NpcByAreaMatchReason.InArea),
+                },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        var popup = vm.NpcsPopup;
+        popup.Should().NotBeNull();
+        popup!.TotalCount.Should().Be(2, "View all N == distinct index members");
+        popup.IsFlat.Should().BeTrue("single reason (InArea) ⇒ flat list");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            new[] { "NPC_Joeh", "NPC_IndexOnly" },
+            "every index member appears — there is no query that could drop one.");
+        popup.Sections.Should().ContainSingle().Which.Label.Should().Be("NPCs in this area");
+        // The capped cluster is a view over the SAME ordered list — membership identical.
+        vm.NpcChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            new[] { "NPC_Joeh", "NPC_IndexOnly" });
+        vm.NpcsTotal.Should().Be(2);
+    }
+
+    [Fact]
+    public void NpcsPopup_openingPopup_doesNotTouchNavigator_noHistoryPushed()
+    {
+        // #318 — opening the popup must NOT push navigator back/forward history (the #229
+        // non-navigating contract, mirroring TryOpenInWindow and the surface-1
+        // ItemDetailViewModel test). The opener is swapped for a capturing no-op so no
+        // window spawns; assert navigator state is pristine before and after.
         var stub = new StubReferenceData
         {
             NpcsByAreaMap =
@@ -89,23 +179,33 @@ public sealed class AreaDetailViewModelTests
                 ["AreaSerbule"] = new[] { new NpcEntry("NPC_Joeh", "Joeh", "Serbule", [], [], []) },
             },
         };
-        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = BuildWith(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub, nav);
 
-        vm.NpcChips.Should().HaveCount(1);
-        vm.NpcsTabShortcut.Should().NotBeNull(
-            "the shortcut is always visible when there's at least one NPC — jumping to the NPCs tab is useful for sort/filter even when the chip strip already shows everything.");
-        vm.NpcsTabShortcut!.DisplayName.Should().Be("View all 1 in NPCs tab →");
+        var prior = AreaDetailViewModel.ProvenancePopupOpener;
+        ProvenancePopupViewModel? captured = null;
+        AreaDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+
+            vm.ShowNpcsPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull("the command invoked the opener with the built popup VM");
+            // The defining assertion: opening the popup pushed no navigator state.
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+        }
+        finally
+        {
+            AreaDetailViewModel.ProvenancePopupOpener = prior;
+        }
     }
 
-    [Fact]
-    public void NpcsTabShortcut_NullWhenNoNpcsInArea()
-    {
-        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
-        vm.NpcChips.Should().BeEmpty();
-        vm.NpcsTabShortcut.Should().BeNull(
-            "no NPCs means no shortcut — the chip would be meaningless.");
-        vm.HasNpcs.Should().BeFalse();
-    }
+    // ── Landmarks (#311 fold-in) ───────────────────────────────────────────────
 
     [Fact]
     public void LandmarkGroups_PartitionByType_OrderedMeditationPillarPortalPlatform()
@@ -137,7 +237,6 @@ public sealed class AreaDetailViewModelTests
     [Fact]
     public void LandmarkGroups_EmptyTypesHidden()
     {
-        // No platforms in this fixture — Teleportation Platform group should NOT render.
         var stub = new StubReferenceData
         {
             LandmarksMap =
@@ -201,9 +300,6 @@ public sealed class AreaDetailViewModelTests
     [Fact]
     public void PortalRow_MissingDesc_DescDisplayEmpty()
     {
-        // The Run binding stays attached but renders empty; visually the " — " separator
-        // collapses with it. Regression net for the empty-string idiom (Run can't carry
-        // Visibility, so the row's *Display getters paper over null fields).
         var stub = new StubReferenceData
         {
             LandmarksMap =
@@ -264,11 +360,89 @@ public sealed class AreaDetailViewModelTests
     }
 
     [Fact]
-    public void RealBundledArea_Eltibule_ProjectsSensibly()
+    public void LandmarksPopup_IsSectionedByType_NotFlat()
     {
-        // Real-data sanity walk per cookbook *Verification ladder* — load actual bundled
-        // areas.json + landmarks.json + npcs.json and verify the largest-NPC area projects
-        // without missing fields. Skips when bundled data isn't co-located.
+        // Landmark Type IS genuine provenance ("which kind of landmark"), so the popup is
+        // a multi-section (provenance-sectioned) popup, NOT collapsed-to-flat. This is the
+        // deliberate distinction from the NPCs surface (single trivial reason ⇒ flat).
+        var stub = new StubReferenceData
+        {
+            LandmarksMap =
+            {
+                ["AreaSerbule"] = new[]
+                {
+                    new PocoLandmark { Name = "Pillar A", Type = "MeditationPillar", Combo = "4017", Loc = "x:1 y:1 z:1" },
+                    new PocoLandmark { Name = "Portal A", Type = "Portal", Desc = "Return", Loc = "x:0 y:0 z:0" },
+                    new PocoLandmark { Name = "Portal B", Type = "Portal", Desc = "Exit", Loc = "x:2 y:2 z:2" },
+                },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        var popup = vm.LandmarksPopup!;
+        popup.Should().NotBeNull();
+        popup.IsFlat.Should().BeFalse("landmark Type is genuine provenance — sectioned, never flat");
+        popup.Sections.Select(s => s.Label).Should().Equal(
+            new[] { "Meditation Pillars", "Portals" },
+            "sections follow the gameplay-relevance order: pillars → portals → platforms");
+        popup.Sections.Single(s => s.Label == "Portals").Chips.Should().HaveCount(2);
+        // Folded label: name · detail (Combo for pillars, Desc · Loc for portals).
+        popup.Sections.Single(s => s.Label == "Meditation Pillars").Chips.Single()
+            .DisplayName.Should().Be("Pillar A · Combo: 4017 · x:1 y:1 z:1");
+        popup.Sections.SelectMany(s => s.Chips).Should().OnlyContain(c => !c.IsNavigable,
+            "landmarks aren't navigable entities — chips are inert");
+    }
+
+    [Fact]
+    public void GateC_LandmarksPopup_HighCardinality_TotalEqualsDistinctMembers_Virtualized()
+    {
+        // #318 Gate C + the #311 high-cardinality virtualization sanity assertion. The
+        // ~547-row Massive Tourmaline precedent (#259) must not regress to a
+        // non-virtualized list. There is no separate non-virtualized list path: the FULL
+        // landmark set is materialized once and rendered ONLY through the shared
+        // ProvenancePopupWindow's recycling VirtualizingStackPanel. This test seeds a
+        // 547-landmark area and asserts (a) the popup carries the full distinct set
+        // (TotalCount == 547, independent of the in-pane preview), (b) every landmark
+        // appears with a DISTINCT reference (so TotalCount's Distinct() can't collapse
+        // them — the virtualized list renders all 547 rows), (c) section provenance is
+        // intact. The shared control's ProvenanceChipListStyle (asserted in
+        // ProvenancePopupWindow.xaml) is the recycling VirtualizingStackPanel; routing
+        // through it is the structural guarantee that this path is virtualized.
+        const int n = 547;
+        var landmarks = Enumerable.Range(0, n)
+            .Select(i => new PocoLandmark
+            {
+                Name = $"Portal {i:000}",
+                Type = "Portal",
+                Desc = $"Exit {i}",
+                Loc = $"x:{i} y:{i} z:{i}",
+            })
+            .ToArray();
+        var stub = new StubReferenceData
+        {
+            LandmarksMap = { ["AreaTourmaline"] = landmarks },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaTourmaline", "Massive Tourmaline", "Tourmaline"), stub);
+
+        vm.LandmarksTotal.Should().Be(n);
+        var popup = vm.LandmarksPopup!;
+        popup.Should().NotBeNull();
+        popup.TotalCount.Should().Be(n,
+            "the popup carries the full distinct set fed from the index, not a preview cap");
+        popup.Sections.Should().ContainSingle("only Portals in this fixture")
+            .Which.Chips.Should().HaveCount(n);
+        // Each landmark must have a DISTINCT reference, otherwise ProvenancePopupViewModel's
+        // Distinct()-by-Reference TotalCount would collapse them and the (virtualized) list
+        // would silently render fewer than 547 rows.
+        popup.Sections.Single().Chips.Select(c => c.Reference).Distinct().Should().HaveCount(n);
+        popup.Sections.Single().Chips.Should().OnlyContain(c => !c.IsNavigable);
+    }
+
+    // ── Real-data sanity ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void RealBundledArea_Serbule_ProjectsSensibly()
+    {
         var bundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
         if (!File.Exists(Path.Combine(bundled, "landmarks.json"))) return;
 
@@ -291,18 +465,25 @@ public sealed class AreaDetailViewModelTests
         detail.NpcChips.Should().OnlyContain(c => !string.IsNullOrEmpty(c.DisplayName));
         detail.NpcChips.Should().OnlyContain(c => !c.DisplayName.StartsWith("NPC_"),
             because: "the resolver should project envelope keys to friendly names");
+        // The popup is fed the index directly: count == distinct index membership.
+        detail.NpcsPopup.Should().NotBeNull();
+        detail.NpcsPopup!.TotalCount.Should().Be(detail.NpcsTotal);
+        detail.NpcsPopup.IsFlat.Should().BeTrue("single-reason InArea ⇒ flat");
 
-        // Landmark sections render with at least one valid group; every group has non-empty rows.
         detail.LandmarkGroups.Should().OnlyContain(g => g.Rows.Count > 0,
-            because: "empty groups are filtered out by BuildLandmarkGroups");
+            because: "empty groups are filtered out by BuildLandmarks");
         detail.LandmarkGroups.SelectMany(g => g.Rows).Should().OnlyContain(r => !string.IsNullOrEmpty(r.Name));
+        if (detail.HasLandmarks)
+        {
+            detail.LandmarksPopup.Should().NotBeNull();
+            detail.LandmarksPopup!.TotalCount.Should().Be(detail.LandmarksTotal);
+            detail.LandmarksPopup.IsFlat.Should().BeFalse("landmarks are sectioned by Type");
+        }
     }
 
     [Fact]
     public void RealBundledArea_LargestLandmarkCluster_PartitionsWithoutUnknownTypes()
     {
-        // Cardinality stress: the area with the most landmarks (32 in AreaDesert1Caves) should
-        // partition cleanly into the three known Types — no "(unknown)" fallback group.
         var bundled = Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
         if (!File.Exists(Path.Combine(bundled, "landmarks.json"))) return;
 
@@ -320,10 +501,14 @@ public sealed class AreaDetailViewModelTests
             new SilmarillionSettings());
         areasVm.SelectedArea = areasVm.AllAreas.First(a => a.Key == areaEntry.Key);
 
-        var groups = areasVm.DetailViewModel!.LandmarkGroups;
+        var detail = areasVm.DetailViewModel!;
+        var groups = detail.LandmarkGroups;
         groups.Should().NotBeEmpty();
         groups.Select(g => g.Type).Should().BeSubsetOf(new[] { "MeditationPillar", "Portal", "TeleportationPlatform" },
             because: "the corpus only carries those three Types; a fallback '(unknown)' indicates either a future PG patch shipping a new Type or a POCO binding break");
+        // Popup membership == full materialized landmark count for the area.
+        detail.LandmarksPopup!.TotalCount.Should().Be(biggestArea.Value.Count,
+            "the popup is the only path to the full set and must carry every landmark");
     }
 
     private static IReferenceDataService? BuildRealRefData(string bundled)
@@ -370,10 +555,28 @@ public sealed class AreaDetailViewModelTests
         return (vm, refData);
     }
 
+    private static AreaDetailViewModel BuildWith(
+        AreaEntry area,
+        StubReferenceData refData,
+        SilmarillionReferenceNavigator navigator)
+    {
+        var nameResolver = new ReferenceDataEntityNameResolver(refData);
+        var openCommand = new RelayCommand<EntityRef?>(_ => { });
+        return new AreaDetailViewModel(area, refData, navigator, nameResolver, new SilmarillionSettings(), openCommand);
+    }
+
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, IReadOnlyList<PocoLandmark>> LandmarksMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<NpcEntry>> NpcsByAreaMap { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Explicit override for the provenance index (#318 Gate C — seed it independently
+        /// of <see cref="NpcsByAreaMap"/> to prove popup membership == index membership
+        /// with NO query in between). When unset, derive from the same NpcsByAreaMap
+        /// fixture so existing setups feed the popup-from-index without restating data.
+        /// </summary>
+        public Dictionary<string, IReadOnlyList<NpcByAreaMatch>> NpcsByAreaWithReasonOverride { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -388,6 +591,25 @@ public sealed class AreaDetailViewModelTests
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<PocoLandmark>> Landmarks => LandmarksMap;
         public IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> NpcsByArea => NpcsByAreaMap;
+
+        public IReadOnlyDictionary<string, IReadOnlyList<NpcByAreaMatch>> NpcsByAreaWithReason
+        {
+            get
+            {
+                if (NpcsByAreaWithReasonOverride.Count > 0)
+                    return NpcsByAreaWithReasonOverride;
+                // Derive from the same NpcsByAreaMap accumulation — single materialization,
+                // mirroring ReferenceDataService.BuildAreaNpcCrossLinkIndex so tests that
+                // only seed NpcsByAreaMap still exercise the real popup-from-index path.
+                return NpcsByAreaMap.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<NpcByAreaMatch>)kv.Value
+                        .Select(n => new NpcByAreaMatch(n, NpcByAreaMatchReason.InArea))
+                        .ToList(),
+                    StringComparer.Ordinal);
+            }
+        }
+
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();

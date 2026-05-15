@@ -82,6 +82,26 @@ public sealed class SilmarillionDeepLinkHandlerTests
     }
 
     [Theory]
+    [InlineData("NpcByArea/AreaSerbule")]   // synthetic kind retired in #318 slice 4, surface 4
+    [InlineData("npcbyarea/AreaSerbule")]   // case-insensitive: still unknown
+    public void TryHandle_RetiredNpcByAreaRoute_IsRejected(string subPath)
+    {
+        // #318 slice 4, surface 4 — deleting EntityKind.NpcByArea retires the generic
+        // mithril://silmarillion/NpcByArea/... route for free: Enum.TryParse<EntityKind>
+        // no longer recognises "NpcByArea", so the handler rejects it before any
+        // navigation. (The "NPCs in this area" surface is now a provenance popup, never a
+        // navigable route.)
+        Enum.TryParse<EntityKind>("NpcByArea", ignoreCase: true, out _).Should().BeFalse(
+            "the synthetic kind was deleted — the generic route dispatch must reject it.");
+
+        var nav = new PermissiveNavigator();
+        var handler = new SilmarillionDeepLinkHandler(nav);
+
+        handler.TryHandle(subPath, diag: null).Should().BeFalse();
+        nav.LastOpened.Should().BeNull();
+    }
+
+    [Theory]
     [InlineData("npc/Marna", EntityKind.Npc, "Marna")]
     [InlineData("ability/Hatchet", EntityKind.Ability, "Hatchet")]
     [InlineData("quest/RuminationsOfAYoungMan", EntityKind.Quest, "RuminationsOfAYoungMan")]

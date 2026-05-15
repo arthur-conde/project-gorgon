@@ -168,11 +168,48 @@ public interface IReferenceDataService
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> NpcsByArea => EmptyNpcByAreaIndex;
 
+    /// <summary>
+    /// Provenance-retaining variant of <see cref="NpcsByArea"/> (#318 slice 4, surface 4 —
+    /// Areas "NPCs in this area"). Same membership — NPCs whose
+    /// <see cref="Mithril.Reference.Models.Npcs.Npc.AreaName"/> equals the area key — but
+    /// each member is a <see cref="NpcByAreaMatch"/> retaining <em>why</em> it qualified,
+    /// so the provenance popup renders membership <em>and</em> provenance from the index
+    /// directly with no second (query-string) derivation that could silently diverge (the
+    /// #318 invariant — replaces the retired <c>NpcByArea</c> synthetic-kind deep link).
+    /// The relationship is single-reason (<see cref="NpcByAreaMatchReason.InArea"/>), so
+    /// the popup collapses to a flat list per the #318 Discipline rule. An NPC is carried
+    /// once — a distinct-member count equals the displayed "View all N". Derived from the
+    /// same accumulation as <see cref="NpcsByArea"/> so the two indices cannot diverge.
+    /// Built whenever <c>npcs.json</c> or <c>areas.json</c> reloads.
+    /// <para>
+    /// The default <b>projects from <see cref="NpcsByArea"/></b> (single trivial
+    /// <see cref="NpcByAreaMatchReason.InArea"/> reason) rather than returning empty: any
+    /// fake that only opts into <see cref="NpcsByArea"/> still feeds the popup-from-index
+    /// without a ripple across every consumer test, and the projection is exactly what
+    /// <c>ReferenceDataService.BuildAreaNpcCrossLinkIndex</c> materializes from the same
+    /// accumulation — so the default faithfully models production. The production service
+    /// overrides this property with the once-materialized index, so this default is never
+    /// hit there.
+    /// </para>
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<NpcByAreaMatch>> NpcsByAreaWithReason
+        => NpcsByArea.Count == 0
+            ? EmptyNpcByAreaMatchIndex
+            : NpcsByArea.ToDictionary(
+                kv => kv.Key,
+                kv => (IReadOnlyList<NpcByAreaMatch>)kv.Value
+                    .Select(n => new NpcByAreaMatch(n, NpcByAreaMatchReason.InArea))
+                    .ToList(),
+                StringComparer.Ordinal);
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<Landmark>> EmptyLandmarkIndex
         = new Dictionary<string, IReadOnlyList<Landmark>>(StringComparer.Ordinal);
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> EmptyNpcByAreaIndex
         = new Dictionary<string, IReadOnlyList<NpcEntry>>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<NpcByAreaMatch>> EmptyNpcByAreaMatchIndex
+        = new Dictionary<string, IReadOnlyList<NpcByAreaMatch>>(StringComparer.Ordinal);
 
     /// <summary>
     /// Item InternalName → sources describing how the item can be obtained

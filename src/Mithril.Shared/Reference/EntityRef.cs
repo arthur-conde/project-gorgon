@@ -59,13 +59,14 @@ public enum EntityKind
     /// </summary>
     EffectByStackingType,
 
-    /// <summary>
-    /// Not an entity per se — a deep-link target for "open the NPCs tab filtered to NPCs
-    /// in this area." InternalName carries the area envelope key (e.g. <c>"AreaSerbule"</c>).
-    /// Dispatched by NpcByAreaKindTarget; powers the Areas-tab "NPCs in this area" section's
-    /// overflow pill when the chip cluster exceeds <see cref="Silmarillion.SilmarillionSettings.UsedInChipCap"/>.
-    /// </summary>
-    NpcByArea,
+    // NpcByArea synthetic kind retired in #318 slice 4, surface 4 — the Areas "NPCs in
+    // this area" 1:N surface is now a provenance popup fed
+    // IReferenceDataService.NpcsByAreaWithReason directly (no synthetic-kind deep link /
+    // query re-derivation). This was the last synthetic kind in the FAN-OUT / 1:N
+    // reverse-lookup family #318 targeted (the dual-derivation bug class) — that family
+    // is now empty. RecipeIngredientKeyword (#259) and ItemKeyword (#270) above are
+    // single-keyword *filter-pivot* kinds (1:1 "open the tab filtered to this concept"),
+    // not fan-out sets; the cookbook keeps those as legitimate pending their own slices.
 }
 
 /// <summary>
@@ -121,7 +122,8 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     // surface is now a provenance popup fed RecipesByIngredientItemWithReason directly.
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
     public static EntityRef EffectByStackingType(string stackingType) => new(EntityKind.EffectByStackingType, stackingType);
-    public static EntityRef NpcByArea(string areaKey) => new(EntityKind.NpcByArea, areaKey);
+    // EntityRef.NpcByArea retired in #318 slice 4, surface 4 — the Areas "NPCs in this
+    // area" 1:N surface is now a provenance popup fed NpcsByAreaWithReason directly.
 }
 
 /// <summary>

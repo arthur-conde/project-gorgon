@@ -122,9 +122,10 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceKindTarget>(sp => new AreasKindTarget(
             sp.GetRequiredService<AreasTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
-        services.AddSingleton<IReferenceKindTarget>(sp => new NpcByAreaKindTarget(
-            sp.GetRequiredService<NpcsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+        // NpcByAreaKindTarget retired in #318 slice 4, surface 4 — the Areas "NPCs in
+        // this area" 1:N surface is now a provenance popup fed NpcsByAreaWithReason
+        // directly (no synthetic-kind deep link / query re-derivation). The landmark
+        // groups (#311 fold-in) likewise route through the shared virtualizing popup.
         services.AddSingleton<IReferenceKindTarget>(sp => new LorebooksKindTarget(
             sp.GetRequiredService<LorebooksTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
