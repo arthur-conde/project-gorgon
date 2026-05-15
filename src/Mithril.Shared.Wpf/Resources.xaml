@@ -1009,12 +1009,14 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="  ·  " Foreground="#55FFFFFF"
-                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                                                       FontSize="{DynamicResource AppFontSizeSmall}"
-                                                       VerticalAlignment="Center">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
+                                            <!-- Separator drawn as a centered Ellipse, not a
+                                                 font glyph: U+00B7 sits on the baseline in the
+                                                 mono font and reads as a period. A shape is
+                                                 font-independent and always vertically centered. -->
+                                            <Ellipse Width="3" Height="3" Margin="7,0"
+                                                     VerticalAlignment="Center" Fill="#88FFFFFF">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
                                                         <Setter Property="Visibility" Value="Visible"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsFirst}" Value="True">
@@ -1022,8 +1024,8 @@
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
+                                                </Ellipse.Style>
+                                            </Ellipse>
                                             <Button Command="{Binding CopyCommand}" Cursor="Hand"
                                                     Background="Transparent" BorderThickness="0"
                                                     Padding="0" ToolTip="Click to copy">
