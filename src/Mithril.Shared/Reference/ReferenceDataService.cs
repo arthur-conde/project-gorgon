@@ -130,6 +130,10 @@ public sealed class ReferenceDataService : IReferenceDataService
     private IReadOnlyDictionary<string, AreaEntry> _areas = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> _npcsByArea =
         new Dictionary<string, IReadOnlyList<NpcEntry>>(StringComparer.Ordinal);
+    // Provenance-retaining sibling of _npcsByArea (#318 slice 4, surface 4). Built from the
+    // SAME accumulation in BuildAreaNpcCrossLinkIndex so the two indices cannot diverge.
+    private IReadOnlyDictionary<string, IReadOnlyList<NpcByAreaMatch>> _npcsByAreaWithReason =
+        new Dictionary<string, IReadOnlyList<NpcByAreaMatch>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _areasSnapshot;
 
     // Landmarks (landmarks.json) — area key → in-area landmark list. Mirrors the file's
@@ -340,6 +344,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, AreaEntry> Areas => _areas;
     public IReadOnlyDictionary<string, IReadOnlyList<PocoLandmark>> Landmarks => _landmarks;
     public IReadOnlyDictionary<string, IReadOnlyList<NpcEntry>> NpcsByArea => _npcsByArea;
+    public IReadOnlyDictionary<string, IReadOnlyList<NpcByAreaMatch>> NpcsByAreaWithReason => _npcsByAreaWithReason;
     public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources => _itemSources;
     public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
     public IReadOnlyDictionary<string, Ability> Abilities => _abilities;
@@ -1065,6 +1070,19 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _npcsByArea = byArea.ToDictionary(
             kv => kv.Key, kv => (IReadOnlyList<NpcEntry>)kv.Value, StringComparer.Ordinal);
+        // Provenance-retaining sibling (#318 slice 4, surface 4 — Areas "NPCs in this
+        // area"). Derived from the SAME `byArea` accumulation as _npcsByArea, so the two
+        // indices cannot diverge (single materialization — the #318 invariant). The
+        // relationship is single-reason: an NPC is in the per-area list iff its AreaName
+        // matched the key (the only accumulation above), and the list is already dedup'd
+        // by NPC — so every member is exactly one (npc, InArea) record and a
+        // distinct-member count equals the displayed "View all N".
+        _npcsByAreaWithReason = byArea.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<NpcByAreaMatch>)kv.Value
+                .Select(n => new NpcByAreaMatch(n, NpcByAreaMatchReason.InArea))
+                .ToList(),
+            StringComparer.Ordinal);
     }
 
     private void ParseAndSwapLorebooks(IReadOnlyDictionary<string, Lorebook> raw, ReferenceFileMetadata meta)

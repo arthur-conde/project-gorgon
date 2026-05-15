@@ -48,6 +48,22 @@ public class EntityRefTests
     // #318 slice 4 (the Items "Used in" 1:N surface is now a provenance popup fed
     // RecipesByIngredientItemWithReason directly) — its factory test is removed with it.
 
+    // EntityRef.NpcByArea / EntityKind.NpcByArea were retired in #318 slice 4, surface 4
+    // (the Areas "NPCs in this area" 1:N surface is now a provenance popup fed
+    // NpcsByAreaWithReason directly) — its factory test is removed with it. This was the
+    // last synthetic EntityKind; the test below pins that zero remain.
+
+    [Fact]
+    public void No_synthetic_EntityKind_named_NpcByArea_remains()
+    {
+        // After #318 slice 4, surface 4 there are zero synthetic EntityKind values.
+        // "NpcByArea" must no longer parse — this is what retires the generic
+        // mithril://silmarillion/NpcByArea/... route (the deep-link handler dispatches via
+        // Enum.TryParse<EntityKind>).
+        Enum.TryParse<EntityKind>("NpcByArea", ignoreCase: true, out _).Should().BeFalse();
+        Enum.GetNames<EntityKind>().Should().NotContain("NpcByArea");
+    }
+
     [Fact]
     public void Npc_factory_strips_area_prefix_from_slug_form()
     {

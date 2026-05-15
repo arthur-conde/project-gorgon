@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -67,13 +68,50 @@
                     <TextBlock Text="{Binding Heading}" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}"
                                FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <!-- Non-virtualizing StackPanel: the largest area carries 32 landmarks across
-                         three groups (avg ~10 per group), well below the threshold where
-                         virtualization matters. Revisit if a future PG patch significantly
-                         expands per-area landmark counts. -->
+                    <!-- In-pane preview cluster only. The full landmark set (and any
+                         high-cardinality area — the ~547-row #259 precedent) is reachable
+                         through the shared virtualizing ProvenancePopupWindow via the
+                         "View all N →" affordance below; there is no separate
+                         non-virtualized list path for the full set (#311 fold-in). -->
                     <ItemsControl ItemsSource="{Binding Rows}"/>
                 </StackPanel>
             </DataTemplate>
+
+            <!-- Shared "View all N →" affordance (ghost fill, ListFilter glyph) — reads as
+                 "go see the full set", not "open an entity". Mirrors the surface-1
+                 ItemDetailView affordance; opens the shared provenance popup (#318). -->
+            <Style x:Key="ViewAllButtonStyle" TargetType="Button">
+                <Setter Property="Margin" Value="0,4,0,0"/>
+                <Setter Property="Padding" Value="6,2"/>
+                <Setter Property="HorizontalAlignment" Value="Left"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderBrush" Value="#66D4A847"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Foreground" Value="#FFD4A847"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
+                                                         Foreground="{TemplateBinding Foreground}"
+                                                         Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#22D4A847"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -116,23 +154,41 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <ContentControl Content="{Binding NpcsTabShortcut}"
-                                    Margin="0,4,0,0"
-                                    Visibility="{Binding NpcsTabShortcut, Converter={StaticResource NullToVis}}">
-                        <ContentControl.Resources>
-                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:ActionChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
-                            </DataTemplate>
-                        </ContentControl.Resources>
-                    </ContentControl>
+                    <!-- "View all N →" — opens the shared provenance popup (#318 slice 4,
+                         surface 4) fed IReferenceDataService.NpcsByAreaWithReason directly.
+                         Always visible whenever any NPC is in the area (independent of the
+                         chip cap). Replaces the retired NpcByArea synthetic-kind shortcut. -->
+                    <Button Style="{StaticResource ViewAllButtonStyle}"
+                            Command="{Binding ShowNpcsPopupCommand}"
+                            Visibility="{Binding NpcsPopup, Converter={StaticResource NullToVis}}">
+                        <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center">
+                            <Run Text="View all "/><Run Text="{Binding NpcsTotal, Mode=OneWay}"/><Run Text=" →"/>
+                        </TextBlock>
+                    </Button>
                 </StackPanel>
 
-                <!-- ─── Landmarks in this area ─── -->
+                <!-- ─── Landmarks in this area (#311 fold-in) ─── -->
                 <StackPanel
                             Visibility="{Binding HasLandmarks, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="Landmarks in this area" FontWeight="SemiBold" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
                     <ItemsControl ItemsSource="{Binding LandmarkGroups}"/>
+                    <!-- "View all N →" — opens the shared virtualizing ProvenancePopupWindow
+                         (#311 fold-in). The full landmark set (and the ~547-row #259
+                         high-cardinality precedent) renders ONLY through the popup's
+                         recycling VirtualizingStackPanel — no separate non-virtualized
+                         list path remains. Sectioned by landmark Type (genuine provenance). -->
+                    <Button Style="{StaticResource ViewAllButtonStyle}"
+                            Command="{Binding ShowLandmarksPopupCommand}"
+                            Visibility="{Binding LandmarksPopup, Converter={StaticResource NullToVis}}">
+                        <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center">
+                            <Run Text="View all "/><Run Text="{Binding LandmarksTotal, Mode=OneWay}"/><Run Text=" →"/>
+                        </TextBlock>
+                    </Button>
                 </StackPanel>
             </StackPanel>
         </DockPanel>
