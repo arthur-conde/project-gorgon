@@ -28,8 +28,8 @@ public static class QueryCompiler
         IReadOnlyDictionary<string, ColumnBinding> columns,
         bool caseSensitive = false)
     {
-        var ast = QueryParser.Parse(query);
-        return ast is null ? null : Compile(ast, columns, caseSensitive);
+        var parsed = QueryParser.Parse(query);
+        return parsed?.Predicate is null ? null : Compile(parsed.Predicate, columns, caseSensitive);
     }
 
     private static Dictionary<string, ColumnBinding> NormalizeColumns(

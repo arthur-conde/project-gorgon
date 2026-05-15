@@ -7,7 +7,7 @@ namespace Mithril.Shared.Wpf.Query;
 
 public static class QueryParser
 {
-    public static QueryNode? Parse(string query)
+    public static ParsedQuery? Parse(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -16,9 +16,9 @@ public static class QueryParser
 
         var tokens = Lex(query);
         var parser = new Parser(tokens);
-        var node = parser.ParseExpression();
+        var (predicate, order) = parser.ParseFull();
         parser.ExpectEof();
-        return node;
+        return new ParsedQuery(predicate, order);
     }
 
     private static readonly HashSet<string> UppercaseKeywords = new(StringComparer.Ordinal)
@@ -500,7 +500,57 @@ public static class QueryParser
             }
         }
 
+        public (QueryNode? Predicate, IReadOnlyList<OrderSpec> Order) ParseFull()
+        {
+            QueryNode? predicate = null;
+            // Predicate is optional: a query of just "ORDER BY ..." has no predicate.
+            if (Peek.Kind != TokenKind.OrderBy && Peek.Kind != TokenKind.SortBy && Peek.Kind != TokenKind.Eof)
+            {
+                predicate = ParseOr();
+            }
+            IReadOnlyList<OrderSpec> order = Array.Empty<OrderSpec>();
+            if (Peek.Kind == TokenKind.OrderBy || Peek.Kind == TokenKind.SortBy)
+            {
+                Consume();
+                order = ParseOrderList();
+            }
+            return (predicate, order);
+        }
+
+        // Kept for nested expressions (e.g. inside parentheses).
         public QueryNode ParseExpression() => ParseOr();
+
+        private IReadOnlyList<OrderSpec> ParseOrderList()
+        {
+            var list = new List<OrderSpec>();
+            list.Add(ParseOrderSpec());
+            while (Peek.Kind == TokenKind.Comma)
+            {
+                Consume();
+                list.Add(ParseOrderSpec());
+            }
+            return list;
+        }
+
+        private OrderSpec ParseOrderSpec()
+        {
+            if (Peek.Kind != TokenKind.Identifier)
+            {
+                throw new QueryException($"Expected column name after ORDER BY but found '{Peek.Text}'.", Peek.Position);
+            }
+            var column = Consume().Text;
+            var dir = OrderDirection.Ascending;
+            if (Peek.Kind == TokenKind.Asc)
+            {
+                Consume();
+            }
+            else if (Peek.Kind == TokenKind.Desc)
+            {
+                Consume();
+                dir = OrderDirection.Descending;
+            }
+            return new OrderSpec(column, dir);
+        }
 
         private QueryNode ParseOr()
         {
