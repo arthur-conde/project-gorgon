@@ -1,6 +1,10 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace Mithril.Shared.Wpf;
 
@@ -38,6 +42,102 @@ public sealed class DetailExportHost : ContentControl
     {
         get => (string?)GetValue(FooterTextProperty);
         set => SetValue(FooterTextProperty, value);
+    }
+
+    public static readonly DependencyProperty FooterSegmentsProperty =
+        DependencyProperty.Register(
+            nameof(FooterSegments), typeof(IEnumerable<string>),
+            typeof(DetailExportHost),
+            new PropertyMetadata(null, OnFooterSegmentsChanged));
+
+    /// <summary>
+    /// When non-null and non-empty, the footer renders these strings as independent
+    /// click-to-copy chips joined by an inert middot, instead of the single
+    /// <see cref="FooterText"/> button. Each chip copies exactly its own string —
+    /// the separator is never part of any copy payload. Null/empty → the
+    /// <see cref="FooterText"/> path is used unchanged.
+    /// </summary>
+    public IEnumerable<string>? FooterSegments
+    {
+        get => (IEnumerable<string>?)GetValue(FooterSegmentsProperty);
+        set => SetValue(FooterSegmentsProperty, value);
+    }
+
+    private static readonly DependencyPropertyKey FooterSegmentItemsKey =
+        DependencyProperty.RegisterReadOnly(
+            nameof(FooterSegmentItems), typeof(IReadOnlyList<FooterSegmentItem>),
+            typeof(DetailExportHost),
+            new PropertyMetadata(System.Array.Empty<FooterSegmentItem>()));
+
+    public static readonly DependencyProperty FooterSegmentItemsProperty =
+        FooterSegmentItemsKey.DependencyProperty;
+
+    /// <summary>Projected, per-item-ack-bearing view of <see cref="FooterSegments"/>
+    /// for the template's <c>ItemsControl</c>. Empty when no segments.</summary>
+    public IReadOnlyList<FooterSegmentItem> FooterSegmentItems =>
+        (IReadOnlyList<FooterSegmentItem>)GetValue(FooterSegmentItemsProperty);
+
+    private static readonly DependencyPropertyKey HasFooterSegmentsKey =
+        DependencyProperty.RegisterReadOnly(
+            nameof(HasFooterSegments), typeof(bool), typeof(DetailExportHost),
+            new PropertyMetadata(false));
+
+    public static readonly DependencyProperty HasFooterSegmentsProperty =
+        HasFooterSegmentsKey.DependencyProperty;
+
+    /// <summary>True when <see cref="FooterSegments"/> has ≥1 non-empty entry; the
+    /// template then shows the segment ItemsControl and hides the single-button
+    /// footer.</summary>
+    public bool HasFooterSegments => (bool)GetValue(HasFooterSegmentsProperty);
+
+    // Rebuilds the projected chip items whenever FooterSegments is (re)assigned.
+    // Detail hosts are recreated per entity selection (the master-detail ContentControl
+    // swaps in a fresh view per selection), so this fires once per host in practice;
+    // an in-flight ack DispatcherTimer from a prior set is not explicitly cancelled
+    // (consistent with OnFooterClick) — safe only because hosts are not reused for
+    // in-place navigation. Revisit if DetailExportHost is ever reused across selections.
+    private static void OnFooterSegmentsChanged(
+        DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var host = (DetailExportHost)d;
+        var segments = (e.NewValue as IEnumerable<string>)?
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToList() ?? [];
+
+        var items = new List<FooterSegmentItem>(segments.Count);
+        for (var i = 0; i < segments.Count; i++)
+        {
+            FooterSegmentItem? item = null;
+            item = new FooterSegmentItem(
+                segments[i], isFirst: i == 0,
+                new RelayCommand(() => host.CopySegment(item!)));
+            items.Add(item);
+        }
+
+        host.SetValue(FooterSegmentItemsKey, items);
+        host.SetValue(HasFooterSegmentsKey, items.Count > 0);
+    }
+
+    private void CopySegment(FooterSegmentItem item)
+    {
+        try
+        {
+            Clipboard.SetDataObject(
+                new DataObject(DataFormats.UnicodeText, item.Text), copy: true);
+        }
+        catch
+        {
+            return; // clipboard can transiently fail; no ack, user can retry
+        }
+
+        item.Copied = true;
+        var timer = new DispatcherTimer { Interval = AckHold };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            item.Copied = false;
+        };
+        timer.Start();
     }
 
     private static readonly DependencyPropertyKey FooterCopiedKey =
@@ -116,4 +216,34 @@ public sealed class DetailExportHost : ContentControl
         };
         timer.Start();
     }
+}
+
+/// <summary>
+/// One copyable footer chip. <see cref="Copied"/> drives a transient "copied" ack on
+/// just this segment (the other segments are unaffected); <see cref="IsFirst"/>
+/// suppresses the leading middot separator for the first chip. Public because the
+/// <c>DetailExportHost</c> template binds to these properties (WPF binding requires
+/// public members).
+/// </summary>
+public sealed partial class FooterSegmentItem : ObservableObject
+{
+    public FooterSegmentItem(string text, bool isFirst, IRelayCommand copyCommand)
+    {
+        Text = text;
+        IsFirst = isFirst;
+        CopyCommand = copyCommand;
+    }
+
+    /// <summary>The atomic identifier shown and copied verbatim.</summary>
+    public string Text { get; }
+
+    /// <summary>First chip in the row → no leading separator.</summary>
+    public bool IsFirst { get; }
+
+    [ObservableProperty]
+    private bool _copied;
+
+    /// <summary>Copies <see cref="Text"/> and triggers this segment's ack.
+    /// Injected by the host at construction.</summary>
+    public IRelayCommand CopyCommand { get; }
 }

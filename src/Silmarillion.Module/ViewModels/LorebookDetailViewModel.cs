@@ -106,6 +106,19 @@ public sealed class LorebookDetailViewModel
             ? InternalName
             : $"{EnvelopeKey} / {InternalName}";
 
+    /// <summary>
+    /// Footer identifiers as independent copyable segments, bound to
+    /// <c>DetailExportHost.FooterSegments</c> (each renders as its own click-to-copy
+    /// chip joined by an inert middot). For real lorebooks the envelope key and
+    /// InternalName always diverge → two segments <c>[Book_101, TheWastedWishes]</c>;
+    /// the defensive equal case collapses to a single segment. This replaces copying
+    /// the joined <see cref="FooterText"/> slug, which was never a valid identifier.
+    /// </summary>
+    public IReadOnlyList<string> FooterSegments =>
+        string.Equals(EnvelopeKey, InternalName, StringComparison.Ordinal)
+            ? new[] { InternalName }
+            : new[] { EnvelopeKey, InternalName };
+
     /// <summary><c>"from &lt;category display title&gt;"</c> or null when uncategorized.</summary>
     public string? CategorySubtitle { get; }
 
