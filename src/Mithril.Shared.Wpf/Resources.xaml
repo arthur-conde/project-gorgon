@@ -989,9 +989,13 @@
                             <!-- Segment footer (#Lorebook): N independent click-to-copy
                                  chips joined by an inert middot. Shown only when
                                  FooterSegments is set; mutually exclusive with
-                                 PART_FooterButton. Single-line → export height
-                                 unchanged. -->
-                            <ItemsControl x:Name="PART_FooterSegments"
+                                 PART_FooterButton (exactly one is non-Collapsed).
+                                 NOTE: declaration order here is load-bearing — these
+                                 two are sibling Dock="Bottom" elements; the contract
+                                 is that only one is ever visible. Don't insert another
+                                 Dock="Bottom" sibling between them or make both visible.
+                                 Single-line → export height unchanged. -->
+                            <ItemsControl x:Name="FooterSegmentsItemsControl"
                                           DockPanel.Dock="Bottom"
                                           HorizontalAlignment="Right"
                                           Margin="0,8,14,12"
