@@ -75,6 +75,14 @@ public enum EntityKind
     /// and would render unscannably as a flat chip cluster.
     /// </summary>
     EffectByStackingType,
+
+    /// <summary>
+    /// Not an entity per se — a deep-link target for "open the NPCs tab filtered to NPCs
+    /// in this area." InternalName carries the area envelope key (e.g. <c>"AreaSerbule"</c>).
+    /// Dispatched by NpcByAreaKindTarget; powers the Areas-tab "NPCs in this area" section's
+    /// overflow pill when the chip cluster exceeds <see cref="Silmarillion.SilmarillionSettings.UsedInChipCap"/>.
+    /// </summary>
+    NpcByArea,
 }
 
 /// <summary>
@@ -130,6 +138,7 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
     public static EntityRef AbilityByEffectKeyword(string keyword) => new(EntityKind.AbilityByEffectKeyword, keyword);
     public static EntityRef EffectByStackingType(string stackingType) => new(EntityKind.EffectByStackingType, stackingType);
+    public static EntityRef NpcByArea(string areaKey) => new(EntityKind.NpcByArea, areaKey);
 }
 
 /// <summary>

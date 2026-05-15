@@ -57,11 +57,10 @@ public sealed class AreaDetailViewModelTests
         var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
 
         vm.NpcChips.Select(c => c.DisplayName).Should().Equal("Joeh", "Marna", "Norbert");
-        vm.NpcOverflowCount.Should().Be(0);
     }
 
     [Fact]
-    public void NpcChips_CappedAtUsedInChipCap_OverflowCountReportsExtras()
+    public void NpcChips_CappedAtUsedInChipCap_ShortcutReportsTotalCount()
     {
         var npcs = Enumerable.Range(1, 30)
             .Select(i => new NpcEntry($"NPC_{i:000}", $"NPC {i:000}", "Serbule", [], [], []))
@@ -74,15 +73,37 @@ public sealed class AreaDetailViewModelTests
         var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub, settings);
 
         vm.NpcChips.Should().HaveCount(12);
-        vm.NpcOverflowCount.Should().Be(18);
+        vm.NpcsTabShortcut.Should().NotBeNull();
+        vm.NpcsTabShortcut!.DisplayName.Should().Be("View all 30 in NPCs tab →",
+            "the shortcut carries the total count so the user knows the chip strip is capped.");
+        vm.NpcsTabShortcut.Reference.Should().Be(EntityRef.NpcByArea("AreaSerbule"));
     }
 
     [Fact]
-    public void NpcChips_EmptyWhenNoNpcsInArea()
+    public void NpcsTabShortcut_AlwaysPresentWhenAnyNpcs_EvenBelowCap()
+    {
+        var stub = new StubReferenceData
+        {
+            NpcsByAreaMap =
+            {
+                ["AreaSerbule"] = new[] { new NpcEntry("NPC_Joeh", "Joeh", "Serbule", [], [], []) },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        vm.NpcChips.Should().HaveCount(1);
+        vm.NpcsTabShortcut.Should().NotBeNull(
+            "the shortcut is always visible when there's at least one NPC — jumping to the NPCs tab is useful for sort/filter even when the chip strip already shows everything.");
+        vm.NpcsTabShortcut!.DisplayName.Should().Be("View all 1 in NPCs tab →");
+    }
+
+    [Fact]
+    public void NpcsTabShortcut_NullWhenNoNpcsInArea()
     {
         var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
         vm.NpcChips.Should().BeEmpty();
-        vm.NpcOverflowCount.Should().Be(0);
+        vm.NpcsTabShortcut.Should().BeNull(
+            "no NPCs means no shortcut — the chip would be meaningless.");
         vm.HasNpcs.Should().BeFalse();
     }
 

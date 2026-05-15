@@ -44,9 +44,9 @@ public sealed partial class AreaDetailViewModel : ObservableObject
         InternalName = area.Key;
         OpenEntityCommand = openEntityCommand;
 
-        var (chips, overflow) = BuildNpcChips(area.Key, refData, nameResolver, navigator, settings.UsedInChipCap);
+        var (chips, shortcut) = BuildNpcChips(area.Key, refData, nameResolver, navigator, settings.UsedInChipCap);
         NpcChips = chips;
-        NpcOverflowCount = overflow;
+        NpcsTabShortcut = shortcut;
 
         LandmarkGroups = BuildLandmarkGroups(area.Key, refData);
     }
@@ -72,12 +72,19 @@ public sealed partial class AreaDetailViewModel : ObservableObject
     public IReadOnlyList<EntityChipVm> NpcChips { get; }
 
     /// <summary>
-    /// Number of NPCs beyond the cap, shown as a small caption under the chip grid
-    /// when non-zero. No synthetic <c>NpcByArea</c> kind target ships in this PR;
-    /// the cookbook's "cap + overflow pill" pattern would need one, so v1 ships the
-    /// caption-only form. File a follow-up if users want a clickable pill.
+    /// Always-visible shortcut chip below <see cref="NpcChips"/> that deep-links into the
+    /// NPCs tab filtered by <c>AreaName = "&lt;areaKey&gt;"</c> (anchored on
+    /// <see cref="EntityRef.NpcByArea(string)"/>). Carries the total NPC count, so when
+    /// the chip strip is capped the user still sees the full size and can jump to the
+    /// master-list context for sorting / further filtering. <see langword="null"/> only
+    /// when no NPCs live in this area (the chip would be meaningless then).
+    /// <para>
+    /// Departs from cookbook *cap + overflow pill* (pill only on overflow): for areas the
+    /// shortcut has value at any cardinality — switching to the NPCs tab lets the user
+    /// sort by service type, narrow by gift preference, etc.
+    /// </para>
     /// </summary>
-    public int NpcOverflowCount { get; }
+    public EntityChipVm? NpcsTabShortcut { get; }
 
     /// <summary>True when at least one NPC chip rendered (drives the section header visibility).</summary>
     public bool HasNpcs => NpcChips.Count > 0;
@@ -90,7 +97,7 @@ public sealed partial class AreaDetailViewModel : ObservableObject
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
-    private static (IReadOnlyList<EntityChipVm> Chips, int OverflowCount) BuildNpcChips(
+    private static (IReadOnlyList<EntityChipVm> Chips, EntityChipVm? Shortcut) BuildNpcChips(
         string areaKey,
         IReferenceDataService refData,
         IEntityNameResolver nameResolver,
@@ -98,7 +105,7 @@ public sealed partial class AreaDetailViewModel : ObservableObject
         int cap)
     {
         if (!refData.NpcsByArea.TryGetValue(areaKey, out var npcs) || npcs.Count == 0)
-            return ([], 0);
+            return ([], null);
 
         var ordered = npcs
             .Where(n => !string.IsNullOrEmpty(n.Key))
@@ -118,8 +125,17 @@ public sealed partial class AreaDetailViewModel : ObservableObject
                 IsNavigable: navigator.CanOpen(reference)));
         }
 
-        var overflow = ordered.Count > cap ? ordered.Count - cap : 0;
-        return (chips, overflow);
+        // Always-visible shortcut into the NPCs tab filtered by area. Label includes the
+        // total NPC count so the user can tell at a glance whether the chip strip is
+        // showing everything or just the cap; when N ≤ cap the chip is still useful for
+        // jumping to the master-list view (sortable by service type, gift prefs, etc.).
+        var shortcutReference = EntityRef.NpcByArea(areaKey);
+        var shortcut = new EntityChipVm(
+            DisplayName: $"View all {ordered.Count} in NPCs tab →",
+            IconId: 0,
+            Reference: shortcutReference,
+            IsNavigable: navigator.CanOpen(shortcutReference));
+        return (chips, shortcut);
     }
 
     private static IReadOnlyList<AreaLandmarkGroup> BuildLandmarkGroups(

@@ -121,6 +121,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         Npc: npc,
         InternalName: internalName,
         Name: _nameResolver.Resolve(EntityRef.Npc(internalName)),
+        AreaName: npc.AreaName ?? "",
         AreaDisplayName: npc.AreaFriendlyName ?? npc.AreaName ?? "(unknown)",
         ServiceTypes: BuildServiceTypes(npc));
 

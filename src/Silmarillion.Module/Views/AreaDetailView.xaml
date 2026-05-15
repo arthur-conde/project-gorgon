@@ -116,13 +116,15 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Foreground="#88FFFFFF" FontStyle="Italic"
-                               FontSize="{DynamicResource AppFontSizeSmall}"
-                               Margin="0,4,0,0"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding NpcOverflowCount, Converter={StaticResource PositiveIntToVis}}">
-                        <Run Text="+"/><Run Text="{Binding NpcOverflowCount, Mode=OneWay}"/><Run Text=" more — filter the NPCs tab by area to see all."/>
-                    </TextBlock>
+                    <ContentControl Content="{Binding NpcsTabShortcut}"
+                                    Margin="0,4,0,0"
+                                    Visibility="{Binding NpcsTabShortcut, Converter={StaticResource NullToVis}}">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
                 </StackPanel>
 
                 <!-- ─── Landmarks in this area ─── -->
