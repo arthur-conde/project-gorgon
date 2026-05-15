@@ -29,6 +29,10 @@ public sealed record ItemDetailContext(
     IReadOnlyList<EntityChipVm>? ConsumedByRecipes = null,
     IReadOnlyList<EntityChipVm>? ConsumedAsKeywordIn = null,
     IReadOnlyList<EntityChipVm>? AwardedByQuests = null,
+    // Inbound 1:1 cross-link (#247): the lorebook this item bestows on use, resolved from
+    // Item.BestowLoreBook (int? → numeric Book id) via LorebooksById. Null when the item
+    // doesn't bestow a book, or the id doesn't resolve. A single navigable EntityChip.
+    EntityChipVm? BestowsLorebook = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null,
     // Always-visible navigable summary chip for the "Used in" section. Non-null whenever
     // the item is consumed by any recipe (independent of the chip cap); renders as a

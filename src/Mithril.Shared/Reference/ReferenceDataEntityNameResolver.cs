@@ -24,6 +24,7 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Ability => ResolveAbility(reference.InternalName),
         EntityKind.Effect => ResolveEffect(reference.InternalName),
         EntityKind.Skill => ResolveSkill(reference.InternalName),
+        EntityKind.Lorebook => ResolveLorebook(reference.InternalName),
         _ => reference.InternalName,
     };
 
@@ -83,6 +84,17 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         _refData.Skills.TryGetValue(skillKey, out var skill) && !string.IsNullOrEmpty(skill.DisplayName)
             ? skill.DisplayName
             : skillKey;
+
+    /// <summary>
+    /// Lorebook InternalNames are the bare PascalCase form (e.g. <c>"TheWastedWishes"</c>,
+    /// matching <see cref="EntityRef.Lorebook(string)"/>); the human title lives on
+    /// <see cref="Mithril.Reference.Models.Misc.Lorebook.Title"/>. Prefer the title; fall
+    /// through to the InternalName when no entry is registered or Title is empty.
+    /// </summary>
+    private string ResolveLorebook(string internalName) =>
+        _refData.LorebooksByInternalName.TryGetValue(internalName, out var book) && !string.IsNullOrEmpty(book.Title)
+            ? book.Title!
+            : internalName;
 
     private static string StripNpcPrefix(string internalName) =>
         internalName.StartsWith("NPC_", StringComparison.Ordinal)

@@ -169,4 +169,27 @@
         </DockPanel>
     </DataTemplate>
 
+    <!-- Compact two-line row for Lorebooks tab. Bound DataContext:
+         Silmarillion.ViewModels.LorebookListRow. Secondary line is the plain
+         '<title> <location-hint-or-internal-name>' shape per the cookbook card
+         secondary-line convention (no unit prefixes / parentheticals). -->
+    <DataTemplate x:Key="LorebookCardTemplate">
+        <DockPanel LastChildFill="True">
+            <Border DockPanel.Dock="Left" Width="24" Height="24" Margin="6,3,6,3"
+                    VerticalAlignment="Center" Background="#FF1F1F1F" CornerRadius="3">
+                <icon:PackIconLucide Kind="BookOpen" Width="14" Height="14" Foreground="#88FFFFFF"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Margin="0,3,6,3">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                           Foreground="#FFD4A847" TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                <TextBlock Text="{Binding InternalName}" Foreground="#88FFFFFF"
+                           FontFamily="{DynamicResource AppMonoFontFamily}"
+                           FontSize="{DynamicResource AppFontSizeSmall}"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </DockPanel>
+    </DataTemplate>
+
 </ResourceDictionary>

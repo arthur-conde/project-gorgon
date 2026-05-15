@@ -1,0 +1,140 @@
+<UserControl x:Class="Silmarillion.Views.LorebookDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:LorebookDetailViewModel}"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Border Padding="14,12">
+        <DockPanel>
+            <!-- Footer: "Book_101 / TheWastedWishes" — mono, bottom-right, per the
+                 detail-view internal-name footer convention. -->
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding FooterText}"
+                       Foreground="#88FFFFFF"
+                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                       FontSize="{DynamicResource AppFontSizeSmall}"
+                       Margin="0,12,0,0" HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"/>
+
+            <StackPanel>
+                <!-- ─── Header: title + category subtitle ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding DisplayName}"
+                               FontFamily="{DynamicResource AppHeaderFontFamily}"
+                               FontSize="{DynamicResource AppFontSizeXLarge}"
+                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding CategorySubtitle}"
+                               Foreground="#88FFFFFF" FontStyle="Italic"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Margin="0,2,0,0"
+                               Visibility="{Binding CategorySubtitle, Converter={StaticResource NullOrEmptyToVis}}"/>
+                </StackPanel>
+
+                <!-- ─── Metadata strip: location hint + folded-in area chip ─── -->
+                <StackPanel Margin="0,0,0,10">
+                    <TextBlock Text="{Binding LocationHint}"
+                               Foreground="#CCFFFFFF" FontStyle="Italic"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" Margin="0,0,0,4"
+                               Visibility="{Binding HasLocationHint, Converter={StaticResource BoolToVis}}"/>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding HasArea, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Found in: " Foreground="#88FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <ContentControl Content="{Binding AreaChip}">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:LorebookDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ─── Body ─── -->
+                <Border Margin="0,0,0,10">
+                    <Grid>
+                        <TextBlock wpf:FormattedText.Text="{Binding BodyText}"
+                                   Foreground="#EEFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeLarge}"
+                                   TextWrapping="Wrap" LineHeight="22"
+                                   Visibility="{Binding HasBody, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="This book points to an external resource — see the in-game Volunteer Guide."
+                                   Foreground="#88FFFFFF" FontStyle="Italic"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasBody}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <!-- ─── Items that bestow this book (#318 popup-from-index) ───
+                     Single-reason 1:N. A one-line affordance opens the shared
+                     ProvenancePopupWindow fed ItemsBestowingLorebook[InternalName]
+                     directly (single flat section, no synthetic kind, no deep-link,
+                     no navigator history). Hidden entirely when nothing bestows it. -->
+                <Button HorizontalAlignment="Left" Cursor="Hand" Padding="6,2"
+                        Command="{Binding ShowBestowingItemsPopupCommand}"
+                        Visibility="{Binding HasBestowingItems, Converter={StaticResource BoolToVis}}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderBrush" Value="#66D4A847"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="Foreground" Value="#FFD4A847"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#22D4A847"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <icon:PackIconLucide Kind="BookMarked" Width="12" Height="12"
+                                                         Foreground="{TemplateBinding Foreground}"
+                                                         Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                    <TextBlock Foreground="{TemplateBinding Foreground}"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               VerticalAlignment="Center">
+                                        <Run Text="Bestowed by "/><Run Text="{Binding BestowingItemsTotal, Mode=OneWay}"/><Run Text=" item(s) →"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</UserControl>

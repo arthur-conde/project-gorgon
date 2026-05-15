@@ -123,6 +123,24 @@
                     </ItemsControl>
                 </StackPanel>
 
+                <!-- Bestows lorebook — inbound 1:1 cross-link (#247). Item.BestowLoreBook
+                     resolved to the lorebook via LorebooksById; a single navigable chip
+                     (becomes clickable once the Lorebooks kind target is registered, plain
+                     text otherwise). Hidden when the item bestows no book. -->
+                <StackPanel Margin="0,10,0,0"
+                            Visibility="{Binding BestowsLorebook, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="Bestows lorebook" FontWeight="SemiBold"
+                               Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <ContentControl Content="{Binding BestowsLorebook}" HorizontalAlignment="Left">
+                        <ContentControl.Resources>
+                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.Resources>
+                    </ContentControl>
+                </StackPanel>
+
                 <!-- Used in recipes — cross-link to recipes that consume this item. Capped at
                      SilmarillionSettings.UsedInChipCap to keep selection-change cheap (long-tail
                      items like MetalSlab1 ship 60+ recipes). The trailing always-visible

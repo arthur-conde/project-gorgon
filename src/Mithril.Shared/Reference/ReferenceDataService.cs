@@ -12,6 +12,9 @@ using Item = Mithril.Reference.Models.Items.Item;
 using PocoArea = Mithril.Reference.Models.Misc.Area;
 using PocoAttribute = Mithril.Reference.Models.Misc.AttributeDef;
 using PocoLandmark = Mithril.Reference.Models.Misc.Landmark;
+using Lorebook = Mithril.Reference.Models.Misc.Lorebook;
+using LorebookInfo = Mithril.Reference.Models.Misc.LorebookInfo;
+using LorebookCategoryInfo = Mithril.Reference.Models.Misc.LorebookCategoryInfo;
 using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
@@ -230,6 +233,23 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<Effect>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _effectsSnapshot;
 
+    // Lorebooks (lorebooks.json) — keyed by "Book_N" envelope key, plus InternalName and
+    // numeric-id secondary lookups. lorebookinfo.json is a separate sidecar carrying the
+    // 7 category display-metadata entries. ItemsBestowingLorebook is the #318 popup-from-
+    // index source for the "Items that bestow this book" surface (#247).
+    private IReadOnlyDictionary<string, Lorebook> _lorebooks =
+        new Dictionary<string, Lorebook>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, Lorebook> _lorebooksByInternalName =
+        new Dictionary<string, Lorebook>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<int, Lorebook> _lorebooksById =
+        new Dictionary<int, Lorebook>();
+    private IReadOnlyDictionary<string, IReadOnlyList<Item>> _itemsBestowingLorebook =
+        new Dictionary<string, IReadOnlyList<Item>>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _lorebooksSnapshot;
+    private IReadOnlyDictionary<string, LorebookCategoryInfo> _lorebookCategories =
+        new Dictionary<string, LorebookCategoryInfo>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _lorebookInfoSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
@@ -264,6 +284,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         _abilityDynamicDotsSnapshot = new ReferenceFileSnapshot("abilitydynamicdots", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _abilityDynamicSpecialValuesSnapshot = new ReferenceFileSnapshot("abilitydynamicspecialvalues", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _effectsSnapshot = new ReferenceFileSnapshot("effects", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _lorebooksSnapshot = new ReferenceFileSnapshot("lorebooks", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _lorebookInfoSnapshot = new ReferenceFileSnapshot("lorebookinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -287,9 +309,14 @@ public sealed class ReferenceDataService : IReferenceDataService
         LoadAbilityDynamicDots();
         LoadAbilityDynamicSpecialValues();
         LoadEffects();
+        LoadLorebookInfo();        // Sidecar; independent of lorebooks.json. Load before
+                                   // LoadLorebooks is not required (categories aren't a parse
+                                   // dependency) but keeps the lorebook pair adjacent.
+        LoadLorebooks();           // After LoadItems so BuildLorebookItemCrossLinkIndex sees
+                                   // the final item set on first build.
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -335,6 +362,11 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByStackingType => _effectsByStackingType;
     public IReadOnlyDictionary<string, IReadOnlyList<EffectAbilityMatch>> AbilitiesByEffectKeyword => _abilitiesByEffectKeyword;
     public IReadOnlyDictionary<string, IReadOnlyList<Effect>> EffectsByTriggeringAbilityKeyword => _effectsByTriggeringAbilityKeyword;
+    public IReadOnlyDictionary<string, Lorebook> Lorebooks => _lorebooks;
+    public IReadOnlyDictionary<string, Lorebook> LorebooksByInternalName => _lorebooksByInternalName;
+    public IReadOnlyDictionary<int, Lorebook> LorebooksById => _lorebooksById;
+    public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsBestowingLorebook => _itemsBestowingLorebook;
+    public IReadOnlyDictionary<string, LorebookCategoryInfo> LorebookCategories => _lorebookCategories;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -360,6 +392,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         "abilitydynamicdots" => _abilityDynamicDotsSnapshot,
         "abilitydynamicspecialvalues" => _abilityDynamicSpecialValuesSnapshot,
         "effects" => _effectsSnapshot,
+        "lorebooks" => _lorebooksSnapshot,
+        "lorebookinfo" => _lorebookInfoSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -388,6 +422,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         "abilitydynamicdots" => RefreshFileAsync("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots, ct),
         "abilitydynamicspecialvalues" => RefreshFileAsync("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues, ct),
         "effects" => RefreshFileAsync("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects, ct),
+        "lorebooks" => RefreshFileAsync("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks, ct),
+        "lorebookinfo" => RefreshFileAsync("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -414,6 +450,8 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("abilitydynamicdots", ct).ConfigureAwait(false);
         await RefreshAsync("abilitydynamicspecialvalues", ct).ConfigureAwait(false);
         await RefreshAsync("effects", ct).ConfigureAwait(false);
+        await RefreshAsync("lorebookinfo", ct).ConfigureAwait(false);
+        await RefreshAsync("lorebooks", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -600,6 +638,8 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadAbilityDynamicDots() => LoadFile("abilitydynamicdots", ReferenceDeserializer.ParseAbilityDynamicDots, ParseAndSwapAbilityDynamicDots);
     private void LoadAbilityDynamicSpecialValues() => LoadFile("abilitydynamicspecialvalues", ReferenceDeserializer.ParseAbilityDynamicSpecialValues, ParseAndSwapAbilityDynamicSpecialValues);
     private void LoadEffects() => LoadFile("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects);
+    private void LoadLorebooks() => LoadFile("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks);
+    private void LoadLorebookInfo() => LoadFile("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -628,6 +668,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         BuildRecipeCrossLinkIndices();
         BuildNpcCrossLinkIndices();
         BuildQuestCrossLinkIndices();
+        BuildLorebookItemCrossLinkIndex();
     }
 
     private void ParseAndSwapRecipes(IReadOnlyDictionary<string, Recipe> raw, ReferenceFileMetadata meta)
@@ -1007,6 +1048,100 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _npcsByArea = byArea.ToDictionary(
             kv => kv.Key, kv => (IReadOnlyList<NpcEntry>)kv.Value, StringComparer.Ordinal);
+    }
+
+    private void ParseAndSwapLorebooks(IReadOnlyDictionary<string, Lorebook> raw, ReferenceFileMetadata meta)
+    {
+        var byKey = new Dictionary<string, Lorebook>(raw.Count, StringComparer.Ordinal);
+        var byInternalName = new Dictionary<string, Lorebook>(raw.Count, StringComparer.Ordinal);
+        var byId = new Dictionary<int, Lorebook>(raw.Count);
+        foreach (var (key, v) in raw)
+        {
+            byKey[key] = v;
+            if (!string.IsNullOrEmpty(v.InternalName))
+                byInternalName[v.InternalName!] = v;
+            // Envelope key is "Book_<N>"; lift the numeric suffix so Item.BestowLoreBook
+            // (an int? matching <N>) can reverse-resolve to the book. Skip keys that don't
+            // fit the convention rather than throwing — defensive against drift.
+            if (TryLiftLorebookId(key, out var id))
+                byId[id] = v;
+        }
+        _lorebooks = byKey;
+        _lorebooksByInternalName = byInternalName;
+        _lorebooksById = byId;
+        _lorebooksSnapshot = new ReferenceFileSnapshot("lorebooks", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
+        BuildLorebookItemCrossLinkIndex();
+    }
+
+    private void ParseAndSwapLorebookInfo(LorebookInfo raw, ReferenceFileMetadata meta)
+    {
+        var byCategory = raw.Categories is null
+            ? new Dictionary<string, LorebookCategoryInfo>(StringComparer.Ordinal)
+            : new Dictionary<string, LorebookCategoryInfo>(raw.Categories, StringComparer.Ordinal);
+        _lorebookCategories = byCategory;
+        _lorebookInfoSnapshot = new ReferenceFileSnapshot("lorebookinfo", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byCategory.Count);
+    }
+
+    /// <summary>
+    /// Lifts the numeric id from a <c>"Book_&lt;N&gt;"</c> envelope key. Returns false for
+    /// keys that don't match the convention (defensive against a future PG key-shape change).
+    /// </summary>
+    private static bool TryLiftLorebookId(string envelopeKey, out int id)
+    {
+        id = 0;
+        var underscore = envelopeKey.LastIndexOf('_');
+        if (underscore < 0 || underscore == envelopeKey.Length - 1) return false;
+        return int.TryParse(
+            envelopeKey.AsSpan(underscore + 1),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out id);
+    }
+
+    /// <summary>
+    /// Builds <see cref="_itemsBestowingLorebook"/>: lorebook InternalName → items whose
+    /// <see cref="Item.BestowLoreBook"/> equals the book's numeric id. The single
+    /// materialization for the #318 popup-from-index "Items that bestow this book" surface
+    /// (single-reason — an item qualifies exactly one way). Called from
+    /// <see cref="ParseAndSwapLorebooks"/> (book set / id mapping changed) and
+    /// <see cref="ParseAndSwapItems"/> (the BestowLoreBook side changed) so a refresh of
+    /// either file rebuilds the index against fresh POCO instances. The per-book list is
+    /// dedup'd by item InternalName so the popup count equals distinct membership.
+    /// </summary>
+    private void BuildLorebookItemCrossLinkIndex()
+    {
+        if (_lorebooksById.Count == 0 || _itemsByInternalName.Count == 0)
+        {
+            _itemsBestowingLorebook = new Dictionary<string, IReadOnlyList<Item>>(StringComparer.Ordinal);
+            return;
+        }
+
+        var acc = new Dictionary<string, List<Item>>(StringComparer.Ordinal);
+        var seen = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var item in _itemsByInternalName.Values)
+        {
+            if (item.BestowLoreBook is not { } bookId) continue;
+            if (!_lorebooksById.TryGetValue(bookId, out var book)) continue;
+            if (string.IsNullOrEmpty(book.InternalName)) continue;
+            var bookName = book.InternalName!;
+
+            if (!acc.TryGetValue(bookName, out var list))
+            {
+                list = new List<Item>();
+                acc[bookName] = list;
+                seen[bookName] = new HashSet<string>(StringComparer.Ordinal);
+            }
+            var itemKey = item.InternalName ?? string.Empty;
+            if (!seen[bookName].Add(itemKey)) continue;
+            list.Add(item);
+        }
+
+        _itemsBestowingLorebook = acc.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<Item>)kv.Value
+                .OrderBy(i => i.Name ?? i.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            StringComparer.Ordinal);
     }
 
     private void ParseAndSwapDirectedGoals(IReadOnlyList<DirectedGoal> raw, ReferenceFileMetadata meta)

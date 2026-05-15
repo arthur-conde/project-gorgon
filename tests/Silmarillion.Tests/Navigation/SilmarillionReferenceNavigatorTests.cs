@@ -426,6 +426,69 @@ public sealed class SilmarillionReferenceNavigatorTests
     }
 
     [Fact]
+    public void Open_Lorebook_SwitchesToLorebooksTab_AndSelects()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("Book_101", new Mithril.Reference.Models.Misc.Lorebook
+        {
+            Category = "Stories", InternalName = "TheWastedWishes",
+            Title = "The Wasted Wishes", Text = "<h1>The Wasted Wishes</h1>body",
+        });
+        var settings = new Silmarillion.SilmarillionSettings();
+        var lorebooksVm = new LorebooksTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var lorebooksTarget = new LorebooksKindTarget(lorebooksVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            lorebooksTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { lorebooksVm }, nav, targets);
+
+        // Deep-link form mithril://silmarillion/lorebook/TheWastedWishes flows through the
+        // target-agnostic handler → EntityRef.Lorebook → this kind target.
+        nav.Open(EntityRef.Lorebook("TheWastedWishes"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(7);
+        lorebooksVm.SelectedLorebook.Should().NotBeNull();
+        lorebooksVm.SelectedLorebook!.InternalName.Should().Be("TheWastedWishes");
+    }
+
+    [Fact]
+    public void Open_Lorebook_UnknownName_DoesNotSelect()
+    {
+        var refData = new FakeReferenceData();
+        var settings = new Silmarillion.SilmarillionSettings();
+        var lorebooksVm = new LorebooksTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData), settings);
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new LorebooksKindTarget(lorebooksVm),
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+
+        nav.Open(EntityRef.Lorebook("NoSuchBook"));
+
+        lorebooksVm.SelectedLorebook.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_DuplicateGuard_TripsForLorebook()
+    {
+        // Verifies the duplicate-registration guard still trips with the new kind in the mix.
+        var dup = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Lorebook),
+            new StubTarget(EntityKind.Lorebook),
+        };
+        Action act = () => new SilmarillionReferenceNavigator(dup);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate IReferenceKindTarget*Lorebook*");
+    }
+
+    [Fact]
     public void Constructor_DuplicateGuard_TripsForEffectAndEffectKeyword()
     {
         // Verifies the duplicate-registration guard still trips with the new kinds in the mix.
@@ -496,6 +559,16 @@ public sealed class SilmarillionReferenceNavigatorTests
 
         private readonly Dictionary<string, AreaEntry> _areas = new(StringComparer.Ordinal);
         public void AddArea(AreaEntry area) => _areas[area.Key] = area;
+
+        private readonly Dictionary<string, Mithril.Reference.Models.Misc.Lorebook> _lorebooks = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Mithril.Reference.Models.Misc.Lorebook> _lorebooksByName = new(StringComparer.Ordinal);
+        public void AddLorebook(string envelopeKey, Mithril.Reference.Models.Misc.Lorebook book)
+        {
+            _lorebooks[envelopeKey] = book;
+            if (book.InternalName is not null) _lorebooksByName[book.InternalName] = book;
+        }
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.Lorebook> Lorebooks => _lorebooks;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.Lorebook> LorebooksByInternalName => _lorebooksByName;
 
         public IReadOnlyList<string> Keys => Array.Empty<string>();
         public IReadOnlyDictionary<long, Item> Items => _itemsById;

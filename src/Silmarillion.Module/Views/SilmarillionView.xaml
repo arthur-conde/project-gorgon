@@ -37,6 +37,9 @@
             <DataTemplate DataType="{x:Type vm:AreasTabViewModel}">
                 <local:AreasTabView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:LorebooksTabViewModel}">
+                <local:LorebooksTabView/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
     <UserControl.InputBindings>

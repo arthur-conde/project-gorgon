@@ -152,8 +152,28 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
             ConsumedByRecipes: consumed,
             ConsumedAsKeywordIn: BuildKeywordChips(item),
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
+            BestowsLorebook: BuildBestowsLorebookChip(item),
             Sources: BuildSourceChips(item.InternalName!),
             RecipesTabShortcut: shortcut);
+    }
+
+    /// <summary>
+    /// Inbound 1:1 cross-link (#247): resolve <see cref="Item.BestowLoreBook"/> (an
+    /// <c>int?</c> = numeric Book id) to the lorebook via <c>LorebooksById</c> and surface
+    /// it as a single navigable chip. Null when the item bestows no book or the id doesn't
+    /// resolve (defensive — a dangling id shouldn't render a dead chip).
+    /// </summary>
+    private EntityChipVm? BuildBestowsLorebookChip(Item item)
+    {
+        if (item.BestowLoreBook is not { } bookId) return null;
+        if (!_refData.LorebooksById.TryGetValue(bookId, out var book)) return null;
+        if (string.IsNullOrEmpty(book.InternalName)) return null;
+        var reference = EntityRef.Lorebook(book.InternalName!);
+        return new EntityChipVm(
+            DisplayName: _nameResolver.Resolve(reference),
+            IconId: 0,
+            Reference: reference,
+            IsNavigable: _navigator.CanOpen(reference));
     }
 
     private IReadOnlyList<EntityChipVm>? BuildAwardedByQuestChips(string itemInternalName)

@@ -6,18 +6,39 @@ using System.Windows.Documents;
 namespace Mithril.Shared.Wpf;
 
 /// <summary>
-/// Attached property + parser that renders Project Gorgon's tiny inline-markup vocabulary
-/// (<c>&lt;i&gt;…&lt;/i&gt;</c>, <c>&lt;b&gt;…&lt;/b&gt;</c>) into a <see cref="TextBlock"/>'s
+/// Attached property + parser that renders Project Gorgon's inline-markup vocabulary
+/// (<c>&lt;i&gt;…&lt;/i&gt;</c>, <c>&lt;b&gt;…&lt;/b&gt;</c>, <c>&lt;h1&gt;…&lt;/h1&gt;</c>,
+/// <c>&lt;hr&gt;</c>, <c>&lt;br&gt;</c>) into a <see cref="TextBlock"/>'s
 /// <see cref="TextBlock.Inlines"/> collection. Quest descriptions, lorebook bodies and item
-/// flavor text all use this two-tag subset — most commonly as a speaker prefix
-/// (<c>&lt;i&gt;Joeh:&lt;/i&gt; Hello adventurer.</c>). A plain <c>TextBlock.Text</c> binding
-/// renders the tags literally; this property parses them into italic / bold runs so the chip
-/// reads as intended.
+/// flavor text all use this subset — most commonly as a speaker prefix
+/// (<c>&lt;i&gt;Joeh:&lt;/i&gt; Hello adventurer.</c>) or, for lorebooks, an opening
+/// <c>&lt;h1&gt;</c> title plus the occasional <c>&lt;hr&gt;</c> scene break. A plain
+/// <c>TextBlock.Text</c> binding renders the tags literally; this property parses them so the
+/// block reads as intended.
+/// <para>
+/// <b>Tag vocabulary (#247 — Option A).</b> The original two-tag subset (<c>&lt;i&gt;</c> /
+/// <c>&lt;b&gt;</c>) was extended with the three structural tags lorebook bodies use:
+/// <list type="bullet">
+/// <item><c>&lt;br&gt;</c> / <c>&lt;br/&gt;</c> → a single <see cref="LineBreak"/>.</item>
+/// <item><c>&lt;hr&gt;</c> / <c>&lt;hr/&gt;</c> → a scene-break: blank line, a row of
+/// em-dashes on its own line, blank line. (<c>TextBlock.Inlines</c> has no
+/// <c>Border</c>/<c>Separator</c> inline; the em-dash row is the lightweight idiom — see the
+/// #247 handoff's Critical → Option A note.)</item>
+/// <item><c>&lt;h1&gt;…&lt;/h1&gt;</c> → a leading line break, the heading text rendered
+/// <b>bold + larger</b>, then a trailing double line break (it opens the book; the body
+/// follows). Bold/italic state from enclosing tags is preserved.</item>
+/// </list>
+/// Extending the shared renderer (rather than pre-stripping in one VM) is deliberate: the
+/// existing call sites (quest descriptions, item flavor text) start parsing these tags too,
+/// which is the desired behaviour — those fields previously rendered literal <c>&lt;br&gt;</c>
+/// etc. on the rare entry that carried one. No consumer relied on literal pass-through (the
+/// only producers of these tags are long-form text fields that <i>want</i> them rendered).
+/// </para>
 /// <para>
 /// The parser handles nesting (<c>&lt;b&gt;&lt;i&gt;X&lt;/i&gt;&lt;/b&gt;</c>) via formatting
-/// counts; unbalanced or interleaved tags close the appropriate counter without throwing, so
-/// data drift can't crash the renderer. Bare <c>&lt;</c> characters not followed by one of the
-/// four supported tags pass through as literal text.
+/// counts; unbalanced or interleaved tags clamp at zero without throwing, so data drift can't
+/// crash the renderer. A bare <c>&lt;</c> not followed by one of the supported tags (including
+/// a malformed <c>&lt;h1</c> with no <c>&gt;</c>) passes through as literal text.
 /// </para>
 /// <para>
 /// Usage:
@@ -31,6 +52,9 @@ namespace Mithril.Shared.Wpf;
 /// </summary>
 public static class FormattedText
 {
+    /// <summary>The em-dash separator row emitted for <c>&lt;hr&gt;</c>.</summary>
+    private const string HorizontalRuleGlyph = "— — — — — — —";
+
     public static readonly DependencyProperty TextProperty =
         DependencyProperty.RegisterAttached(
             "Text",
@@ -52,9 +76,9 @@ public static class FormattedText
     }
 
     /// <summary>
-    /// Tokenise <paramref name="text"/> and yield the WPF <see cref="Inline"/> runs that
-    /// would render it with the embedded italic / bold spans applied. Pure function — usable
-    /// from tests without instantiating a TextBlock.
+    /// Tokenise <paramref name="text"/> and yield the WPF <see cref="Inline"/> runs (and
+    /// <see cref="LineBreak"/>s) that would render it with the embedded markup applied. Pure
+    /// function — usable from tests without instantiating a TextBlock.
     /// </summary>
     public static IReadOnlyList<Inline> BuildInlines(string text)
     {
@@ -63,71 +87,121 @@ public static class FormattedText
 
         // Counts rather than a stack so unbalanced/interleaved data drift can't crash —
         // each </tag> decrements (clamped at 0), each <tag> increments. A run inherits the
-        // current italic/bold state at emission time.
+        // current italic/bold/heading state at emission time.
         var italicDepth = 0;
         var boldDepth = 0;
+        var headingDepth = 0;
         var pos = 0;
+
+        void EmitText(string segment)
+        {
+            if (segment.Length == 0) return;
+            result.Add(MakeRun(segment, italicDepth, boldDepth, headingDepth));
+        }
 
         while (pos < text.Length)
         {
-            var (tagPos, tagLength, italicDelta, boldDelta) = FindNextTag(text, pos);
+            var tag = FindNextTag(text, pos);
 
-            if (tagPos < 0)
+            if (tag.Pos < 0)
             {
-                var tail = text.Substring(pos);
-                if (tail.Length > 0) result.Add(MakeRun(tail, italicDepth, boldDepth));
+                EmitText(text.Substring(pos));
                 break;
             }
 
-            if (tagPos > pos)
+            if (tag.Pos > pos)
+                EmitText(text.Substring(pos, tag.Pos - pos));
+
+            switch (tag.Kind)
             {
-                var segment = text.Substring(pos, tagPos - pos);
-                result.Add(MakeRun(segment, italicDepth, boldDepth));
+                case TagKind.Italic:
+                    italicDepth = System.Math.Max(0, italicDepth + tag.Delta);
+                    break;
+                case TagKind.Bold:
+                    boldDepth = System.Math.Max(0, boldDepth + tag.Delta);
+                    break;
+                case TagKind.Heading:
+                    if (tag.Delta > 0)
+                    {
+                        // Opening <h1>: break onto a fresh line, then bold+large text.
+                        result.Add(new LineBreak());
+                        headingDepth = headingDepth + 1;
+                    }
+                    else
+                    {
+                        // Closing </h1>: end the heading, double-break before the body.
+                        headingDepth = System.Math.Max(0, headingDepth - 1);
+                        result.Add(new LineBreak());
+                        result.Add(new LineBreak());
+                    }
+                    break;
+                case TagKind.LineBreak:
+                    result.Add(new LineBreak());
+                    break;
+                case TagKind.HorizontalRule:
+                    // Scene break: blank line, em-dash row, blank line. No inline Border in
+                    // TextBlock.Inlines, so the glyph row is the lightweight separator idiom.
+                    result.Add(new LineBreak());
+                    result.Add(new Run(HorizontalRuleGlyph) { Foreground = SystemColors.GrayTextBrush });
+                    result.Add(new LineBreak());
+                    result.Add(new LineBreak());
+                    break;
             }
 
-            italicDepth = System.Math.Max(0, italicDepth + italicDelta);
-            boldDepth = System.Math.Max(0, boldDepth + boldDelta);
-            pos = tagPos + tagLength;
+            pos = tag.Pos + tag.Length;
         }
 
         return result;
     }
 
+    private enum TagKind { Italic, Bold, Heading, LineBreak, HorizontalRule }
+
+    private readonly record struct TagMatch(int Pos, int Length, TagKind Kind, int Delta);
+
     /// <summary>
-    /// Linear scan from <paramref name="from"/> for the next occurrence of any of the four
-    /// supported tag literals. Returns -1 in <c>Pos</c> when none is found.
+    /// Linear scan from <paramref name="from"/> for the next occurrence of any supported tag
+    /// literal. <c>&lt;br&gt;</c> / <c>&lt;hr&gt;</c> also match their XML self-closing forms.
+    /// Returns <c>Pos = -1</c> when none is found.
     /// </summary>
-    private static (int Pos, int Length, int ItalicDelta, int BoldDelta) FindNextTag(string text, int from)
+    private static TagMatch FindNextTag(string text, int from)
     {
-        var bestPos = -1;
-        var bestLen = 0;
-        var bestItalic = 0;
-        var bestBold = 0;
+        var best = new TagMatch(-1, 0, TagKind.Italic, 0);
 
-        TryTag("<i>", italicDelta: +1, boldDelta: 0);
-        TryTag("</i>", italicDelta: -1, boldDelta: 0);
-        TryTag("<b>", italicDelta: 0, boldDelta: +1);
-        TryTag("</b>", italicDelta: 0, boldDelta: -1);
-
-        return (bestPos, bestLen, bestItalic, bestBold);
-
-        void TryTag(string tag, int italicDelta, int boldDelta)
+        void TryTag(string tag, TagKind kind, int delta)
         {
-            var idx = text.IndexOf(tag, from, System.StringComparison.Ordinal);
+            var idx = text.IndexOf(tag, from, System.StringComparison.OrdinalIgnoreCase);
             if (idx < 0) return;
-            if (bestPos >= 0 && idx >= bestPos) return;
-            bestPos = idx;
-            bestLen = tag.Length;
-            bestItalic = italicDelta;
-            bestBold = boldDelta;
+            // Earliest wins; on a tie the longer literal wins so "<br/>" isn't shadowed by
+            // a hypothetical shorter prefix match.
+            if (best.Pos >= 0 && (idx > best.Pos || (idx == best.Pos && tag.Length <= best.Length)))
+                return;
+            best = new TagMatch(idx, tag.Length, kind, delta);
         }
+
+        TryTag("<i>", TagKind.Italic, +1);
+        TryTag("</i>", TagKind.Italic, -1);
+        TryTag("<b>", TagKind.Bold, +1);
+        TryTag("</b>", TagKind.Bold, -1);
+        TryTag("<h1>", TagKind.Heading, +1);
+        TryTag("</h1>", TagKind.Heading, -1);
+        TryTag("<br/>", TagKind.LineBreak, 0);
+        TryTag("<br>", TagKind.LineBreak, 0);
+        TryTag("<hr/>", TagKind.HorizontalRule, 0);
+        TryTag("<hr>", TagKind.HorizontalRule, 0);
+
+        return best;
     }
 
-    private static Run MakeRun(string text, int italicDepth, int boldDepth)
+    private static Run MakeRun(string text, int italicDepth, int boldDepth, int headingDepth)
     {
         var run = new Run(text);
         if (italicDepth > 0) run.FontStyle = FontStyles.Italic;
-        if (boldDepth > 0) run.FontWeight = FontWeights.Bold;
+        if (boldDepth > 0 || headingDepth > 0) run.FontWeight = FontWeights.Bold;
+        if (headingDepth > 0)
+            // Larger reading-comfort size for the book title. Absolute (not inherited-relative
+            // — TextBlock.Inlines runs can't express a relative size) but scales off the OS
+            // message-font baseline so it tracks the user's system text-size preference.
+            run.FontSize = SystemFonts.MessageFontSize * 1.45;
         return run;
     }
 }
