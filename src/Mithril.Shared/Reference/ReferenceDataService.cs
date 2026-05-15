@@ -15,6 +15,7 @@ using PocoLandmark = Mithril.Reference.Models.Misc.Landmark;
 using Lorebook = Mithril.Reference.Models.Misc.Lorebook;
 using LorebookInfo = Mithril.Reference.Models.Misc.LorebookInfo;
 using LorebookCategoryInfo = Mithril.Reference.Models.Misc.LorebookCategoryInfo;
+using PlayerTitle = Mithril.Reference.Models.Misc.PlayerTitle;
 using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
@@ -269,6 +270,13 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, LorebookCategoryInfo>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _lorebookInfoSnapshot;
 
+    // Player titles (playertitles.json) — keyed by "Title_N" envelope key (the only
+    // identifier the POCO carries). No reverse index: see the #248 NOTE in
+    // IReferenceDataService for why the Quest→title linkage is not materialized.
+    private IReadOnlyDictionary<string, PlayerTitle> _playerTitles =
+        new Dictionary<string, PlayerTitle>(StringComparer.Ordinal);
+    private ReferenceFileSnapshot _playerTitlesSnapshot;
+
     public ReferenceDataService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null, string? bundledDir = null, IPerfTracer? perf = null)
     {
         _cacheDir = cacheDir;
@@ -305,6 +313,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _effectsSnapshot = new ReferenceFileSnapshot("effects", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _lorebooksSnapshot = new ReferenceFileSnapshot("lorebooks", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
         _lorebookInfoSnapshot = new ReferenceFileSnapshot("lorebookinfo", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
+        _playerTitlesSnapshot = new ReferenceFileSnapshot("playertitles", ReferenceFileSource.Bundled, FallbackCdnVersion, null, 0);
 
         LoadItems();
         LoadRecipes();
@@ -333,9 +342,10 @@ public sealed class ReferenceDataService : IReferenceDataService
                                    // dependency) but keeps the lorebook pair adjacent.
         LoadLorebooks();           // After LoadItems so BuildLorebookItemCrossLinkIndex sees
                                    // the final item set on first build.
+        LoadPlayerTitles();        // Independent file; no cross-link index (#248).
     }
 
-    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo"];
+    public IReadOnlyList<string> Keys { get; } = ["items", "recipes", "skills", "xptables", "npcs", "areas", "landmarks", "sources_items", "sources_recipes", "abilities", "sources_abilities", "attributes", "tsysclientinfo", "tsysprofiles", "quests", "strings_all", "directedgoals", "abilitykeywords", "abilitydynamicdots", "abilitydynamicspecialvalues", "effects", "lorebooks", "lorebookinfo", "playertitles"];
 
     public IReadOnlyDictionary<long, Item> Items => _items;
     public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByInternalName;
@@ -390,6 +400,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<int, Lorebook> LorebooksById => _lorebooksById;
     public IReadOnlyDictionary<string, IReadOnlyList<Item>> ItemsBestowingLorebook => _itemsBestowingLorebook;
     public IReadOnlyDictionary<string, LorebookCategoryInfo> LorebookCategories => _lorebookCategories;
+    public IReadOnlyDictionary<string, PlayerTitle> PlayerTitles => _playerTitles;
     public IReadOnlyDictionary<string, string> Strings => _strings;
 
     public ReferenceFileSnapshot GetSnapshot(string key) => key switch
@@ -417,6 +428,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "effects" => _effectsSnapshot,
         "lorebooks" => _lorebooksSnapshot,
         "lorebookinfo" => _lorebookInfoSnapshot,
+        "playertitles" => _playerTitlesSnapshot,
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -447,6 +459,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         "effects" => RefreshFileAsync("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects, ct),
         "lorebooks" => RefreshFileAsync("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks, ct),
         "lorebookinfo" => RefreshFileAsync("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo, ct),
+        "playertitles" => RefreshFileAsync("playertitles", ReferenceDeserializer.ParsePlayerTitles, ParseAndSwapPlayerTitles, ct),
         _ => throw new ArgumentException($"Unknown reference file key: {key}", nameof(key)),
     };
 
@@ -475,6 +488,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         await RefreshAsync("effects", ct).ConfigureAwait(false);
         await RefreshAsync("lorebookinfo", ct).ConfigureAwait(false);
         await RefreshAsync("lorebooks", ct).ConfigureAwait(false);
+        await RefreshAsync("playertitles", ct).ConfigureAwait(false);
     }
 
     public void BeginBackgroundRefresh()
@@ -663,6 +677,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     private void LoadEffects() => LoadFile("effects", ReferenceDeserializer.ParseEffects, ParseAndSwapEffects);
     private void LoadLorebooks() => LoadFile("lorebooks", ReferenceDeserializer.ParseLorebooks, ParseAndSwapLorebooks);
     private void LoadLorebookInfo() => LoadFile("lorebookinfo", ReferenceDeserializer.ParseLorebookInfo, ParseAndSwapLorebookInfo);
+    private void LoadPlayerTitles() => LoadFile("playertitles", ReferenceDeserializer.ParsePlayerTitles, ParseAndSwapPlayerTitles);
 
     // ── Per-type parse-and-swap ──────────────────────────────────────────
 
@@ -1199,6 +1214,18 @@ public sealed class ReferenceDataService : IReferenceDataService
             : new Dictionary<string, LorebookCategoryInfo>(raw.Categories, StringComparer.Ordinal);
         _lorebookCategories = byCategory;
         _lorebookInfoSnapshot = new ReferenceFileSnapshot("lorebookinfo", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byCategory.Count);
+    }
+
+    private void ParseAndSwapPlayerTitles(IReadOnlyDictionary<string, PlayerTitle> raw, ReferenceFileMetadata meta)
+    {
+        // Defensive copy with the same backing-store / comparer semantics as the rest
+        // of the dictionary-shaped reference files. Keyed by the "Title_N" envelope
+        // key (the only identifier the POCO carries). No cross-link index — see the
+        // #248 NOTE in IReferenceDataService for why Quest→title is not materialized.
+        var byKey = new Dictionary<string, PlayerTitle>(raw.Count, StringComparer.Ordinal);
+        foreach (var (key, v) in raw) byKey[key] = v;
+        _playerTitles = byKey;
+        _playerTitlesSnapshot = new ReferenceFileSnapshot("playertitles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
     }
 
     /// <summary>

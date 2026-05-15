@@ -369,6 +369,66 @@ public sealed class SilmarillionReferenceNavigatorTests
     }
 
     [Fact]
+    public void Open_PlayerTitle_SwitchesToPlayerTitlesTab_AndSelects()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddPlayerTitle("Title_5018", new Mithril.Reference.Models.Misc.PlayerTitle
+        {
+            Title = "<color=#00cc00>Warsmith</color>", Tooltip = "Earned by completing a quest.",
+        });
+        var playerTitlesVm = new PlayerTitlesTabViewModel(refData);
+        var playerTitlesTarget = new PlayerTitlesKindTarget(playerTitlesVm);
+
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new StubTarget(EntityKind.Recipe),
+            playerTitlesTarget,
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+        var silmarillionVm = new SilmarillionViewModel(new ITabViewModel[] { playerTitlesVm }, nav, targets);
+
+        // Deep-link form mithril://silmarillion/playertitle/Title_5018 flows through
+        // the target-agnostic handler → EntityRef.PlayerTitle → this kind target.
+        // Selection key is the "Title_N" envelope key (the POCO has no InternalName).
+        nav.Open(EntityRef.PlayerTitle("Title_5018"));
+
+        silmarillionVm.SelectedTabIndex.Should().Be(8);
+        playerTitlesVm.SelectedTitle.Should().NotBeNull();
+        playerTitlesVm.SelectedTitle!.EnvelopeKey.Should().Be("Title_5018");
+    }
+
+    [Fact]
+    public void Open_PlayerTitle_UnknownKey_DoesNotSelect()
+    {
+        var refData = new FakeReferenceData();
+        var playerTitlesVm = new PlayerTitlesTabViewModel(refData);
+        var targets = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.Item),
+            new PlayerTitlesKindTarget(playerTitlesVm),
+        };
+        var nav = new SilmarillionReferenceNavigator(targets);
+
+        nav.Open(EntityRef.PlayerTitle("Title_999999"));
+
+        playerTitlesVm.SelectedTitle.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_DuplicateGuard_TripsForPlayerTitle()
+    {
+        var dup = new IReferenceKindTarget[]
+        {
+            new StubTarget(EntityKind.PlayerTitle),
+            new StubTarget(EntityKind.PlayerTitle),
+        };
+        Action act = () => new SilmarillionReferenceNavigator(dup);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate IReferenceKindTarget*PlayerTitle*");
+    }
+
+    [Fact]
     public void Constructor_DuplicateGuard_TripsForEffectAndEffectKeyword()
     {
         // Verifies the duplicate-registration guard still trips with the new kinds in the mix.
@@ -449,6 +509,11 @@ public sealed class SilmarillionReferenceNavigatorTests
         }
         public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.Lorebook> Lorebooks => _lorebooks;
         public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.Lorebook> LorebooksByInternalName => _lorebooksByName;
+
+        private readonly Dictionary<string, Mithril.Reference.Models.Misc.PlayerTitle> _playerTitles = new(StringComparer.Ordinal);
+        public void AddPlayerTitle(string envelopeKey, Mithril.Reference.Models.Misc.PlayerTitle title)
+            => _playerTitles[envelopeKey] = title;
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Misc.PlayerTitle> PlayerTitles => _playerTitles;
 
         public IReadOnlyList<string> Keys => Array.Empty<string>();
         public IReadOnlyDictionary<long, Item> Items => _itemsById;
