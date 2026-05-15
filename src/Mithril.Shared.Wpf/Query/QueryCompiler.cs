@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -591,5 +592,48 @@ public static class QueryCompiler
             // fall through
         }
         throw new QueryException($"Cannot compare {left.GetType().Name} and {right.GetType().Name}.", 0);
+    }
+
+    /// <summary>
+    /// Compile a parsed ORDER BY clause to a list of <see cref="SortDescription"/>
+    /// suitable for <see cref="System.Windows.Data.ICollectionView.SortDescriptions"/>.
+    /// The property name uses the schema's canonical casing so the resulting
+    /// descriptors match what reflection will resolve at sort time.
+    /// </summary>
+    public static IReadOnlyList<SortDescription> CompileOrder(
+        IReadOnlyList<OrderSpec> order,
+        IReadOnlyDictionary<string, ColumnBinding> columns,
+        bool caseSensitive = false)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        ArgumentNullException.ThrowIfNull(columns);
+        if (order.Count == 0)
+        {
+            return Array.Empty<SortDescription>();
+        }
+        var normalized = NormalizeColumns(columns, caseSensitive);
+        var result = new SortDescription[order.Count];
+        for (int i = 0; i < order.Count; i++)
+        {
+            var spec = order[i];
+            var binding = ResolveColumn(spec.Column, normalized);
+            EnsureSortable(binding);
+            var direction = spec.Direction == OrderDirection.Ascending
+                ? ListSortDirection.Ascending
+                : ListSortDirection.Descending;
+            // Use the binding's canonical Name, not the spec's incoming casing, so
+            // path-based SortDescription resolution doesn't depend on what the user typed.
+            result[i] = new SortDescription(binding.Name, direction);
+        }
+        return result;
+    }
+
+    private static void EnsureSortable(ColumnBinding binding)
+    {
+        var underlying = Nullable.GetUnderlyingType(binding.ValueType) ?? binding.ValueType;
+        if (typeof(IComparable).IsAssignableFrom(underlying)) return;
+        // String is IComparable; this catches arbitrary reference types like `object`.
+        throw new QueryException(
+            $"Column '{binding.Name}' is type {underlying.Name} and is not sortable.", 0);
     }
 }
