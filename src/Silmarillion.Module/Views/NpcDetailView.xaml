@@ -17,19 +17,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost>
+    <c:DetailExportHost FooterText="{Binding InternalName}">
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer docks to bottom; body StackPanel fills the rest. With the host
-                 ContentControl bound to ScrollViewer.ViewportHeight, this pins the footer to
-                 the bottom of the pane even for sparse NPCs (altars / pedestals). -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"/>
+            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
             <StackPanel>
                 <!-- Header: name + area + position -->
                 <StackPanel Margin="0,0,0,10">

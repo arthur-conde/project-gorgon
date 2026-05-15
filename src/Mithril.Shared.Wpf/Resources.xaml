@@ -925,17 +925,53 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- Wraps an entity detail card; overlays a top-right "Copy as image" camera
-         button that snapshots ONLY the content (the button is a sibling of
-         PART_ExportContent in this template, so it is excluded from the capture).
-         Default style for the templated DetailExportHost control — see
+    <!-- Wraps an entity detail card. Owns (a) the top-right "Copy as image" camera
+         button and (b) the mono bottom-right internal-name footer — both kept off
+         the individual views for consistency. The outer Grid is Left/Top-aligned so
+         it sizes to the card's desired extent (no pane filler → the snapshot is
+         tightly sized); PART_ExportContent (footer + body) is the capture target;
+         the camera button is its sibling so it is excluded from the capture. See
          DetailExportHost.cs (mirrors the ViewModeToggle pattern above). -->
     <Style TargetType="{x:Type c:DetailExportHost}">
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type c:DetailExportHost}">
-                    <Grid>
-                        <ContentPresenter x:Name="PART_ExportContent"/>
+                    <Grid HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <DockPanel x:Name="PART_ExportContent">
+                            <!-- Internal-name footer: mono, bottom-right, hidden when
+                                 FooterText is empty (NullOrEmptyToVis is string-only —
+                                 FooterText is a string, so it is correct here). Click
+                                 copies the text; the label flips to a "copied" ack for
+                                 ~1.2s (driven by the read-only FooterCopied DP). -->
+                            <Button x:Name="PART_FooterButton" DockPanel.Dock="Bottom"
+                                    HorizontalAlignment="Right" Cursor="Hand"
+                                    Background="Transparent" BorderThickness="0" Padding="0"
+                                    Margin="0,8,14,12"
+                                    ToolTip="Click to copy the internal name"
+                                    Visibility="{Binding FooterText, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource NullOrEmptyToVis}}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <ContentPresenter/>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <TextBlock FontFamily="{DynamicResource AppMonoFontFamily}"
+                                           FontSize="{DynamicResource AppFontSizeSmall}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="{Binding FooterText, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                            <Setter Property="Foreground" Value="#88FFFFFF"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding FooterCopied, RelativeSource={RelativeSource TemplatedParent}}" Value="True">
+                                                    <Setter Property="Text" Value="copied ✓"/>
+                                                    <Setter Property="Foreground" Value="#FFD4A847"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Button>
+                            <ContentPresenter/>
+                        </DockPanel>
                         <Button x:Name="PART_ExportButton"
                                 HorizontalAlignment="Right" VerticalAlignment="Top"
                                 Width="24" Height="24" Padding="0" Margin="6"
@@ -944,15 +980,6 @@
                                 ToolTip="Copy this card as an image">
                             <icon:PackIconLucide Kind="Camera" Width="14" Height="14"
                                                  Foreground="#66FFFFFF"/>
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Opacity" Value="1"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
                         </Button>
                     </Grid>
                 </ControlTemplate>

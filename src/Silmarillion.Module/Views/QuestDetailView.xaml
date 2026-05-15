@@ -160,17 +160,11 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost>
+    <c:DetailExportHost FooterText="{Binding InternalName}">
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer: internal name (mono). Repeatability promoted to a header chip so it's
-                 visible at first glance for daily-quest distinction. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding InternalName}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       HorizontalAlignment="Right" Margin="0,8,0,0"/>
+            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
 
             <StackPanel>
                 <!-- Header: name + location chip + badges -->
