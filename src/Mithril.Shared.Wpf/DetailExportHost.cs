@@ -90,6 +90,12 @@ public sealed class DetailExportHost : ContentControl
     /// footer.</summary>
     public bool HasFooterSegments => (bool)GetValue(HasFooterSegmentsProperty);
 
+    // Rebuilds the projected chip items whenever FooterSegments is (re)assigned.
+    // Detail hosts are recreated per entity selection (the master-detail ContentControl
+    // swaps in a fresh view per selection), so this fires once per host in practice;
+    // an in-flight ack DispatcherTimer from a prior set is not explicitly cancelled
+    // (consistent with OnFooterClick) — safe only because hosts are not reused for
+    // in-place navigation. Revisit if DetailExportHost is ever reused across selections.
     private static void OnFooterSegmentsChanged(
         DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
