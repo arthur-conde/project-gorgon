@@ -24,7 +24,7 @@
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer ("Book_NNN / Name") is owned by the wrapping DetailExportHost (FooterText). -->
+            <!-- Footer is owned by the wrapping DetailExportHost via FooterSegments (independent click-to-copy chips: envelope key + InternalName). -->
 
             <StackPanel>
                 <!-- ─── Header: title + category subtitle ─── -->
