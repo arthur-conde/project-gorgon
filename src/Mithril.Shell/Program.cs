@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -72,6 +73,7 @@ public static class Program
         try
         {
             Boot("=== startup ===");
+            Boot($"shell version: {typeof(Program).Assembly.InformationalVersion()}");
 
             // Extract an activation URI from argv if present. The OS passes it as the first
             // argument when launching via the registered custom scheme (mithril://…).
@@ -175,7 +177,7 @@ public static class Program
                 // Without this ordering, the NoOp would win and CanOpen would always
                 // return false — chip cross-links would render disabled.
                 .AddSingleton<IReferenceNavigator, NoOpReferenceNavigator>()
-                .AddMithrilModules()
+                .AddMithrilModules(Boot)
                 .AddMithrilAttention()
                 .AddMithrilShellUpdates()
                 .AddMithrilShellViews()
