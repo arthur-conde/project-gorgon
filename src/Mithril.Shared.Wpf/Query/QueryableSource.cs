@@ -32,6 +32,7 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
     private string? _queryText;
     private bool _caseSensitive;
     private Func<T, bool>? _predicate;
+    private IReadOnlyList<OrderSpec> _order = Array.Empty<OrderSpec>();
     private string? _error;
 
     public QueryableSource(bool caseSensitive = false)
@@ -104,8 +105,26 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         }
     }
 
+    /// <summary>
+    /// Parsed ORDER BY clause for the current <see cref="QueryText"/>, or
+    /// empty when the query has no sort clause. Empty also when parsing fails
+    /// (see <see cref="Error"/>).
+    /// </summary>
+    public IReadOnlyList<OrderSpec> Order
+    {
+        get => _order;
+        private set
+        {
+            if (ReferenceEquals(_order, value)) return;
+            _order = value;
+            OnPropertyChanged();
+            OrderChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event EventHandler? PredicateChanged;
+    public event EventHandler? OrderChanged;
 
     /// <summary>
     /// Convenience: filter <paramref name="source"/> by the current
@@ -118,29 +137,97 @@ public sealed class QueryableSource<T> : INotifyPropertyChanged where T : class
         return p is null ? source : source.Where(p);
     }
 
+    /// <summary>
+    /// Filter <paramref name="source"/> by the current <see cref="Predicate"/>
+    /// (if any) and then sort by the current <see cref="Order"/>. When no order
+    /// clause is set, the filtered enumerable is returned in iteration order.
+    /// </summary>
+    public IEnumerable<T> ApplyOrdered(IEnumerable<T> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var filtered = Apply(source);
+        if (_order.Count == 0)
+        {
+            return filtered;
+        }
+        IOrderedEnumerable<T>? ordered = null;
+        for (int i = 0; i < _order.Count; i++)
+        {
+            var spec = _order[i];
+            // ResolveColumn returns the canonical binding; resolution is case-insensitive
+            // unless _caseSensitive is true (matches QueryCompiler).
+            var key = _bindings[spec.Column];
+            Func<T, object?> selector = item => key.GetValue(item!);
+            if (ordered is null)
+            {
+                ordered = spec.Direction == OrderDirection.Ascending
+                    ? filtered.OrderBy(selector, NullSafeComparer.Instance)
+                    : filtered.OrderByDescending(selector, NullSafeComparer.Instance);
+            }
+            else
+            {
+                ordered = spec.Direction == OrderDirection.Ascending
+                    ? ordered.ThenBy(selector, NullSafeComparer.Instance)
+                    : ordered.ThenByDescending(selector, NullSafeComparer.Instance);
+            }
+        }
+        return ordered!;
+    }
+
     private void Recompile()
     {
         if (string.IsNullOrWhiteSpace(_queryText))
         {
             Error = null;
             Predicate = null;
+            Order = Array.Empty<OrderSpec>();
             return;
         }
         try
         {
-            var compiled = QueryCompiler.Compile(_queryText!, _bindings, _caseSensitive);
+            var parsed = QueryParser.Parse(_queryText!);
+            if (parsed is null)
+            {
+                Error = null;
+                Predicate = null;
+                Order = Array.Empty<OrderSpec>();
+                return;
+            }
+            Func<T, bool>? predicate = null;
+            if (parsed.Predicate is not null)
+            {
+                var compiled = QueryCompiler.Compile(parsed.Predicate, _bindings, _caseSensitive);
+                predicate = item => compiled(item);
+            }
+            // Compile order eagerly so unknown-column errors surface here, not at Apply time.
+            _ = QueryCompiler.CompileOrder(parsed.Order, _bindings, _caseSensitive);
             Error = null;
-            Predicate = compiled is null ? null : item => compiled(item);
+            Predicate = predicate;
+            Order = parsed.Order;
         }
         catch (QueryException ex)
         {
             Error = ex.Message;
-            // Intentionally keep last-good Predicate so the UI doesn't flicker
-            // mid-typing; the error string is the signal that the live query
-            // didn't take effect.
+            // Keep last-good Predicate + Order so UI doesn't flicker mid-typing.
         }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? property = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
+
+    private sealed class NullSafeComparer : IComparer<object?>
+    {
+        public static readonly NullSafeComparer Instance = new();
+        public int Compare(object? x, object? y)
+        {
+            if (ReferenceEquals(x, y)) return 0;
+            if (x is null) return -1;
+            if (y is null) return 1;
+            if (x is IComparable xc && x.GetType() == y.GetType()) return xc.CompareTo(y);
+            return string.Compare(
+                System.Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture),
+                System.Convert.ToString(y, System.Globalization.CultureInfo.InvariantCulture),
+                System.StringComparison.OrdinalIgnoreCase);
+        }
+    }
 }

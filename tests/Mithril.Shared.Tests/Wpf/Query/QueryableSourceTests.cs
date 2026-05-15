@@ -141,4 +141,51 @@ public class QueryableSourceTests
         // result, and the helper doesn't crash.
         qs.Error.Should().NotBeNull();
     }
+
+    private sealed record Row2(string Name, int Cost) { public Row2() : this("", 0) { } }
+
+    [Fact]
+    public void Order_property_reflects_parsed_clause()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Cost DESC";
+        src.Order.Should().HaveCount(1);
+        src.Order[0].Column.Should().Be("Cost");
+        src.Order[0].Direction.Should().Be(OrderDirection.Descending);
+    }
+
+    [Fact]
+    public void Order_empty_when_no_clause()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 5";
+        src.Order.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ApplyOrdered_sorts_filtered_results()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 0 ORDER BY Cost DESC";
+        var rows = new[] { new Row2("a", 3), new Row2("b", 0), new Row2("c", 7), new Row2("d", 1) };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("c", "a", "d");
+    }
+
+    [Fact]
+    public void ApplyOrdered_with_no_order_returns_filter_only()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "Cost > 0";
+        var rows = new[] { new Row2("a", 3), new Row2("b", 0), new Row2("c", 7) };
+        src.ApplyOrdered(rows).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ApplyOrdered_multi_key_uses_thenby()
+    {
+        var src = new QueryableSource<Row2>();
+        src.QueryText = "ORDER BY Cost, Name DESC";
+        var rows = new[] { new Row2("a", 1), new Row2("b", 2), new Row2("c", 1) };
+        src.ApplyOrdered(rows).Select(r => r.Name).Should().Equal("c", "a", "b");
+    }
 }
