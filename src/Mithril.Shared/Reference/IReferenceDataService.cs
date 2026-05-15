@@ -56,6 +56,25 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => EmptyRecipeIndex;
 
     /// <summary>
+    /// Provenance-retaining variant of <see cref="RecipesByIngredientItem"/> (#318 slice 4,
+    /// surface 1 — Items "Used in"). Same membership — recipes that consume the keyed item
+    /// via a direct <see cref="RecipeItemIngredient"/> — but each member is a
+    /// <see cref="RecipeIngredientItemMatch"/> retaining <em>why</em> it qualified, so the
+    /// provenance popup renders membership <em>and</em> provenance from the index directly
+    /// with no second (query-string) derivation that could silently diverge. The
+    /// relationship is single-reason (<see cref="RecipeIngredientItemMatchReason.DirectIngredient"/>),
+    /// so the popup collapses to a flat list per the #318 Discipline rule. A recipe is
+    /// carried once even if it lists the item in several slots — a distinct-member count
+    /// equals the displayed "View all N". Built whenever items.json or recipes.json reloads.
+    /// Defaults to empty so test fakes don't need to opt into cross-linking.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> RecipesByIngredientItemWithReason
+        => EmptyRecipeIngredientItemMatchIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> EmptyRecipeIngredientItemMatchIndex
+        = new Dictionary<string, IReadOnlyList<RecipeIngredientItemMatch>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// The flat set of every distinct keyword tag that appears in any
     /// <see cref="RecipeKeywordIngredient.ItemKeys"/> across all recipes. Powers the item-detail
     /// "Used as" section: an item's chip set is <c>item.Keywords ∩ KeywordsUsedInRecipeSlots</c>,

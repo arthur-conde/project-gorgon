@@ -154,13 +154,14 @@ If a future popup ever populates itself by re-running a query, the second deriva
 
 ### State of the migration
 
-**Migrated (#318): effect→abilities** — Effects-tab "Required by abilities" "View all N →" opens the provenance popup; the `AbilityByEffectKeyword` synthetic `EntityKind` + its kind target + its `mithril://silmarillion/AbilityByEffectKeyword/…` route were deleted.
+**Migrated (#318 slices 2+3): effect→abilities** — Effects-tab "Required by abilities" "View all N →" opens the provenance popup; the `AbilityByEffectKeyword` synthetic `EntityKind` + its kind target + its `mithril://silmarillion/AbilityByEffectKeyword/…` route were deleted.
+
+**Migrated (#318 slice 4): RecipeIngredientItem (#273)** — Items-tab "Used in" "View all N →" opens the provenance popup fed `IReferenceDataService.RecipesByIngredientItemWithReason` directly; the `RecipeIngredientItem` synthetic `EntityKind`, its `EntityRef` factory, `RecipeIngredientItemKindTarget` (+ DI registration), and its `mithril://silmarillion/RecipeIngredientItem/…` route were deleted. Single-reason relationship (`DirectIngredient`) ⇒ the popup collapses to a flat list (#318 Discipline).
 
 **Not yet migrated (slice 4+):** the remaining synthetic kind targets in `Silmarillion.Module/Navigation/` still ship and still follow the *old* query-mutating shape — `Kind` is a synthetic `EntityKind`, `InternalName` is a payload, `TrySelectByInternalName` mutates a tab VM's `QueryText`, `TryOpenInWindow → false`:
 
 - **[`RecipeIngredientKeywordKindTarget`](../src/Silmarillion.Module/Navigation/RecipeIngredientKeywordKindTarget.cs)** (#259) — item-detail "Used as" → Recipes filtered by `IngredientKeywords CONTAINS`.
 - **[`ItemKeywordKindTarget`](../src/Silmarillion.Module/Navigation/ItemKeywordKindTarget.cs)** (#270) — recipe-detail → Items filtered by `Keywords`.
-- **[`RecipeIngredientItemKindTarget`](../src/Silmarillion.Module/Navigation/RecipeIngredientItemKindTarget.cs)** (#273) — item-detail "Used in" → Recipes filtered by `Ingredients CONTAINS`.
 - **`NpcByArea`** — Areas "NPCs in this area".
 
 These are 1:N surfaces awaiting migration to the popup-from-index rule (slice 4, one PR per surface). **Do not add new synthetic-kind 1:N surfaces** — build them on the rule above from day one. A single-keyword *filter pivot* (one tag → "open the tab filtered to this concept") remains a legitimate 1:1 `EntityChip` target; the rule is about *fan-out / reverse-lookup* sets, not every query-shaped navigation.

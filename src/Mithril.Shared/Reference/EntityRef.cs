@@ -41,14 +41,6 @@ public enum EntityKind
     ItemKeyword,
 
     /// <summary>
-    /// Not an entity per se — a deep-link target for "open the Recipes tab filtered to recipes
-    /// that consume this item as a direct ingredient." InternalName carries the item's
-    /// InternalName. Dispatched by RecipeIngredientItemKindTarget. Mirror of
-    /// <see cref="RecipeIngredientKeyword"/> for the item-pivot direction.
-    /// </summary>
-    RecipeIngredientItem,
-
-    /// <summary>
     /// Not an entity per se — a deep-link target for "open the Effects tab filtered to effects
     /// whose <c>Keywords</c> list contains this tag." InternalName carries the keyword
     /// (e.g. <c>"FrostShard"</c>, <c>"Buff"</c>). Dispatched by EffectKeywordKindTarget.
@@ -125,7 +117,8 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef RecipeIngredientKeyword(string keyword) => new(EntityKind.RecipeIngredientKeyword, keyword);
     public static EntityRef ItemKeyword(string keyword) => new(EntityKind.ItemKeyword, keyword);
     public static EntityRef ItemKeyword(IReadOnlyList<string> itemKeys) => new(EntityKind.ItemKeyword, string.Join('+', itemKeys));
-    public static EntityRef RecipeIngredientItem(string itemInternalName) => new(EntityKind.RecipeIngredientItem, itemInternalName);
+    // EntityRef.RecipeIngredientItem retired in #318 slice 4 — the Items "Used in" 1:N
+    // surface is now a provenance popup fed RecipesByIngredientItemWithReason directly.
     public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
     public static EntityRef EffectByStackingType(string stackingType) => new(EntityKind.EffectByStackingType, stackingType);
     public static EntityRef NpcByArea(string areaKey) => new(EntityKind.NpcByArea, areaKey);

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Mithril.TestSupport;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
@@ -116,60 +117,74 @@ public sealed class ItemsTabViewModelTests
             .Should().Be("Metal Armor", because: "KeywordDisplayNames lookup wins over the raw tag");
     }
 
+    // ── #318 slice 4, surface 1 — Items "Used in" provenance popup ──────────────
+    // The reverse-lookup "recipes that consume this item" is now a ProvenancePopupViewModel
+    // fed IReferenceDataService.RecipesByIngredientItemWithReason directly; the retired
+    // RecipeIngredientItem synthetic-kind ActionChip is gone. These tests assert the #318
+    // invariant: popup membership == index collection, "View all N" == distinct members,
+    // single-reason ⇒ flat, and opening pushes no navigator history.
+
     [Fact]
-    public void UsedIn_belowCap_emitsAllChips_andRecipesTabShortcut()
+    public void UsedIn_belowCap_emitsAllChips_andBuildsPopup()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var recipes = MakeRecipeList(count: 5);
         var refData = new StubReferenceData
         {
             ItemsByName = { ["MetalSlab1"] = item },
-            RecipesByIngredient =
-            {
-                ["MetalSlab1"] = MakeRecipeList(count: 5),
-            },
+            RecipesByIngredient = { ["MetalSlab1"] = recipes },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(5);
-        var shortcut = vm.DetailViewModel.RecipesTabShortcut;
-        shortcut.Should().NotBeNull(because: "the navigable summary chip is always shown, even at counts within the cap");
-        shortcut!.DisplayName.Should().Be("View all 5 in Recipes tab →");
-        shortcut.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
+        detail.ConsumedByRecipes.Should().HaveCount(5);
+        detail.ConsumedByRecipesPopup.Should().NotBeNull(
+            because: "the View-all affordance is always built, even at counts within the cap");
+        var popup = detail.ConsumedByRecipesPopup!;
+        popup.TotalCount.Should().Be(5);
+        detail.ConsumedByRecipesTotal.Should().Be(5);
+        detail.ShowConsumedByRecipesPopupCommand.CanExecute(null).Should().BeTrue();
+        // Single reason (DirectIngredient) ⇒ flat list, no section chrome (#318 Discipline).
+        popup.IsFlat.Should().BeTrue(because: "one trivial reason is noise — collapse to flat");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            recipes.Select(r => r.InternalName),
+            because: "popup membership == the index collection (no second derivation)");
     }
 
     [Fact]
-    public void UsedIn_aboveCap_capsChips_andEmitsRecipesTabShortcut()
+    public void UsedIn_aboveCap_capsChips_butPopupCarriesFullDistinctSet()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab", IconId = 4242 };
+        // The MetalSlab1 case from the issue (~69 recipes).
+        var recipes = MakeRecipeList(count: 69);
         var refData = new StubReferenceData
         {
             ItemsByName = { ["MetalSlab1"] = item },
-            RecipesByIngredient =
-            {
-                // The MetalSlab1 case from the issue (~69 recipes).
-                ["MetalSlab1"] = MakeRecipeList(count: 69),
-            },
+            RecipesByIngredient = { ["MetalSlab1"] = recipes },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12,
-            because: "cap 12 means the first dozen show as chips and the rest are reachable via the summary chip");
-
-        var shortcut = vm.DetailViewModel.RecipesTabShortcut;
-        shortcut.Should().NotBeNull();
-        shortcut!.DisplayName.Should().Be("View all 69 in Recipes tab →");
-        shortcut.IconId.Should().Be(0, because: "the ActionChip renders its own ListFilter glyph, not the item icon");
-        shortcut.Reference.Should().Be(EntityRef.RecipeIngredientItem("MetalSlab1"));
+        detail.ConsumedByRecipes.Should().HaveCount(12,
+            because: "cap 12 means the first dozen show as chips and the rest are reachable via the popup");
+        var popup = detail.ConsumedByRecipesPopup!;
+        // The defining #318 assertion: "View all N" == distinct index members, NOT the cap.
+        popup.TotalCount.Should().Be(69);
+        detail.ConsumedByRecipesTotal.Should().Be(69);
+        popup.FlatChips.Should().HaveCount(69,
+            because: "the popup carries the full set fed from the index, not the capped cluster");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            recipes.Select(r => r.InternalName));
     }
 
     [Fact]
-    public void UsedIn_capZero_collapsesEverythingIntoShortcut()
+    public void UsedIn_capZero_collapsesAllChips_butPopupStillFull()
     {
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
@@ -177,42 +192,41 @@ public sealed class ItemsTabViewModelTests
             ItemsByName = { ["MetalSlab1"] = item },
             RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 3) },
         };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 0 });
 
         vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel!.ConsumedByRecipes.Should().BeEmpty();
-        vm.DetailViewModel.RecipesTabShortcut.Should().NotBeNull();
-        vm.DetailViewModel.RecipesTabShortcut!.DisplayName.Should().Be("View all 3 in Recipes tab →");
+        detail.ConsumedByRecipes.Should().BeEmpty();
+        detail.ConsumedByRecipesPopup.Should().NotBeNull();
+        detail.ConsumedByRecipesPopup!.TotalCount.Should().Be(3);
+        detail.ConsumedByRecipesTotal.Should().Be(3);
     }
 
     [Fact]
-    public void UsedIn_capExactlyMatchesCount_stillEmitsShortcut()
+    public void UsedIn_noConsumingRecipe_popupIsNull_andSectionHidden()
     {
-        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
-        var refData = new StubReferenceData
-        {
-            ItemsByName = { ["MetalSlab1"] = item },
-            RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 12) },
-        };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(),
+        var item = new Item { Id = 1, InternalName = "Lonely", Name = "Lonely" };
+        var refData = new StubReferenceData { ItemsByName = { ["Lonely"] = item } };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
             new SilmarillionSettings { UsedInChipCap = 12 });
 
         vm.SelectedItem = item;
+        var detail = vm.DetailViewModel!;
 
-        vm.DetailViewModel!.ConsumedByRecipes.Should().HaveCount(12);
-        vm.DetailViewModel.RecipesTabShortcut.Should().NotBeNull(
-            because: "the navigable summary chip is always shown regardless of count vs cap");
-        vm.DetailViewModel.RecipesTabShortcut!.DisplayName.Should().Be("View all 12 in Recipes tab →");
+        detail.ConsumedByRecipes.Should().BeEmpty();
+        detail.ConsumedByRecipesPopup.Should().BeNull(
+            because: "no recipe consumes the item — the whole 'Used in' section hides");
+        detail.ConsumedByRecipesTotal.Should().Be(0);
+        detail.ShowConsumedByRecipesPopupCommand.CanExecute(null).Should().BeFalse();
     }
 
     [Fact]
-    public void UsedInChipCap_change_liveRebuilds_DetailViewModel()
+    public void UsedInChipCap_change_liveRebuilds_DetailViewModel_PopupStaysFull()
     {
-        // The user drags the slider; the open detail view should re-cap on the spot. We
-        // verify by changing the cap and checking that ConsumedByRecipes reflects the new
-        // value. The summary chip stays present throughout (always-visible by design).
+        // The user drags the slider; the open detail view re-caps on the spot. The popup
+        // (fed from the index) carries the full set regardless of the cap.
         var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
         var refData = new StubReferenceData
         {
@@ -220,23 +234,117 @@ public sealed class ItemsTabViewModelTests
             RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 20) },
         };
         var settings = new SilmarillionSettings { UsedInChipCap = 12 };
-        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver(), settings);
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(), settings);
         vm.SelectedItem = item;
 
         var before = vm.DetailViewModel!;
         before.ConsumedByRecipes.Should().HaveCount(12);
-        before.RecipesTabShortcut.Should().NotBeNull();
-        before.RecipesTabShortcut!.DisplayName.Should().Be("View all 20 in Recipes tab →");
+        before.ConsumedByRecipesPopup!.TotalCount.Should().Be(20);
 
         settings.UsedInChipCap = 25;
 
         var after = vm.DetailViewModel!;
         after.Should().NotBeSameAs(before, because: "live-update rebuilds the detail VM on slider drag");
         after.ConsumedByRecipes.Should().HaveCount(20);
-        after.RecipesTabShortcut.Should().NotBeNull(
-            because: "the summary chip is always present even when every recipe now fits as a chip");
-        after.RecipesTabShortcut!.DisplayName.Should().Be("View all 20 in Recipes tab →");
+        after.ConsumedByRecipesPopup!.TotalCount.Should().Be(20,
+            because: "the popup is fed the index directly — the cap never affects its count");
     }
+
+    [Fact]
+    public void UsedIn_recipeQualifyingOnlyViaNonPrimaryIndexEntry_appearsInPopup_withCorrectProvenance()
+    {
+        // #318 Gate C — the load-bearing regression that would have caught the original
+        // dual-derivation bug for THIS surface. The pre-#318 "View all N" deep-linked via
+        // RecipeIngredientItem, whose kind target re-derived the set as the query string
+        // `Ingredients CONTAINS "<item>"`. If the index ever carried a member the query
+        // string did NOT (e.g. a recipe added to RecipesByIngredientItemWithReason for a
+        // reason the query couldn't express), the chip opened a list missing that member.
+        // The popup-from-index has no query between the set and the screen, so a member
+        // present ONLY in the index must still appear — with its DirectIngredient
+        // provenance — and the count must equal the distinct index membership exactly.
+        var item = new Item { Id = 1, InternalName = "Widget", Name = "Widget" };
+        var direct = new Recipe { Key = "recipe_001", InternalName = "DirectUser", Name = "Direct User" };
+        // A recipe whose membership comes from a match record only (the "non-primary"
+        // analogue here — it lives in the provenance index, never re-derivable from a
+        // naive query). It must still surface in the popup.
+        var indexOnly = new Recipe { Key = "recipe_002", InternalName = "IndexOnlyUser", Name = "Index Only User" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["Widget"] = item },
+            // Seed the provenance index directly with BOTH members so the test asserts
+            // popup membership == index membership, independent of any query.
+            RecipesByIngredientWithReasonOverride =
+            {
+                ["Widget"] = new[]
+                {
+                    new RecipeIngredientItemMatch(direct, RecipeIngredientItemMatchReason.DirectIngredient),
+                    new RecipeIngredientItemMatch(indexOnly, RecipeIngredientItemMatchReason.DirectIngredient),
+                },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.SelectedItem = item;
+        var popup = vm.DetailViewModel!.ConsumedByRecipesPopup;
+
+        popup.Should().NotBeNull();
+        popup!.TotalCount.Should().Be(2, because: "View all N == distinct index members");
+        popup.IsFlat.Should().BeTrue(because: "single reason (DirectIngredient) ⇒ flat list");
+        popup.FlatChips.Select(c => c.Reference.InternalName).Should().BeEquivalentTo(
+            new[] { "DirectUser", "IndexOnlyUser" },
+            because: "every index member appears — there is no query that could drop one");
+        // Provenance is intact: the lone section is the DirectIngredient one.
+        popup.Sections.Should().ContainSingle().Which.Label.Should().Be("Used in");
+        popup.Sections.Single().Chips.Select(c => c.Reference.InternalName).Should()
+            .BeEquivalentTo(new[] { "DirectUser", "IndexOnlyUser" });
+    }
+
+    [Fact]
+    public void UsedIn_openingPopup_doesNotTouchNavigator_noHistoryPushed()
+    {
+        // #318 — opening the popup must NOT push navigator back/forward history (the #229
+        // non-navigating contract, mirroring TryOpenInWindow and the slice-2
+        // EffectDetailViewModel test). The opener is swapped for a capturing no-op so no
+        // window spawns; assert navigator state is pristine before and after.
+        var item = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Metal Slab" };
+        var refData = new StubReferenceData
+        {
+            ItemsByName = { ["MetalSlab1"] = item },
+            RecipesByIngredient = { ["MetalSlab1"] = MakeRecipeList(count: 4) },
+        };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new ItemsTabViewModel(refData, nav, new FakeEntityNameResolver(),
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        var prior = ItemDetailViewModel.ProvenancePopupOpener;
+        ProvenancePopupViewModel? captured = null;
+        ItemDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            vm.SelectedItem = item;
+            var detail = vm.DetailViewModel!;
+
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+
+            detail.ShowConsumedByRecipesPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull(because: "the command invoked the opener with the built popup VM");
+            // The defining assertion: opening the popup pushed no navigator state.
+            nav.Current.Should().BeNull();
+            nav.CanGoBack.Should().BeFalse();
+            nav.CanGoForward.Should().BeFalse();
+        }
+        finally
+        {
+            ItemDetailViewModel.ProvenancePopupOpener = prior;
+        }
+    }
+
+    private static SilmarillionReferenceNavigator NavWithRecipe() =>
+        new(new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Recipe) });
 
     private static IReadOnlyList<Recipe> MakeRecipeList(int count) =>
         Enumerable.Range(1, count)
@@ -414,6 +522,24 @@ public sealed class ItemsTabViewModelTests
         public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
         public IReadOnlyDictionary<string, Item> ItemsByInternalName => ItemsByName;
         public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByIngredientItem => RecipesByIngredient;
+
+        // #318 slice 4: an explicit override lets a test seed the provenance index
+        // independently of RecipesByIngredient (Gate C — prove popup membership == index
+        // membership with NO query in between). When unset, derive from the same
+        // RecipesByIngredient fixture so existing setups feed the new popup-from-index
+        // code path unchanged. Single reason (DirectIngredient), mirroring production.
+        public Dictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> RecipesByIngredientWithReasonOverride { get; }
+            = new(StringComparer.Ordinal);
+
+        public IReadOnlyDictionary<string, IReadOnlyList<RecipeIngredientItemMatch>> RecipesByIngredientItemWithReason =>
+            RecipesByIngredientWithReasonOverride.Count > 0
+                ? RecipesByIngredientWithReasonOverride
+                : RecipesByIngredient.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<RecipeIngredientItemMatch>)kv.Value
+                        .Select(r => new RecipeIngredientItemMatch(r, RecipeIngredientItemMatchReason.DirectIngredient))
+                        .ToList(),
+                    StringComparer.Ordinal);
         public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();

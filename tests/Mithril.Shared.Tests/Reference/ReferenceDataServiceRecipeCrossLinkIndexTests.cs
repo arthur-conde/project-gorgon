@@ -165,6 +165,113 @@ public sealed class ReferenceDataServiceRecipeCrossLinkIndexTests : IDisposable
     }
 
     [Fact]
+    public void RecipesByIngredientItemWithReason_membership_equals_RecipesByIngredientItem_singleReason()
+    {
+        // #318 slice 4, surface 1 — Gate C (reference-layer half). The provenance-retaining
+        // index must be the SAME set as RecipesByIngredientItem (single materialization —
+        // the #318 invariant: the popup is a view over the index, never a re-derivation),
+        // and because the relationship is single-reason every member carries exactly the
+        // DirectIngredient flag. A regression that let the two indices drift (the original
+        // dual-derivation bug class) fails here.
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Tomato", "InternalName": "Tomato" },
+              "item_101": { "Name": "Salt", "InternalName": "Salt" }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Salted Tomato", "InternalName": "SaltedTomato", "Skill": "Cooking",
+                "Ingredients": [
+                  { "ItemCode": 100, "StackSize": 1 },
+                  { "ItemCode": 101, "StackSize": 1 }
+                ]
+              },
+              "recipe_2": {
+                "Name": "Tomato Soup", "InternalName": "TomatoSoup", "Skill": "Cooking",
+                "Ingredients": [ { "ItemCode": 100, "StackSize": 2 } ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // Same key set.
+        svc.RecipesByIngredientItemWithReason.Keys.Should().BeEquivalentTo(
+            svc.RecipesByIngredientItem.Keys);
+
+        foreach (var (item, plain) in svc.RecipesByIngredientItem)
+        {
+            var withReason = svc.RecipesByIngredientItemWithReason[item];
+            // Same members (same Recipe instances), same order.
+            withReason.Select(m => m.Recipe).Should().Equal(plain,
+                because: "the provenance index is a view over the same materialized set");
+            // Single-reason: every member is exactly DirectIngredient (a distinct-member
+            // count therefore equals the displayed 'View all N').
+            withReason.Should().OnlyContain(
+                m => m.Reason == RecipeIngredientItemMatchReason.DirectIngredient);
+        }
+
+        // Tomato is referenced by two distinct recipes — both carried, once each.
+        svc.RecipesByIngredientItemWithReason["Tomato"]
+            .Select(m => m.Recipe.InternalName)
+            .Should().BeEquivalentTo(new[] { "SaltedTomato", "TomatoSoup" });
+    }
+
+    [Fact]
+    public void RecipesByIngredientItemWithReason_recipeQualifyingViaNonFirstSlot_stillCarriedOnce_withDirectIngredient()
+    {
+        // #318 Gate C — the load-bearing regression. A recipe that consumes the item via a
+        // *non-primary* slot (here: the SECOND ingredient slot, the first being a keyword
+        // slot that never feeds this index) must still appear, once, with DirectIngredient
+        // provenance. The original dual-derivation bug surfaced exactly when a member
+        // qualified via something other than the field the re-derived query inspected; the
+        // popup-from-index has no query, so the member is present by construction.
+        WriteFixture(
+            itemsJson: """
+            {
+              "item_100": { "Name": "Rough Crystal", "InternalName": "RoughCrystal", "Keywords": ["Crystal"] },
+              "item_200": { "Name": "Iron Bar", "InternalName": "IronBar" }
+            }
+            """,
+            recipesJson: """
+            {
+              "recipe_1": {
+                "Name": "Enchant Bar", "InternalName": "EnchantBar", "Skill": "Smithing",
+                "Ingredients": [
+                  { "Desc": "Aux Crystal", "ItemKeys": ["Crystal"], "StackSize": 1 },
+                  { "ItemCode": 200, "StackSize": 1 }
+                ]
+              },
+              "recipe_2": {
+                "Name": "Reforge Bar", "InternalName": "ReforgeBar", "Skill": "Smithing",
+                "Ingredients": [
+                  { "ItemCode": 200, "StackSize": 1 },
+                  { "ItemCode": 200, "StackSize": 1 }
+                ]
+              }
+            }
+            """);
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        // IronBar qualifies in recipe_1 only via the second slot, and in recipe_2 via two
+        // direct slots — it must appear once per recipe (deduped), with DirectIngredient.
+        svc.RecipesByIngredientItemWithReason.Should().ContainKey("IronBar");
+        var members = svc.RecipesByIngredientItemWithReason["IronBar"];
+        members.Select(m => m.Recipe.InternalName).Should().BeEquivalentTo(
+            new[] { "EnchantBar", "ReforgeBar" },
+            because: "membership is by recipe, deduped, regardless of which slot matched");
+        members.Should().OnlyContain(m => m.Reason == RecipeIngredientItemMatchReason.DirectIngredient);
+
+        // The keyword-only item is NOT in the per-item provenance index (it's the 'Used as'
+        // surface, #259 — out of scope here and never feeding this index).
+        svc.RecipesByIngredientItemWithReason.Should().NotContainKey("RoughCrystal");
+    }
+
+    [Fact]
     public void KeywordsUsedInRecipeSlots_collects_distinct_tags_across_all_RecipeKeywordIngredient_slots()
     {
         WriteFixture(
