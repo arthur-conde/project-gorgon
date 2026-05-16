@@ -1,4 +1,5 @@
 using Elrond.Domain;
+using Mithril.Leveling;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
@@ -7,15 +8,21 @@ namespace Elrond.Services;
 
 /// <summary>
 /// Pure computation engine that cross-references CDN reference data with a
-/// character snapshot to produce skill-leveling analysis.
+/// character snapshot to produce skill-leveling analysis. The skill-XP math
+/// (drop-off, first-time bonus, XP-to-goal, table resolution) lives in shared
+/// <see cref="LevelingMath"/> per #225; this engine owns the Elrond-specific
+/// projection to <see cref="SkillAnalysis"/> / <see cref="RecipeAnalysis"/> rows
+/// and the cookbook-section model.
 /// </summary>
 public sealed class SkillAdvisorEngine
 {
     private readonly IReferenceDataService _ref;
+    private readonly LevelingMath _math;
 
-    public SkillAdvisorEngine(IReferenceDataService referenceData)
+    public SkillAdvisorEngine(IReferenceDataService referenceData, LevelingMath? math = null)
     {
         _ref = referenceData;
+        _math = math ?? new LevelingMath(referenceData);
     }
 
     /// <summary>
@@ -244,82 +251,25 @@ public sealed class SkillAdvisorEngine
             IsUmbrellaSection: isUmbrellaSection);
     }
 
+    // Math delegated to shared Mithril.Leveling (#225). These thin pass-throughs
+    // keep the engine's and LevelingSimulator's existing call sites untouched.
     internal int ComputeEffectiveXp(Recipe recipe, int playerLevel)
-    {
-        if (recipe.RewardSkillXpDropOffLevel is not { } dropOffLevel) return recipe.RewardSkillXp;
-        if (recipe.RewardSkillXpDropOffPct is not { } dropOffPct) return recipe.RewardSkillXp;
-
-        if (playerLevel < dropOffLevel) return recipe.RewardSkillXp;
-
-        var rate = recipe.RewardSkillXpDropOffRate ?? 1;
-        if (rate <= 0) rate = 1;
-
-        // RewardSkillXpDropOffLevel is the level AT WHICH the first reduction
-        // already applies — not the level after which drop-off begins. So at
-        // playerLevel == dropOffLevel we owe one reduction; the early-out above
-        // covers playerLevel < dropOffLevel. Each additional 'rate' levels past
-        // drop-off compounds another reduction. (Closes #159 — first tier was
-        // silently skipped, making Elrond's effective XP one tier too high.)
-        var levelsPast = playerLevel - dropOffLevel;
-        var reductions = levelsPast / rate + 1;
-        var remaining = 1.0;
-        for (var i = 0; i < reductions; i++)
-        {
-            remaining *= (1.0 - dropOffPct);
-            if (remaining <= 0) return 0;
-        }
-
-        return Math.Max(0, (int)(recipe.RewardSkillXp * remaining));
-    }
+        => _math.EffectiveXpPerCraft(recipe, playerLevel);
 
     /// <summary>
     /// Computes the total XP needed from the current position to reach <paramref name="goalLevel"/>.
     /// </summary>
     internal long ComputeXpToGoal(string skillName, int currentLevel, long currentXp, long currentLevelXpNeeded, int goalLevel)
-    {
-        // XP remaining in the current level
-        var total = currentLevelXpNeeded - currentXp;
-        if (total < 0) total = 0;
-
-        var xpAmounts = ResolveXpTable(skillName);
-        if (xpAmounts is null) return total;
-
-        // Add XP for each full level between currentLevel+1 and goalLevel-1,
-        // plus XP for goalLevel-1 index (to reach goalLevel)
-        for (var lvl = currentLevel + 1; lvl < goalLevel; lvl++)
-        {
-            if (lvl - 1 < xpAmounts.Count)
-                total += xpAmounts[lvl - 1];
-            else
-                break;
-        }
-
-        return total;
-    }
+        => _math.XpToGoal(skillName, currentLevel, currentXp, currentLevelXpNeeded, goalLevel);
 
     /// <summary>Resolves the XP amounts array for a given skill.</summary>
     internal IReadOnlyList<long>? ResolveXpTable(string skillName)
-    {
-        if (_ref.Skills.TryGetValue(skillName, out var skillEntry) &&
-            !string.IsNullOrEmpty(skillEntry.XpTable) &&
-            _ref.XpTables.TryGetValue(skillEntry.XpTable, out var xpTable))
-        {
-            return xpTable.XpAmounts;
-        }
-        return null;
-    }
+        => _math.ResolveXpTable(skillName);
 
     private IReadOnlyList<XpMilestone> BuildMilestones(
         string skillName, int currentLevel, long currentXp, long currentLevelXpNeeded, int maxLevels)
     {
-        // Resolve XP table for the skill
-        IReadOnlyList<long>? xpAmounts = null;
-        if (_ref.Skills.TryGetValue(skillName, out var skillEntry) &&
-            !string.IsNullOrEmpty(skillEntry.XpTable) &&
-            _ref.XpTables.TryGetValue(skillEntry.XpTable, out var xpTable))
-        {
-            xpAmounts = xpTable.XpAmounts;
-        }
+        var xpAmounts = _math.ResolveXpTable(skillName);
 
         var milestones = new List<XpMilestone>();
         var cumulative = currentLevelXpNeeded - currentXp; // XP remaining in current level
