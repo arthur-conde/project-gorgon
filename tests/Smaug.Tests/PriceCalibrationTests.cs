@@ -68,6 +68,20 @@ public sealed class PriceCalibrationTests
         FavorTierName.IsAtLeast(FavorTierName.Neutral, FavorTierName.Friends).Should().BeFalse();
     }
 
+    // #371: Tolerated is favor -100, below Neutral (0). The prior assertions did not
+    // exercise this boundary, which is exactly why the inversion slipped. Pin the full
+    // ladder to the floor-grounded order (matching Arwen.Domain.FavorTiers).
+    [Fact]
+    public void FavorTierName_Ordered_IsFloorGrounded()
+    {
+        FavorTierName.RankOf(FavorTierName.Tolerated)
+            .Should().BeLessThan(FavorTierName.RankOf(FavorTierName.Neutral));
+
+        FavorTierName.Ordered.Should().Equal(
+            "Despised", "Hated", "Disliked", "Tolerated", "Neutral", "Comfortable",
+            "Friends", "CloseFriends", "BestFriends", "LikeFamily", "SoulMates");
+    }
+
     private static PriceObservation Make(string npc, string internalName, long value, long paid, string tier, int cp) =>
         new()
         {
