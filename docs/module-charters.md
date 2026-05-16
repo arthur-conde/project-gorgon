@@ -230,12 +230,21 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   `AugmentPoolPreview` pool surface Celebrimbor uses, fed by the shared
   `ResultEffectsParser`. Silmarillion is the **master** view (full pool for any
   browsed recipe); **Celebrimbor is the planning-narrowed slice** of that *same* data
-  (the pool for recipes in your craft plan). Mechanic (owner-stated): the roll pool is
-  influenced by the **crystal** (keyword ingredient) used in recipes whose name
-  contains *"(enchanted)"* — the `*E` enchanted-equipment recipes with
-  `RecipeKeywordIngredient` crystal slots. Showing the *possible* pool is **browsing**
-  (within charter, consistent with the carve-out below); it is **not** simulating a
-  specific roll. Relates to #214.
+  (the pool for recipes in your craft plan). **Mechanic — verified against `recipes.json` + `ResultEffectsParser`
+  2026-05-16:** the `*E` *"(enchanted)"* recipes carry generic `Crystal`
+  keyword-ingredient slots (`ItemKeys:["Crystal"]`) and a
+  `TSysCraftedEquipment(template)` ResultEffect; `TryBuildCraftedEquipmentPool`
+  derives the displayable pool from the crafted-equipment template's `TSysProfile` →
+  `IReferenceDataService.Profiles` — so the pool is **template/profile-derived and
+  crystal-independent in reference data.** ⚠️ **Correction:** the owner-stated "rolls
+  influenced by the crystal used" is **not reflected in reference data or the parser**
+  — the crystal slots are consumed ingredients with no effect on the parsed pool; any
+  crystal→roll influence is game-engine *runtime* behaviour, outside browsable data.
+  Consequence: Silmarillion can show the **full possible pool per recipe/template**
+  (browsing, within charter); it **cannot** show "crystal X narrows the pool" — that
+  linkage isn't in the data, and deriving it would be calculation, not browsing
+  (reinforces the no-computation carve-out below). Showing the *possible* pool is
+  **browsing**; it is **not** simulating a specific roll. Relates to #214.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
@@ -326,9 +335,16 @@ libraries; the charter follows the code:
   popup (the `AugmentPoolPreview` surface, shared `ResultEffectsParser`) — promoted
   from "#214 gap" to explicit in-scope. Sharpened the Silmarillion↔Celebrimbor
   relationship: Silmarillion = master list / full pool; Celebrimbor = planning-narrowed
-  slice of the same data. Recorded the mechanic (roll pool influenced by the crystal /
-  keyword ingredient in *"(enchanted)"* `*E` recipes). Browsing the *possible* pool ≠
-  simulating a roll, so consistent with the no-computation carve-out.
+  slice of the same data.
+- **2026-05-16** — TSys-pool shape **verified** against `recipes.json` +
+  `ResultEffectsParser`. Confirmed the popup is data-supported (`*E` "(enchanted)" →
+  `Crystal` keyword slots + `TSysCraftedEquipment(template)` → `AugmentPoolPreview`
+  from `template.TSysProfile`/`Profiles`). **Corrected:** owner-stated "rolls
+  influenced by the crystal" is *not* in reference data — pool is template/profile-
+  derived, crystal-independent; any crystal influence is engine runtime, not
+  browsable. Charter mechanic line moved from owner-stated to verified, discrepancy
+  flagged ⚠️. (Verification overturned the stated mechanic — same pattern as gardening
+  XP and the inv-layering corrections.)
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
   is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
