@@ -1,0 +1,172 @@
+/* ============================================================================
+   Mithril Design System — Colors & Type
+   Lifted from src/Mithril.Shared.Wpf/Resources.xaml in moumantai-gg/mithril.
+   Names match the SolidColorBrush keys 1:1 so you can reference WPF resources
+   in conversation without translation. (BgPrimaryBrush → --bg-primary, etc.)
+   ============================================================================ */
+
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --bg-primary:        #1A1A1A;   /* window chrome, content pages          */
+  --bg-recessed:       #1E1E1E;   /* data grids, log lists                 */
+  --bg-surface:        #252525;   /* cards, inputs, buttons                */
+  --bg-surface-hover:  #303030;   /* hover state for surface elements      */
+  --bg-sidebar:        #202020;   /* left rail, settings sub-rail          */
+  --bg-statusbar:      #252525;   /* bottom status strip                   */
+  --bg-log-canvas:     #101010;   /* deepest — diagnostics log viewport    */
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --fg-primary:        #E8E8E8;
+  --fg-secondary:      rgba(255, 255, 255, 0.80);  /* #CCFFFFFF body copy  */
+  --fg-tertiary:       rgba(255, 255, 255, 0.53);  /* #88FFFFFF labels     */
+  --fg-quaternary:     rgba(255, 255, 255, 0.40);  /* #66FFFFFF metadata   */
+
+  /* ── Accent (gold) — the signature Mithril color ─────────────────────── */
+  --accent:            #D4A847;   /* primary CTA, headers, sort arrows     */
+  --accent-fg:         #1A1A1A;   /* text drawn on top of the accent       */
+  --accent-soft:       #1E3A5F;   /* selected row / pressed bg (blue)      */
+  --accent-soft-text:  #CFE8FF;   /* text on accent-soft                   */
+
+  /* ── Borders ──────────────────────────────────────────────────────────── */
+  --border-subtle:     rgba(255, 255, 255, 0.20);  /* #33FFFFFF default    */
+  --border-strong:     rgba(255, 255, 255, 0.33);  /* #55FFFFFF hover      */
+  --border-faint:      rgba(255, 255, 255, 0.13);  /* #22FFFFFF settings   */
+
+  /* ── Semantic / state ─────────────────────────────────────────────────── */
+  --warn:              #E0A030;   /* warn-level log, conflict triangles    */
+  --warn-bg:           #4A3820;   /* update-available banner background    */
+  --warn-fg:           #F3E1B8;   /* text on warn-bg                       */
+  --warn-border:       #E8B04A;
+  --error:             #D04040;   /* error-level log, hard validation      */
+  --error-rec:         #E04545;   /* perf-trace REC indicator              */
+  --info:              #88B0E0;   /* diagnostics category column           */
+  --success:           #7AB880;   /* query string token, ok pills          */
+  --global-hotkey:     #7AB8E0;   /* "Globe" indicator for global hotkey   */
+
+  /* ── Query-token highlight palette (MithrilQueryBox) ─────────────────── */
+  --q-column:          #D4A847;
+  --q-keyword:         #CFE8FF;
+  --q-operator:        #AAAAAA;
+  --q-string:          #7AB880;
+  --q-number:          #E0BF7A;
+  --q-duration:        #E0BF7A;
+  --q-punct:           #999999;
+  --q-error:           #CC6666;
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --font-body:    "Segoe UI", "Segoe UI Variable", system-ui, -apple-system, sans-serif;
+  --font-header:  "Cambria", "Source Serif Pro", "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono:    "Consolas", "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  /* Size scale lifted verbatim from Resources.xaml (AppFontSize* keys).
+     Body sits at 12pt — small by web standards but spot-on for dense
+     desktop tools. Multiply by 1.33 to map pt→px in HTML mockups. */
+  --fs-xsmall:  9pt;    /* badge counts, table sub-text                    */
+  --fs-small:   10pt;   /* query token kind column                         */
+  --fs-hint:    11pt;   /* labels, helper text, badges                     */
+  --fs-base:    12pt;   /* default body / control text                     */
+  --fs-medium:  13pt;   /* primary nav items                               */
+  --fs-large:   14pt;   /* sidebar module titles                           */
+  --fs-xlarge:  16pt;   /* prominent body                                  */
+  --fs-header:  18pt;   /* sub-section headings                            */
+  --fs-title:   20pt;   /* page title                                      */
+  --fs-hero:    22pt;   /* page hero (Cambria + accent gold)               */
+
+  /* ── State opacities (from EatenOpacityKey / LockedOpacityKey) ────────── */
+  --op-eaten:   0.60;   /* done, de-emphasised                             */
+  --op-locked: 0.45;    /* out of reach, even more de-emphasised           */
+  --op-disabled: 0.50;  /* WPF button :disabled                            */
+
+  /* ── Shape & rhythm ───────────────────────────────────────────────────── */
+  --radius-sm: 2px;     /* category chips                                  */
+  --radius-md: 3px;     /* buttons, inputs, cards, banners (the default)   */
+  --radius-pill: 9999px;/* badge pills (CornerRadius=7..9 in XAML)         */
+
+  --pad-xs: 2px;
+  --pad-sm: 4px;
+  --pad-md: 6px;        /* default control vertical padding                */
+  --pad-lg: 10px;       /* default control horizontal padding              */
+  --pad-xl: 12px;
+  --pad-2xl: 16px;
+  --pad-3xl: 24px;      /* settings-page content margin                    */
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  --sidebar-width: 260px;
+  --settings-rail-width: 200px;
+  --content-max-width: 640px;     /* settings forms cap at 640             */
+  --window-min-width: 1100px;
+  --window-min-height: 700px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Semantic role classes — map element types to tokens. Use these in HTML
+   mockups instead of re-typing colors per element.
+   ────────────────────────────────────────────────────────────────────────── */
+
+body, .body, p {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  color: var(--fg-primary);
+  background: var(--bg-primary);
+}
+
+.page-hero, h1.hero {
+  font-family: var(--font-header);
+  font-size: var(--fs-hero);
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+
+h1, .h1 {
+  font-family: var(--font-header);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+h2, .h2 {
+  font-family: var(--font-header);
+  font-size: var(--fs-header);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+h3, .h3 {
+  font-family: var(--font-header);
+  font-size: var(--fs-large);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.label, label, .field-label {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--fg-tertiary);
+}
+
+.help, .hint {
+  font-family: var(--font-body);
+  font-size: var(--fs-hint);
+  color: var(--fg-tertiary);
+}
+
+.meta, .footnote {
+  font-size: var(--fs-hint);
+  color: var(--fg-quaternary);
+}
+
+code, .mono, kbd, pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+}
+
+kbd {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1px 6px;
+  font-size: var(--fs-hint);
+  color: var(--fg-primary);
+}

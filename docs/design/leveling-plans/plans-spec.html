@@ -1,0 +1,1263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mithril — Plans tab visual & interaction spec</title>
+<style>
+  :root{
+    /* App tokens — these are the values you implement in XAML */
+    --bg:#1A1A1A;
+    --surface:#1F1F1F;
+    --surface-2:#242424;
+    --surface-3:#2A2A2A;
+    --row-hover:#262626;
+    --border:rgba(255,255,255,0.13);
+    --border-soft:rgba(255,255,255,0.06);
+    --border-strong:rgba(255,255,255,0.20);
+    --text:#E6E6E6;
+    --text-2:#B0B0B0;
+    --text-3:#7A7A7A;
+    --text-4:#5A5A5A;
+    --accent:#4FB3A5;            /* the ONE teal — primary action + progress only */
+    --accent-dim:rgba(79,179,165,0.16);
+    --accent-edge:rgba(79,179,165,0.55);
+    --warn:#C9A24A;              /* stale */
+    --warn-dim:rgba(201,162,74,0.14);
+    --ok:#7BA876;                /* done */
+    --ok-dim:rgba(123,168,118,0.14);
+
+    /* Doc-chrome tokens (NOT the app — the page wrapping the mockups) */
+    --doc-bg:#0C0C0C;
+    --doc-rule:rgba(255,255,255,0.07);
+    --doc-text:#9A9A9A;
+    --mono:"Cascadia Mono","JetBrains Mono","Consolas","Menlo",ui-monospace,monospace;
+    --ui:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--doc-bg);color:var(--text);font-family:var(--ui);-webkit-font-smoothing:antialiased}
+  body{padding:48px 56px 96px;font-size:13px;line-height:1.45}
+
+  /* ───────── Doc header & frame chrome ───────── */
+  .doc-head{max-width:1560px;margin:0 auto 36px;display:flex;align-items:baseline;gap:24px;border-bottom:1px solid var(--doc-rule);padding-bottom:18px}
+  .doc-head h1{margin:0;font-weight:600;font-size:18px;letter-spacing:.2px;color:#D8D8D8}
+  .doc-head .meta{font-family:var(--mono);font-size:11px;color:var(--text-4);letter-spacing:.4px}
+  .doc-head .meta b{color:var(--text-3);font-weight:500}
+
+  .frame{max-width:1560px;margin:0 auto 56px;display:grid;grid-template-columns:1100px 400px;gap:32px;align-items:start}
+  .frame-label{grid-column:1 / -1;display:flex;align-items:baseline;gap:14px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed var(--doc-rule)}
+  .frame-label .num{font-family:var(--mono);font-size:11px;color:var(--text-4);letter-spacing:1px}
+  .frame-label h2{margin:0;font-size:14px;font-weight:600;color:#D8D8D8;letter-spacing:.2px}
+  .frame-label .kind{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.6px;text-transform:uppercase}
+
+  /* The "device" — fixed 1100×720 app canvas */
+  .app{width:1100px;height:720px;background:var(--bg);border:1px solid var(--border);display:flex;flex-direction:column;color:var(--text);overflow:hidden;font-size:13px}
+
+  /* Title bar — feels like a MahApps.Metro window strip */
+  .titlebar{height:30px;background:#161616;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;padding:0 12px;gap:10px;flex-shrink:0}
+  .titlebar .brand{font-size:11px;letter-spacing:1.4px;color:var(--text-3);text-transform:uppercase}
+  .titlebar .sep{flex:1}
+  .titlebar .wbtn{width:14px;height:14px;display:grid;place-items:center;color:var(--text-3);font-size:11px;line-height:1}
+  .titlebar .wbtn svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:1.4}
+
+  /* Tab strip */
+  .tabs{height:36px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:stretch;padding:0 4px;flex-shrink:0}
+  .tab{display:flex;align-items:center;padding:0 16px;font-size:12px;color:var(--text-2);letter-spacing:.3px;position:relative;cursor:default}
+  .tab.active{color:var(--text)}
+  .tab.active::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--accent)}
+  .tab .ic{width:13px;height:13px;margin-right:7px;stroke:currentColor;fill:none;stroke-width:1.5;opacity:.85}
+
+  /* Common: pane heading */
+  .pane-head{height:38px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border-soft);gap:14px;flex-shrink:0}
+  .pane-head h3{margin:0;font-size:12px;font-weight:600;color:var(--text);letter-spacing:.4px;text-transform:uppercase}
+  .pane-head .sub{font-size:11px;color:var(--text-3);font-family:var(--mono);letter-spacing:.3px}
+  .pane-head .spacer{flex:1}
+
+  /* Buttons */
+  .btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 12px;font-size:12px;font-family:var(--ui);background:transparent;color:var(--text-2);border:1px solid var(--border);border-radius:2px;cursor:default;letter-spacing:.2px}
+  .btn:hover{background:#262626;color:var(--text)}
+  .btn.primary{background:var(--accent);color:#0F1A18;border-color:var(--accent);font-weight:600}
+  .btn.primary:hover{background:#5BC2B3}
+  .btn.ghost{border-color:transparent;color:var(--text-3)}
+  .btn.ghost:hover{color:var(--text);background:#262626}
+  .btn.warn{color:var(--warn);border-color:rgba(201,162,74,0.35)}
+  .btn .ic{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.6}
+  .btn.sm{height:22px;padding:0 9px;font-size:11px}
+
+  /* Pills/badges */
+  .pill{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;font-weight:600;border-radius:2px;border:1px solid transparent}
+  .pill.stale{color:var(--warn);background:var(--warn-dim);border-color:rgba(201,162,74,0.35)}
+  .pill.done{color:var(--ok);background:var(--ok-dim);border-color:rgba(123,168,118,0.35)}
+  .pill.hypo{color:var(--text-3);background:rgba(255,255,255,0.04);border-color:var(--border)}
+  .pill.live{color:var(--accent);background:var(--accent-dim);border-color:var(--accent-edge)}
+
+  /* Status icons */
+  .ic{display:inline-block;vertical-align:middle}
+  svg.ic{stroke:currentColor;fill:none;stroke-width:1.6}
+
+  /* ───────── Manager view ───────── */
+  .mgr{flex:1;display:flex;flex-direction:column;min-height:0}
+  .mgr-toolbar{height:42px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--border-soft);flex-shrink:0}
+  .mgr-search{flex:1;display:flex;align-items:center;gap:8px;height:26px;padding:0 10px;border:1px solid var(--border);border-radius:2px;background:#171717;max-width:340px}
+  .mgr-search input{flex:1;background:transparent;border:0;outline:0;color:var(--text-2);font-family:var(--ui);font-size:12px}
+  .mgr-search .ic{width:12px;height:12px;color:var(--text-4);stroke:currentColor;fill:none;stroke-width:1.6}
+  .mgr-toolbar .filterchips{display:flex;gap:4px}
+  .chip{height:22px;padding:0 9px;display:inline-flex;align-items:center;font-size:11px;color:var(--text-3);border:1px solid var(--border-soft);border-radius:2px;background:transparent}
+  .chip.on{color:var(--text);border-color:var(--border-strong);background:var(--surface-2)}
+  .chip .ct{margin-left:6px;font-family:var(--mono);font-size:10px;color:var(--text-4)}
+  .chip.on .ct{color:var(--text-2)}
+
+  /* Column header */
+  .mgr-cols{display:grid;grid-template-columns:24px 1fr 200px 110px 110px 180px;gap:0;padding:0 16px;height:28px;align-items:center;border-bottom:1px solid var(--border);background:#181818;font-family:var(--mono);font-size:10.5px;color:var(--text-4);letter-spacing:1px;text-transform:uppercase}
+
+  /* Row */
+  .mgr-list{flex:1;overflow:auto}
+  .row{display:grid;grid-template-columns:24px 1fr 200px 110px 110px 180px;gap:0;align-items:center;padding:0 16px;height:54px;border-bottom:1px solid var(--border-soft);position:relative}
+  .row:hover{background:var(--row-hover)}
+  .row.selected{background:#222;}
+  .row.selected::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent)}
+  .row .glyph{color:var(--text-3);font-size:13px;line-height:1}
+  .row .glyph.ok{color:var(--ok)}
+  .row .glyph.warn{color:var(--warn)}
+  .row .glyph.run{color:var(--accent)}
+  .row .title{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .row .title .t1{font-size:13px;color:var(--text);letter-spacing:.1px}
+  .row .title .t2{font-size:11px;color:var(--text-3);font-family:var(--mono);letter-spacing:.2px;display:flex;gap:10px;align-items:center}
+  .row .title .t2 .skl{color:var(--text-2)}
+  .row .char{font-size:12px;color:var(--text-2)}
+  .row .char .srv{color:var(--text-4);font-family:var(--mono);font-size:11px}
+  .row .char.hypo{color:var(--text-3);font-style:italic}
+  .row .phase{font-family:var(--mono);font-size:12px;color:var(--text-2);display:flex;align-items:center;gap:8px}
+  .row .phase .bar{flex:1;max-width:54px;height:4px;background:#2A2A2A;border-radius:1px;overflow:hidden}
+  .row .phase .bar i{display:block;height:100%;background:var(--accent)}
+  .row .phase.done .bar i{background:var(--ok)}
+  .row .age{font-family:var(--mono);font-size:11px;color:var(--text-4)}
+  .row .badges{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+  .row .badges .actions{display:none;gap:4px}
+  .row:hover .badges .actions, .row.selected .badges .actions{display:flex}
+  .row:hover .badges .pill, .row.selected .badges .pill{display:none}
+
+  /* Empty state */
+  .empty{flex:1;display:grid;place-items:center;text-align:center;padding:24px}
+  .empty .ill{width:88px;height:88px;border:1px dashed var(--border);border-radius:50%;display:grid;place-items:center;color:var(--text-4);margin-bottom:16px}
+  .empty .ill svg{width:36px;height:36px;stroke:currentColor;fill:none;stroke-width:1.3}
+  .empty h4{margin:0 0 6px;font-size:14px;font-weight:600;color:var(--text-2);letter-spacing:.2px}
+  .empty p{margin:0 0 18px;color:var(--text-3);font-size:12.5px;max-width:380px;line-height:1.55}
+  .empty .hints{display:flex;gap:8px;justify-content:center}
+
+  /* ───────── Walker view ───────── */
+  .walker{flex:1;display:grid;grid-template-columns:360px 1fr 280px;min-height:0}
+  .walker .col{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .walker .col + .col{border-left:1px solid var(--border-soft)}
+
+  /* Phase rail */
+  .rail{padding:8px 0;overflow:auto;flex:1}
+  .ph{position:relative;padding:10px 18px 10px 42px;cursor:default;border-left:2px solid transparent}
+  .ph .marker{position:absolute;left:16px;top:14px;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--text-4);background:var(--bg);display:grid;place-items:center;color:var(--text-4);font-size:10px;font-family:var(--mono);line-height:1}
+  .ph.done .marker{border-color:var(--ok);color:var(--ok);background:#1A1F1A}
+  .ph.done .marker::after{content:"✓";font-size:10px}
+  .ph.current{background:linear-gradient(90deg,rgba(79,179,165,0.07),transparent 80%);border-left-color:var(--accent)}
+  .ph.current .marker{border-color:var(--accent);color:var(--accent)}
+  .ph.current .marker::after{content:"";width:6px;height:6px;background:var(--accent);border-radius:50%}
+  .ph.up .marker{color:var(--text-4)}
+  .ph .pname{font-size:12.5px;color:var(--text);letter-spacing:.1px}
+  .ph.done .pname{color:var(--text-2)}
+  .ph.up .pname{color:var(--text-3)}
+  .ph .pmeta{margin-top:3px;font-family:var(--mono);font-size:10.5px;color:var(--text-4);letter-spacing:.2px;display:flex;gap:10px}
+  .ph.current .pmeta{color:var(--text-3)}
+  .ph .pmeta .lv{color:var(--text-3)}
+  .ph .pmeta .xp{color:var(--text-4)}
+  .ph .progress-mini{margin-top:6px;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;color:var(--text-3)}
+  .ph .progress-mini .bar{flex:1;height:3px;background:#262626;border-radius:1px;overflow:hidden;max-width:140px}
+  .ph .progress-mini .bar i{display:block;height:100%;background:var(--accent)}
+  .ph.done .progress-mini .bar i{background:var(--ok)}
+
+  /* Unlock callout, sits between phases */
+  .unlock{margin:2px 18px 2px 42px;padding:8px 10px;border-left:2px solid rgba(201,162,74,0.45);background:rgba(201,162,74,0.05);font-size:11px;color:var(--text-2);line-height:1.45;font-family:var(--mono);letter-spacing:.2px}
+  .unlock b{color:var(--warn);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:1px;display:block;margin-bottom:2px}
+  .unlock .why{color:var(--text-4);font-size:10.5px;margin-top:2px}
+
+  /* Center detail */
+  .detail{flex:1;display:flex;flex-direction:column;min-height:0;overflow:auto}
+  .det-head{padding:18px 22px 14px;border-bottom:1px solid var(--border-soft)}
+  .det-eyebrow{font-family:var(--mono);font-size:10.5px;color:var(--text-4);letter-spacing:1.2px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .det-title{margin:6px 0 8px;font-size:22px;font-weight:500;letter-spacing:.2px}
+  .det-sub{font-family:var(--mono);font-size:11.5px;color:var(--text-3);display:flex;flex-wrap:wrap;gap:14px}
+  .det-sub b{color:var(--text-2);font-weight:500}
+  .det-sub .flag{color:var(--accent)}
+
+  /* The predicate block */
+  .predicate{margin:18px 22px;padding:14px 16px;border:1px solid var(--border);background:var(--surface);border-radius:2px}
+  .predicate .ptop{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+  .predicate .label{font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:.6px;text-transform:uppercase}
+  .predicate .count{font-family:var(--mono);font-size:18px;color:var(--text);letter-spacing:.4px}
+  .predicate .count em{color:var(--text-3);font-style:normal;font-size:14px}
+  .predicate .count .nm{color:var(--accent)}
+  .predicate .pbar{height:6px;background:#262626;border-radius:1px;overflow:hidden;position:relative}
+  .predicate .pbar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .predicate.complete .pbar i{background:var(--ok)}
+  .predicate.complete .count .nm{color:var(--ok)}
+  .predicate .note{margin-top:10px;font-size:11.5px;color:var(--text-3);display:flex;align-items:center;gap:8px}
+  .predicate .note .ic{width:12px;height:12px;color:var(--text-4)}
+
+  .predicate.advancing{border-color:var(--ok);background:linear-gradient(180deg,rgba(123,168,118,0.06),transparent 70%)}
+  .predicate.stuck{border-color:rgba(201,162,74,0.45);background:linear-gradient(180deg,rgba(201,162,74,0.06),transparent 70%)}
+
+  /* Ingredient table */
+  .ing-pane{flex:1;display:flex;flex-direction:column;min-height:0}
+  .ing-pane .pane-head{padding:0 18px}
+  .ing-list{overflow:auto;flex:1}
+  .ing{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:38px;border-bottom:1px solid var(--border-soft);gap:10px}
+  .ing .nm{font-size:12.5px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .ing .need{font-family:var(--mono);font-size:11px;color:var(--text-4);min-width:46px;text-align:right}
+  .seg{display:flex;background:#181818;border:1px solid var(--border);border-radius:2px;height:22px;overflow:hidden}
+  .seg .sg{padding:0 8px;font-size:10.5px;color:var(--text-3);display:flex;align-items:center;line-height:1;letter-spacing:.3px;text-transform:uppercase;border-right:1px solid var(--border-soft);font-family:var(--ui)}
+  .seg .sg:last-child{border-right:0}
+  .seg .sg.on{background:var(--surface-3);color:var(--text)}
+  .seg .sg.on.craft{color:var(--accent)}
+  .seg .sg.on.supply{color:var(--text)}
+  .seg .sg.on.ignore{color:var(--text-3)}
+
+  /* Walker footer */
+  .wfoot{height:46px;border-top:1px solid var(--border);display:flex;align-items:center;padding:0 22px;gap:16px;background:#181818;flex-shrink:0}
+  .wfoot .pos{font-family:var(--mono);font-size:11.5px;color:var(--text-2);letter-spacing:.3px}
+  .wfoot .pos .sep{color:var(--text-4);padding:0 8px}
+  .wfoot .left{flex:1;display:flex;align-items:center;gap:18px}
+  .wfoot .right{display:flex;align-items:center;gap:8px}
+
+  /* Banners */
+  .banner{padding:10px 22px;border-bottom:1px solid;display:flex;align-items:center;gap:12px;font-size:12.5px;line-height:1.45}
+  .banner.stale{background:rgba(201,162,74,0.07);border-color:rgba(201,162,74,0.30);color:var(--text-2)}
+  .banner.stale .ic{color:var(--warn);width:14px;height:14px}
+  .banner.stale b{color:var(--warn);font-weight:600}
+  .banner .grow{flex:1}
+
+  /* The phase-complete toast strip embedded in column */
+  .toast{margin:0 22px 0;padding:8px 12px;background:rgba(123,168,118,0.08);border:1px solid rgba(123,168,118,0.30);border-radius:2px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-2)}
+  .toast .ic{width:14px;height:14px;color:var(--ok)}
+  .toast b{color:var(--ok);font-weight:600}
+
+  /* Plan-complete celebrant block (still restrained) */
+  .complete-block{margin:24px 22px;padding:28px 22px;border:1px solid var(--border);background:var(--surface);border-radius:2px;text-align:center}
+  .complete-block .seal{width:54px;height:54px;border-radius:50%;background:var(--ok-dim);border:1px solid rgba(123,168,118,0.40);display:inline-grid;place-items:center;color:var(--ok);margin-bottom:14px}
+  .complete-block .seal svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .complete-block h4{margin:0 0 6px;font-size:16px;font-weight:600;color:var(--text);letter-spacing:.3px}
+  .complete-block p{margin:0 0 16px;color:var(--text-3);font-size:12.5px}
+  .complete-block .stats{display:flex;gap:24px;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--text-3);margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)}
+  .complete-block .stats b{display:block;color:var(--text);font-size:14px;font-weight:500;margin-bottom:2px}
+
+  /* ───────── Annotations panel ───────── */
+  .notes{background:transparent;font-family:var(--mono);font-size:11.5px;color:var(--doc-text);line-height:1.65;padding-top:32px}
+  .notes h5{margin:0 0 6px;font-family:var(--ui);font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1.3px}
+  .notes .grp{margin-bottom:22px}
+  .notes ul{margin:0 0 0 0;padding:0;list-style:none}
+  .notes li{padding-left:14px;position:relative;margin-bottom:6px;color:#A8A8A8}
+  .notes li::before{content:"";position:absolute;left:0;top:9px;width:6px;height:1px;background:var(--text-4)}
+  .notes .bind{display:block;padding-left:0}
+  .notes .bind .k{color:var(--text-2)}
+  .notes .bind .v{color:var(--accent);opacity:.85}
+  .notes .bind .c{color:var(--text-4)}
+  .notes .bind::before{display:none}
+  .notes .binds-list{padding-left:0;border-left:1px solid var(--doc-rule);padding:6px 0 6px 12px}
+  .notes em{color:var(--warn);font-style:normal}
+
+</style>
+</head>
+<body>
+
+<header class="doc-head">
+  <h1>Mithril · Celebrimbor — Plans tab</h1>
+  <div class="meta">
+    <b>scope:</b> visual + interaction spec &nbsp;·&nbsp;
+    <b>target:</b> WPF + MahApps.Metro &nbsp;·&nbsp;
+    <b>canvas:</b> 1100×720 &nbsp;·&nbsp;
+    <b>accent:</b> teal — primary action / progress only
+  </div>
+</header>
+
+<!-- ╔════════════ FRAME 1 · Manager — empty library ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">01 / 07</span>
+    <h2>Manager — empty library</h2>
+    <span class="kind">Plans · Manager</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="mgr">
+      <div class="mgr-toolbar">
+        <div class="mgr-search">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+          <input placeholder="Filter plans by skill, character, recipe…" disabled />
+        </div>
+        <div class="filterchips">
+          <span class="chip on">All <span class="ct">0</span></span>
+          <span class="chip">In progress <span class="ct">0</span></span>
+          <span class="chip">Stale <span class="ct">0</span></span>
+          <span class="chip">Done <span class="ct">0</span></span>
+        </div>
+      </div>
+
+      <div class="empty">
+        <div>
+          <div class="ill"><svg viewBox="0 0 24 24"><path d="M4 5h14M4 12h10M4 19h14"/><path d="M19 16v6M16 19h6"/></svg></div>
+          <h4>No plans in your library</h4>
+          <p>Celebrimbor walks plans you've received. Generate one from the <b style="color:var(--text-2)">Picker</b> tab — for the active character or a hypothetical — and it will land here.</p>
+          <div class="hints">
+            <span class="btn"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Open Picker</span>
+            <span class="btn ghost">Import .plan…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>State</h5>
+      <ul>
+        <li>Library count is 0 — no <code style="font-family:var(--mono);color:var(--text-2)">SavedLevelingPlan</code> rows persisted.</li>
+        <li>Search + filter chips render in the disabled-but-visible state so the user can still see what is available.</li>
+        <li>Filter chip counts all read 0 from the same source as the rows — they are <em>not</em> hidden when zero, so the empty surface still feels like the same screen.</li>
+        <li>Primary CTA points back to <b>Picker</b>: Celebrimbor does <em>not</em> author plans.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">empty.visible</span> ← <span class="v">SavedPlans.Count == 0</span></span>
+        <span class="bind"><span class="k">chip[*].count</span> ← <span class="v">SavedPlans.CountWhere(predicate)</span></span>
+        <span class="bind"><span class="k">cta.openPicker</span> → <span class="v">NavigateTo(Tab.Picker)</span></span>
+        <span class="bind"><span class="k">cta.import</span> → <span class="v">ImportPlanFromFileCommand</span></span>
+        <span class="bind c">// no row template renders; mgr-list collapsed</span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 2 · Manager — mixed ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">02 / 07</span>
+    <h2>Manager — mixed library (in-progress, stale, done, hypothetical)</h2>
+    <span class="kind">Plans · Manager</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="mgr">
+      <div class="mgr-toolbar">
+        <div class="mgr-search">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+          <input placeholder="Filter plans by skill, character, recipe…" value="" />
+        </div>
+        <div class="filterchips">
+          <span class="chip on">All <span class="ct">4</span></span>
+          <span class="chip">In progress <span class="ct">1</span></span>
+          <span class="chip">Stale <span class="ct">1</span></span>
+          <span class="chip">Done <span class="ct">1</span></span>
+        </div>
+        <span class="btn ghost sm" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h12"/></svg>Sort: Recent</span>
+      </div>
+
+      <div class="mgr-cols">
+        <span></span>
+        <span>Plan</span>
+        <span>Character</span>
+        <span>Progress</span>
+        <span>Created</span>
+        <span style="text-align:right">Status</span>
+      </div>
+
+      <div class="mgr-list">
+        <!-- in-progress / selected -->
+        <div class="row selected">
+          <span class="glyph run">▸</span>
+          <div class="title">
+            <span class="t1">Smithing &nbsp;<span style="color:var(--text-3)">12→</span><span style="color:var(--text)">90</span></span>
+            <span class="t2"><span class="skl">Iron Long Sword path</span> · 5 phases · 142 predicted crafts</span>
+          </div>
+          <div class="char">Borg<span class="srv"> @ Alpha</span></div>
+          <div class="phase">
+            <span>2 / 5</span>
+            <span class="bar"><i style="width:40%"></i></span>
+          </div>
+          <div class="age">2d ago</div>
+          <div class="badges">
+            <span class="pill live">In&nbsp;progress</span>
+            <div class="actions">
+              <span class="btn primary sm">Walk</span>
+              <span class="btn sm">Re-plan</span>
+              <span class="btn ghost sm">Delete</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- stale -->
+        <div class="row">
+          <span class="glyph warn">⚠</span>
+          <div class="title">
+            <span class="t1">Calligraphy &nbsp;<span style="color:var(--text-3)">1→</span><span style="color:var(--text)">50</span></span>
+            <span class="t2"><span class="skl">Inked Scroll → Vellum path</span> · 8 phases · 287 predicted crafts</span>
+          </div>
+          <div class="char">Mira<span class="srv"> @ Alpha</span></div>
+          <div class="phase">
+            <span>4 / 8</span>
+            <span class="bar"><i style="width:50%"></i></span>
+          </div>
+          <div class="age">11d ago</div>
+          <div class="badges">
+            <span class="pill stale">⚠ Stale</span>
+            <div class="actions">
+              <span class="btn sm warn">Refresh</span>
+              <span class="btn sm">Re-plan</span>
+              <span class="btn ghost sm">Delete</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- done -->
+        <div class="row">
+          <span class="glyph ok">✓</span>
+          <div class="title">
+            <span class="t1">Smelting &nbsp;<span style="color:var(--text-3)">70→</span><span style="color:var(--text)">100</span></span>
+            <span class="t2"><span class="skl">Cobalt → Mithril Ingot path</span> · 6 phases · 96 predicted crafts</span>
+          </div>
+          <div class="char">Borg<span class="srv"> @ Alpha</span></div>
+          <div class="phase done">
+            <span>6 / 6</span>
+            <span class="bar"><i style="width:100%"></i></span>
+          </div>
+          <div class="age">23d ago</div>
+          <div class="badges">
+            <span class="pill done">✓ Done</span>
+            <div class="actions">
+              <span class="btn sm">Re-plan</span>
+              <span class="btn sm">Archive</span>
+              <span class="btn ghost sm">Delete</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- hypothetical -->
+        <div class="row">
+          <span class="glyph">○</span>
+          <div class="title">
+            <span class="t1">Cooking &nbsp;<span style="color:var(--text-3)">20→</span><span style="color:var(--text)">60</span></span>
+            <span class="t2"><span class="skl">Stew → Roast path</span> · 4 phases · 118 predicted crafts</span>
+          </div>
+          <div class="char hypo">hypothetical</div>
+          <div class="phase">
+            <span>0 / 4</span>
+            <span class="bar"><i style="width:0%"></i></span>
+          </div>
+          <div class="age">just now</div>
+          <div class="badges">
+            <span class="pill hypo">Hypothetical</span>
+            <div class="actions">
+              <span class="btn primary sm">Walk</span>
+              <span class="btn sm">Re-plan</span>
+              <span class="btn ghost sm">Delete</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Row anatomy</h5>
+      <ul>
+        <li>Leading glyph encodes status at a glance: <span style="color:var(--accent)">▸</span> in-progress · <span style="color:var(--warn)">⚠</span> stale · <span style="color:var(--ok)">✓</span> done · <span style="color:var(--text-3)">○</span> never walked.</li>
+        <li>Status pill is the resting display; on hover/selection it swaps for the action triplet so the row never grows tall.</li>
+        <li>Hypothetical plans render the character cell as the italic literal "hypothetical" — they are <em>not</em> filtered out, they are walkable.</li>
+        <li>Selected row gets a 2 px teal left edge; that is the only place the accent appears in this view besides the in-progress progress bar.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — row</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">glyph</span> ← <span class="v">{IsComplete, IsStale, CurrentPhaseIndex&gt;0 ? run : ○}</span></span>
+        <span class="bind"><span class="k">title.t1</span> ← <span class="v">$"{Skill} {Plan.StartLevel}→{GoalLevel}"</span></span>
+        <span class="bind"><span class="k">title.t2</span> ← <span class="v">PlanLabel · Phases.Count · Σ PredictedCrafts</span></span>
+        <span class="bind"><span class="k">char</span> ← <span class="v">Character == null ? "hypothetical" : $"{Name} @ {Server}"</span></span>
+        <span class="bind"><span class="k">phase.text</span> ← <span class="v">$"{CurrentPhaseIndex+1} / {Phases.Count}"</span></span>
+        <span class="bind"><span class="k">phase.bar.width%</span> ← <span class="v">CurrentPhaseIndex / Phases.Count</span></span>
+        <span class="bind"><span class="k">age</span> ← <span class="v">Humanize(now − CreatedAt)</span></span>
+        <span class="bind"><span class="k">pill.stale.visible</span> ← <span class="v">IsInitialStateStaleAgainst(LiveCharacter)</span></span>
+        <span class="bind"><span class="k">pill.done.visible</span> ← <span class="v">CurrentPhaseIndex == Phases.Count</span></span>
+        <span class="bind"><span class="k">action.walk</span> → <span class="v">OpenWalkerCommand(plan)</span></span>
+        <span class="bind"><span class="k">action.replan</span> → <span class="v">RegenerateFromCurrentStateCommand(plan)</span></span>
+        <span class="bind"><span class="k">action.delete</span> → <span class="v">DeletePlanCommand(plan)</span> <span class="c">// confirm</span></span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 3 · Walker mid-phase, predicate cold ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">03 / 07</span>
+    <h2>Walker — mid-phase, predicate not met (12 / 30) · unlock callout below</h2>
+    <span class="kind">Plans · Walker</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="walker">
+      <!-- Phase rail -->
+      <div class="col">
+        <div class="pane-head">
+          <h3>Phases</h3>
+          <span class="sub">5 total</span>
+          <span class="spacer"></span>
+          <span class="btn ghost sm">↩ Library</span>
+        </div>
+        <div class="rail">
+          <div class="ph done">
+            <span class="marker"></span>
+            <div class="pname">Copper Long Sword</div>
+            <div class="pmeta"><span class="lv">L12 → L18</span><span class="xp">×24 · 180 xp</span></div>
+          </div>
+          <div class="ph current">
+            <span class="marker"></span>
+            <div class="pname">Iron Long Sword</div>
+            <div class="pmeta"><span class="lv">L18 → L32</span><span class="xp">×30 · 210 xp</span><span style="color:var(--accent)">first-time bonus</span></div>
+            <div class="progress-mini"><span>12 / 30</span><span class="bar"><i style="width:40%"></i></span></div>
+          </div>
+          <div class="unlock">
+            <b>Unlocks at L25</b>
+            Steel Long Sword · 350 xp/craft
+            <div class="why">tier transition — reasoning: <span style="color:var(--text-3)">higher base xp/craft than current recipe at this level</span></div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Steel Long Sword</div>
+            <div class="pmeta"><span class="lv">L32 → L55</span><span class="xp">×46 · 350 xp</span></div>
+          </div>
+          <div class="unlock">
+            <b>Unlocks at L48</b>
+            Toughened Steel Long Sword · 520 xp/craft
+            <div class="why">tier transition</div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Toughened Steel Long Sword</div>
+            <div class="pmeta"><span class="lv">L55 → L78</span><span class="xp">×34 · 520 xp</span></div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Adamant Long Sword</div>
+            <div class="pmeta"><span class="lv">L78 → L90</span><span class="xp">×18 · 710 xp</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail column -->
+      <div class="col">
+        <div class="detail">
+          <div class="det-head">
+            <div class="det-eyebrow">
+              Smithing · Borg @ Alpha
+              <span style="color:var(--text-4)">·</span>
+              <span style="color:var(--text-3)">Goal L90</span>
+            </div>
+            <div class="det-title">Iron Long Sword</div>
+            <div class="det-sub">
+              <span><b>L18 → L32</b></span>
+              <span>predicted crafts: <b>30</b></span>
+              <span>xp / craft: <b>210</b></span>
+              <span>reuse-intermediate: <b>84</b></span>
+              <span class="flag">first-time bonus active</span>
+            </div>
+          </div>
+
+          <div class="predicate">
+            <div class="ptop">
+              <span class="label">Phase completion · on hand</span>
+              <span class="count"><span class="nm">12</span><em> / 30</em></span>
+            </div>
+            <div class="pbar"><i style="width:40%"></i></div>
+            <div class="note">
+              <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+              Phase advances when <b style="color:var(--text-2)">OnHand ≥ Threshold</b>. 18 more crafts predicted — adjust ingredient sourcing as needed.
+            </div>
+          </div>
+        </div>
+
+        <div class="wfoot">
+          <div class="left">
+            <span class="pos">Phase <b style="color:var(--text)">2</b> of 5 <span class="sep">·</span> 18 crafts left <span class="sep">·</span> Σ remaining 122</span>
+          </div>
+          <div class="right">
+            <span class="btn ghost sm">Re-plan</span>
+            <span class="btn primary sm"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Send to craft list</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sourcing column -->
+      <div class="col">
+        <div class="ing-pane">
+          <div class="pane-head">
+            <h3>Sourcing</h3>
+            <span class="sub">per ingredient</span>
+          </div>
+          <div class="ing-list">
+            <div class="ing">
+              <span class="nm">Iron Ingot</span>
+              <span class="need">×60</span>
+              <span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Long Wood Haft</span>
+              <span class="need">×30</span>
+              <span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Iron Pommel</span>
+              <span class="need">×30</span>
+              <span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Leather Wrap</span>
+              <span class="need">×30</span>
+              <span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Iron Ore</span>
+              <span class="need">×120</span>
+              <span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Charcoal</span>
+              <span class="need">×120</span>
+              <span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span>
+            </div>
+            <div class="ing">
+              <span class="nm">Sword Polish</span>
+              <span class="need">×30</span>
+              <span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Layout</h5>
+      <ul>
+        <li>Three-column split — phase rail (timeline + unlock interstitials), current-phase detail, per-ingredient sourcing.</li>
+        <li>Phase rail markers: filled-check (done) · teal dot (current) · hollow (upcoming). Current row has a faint teal wash and a 2 px left edge.</li>
+        <li>Unlock callouts render <em>between</em> phases, anchored to the rail, with a dimmed amber edge — they belong to the gap, not the phase.</li>
+        <li>Sourcing rows expose a tri-state segmented control: <code style="color:var(--accent);font-family:var(--mono)">craft</code> · supply · ignore. Only the active segment has surface fill.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — walker</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">det.title</span> ← <span class="v">CurrentPhase.RecipeName</span></span>
+        <span class="bind"><span class="k">det.levels</span> ← <span class="v">CurrentPhase.LevelAtStart → CurrentPhase.LevelAtEnd</span></span>
+        <span class="bind"><span class="k">det.predicted</span> ← <span class="v">CurrentPhase.PredictedCrafts</span></span>
+        <span class="bind"><span class="k">det.xp</span> ← <span class="v">CurrentPhase.XpPerCraft</span></span>
+        <span class="bind"><span class="k">det.reuse</span> ← <span class="v">CurrentPhase.IntermediateReuseXpPerCraft</span></span>
+        <span class="bind"><span class="k">det.bonusFlag</span> ← <span class="v">CurrentPhase.UsesFirstTimeBonus</span></span>
+        <span class="bind"><span class="k">predicate.count</span> ← <span class="v">CurrentEvaluation.OnHand</span></span>
+        <span class="bind"><span class="k">predicate.threshold</span> ← <span class="v">CurrentEvaluation.Threshold</span></span>
+        <span class="bind"><span class="k">predicate.bar%</span> ← <span class="v">OnHand / Threshold (clamp 0..1)</span></span>
+        <span class="bind"><span class="k">unlock.at</span> ← <span class="v">NextUnlock.AtLevel</span></span>
+        <span class="bind"><span class="k">unlock.recipe</span> ← <span class="v">NextUnlock.RecipeName</span></span>
+        <span class="bind"><span class="k">unlock.xp</span> ← <span class="v">NextUnlock.XpPerCraftAtUnlock</span></span>
+        <span class="bind"><span class="k">unlock.why</span> ← <span class="v">NextUnlock.Reason</span></span>
+        <span class="bind"><span class="k">ing[i].source</span> ↔ <span class="v">SourcingMode {Craft, SupplyExternally, Ignore}</span></span>
+        <span class="bind"><span class="k">foot.pos</span> ← <span class="v">$"Phase {CurrentPhaseIndex+1} of {Phases.Count}"</span></span>
+        <span class="bind"><span class="k">foot.craftsLeft</span> ← <span class="v">CurrentPhase.PredictedCrafts − craftsSoFarInPhase</span></span>
+        <span class="bind"><span class="k">cta.craftlist</span> → <span class="v">EnqueueCurrentPhaseToShoppingCommand</span></span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 4 · Walker — predicate just tripped ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">04 / 07</span>
+    <h2>Walker — predicate just tripped (30 / 30) → "phase complete, advancing…"</h2>
+    <span class="kind">Plans · Walker · transient</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="walker">
+      <div class="col">
+        <div class="pane-head"><h3>Phases</h3><span class="sub">5 total</span><span class="spacer"></span><span class="btn ghost sm">↩ Library</span></div>
+        <div class="rail">
+          <div class="ph done">
+            <span class="marker"></span>
+            <div class="pname">Copper Long Sword</div>
+            <div class="pmeta"><span class="lv">L12 → L18</span><span class="xp">×24 · 180 xp</span></div>
+          </div>
+          <div class="ph current" style="background:linear-gradient(90deg,rgba(123,168,118,0.10),transparent 80%);border-left-color:var(--ok)">
+            <span class="marker" style="border-color:var(--ok);color:var(--ok)"></span>
+            <div class="pname">Iron Long Sword</div>
+            <div class="pmeta"><span class="lv">L18 → L32</span><span class="xp">×30 · 210 xp</span><span style="color:var(--ok)">threshold met</span></div>
+            <div class="progress-mini"><span style="color:var(--ok)">30 / 30</span><span class="bar"><i style="width:100%;background:var(--ok)"></i></span></div>
+          </div>
+          <div class="unlock">
+            <b>Unlocks at L25</b>
+            Steel Long Sword · 350 xp/craft
+            <div class="why">tier transition</div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Steel Long Sword</div>
+            <div class="pmeta"><span class="lv">L32 → L55</span><span class="xp">×46 · 350 xp</span><span style="color:var(--accent)">next</span></div>
+          </div>
+          <div class="unlock">
+            <b>Unlocks at L48</b>
+            Toughened Steel Long Sword · 520 xp/craft
+            <div class="why">tier transition</div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Toughened Steel Long Sword</div>
+            <div class="pmeta"><span class="lv">L55 → L78</span><span class="xp">×34 · 520 xp</span></div>
+          </div>
+          <div class="ph up">
+            <span class="marker"></span>
+            <div class="pname">Adamant Long Sword</div>
+            <div class="pmeta"><span class="lv">L78 → L90</span><span class="xp">×18 · 710 xp</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="detail">
+          <div class="det-head">
+            <div class="det-eyebrow">Smithing · Borg @ Alpha <span style="color:var(--text-4)">·</span> <span style="color:var(--text-3)">Goal L90</span></div>
+            <div class="det-title">Iron Long Sword</div>
+            <div class="det-sub">
+              <span><b>L18 → L32</b></span>
+              <span>predicted crafts: <b>30</b></span>
+              <span>xp / craft: <b>210</b></span>
+              <span>reuse-intermediate: <b>84</b></span>
+              <span class="flag">first-time bonus active</span>
+            </div>
+          </div>
+
+          <div class="predicate complete advancing">
+            <div class="ptop">
+              <span class="label" style="color:var(--ok)">Phase completion · threshold met</span>
+              <span class="count"><span class="nm">30</span><em> / 30</em></span>
+            </div>
+            <div class="pbar"><i style="width:100%"></i></div>
+            <div class="note" style="color:var(--text-2)">
+              <svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M5 13l4 4L19 7"/></svg>
+              <b style="color:var(--ok)">Phase complete.</b> Advancing to <b style="color:var(--text)">Steel Long Sword</b> in 2s — <span style="color:var(--text-3)">press <kbd style="font-family:var(--mono);font-size:10.5px;border:1px solid var(--border);padding:1px 5px;border-radius:2px;color:var(--text-3)">Esc</kbd> to hold here.</span>
+            </div>
+          </div>
+
+          <div class="toast" style="margin:0 22px 14px">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            Next phase <b>Steel Long Sword</b> unlocked at L25 · ×46 predicted crafts · 350 xp/craft
+          </div>
+        </div>
+
+        <div class="wfoot">
+          <div class="left">
+            <span class="pos">Phase <b style="color:var(--ok)">2 ✓</b> of 5 <span class="sep">·</span> advancing to phase 3 <span class="sep">·</span> Σ remaining 98</span>
+          </div>
+          <div class="right">
+            <span class="btn ghost sm">Hold</span>
+            <span class="btn primary sm">Advance now</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="ing-pane">
+          <div class="pane-head"><h3>Sourcing</h3><span class="sub">phase 2 — locked</span></div>
+          <div class="ing-list" style="opacity:.55">
+            <div class="ing"><span class="nm">Iron Ingot</span><span class="need">×60</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Long Wood Haft</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Pommel</span><span class="need">×30</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Leather Wrap</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Ore</span><span class="need">×120</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Charcoal</span><span class="need">×120</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Sword Polish</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Transition cue</h5>
+      <ul>
+        <li>Predicate block switches accent → green for ~2 s. Bar fill, count number, and rail dot all swap accent for the "ok" hue.</li>
+        <li>An advance is auto-scheduled. Esc / "Hold" cancels the auto-advance; "Advance now" forces it.</li>
+        <li>Sourcing column dims to 55 % while the advance is in-flight — the next phase will repopulate it.</li>
+        <li>Rail marks the just-finished phase with the teal dot held briefly before resolving to a green ✓ in the next state.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — transient</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">predicate.state</span> ← <span class="v">CurrentEvaluation.IsComplete == true</span></span>
+        <span class="bind"><span class="k">predicate.toneSwap</span> ← <span class="v">IsComplete ? ok : accent</span></span>
+        <span class="bind"><span class="k">advance.timer</span> ← <span class="v">PhaseAdvanceCountdown (2000 ms)</span></span>
+        <span class="bind"><span class="k">cta.hold</span> → <span class="v">CancelAutoAdvanceCommand</span></span>
+        <span class="bind"><span class="k">cta.advanceNow</span> → <span class="v">AdvancePhaseCommand</span></span>
+        <span class="bind"><span class="k">toast.nextPhase</span> ← <span class="v">Phases[CurrentPhaseIndex+1]</span></span>
+        <span class="bind c">// IsComplete originates from PhaseEvaluation.OnHand ≥ Threshold</span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 5 · Walker — predicted crafts exhausted, predicate cold ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">05 / 07</span>
+    <h2>Walker — predicted crafts exhausted, predicate still cold (random output ran short)</h2>
+    <span class="kind">Plans · Walker · drift</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="walker">
+      <div class="col">
+        <div class="pane-head"><h3>Phases</h3><span class="sub">5 total</span><span class="spacer"></span><span class="btn ghost sm">↩ Library</span></div>
+        <div class="rail">
+          <div class="ph done"><span class="marker"></span><div class="pname">Copper Long Sword</div><div class="pmeta"><span class="lv">L12 → L18</span><span class="xp">×24 · 180 xp</span></div></div>
+          <div class="ph current" style="background:linear-gradient(90deg,rgba(201,162,74,0.10),transparent 80%);border-left-color:var(--warn)">
+            <span class="marker" style="border-color:var(--warn);color:var(--warn)"></span>
+            <div class="pname">Iron Long Sword</div>
+            <div class="pmeta"><span class="lv">L18 → L32</span><span class="xp">×30 · 210 xp</span><span style="color:var(--warn)">predicted crafts exhausted</span></div>
+            <div class="progress-mini"><span style="color:var(--warn)">24 / 30</span><span class="bar"><i style="width:80%;background:var(--warn)"></i></span></div>
+          </div>
+          <div class="unlock"><b>Unlocks at L25</b>Steel Long Sword · 350 xp/craft<div class="why">tier transition</div></div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Steel Long Sword</div><div class="pmeta"><span class="lv">L32 → L55</span><span class="xp">×46 · 350 xp</span></div></div>
+          <div class="unlock"><b>Unlocks at L48</b>Toughened Steel Long Sword · 520 xp/craft<div class="why">tier transition</div></div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Toughened Steel Long Sword</div><div class="pmeta"><span class="lv">L55 → L78</span><span class="xp">×34 · 520 xp</span></div></div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Adamant Long Sword</div><div class="pmeta"><span class="lv">L78 → L90</span><span class="xp">×18 · 710 xp</span></div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="detail">
+          <div class="det-head">
+            <div class="det-eyebrow">Smithing · Borg @ Alpha <span style="color:var(--text-4)">·</span> <span style="color:var(--text-3)">Goal L90</span></div>
+            <div class="det-title">Iron Long Sword</div>
+            <div class="det-sub">
+              <span><b>L18 → L32</b></span>
+              <span>predicted crafts: <b>30</b></span>
+              <span style="color:var(--warn)">crafts so far: <b>30</b></span>
+              <span>xp / craft: <b>210</b></span>
+              <span class="flag">first-time bonus used</span>
+            </div>
+          </div>
+
+          <div class="predicate stuck">
+            <div class="ptop">
+              <span class="label" style="color:var(--warn)">Predicate cold · output ran short</span>
+              <span class="count"><span class="nm" style="color:var(--warn)">24</span><em> / 30</em></span>
+            </div>
+            <div class="pbar"><i style="width:80%;background:var(--warn)"></i></div>
+            <div class="note" style="color:var(--text-2)">
+              <svg class="ic" viewBox="0 0 24 24" style="color:var(--warn)"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+              30 crafts completed; output yielded <b>24</b> swords (random sub-craft rolls were unkind). The phase will not advance until <b>OnHand ≥ 30</b>.
+            </div>
+          </div>
+
+          <div style="margin:0 22px 18px;padding:14px 16px;border:1px solid var(--border);background:var(--surface);border-radius:2px">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:10px">What now?</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="border:1px solid var(--border);border-radius:2px;padding:12px;background:#1B1B1B">
+                <div style="font-size:13px;color:var(--text);margin-bottom:4px">Keep crafting</div>
+                <div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:10px">Continue same recipe. Estimated <b style="color:var(--text-2)">~8</b> more crafts to hit 30 at current yield rate.</div>
+                <span class="btn primary sm"><svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Top up craft list (+8)</span>
+              </div>
+              <div style="border:1px solid var(--border);border-radius:2px;padding:12px;background:#1B1B1B">
+                <div style="font-size:13px;color:var(--text);margin-bottom:4px">Re-plan from here</div>
+                <div style="font-size:11.5px;color:var(--text-3);line-height:1.5;margin-bottom:10px">Rebuild remaining phases using <em style="color:var(--text-2);font-style:normal">current</em> level and inventory.</div>
+                <span class="btn sm">Re-plan from current state</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wfoot">
+          <div class="left">
+            <span class="pos">Phase <b style="color:var(--warn)">2 ⚠</b> of 5 <span class="sep">·</span> 0 crafts left in plan <span class="sep">·</span> <span style="color:var(--warn)">predicate still 24 / 30</span></span>
+          </div>
+          <div class="right">
+            <span class="btn ghost sm">Mark complete anyway</span>
+            <span class="btn sm warn">Re-plan</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="ing-pane">
+          <div class="pane-head"><h3>Sourcing</h3><span class="sub">top-up estimate</span></div>
+          <div class="ing-list">
+            <div class="ing"><span class="nm">Iron Ingot</span><span class="need" style="color:var(--warn)">+16</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Long Wood Haft</span><span class="need" style="color:var(--warn)">+8</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Pommel</span><span class="need" style="color:var(--warn)">+8</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Leather Wrap</span><span class="need" style="color:var(--warn)">+8</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Ore</span><span class="need" style="color:var(--warn)">+32</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Charcoal</span><span class="need" style="color:var(--text-4)">+0</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Sword Polish</span><span class="need" style="color:var(--text-4)">+0</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Drift state</h5>
+      <ul>
+        <li>This is the explicit affordance for <b>predicted exhausted, predicate cold</b> — the planner's count was right, RNG was not.</li>
+        <li>Predicate uses the amber/warn tone, <em>not</em> teal — drift is a soft warning, not an error.</li>
+        <li>The "What now?" block presents two equal-weighted choices side by side. "Keep crafting" is the primary because the user usually has momentum.</li>
+        <li>"Mark complete anyway" is a footer escape hatch (force-advance, accepts the cold predicate).</li>
+        <li>Sourcing column flips to <b>top-up estimate mode</b> — quantities are the gap to hit 30, not the original phase need.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — drift</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">drift.detected</span> ← <span class="v">CraftsSoFar ≥ PredictedCrafts && !IsComplete</span></span>
+        <span class="bind"><span class="k">topup.estimate</span> ← <span class="v">(Threshold − OnHand) / RollingYieldRate</span></span>
+        <span class="bind"><span class="k">cta.topup</span> → <span class="v">AppendToShoppingCommand(estimate)</span></span>
+        <span class="bind"><span class="k">cta.replan</span> → <span class="v">RegenerateFromCurrentStateCommand</span></span>
+        <span class="bind"><span class="k">cta.forceAdvance</span> → <span class="v">ForceAdvancePhaseCommand</span> <span class="c">// confirm</span></span>
+        <span class="bind"><span class="k">ing[i].need</span> ← <span class="v">topup.estimate · Recipe.Ingredients[i].PerCraft</span></span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 6 · Walker — plan complete ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">06 / 07</span>
+    <h2>Walker — plan complete (all phases ✓)</h2>
+    <span class="kind">Plans · Walker · terminal</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="walker">
+      <div class="col">
+        <div class="pane-head"><h3>Phases</h3><span class="sub">5 / 5 complete</span><span class="spacer"></span><span class="btn ghost sm">↩ Library</span></div>
+        <div class="rail">
+          <div class="ph done"><span class="marker"></span><div class="pname">Copper Long Sword</div><div class="pmeta"><span class="lv">L12 → L18</span><span class="xp">×24 · 180 xp</span></div></div>
+          <div class="ph done"><span class="marker"></span><div class="pname">Iron Long Sword</div><div class="pmeta"><span class="lv">L18 → L32</span><span class="xp">×30 · 210 xp</span></div></div>
+          <div class="ph done"><span class="marker"></span><div class="pname">Steel Long Sword</div><div class="pmeta"><span class="lv">L32 → L55</span><span class="xp">×46 · 350 xp</span></div></div>
+          <div class="ph done"><span class="marker"></span><div class="pname">Toughened Steel Long Sword</div><div class="pmeta"><span class="lv">L55 → L78</span><span class="xp">×34 · 520 xp</span></div></div>
+          <div class="ph done"><span class="marker"></span><div class="pname">Adamant Long Sword</div><div class="pmeta"><span class="lv">L78 → L90</span><span class="xp">×18 · 710 xp</span></div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="detail">
+          <div class="det-head">
+            <div class="det-eyebrow">Smithing · Borg @ Alpha <span style="color:var(--text-4)">·</span> <span style="color:var(--ok)">Goal L90 reached</span></div>
+            <div class="det-title">Plan complete</div>
+            <div class="det-sub">
+              <span>created <b>23d ago</b></span>
+              <span>walked <b>14d</b></span>
+              <span class="flag" style="color:var(--ok)">all phases ✓</span>
+            </div>
+          </div>
+
+          <div class="complete-block">
+            <div class="seal"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+            <h4>Smithing 12 → 90 finished</h4>
+            <p>The plan reached its goal level. Nothing more to walk. Archive it, re-plan from here for a new goal, or open another plan from the library.</p>
+            <div style="display:flex;gap:8px;justify-content:center">
+              <span class="btn sm">Archive</span>
+              <span class="btn sm">Re-plan past L90 →</span>
+              <span class="btn ghost sm">View craft history</span>
+            </div>
+            <div class="stats">
+              <div><b>152</b>crafts walked</div>
+              <div><b>21,840</b>xp banked</div>
+              <div><b>4</b>unlocks honored</div>
+              <div><b>0</b>re-plans</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wfoot">
+          <div class="left">
+            <span class="pos">Phase <b style="color:var(--ok)">5 ✓</b> of 5 <span class="sep">·</span> 0 crafts left <span class="sep">·</span> plan terminal</span>
+          </div>
+          <div class="right">
+            <span class="btn ghost sm">Back to library</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="ing-pane">
+          <div class="pane-head"><h3>Sourcing</h3><span class="sub">no active phase</span></div>
+          <div style="flex:1;display:grid;place-items:center;padding:24px;text-align:center;color:var(--text-4);font-size:12px;line-height:1.6">
+            <div>
+              <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text-4);margin-bottom:8px">Empty</div>
+              <div>No phase is current.<br/>Sourcing controls re-appear when a plan is walking.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Terminal layout</h5>
+      <ul>
+        <li>Every rail row resolves to the ✓ done state — uniform green markers, no current/upcoming variants.</li>
+        <li>Predicate block is replaced by a single "complete" panel; this is the ONLY frame that uses the green seal motif.</li>
+        <li>Sourcing column is left in-place but emptied — keeps three-column rhythm intact so the user isn't disoriented switching between walker frames.</li>
+        <li>"Re-plan past L90" is offered for the common case where the user wants to push past the goal.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — terminal</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">walker.terminal</span> ← <span class="v">IsPlanComplete == true</span></span>
+        <span class="bind"><span class="k">complete.craftCount</span> ← <span class="v">Σ phase.CraftsCompleted</span></span>
+        <span class="bind"><span class="k">complete.xpBanked</span> ← <span class="v">Σ phase.XpEarned</span></span>
+        <span class="bind"><span class="k">complete.unlocks</span> ← <span class="v">UnlocksHonored.Count</span></span>
+        <span class="bind"><span class="k">complete.replans</span> ← <span class="v">ReplanEvents.Count</span></span>
+        <span class="bind"><span class="k">cta.archive</span> → <span class="v">ArchivePlanCommand</span></span>
+        <span class="bind"><span class="k">cta.replanPast</span> → <span class="v">RegenerateWithHigherGoalCommand</span></span>
+        <span class="bind c">// sourcing.empty when CurrentPhase == null</span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+<!-- ╔════════════ FRAME 7 · Walker — stale refresh banner ════════════╗ -->
+<section class="frame">
+  <div class="frame-label">
+    <span class="num">07 / 07</span>
+    <h2>Walker — stale: live character outpaced the plan</h2>
+    <span class="kind">Plans · Walker · stale</span>
+  </div>
+  <div class="app">
+    <div class="titlebar">
+      <span class="brand">Mithril</span>
+      <span class="sep"></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7"/></svg></span>
+      <span class="wbtn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></span>
+    </div>
+    <div class="tabs">
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Picker</div>
+      <div class="tab"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h3l2 12h11l2-9H6"/></svg>Shopping</div>
+      <div class="tab active"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h14M4 12h14M4 19h14"/></svg>Plans</div>
+    </div>
+
+    <div class="banner stale">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+      <div class="grow">
+        <b>Borg learned new recipes since this plan was generated.</b>
+        <span style="color:var(--text-3)"> The walker's predicted crafts assume a recipe set that no longer matches the live character — 3 new unlocks · started 2 levels above plan baseline.</span>
+      </div>
+      <span class="btn sm warn">Diff…</span>
+      <span class="btn primary sm"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3.4-7l3.4 3M21 4v6h-6"/></svg>Refresh & re-plan</span>
+    </div>
+
+    <div class="walker" style="opacity:.78">
+      <div class="col">
+        <div class="pane-head"><h3>Phases</h3><span class="sub">5 total · plan baseline</span><span class="spacer"></span><span class="btn ghost sm">↩ Library</span></div>
+        <div class="rail">
+          <div class="ph done"><span class="marker"></span><div class="pname">Copper Long Sword</div><div class="pmeta"><span class="lv">L12 → L18</span><span class="xp">×24 · 180 xp</span></div></div>
+          <div class="ph current" style="background:linear-gradient(90deg,rgba(201,162,74,0.10),transparent 80%);border-left-color:var(--warn)">
+            <span class="marker" style="border-color:var(--warn);color:var(--warn)"></span>
+            <div class="pname">Iron Long Sword <span style="color:var(--warn);font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;margin-left:6px">drift</span></div>
+            <div class="pmeta"><span class="lv">L18 → L32</span><span class="xp">×30 · 210 xp</span><span style="color:var(--warn)">live: L20 (skip recommended?)</span></div>
+            <div class="progress-mini"><span>5 / 30</span><span class="bar"><i style="width:16%;background:var(--warn)"></i></span></div>
+          </div>
+          <div class="unlock" style="border-left-color:rgba(201,162,74,0.7);background:rgba(201,162,74,0.10)">
+            <b style="color:var(--warn)">Already known on live character</b>
+            Steel Long Sword · was scheduled to unlock at L25
+            <div class="why" style="color:var(--text-3)">Borg learned this recipe earlier than baseline assumed</div>
+          </div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Steel Long Sword</div><div class="pmeta"><span class="lv">L32 → L55</span><span class="xp">×46 · 350 xp</span></div></div>
+          <div class="unlock"><b>Unlocks at L48</b>Toughened Steel Long Sword · 520 xp/craft<div class="why">tier transition</div></div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Toughened Steel Long Sword</div><div class="pmeta"><span class="lv">L55 → L78</span><span class="xp">×34 · 520 xp</span></div></div>
+          <div class="ph up"><span class="marker"></span><div class="pname">Adamant Long Sword</div><div class="pmeta"><span class="lv">L78 → L90</span><span class="xp">×18 · 710 xp</span></div></div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="detail">
+          <div class="det-head">
+            <div class="det-eyebrow">Smithing · Borg @ Alpha <span style="color:var(--text-4)">·</span> <span style="color:var(--warn)">plan baseline L18 · live L20</span></div>
+            <div class="det-title">Iron Long Sword</div>
+            <div class="det-sub">
+              <span><b>L18 → L32</b></span>
+              <span>predicted crafts: <b>30</b></span>
+              <span>xp / craft: <b>210</b></span>
+              <span style="color:var(--warn)">⚠ predictions stale</span>
+            </div>
+          </div>
+
+          <div class="predicate" style="border-color:rgba(201,162,74,0.35)">
+            <div class="ptop">
+              <span class="label">Phase completion · on hand</span>
+              <span class="count"><span class="nm" style="color:var(--warn)">5</span><em> / 30</em></span>
+            </div>
+            <div class="pbar"><i style="width:16%;background:var(--warn)"></i></div>
+            <div class="note">
+              <svg class="ic" viewBox="0 0 24 24" style="color:var(--warn)"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+              Walking is still possible, but xp predictions are based on a recipe set the character no longer has. <b style="color:var(--warn)">Refresh & re-plan</b> for accurate predicted crafts.
+            </div>
+          </div>
+
+          <div style="margin:0 22px 16px;padding:12px 14px;border:1px dashed var(--border);border-radius:2px;font-family:var(--mono);font-size:11px;color:var(--text-3);line-height:1.7">
+            <div style="color:var(--text-2);text-transform:uppercase;letter-spacing:1px;font-size:10.5px;margin-bottom:6px">drift summary</div>
+            <div>· baseline character level <span style="color:var(--text-2)">L18</span> &nbsp;→ live <span style="color:var(--warn)">L20</span></div>
+            <div>· recipes known at baseline <span style="color:var(--text-2)">14</span> &nbsp;→ live <span style="color:var(--warn)">17</span> &nbsp;<span style="color:var(--text-4)">(+ Steel Long Sword, + Iron Pickaxe, + Forge Hammer)</span></div>
+            <div>· first-time bonuses claimed since plan <span style="color:var(--warn)">2</span></div>
+          </div>
+        </div>
+
+        <div class="wfoot">
+          <div class="left">
+            <span class="pos">Phase <b style="color:var(--warn)">2 ⚠</b> of 5 <span class="sep">·</span> 25 crafts left <span class="sep">·</span> <span style="color:var(--warn)">predictions stale</span></span>
+          </div>
+          <div class="right">
+            <span class="btn ghost sm">Walk anyway</span>
+            <span class="btn primary sm">Refresh & re-plan</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="ing-pane">
+          <div class="pane-head"><h3>Sourcing</h3><span class="sub" style="color:var(--warn)">may be inaccurate</span></div>
+          <div class="ing-list">
+            <div class="ing"><span class="nm">Iron Ingot</span><span class="need">×60</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Long Wood Haft</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Pommel</span><span class="need">×30</span><span class="seg"><span class="sg on craft">Craft</span><span class="sg">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Leather Wrap</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Iron Ore</span><span class="need">×120</span><span class="seg"><span class="sg">Craft</span><span class="sg on supply">Supply</span><span class="sg">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Charcoal</span><span class="need">×120</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+            <div class="ing"><span class="nm">Sword Polish</span><span class="need">×30</span><span class="seg"><span class="sg">Craft</span><span class="sg">Supply</span><span class="sg on ignore">Ignore</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div class="grp">
+      <h5>Stale walker</h5>
+      <ul>
+        <li>Top banner spans the full app width below the tab strip — <em>not</em> a toast. Banner uses amber, never red.</li>
+        <li>The walker is still rendered behind the banner at 78 % opacity to communicate "you can read it, you just shouldn't trust it yet".</li>
+        <li>"Refresh & re-plan" is primary. "Walk anyway" is the secondary escape for users who don't care about precision.</li>
+        <li>Unlock callouts that the live character already knows render in the amber tone with a different label, so the user can see exactly which unlocks the plan thinks are still ahead but aren't.</li>
+        <li>Drift summary block uses monospace to read as a diff, not as marketing copy.</li>
+      </ul>
+    </div>
+    <div class="grp">
+      <h5>binds — stale</h5>
+      <div class="binds-list">
+        <span class="bind"><span class="k">banner.visible</span> ← <span class="v">SavedPlan.IsInitialStateStaleAgainst(LiveCharacter)</span></span>
+        <span class="bind"><span class="k">banner.deltaSummary</span> ← <span class="v">StaleDiff{ΔLevel, ΔRecipes, ΔFirstTimeBonuses}</span></span>
+        <span class="bind"><span class="k">cta.refresh</span> → <span class="v">RefreshAndReplanCommand(plan, LiveCharacter)</span></span>
+        <span class="bind"><span class="k">cta.walkAnyway</span> → <span class="v">DismissStaleWarningCommand</span></span>
+        <span class="bind"><span class="k">unlock.alreadyKnown</span> ← <span class="v">LiveCharacter.Recipes.Contains(NextUnlock.RecipeName)</span></span>
+        <span class="bind c">// walker body bindings unchanged from frame 03</span>
+      </div>
+    </div>
+  </aside>
+</section>
+
+
+</body>
+</html>
