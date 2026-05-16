@@ -8,6 +8,10 @@ namespace Silmarillion.ViewModels;
 /// alongside pre-resolved display names. <see cref="ServiceTypes"/> is the flat, deduplicated
 /// set of <c>NpcService.Type</c> values across the NPC's services — queryable via the engine's
 /// collection-<c>CONTAINS</c> path (powers <c>ServiceTypes CONTAINS "Store"</c> and friends).
+/// <see cref="CapIncreases"/> is the flattened, parsed store cap-increase rows across every
+/// <c>StoreService</c> the NPC offers — a homogeneous <see cref="StoreCapIncrease"/> collection,
+/// so the engine's quantified-subquery path answers the originating #349 question:
+/// <c>CapIncreases WITH ANY (Tier = 'Friends' AND GoldCap &gt; 1000)</c>.
 /// <para>
 /// <see cref="AreaName"/> is the area envelope key (e.g. <c>"AreaSerbule"</c>), distinct from
 /// the friendly-name fallback in <see cref="AreaDisplayName"/>. Kept queryable so a user can
@@ -23,4 +27,5 @@ public sealed record NpcListRow(
     string Name,
     string AreaName,
     string AreaDisplayName,
-    IReadOnlyList<NpcServiceTypeValue> ServiceTypes);
+    IReadOnlyList<NpcServiceTypeValue> ServiceTypes,
+    IReadOnlyList<StoreCapIncrease> CapIncreases);

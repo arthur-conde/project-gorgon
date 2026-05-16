@@ -806,6 +806,92 @@ public sealed class NpcsTabViewModelTests
         vm.DetailViewModel!.Description.Should().Be("Fresh after refresh.");
     }
 
+    [Fact]
+    public void NpcListRow_CapIncreases_FlattenedAndParsed_AcrossStoreServices()
+    {
+        // #352: surface the parsed store cap-increase rows on the list-row so the
+        // query box can ask the originating #349 question. Two StoreServices flatten
+        // into one homogeneous list; parsing (tier/gold/keywords) is #350's parser.
+        var npc = new Npc
+        {
+            Name = "Big Vendor",
+            Services = new NpcServicePoco[]
+            {
+                new NpcStoreServicePoco
+                {
+                    Type = "Store",
+                    CapIncreases = ["Friends:5000:Armor,Weapon", "Comfortable:50000:"],
+                },
+                new NpcTrainingServicePoco { Type = "Training", Skills = ["Unarmed"] },
+                new NpcStoreServicePoco
+                {
+                    Type = "Store",
+                    CapIncreases = ["Despised:200000"],
+                },
+            },
+        };
+        var refData = new StubReferenceData { NpcsByKey = { ["NPC_Vendor"] = npc } };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        var caps = vm.AllNpcs.Single().CapIncreases;
+        caps.Select(c => c.Tier).Should().Equal("Friends", "Comfortable", "Despised");
+        caps.Select(c => c.GoldCap).Should().Equal(5000, 50000, 200000);
+        caps[0].Keywords.Should().Equal("Armor", "Weapon");
+        caps[1].Keywords.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void QueryText_CapIncreasesWithAny_CorrelatesTierAndGoldCapPerElement()
+    {
+        // The originating #349 question, end-to-end through the engine over the
+        // NPC list-row schema: "a Friends-tier cap above 1000g". The correlation
+        // trap NPC has Friends and >1000 on DIFFERENT cap rows — it must NOT match.
+        var refData = new StubReferenceData
+        {
+            NpcsByKey =
+            {
+                ["NPC_Match"] = new Npc
+                {
+                    Name = "Match",
+                    Services = new NpcServicePoco[]
+                    {
+                        new NpcStoreServicePoco
+                        {
+                            Type = "Store",
+                            CapIncreases = ["Friends:5000:Armor", "Despised:100:Food"],
+                        },
+                    },
+                },
+                ["NPC_SplitTrap"] = new Npc
+                {
+                    Name = "Split Trap",
+                    Services = new NpcServicePoco[]
+                    {
+                        new NpcStoreServicePoco
+                        {
+                            Type = "Store",
+                            CapIncreases = ["Friends:100:Armor", "Despised:9000:Food"],
+                        },
+                    },
+                },
+                ["NPC_NoStore"] = new Npc
+                {
+                    Name = "No Store",
+                    Services = new NpcServicePoco[] { new NpcTrainingServicePoco { Type = "Training" } },
+                },
+            },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        const string query = "CapIncreases WITH ANY (Tier = 'Friends' AND GoldCap > 1000)";
+        var columns = ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow));
+        var predicate = QueryCompiler.Compile(query, columns);
+        predicate.Should().NotBeNull();
+
+        var matches = vm.AllNpcs.Where(r => predicate!(r)).Select(r => r.InternalName).ToList();
+        matches.Should().BeEquivalentTo(["NPC_Match"]);
+    }
+
     private sealed class StubReferenceData : IReferenceDataService
     {
         public Dictionary<string, Npc> NpcsByKey { get; } = new(StringComparer.Ordinal);

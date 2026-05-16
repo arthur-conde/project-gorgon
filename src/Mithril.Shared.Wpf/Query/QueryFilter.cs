@@ -46,6 +46,16 @@ public static class QueryFilter
         "QueryError", typeof(string), typeof(QueryFilter),
         new FrameworkPropertyMetadata(null));
 
+    /// <summary>
+    /// Non-fatal narrowing diagnostics from the last successful compile, joined into
+    /// one string (null when there are none). Surfaced separately from
+    /// <see cref="QueryErrorProperty"/> because the query <em>did</em> run — bind it
+    /// <c>OneWayToSource</c> like <c>QueryError</c> and render it as a soft hint.
+    /// </summary>
+    public static readonly DependencyProperty QueryWarningProperty = DependencyProperty.RegisterAttached(
+        "QueryWarning", typeof(string), typeof(QueryFilter),
+        new FrameworkPropertyMetadata(null));
+
     private static readonly DependencyProperty StateProperty = DependencyProperty.RegisterAttached(
         "State", typeof(FilterState), typeof(QueryFilter),
         new PropertyMetadata(null));
@@ -58,6 +68,9 @@ public static class QueryFilter
 
     public static string? GetQueryError(DependencyObject obj) => (string?)obj.GetValue(QueryErrorProperty);
     public static void SetQueryError(DependencyObject obj, string? value) => obj.SetValue(QueryErrorProperty, value);
+
+    public static string? GetQueryWarning(DependencyObject obj) => (string?)obj.GetValue(QueryWarningProperty);
+    public static void SetQueryWarning(DependencyObject obj, string? value) => obj.SetValue(QueryWarningProperty, value);
 
     private static void OnQueryInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -291,6 +304,7 @@ public static class QueryFilter
             if (string.IsNullOrWhiteSpace(text))
             {
                 SetQueryError(_control, null);
+                SetQueryWarning(_control, null);
                 return (null, Array.Empty<OrderSpec>());
             }
             var knownColumns = new HashSet<string>(_columns.Keys, StringComparer.OrdinalIgnoreCase);
@@ -301,11 +315,15 @@ public static class QueryFilter
                     var parsed = QueryParser.Parse(text);
                     SetQueryError(_control, null);
                     Predicate<object>? predicate = null;
+                    var warnings = new List<QueryDiagnostic>();
                     if (parsed?.Predicate is not null)
                     {
-                        var compiled = QueryCompiler.Compile(parsed.Predicate, _columns, caseSensitive);
+                        var compiled = QueryCompiler.Compile(parsed.Predicate, _columns, warnings, caseSensitive);
                         predicate = item => compiled(item);
                     }
+                    SetQueryWarning(_control, warnings.Count == 0
+                        ? null
+                        : string.Join(" ", warnings.Select(w => w.Message)));
                     _lastGoodInputPredicate = predicate;
                     return (predicate, parsed?.Order ?? Array.Empty<OrderSpec>());
                 }
@@ -315,11 +333,14 @@ public static class QueryFilter
                     // does not — it returns empty so SortDescriptions clears to the VM's
                     // captured baseline. Two clauses, two consumer surfaces; the predicate
                     // protects the *visible filter*, the order falls back to a stable default.
+                    // A hard error supersedes any stale warning.
                     SetQueryError(_control, ex.Message);
+                    SetQueryWarning(_control, null);
                     return (_lastGoodInputPredicate, Array.Empty<OrderSpec>());
                 }
             }
             SetQueryError(_control, null);
+            SetQueryWarning(_control, null);
             var bareTextPredicate = BuildBareTextPredicate(text!, caseSensitive);
             _lastGoodInputPredicate = bareTextPredicate;
             return (bareTextPredicate, Array.Empty<OrderSpec>());
