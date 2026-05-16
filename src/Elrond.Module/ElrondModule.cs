@@ -39,7 +39,6 @@ public sealed class ElrondModule : IMithrilModule
         // shell/module-activator edge. Powers B2 "Generate leveling plan".
         services.AddMithrilPlanning();
         services.AddSingleton<SkillAdvisorEngine>();
-        services.AddSingleton<LevelingSimulator>();
 
         services.AddSingleton<GenerateLevelingPlanViewModel>(sp => new GenerateLevelingPlanViewModel(
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
@@ -52,7 +51,6 @@ public sealed class ElrondModule : IMithrilModule
 
         services.AddSingleton<SkillAdvisorViewModel>(sp => new SkillAdvisorViewModel(
             sp.GetRequiredService<SkillAdvisorEngine>(),
-            sp.GetRequiredService<LevelingSimulator>(),
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ElrondSettings>(),

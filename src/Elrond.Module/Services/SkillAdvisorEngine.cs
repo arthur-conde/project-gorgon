@@ -252,7 +252,7 @@ public sealed class SkillAdvisorEngine
     }
 
     // Math delegated to shared Mithril.Leveling (#225). These thin pass-throughs
-    // keep the engine's and LevelingSimulator's existing call sites untouched.
+    // keep the engine's existing call sites untouched.
     internal int ComputeEffectiveXp(Recipe recipe, int playerLevel)
         => _math.EffectiveXpPerCraft(recipe, playerLevel);
 
