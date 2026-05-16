@@ -51,15 +51,10 @@ public sealed class FavorStateService : IFavorLookupService
     public string? GetFavorTier(string npcKey)
     {
         if (string.IsNullOrEmpty(npcKey)) return null;
-        return _tierByNpcKey.TryGetValue(npcKey, out var tier) ? ToGameLogName(tier) : null;
+        // FavorTier member names are the canonical game-log tokens (incl. "Hated"),
+        // which is exactly what IFavorLookupService consumers (Smaug) expect.
+        return _tierByNpcKey.TryGetValue(npcKey, out var tier) ? tier.ToString() : null;
     }
-
-    // Arwen's enum uses "Hatred"; the game's log emits "Hated". Everything else already matches.
-    private static string ToGameLogName(FavorTier tier) => tier switch
-    {
-        FavorTier.Hatred => "Hated",
-        _ => tier.ToString(),
-    };
 
     public FavorStateService(
         IReferenceDataService refData,

@@ -3,7 +3,7 @@ namespace Arwen.Domain;
 public enum FavorTier
 {
     Despised,
-    Hatred,
+    Hated,
     Disliked,
     Tolerated,
     Neutral,
@@ -20,7 +20,7 @@ public static class FavorTiers
     private static readonly (FavorTier Tier, int Floor, int? Cap)[] Table =
     [
         (FavorTier.Despised,     -99999, 1800),
-        (FavorTier.Hatred,       -600,   300),
+        (FavorTier.Hated,        -600,   300),
         (FavorTier.Disliked,     -300,   200),
         (FavorTier.Tolerated,    -100,   100),
         (FavorTier.Neutral,      0,      100),
