@@ -1,6 +1,9 @@
-// Only StoreCapIncrease is pulled from the Reference models — aliased to avoid
-// colliding with this file's own slim NpcService record.
+// StoreCapIncrease and FavorTier are pulled from the Reference models — aliased
+// (NOT a blanket `using Mithril.Reference.Models.Npcs;`) because that namespace
+// also declares NpcService/NpcPreference, which would collide CS0104 with this
+// file's own slim records.
 using StoreCapIncrease = Mithril.Reference.Models.Npcs.StoreCapIncrease;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 
 namespace Mithril.Shared.Reference;
 
@@ -36,5 +39,5 @@ public sealed record NpcPreference(
 /// </summary>
 public sealed record NpcService(
     string Type,
-    string? MinFavorTier,
+    FavorTier? MinFavorTier,
     IReadOnlyList<StoreCapIncrease> CapIncreases);

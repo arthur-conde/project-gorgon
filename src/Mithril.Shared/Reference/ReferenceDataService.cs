@@ -23,6 +23,8 @@ using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
 using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
 using StoreCapIncrease = Mithril.Reference.Models.Npcs.StoreCapIncrease;
 using StoreCapIncreaseParser = Mithril.Reference.Models.Npcs.StoreCapIncreaseParser;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using FavorTierExtensions = Mithril.Reference.Models.Npcs.FavorTierExtensions;
 using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
 using DirectedGoal = Mithril.Reference.Models.Misc.DirectedGoal;
 using AbilityKeyword = Mithril.Reference.Models.Misc.AbilityKeyword;
@@ -1109,7 +1111,10 @@ public sealed class ReferenceDataService : IReferenceDataService
                 .Where(s => !string.IsNullOrEmpty(s.Type))
                 .Select(s => new NpcService(
                     s.Type,
-                    s.Favor,
+                    // #385: parse the favor gate ONCE here. null Favor → null (no gate);
+                    // any non-null Favor → Parse (junk → FavorTier.Unknown, NOT null —
+                    // the gate math owns "not gated", not a coincidental null).
+                    s.Favor is { } f ? FavorTierExtensions.Parse(f) : (FavorTier?)null,
                     s is PocoNpcStoreService store ? StoreCapIncreaseParser.ParseRequiringGold(store.CapIncreases) : (IReadOnlyList<StoreCapIncrease>)[]))
                 .ToList();
 

@@ -99,13 +99,15 @@ public sealed class SellPlannerService
             if (!VendorAcceptsItem(store, itemKeywords)) continue;
 
             var playerTier = _favorLookup?.GetFavorTier(npcKey);
+            // MinFavorTier is FavorTier? (parsed once at the projection, #385). The
+            // `is null` short-circuit keeps a null gate "accessible"; .Value is safe
+            // past it. Junk → Unknown (int.MinValue) so any tier >= it ⇒ accessible.
             var isAccessible = store.MinFavorTier is null ||
-                               (playerTier ?? FavorTier.Neutral) >= Parse(store.MinFavorTier);
+                               (playerTier ?? FavorTier.Neutral) >= store.MinFavorTier.Value;
 
             // Use the player's known tier for the estimate when we have it; otherwise fall back
             // to the vendor's requirement so users see some number for tier-gated vendors.
-            var estimateTier = playerTier
-                ?? (store.MinFavorTier is { } m ? Parse(m) : FavorTier.Neutral);
+            var estimateTier = playerTier ?? store.MinFavorTier ?? FavorTier.Neutral;
             var estimate = _calibration.EstimateSellPrice(
                 npcKey,
                 item.InternalName,
@@ -116,7 +118,7 @@ public sealed class SellPlannerService
                 NpcKey: npcKey,
                 NpcName: npc.Name,
                 Area: string.IsNullOrEmpty(npc.Area) ? "(Unknown Area)" : npc.Area,
-                MinFavorTier: store.MinFavorTier,
+                MinFavorTier: store.MinFavorTier?.DisplayName(),
                 PlayerFavorTier: playerTier?.DisplayName(),
                 IsAccessible: isAccessible,
                 Estimate: estimate));

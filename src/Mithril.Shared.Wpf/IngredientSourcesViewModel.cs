@@ -1,5 +1,10 @@
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
+// Aliased, NOT `using Mithril.Reference.Models.Npcs;` — that namespace also
+// declares NpcService/NpcPreference, colliding CS0104 with the slim records
+// this file references in <see cref> doc comments (#385).
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Mithril.Shared.Wpf;
 
@@ -209,8 +214,12 @@ public sealed record IngredientSourcesViewModel(
         foreach (var svc in npc.Services)
         {
             if (!string.Equals(svc.Type, serviceType, StringComparison.Ordinal)) continue;
-            if (string.IsNullOrEmpty(svc.MinFavorTier)) return null;
-            return $"Requires {svc.MinFavorTier} or higher";
+            // #385 display ⇔ gate parity: null = no gate; Unknown = the gate's
+            // "not gated" sentinel (junk token). Neither asserts a requirement —
+            // showing "Requires Unknown or higher" would claim a gate the logic
+            // does not enforce.
+            if (svc.MinFavorTier is not { } tier || tier == FavorTier.Unknown) return null;
+            return $"Requires {tier.DisplayName()} or higher";
         }
         return null;
     }

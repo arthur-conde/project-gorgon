@@ -851,6 +851,34 @@ public class ReferenceDataServiceTests : IDisposable
     }
 
     [Fact]
+    public void Npcs_projection_parses_service_MinFavorTier_to_FavorTier()
+    {
+        // #385: the slim NpcService.MinFavorTier is FavorTier?, parsed once at the
+        // projection. null Favor → null; a real token → that tier; junk → Unknown
+        // (NOT null — the gate math, not a coincidental null, is the not-gated rule).
+        File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
+        File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.json"), """
+            {
+              "NPC_Real": { "Name": "Real", "Services": [ { "Type": "Store", "Favor": "Friends" } ] },
+              "NPC_Null": { "Name": "Null", "Services": [ { "Type": "Store" } ] },
+              "NPC_Junk": { "Name": "Junk", "Services": [ { "Type": "Store", "Favor": "totally-not-a-tier" } ] }
+            }
+            """);
+        File.WriteAllText(Path.Combine(_bundledDir, "npcs.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
+
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
+
+        svc.Npcs["NPC_Real"].Services.Single().MinFavorTier
+            .Should().Be(Mithril.Reference.Models.Npcs.FavorTier.Friends);
+        svc.Npcs["NPC_Null"].Services.Single().MinFavorTier
+            .Should().BeNull("absent Favor projects to a null gate");
+        svc.Npcs["NPC_Junk"].Services.Single().MinFavorTier
+            .Should().Be(Mithril.Reference.Models.Npcs.FavorTier.Unknown,
+                "an unrecognised token is Unknown, not null — the gate math owns 'not gated'");
+    }
+
+    [Fact]
     public void GetSnapshot_UnknownKey_Throws()
     {
         WriteBundled("""{}""", version: "v100");

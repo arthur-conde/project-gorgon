@@ -5,6 +5,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 using Mithril.Shared.Wpf;
 using Xunit;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 
 namespace Mithril.Shared.Tests.Wpf;
 
@@ -126,8 +127,8 @@ public class IngredientSourcesViewModelTests
     [Fact]
     public void Vendor_source_surfaces_Store_service_MinFavorTier_as_Requirement()
     {
-        // Hulon's Store service is gated on "Liked" favor; we should expose that.
-        var store = new NpcService(Type: "Store", MinFavorTier: "Liked", CapIncreases: []);
+        // Hulon's Store service is gated on Comfortable favor; we should expose that.
+        var store = new NpcService(Type: "Store", MinFavorTier: FavorTier.Comfortable, CapIncreases: []);
         var npc = new NpcEntry("NPC_Hulon", "Hulon", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store]);
         var refData = new StubRefData(
             sources: new() { ["IronBar"] = [new ItemSource("Vendor", "NPC_Hulon", null)] },
@@ -136,16 +137,34 @@ public class IngredientSourcesViewModelTests
         var vm = IngredientSourcesViewModel.Build(
             new IngredientSourcesInput("Iron Bar", null, "IronBar", []), refData);
 
-        vm.Sources.Single().Requirement.Should().Be("Requires Liked or higher");
+        vm.Sources.Single().Requirement.Should().Be("Requires Comfortable or higher");
+    }
+
+    [Fact]
+    public void Vendor_source_with_unparseable_MinFavorTier_emits_no_Requirement()
+    {
+        // #385 display ⇔ gate parity: FavorTier.Unknown is the gate's "not gated"
+        // sentinel (junk tokens project to it). The shown requirement must agree —
+        // no "Requires Unknown or higher" line.
+        var store = new NpcService(Type: "Store", MinFavorTier: FavorTier.Unknown, CapIncreases: []);
+        var npc = new NpcEntry("NPC_Hulon", "Hulon", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store]);
+        var refData = new StubRefData(
+            sources: new() { ["IronBar"] = [new ItemSource("Vendor", "NPC_Hulon", null)] },
+            npcs: new() { ["NPC_Hulon"] = npc });
+
+        var vm = IngredientSourcesViewModel.Build(
+            new IngredientSourcesInput("Iron Bar", null, "IronBar", []), refData);
+
+        vm.Sources.Single().Requirement.Should().BeNull();
     }
 
     [Fact]
     public void Barter_source_uses_Barter_service_for_Requirement_lookup()
     {
-        // Same NPC has a Store at Neutral and a Barter at "Loved" — only the Barter gate
-        // applies for a Barter source. Confirms the service-type routing isn't conflated.
+        // Same NPC has an ungated Store and a Barter gated at BestFriends — only the
+        // Barter gate applies for a Barter source. Confirms service-type routing isn't conflated.
         var store = new NpcService("Store", MinFavorTier: null, CapIncreases: []);
-        var barter = new NpcService("Barter", MinFavorTier: "Loved", CapIncreases: []);
+        var barter = new NpcService("Barter", MinFavorTier: FavorTier.BestFriends, CapIncreases: []);
         var npc = new NpcEntry("NPC_Velkort", "Velkort", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store, barter]);
         var refData = new StubRefData(
             sources: new() { ["RareIngot"] = [new ItemSource("Barter", "NPC_Velkort", null)] },
@@ -154,7 +173,7 @@ public class IngredientSourcesViewModelTests
         var vm = IngredientSourcesViewModel.Build(
             new IngredientSourcesInput("Rare Ingot", null, "RareIngot", []), refData);
 
-        vm.Sources.Single().Requirement.Should().Be("Requires Loved or higher");
+        vm.Sources.Single().Requirement.Should().Be("Requires Best Friends or higher");
     }
 
     [Fact]
@@ -301,7 +320,7 @@ public class IngredientSourcesViewModelTests
     {
         // NpcGift gating lives on per-preference RequiredFavorTier, not per-NPC.
         // The Sources tab line should not claim a vendor-style favor gate for gifts.
-        var store = new NpcService("Store", MinFavorTier: "Liked", CapIncreases: []);
+        var store = new NpcService("Store", MinFavorTier: FavorTier.Comfortable, CapIncreases: []);
         var npc = new NpcEntry("NPC_Marna", "Marna", "Serbule", Preferences: [], ItemGiftTiers: [], Services: [store]);
         var refData = new StubRefData(
             sources: new() { ["GiftedItem"] = [new ItemSource("NpcGift", "NPC_Marna", null)] },
