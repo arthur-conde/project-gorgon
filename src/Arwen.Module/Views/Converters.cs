@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Windows.Data;
-using Arwen.Domain;
+using Mithril.Reference.Models.Npcs;
 
 namespace Arwen.Views;
 
@@ -23,7 +23,7 @@ public sealed class ProgressToWidthConverter : IValueConverter
 public sealed class TierToDisplayNameConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-        value is FavorTier tier ? FavorTiers.DisplayName(tier) : value?.ToString() ?? "";
+        value is FavorTier tier ? tier.DisplayName() : value?.ToString() ?? "";
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotSupportedException();

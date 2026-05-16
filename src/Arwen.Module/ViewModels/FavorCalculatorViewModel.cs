@@ -4,6 +4,9 @@ using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
+using FavorScale = Mithril.Reference.Models.Npcs.FavorScale;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 
 namespace Arwen.ViewModels;
 
@@ -176,15 +179,15 @@ public sealed partial class FavorCalculatorViewModel : ObservableObject
         else
         {
             // Use floor of current tier as worst-case estimate
-            currentFavor = FavorTiers.FloorOf(SelectedNpc.CurrentTier);
+            currentFavor = FavorTiers.RepresentativeFavor(SelectedNpc.CurrentTier);
         }
 
-        var targetFloor = FavorTiers.FloorOf(TargetTier);
+        var targetFloor = FavorScale.FloorOf(TargetTier) ?? 0; // Despised (null floor) is excluded from TargetTierOptions, so this is always non-null
         var remaining = Math.Max(0, targetFloor - currentFavor);
 
         if (remaining <= 0)
         {
-            ResultText = $"Already at or above {FavorTiers.DisplayName(TargetTier)}!";
+            ResultText = $"Already at or above {TargetTier.DisplayName()}!";
             BreakdownText = "";
             return;
         }
@@ -197,15 +200,15 @@ public sealed partial class FavorCalculatorViewModel : ObservableObject
         }
         else
         {
-            ResultText = $"{remaining:F0} favor remaining to {FavorTiers.DisplayName(TargetTier)}. " +
+            ResultText = $"{remaining:F0} favor remaining to {TargetTier.DisplayName()}. " +
                          $"Gift this item in-game to calibrate the rate for \"{SelectedItem.MatchedKeyword}\".";
         }
 
         // Tier breakdown
-        var breakdown = FavorTiers.TierBreakdown(currentFavor);
+        var breakdown = FavorScale.TierBreakdown(currentFavor);
         var parts = breakdown
-            .Where(b => FavorTiers.FloorOf(b.Tier) < targetFloor || b.Tier == TargetTier)
-            .Select(b => $"{FavorTiers.DisplayName(b.Tier)}: {b.Remaining:N0}");
+            .Where(b => (FavorScale.FloorOf(b.Tier) ?? double.NegativeInfinity) < targetFloor || b.Tier == TargetTier)
+            .Select(b => $"{b.Tier.DisplayName()}: {b.Remaining:N0}");
         BreakdownText = string.Join(" → ", parts);
     }
 }

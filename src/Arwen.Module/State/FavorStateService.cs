@@ -1,6 +1,9 @@
 using Arwen.Domain;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
+using FavorScale = Mithril.Reference.Models.Npcs.FavorScale;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using FavorTierExtensions = Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Arwen.State;
 
@@ -48,12 +51,10 @@ public sealed class FavorStateService : IFavorLookupService
     public event EventHandler? StateChanged;
     public event EventHandler? FavorChanged;
 
-    public string? GetFavorTier(string npcKey)
+    public FavorTier? GetFavorTier(string npcKey)
     {
         if (string.IsNullOrEmpty(npcKey)) return null;
-        // FavorTier member names are the canonical game-log tokens (incl. "Hated"),
-        // which is exactly what IFavorLookupService consumers (Smaug) expect.
-        return _tierByNpcKey.TryGetValue(npcKey, out var tier) ? tier.ToString() : null;
+        return _tierByNpcKey.TryGetValue(npcKey, out var tier) ? tier : null;
     }
 
     public FavorStateService(
@@ -134,21 +135,26 @@ public sealed class FavorStateService : IFavorLookupService
         if (snapshot is not null)
         {
             entry.ExactFavor = snapshot.ExactFavor;
-            entry.CurrentTier = FavorTiers.TierForFavor(snapshot.ExactFavor);
-            entry.TierProgress = FavorTiers.ProgressInTier(snapshot.ExactFavor, entry.CurrentTier);
+            entry.CurrentTier = FavorScale.TierForFavor(snapshot.ExactFavor);
+            entry.TierProgress = FavorScale.ProgressInTier(snapshot.ExactFavor, entry.CurrentTier);
             entry.IsKnown = true;
             return;
         }
 
-        // Priority 2: Character export tier (no exact value)
-        if (activeChar?.NpcFavor.TryGetValue(entry.NpcKey, out var tierName) == true &&
-            FavorTiers.TryParse(tierName, out var tier))
+        // Priority 2: Character export tier (no exact value). Unknown token →
+        // treat as not-known and fall through to Priority 3 (preserves the old
+        // FavorTiers.TryParse==false behaviour).
+        if (activeChar?.NpcFavor.TryGetValue(entry.NpcKey, out var tierName) == true)
         {
-            entry.CurrentTier = tier;
-            entry.ExactFavor = null;
-            entry.TierProgress = double.NaN;
-            entry.IsKnown = true;
-            return;
+            var parsed = FavorTierExtensions.Parse(tierName);
+            if (parsed != FavorTier.Unknown)
+            {
+                entry.CurrentTier = parsed;
+                entry.ExactFavor = null;
+                entry.TierProgress = double.NaN;
+                entry.IsKnown = true;
+                return;
+            }
         }
 
         // Priority 3: Unknown

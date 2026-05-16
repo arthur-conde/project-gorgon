@@ -3,6 +3,7 @@ using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Reference;
 
 namespace Arwen.ViewModels;
@@ -115,7 +116,7 @@ public sealed partial class ItemLookupViewModel : ObservableObject
                 Desire = nm.Match.Desire,
                 Pref = nm.Match.Pref,
                 MatchedKeyword = nm.Match.MatchedKeyword,
-                CurrentTier = favorEntry is not null ? FavorTiers.DisplayName(favorEntry.CurrentTier) : "",
+                CurrentTier = favorEntry is not null ? favorEntry.CurrentTier.DisplayName() : "",
                 HasMet = hasMet,
                 EstimatedFavor = _calibration.EstimateFavor(nm.Match, nm.NpcKey)?.Value,
             });

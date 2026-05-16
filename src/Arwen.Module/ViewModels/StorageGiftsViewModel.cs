@@ -6,6 +6,8 @@ using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
+using FavorScale = Mithril.Reference.Models.Npcs.FavorScale;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 
 namespace Arwen.ViewModels;
 
@@ -207,7 +209,7 @@ public sealed partial class StorageGiftsViewModel : ObservableObject
 
         var favorEntry = _state.Entries.FirstOrDefault(e => e.NpcKey == nm.NpcKey);
         var currentFavor = favorEntry?.ExactFavor
-            ?? (favorEntry?.IsKnown == true ? (double?)FavorTiers.FloorOf(favorEntry.CurrentTier) : null);
+            ?? (favorEntry?.IsKnown == true ? FavorTiers.RepresentativeFavor(favorEntry.CurrentTier) : (double?)null);
 
         var estimate = _calibration.EstimateFavor(nm.Match, nm.NpcKey);
         var estimatedTotal = estimate is not null ? estimate.Value * stackSize : (double?)null;
@@ -218,22 +220,22 @@ public sealed partial class StorageGiftsViewModel : ObservableObject
         var projectedTier = currentTier;
         var currentFrac = 0.0;
         var projectedFrac = 0.0;
-        var tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? FavorTiers.FloorOf(currentTier));
+        var tierCeiling = FavorScale.CeilingOf(currentTier) ?? FavorScale.FloorOf(currentTier) ?? 0;
 
         if (currentFavor.HasValue)
         {
-            currentTier = FavorTiers.TierForFavor(currentFavor.Value);
-            tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? currentFavor.Value);
-            var cFrac = FavorTiers.ProgressInTier(currentFavor.Value, currentTier);
+            currentTier = FavorScale.TierForFavor(currentFavor.Value);
+            tierCeiling = FavorScale.CeilingOf(currentTier) ?? currentFavor.Value;
+            var cFrac = FavorScale.ProgressInTier(currentFavor.Value, currentTier);
             currentFrac = double.IsNaN(cFrac) ? 0.0 : cFrac;
 
             if (estimatedTotal.HasValue)
             {
                 var proj = currentFavor.Value + estimatedTotal.Value;
                 projectedFavor = proj;
-                projectedTier = FavorTiers.TierForFavor(proj);
+                projectedTier = FavorScale.TierForFavor(proj);
                 var pFrac = projectedTier == currentTier
-                    ? FavorTiers.ProgressInTier(proj, currentTier)
+                    ? FavorScale.ProgressInTier(proj, currentTier)
                     : 1.0;
                 projectedFrac = double.IsNaN(pFrac) ? 0.0 : pFrac;
             }

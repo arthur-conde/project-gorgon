@@ -4,6 +4,7 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 using Smaug.Domain;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Smaug.State;
 
@@ -121,7 +122,7 @@ public sealed class StorageSellbackService
                 if (playerTier is not null)
                 {
                     maxGold = VendorCapResolver.ResolveMaxGold(
-                        store, playerTier, ctx.Keywords, _sellContext.CivicPrideLevel);
+                        store, playerTier.Value, ctx.Keywords, _sellContext.CivicPrideLevel);
                     acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;
                 }
 
@@ -143,7 +144,7 @@ public sealed class StorageSellbackService
                 NpcName: npc.Name,
                 Area: string.IsNullOrEmpty(npc.Area) ? "(Unknown Area)" : npc.Area,
                 MinFavorTier: store.MinFavorTier,
-                PlayerFavorTier: playerTier,
+                PlayerFavorTier: playerTier?.DisplayName(),
                 Items: buyableItems));
         }
 

@@ -1,4 +1,6 @@
 using Mithril.Shared.Reference;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Smaug.Domain;
 
@@ -31,22 +33,20 @@ public static class VendorCapResolver
     /// </summary>
     public static int? ResolveMaxGold(
         NpcService store,
-        string? playerFavorTier,
+        FavorTier playerFavorTier,
         IReadOnlySet<string> itemKeywords,
         int civicPrideLevel)
     {
         if (store.CapIncreases.Count == 0) return null;
 
         // Gate on MinFavorTier first.
-        var currentTier = playerFavorTier ?? FavorTierName.Neutral;
-        if (store.MinFavorTier is not null && !FavorTierName.IsAtLeast(currentTier, store.MinFavorTier))
-            return null;
+        var currentTier = playerFavorTier;
+        if (store.MinFavorTier is { } minTier && currentTier < Parse(minTier)) return null;
 
-        var currentRank = FavorTierName.RankOf(currentTier);
         int? best = null;
         foreach (var cap in store.CapIncreases)
         {
-            if (FavorTierName.RankOf(cap.Tier) > currentRank) continue;
+            if (cap.Tier > currentTier) continue;
             if (!MatchesKeywords(cap.Keywords, itemKeywords)) continue;
             // GoldCap is int? on the canonical record; the Smaug projection uses
             // ParseRequiringGold so it is never null here, but stay nullable-correct.

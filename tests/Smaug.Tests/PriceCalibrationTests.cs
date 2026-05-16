@@ -11,16 +11,16 @@ public sealed class PriceCalibrationTests
     {
         var obs = new List<PriceObservation>
         {
-            Make("NPC_A", "BottleOfWater", 11, 100, FavorTierName.Neutral, 0),
-            Make("NPC_A", "BottleOfWater", 11, 100, FavorTierName.Neutral, 0),
-            Make("NPC_A", "BottleOfWater", 11, 110, FavorTierName.Neutral, 0),
-            Make("NPC_A", "BottleOfWater", 11, 120, FavorTierName.Friends, 0),
+            Make("NPC_A", "BottleOfWater", 11, 100, "Neutral", 0),
+            Make("NPC_A", "BottleOfWater", 11, 100, "Neutral", 0),
+            Make("NPC_A", "BottleOfWater", 11, 110, "Neutral", 0),
+            Make("NPC_A", "BottleOfWater", 11, 120, "Friends", 0),
         };
 
         var rates = PriceCalibrationService.BuildAbsoluteRates(obs);
 
         rates.Should().HaveCount(2);
-        var neutralKey = PriceCalibrationService.AbsoluteKey("NPC_A", "BottleOfWater", FavorTierName.Neutral, CivicPrideBucket.Under5);
+        var neutralKey = PriceCalibrationService.AbsoluteKey("NPC_A", "BottleOfWater", "Neutral", CivicPrideBucket.Under5);
         rates[neutralKey].SampleCount.Should().Be(3);
         rates[neutralKey].AvgPrice.Should().BeApproximately((100 + 100 + 110) / 3.0, 0.01);
         rates[neutralKey].MinPrice.Should().Be(100);
@@ -32,13 +32,13 @@ public sealed class PriceCalibrationTests
     {
         var obs = new List<PriceObservation>
         {
-            MakeWithBucket("NPC_A", "GloveAugment_1", 160, 160, "Augment", FavorTierName.SoulMates, 0),
-            MakeWithBucket("NPC_A", "GloveAugment_2", 190, 170, "Augment", FavorTierName.SoulMates, 0),
+            MakeWithBucket("NPC_A", "GloveAugment_1", 160, 160, "Augment", "SoulMates", 0),
+            MakeWithBucket("NPC_A", "GloveAugment_2", 190, 170, "Augment", "SoulMates", 0),
         };
 
         var rates = PriceCalibrationService.BuildRatioRates(obs);
 
-        var key = PriceCalibrationService.RatioKey("NPC_A", "Augment", FavorTierName.SoulMates, CivicPrideBucket.Under5);
+        var key = PriceCalibrationService.RatioKey("NPC_A", "Augment", "SoulMates", CivicPrideBucket.Under5);
         rates.Should().ContainKey(key);
         rates[key].SampleCount.Should().Be(2);
         // First obs ratio = 160/160 = 1.0; second = 170/190 ≈ 0.8947
@@ -55,31 +55,6 @@ public sealed class PriceCalibrationTests
         CivicPrideBucket.FromLevel(25).Should().Be(CivicPrideBucket.To34);
         CivicPrideBucket.FromLevel(45).Should().Be(CivicPrideBucket.AtLeast45);
         CivicPrideBucket.FromLevel(100).Should().Be(CivicPrideBucket.AtLeast45);
-    }
-
-    [Fact]
-    public void FavorTierName_Rank_OrdersCorrectly()
-    {
-        FavorTierName.RankOf(FavorTierName.Despised).Should().Be(0);
-        FavorTierName.RankOf(FavorTierName.Neutral).Should().BeGreaterThan(FavorTierName.RankOf(FavorTierName.Hated));
-        FavorTierName.RankOf(FavorTierName.SoulMates).Should().Be(FavorTierName.Ordered.Count - 1);
-        FavorTierName.RankOf("NotATier").Should().Be(-1);
-        FavorTierName.IsAtLeast(FavorTierName.Friends, FavorTierName.Neutral).Should().BeTrue();
-        FavorTierName.IsAtLeast(FavorTierName.Neutral, FavorTierName.Friends).Should().BeFalse();
-    }
-
-    // #371: Tolerated is favor -100, below Neutral (0). The prior assertions did not
-    // exercise this boundary, which is exactly why the inversion slipped. Pin the full
-    // ladder to the floor-grounded order (matching Arwen.Domain.FavorTiers).
-    [Fact]
-    public void FavorTierName_Ordered_IsFloorGrounded()
-    {
-        FavorTierName.RankOf(FavorTierName.Tolerated)
-            .Should().BeLessThan(FavorTierName.RankOf(FavorTierName.Neutral));
-
-        FavorTierName.Ordered.Should().Equal(
-            "Despised", "Hated", "Disliked", "Tolerated", "Neutral", "Comfortable",
-            "Friends", "CloseFriends", "BestFriends", "LikeFamily", "SoulMates");
     }
 
     private static PriceObservation Make(string npc, string internalName, long value, long paid, string tier, int cp) =>

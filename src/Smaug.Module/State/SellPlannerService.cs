@@ -3,6 +3,8 @@ using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 using Smaug.Domain;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Smaug.State;
 
@@ -98,15 +100,16 @@ public sealed class SellPlannerService
 
             var playerTier = _favorLookup?.GetFavorTier(npcKey);
             var isAccessible = store.MinFavorTier is null ||
-                               FavorTierName.IsAtLeast(playerTier ?? FavorTierName.Neutral, store.MinFavorTier);
+                               (playerTier ?? FavorTier.Neutral) >= Parse(store.MinFavorTier);
 
             // Use the player's known tier for the estimate when we have it; otherwise fall back
             // to the vendor's requirement so users see some number for tier-gated vendors.
-            var estimateTier = playerTier ?? store.MinFavorTier ?? FavorTierName.Neutral;
+            var estimateTier = playerTier
+                ?? (store.MinFavorTier is { } m ? Parse(m) : FavorTier.Neutral);
             var estimate = _calibration.EstimateSellPrice(
                 npcKey,
                 item.InternalName,
-                estimateTier,
+                estimateTier.ToToken(),
                 _sellContext.CivicPrideLevel);
 
             rows.Add(new SellPlannerVendorRow(
@@ -114,7 +117,7 @@ public sealed class SellPlannerService
                 NpcName: npc.Name,
                 Area: string.IsNullOrEmpty(npc.Area) ? "(Unknown Area)" : npc.Area,
                 MinFavorTier: store.MinFavorTier,
-                PlayerFavorTier: playerTier,
+                PlayerFavorTier: playerTier?.DisplayName(),
                 IsAccessible: isAccessible,
                 Estimate: estimate));
         }

@@ -21,11 +21,10 @@ namespace Mithril.Reference.Models.Npcs;
 /// (and is distinct from <see cref="Tolerated"/> = −1).
 /// </para>
 /// <para>
-/// This type is deliberately local to the reference model (issue #368, narrow
-/// scope). Smaug's <c>FavorTierName</c> and Arwen's <c>FavorTier</c> model the same
-/// ladder with their own (divergent, partly-buggy) spelling/order — converging all
-/// three onto one canonical type is tracked by the umbrella #370 (with the Smaug
-/// order bug #371 and Arwen spelling bug #372). Do not "fix" them from here.
+/// Canonical type for the whole solution (#368/#370): Smaug and Arwen previously
+/// maintained local string-based ladders — both now converge here (Smaug #370 Task 3,
+/// Arwen Task 2). <c>NpcService.MinFavorTier</c> remains <c>string?</c> (field retype
+/// deferred to #385); parse at the boundary via <see cref="Parse"/>.
 /// </para>
 /// </remarks>
 public enum FavorTier
@@ -70,9 +69,9 @@ public static class FavorTierExtensions
 
     /// <summary>
     /// The exact reference-data token for a tier (the enum member name;
-    /// <see cref="FavorTier.Unknown"/> → <c>"Unknown"</c>). Lets string-keyed
-    /// consumers (e.g. Smaug's existing <c>FavorTierName.RankOf</c>) keep working
-    /// unchanged against a typed value — preserving their semantics verbatim.
+    /// <see cref="FavorTier.Unknown"/> → <c>"Unknown"</c>). Used to key
+    /// calibration data (string-keyed, persisted) and anywhere a raw token string
+    /// is required instead of the typed enum.
     /// </summary>
     public static string ToToken(this FavorTier tier) => tier.ToString();
 
