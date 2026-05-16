@@ -146,14 +146,18 @@ an unwired edge. This is the priority and stands alone.
 
 ### Known visual debt (axis: presentation, not coverage)
 
-- **`EntityChip` collides with the stat badges** (#404). A design critique found
-  the shared bordered/icon chip is visually identical to the header stat badges
+- **No fact / control / link visual grammar** (#404). A design critique found
+  the shared `EntityChip` is visually identical to the header stat badges
   (`Skill N`, `MaxUses`, cooldown) and breaks prose in `{prefix} [chip]` rows.
-  This is a *coverage-complete, presentation-wrong* state: #342's fields are all
-  surfaced, the chip *styling* is the debt. Recommendation (V5 hybrid: inline
-  gold link in prose, ghost pill in lists) + an orthogonal stat-badge restyle is
-  a design-system change, deliberately **out of #342/#400 scope** — tracked in
-  #404. Don't re-flag the recipe-detail chips as a coverage gap; they're not.
+  Root cause is the *absence of a grammar* distinguishing passive facts from
+  controls from navigable links — the chip collision is one symptom. This is a
+  *coverage-complete, presentation-wrong* state: #342's fields are all surfaced,
+  the visual grammar is the debt. Agreed direction: grammar-first; link tier →
+  **V2** (small lead-icon + gold name, no box — V5's prose/list dual form
+  rejected as a call-site footgun); badge tier restyled to read inert (same
+  pass, not orthogonal). Design-system change, deliberately **out of #342/#400
+  scope** — tracked in #404. Don't re-flag the recipe-detail chips as a coverage
+  gap; they're not.
 
 ## History
 
