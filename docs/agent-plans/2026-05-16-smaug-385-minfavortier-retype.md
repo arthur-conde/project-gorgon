@@ -194,10 +194,9 @@ the json-versioning convention — out of #385 scope. #385 therefore:
 - changes nothing in the calibration path,
 - adds a **characterization test** pinning the current raw-token passthrough
   (so a future migration is a deliberate, test-visible change, not a silent one),
-- files a follow-up issue for "canonicalise calibration favor token at ingest
-  behind a `SchemaVersion` bump"; this doc + that issue are the recorded
-  rationale per the Acceptance "if anything stays `string`, record the
-  rationale" clause.
+- filed follow-up **#397** ("canonicalise calibration favor token at ingest
+  behind a `SchemaVersion` bump"); this doc + #397 are the recorded rationale
+  per the Acceptance "if anything stays `string`, record the rationale" clause.
 
 ## Testing
 
