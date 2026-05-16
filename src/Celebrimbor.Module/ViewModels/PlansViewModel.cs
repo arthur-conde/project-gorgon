@@ -8,6 +8,7 @@ using Mithril.Planning;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf.Dialogs;
 
 namespace Celebrimbor.ViewModels;
 
@@ -30,6 +31,7 @@ public sealed partial class PlansViewModel : ObservableObject
     private readonly IReferenceDataService? _referenceData;
     private readonly IModuleActivator? _activator;
     private readonly Func<string?> _pickPlanFile;
+    private readonly IDialogService? _dialogService;
     private readonly Func<SavedPlanRowViewModel, bool> _confirmDelete;
 
     public PlansViewModel(
@@ -40,6 +42,7 @@ public sealed partial class PlansViewModel : ObservableObject
         PlanWalkerViewModel walker,
         IReferenceDataService? referenceData = null,
         IModuleActivator? activator = null,
+        IDialogService? dialogService = null,
         Func<string?>? pickPlanFile = null,
         Func<SavedPlanRowViewModel, bool>? confirmDelete = null)
     {
@@ -49,6 +52,7 @@ public sealed partial class PlansViewModel : ObservableObject
         _activeChar = activeChar;
         _referenceData = referenceData;
         _activator = activator;
+        _dialogService = dialogService;
         _pickPlanFile = pickPlanFile ?? DefaultPickPlanFile;
         _confirmDelete = confirmDelete ?? DefaultConfirmDelete;
         Walker = walker;
@@ -225,11 +229,10 @@ public sealed partial class PlansViewModel : ObservableObject
         return dlg.ShowDialog() == true ? dlg.FileName : null;
     }
 
-    private static bool DefaultConfirmDelete(SavedPlanRowViewModel row)
-        => System.Windows.MessageBox.Show(
-               $"Delete the plan \"{row.Title}\"? This cannot be undone.",
-               "Delete plan", System.Windows.MessageBoxButton.OKCancel,
-               System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.OK;
+    private bool DefaultConfirmDelete(SavedPlanRowViewModel row)
+        => (_dialogService ?? new DialogService()).Confirm(
+               "Delete plan",
+               $"Delete the plan \"{row.Title}\"? This cannot be undone.");
 
     private static void DispatchOnUi(Action action)
     {

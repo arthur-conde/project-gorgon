@@ -14,14 +14,7 @@ public sealed class DialogService : IDialogService
     }
 
     public bool Confirm(string title, string message)
-    {
-        var result = MessageBox.Show(
-            Application.Current.MainWindow,
-            message,
-            title,
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        return result == MessageBoxResult.Yes;
-    }
+        // Themed chrome (DialogWindow) — consistent with the rest of the app
+        // rather than a raw OS MessageBox. Primary ⇒ true; secondary / X ⇒ false.
+        => ShowDialog(new ConfirmDialogViewModel(title, message), new ConfirmDialogView()) == true;
 }
