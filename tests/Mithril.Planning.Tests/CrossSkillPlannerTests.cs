@@ -194,6 +194,46 @@ public class CrossSkillPlannerTests
         widgetPhase.PredictedCrafts.Should().Be(7);
     }
 
+    // ── Recipe.MaxUses (per-character lifetime cap) ──────────────────────
+
+    [Fact]
+    public void MaxUses_CapsGrind_ThenSwitchesToNextBestRecipe()
+    {
+        // Capped recipe is the highest XP but usable only twice ever; the
+        // planner must grind it ≤2× then fall through to the uncapped one.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Rune").AddItem(2, "Brick")
+            .AddRecipe("ScribeRune", Skill, xp: 100, produces: (1, 1), skillLevelReq: 1, maxUses: 2)
+            .AddRecipe("LayBrick", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 5), State(1), RecipeHistory.Empty)!;
+
+        plan.Phases.Where(p => p.RecipeInternalName == "ScribeRune").Sum(p => p.PredictedCrafts)
+            .Should().Be(2, because: "MaxUses=2 is a hard per-character lifetime cap");
+        plan.Phases.Should().Contain(p => p.RecipeInternalName == "LayBrick",
+            because: "the planner switches to the uncapped recipe once the cap is hit");
+        plan.FinalState.LevelOf(Skill).Should().Be(5, because: "the goal is still reached via the fallback");
+    }
+
+    [Fact]
+    public void MaxUses_PriorHistoryCountsAgainstTheCap()
+    {
+        // ScribeRune already crafted twice on this character ⇒ cap exhausted;
+        // it must not appear in the plan at all.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Rune").AddItem(2, "Brick")
+            .AddRecipe("ScribeRune", Skill, xp: 100, produces: (1, 1), skillLevelReq: 1, maxUses: 2)
+            .AddRecipe("LayBrick", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        var history = new RecipeHistory(new Dictionary<string, int> { ["ScribeRune"] = 2 });
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 4), State(1), history)!;
+
+        plan.Phases.Should().NotContain(p => p.RecipeInternalName == "ScribeRune",
+            because: "history completions count toward MaxUses — the cap is already spent");
+        plan.Phases.Should().OnlyContain(p => p.RecipeInternalName == "LayBrick");
+        plan.FinalState.LevelOf(Skill).Should().Be(4);
+    }
+
     // ── Minimal IReferenceDataService fake ───────────────────────────────
 
     private sealed class FakeRef : IReferenceDataService
@@ -230,7 +270,8 @@ public class CrossSkillPlannerTests
         public FakeRef AddRecipe(
             string internalName, string rewardSkill, int xp,
             (long id, int stack) produces,
-            int firstTime = 0, int skillLevelReq = 0, (long id, int stack)? ingredients = null)
+            int firstTime = 0, int skillLevelReq = 0, (long id, int stack)? ingredients = null,
+            int? maxUses = null)
         {
             var r = new Recipe
             {
@@ -242,6 +283,7 @@ public class CrossSkillPlannerTests
                 RewardSkill = rewardSkill,
                 RewardSkillXp = xp,
                 RewardSkillXpFirstTime = firstTime,
+                MaxUses = maxUses,
                 Ingredients = ingredients is { } ing
                     ? [new RecipeItemIngredient { ItemCode = ing.id, StackSize = ing.stack }]
                     : [],

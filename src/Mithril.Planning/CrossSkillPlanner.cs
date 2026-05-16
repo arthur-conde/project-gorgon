@@ -135,6 +135,10 @@ public sealed class CrossSkillPlanner
                     return (recipe: r, baseXp, reuse, effXp: baseXp + reuse);
                 })
                 .Where(x => x.effXp > 0 || unusedBonuses.Contains(x.recipe.Key))
+                // Respect the recipe's per-character lifetime cap (Recipe.MaxUses):
+                // a recipe exhausted by prior history or earlier phases this run is
+                // no longer craftable, so it can't be a grind OR a bonus source.
+                .Where(x => RemainingUses(x.recipe, completions) > 0)
                 .ToList();
 
             if (available.Count == 0) break;
@@ -180,6 +184,11 @@ public sealed class CrossSkillPlanner
             var needed = xpForLevel - xp;
             var crafts = (int)Math.Ceiling((double)needed / best.effXp);
             if (crafts < 1) crafts = 1;
+            // Never schedule a recipe past its lifetime cap; if that's short of
+            // the level, the loop re-picks the next-best recipe next iteration
+            // (this recipe is now exhausted ⇒ filtered out of `available`).
+            var remaining = RemainingUses(best.recipe, completions);
+            if (crafts > remaining) crafts = remaining;
 
             xp += (long)crafts * best.effXp;
             completed.Add(best.recipe.InternalName!);
@@ -333,6 +342,18 @@ public sealed class CrossSkillPlanner
 
     private static void Bump(IDictionary<string, int> map, string key, int by)
         => map[key] = map.TryGetValue(key, out var v) ? v + by : by;
+
+    /// <summary>
+    /// How many more times this recipe may be crafted given its per-character
+    /// lifetime cap (<see cref="Recipe.MaxUses"/> — Research recipes:
+    /// WeatherWitching / FireMagic / IceMagic, often <c>1</c>). <paramref name="completions"/>
+    /// is seeded from <see cref="RecipeHistory"/> and bumped per scheduled
+    /// craft, so it already holds prior + this-run uses. No cap ⇒ unbounded.
+    /// </summary>
+    private static int RemainingUses(Recipe recipe, IReadOnlyDictionary<string, int> completions)
+        => recipe.MaxUses is int max
+            ? Math.Max(0, max - (completions.TryGetValue(recipe.InternalName ?? "", out var c) ? c : 0))
+            : int.MaxValue;
 
     /// <summary>
     /// Merge consecutive non-bonus steps for the same recipe into one phase, then
