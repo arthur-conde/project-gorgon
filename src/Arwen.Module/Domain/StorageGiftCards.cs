@@ -1,3 +1,5 @@
+using Mithril.Reference.Models.Npcs;
+
 namespace Arwen.Domain;
 
 /// <summary>

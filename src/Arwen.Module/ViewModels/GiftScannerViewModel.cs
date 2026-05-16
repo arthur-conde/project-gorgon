@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Arwen.Domain;
 using Arwen.State;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Character;
 using Mithril.Shared.Game;
 using Mithril.Shared.Storage;
@@ -141,7 +142,7 @@ public sealed partial class GiftScannerViewModel : ObservableObject
 
         // Current favor snapshot — prefer exact value from Player.log, fall back to tier floor
         var currentFavor = SelectedNpc.ExactFavor
-                           ?? (double?)FavorTiers.FloorOf(SelectedNpc.CurrentTier);
+                           ?? FavorTiers.RepresentativeFavor(SelectedNpc.CurrentTier);
 
         var rows = new List<GiftScannerRow>();
         foreach (var item in report.Items)
@@ -165,23 +166,19 @@ public sealed partial class GiftScannerViewModel : ObservableObject
             var projectedTier = currentTier;
             var currentFrac = double.NaN;
             var projectedFrac = double.NaN;
-            var tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? FavorTiers.FloorOf(currentTier));
 
-            if (currentFavor.HasValue)
+            currentTier = FavorScale.TierForFavor(currentFavor);
+            var tierCeiling = FavorScale.CeilingOf(currentTier) ?? currentFavor;
+            currentFrac = FavorScale.ProgressInTier(currentFavor, currentTier);
+
+            if (estimatedTotal.HasValue)
             {
-                currentTier = FavorTiers.TierForFavor(currentFavor.Value);
-                tierCeiling = (double)(FavorTiers.CeilingOf(currentTier) ?? currentFavor.Value);
-                currentFrac = FavorTiers.ProgressInTier(currentFavor.Value, currentTier);
-
-                if (estimatedTotal.HasValue)
-                {
-                    var proj = currentFavor.Value + estimatedTotal.Value;
-                    projectedFavor = proj;
-                    projectedTier = FavorTiers.TierForFavor(proj);
-                    projectedFrac = projectedTier == currentTier
-                        ? FavorTiers.ProgressInTier(proj, currentTier)
-                        : 1.0; // projection crosses into a higher tier — show full bar
-                }
+                var proj = currentFavor + estimatedTotal.Value;
+                projectedFavor = proj;
+                projectedTier = FavorScale.TierForFavor(proj);
+                projectedFrac = projectedTier == currentTier
+                    ? FavorScale.ProgressInTier(proj, currentTier)
+                    : 1.0; // projection crosses into a higher tier — show full bar
             }
 
             rows.Add(new GiftScannerRow(

@@ -1,3 +1,5 @@
+using Mithril.Reference.Models.Npcs;
+
 namespace Mithril.Shared.Reference;
 
 /// <summary>
@@ -10,11 +12,11 @@ public interface IFavorLookupService
 {
     /// <summary>
     /// The known favor tier for the active character with this NPC, as the
-    /// game-log spelling (e.g. <c>"Neutral"</c>, <c>"CloseFriends"</c>).
-    /// Returns null when the player has not interacted with the NPC or no
-    /// favor data is available.
+    /// canonical <see cref="FavorTier"/>. Returns null when the player has not
+    /// interacted with the NPC or no favor data is available (distinct from
+    /// <see cref="FavorTier.Unknown"/>, which means an unparseable token).
     /// </summary>
-    string? GetFavorTier(string npcKey);
+    FavorTier? GetFavorTier(string npcKey);
 
     /// <summary>Fires when any NPC's favor tier may have changed.</summary>
     event EventHandler? FavorChanged;

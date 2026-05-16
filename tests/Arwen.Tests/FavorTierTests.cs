@@ -1,115 +1,34 @@
 using Arwen.Domain;
 using FluentAssertions;
+using Mithril.Reference.Models.Npcs;
 using Xunit;
 
 namespace Arwen.Tests;
 
 public sealed class FavorTierTests
 {
-    [Theory]
-    [InlineData(0, FavorTier.Neutral)]
-    [InlineData(99, FavorTier.Neutral)]
-    [InlineData(100, FavorTier.Comfortable)]
-    [InlineData(299, FavorTier.Comfortable)]
-    [InlineData(300, FavorTier.Friends)]
-    [InlineData(599, FavorTier.Friends)]
-    [InlineData(600, FavorTier.CloseFriends)]
-    [InlineData(1200, FavorTier.BestFriends)]
-    [InlineData(2000, FavorTier.LikeFamily)]
-    [InlineData(3000, FavorTier.SoulMates)]
-    [InlineData(5000, FavorTier.SoulMates)]
-    [InlineData(-1, FavorTier.Tolerated)]
-    [InlineData(-100, FavorTier.Tolerated)]
-    [InlineData(-101, FavorTier.Disliked)]
-    [InlineData(-600, FavorTier.Hated)]
-    [InlineData(-601, FavorTier.Despised)]
-    public void TierForFavor_ReturnsCorrectTier(double favor, FavorTier expected) =>
-        FavorTiers.TierForFavor(favor).Should().Be(expected);
+    [Fact]
+    public void TargetTierOptions_AreComfortableThroughSoulMates() =>
+        FavorTiers.TargetTierOptions.Should().Equal(
+            FavorTier.Comfortable, FavorTier.Friends, FavorTier.CloseFriends,
+            FavorTier.BestFriends, FavorTier.LikeFamily, FavorTier.SoulMates);
 
     [Fact]
-    public void FloorOf_ReturnsExpectedValues()
+    public void RepresentativeFavor_UsesFloor_AndDespisedFallsBackToCeiling()
     {
-        FavorTiers.FloorOf(FavorTier.Neutral).Should().Be(0);
-        FavorTiers.FloorOf(FavorTier.Friends).Should().Be(300);
-        FavorTiers.FloorOf(FavorTier.SoulMates).Should().Be(3000);
+        FavorTiers.RepresentativeFavor(FavorTier.Friends).Should().Be(300);
+        FavorTiers.RepresentativeFavor(FavorTier.Despised).Should().Be(-600);
+        FavorTiers.RepresentativeFavor(FavorTier.SoulMates).Should().Be(3000); // SoulMates returns its floor (3000), not the ceiling fallback
     }
 
     [Fact]
-    public void CapOf_ReturnsExpectedValues()
-    {
-        FavorTiers.CapOf(FavorTier.Neutral).Should().Be(100);
-        FavorTiers.CapOf(FavorTier.Friends).Should().Be(300);
-        FavorTiers.CapOf(FavorTier.LikeFamily).Should().Be(1000);
-        FavorTiers.CapOf(FavorTier.SoulMates).Should().BeNull();
-    }
+    public void Parse_UnknownToken_IsUnknown_NotNeutral() =>
+        FavorTierExtensions.Parse("InvalidTier").Should().Be(FavorTier.Unknown);
 
     [Theory]
-    [InlineData(0, FavorTier.Neutral, 0.0)]
-    [InlineData(50, FavorTier.Neutral, 0.5)]
-    [InlineData(100, FavorTier.Neutral, 1.0)]
-    [InlineData(300, FavorTier.Friends, 0.0)]
-    [InlineData(450, FavorTier.Friends, 0.5)]
-    public void ProgressInTier_CalculatesCorrectly(double favor, FavorTier tier, double expected) =>
-        FavorTiers.ProgressInTier(favor, tier).Should().BeApproximately(expected, 0.001);
-
-    [Fact]
-    public void ProgressInTier_SoulMates_ReturnsNaN() =>
-        double.IsNaN(FavorTiers.ProgressInTier(3500, FavorTier.SoulMates)).Should().BeTrue();
-
-    [Fact]
-    public void FavorToReachTier_FromNeutral()
-    {
-        // At favor 50, reaching Friends (floor 300) needs 250
-        FavorTiers.FavorToReachTier(50, FavorTier.Friends).Should().Be(250);
-    }
-
-    [Fact]
-    public void FavorToReachTier_AlreadyThere_ReturnsZero() =>
-        FavorTiers.FavorToReachTier(500, FavorTier.Friends).Should().Be(0);
-
-    [Fact]
-    public void FavorToSoulMates_FromZero() =>
-        FavorTiers.FavorToSoulMates(0).Should().Be(3000);
-
-    [Fact]
-    public void TierBreakdown_FromNeutral()
-    {
-        var breakdown = FavorTiers.TierBreakdown(50);
-        breakdown.Should().NotBeEmpty();
-        breakdown[0].Tier.Should().Be(FavorTier.Neutral);
-        breakdown[0].Remaining.Should().Be(50); // 100 - 50 = 50 to get past Neutral
-    }
-
-    [Theory]
-    [InlineData("Friends", true, FavorTier.Friends)]
-    [InlineData("CloseFriends", true, FavorTier.CloseFriends)]
-    [InlineData("SoulMates", true, FavorTier.SoulMates)]
-    [InlineData("InvalidTier", false, FavorTier.Neutral)]
-    [InlineData(null, false, FavorTier.Neutral)]
-    public void TryParse_HandlesAllCases(string? input, bool expectedSuccess, FavorTier expectedTier)
-    {
-        var result = FavorTiers.TryParse(input, out var tier);
-        result.Should().Be(expectedSuccess);
-        tier.Should().Be(expectedTier);
-    }
-
-    // Guard for #372: every FavorTier member name must be the canonical game-log token,
-    // so it round-trips through TryParse of its own name. (Regression: "Hatred" vs "Hated".)
-    [Theory]
-    [MemberData(nameof(AllTiers))]
-    public void TryParse_RoundTripsEveryMemberName(FavorTier tier)
-    {
-        FavorTiers.TryParse(tier.ToString(), out var parsed).Should().BeTrue();
-        parsed.Should().Be(tier);
-    }
-
-    public static TheoryData<FavorTier> AllTiers() =>
-        [.. Enum.GetValues<FavorTier>()];
-
-    [Fact]
-    public void TryParse_Hated_ResolvesToHatedTier()
-    {
-        FavorTiers.TryParse("Hated", out var tier).Should().BeTrue();
-        tier.Should().Be(FavorTier.Hated);
-    }
+    [InlineData("Friends", FavorTier.Friends)]
+    [InlineData("Hated", FavorTier.Hated)]
+    [InlineData("SoulMates", FavorTier.SoulMates)]
+    public void Parse_KnownTokens(string token, FavorTier expected) =>
+        FavorTierExtensions.Parse(token).Should().Be(expected);
 }
