@@ -25,6 +25,28 @@ Each **Does NOT own** entry is tagged:
 `Owns` lines are grounded in current code and are lower-risk; `Reference data` lists
 what the module legitimately consumes within its charter (not everything it *could*).
 
+A **Does NOT own** entry is one of two kinds, and the distinction matters:
+
+- **Hard (authority):** another module or the game engine is the source of truth;
+  doing it here would duplicate/contradict authority. Example: Gandalf vs. quest
+  eligibility. *Must not.*
+- **Soft (empty):** on-charter-adjacent and not prohibited, but a deliberate
+  non-feature — the underlying mechanic is trivial or the data doesn't exist, so there
+  is nothing worth building. Example: Samwise vs. crop-selection advice. *Won't,
+  because empty.* These are still binding decisions, just for a different reason.
+
+---
+
+## Cross-cutting ownership (confirmed)
+
+Applies to *every* module; owner-confirmed 2026-05-16:
+
+- **Recipe / crafting → Elrond or Celebrimbor.** Anything recipe- or crafting-related
+  — items as crafting ingredients, crafting *use* of an item, craft planning, leveling
+  *via* recipes — is owned by **Elrond** (leveling advice) or **Celebrimbor** (planning
+  / execution), never by the module that happens to produce or hold the item. Cited by
+  Samwise (crops), Pippin (food), and Bilbo (craftables) below.
+
 ---
 
 ## Samwise — garden tracker
@@ -36,11 +58,17 @@ what the module legitimately consumes within its charter (not everything it *cou
   Alarms are loss-prevention, not merely a ripeness/harvest-ready notification.
   (See `samwise-parser` memory: identification trade-offs, alias-learning convergence.)
 - **Does NOT own:**
-  - ⚠️ *What to plant / crop economics / yield optimization.* It tracks the garden; it
-    does not advise on it. (The "first and foremost a *tracker*" framing leans this
-    way, but the exact boundary is not owner-confirmed.)
-  - ⚠️ *Cooking/crafting use of crops.* Crop-as-ingredient is Celebrimbor/Pippin.
-- **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`).
+  - **✅ confirmed (owner, 2026-05-16) — soft/empty** — *Crop-selection / yield
+    optimization.* Not prohibited (Samwise *could* suggest what to plant) but a
+    deliberate non-feature: PG gardening is intentionally trivial (plant → water when
+    thirsty → fertilize when hungry → collect when ready), so there is nothing to
+    optimize. Gardening XP is likely deterministic but, unlike recipe XP, the values
+    are **not in reference data** — so XP-driven advice isn't even data-feasible.
+  - **✅ confirmed (owner, 2026-05-16)** — *Anything recipe/crafting* (crops as
+    ingredients, cooking with crops) → Elrond/Celebrimbor, per the cross-cutting rule.
+- **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`). Gardening
+  XP is *not* in reference data (contrast: recipe XP tables are), so no XP-driven
+  gardening feature is data-feasible today.
 
 ## Pippin — Gourmand support (food-variety tracking)
 
@@ -52,7 +80,8 @@ what the module legitimately consumes within its charter (not everything it *cou
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *Food buffs.* Pippin tracks nothing about
     buff effects or buff uptime. Gourmand novelty only.
-  - ⚠️ *Crafting food.* That's Celebrimbor.
+  - **✅ confirmed** — *Crafting food* → Celebrimbor, per the cross-cutting
+    recipe/crafting rule.
   - ⚠️ *Food provenance browsing* (where a food comes from). That's Silmarillion.
 - **Reference data:** `Items` (food catalog / `FoodDesc` to enumerate the universe of
   foods and identify which items are food).
@@ -106,8 +135,10 @@ what the module legitimately consumes within its charter (not everything it *cou
 
 - **Owns:** parsing storage/inventory exports, inventory query, and location chips.
 - **Does NOT own:**
-  - ⚠️ *Craft planning* (multi-recipe shopping lists). That's Celebrimbor.
-  - ⚠️ *Leveling advice.* That's Elrond.
+  - **✅ confirmed** — *Craft planning* (multi-recipe shopping lists) → Celebrimbor,
+    per the cross-cutting recipe/crafting rule.
+  - **✅ confirmed** — *Leveling advice* → Elrond, per the cross-cutting rule
+    (leveling via recipes is Elrond's).
 - **Reference data:** `Items`, `Recipes`, keyword index (craftable-from-on-hand).
   *(The inventory-query surface is a candidate for shared extraction — Celebrimbor §1
   `IInventoryQueryService`; Bilbo would consume the shared service.)*
@@ -162,8 +193,13 @@ libraries; the charter follows the code:
 - **2026-05-16** — Samwise charter confirmed by owner: first and foremost a garden
   tracker — interprets `Player.log` to track plantings + state transitions and alarms
   so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
-  confirmed; ⚠️ tracker-not-advisor boundary left inferred (framing leans that way,
-  not explicitly ruled on).
+  confirmed.
+- **2026-05-16** — Samwise boundaries refined by owner: crop-selection/yield advice is
+  a *soft* non-feature (PG gardening trivial; gardening XP absent from ref data), not a
+  prohibition — promoted to ✅. Recipe/crafting confirmed as Elrond/Celebrimbor
+  territory and lifted into a new "Cross-cutting ownership (confirmed)" section
+  (recurs for Pippin/Bilbo). Added the hard-vs-soft does-not-own distinction to the
+  reading guide.
 - **2026-05-16** — Pippin charter corrected by owner: it supplements the **Gourmand**
   skill (food-novelty tracking — foods *not yet eaten*), not buff/consumption tracking.
   Owns + the no-buffs boundary promoted to ✅ confirmed. The earlier draft's
