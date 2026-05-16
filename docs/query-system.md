@@ -12,6 +12,54 @@ text query into an AST, compiles to a `Func<object, bool>` against a schema
 reflected from your row type's public properties, and offers three consumer
 surfaces depending on where you want filtering to apply.
 
+This grammar is now a deliberate, named DSL — the **Mithril Query Language
+(MQL)**. It has been extended several times (object-collection quantifiers,
+ordinal enum columns, collection cardinality) and will be again; naming it and
+giving it the charter below means each "can we add X?" is judged against a
+written contract instead of re-litigated ad hoc. The name is cheap; the
+contract is the point.
+
+## Charter — what MQL is, and is not
+
+**Invariants (every addition must hold all four):**
+
+1. **Column-first, predicate-only.** Every clause is `<column> <op> …`. There
+   are **no scalar expressions on the left** — no `f(col) <op> x`, no
+   arithmetic, no function library. The LHS is always a bound column.
+2. **Schema-reflected, in-memory.** It compiles to `Func<object,bool>` over a
+   schema reflected from public properties. It is **not** `IQueryable`/EF;
+   anything added must be expressible as a boolean over a row (or, inside a
+   quantifier, an element).
+3. **Set-oriented, unordered.** Collections are sets to test, not sequences.
+   No positional/index/`FIRST`/`LAST` operators — element order is not
+   meaningful in the data.
+4. **One idiom per need.** `CONTAINS` = keyword/element match;
+   `WITH ANY|ALL|NONE (…)` = per-element correlation; `IS [NOT] EMPTY|NULL` =
+   cardinality/presence; ordinal comparison is carried by the *column's type*
+   (e.g. an enum), never by special-casing names. Don't add a second way to
+   say something that already has one.
+
+**Explicitly out of charter (do not propose without first amending this
+section):**
+
+- **`COUNT(col)` / `SUM` / `MAX` / aggregate expressions.** They violate
+  invariant 1 (scalar expression on the LHS). Cardinality is expressed with
+  *counted quantifiers* instead — `WITH AT LEAST|AT MOST|EXACTLY n (…)`
+  ([#378](https://github.com/moumantai-gg/mithril/issues/378)) — which stay
+  column-first and reuse the quantifier machinery.
+- **A scalar function library** (`LOWER`, `LENGTH`, date-part extraction, …).
+  Case-insensitivity is default and `LIKE` exists; these multiply surface
+  area and fight invariant 1.
+- **Positional / ordering element operators** (invariant 3).
+
+**Governance.** Extensions are issue-first (per the repo's where-things-live
+rule) and the issue must state which idiom it extends and confirm all four
+invariants. Currently queued *in-charter* extensions:
+[#377](https://github.com/moumantai-gg/mithril/issues/377) (`CONTAINS
+ANY|ALL|NONE (<set>)`) and
+[#378](https://github.com/moumantai-gg/mithril/issues/378) (counted
+quantifiers).
+
 ## The grammar at a glance
 
 ```
