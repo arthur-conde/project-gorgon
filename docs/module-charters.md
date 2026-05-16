@@ -46,6 +46,14 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   *via* recipes — is owned by **Elrond** (leveling advice) or **Celebrimbor** (planning
   / execution), never by the module that happens to produce or hold the item. Cited by
   Samwise (crops), Pippin (food), and Bilbo (craftables) below.
+- **Displaying reference data is not turf; *being the browser* is.** Any module may
+  *render* reference data when its own purpose needs it (Celebrimbor shows
+  recipes/effects to plan crafts; Pippin shows food provenance for Gourmand). That
+  does **not** make it a co-owner of browsing. **Silmarillion is *the* reference-data
+  browser** — the dedicated, general, authoritative surface; every other module is
+  "just another place the data happens to be displayed." "Renders some data" ≠ "owns
+  the browser role." (Same shape as the shared-infra rule: ubiquitous capability,
+  single owner.)
 
 ---
 
@@ -173,9 +181,12 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Silmarillion — reference-data browser
 
-- **Owns: ✅ confirmed** — browsing and cross-linking reference data (master-detail,
-  navigator, provenance popups). Field-level scope is governed by
-  [silmarillion-field-coverage.md](silmarillion-field-coverage.md); tab scope by
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — *Silmarillion is **the** reference-data
+  browser*: the dedicated, authoritative surface for browsing and cross-linking **all**
+  reference data (master-detail, navigator, provenance popups). Other modules may
+  render reference data incidentally to their own purpose, but "being the browser" is
+  Silmarillion's charter alone. Field-level scope:
+  [silmarillion-field-coverage.md](silmarillion-field-coverage.md); tab scope:
   [silmarillion-roadmap.md](silmarillion-roadmap.md).
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
@@ -203,14 +214,14 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     *consumes* a target list; whatever decides that list (Elrond / the #227 cross-skill
     planner) is upstream. #228's "plan-aware craft list" means Celebrimbor *receives* a
     computed plan as targets — it does not compute it.
-  - **✅ confirmed (owner, 2026-05-16)** — *Generic reference browsing / cross-link
-    navigation* → Silmarillion. **Recipe *display* deliberately overlaps** — both
-    modules show a recipe — differentiated by *purpose*: Silmarillion browses it;
-    Celebrimbor shows it in service of a craft plan and additionally previews its
-    treasure (ResultEffects) outcomes ("what you might get"). The effect-preview
-    capability is **shared infra** (`Mithril.Shared.ResultEffectsParser`), owned by
-    neither; Silmarillion just does not consume it yet — tracked as #214, a *gap, not
-    a boundary*.
+  - **✅ confirmed (owner, 2026-05-16)** — *Reference browsing.* Silmarillion is **the**
+    reference browser; Celebrimbor rendering recipe/effect data is **incidental to
+    planning, not a co-owned browsing role** — "just another place the data is
+    displayed." It shows a recipe in service of a craft plan and previews its treasure
+    (ResultEffects) outcomes. That effect-preview capability is **shared infra**
+    (`Mithril.Shared.ResultEffectsParser`), owned by neither; Silmarillion simply does
+    not consume it yet — #214, a *gap, not a boundary*. (Displaying data ≠ owning the
+    browser role — see the data-display cross-cutting rule above.)
 - **Reference data:** `Recipes`, `Items`, `ResultEffectsParser` previews, `Areas`
   (source resolution), inventory.
 
@@ -251,6 +262,12 @@ libraries; the charter follows the code:
   while Silmarillion currently does not (#214: gap, not boundary). Added a carve-out
   to Silmarillion's "no computation" line so #214 can't be misread as a charter
   violation; listed `ResultEffectsParser` as shipped shared infra owned by neither.
+- **2026-05-16** — Owner sharpened the asymmetry: it is *not* symmetric overlap —
+  **Silmarillion is *the* reference browser; Celebrimbor is just another place the
+  data is displayed.** Generalised into a cross-cutting rule ("displaying data is not
+  turf; being the browser is"), parallel to the shared-infra rule. Silmarillion Owns
+  + the Celebrimbor browsing line reworded from "deliberate overlap" to this
+  asymmetric framing.
 - **2026-05-16** — Pippin data source corrected: the in-game report is *dumped into*
   `Player.log` (Pippin reads it there today) and *also* exists as an un-consumed
   standalone raw text file — the prior flat "not `Player.log`" was wrong. Endorsed
