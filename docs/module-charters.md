@@ -39,14 +39,20 @@ what the module legitimately consumes within its charter (not everything it *cou
   - ⚠️ *Cooking/crafting use of crops.* Crop-as-ingredient is Celebrimbor/Pippin.
 - **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`).
 
-## Pippin — food consumption tracking
+## Pippin — Gourmand support (food-variety tracking)
 
-- **Owns:** tracking food/buff consumption from the log and the food catalog
-  (`FoodDesc` extraction).
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — supplementing PG's **Gourmand** skill,
+  which levels from eating foods *not previously eaten*. Pippin tracks the per-character
+  set of foods already eaten (from the log) against the food catalog and surfaces the
+  not-yet-eaten foods so the player can progress Gourmand. It is about food
+  *novelty/variety*, not buffs.
 - **Does NOT own:**
-  - ⚠️ *Recommending what to eat, or crafting food.* Advice/crafting is Elrond/Celebrimbor.
+  - **✅ confirmed (owner, 2026-05-16)** — *Food buffs.* Pippin tracks nothing about
+    buff effects or buff uptime. Gourmand novelty only.
+  - ⚠️ *Crafting food.* That's Celebrimbor.
   - ⚠️ *Food provenance browsing* (where a food comes from). That's Silmarillion.
-- **Reference data:** `Items` (food descriptors).
+- **Reference data:** `Items` (food catalog / `FoodDesc` to enumerate the universe of
+  foods and identify which items are food).
 
 ## Legolas — surveying & route optimization
 
@@ -150,3 +156,8 @@ libraries; the charter follows the code:
   owner/design-doc-confirmed (Gandalf eligibility confirmed by owner this date; Elrond
   recipe-anchoring and Silmarillion browser-not-calculator from existing design docs).
   All ⚠️ entries are unconfirmed Claude drafts pending owner sign-off.
+- **2026-05-16** — Pippin charter corrected by owner: it supplements the **Gourmand**
+  skill (food-novelty tracking — foods *not yet eaten*), not buff/consumption tracking.
+  Owns + the no-buffs boundary promoted to ✅ confirmed. The earlier draft's
+  "recommending what to eat" non-ownership was deleted — it contradicted the real
+  charter (surfacing un-eaten foods *is* Pippin's job).
