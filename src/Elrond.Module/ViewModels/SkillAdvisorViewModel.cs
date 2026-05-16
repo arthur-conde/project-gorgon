@@ -70,12 +70,19 @@ public sealed partial class SkillAdvisorViewModel
 
     public ICollectionView RecipesView { get; }
 
+    /// <summary>
+    /// The "Generate leveling plan" surface (#228 PR-B/B2), hosted as a peer
+    /// tab. Seeded — but not clobbered — from the advisor's current skill/goal.
+    /// </summary>
+    public GenerateLevelingPlanViewModel GeneratePlan { get; }
+
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
         LevelingSimulator simulator,
         IActiveCharacterService characterData,
         IReferenceDataService referenceData,
         ElrondSettings settings,
+        GenerateLevelingPlanViewModel generatePlan,
         Func<ICraftListImportTarget?>? craftListImportAccessor = null)
     {
         _engine = engine;
@@ -83,6 +90,7 @@ public sealed partial class SkillAdvisorViewModel
         _activeChar = characterData;
         _referenceData = referenceData;
         _settings = settings;
+        GeneratePlan = generatePlan;
         _craftListImportAccessor = craftListImportAccessor;
 
         _goalLevel = settings.LastGoalLevel;
@@ -279,6 +287,7 @@ public sealed partial class SkillAdvisorViewModel
             _settings.LastSkill = value;
         UpdateSelectedSkillSummary(value);
         ResetSimulationStartState();
+        GeneratePlan?.SeedFromAdvisor(value, GoalLevel);
         Reanalyze();
     }
 
@@ -292,6 +301,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         _settings.LastGoalLevel = value;
         SimulationResult = null;
+        GeneratePlan?.SeedFromAdvisor(SelectedSkill, value);
         Reanalyze();
     }
 
