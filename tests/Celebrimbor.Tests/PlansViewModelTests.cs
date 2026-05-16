@@ -137,4 +137,17 @@ public class PlansViewModelTests
         vm.StaleCount.Should().Be(1);
         vm.Rows[0].Status.Should().Be(SavedPlanStatus.Stale);
     }
+
+    [Fact]
+    public void Row_TitleUsesSkillDisplayName_FallingBackToKey()
+    {
+        var plan = PlanFixtures.Plan("WeaponAugmentBrewing", 1, 9, 0,
+            [PlanFixtures.Phase(0, "ForgeBar", 5, 1, 9)]);
+
+        new SavedPlanRowViewModel(plan, isStale: false, "Weapon Augmentation")
+            .Title.Should().StartWith("Weapon Augmentation", because: "the row shows the human skill name");
+
+        new SavedPlanRowViewModel(plan, isStale: false, skillDisplayName: null)
+            .Title.Should().StartWith("WeaponAugmentBrewing", because: "no reference data ⇒ fall back to the key");
+    }
 }

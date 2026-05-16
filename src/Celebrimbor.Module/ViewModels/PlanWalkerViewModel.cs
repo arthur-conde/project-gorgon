@@ -108,7 +108,7 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
         var walk = _executor.Evaluate(plan, onHand);
         var live = _executor.ResolveLiveSnapshot(plan.Character);
 
-        Skill = plan.Skill;
+        Skill = SkillDisplayName(plan.Skill);
         CharacterLabel = plan.Character is { } c ? $"{c.Name} @ {c.Server}" : "hypothetical";
         GoalLabel = $"Goal L{plan.GoalLevel}";
         var phaseCount = plan.Phases.Count;
@@ -129,7 +129,7 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
         PhaseCountLabel = IsPlanComplete ? $"{phaseCount} / {phaseCount} complete" : $"{phaseCount} total";
 
         IsStale = !_staleDismissed && live is not null && plan.IsInitialStateStaleAgainst(live);
-        StaleSummary = IsStale ? BuildStaleSummary(plan, live!) : "";
+        StaleSummary = IsStale ? BuildStaleSummary(plan, live!, Skill) : "";
         CreatedAgeText = HumanizeAge(DateTimeOffset.Now - plan.CreatedAt);
 
         BuildRail(plan, walk, live);
@@ -246,7 +246,7 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
         if (walk.CurrentPhase is not { } cur || string.IsNullOrEmpty(cur.RecipeInternalName)) return;
         _craftList.ImportRecipes(
             [new CraftListImportEntry(cur.RecipeInternalName, Math.Max(1, cur.PredictedCrafts))],
-            $"Leveling plan · {_plan.Skill}");
+            $"Leveling plan · {SkillDisplayName(_plan.Skill)}");
     }
 
     /// <summary>
@@ -294,18 +294,26 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
     [RelayCommand]
     private void BackToLibrary() => BackRequested?.Invoke(this, EventArgs.Empty);
 
-    private static string BuildStaleSummary(SavedLevelingPlan plan, Mithril.Shared.Character.CharacterSnapshot live)
+    private static string BuildStaleSummary(SavedLevelingPlan plan, Mithril.Shared.Character.CharacterSnapshot live, string skillDisplay)
     {
         var newRecipes = live.RecipeCompletions.Keys
             .Count(k => !plan.InitialRecipeCompletions.ContainsKey(k));
         var skillNote = plan.InitialSkills.TryGetValue(plan.Skill, out var was)
             && live.Skills.TryGetValue(plan.Skill, out var now) && now.Level != was.Level
-            ? $"{plan.Skill} L{was.Level} → L{now.Level}"
-            : $"{plan.Skill} baseline unchanged";
+            ? $"{skillDisplay} L{was.Level} → L{now.Level}"
+            : $"{skillDisplay} baseline unchanged";
         return newRecipes > 0
             ? $"{skillNote} · {newRecipes} new recipe(s) since this plan was generated"
             : $"{skillNote} · progression changed since this plan was generated";
     }
+
+    /// <summary>
+    /// Resolve a skill's id-shaped key to its human display name (convention:
+    /// reverse-lookup internalName→display where reference data allows; the
+    /// model still stores the key). Falls back to the key when unknown.
+    /// </summary>
+    private string SkillDisplayName(string skillKey)
+        => _ref.Skills.TryGetValue(skillKey, out var e) ? e.DisplayName : skillKey;
 
     private static string HumanizeAge(TimeSpan age)
     {

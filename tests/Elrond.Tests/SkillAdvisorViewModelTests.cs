@@ -343,7 +343,7 @@ public class SkillAdvisorViewModelTests
 
     // #228 PR-B/B2: SkillAdvisorViewModel now hosts the Generate-plan child VM.
     private static GenerateLevelingPlanViewModel Gen(IReferenceDataService refData, IActiveCharacterService chr)
-        => new(chr, new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)));
+        => new(chr, new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)), refData);
 
     private static SkillAdvisorViewModel MakeVmWithImportTarget(
         out FakeRefData refData, out FakeCraftListImportTarget importTarget)

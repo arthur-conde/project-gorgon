@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Mithril.Planning;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
 
 namespace Celebrimbor.ViewModels;
 
@@ -26,6 +27,7 @@ public sealed partial class PlansViewModel : ObservableObject
     private readonly PlanExecutor _executor;
     private readonly OnHandInventoryQuery _onHand;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IReferenceDataService? _referenceData;
     private readonly IModuleActivator? _activator;
     private readonly Func<string?> _pickPlanFile;
     private readonly Func<SavedPlanRowViewModel, bool> _confirmDelete;
@@ -36,6 +38,7 @@ public sealed partial class PlansViewModel : ObservableObject
         OnHandInventoryQuery onHand,
         IActiveCharacterService activeChar,
         PlanWalkerViewModel walker,
+        IReferenceDataService? referenceData = null,
         IModuleActivator? activator = null,
         Func<string?>? pickPlanFile = null,
         Func<SavedPlanRowViewModel, bool>? confirmDelete = null)
@@ -44,6 +47,7 @@ public sealed partial class PlansViewModel : ObservableObject
         _executor = executor;
         _onHand = onHand;
         _activeChar = activeChar;
+        _referenceData = referenceData;
         _activator = activator;
         _pickPlanFile = pickPlanFile ?? DefaultPickPlanFile;
         _confirmDelete = confirmDelete ?? DefaultConfirmDelete;
@@ -96,7 +100,7 @@ public sealed partial class PlansViewModel : ObservableObject
         var live = _activeChar.ActiveCharacter;
         _allRows = _store.All()
             .OrderByDescending(p => p.CreatedAt)
-            .Select(p => new SavedPlanRowViewModel(p, IsStale(p, live)))
+            .Select(p => new SavedPlanRowViewModel(p, IsStale(p, live), SkillDisplay(p.Skill)))
             .ToList();
 
         AllCount = _allRows.Count;
@@ -126,6 +130,15 @@ public sealed partial class PlansViewModel : ObservableObject
 
     private static bool IsStale(SavedLevelingPlan plan, CharacterSnapshot? live)
         => live is not null && plan.IsInitialStateStaleAgainst(live);
+
+    /// <summary>
+    /// Resolve a skill's id-shaped key to its human display name (convention:
+    /// reverse-lookup internalName→display where reference data allows; the
+    /// persisted plan still stores the key). Falls back to the key.
+    /// </summary>
+    private string SkillDisplay(string skillKey)
+        => _referenceData is not null && _referenceData.Skills.TryGetValue(skillKey, out var e)
+            ? e.DisplayName : skillKey;
 
     [RelayCommand]
     private void SetFilter(PlanFilter filter) => ActiveFilter = filter;
