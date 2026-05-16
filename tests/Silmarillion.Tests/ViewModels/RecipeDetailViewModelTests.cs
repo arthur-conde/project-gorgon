@@ -161,23 +161,28 @@ public sealed class RecipeDetailViewModelTests
     }
 
     [Fact]
-    public void SharedCooldownNote_UsesResolvedDisplayName_WhenProvided()
+    public void SharedCooldownChip_IsANavigableRecipeCrossLink_WhenProvided()
     {
+        // SharesResetTimerWith is a recipe→recipe edge (19/19 corpus values are real
+        // recipe InternalNames) — it must be a navigable chip, not dead prose.
+        var chip = new EntityChipVm("Make Roux", IconId: 7,
+            Reference: EntityRef.Recipe("MakeRouxInternal"), IsNavigable: true);
+
         var vm = new RecipeDetailViewModel(
             SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [],
-            sharesResetTimerDisplayName: "Make Roux");
+            sharedCooldownChip: chip);
 
-        vm.SharedCooldownNote.Should().Be("Shares its cooldown with Make Roux");
+        vm.SharedCooldownChip.Should().BeSameAs(chip);
+        vm.SharedCooldownChip!.Reference!.Kind.Should().Be(EntityKind.Recipe);
+        vm.SharedCooldownChip.IsNavigable.Should().BeTrue();
+        vm.SharedCooldownLabel.Should().Be("Shares cooldown with");
     }
 
     [Fact]
-    public void SharedCooldownNote_FallsBackToInternalName_AndIsEmptyWhenAbsent()
+    public void SharedCooldownChip_IsNullWhenAbsent()
     {
-        new RecipeDetailViewModel(SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [])
-            .SharedCooldownNote.Should().Be("Shares its cooldown with MakeRouxInternal");
-
         new RecipeDetailViewModel(SampleRecipe(), [], [], [])
-            .SharedCooldownNote.Should().BeEmpty();
+            .SharedCooldownChip.Should().BeNull();
     }
 
     [Fact]

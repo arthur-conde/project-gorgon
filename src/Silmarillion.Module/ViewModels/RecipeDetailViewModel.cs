@@ -43,7 +43,7 @@ public sealed class RecipeDetailViewModel
         IReadOnlyList<RecipeKeywordSlotVm>? keywordSlots = null,
         IReadOnlyList<string>? otherRequirementLines = null,
         IReadOnlyList<EntityChipVm>? recipeRequirementChips = null,
-        string? sharesResetTimerDisplayName = null)
+        EntityChipVm? sharedCooldownChip = null)
     {
         Recipe = recipe;
         Ingredients = ingredients;
@@ -57,9 +57,7 @@ public sealed class RecipeDetailViewModel
         RecipeRequirementChips = recipeRequirementChips ?? [];
         CostLines = BuildCostLines(recipe.Costs);
         CooldownChip = BuildCooldownChip(recipe.ResetTimeInSeconds);
-        SharedCooldownNote = string.IsNullOrEmpty(recipe.SharesResetTimerWith)
-            ? ""
-            : $"Shares its cooldown with {sharesResetTimerDisplayName ?? recipe.SharesResetTimerWith}";
+        SharedCooldownChip = sharedCooldownChip;
     }
 
     /// <summary>
@@ -175,11 +173,18 @@ public sealed class RecipeDetailViewModel
     public string CooldownChip { get; }
 
     /// <summary>
-    /// "Shares its cooldown with {recipe}" when <see cref="Recipe.SharesResetTimerWith"/>
-    /// is set (the referenced recipe resolved to its display name by the hosting tab);
-    /// empty string otherwise.
+    /// Navigable cross-link for <see cref="Recipe.SharesResetTimerWith"/> — every value
+    /// in the corpus (19/19) is a real recipe <c>InternalName</c>, so this is a recipe→
+    /// recipe edge of the same shape as <see cref="RecipeRequirementChips"/>, not prose.
+    /// Built by the hosting tab (resolves the name + <c>navigator.CanOpen</c>); null when
+    /// the field is absent. Kept distinct from <see cref="RecipeRequirementChips"/>
+    /// because a shared-cooldown grouping is not a requirement gate — the view labels it
+    /// "<see cref="SharedCooldownLabel"/>" so the two don't read as the same thing.
     /// </summary>
-    public string SharedCooldownNote { get; }
+    public EntityChipVm? SharedCooldownChip { get; }
+
+    /// <summary>Prefix shown before <see cref="SharedCooldownChip"/>.</summary>
+    public string SharedCooldownLabel => "Shares cooldown with";
 
     private static IReadOnlyList<string> BuildCostLines(IReadOnlyList<RecipeCost>? costs)
     {

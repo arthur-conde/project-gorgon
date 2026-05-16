@@ -73,8 +73,8 @@
                  deliberately punts on (docs/planner-recipe-field-consumption.md — this
                  section is the display half that makes that punt sound), plus 1:1
                  navigable chips for the recipe-referencing kinds (RecipeKnown /
-                 cross-recipe RecipeUsed), plus the shared-cooldown note. Whole section
-                 self-hides when the recipe carries none of the three. -->
+                 cross-recipe RecipeUsed), plus the shared-cooldown cross-link chip.
+                 Whole section self-hides when the recipe carries none of the three. -->
             <StackPanel Margin="0,0,0,10">
                 <StackPanel.Style>
                     <Style TargetType="StackPanel">
@@ -86,7 +86,9 @@
                             <DataTrigger Binding="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
-                            <DataTrigger Binding="{Binding SharedCooldownNote, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                            <!-- NullToVis (not NullOrEmptyToVis — that's string-only and
+                                 silently collapses an object binding). -->
+                            <DataTrigger Binding="{Binding SharedCooldownChip, Converter={StaticResource NullToVis}}" Value="Visible">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                         </Style.Triggers>
@@ -104,10 +106,6 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Text="{Binding SharedCooldownNote}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           TextWrapping="Wrap" Margin="0,0,0,2"
-                           Visibility="{Binding SharedCooldownNote, Converter={StaticResource NullOrEmptyToVis}}"/>
                 <ItemsControl ItemsSource="{Binding RecipeRequirementChips}" Margin="0,4,0,0"
                               Visibility="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}">
                     <ItemsControl.ItemsPanel>
@@ -119,6 +117,25 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- Shared-cooldown grouping. A recipe→recipe edge (every corpus value is
+                     a real recipe InternalName), so it's a navigable chip, not prose —
+                     but labelled distinctly from the requirement chips above because a
+                     cooldown grouping isn't a gate. Mirrors QuestDetailView's
+                     giver/turn-in prefix+chip pattern; StackPanel collapses on a null
+                     chip so the ContentControl template never instantiates dead. -->
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                            Visibility="{Binding SharedCooldownChip, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="{Binding SharedCooldownLabel}" Foreground="#88FFFFFF"
+                               FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ContentControl Content="{Binding SharedCooldownChip}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
+                </StackPanel>
             </StackPanel>
 
             <!-- Cost: currency to perform the recipe. The planner ignores Costs by

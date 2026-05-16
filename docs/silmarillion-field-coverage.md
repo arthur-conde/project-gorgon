@@ -57,7 +57,8 @@ chips, via `RecipeRequirementProjector`; `PetTypeTag` resolved through
 NPC/monster entities, "SummonedBakingBread" → "Rising Dough", not camel-split;
 #342), `Costs` ("Cost" lines; #342),
 `ResetTimeInSeconds` (cooldown chip beside `MaxUses`) + `SharesResetTimerWith`
-(resolved "Shares its cooldown with …" note; #342).
+(navigable recipe→recipe cross-link chip — every corpus value 19/19 is a real
+recipe `InternalName` — labelled "Shares cooldown with", not prose; #342).
 
 **Deliberate omissions** (taxonomy classes 1–4): `Key`, `UsageAnimation`,
 `UsageAnimationEnd`, `UsageDelay`, `UsageDelayMessage`, `ActionLabel`, `Particle`,
