@@ -101,7 +101,7 @@ public sealed class QuestsTabViewModelTests
     }
 
     [Fact]
-    public void QuestListRow_IsRepeatable_TrueWhenAnyReuseTimeFieldIsPositive()
+    public void QuestListRow_CadenceProjection_FlowsFromClassifier()
     {
         var refData = new StubReferenceData
         {
@@ -114,9 +114,20 @@ public sealed class QuestsTabViewModelTests
         };
         var vm = BuildVm(refData);
 
-        vm.AllQuests.Single(r => r.InternalName == "OneOff").IsRepeatable.Should().BeFalse();
-        vm.AllQuests.Single(r => r.InternalName == "DailyHours").IsRepeatable.Should().BeTrue();
-        vm.AllQuests.Single(r => r.InternalName == "WeeklyDays").IsRepeatable.Should().BeTrue();
+        var oneOff = vm.AllQuests.Single(r => r.InternalName == "OneOff");
+        oneOff.IsRepeatable.Should().BeFalse();
+        oneOff.Cadence.Should().Be(QuestCadence.OneTime);
+        oneOff.ReuseMinutes.Should().Be(0);
+
+        var daily = vm.AllQuests.Single(r => r.InternalName == "DailyHours");
+        daily.IsRepeatable.Should().BeTrue();
+        daily.Cadence.Should().Be(QuestCadence.Daily);
+        daily.ReuseMinutes.Should().Be(20 * 60);
+
+        var weekly = vm.AllQuests.Single(r => r.InternalName == "WeeklyDays");
+        weekly.IsRepeatable.Should().BeTrue();
+        weekly.Cadence.Should().Be(QuestCadence.Weekly);
+        weekly.ReuseMinutes.Should().Be(7 * 24 * 60);
     }
 
     [Fact]

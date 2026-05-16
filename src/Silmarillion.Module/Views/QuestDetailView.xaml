@@ -192,6 +192,7 @@
                              a daily from a one-shot is the first piece of info a player wants. -->
                         <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
                                 CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
+                                ToolTip="{Binding RepeatabilityDetail}"
                                 Visibility="{Binding RepeatabilityChip, Converter={StaticResource NullOrEmptyToVis}}">
                             <TextBlock Text="{Binding RepeatabilityChip}" Foreground="#FFD4A847"
                                        FontWeight="SemiBold"
