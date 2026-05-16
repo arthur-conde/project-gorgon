@@ -46,14 +46,23 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   *via* recipes — is owned by **Elrond** (leveling advice) or **Celebrimbor** (planning
   / execution), never by the module that happens to produce or hold the item. Cited by
   Samwise (crops), Pippin (food), and Bilbo (craftables) below.
-- **Displaying reference data is not turf; *being the browser* is.** Any module may
-  *render* reference data when its own purpose needs it (Celebrimbor shows
-  recipes/effects to plan crafts; Pippin shows food provenance for Gourmand). That
-  does **not** make it a co-owner of browsing. **Silmarillion is *the* reference-data
-  browser** — the dedicated, general, authoritative surface; every other module is
-  "just another place the data happens to be displayed." "Renders some data" ≠ "owns
-  the browser role." (Same shape as the shared-infra rule: ubiquitous capability,
-  single owner.)
+  **Carve-out:** *evaluating which recipes the player's current inv/storage already
+  satisfies* is a read-only state query owned by **Bilbo** (its data domain), not
+  planning/leveling. This rule governs crafting-*as-activity* (plan / level / execute),
+  not "what is makeable from what I hold right now."
+- **Each data domain has exactly one owning browser/evaluator; *rendering* it
+  elsewhere is not turf.** Any module may render data its own purpose needs
+  (Celebrimbor shows recipes/effects to plan; modules surface bits of state in
+  passing). That does **not** make it a co-owner. Each domain has a single owner,
+  all owner-confirmed 2026-05-16:
+  - **Silmarillion** — reference (CDN) data.
+  - **Bilbo** — the player's inventory/storage export (incl. immediate craftability).
+  - **Pippin** — the player's eaten-food state (Gourmand novelty + provenance).
+  - **Elrond** — the player's progression state (as leveling constraints).
+
+  "Renders some data" ≠ "owns the browser/evaluator role." (Same shape as the
+  shared-infra rule: ubiquitous capability, single owner. The owner may *consume*
+  shared infra — e.g. a shared inventory-query service — while remaining the owner.)
 
 ---
 
@@ -178,15 +187,24 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Bilbo — storage/inventory management
 
-- **Owns:** parsing storage/inventory exports, inventory query, and location chips.
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — Bilbo is, at root, **the browser/
+  evaluator for the player's inventory/storage export** (parallel to Silmarillion for
+  reference data): (1) parse the inv/storage export, query it, location chips; (2) a
+  read-only **craftability evaluator** — "what is craftable *right now* given current
+  inv/storage state." Both are properties/queries *over the player-state export*, not
+  forward activity.
 - **Does NOT own:**
-  - **✅ confirmed** — *Craft planning* (multi-recipe shopping lists) → Celebrimbor,
-    per the cross-cutting recipe/crafting rule.
+  - **✅ confirmed** — *Craft planning* (multi-recipe shopping lists, what-to-acquire,
+    quantity math) → Celebrimbor. The line: "what can I make from what I hold *now*"
+    is Bilbo (a state property); "what do I need to make N of X" is Celebrimbor (a
+    plan). See the recipe/crafting carve-out above.
   - **✅ confirmed** — *Leveling advice* → Elrond, per the cross-cutting rule
     (leveling via recipes is Elrond's).
-- **Reference data:** `Items`, `Recipes`, keyword index (craftable-from-on-hand).
+- **Reference data:** `Items`, `Recipes`, keyword index — joined *against the inv/
+  storage state* to compute immediate craftability.
   *(The inventory-query surface is a candidate for shared extraction — Celebrimbor §1
-  `IInventoryQueryService`; Bilbo would consume the shared service.)*
+  `IInventoryQueryService`; Bilbo would consume the shared service while remaining the
+  owning evaluator.)*
 
 ## Silmarillion — reference-data browser
 
@@ -273,6 +291,13 @@ libraries; the charter follows the code:
   while Silmarillion currently does not (#214: gap, not boundary). Added a carve-out
   to Silmarillion's "no computation" line so #214 can't be misread as a charter
   violation; listed `ResultEffectsParser` as shipped shared infra owned by neither.
+- **2026-05-16** — Bilbo reframed by owner: at root **the browser/evaluator for the
+  player's inv/storage export** (parallel to Silmarillion for reference data) + a
+  read-only "craftable from on-hand now" evaluator. Generalised the four
+  session-confirmed single-owner facts (Silmarillion/Bilbo/Pippin/Elrond) into one
+  cross-cutting rule: each data domain has exactly one owning browser/evaluator. Added
+  a recipe/crafting carve-out so "what's makeable from what I hold now" stays Bilbo's
+  (state query) vs. Celebrimbor's planning.
 - **2026-05-16** — Elrond Owns expanded by owner: Elrond owns the **player's
   progression state** (learned skills, progress, known recipes) as the leveling
   calculator's constraint set — scoped to the progression facet (distinct from Bilbo's
