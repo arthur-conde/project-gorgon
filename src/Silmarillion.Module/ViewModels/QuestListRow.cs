@@ -17,6 +17,14 @@ namespace Silmarillion.ViewModels;
 /// can run <c>Keywords CONTAINS "MainStory"</c> against the collection per the
 /// <c>IQueryStringValue</c> path shipped in #261.
 /// </para>
+/// <para>
+/// <see cref="Cadence"/> is the friendly repeatability bucket (queryable as
+/// <c>Cadence = "Daily"</c>) and <see cref="ReuseMinutes"/> is the exact interval
+/// (queryable as <c>ReuseMinutes &lt;= 720</c>). Both come from
+/// <see cref="QuestCadenceClassifier"/> so the coarse label and the precise number
+/// never disagree. <see cref="IsRepeatable"/> is retained for existing queries and is
+/// simply <c>Cadence != OneTime</c>. See #345.
+/// </para>
 /// </summary>
 public sealed record QuestListRow(
     Quest Quest,
@@ -29,4 +37,6 @@ public sealed record QuestListRow(
     bool IsCancellable,
     bool IsGuildQuest,
     bool IsWorkOrder,
-    bool IsRepeatable);
+    bool IsRepeatable,
+    QuestCadence Cadence,
+    int ReuseMinutes);

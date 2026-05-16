@@ -119,9 +119,7 @@ public sealed partial class QuestsTabViewModel : ObservableObject, ITabViewModel
             .Where(k => !string.IsNullOrEmpty(k))
             .Select(k => new QuestKeywordValue(k))
             .ToList();
-        var isRepeatable = quest.ReuseTime_Days is > 0
-            || quest.ReuseTime_Hours is > 0
-            || quest.ReuseTime_Minutes is > 0;
+        var cadence = QuestCadenceClassifier.Classify(quest);
 
         return new QuestListRow(
             Quest: quest,
@@ -134,7 +132,9 @@ public sealed partial class QuestsTabViewModel : ObservableObject, ITabViewModel
             IsCancellable: quest.IsCancellable ?? false,
             IsGuildQuest: quest.IsGuildQuest ?? false,
             IsWorkOrder: !string.IsNullOrEmpty(quest.WorkOrderSkill),
-            IsRepeatable: isRepeatable);
+            IsRepeatable: cadence != QuestCadence.OneTime,
+            Cadence: cadence,
+            ReuseMinutes: QuestCadenceClassifier.ReuseMinutes(quest));
     }
 
     private QuestDetailViewModel BuildDetailViewModel(QuestListRow row) =>
