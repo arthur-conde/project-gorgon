@@ -23,8 +23,9 @@ namespace Mithril.Reference.Models.Npcs;
 /// <para>
 /// Canonical type for the whole solution (#368/#370): Smaug and Arwen previously
 /// maintained local string-based ladders — both now converge here (Smaug #370 Task 3,
-/// Arwen Task 2). <c>NpcService.MinFavorTier</c> remains <c>string?</c> (field retype
-/// deferred to #385); parse at the boundary via <see cref="Parse"/>.
+/// Arwen Task 2). The slim <c>NpcService.MinFavorTier</c> is <c>FavorTier?</c> as of
+/// #385, parsed once at the <c>ReferenceDataService</c> projection via <see cref="Parse"/>
+/// (junk → <see cref="Unknown"/>); downstream comparisons are typed.
 /// </para>
 /// </remarks>
 public enum FavorTier

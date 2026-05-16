@@ -1,6 +1,5 @@
 using Mithril.Shared.Reference;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
-using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Smaug.Domain;
 
@@ -39,9 +38,11 @@ public static class VendorCapResolver
     {
         if (store.CapIncreases.Count == 0) return null;
 
-        // Gate on MinFavorTier first.
+        // Gate on MinFavorTier first. MinFavorTier is parsed once at the projection
+        // (#385); a junk token is FavorTier.Unknown (int.MinValue) so currentTier is
+        // never < it — junk stays "not gated", exactly as before the retype.
         var currentTier = playerFavorTier;
-        if (store.MinFavorTier is { } minTier && currentTier < Parse(minTier)) return null;
+        if (store.MinFavorTier is { } req && currentTier < req) return null;
 
         int? best = null;
         foreach (var cap in store.CapIncreases)

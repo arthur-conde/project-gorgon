@@ -143,7 +143,7 @@ public sealed class StorageSellbackService
                 NpcKey: npcKey,
                 NpcName: npc.Name,
                 Area: string.IsNullOrEmpty(npc.Area) ? "(Unknown Area)" : npc.Area,
-                MinFavorTier: store.MinFavorTier,
+                MinFavorTier: store.MinFavorTier?.DisplayName(),
                 PlayerFavorTier: playerTier?.DisplayName(),
                 Items: buyableItems));
         }

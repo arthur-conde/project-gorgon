@@ -102,7 +102,7 @@ public sealed class VendorCatalogService
                     NpcKey: src.Npc,
                     NpcName: npc?.Name ?? src.Npc.Replace("NPC_", ""),
                     Area: npc?.Area ?? "",
-                    MinFavorTier: storeService?.MinFavorTier,
+                    MinFavorTier: storeService?.MinFavorTier?.DisplayName(),
                     PlayerFavorTier: playerTier?.DisplayName(),
                     EffectiveMaxGold: maxGold,
                     IsAcceptable: acceptable));

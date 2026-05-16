@@ -60,6 +60,11 @@ for junk), **not** a throwing parse. After the retype the comparison is a direct
 enum `<` / `>=` and the table above must still hold (verify `Unknown = int.MinValue`
 keeps "junk = not gated"; `null` MinFavorTier keeps "no gate").
 
+**Display parity corollary** (Approach step 5): wherever `MinFavorTier` drives a
+*shown requirement* (`ResolveFavorRequirement`), `null` **and** `Unknown` both
+render as *no requirement line*. The displayed requirement must never assert a
+gate the logic doesn't enforce.
+
 ## Approach
 
 **Push the parse into the projection; compare typed everywhere downstream.**
@@ -90,6 +95,33 @@ keeps "junk = not gated"; `null` MinFavorTier keeps "no gate").
      [[favortier-extensions-using-static-not-dead]] — `.DisplayName()`/`.ToToken()`
      are extension calls that still need the namespace/`using static` under the
      alias pattern; do not blindly delete).
+5. **Cross-project consumer (NOT just Smaug).** The slim
+   `NpcService.MinFavorTier` has one consumer outside Smaug that the retype
+   hard-breaks under warnings-as-errors:
+   [`IngredientSourcesViewModel.ResolveFavorRequirement`](../../src/Mithril.Shared.Wpf/IngredientSourcesViewModel.cs#L199-L216)
+   (`Mithril.Shared.Wpf`). Lines 212-213 do `string.IsNullOrEmpty(svc.MinFavorTier)`
+   (now a type error) + `$"Requires {svc.MinFavorTier} or higher"`. Fix:
+   - **Aliases, NOT a namespace import.** This file references POCO-vs-slim
+     `NpcService`/`NpcPreference` in `<see cref>` doc comments (lines 162-166);
+     a blanket `using Mithril.Reference.Models.Npcs;` creates CS0104 /
+     ambiguous-cref errors under warnings-as-errors (the
+     [[favortier-extensions-using-static-not-dead]] collision). Mirror the Smaug
+     pattern instead:
+     ```csharp
+     using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+     using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
+     ```
+   - Body (212-213) →
+     ```csharp
+     if (svc.MinFavorTier is not { } tier || tier == FavorTier.Unknown) return null;
+     return $"Requires {tier.DisplayName()} or higher";
+     ```
+   - **Decision (display ⇔ gate parity):** collapse `Unknown` into the same
+     "no requirement shown" branch as `null`. The gate logic treats `Unknown`
+     as *not gated*; printing "Requires Unknown or higher" would assert a
+     requirement the gate doesn't enforce — exactly the display/logic divergence
+     #385 exists to kill. Real-token behaviour is unchanged; junk shifts from
+     "Requires &lt;junk&gt; or higher" to no line (strictly more correct).
 4. **Display layer — keep `string?`, convert at the boundary** (mirrors how #387
    handled `PlayerFavorTier`). The three Smaug service records
    ([SellPlannerService.cs:32](../../src/Smaug.Module/State/SellPlannerService.cs#L32),
@@ -114,8 +146,10 @@ keeps "junk = not gated"; `null` MinFavorTier keeps "no gate").
 - [src/Smaug.Module/Domain/VendorCapResolver.cs](../../src/Smaug.Module/Domain/VendorCapResolver.cs#L44) — typed gate.
 - [src/Smaug.Module/State/SellPlannerService.cs](../../src/Smaug.Module/State/SellPlannerService.cs#L102-L119) — typed gate + estimate + `MinFavorTier:` display conversion.
 - [src/Smaug.Module/State/StorageSellbackService.cs](../../src/Smaug.Module/State/StorageSellbackService.cs#L146) — `MinFavorTier:` display conversion.
-- [src/Smaug.Module/State/VendorCatalogService.cs](../../src/Smaug.Module/State/VendorCatalogService.cs#L105) — `MinFavorTier:` display conversion.
-- Any other `MinFavorTier` consumer surfaced by the audit grep below.
+- [src/Smaug.Module/State/VendorCatalogService.cs](../../src/Smaug.Module/State/VendorCatalogService.cs#L105) — `MinFavorTier:` display conversion (note: `storeService?.MinFavorTier?.DisplayName()` — null-conditional already there).
+- [src/Mithril.Shared.Wpf/IngredientSourcesViewModel.cs](../../src/Mithril.Shared.Wpf/IngredientSourcesViewModel.cs#L199-L216) — cross-project consumer; alias-not-namespace + `Unknown`-suppression per Approach step 5.
+- [src/Mithril.Reference/Models/Npcs/FavorTier.cs](../../src/Mithril.Reference/Models/Npcs/FavorTier.cs#L26) — stale doc comment ("`NpcService.MinFavorTier` remains `string?`") becomes false; update it in the same PR.
+- Audit grep confirmed the above is the *complete* consumer set of the slim `NpcService.MinFavorTier`. Silmarillion's `MinFavorTier` carriers are fed from the **POCO** `s.Favor`/`p.Favor`, not the slim record — see Out of scope.
 
 ## Calibration — explicitly NOT migrated (token-at-rest)
 
@@ -137,6 +171,33 @@ that finding and change nothing. If a versioned migration is ever wanted, it
 must be an explicit `SchemaVersion` bump (see the settings-migration /
 json-versioning conventions), never silent.
 
+### Audit outcome (traced — decision recorded, no code change)
+
+The `favorTier` arg to `RecordObservation` is **not** a `.ToToken()`-canonicalised
+value. Chain:
+[`RecordObservation(…, _context.ActiveFavorTier!, …)`](../../src/Smaug.Module/State/VendorIngestionService.cs#L91)
+← `VendorSellContext.ActiveFavorTier` (`string?`,
+[VendorSellContext.cs:14/42](../../src/Smaug.Module/State/VendorSellContext.cs#L14))
+← `VendorScreenOpened.FavorTier` ← the **raw regex capture group** at
+[VendorLogParser.cs:61](../../src/Smaug.Module/Parsing/VendorLogParser.cs#L61)
+(`m.Groups[2].Value` from `ProcessVendorScreen(entityId, FavorTier, …)`),
+never round-tripped through `Parse`/`ToToken`.
+
+**Decision: document + defer; no #385 code change.** In practice the value is
+canonical because `FavorTier`'s tokens are modelled directly on PG's emitted
+tier names, so the empirically-observed key shape is already correct. The
+defensive risk (PG emits an unrecognised spelling → it bakes verbatim into a
+mis-keyed `AbsoluteKey`/`RatioKey`) is real but cannot be fixed inside #385:
+canonicalising at ingest *changes the persisted key shape*, which is a versioned
+calibration-data migration and **must** be an explicit `SchemaVersion` bump per
+the json-versioning convention — out of #385 scope. #385 therefore:
+- changes nothing in the calibration path,
+- adds a **characterization test** pinning the current raw-token passthrough
+  (so a future migration is a deliberate, test-visible change, not a silent one),
+- filed follow-up **#397** ("canonicalise calibration favor token at ingest
+  behind a `SchemaVersion` bump"); this doc + #397 are the recorded rationale
+  per the Acceptance "if anything stays `string`, record the rationale" clause.
+
 ## Testing
 
 TDD. The behavioural-equivalence table is the spec — pin it.
@@ -154,9 +215,13 @@ TDD. The behavioural-equivalence table is the spec — pin it.
   safety net), per TDD-for-refactor.
 - **SellPlanner accessibility**: a test that `isAccessible` is unchanged across
   the retype for null / real / junk `MinFavorTier`.
-- Calibration: if the `RecordObservation` caller is found to pass a non-canonical
-  token, add a regression test that the persisted key uses the canonical token;
-  otherwise no calibration test change.
+- **`ResolveFavorRequirement`** (`tests/Mithril.Shared.Tests`, Wpf VM suite):
+  `null MinFavorTier → null`; real tier → `"Requires <DisplayName> or higher"`;
+  junk/`Unknown` → `null` (display ⇔ gate parity, Approach step 5).
+- **Calibration characterization test**: pin the *current* raw-token passthrough
+  into the persisted key (audit found the caller passes the raw log token, not
+  `.ToToken()`). This is a guard so the deferred canonicalisation migration is
+  test-visible, not a behaviour change in #385.
 - Full `dotnet test Mithril.slnx` green; `grep -rn "MinFavorTier" src --include=*.cs`
   shows no remaining `string`-typed *comparison* (only display-record `string`
   carriers + the projection).
@@ -170,6 +235,13 @@ TDD. The behavioural-equivalence table is the spec — pin it.
   stays at rest; audit-only).
 - `StoreCapIncrease.Tier` (already typed since #373) and `PlayerFavorTier`
   (already handled in #387).
+- **Silmarillion's `MinFavorTier` — do not touch.**
+  `NpcsTabViewModel.cs:223/451` + `NpcServiceRow`/`NpcPreferenceRow` carry
+  `string? MinFavorTier` fed from the **POCO** `s.Favor`/`p.Favor`, not the
+  slim `Mithril.Shared.Reference.NpcService`, so the retype does not reach them.
+  In particular `NpcsTabViewModel.cs:223` has a deliberate
+  `Despised → null` special-case — **must not** be "converged" into the
+  projection; its semantics differ from the gate's null/Unknown rules.
 
 ## Acceptance
 

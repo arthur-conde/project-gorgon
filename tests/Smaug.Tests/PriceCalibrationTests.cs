@@ -28,6 +28,22 @@ public sealed class PriceCalibrationTests
     }
 
     [Fact]
+    public void AbsoluteKey_uses_the_favor_token_verbatim_not_canonicalised()
+    {
+        // #385 calibration audit guard. The favor token reaching the persisted
+        // key is the RAW VendorScreenOpened token (VendorLogParser.cs), never
+        // round-tripped through FavorTierExtensions.Parse/.ToToken. #385 keeps
+        // it that way (canonicalising = a key-shape change ⇒ SchemaVersion bump,
+        // out of scope). This pins the raw passthrough so a future migration is
+        // a deliberate, test-visible change — not a silent one.
+        var key = PriceCalibrationService.AbsoluteKey(
+            "NPC_A", "BottleOfWater", "totally-not-a-tier", "Under5");
+
+        key.Should().Be("NPC_A|BottleOfWater|totally-not-a-tier|Under5",
+            "the junk token is keyed verbatim, NOT normalised to 'Unknown'");
+    }
+
+    [Fact]
     public void RatioRates_UseKeywordBucket()
     {
         var obs = new List<PriceObservation>
