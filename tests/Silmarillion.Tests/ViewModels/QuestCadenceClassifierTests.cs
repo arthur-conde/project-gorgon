@@ -84,4 +84,22 @@ public sealed class QuestCadenceClassifierTests
         QuestCadenceClassifier.BadgeText(Q(minutes: 30)).Should().Be("Every 30m");
         QuestCadenceClassifier.BadgeText(Q(days: 2, minutes: 15)).Should().Be("Every 2d 15m");
     }
+
+    [Fact]
+    public void DetailText_RecoversPrecisionBehindFriendlyBadge()
+    {
+        // The case from #345: badge says "Daily", tooltip says the real 20h.
+        QuestCadenceClassifier.BadgeText(Q(hours: 20)).Should().Be("Daily");
+        QuestCadenceClassifier.DetailText(Q(hours: 20)).Should().Be("Repeatable every 20 hours");
+
+        QuestCadenceClassifier.DetailText(Q(days: 7)).Should().Be("Repeatable every 7 days");
+        QuestCadenceClassifier.DetailText(Q(days: 1, hours: 1, minutes: 1))
+            .Should().Be("Repeatable every 1 day 1 hour 1 minute");
+    }
+
+    [Fact]
+    public void DetailText_NullForOneTime()
+    {
+        QuestCadenceClassifier.DetailText(Q()).Should().BeNull();
+    }
 }

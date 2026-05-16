@@ -60,6 +60,7 @@ public sealed class QuestDetailViewModel
         PreGiveRecipeChips = BuildRecipeChips(quest.PreGiveRecipes, refData, nameResolver, navigator);
 
         RepeatabilityChip = QuestCadenceClassifier.BadgeText(quest);
+        RepeatabilityDetail = QuestCadenceClassifier.DetailText(quest);
         FavorRewardDisplay = BuildFavorRewardDisplay(quest, refData, nameResolver);
         BadgesDisplay = BuildBadgesDisplay(IsCancellable, IsGuildQuest, IsWorkOrder, WorkOrderSkillDisplay);
 
@@ -100,6 +101,13 @@ public sealed class QuestDetailViewModel
     /// interval is exposed for querying as <see cref="QuestListRow.ReuseMinutes"/>.
     /// </summary>
     public string? RepeatabilityChip { get; }
+
+    /// <summary>
+    /// Precise long-form interval ("Repeatable every 20 hours") shown as a tooltip on the
+    /// friendly <see cref="RepeatabilityChip"/> badge, so hovering "Daily" recovers the
+    /// exact cooldown the badge rounds. Null for one-time quests (badge collapsed).
+    /// </summary>
+    public string? RepeatabilityDetail { get; }
 
     public string? FavorRewardDisplay { get; }
     public string? BadgesDisplay { get; }

@@ -65,6 +65,26 @@ public static class QuestCadenceClassifier
     }
 
     /// <summary>
+    /// Precise long-form interval for a tooltip on the (friendly) badge —
+    /// <c>"Repeatable every 20 hours"</c>. <c>null</c> for one-time quests, where the badge
+    /// is collapsed and there is nothing to qualify. This is the exact value the friendly
+    /// <see cref="BadgeText"/> rounds (20h → "Daily"), so hovering recovers the precision.
+    /// </summary>
+    public static string? DetailText(Quest quest)
+    {
+        if (Classify(quest) == QuestCadence.OneTime) return null;
+
+        var days = quest.ReuseTime_Days ?? 0;
+        var hours = quest.ReuseTime_Hours ?? 0;
+        var minutes = quest.ReuseTime_Minutes ?? 0;
+        var parts = new List<string>(3);
+        if (days > 0) parts.Add($"{days} day{(days == 1 ? "" : "s")}");
+        if (hours > 0) parts.Add($"{hours} hour{(hours == 1 ? "" : "s")}");
+        if (minutes > 0) parts.Add($"{minutes} minute{(minutes == 1 ? "" : "s")}");
+        return $"Repeatable every {string.Join(" ", parts)}";
+    }
+
+    /// <summary>
     /// Header-badge text: <c>null</c> for one-time quests (the chip collapses), the friendly
     /// name for <see cref="QuestCadence.Daily"/>/<see cref="QuestCadence.Weekly"/>, and a
     /// compact <c>"Every 3d 12h 30m"</c> form otherwise. Keeps the friendly-vs-compact
