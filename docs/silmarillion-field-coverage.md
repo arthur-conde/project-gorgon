@@ -144,6 +144,17 @@ an unwired edge. This is the priority and stands alone.
 - Everything else unsurfaced is deliberate; do not file "increase coverage" issues
   against it. If a future audit re-flags class 1–4 properties, point it here.
 
+### Known visual debt (axis: presentation, not coverage)
+
+- **`EntityChip` collides with the stat badges** (#404). A design critique found
+  the shared bordered/icon chip is visually identical to the header stat badges
+  (`Skill N`, `MaxUses`, cooldown) and breaks prose in `{prefix} [chip]` rows.
+  This is a *coverage-complete, presentation-wrong* state: #342's fields are all
+  surfaced, the chip *styling* is the debt. Recommendation (V5 hybrid: inline
+  gold link in prose, ghost pill in lists) + an orthogonal stat-badge restyle is
+  a design-system change, deliberately **out of #342/#400 scope** — tracked in
+  #404. Don't re-flag the recipe-detail chips as a coverage gap; they're not.
+
 ## History
 
 - **2026-05-16** — #342 resolved: `OtherRequirements` (typed lines + recipe
