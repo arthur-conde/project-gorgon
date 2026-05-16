@@ -67,16 +67,19 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     ingredients, cooking with crops, **and Gardening crafting recipes** — see data
     note) → Elrond/Celebrimbor, per the cross-cutting rule.
 - **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`).
-- **Data note (verified v470, 2026-05-16):** an earlier draft asserted "gardening XP
-  is not in reference data" — **false, corrected.** `Gardening` is a real skill and
-  Gardening *crafting* recipes (`BasicFertilizer1/2/3`, …) are in `recipes.json` with
-  full `RewardSkillXp`/first-time/drop-off, so recipe-based Gardening leveling is
-  Elrond's via the cross-cutting rule like any craft skill. **Verification owed:**
-  whether the *crop-lifecycle actions themselves* (plant / water / apply-fertilizer /
-  harvest) grant XP and whether that lives anywhere in reference data is unverified —
-  not recipe-shaped, so likely absent, but neither owner nor a data check has
-  confirmed. That open question is the only thing that would gate a hypothetical
-  lifecycle-XP feature.
+- **Data note (verified v470, 2026-05-16; refined by owner):** Gardening's **primary**
+  XP source is the planting loop (plant → water → fertilize → harvest) — owner-confirmed
+  it grants XP. A **secondary** source is a handful of Gardening *crafting* recipes
+  (`BasicFertilizer1/2/3`, …), which are in `recipes.json` with full
+  `RewardSkillXp`/first-time/drop-off and so fall to Elrond via the cross-cutting rule
+  like any craft skill. Structural consequence: Elrond is recipe-anchored, so it sees
+  *only the secondary slice* — Gardening's primary progression sits outside both
+  Samwise's charter (tracker, not advisor) and Elrond's (recipe-anchored). **Verification
+  owed:** the planting-loop per-action XP values do not appear to be in reference data
+  (owner's observation; not exhaustively checked). If confirmed absent, no data-feasible
+  XP-driven gardening advisor is possible for the primary source — which is the
+  data-level reason crop-selection optimization stays a soft non-feature, not a
+  temporary gap.
 
 ## Pippin — Gourmand support (food-variety tracking)
 
@@ -124,7 +127,9 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   - **✅ confirmed** — *Non-recipe skills.* Recipe-anchored by design: skills without
     recipes (combat/gathering/etc.) intentionally never appear; Elrond cannot advise
     on them. (Design doc + `elrond_recipe_anchored_design` memory.)
-  - ⚠️ *Multi-recipe shopping / inventory.* That's Celebrimbor.
+  - **✅ confirmed (by entailment, 2026-05-16)** — *Multi-recipe shopping / inventory.*
+    Celebrimbor's Owns is owner-confirmed as exactly this; Elrond not owning it is the
+    direct complement.
   - ⚠️ *The skill-XP math itself, post-#225.* Slated to lift into shared
     `Mithril.Leveling`; after #225 Elrond consumes that engine rather than owning it.
 - **Reference data:** `Recipes`, `Skills`, `XpTables`.
@@ -169,13 +174,20 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Celebrimbor — crafting planner
 
-- **Owns:** multi-recipe selection, shopping-list aggregation, on-hand cross-reference,
-  and the craft-step ladder. (See [celebrimbor-roadmap.md](celebrimbor-roadmap.md).)
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — build a shopping list and craft a given
+  set of targets, accounting for what is on hand. Scope is *exactly* "what is needed to
+  make N units of X": multi-recipe selection, shopping-list aggregation, on-hand
+  cross-reference, the craft-step ladder. **It accounts for no logic beyond the
+  quantity math** — no optimization, no strategy, no decision about *what* or *how
+  much* to make. (See [celebrimbor-roadmap.md](celebrimbor-roadmap.md).)
 - **Does NOT own:**
-  - ⚠️ *Leveling optimization.* The cross-skill planner (#227) is the Elrond/Celebrimbor
-    convergence; Celebrimbor *executes* a plan (#228), it does not compute the leveling
-    strategy.
-  - ⚠️ *Reference browsing.* That's Silmarillion.
+  - **✅ confirmed (owner, 2026-05-16)** — *Any logic beyond "make N of X".* Leveling
+    optimization, what-to-craft strategy, ROI — all out. Celebrimbor only ever
+    *consumes* a target list; whatever decides that list (Elrond / the #227 cross-skill
+    planner) is upstream. #228's "plan-aware craft list" means Celebrimbor *receives* a
+    computed plan as targets — it does not compute it.
+  - ⚠️ *Reference browsing.* That's Silmarillion. (The "no logic beyond N-of-X" scope
+    strongly implies this, but Celebrimbor↔Silmarillion was not explicitly ruled on.)
 - **Reference data:** `Recipes`, `Items`, `ResultEffectsParser` previews, `Areas`
   (source resolution), inventory.
 
@@ -205,6 +217,15 @@ libraries; the charter follows the code:
   tracker — interprets `Player.log` to track plantings + state transitions and alarms
   so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
   confirmed.
+- **2026-05-16** — Celebrimbor charter confirmed & tightened by owner: scope is exactly
+  "what is needed to make N units of X" + on-hand, no logic beyond the quantity math.
+  Owns + the no-extra-logic boundary → ✅; Elrond's reciprocal "multi-recipe shopping →
+  Celebrimbor" → ✅ by entailment. Celebrimbor↔Silmarillion left ⚠️ (strongly implied,
+  not explicitly ruled).
+- **2026-05-16** — Samwise gardening note refined by owner: planting loop is the
+  *primary* Gardening XP source (grants XP — confirmed); recipes are secondary and in
+  ref data. Recorded that Elrond (recipe-anchored) sees only the secondary slice;
+  primary-loop XP presence in ref data remains Verification owed.
 - **2026-05-16** — Legolas & Arwen sections confirmed accurate by owner; their ⚠️
   entries promoted to ✅.
 - **2026-05-16** — Samwise gardening-XP claim corrected after a v470 data check: the
