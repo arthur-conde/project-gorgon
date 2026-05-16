@@ -201,7 +201,14 @@ public class DeepLinkRouterTests
     private sealed class RecordingListTarget : ICraftListImportTarget
     {
         public string? LastPayload { get; private set; }
+        public IReadOnlyList<CraftListImportEntry>? LastRecipes { get; private set; }
+        public string? LastSource { get; private set; }
         public void ImportFromLinkPayload(string base64UrlPayload) => LastPayload = base64UrlPayload;
+        public void ImportRecipes(IReadOnlyList<CraftListImportEntry> recipes, string source)
+        {
+            LastRecipes = recipes;
+            LastSource = source;
+        }
     }
 
     private sealed class RecordingPippinTarget : IPippinShareImportTarget

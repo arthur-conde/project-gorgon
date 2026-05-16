@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using Elrond.Domain;
 using Elrond.Services;
 using Mithril.Shared.Character;
+using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Filtering;
 using Mithril.Shared.Wpf.Query;
@@ -57,6 +58,7 @@ public sealed partial class SkillAdvisorViewModel
     private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
+    private readonly ICraftListImportTarget? _craftListImport;
 
     private readonly ObservableCollection<RecipeAnalysis> _recipes = [];
 
@@ -67,13 +69,15 @@ public sealed partial class SkillAdvisorViewModel
         LevelingSimulator simulator,
         IActiveCharacterService characterData,
         IReferenceDataService referenceData,
-        ElrondSettings settings)
+        ElrondSettings settings,
+        ICraftListImportTarget? craftListImport = null)
     {
         _engine = engine;
         _simulator = simulator;
         _activeChar = characterData;
         _referenceData = referenceData;
         _settings = settings;
+        _craftListImport = craftListImport;
 
         _goalLevel = settings.LastGoalLevel;
         _viewMode = settings.ViewMode;
@@ -203,6 +207,7 @@ public sealed partial class SkillAdvisorViewModel
     };
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SendToCraftListCommand))]
     private RecipeAnalysis? _selectedRecipe;
 
     [ObservableProperty]
@@ -331,6 +336,34 @@ public sealed partial class SkillAdvisorViewModel
     {
         _activeChar.Refresh();
     }
+
+    /// <summary>
+    /// True when a craft-list import target (Celebrimbor) is registered. Drives the
+    /// "Send to craft list" button's visibility so it stays hidden if Celebrimbor is absent.
+    /// </summary>
+    public bool IsCraftListImportAvailable => _craftListImport is not null;
+
+    /// <summary>
+    /// Pushes the selected recipe into the craft-list module (Celebrimbor) in-process —
+    /// activates its tab and runs the shared Append/Replace/Cancel dialog. v1 sends quantity
+    /// 1 per recipe; the user dials in counts in Celebrimbor. The importer contract is
+    /// list-based, so multi-select is a non-breaking UI follow-up.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSendToCraftList))]
+    private void SendToCraftList()
+    {
+        if (_craftListImport is null || SelectedRecipe is not { } recipe) return;
+        if (string.IsNullOrWhiteSpace(recipe.InternalName)) return;
+
+        _craftListImport.ImportRecipes(
+            [new CraftListImportEntry(recipe.InternalName, 1)],
+            $"Elrond · {recipe.RecipeName}");
+    }
+
+    private bool CanSendToCraftList()
+        => _craftListImport is not null
+           && SelectedRecipe is { } r
+           && !string.IsNullOrWhiteSpace(r.InternalName);
 
     /// <summary>
     /// Toggle the chip with the given Id. Bound to chip clicks in the sort popup.

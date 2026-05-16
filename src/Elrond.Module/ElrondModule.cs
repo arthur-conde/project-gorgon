@@ -38,7 +38,8 @@ public sealed class ElrondModule : IMithrilModule
             sp.GetRequiredService<LevelingSimulator>(),
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
-            sp.GetRequiredService<ElrondSettings>()));
+            sp.GetRequiredService<ElrondSettings>(),
+            sp.GetService<ICraftListImportTarget>()));
         services.AddSingleton<IElrondSkillImportTarget>(sp => new Services.ElrondSkillImportTarget(
             sp.GetRequiredService<SkillAdvisorViewModel>(),
             sp.GetService<IModuleActivator>(),

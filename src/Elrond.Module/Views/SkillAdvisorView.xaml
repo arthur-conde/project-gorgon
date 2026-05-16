@@ -452,6 +452,14 @@
                                                 <DockPanel Margin="0,0,0,10">
                                                     <wpf:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
                                                                    Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
+                                                    <Button DockPanel.Dock="Right" Padding="8,4" VerticalAlignment="Top"
+                                                            Command="{Binding DataContext.SendToCraftListCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            ToolTip="Send this recipe to Celebrimbor's craft list (quantity 1; adjust counts there)">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <icon:PackIconLucide Kind="ListPlus" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                            <TextBlock Text="Send to craft list" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Button>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding RecipeName}" FontWeight="Bold"
                                                                    Foreground="{StaticResource AccentBrush}" FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>

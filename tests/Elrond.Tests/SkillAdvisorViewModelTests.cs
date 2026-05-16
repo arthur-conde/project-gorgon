@@ -261,6 +261,83 @@ public class SkillAdvisorViewModelTests
         settings.LastQueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
     }
 
+    // ── Send to craft list (#224) ────────────────────────────────────────
+
+    [Fact]
+    public void SendToCraftList_NoTargetRegistered_CommandDisabled()
+    {
+        var (vm, _, _, _) = MakeFixture(
+            characterSkills: new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            register: r => { r.AddSkill("Cooking", parents: []); r.AddRecipe(rewardSkill: "Cooking"); });
+
+        vm.SelectedSkill = "Cooking";
+        vm.SelectedRecipe = vm.Analysis!.Recipes.First();
+
+        vm.IsCraftListImportAvailable.Should().BeFalse();
+        vm.SendToCraftListCommand.CanExecute(null).Should().BeFalse(
+            because: "no craft-list import target (Celebrimbor) was registered");
+    }
+
+    [Fact]
+    public void SendToCraftList_NoSelection_CommandDisabled()
+    {
+        var vm = MakeVmWithImportTarget(out _, out var importTarget);
+
+        vm.SelectedRecipe.Should().BeNull();
+        vm.IsCraftListImportAvailable.Should().BeTrue();
+        vm.SendToCraftListCommand.CanExecute(null).Should().BeFalse(
+            because: "no recipe is selected");
+        importTarget.LastRecipes.Should().BeNull();
+    }
+
+    [Fact]
+    public void SendToCraftList_SendsSelectedRecipeAtQuantityOne()
+    {
+        var vm = MakeVmWithImportTarget(out _, out var importTarget);
+
+        vm.SelectedSkill = "Cooking";
+        var recipe = vm.Analysis!.Recipes.First();
+        vm.SelectedRecipe = recipe;
+
+        vm.SendToCraftListCommand.CanExecute(null).Should().BeTrue();
+        vm.SendToCraftListCommand.Execute(null);
+
+        importTarget.LastRecipes.Should().ContainSingle();
+        importTarget.LastRecipes![0].RecipeInternalName.Should().Be(recipe.InternalName);
+        importTarget.LastRecipes![0].Quantity.Should().Be(1,
+            because: "v1 sends quantity 1; the user dials in counts in Celebrimbor");
+        importTarget.LastSource.Should().Contain(recipe.RecipeName);
+    }
+
+    private static SkillAdvisorViewModel MakeVmWithImportTarget(
+        out FakeRefData refData, out FakeCraftListImportTarget importTarget)
+    {
+        refData = new FakeRefData();
+        refData.AddSkill("Cooking", parents: []);
+        refData.AddRecipe(rewardSkill: "Cooking");
+        var characterSvc = new FakeActiveCharacterService();
+        characterSvc.SetCharacter(new CharacterSnapshot(
+            "C", "S", DateTimeOffset.UtcNow,
+            new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            new Dictionary<string, int>(), new Dictionary<string, string>()));
+        var engine = new SkillAdvisorEngine(refData);
+        var sim = new LevelingSimulator(refData, engine);
+        importTarget = new FakeCraftListImportTarget();
+        return new SkillAdvisorViewModel(engine, sim, characterSvc, refData, new ElrondSettings(), importTarget);
+    }
+
+    private sealed class FakeCraftListImportTarget : Mithril.Shared.Modules.ICraftListImportTarget
+    {
+        public IReadOnlyList<Mithril.Shared.Modules.CraftListImportEntry>? LastRecipes { get; private set; }
+        public string? LastSource { get; private set; }
+        public void ImportFromLinkPayload(string base64UrlPayload) { }
+        public void ImportRecipes(IReadOnlyList<Mithril.Shared.Modules.CraftListImportEntry> recipes, string source)
+        {
+            LastRecipes = recipes;
+            LastSource = source;
+        }
+    }
+
     // ── Fixture ──────────────────────────────────────────────────────────
 
     private static (SkillAdvisorViewModel vm, FakeRefData refData, FakeActiveCharacterService characterSvc, ElrondSettings settings)
