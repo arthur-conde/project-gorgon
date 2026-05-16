@@ -146,5 +146,5 @@ public sealed partial class StorageVaultsTabViewModel : ObservableObject, ITabVi
     }
 
     private StorageVaultDetailViewModel BuildDetailViewModel(StorageVaultListRow row) =>
-        new StorageVaultDetailViewModel(row, _refData, _navigator, _nameResolver);
+        new StorageVaultDetailViewModel(row, _refData, _navigator, _nameResolver, OpenEntityCommand);
 }

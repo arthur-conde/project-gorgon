@@ -217,6 +217,40 @@ public sealed class StorageVaultDetailViewModelTests
         vm.HasAccessRequirements.Should().BeTrue();
     }
 
+    [Fact]
+    public void Chips_Click_NavigatesViaOpenEntityCommand_ThreadedThroughTheTab()
+    {
+        // #340 regression: StorageVaultDetailView.xaml binds every chip's ClickCommand
+        // to DataContext.OpenEntityCommand. If the tab does not thread its command into
+        // the detail VM (every other tab does), the binding resolves to null and the
+        // chip is a dead no-op despite rendering as navigable. Exercise the real tab →
+        // detail wiring (BuildDetailViewModel), not the direct ctor.
+        var refData = new FakeReferenceData();
+        refData.AddArea(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        refData.AddVault("NPC_CharlesThompson", new StorageVaultPoco
+        {
+            Area = "AreaSerbule", NpcFriendlyName = "Charles Thompson",
+            HasAssociatedNpc = true, NumSlots = 24,
+        });
+
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+        var settings = new SilmarillionSettings();
+        var tab = new StorageVaultsTabViewModel(refData, nav, resolver, settings);
+        tab.SelectedVault = tab.AllVaults.Single(r => r.EnvelopeKey == "NPC_CharlesThompson");
+
+        var detail = tab.DetailViewModel!;
+        detail.OpenEntityCommand.Should().NotBeNull(
+            "the chip ClickCommand binds to DetailViewModel.OpenEntityCommand — a null " +
+            "command makes the Area/Operator/Quest chips dead no-ops (#340)");
+
+        detail.OpenEntityCommand!.Execute(detail.AreaChip!.Reference);
+
+        nav.Current.Should().NotBeNull("clicking the Area chip should drive navigation");
+        nav.Current!.Kind.Should().Be(EntityKind.Area);
+        nav.Current.InternalName.Should().Be("AreaSerbule");
+    }
+
     private static StorageVaultDetailViewModel Build(
         FakeReferenceData refData, string envelopeKey, StorageVaultPoco vault)
     {
