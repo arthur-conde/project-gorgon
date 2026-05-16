@@ -41,7 +41,12 @@ public sealed class ElrondModule : IMithrilModule
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ElrondSettings>(),
-            sp.GetService<ICraftListImportTarget>()));
+            // Deferred, NOT sp.GetService<ICraftListImportTarget>() eagerly: resolving it
+            // at VM-construction time closes a DI cycle (→ Celebrimbor's
+            // CraftListImportTarget → IModuleActivator → ShellViewModel → eager
+            // ActivateModule → back to this VM) that MS.DI turns into a silent
+            // UI-thread deadlock. The VM invokes this only on the Send click.
+            () => sp.GetService<ICraftListImportTarget>()));
         services.AddSingleton<IElrondSkillImportTarget>(sp => new Services.ElrondSkillImportTarget(
             sp.GetRequiredService<SkillAdvisorViewModel>(),
             sp.GetService<IModuleActivator>(),
