@@ -1,3 +1,7 @@
+// Only StoreCapIncrease is pulled from the Reference models — aliased to avoid
+// colliding with this file's own slim NpcService record.
+using StoreCapIncrease = Mithril.Reference.Models.Npcs.StoreCapIncrease;
+
 namespace Mithril.Shared.Reference;
 
 /// <summary>
@@ -33,14 +37,4 @@ public sealed record NpcPreference(
 public sealed record NpcService(
     string Type,
     string? MinFavorTier,
-    IReadOnlyList<NpcStoreCapIncrease> CapIncreases);
-
-/// <summary>
-/// One entry of a Store service's <c>CapIncreases</c> array. Parsed from the
-/// raw string form <c>"&lt;FavorTier&gt;:&lt;MaxGold&gt;:&lt;keyword,keyword,…&gt;"</c>.
-/// An empty <see cref="Keywords"/> list means the cap applies to any item.
-/// </summary>
-public sealed record NpcStoreCapIncrease(
-    string FavorTier,
-    int MaxGold,
-    IReadOnlyList<string> Keywords);
+    IReadOnlyList<StoreCapIncrease> CapIncreases);

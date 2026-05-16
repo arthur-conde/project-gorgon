@@ -46,9 +46,11 @@ public static class VendorCapResolver
         int? best = null;
         foreach (var cap in store.CapIncreases)
         {
-            if (FavorTierName.RankOf(cap.FavorTier) > currentRank) continue;
+            if (FavorTierName.RankOf(cap.Tier) > currentRank) continue;
             if (!MatchesKeywords(cap.Keywords, itemKeywords)) continue;
-            if (best is null || cap.MaxGold > best.Value) best = cap.MaxGold;
+            // GoldCap is int? on the canonical record; the Smaug projection uses
+            // ParseRequiringGold so it is never null here, but stay nullable-correct.
+            if (cap.GoldCap is { } g && (best is null || g > best.Value)) best = g;
         }
 
         if (best is null) return null;
