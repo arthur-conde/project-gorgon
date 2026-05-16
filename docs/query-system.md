@@ -25,6 +25,8 @@ MinLevel IS NULL / IS NOT NULL               — null check
 avg > 1m30s                                  — duration literals: 30s, 1m30s, 2h, 150ms
 Timestamp BEFORE NOW()                       — English-aliased <, >; NOW() and TODAY() functions
 NOT LIKE / NOT IN / NOT BETWEEN              — negation prefix
+Services WITH ANY (Type='Store' AND Favor='Friends')   — quantified subquery over an object collection
+Reqs WITH ALL (T='MinSkillLevel')            — ANY = ≥1 element; ALL = every element (vacuously true if empty)
 ORDER BY Cost DESC, Name                     — sort clause (SORT BY also accepted; ASC implicit)
 ```
 
@@ -247,6 +249,40 @@ returning a string from `QueryStringValue` — this is how
 `Item.Keywords` (`IReadOnlyList<ItemKeyword>`) supports
 `Keywords CONTAINS 'Crystal'` from the Silmarillion Items tab.
 `STARTSWITH` / `ENDSWITH` remain string-column-only.
+
+### `WITH ANY|ALL` — quantified subqueries over object collections
+
+`CONTAINS` flattens a collection to a single keyword test; it cannot ask
+"is there *one* element that is `Tier='Despised'` **and** `GoldCap>1000`
+together?". `<col> WITH ANY (<pred>)` / `<col> WITH ALL (<pred>)` does:
+`<pred>` is a full predicate compiled against the collection's **element**
+sub-schema and evaluated **per element**, so a conjunction inside the parens
+correlates on one element (the accuracy property the feature exists for).
+`ANY` ⇒ ≥1 matching element (short-circuits); `ALL` ⇒ every element matches
+and is **vacuously true over an empty collection**; a null collection is
+false for both (matching the `CONTAINS`-over-null convention). Negate with
+the existing prefix `NOT ( … )` — there is no inline `NOT WITH`. String /
+`IQueryStringValue` collections are rejected — those keep using `CONTAINS`,
+the one way to match a flat keyword list.
+
+For a **polymorphic** element collection (a discriminated-union base
+registered in `DiscriminatorRegistry`, e.g. `Npc.Services`,
+`Quest.Requirements`), the element schema is the **union** of every concrete
+subtype's properties plus the discriminator pseudo-column. A property absent
+from an element's runtime subtype reads as *absent* (distinct from
+present-but-null): every comparison against it — including `IS NULL` — is
+false, so naming a sibling-subtype field simply skips that element instead of
+erroring. When the same property name has **different types** across subtypes
+(the hierarchy is *Mandatory*-narrowing), scope it with an in-conjunction
+`<discriminator> = '<value>'` equality so the engine can resolve its concrete
+type; an unguarded reference (or a `!=` "guard") is a compile error with
+guidance. **v1 limitations:** a colliding property that would resolve to
+*different* types across the OR-branches of one quantifier is rejected (the
+inner predicate compiles once) — split it into separate queries; the
+soft-warning channel (`QueryCompiler.Compile(…, ICollection<QueryDiagnostic>
+warnings, …)`) is plumbed but not yet surfaced in the UI. Rationale, the
+A-vs-B decision, and the per-hierarchy narrowing contract are in
+[`query-quantified-subqueries.md`](query-quantified-subqueries.md).
 
 ### Schema is reflected, not declared
 
