@@ -59,6 +59,7 @@ public sealed class RecipeRequirementProjectorTests
             new WeatherRequirement { T = "Weather", ClearSky = true },
             new TimeOfDayRecipeRequirement { T = "TimeOfDay", MinHour = 20, MaxHour = 4 },
             new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "CowPet", MinCount = 2, MaxCount = 2 },
+            new HasEffectKeywordRecipeRequirement { T = "HasEffectKeyword", Keyword = "Sandstorm" },
             new HasHandsRequirement { T = "HasHands" },
             new IsLycanthropeRequirement { T = "IsLycanthrope" },
             new HasGuildHallRequirement { T = "HasGuildHall" },
@@ -72,10 +73,31 @@ public sealed class RecipeRequirementProjectorTests
             "Only during the waning crescent moon.",
             "Only when the sky is clear.",
             "Only between 20:00 and 04:00 in-game time.",
-            "Requires 2 Cow Pet pets.",
+            "Requires exactly 2 Cow Pet.",                 // tag already a pet-noun ⇒ no "pets" suffix
+            "Requires the effect “Sandstorm”.",
             "Requires hands (not available in animal form).",
             "Werewolf characters only.",
             "Requires a guild hall.");
+    }
+
+    [Fact]
+    public void PetCount_TreatsMinMaxAsBounds_NotARequiredQuantity()
+    {
+        var (nav, resolver) = Deps();
+        // The only two shapes in the bundled corpus, plus a floor-only and a non-pet-noun.
+        var reqs = new RecipeRequirement[]
+        {
+            new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "SummonedBakingBread", MaxCount = 4 },
+            new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "StorageCrateDruid", MaxCount = 0 },
+            new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "Wolf", MinCount = 2 },
+        };
+
+        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver);
+
+        lines.Should().Equal(
+            "Requires at most 4 Summoned Baking Bread pets.",   // cap, not "requires 4"
+            "Must not own any Storage Crate Druid.",            // Max 0 ⇒ disallowed, not "0 pets"
+            "Requires at least 2 Wolf pets.");                  // "pet" appended (tag isn't a pet-noun)
     }
 
     [Fact]

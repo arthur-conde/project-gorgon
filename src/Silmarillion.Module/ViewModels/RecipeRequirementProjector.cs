@@ -136,17 +136,8 @@ public static class RecipeRequirementProjector
                     break;
 
                 case PetCountRecipeRequirement p:
-                {
-                    var kind = string.IsNullOrEmpty(p.PetTypeTag) ? "" : $" {Humanise(p.PetTypeTag!)}";
-                    if (p.MinCount is { } mn && p.MaxCount is { } mx && mn != mx)
-                        lines.Add($"Requires {mn}–{mx}{kind} pets.");
-                    else
-                    {
-                        var n = p.MinCount ?? p.MaxCount ?? 1;
-                        lines.Add($"Requires {n}{kind} pet{(n == 1 ? "" : "s")}.");
-                    }
+                    lines.Add(DescribePetCount(p));
                     break;
-                }
 
                 case HasEffectKeywordRecipeRequirement h when !string.IsNullOrEmpty(h.Keyword):
                     lines.Add(h.MinCount is > 1
@@ -198,6 +189,38 @@ public static class RecipeRequirementProjector
         }
 
         return (lines, chips);
+    }
+
+    /// <summary>
+    /// Phrase a pet-count gate. <c>MinCount</c>/<c>MaxCount</c> are bounds, not a required
+    /// quantity — the corpus only carries upper bounds (<c>SummonedBakingBread</c> ≤4,
+    /// <c>StorageCrateDruid</c> ≤0), so "Requires N …" would be doubly wrong (it's a cap,
+    /// and N=0 means *none allowed*). The word "pet" is appended only when the humanised
+    /// tag doesn't already end in it, killing the "… Cow Pet pets" redundancy.
+    /// </summary>
+    private static string DescribePetCount(PetCountRecipeRequirement p)
+    {
+        var kind = string.IsNullOrEmpty(p.PetTypeTag) ? "pet" : Humanise(p.PetTypeTag!);
+        var kindIsPetNoun =
+            kind.EndsWith("pet", StringComparison.OrdinalIgnoreCase)
+            || kind.EndsWith("pets", StringComparison.OrdinalIgnoreCase);
+        string Noun(int n) => kindIsPetNoun ? kind : $"{kind} pet{(n == 1 ? "" : "s")}";
+
+        var min = p.MinCount;
+        var max = p.MaxCount;
+
+        // Max 0 with no floor ⇒ the pet is disallowed entirely.
+        if (max is 0 && min is null or 0)
+            return $"Must not own any {kind}.";
+
+        return (min, max) switch
+        {
+            ({ } a, { } b) when a == b => $"Requires exactly {a} {Noun(a)}.",
+            ({ } a, { } b) => $"Requires {a}–{b} {Noun(b)}.",
+            ({ } a, null) => $"Requires at least {a} {Noun(a)}.",
+            (null, { } b) => $"Requires at most {b} {Noun(b)}.",
+            _ => kindIsPetNoun ? $"Requires a {kind}." : $"Requires a {kind} pet.",
+        };
     }
 
     /// <summary>
