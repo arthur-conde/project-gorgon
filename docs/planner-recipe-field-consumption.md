@@ -42,7 +42,23 @@ unlocks: `PetCount`, `HasHands`, `HasEffectKeyword`, `EquipmentSlotEmpty`,
 These match the `AssertedUnlocks` philosophy (`PlanInputs.cs`: *"the planner does
 NOT pursue favor/quests/lorebooks itself — non-skill unlocks are user-asserted"*).
 The planner does **not** read them; a user who knows they'll satisfy the
-condition plans as normal. **Known limitation:** `AssertedUnlocks` is keyed by
+condition plans as normal.
+
+> **Load-bearing dependency — the punt is only sound if the gate is *visible*
+> somewhere.** The user-asserted contract assumes the user *knows* the condition
+> exists. That knowledge has to come from somewhere, and the planner isn't it. So
+> every row in this section (and in "Correctly ignored" below) is implicitly a
+> requirement on the **Silmarillion recipe detail**: if neither the planner nor
+> the browser shows `Weather`/`PetCount`/cooldown, the user is told nothing,
+> anywhere — the same silent-trap shape as the `MaxUses` bug, one layer up.
+> Resolved 2026-05-16: `OtherRequirements` (typed lines + recipe cross-link
+> chips), `Costs`, and the reset-timer now render in the recipe detail
+> (`RecipeRequirementProjector` + `RecipeDetailViewModel`; closes #342). Keep the
+> two in lockstep: a new planner-punted gate **must** get a
+> `RecipeRequirementProjector` arm, or it regresses this contract. The display
+> axis is tracked in [silmarillion-field-coverage.md](silmarillion-field-coverage.md).
+
+**Known limitation:** `AssertedUnlocks` is keyed by
 recipe `InternalName`, so it cannot actually *express* most of these
 (pet count, body form, equipped-slot, world event). This is accepted: these
 gates are rare, situational, and outside the planner's "skill grind path"
@@ -71,6 +87,12 @@ audit re-flags it, point here.
 
 ## History
 
+- **2026-05-16** — Recorded the **display dependency**: the "deliberate punt" /
+  "correctly ignored" rows are only defensible if Silmarillion surfaces the gate.
+  Resolved the blind spot — `OtherRequirements`/`Costs`/reset-timer now render in
+  the recipe detail (`RecipeRequirementProjector`, closes #342). The planner's
+  consumption is unchanged; this closes the *visibility* half so the user-asserted
+  contract is verifiable.
 - **2026-05-16** — Created alongside the `OtherRequirements` planner fix
   (`AlwaysFail` exclude · `RecipeKnown` gate · `RecipeUsed` cap). Recipe-field
   prevalence and the kind taxonomy came from a full-corpus audit of bundled

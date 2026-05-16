@@ -95,8 +95,12 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var effects = recipe.ResultEffects ?? Array.Empty<string>();
         var sources = BuildSourceChips(recipe);
         var keywordSlots = BuildKeywordSlots(recipe);
+        var requirements = RecipeRequirementProjector.Build(
+            recipe.OtherRequirements, recipe.InternalName, _navigator, _nameResolver, _refData.Strings);
+        var sharedCooldownChip = BuildSharedCooldownChip(recipe);
         DetailViewModel = new RecipeDetailViewModel(
-            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots);
+            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots,
+            requirements, sharedCooldownChip);
     }
 
     private void OnFileUpdated(object? sender, string fileKey)
@@ -121,6 +125,27 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
                 SelectedRow = resolved;
             }
         });
+    }
+
+    /// <summary>
+    /// Build the navigable chip for <c>SharesResetTimerWith</c>. Every corpus value is a
+    /// real recipe <see cref="Recipe.InternalName"/> (19/19), so this is a recipe→recipe
+    /// cross-link — same construction as the ingredient/produced chips. Null when absent;
+    /// degrades to a non-navigable pill when the Recipes tab can't open (mirrors the
+    /// <see cref="RecipeRequirementProjector"/> chips' degrade contract).
+    /// </summary>
+    private EntityChipVm? BuildSharedCooldownChip(Recipe recipe)
+    {
+        if (string.IsNullOrEmpty(recipe.SharesResetTimerWith)) return null;
+        var reference = EntityRef.Recipe(recipe.SharesResetTimerWith!);
+        var iconId = _refData.RecipesByInternalName.TryGetValue(recipe.SharesResetTimerWith!, out var target)
+            ? target.IconId
+            : 0;
+        return new EntityChipVm(
+            DisplayName: _nameResolver.Resolve(reference),
+            IconId: iconId,
+            Reference: reference,
+            IsNavigable: _navigator.CanOpen(reference));
     }
 
     private IReadOnlyList<RecipeListRow> BuildAllRecipes(IReferenceDataService refData) =>

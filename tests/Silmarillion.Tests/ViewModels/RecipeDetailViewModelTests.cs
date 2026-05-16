@@ -15,7 +15,10 @@ public sealed class RecipeDetailViewModelTests
         int skillLevel = 12,
         string? description = null,
         IReadOnlyList<string>? resultEffects = null,
-        int? maxUses = null) => new()
+        int? maxUses = null,
+        IReadOnlyList<RecipeCost>? costs = null,
+        int? resetTimeInSeconds = null,
+        string? sharesResetTimerWith = null) => new()
     {
         Key = "recipe_1",
         InternalName = internalName,
@@ -27,6 +30,9 @@ public sealed class RecipeDetailViewModelTests
         Ingredients = [],
         ResultEffects = resultEffects,
         MaxUses = maxUses,
+        Costs = costs,
+        ResetTimeInSeconds = resetTimeInSeconds,
+        SharesResetTimerWith = sharesResetTimerWith,
     };
 
     [Fact]
@@ -135,5 +141,82 @@ public sealed class RecipeDetailViewModelTests
             resultEffectsText: []);
 
         vm.MaxUsesChip.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData(0, "")]
+    [InlineData(45, "Reuse every 45s")]
+    [InlineData(90, "Reuse every 1m 30s")]
+    [InlineData(5400, "Reuse every 1h 30m")]
+    [InlineData(180000, "Reuse every 2d 2h")]
+    public void CooldownChip_FormatsResetTime_OrEmptyWhenAbsent(int? resetSeconds, string expected)
+    {
+        // The planner is time-stateless: it surfaces the MaxUses cap but never the
+        // cooldown. The browser is the only place this reaches the player (#342).
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(resetTimeInSeconds: resetSeconds), [], [], []);
+
+        vm.CooldownChip.Should().Be(expected);
+    }
+
+    [Fact]
+    public void SharedCooldownRow_IsANavigableChipRow_WithDistinctPrefix_WhenProvided()
+    {
+        // SharesResetTimerWith is a recipe→recipe edge (19/19 corpus values are real
+        // recipe InternalNames) — a chip row, not dead prose, but labelled distinctly
+        // from the requirement gates (a cooldown grouping isn't a gate).
+        var chip = new EntityChipVm("Make Roux", IconId: 7,
+            Reference: EntityRef.Recipe("MakeRouxInternal"), IsNavigable: true);
+
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [],
+            sharedCooldownChip: chip);
+
+        vm.SharedCooldownRow.Should().NotBeNull();
+        vm.SharedCooldownRow!.Chip.Should().BeSameAs(chip);
+        vm.SharedCooldownRow.Chip!.Reference!.Kind.Should().Be(EntityKind.Recipe);
+        vm.SharedCooldownRow.Prefix.Should().Be("Shares cooldown with");
+        vm.SharedCooldownRow.Text.Should().Be("Shares cooldown with Make Roux");
+    }
+
+    [Fact]
+    public void SharedCooldownRow_IsNullWhenAbsent()
+    {
+        new RecipeDetailViewModel(SampleRecipe(), [], [], [])
+            .SharedCooldownRow.Should().BeNull();
+    }
+
+    [Fact]
+    public void CostLines_FormatCurrencyAndSkipNonPositive_OrEmptyWhenAbsent()
+    {
+        new RecipeDetailViewModel(SampleRecipe(), [], [], []).CostLines.Should().BeEmpty();
+
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(costs: new[]
+            {
+                new RecipeCost { Currency = "FaeEnergy", Price = 1500 },     // camel-split
+                new RecipeCost { Currency = "CombatWisdom", Price = 0 },      // skipped (≤0)
+                new RecipeCost { Currency = null, Price = 25 },
+            }),
+            [], [], []);
+
+        vm.CostLines.Should().Equal("1,500 Fae Energy", "25 currency");
+    }
+
+    [Fact]
+    public void Requirements_DefaultEmpty_AndPassThroughWhenProvided()
+    {
+        new RecipeDetailViewModel(SampleRecipe(), [], [], []).Requirements.Should().BeEmpty();
+
+        var rows = new[]
+        {
+            new RecipeRequirementRow("Only during the full moon."),
+            new RecipeRequirementRow("Requires recipe: Make Roux", "Requires recipe:",
+                new EntityChipVm("Make Roux", 0, EntityRef.Recipe("MakeRoux"), true)),
+        };
+        var vm = new RecipeDetailViewModel(SampleRecipe(), [], [], [], requirements: rows);
+
+        vm.Requirements.Should().BeEquivalentTo(rows, o => o.WithStrictOrdering());
     }
 }
