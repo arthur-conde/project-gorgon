@@ -62,13 +62,21 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     optimization.* Not prohibited (Samwise *could* suggest what to plant) but a
     deliberate non-feature: PG gardening is intentionally trivial (plant → water when
     thirsty → fertilize when hungry → collect when ready), so there is nothing to
-    optimize. Gardening XP is likely deterministic but, unlike recipe XP, the values
-    are **not in reference data** — so XP-driven advice isn't even data-feasible.
+    optimize.
   - **✅ confirmed (owner, 2026-05-16)** — *Anything recipe/crafting* (crops as
-    ingredients, cooking with crops) → Elrond/Celebrimbor, per the cross-cutting rule.
-- **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`). Gardening
-  XP is *not* in reference data (contrast: recipe XP tables are), so no XP-driven
-  gardening feature is data-feasible today.
+    ingredients, cooking with crops, **and Gardening crafting recipes** — see data
+    note) → Elrond/Celebrimbor, per the cross-cutting rule.
+- **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`).
+- **Data note (verified v470, 2026-05-16):** an earlier draft asserted "gardening XP
+  is not in reference data" — **false, corrected.** `Gardening` is a real skill and
+  Gardening *crafting* recipes (`BasicFertilizer1/2/3`, …) are in `recipes.json` with
+  full `RewardSkillXp`/first-time/drop-off, so recipe-based Gardening leveling is
+  Elrond's via the cross-cutting rule like any craft skill. **Verification owed:**
+  whether the *crop-lifecycle actions themselves* (plant / water / apply-fertilizer /
+  harvest) grant XP and whether that lives anywhere in reference data is unverified —
+  not recipe-shaped, so likely absent, but neither owner nor a data check has
+  confirmed. That open question is the only thing that would gate a hypothetical
+  lifecycle-XP feature.
 
 ## Pippin — Gourmand support (food-variety tracking)
 
@@ -88,21 +96,24 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Legolas — surveying & route optimization
 
-- **Owns:** the survey FSM, position-anchor/projection, survey-run route optimization,
-  and the map overlay. (See `legolas-overview` doc + `legolas_position_anchor_constraint`
-  memory: surveying produces inventory items; movement invalidates the projector.)
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — the survey FSM, position-anchor/projection,
+  survey-run route optimization, and the map overlay. (See `legolas-overview` doc +
+  `legolas_position_anchor_constraint` memory: surveying produces inventory items;
+  movement invalidates the projector.)
 - **Does NOT own:**
-  - ⚠️ *General geographic reference* (where places/landmarks are). Areas/landmarks
-    browsing is Silmarillion.
-  - ⚠️ *Item acquisition guidance.*
+  - **✅ confirmed (owner, 2026-05-16)** — *General geographic reference* (where
+    places/landmarks are). Areas/landmarks browsing is Silmarillion.
+  - **✅ confirmed (owner, 2026-05-16)** — *Item acquisition guidance.*
 - **Reference data:** `Items` (survey items).
 
 ## Arwen — NPC favor & gift tracking
 
-- **Owns:** per-NPC favor state, gift-rate calibration, and gift-outcome tracking.
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — per-NPC favor state, gift-rate
+  calibration, and gift-outcome tracking.
 - **Does NOT own:**
-  - ⚠️ *NPC location/services browsing.* The NPC reference card is Silmarillion.
-  - ⚠️ *Quest-giving / favor-quest adjudication.*
+  - **✅ confirmed (owner, 2026-05-16)** — *NPC location/services browsing.* The NPC
+    reference card is Silmarillion.
+  - **✅ confirmed (owner, 2026-05-16)** — *Quest-giving / favor-quest adjudication.*
 - **Reference data:** `Npcs` (preferences), `Items` (gift identity).
 
 ## Elrond — skill leveling advisor
@@ -194,6 +205,14 @@ libraries; the charter follows the code:
   tracker — interprets `Player.log` to track plantings + state transitions and alarms
   so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
   confirmed.
+- **2026-05-16** — Legolas & Arwen sections confirmed accurate by owner; their ⚠️
+  entries promoted to ✅.
+- **2026-05-16** — Samwise gardening-XP claim corrected after a v470 data check: the
+  asserted "gardening XP not in reference data" was **false** — `Gardening` is a skill
+  and `BasicFertilizer1/2/3` recipes carry full Gardening XP, so recipe-based Gardening
+  leveling is Elrond's via the cross-cutting rule. Crop-*lifecycle* XP availability
+  recorded as explicit Verification owed. Both the prior draft and the owner's
+  assumption were off; checking the data resolved it.
 - **2026-05-16** — Samwise boundaries refined by owner: crop-selection/yield advice is
   a *soft* non-feature (PG gardening trivial; gardening XP absent from ref data), not a
   prohibition — promoted to ✅. Recipe/crafting confirmed as Elrond/Celebrimbor
