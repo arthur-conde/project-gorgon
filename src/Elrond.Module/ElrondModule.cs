@@ -3,6 +3,7 @@ using Elrond.Domain;
 using Elrond.Services;
 using Elrond.ViewModels;
 using Elrond.Views;
+using Mithril.Leveling.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
@@ -30,6 +31,7 @@ public sealed class ElrondModule : IMithrilModule
 
         services.AddMithrilSettings<ElrondSettings>(settingsPath, ElrondSettingsJsonContext.Default.ElrondSettings);
 
+        services.AddMithrilLeveling();
         services.AddSingleton<SkillAdvisorEngine>();
         services.AddSingleton<LevelingSimulator>();
 
