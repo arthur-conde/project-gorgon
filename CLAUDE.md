@@ -58,6 +58,8 @@ Modules are discovered at runtime via reflection from the `modules/` folder (`Sh
 | Gandalf | gandalf | User-created timers with alarms | Eager |
 | Bilbo | bilbo | Storage/inventory management | Lazy |
 
+This table is purpose-only and non-exhaustive (Silmarillion and Celebrimbor also ship). **Before proposing or building work for a module, read [docs/module-charters.md](docs/module-charters.md)** — it records each module's responsibility *boundaries* (what it explicitly does **not** own, and why). A data-availability gap is not a feature unless it serves the module's charter.
+
 ### Shell Bootstrap (Program.cs)
 
 Single-instance mutex guard &rarr; game root detection &rarr; settings load &rarr; `IHost` build &rarr; eager module gates opened &rarr; WPF `App.Run()`. Second-instance attempts raise the existing window via `EventWaitHandle`.
