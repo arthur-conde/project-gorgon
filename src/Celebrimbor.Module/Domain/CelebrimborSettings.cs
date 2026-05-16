@@ -1,12 +1,28 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Mithril.Shared.Character;
 using Mithril.Shared.Wpf;
 
 namespace Celebrimbor.Domain;
 
-public sealed class CelebrimborSettings : INotifyPropertyChanged
+public sealed class CelebrimborSettings : INotifyPropertyChanged, IVersionedState<CelebrimborSettings>
 {
+    /// <summary>
+    /// Schema-version stamp (forward-compat hygiene per #208 — "any persisted JSON
+    /// should carry a schema version"). Legacy files predate the field; per the
+    /// codebase's IVersionedState convention <see cref="SchemaVersion"/> initialises
+    /// to <see cref="Version"/>, and <see cref="Migrate"/> is an identity passthrough
+    /// (no data loss). This is independent of #228 — the leveling plan is *not*
+    /// stored here (it lives in a per-character <c>LevelingPlanState</c> store);
+    /// CelebrimborSettings stays module-wide for the craft list / grid state.
+    /// </summary>
+    public const int Version = 1;
+    public static int CurrentVersion => Version;
+    public static CelebrimborSettings Migrate(CelebrimborSettings loaded) => loaded;
+
+    public int SchemaVersion { get; set; } = Version;
+
     private bool _knownRecipesOnly;
     private bool _enforceSkillLevel;
     private int _expansionDepth;

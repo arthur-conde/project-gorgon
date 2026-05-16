@@ -59,6 +59,13 @@
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
+    <!-- Shared leveling/planning libs. The shell must reference these so their
+         DLLs land in the app base dir for the reflection module loader to resolve:
+         modules not <ProjectReference>'d here (Celebrimbor) are copied as
+         *.Module.dll only, NOT their shared-lib deps. Mithril.Leveling previously
+         arrived transitively via Elrond's ref — fragile; make it explicit. -->
+    <ProjectReference Include="..\Mithril.Leveling\Mithril.Leveling.csproj" />
+    <ProjectReference Include="..\Mithril.Planning\Mithril.Planning.csproj" />
     <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
     <ProjectReference Include="..\Legolas.Module\Legolas.Module.csproj" />
     <ProjectReference Include="..\Gandalf.Module\Gandalf.Module.csproj" />
