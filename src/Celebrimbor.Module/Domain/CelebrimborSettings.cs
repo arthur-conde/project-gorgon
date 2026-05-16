@@ -9,10 +9,13 @@ namespace Celebrimbor.Domain;
 public sealed class CelebrimborSettings : INotifyPropertyChanged, IVersionedState<CelebrimborSettings>
 {
     /// <summary>
-    /// First versioned schema. Legacy files predate versioning and deserialize with
-    /// <see cref="SchemaVersion"/> = 0; the loader migrates them to <see cref="Version"/>.
-    /// v1 only *adds* nullable plan state, so the migration is a pure identity passthrough —
-    /// no existing CraftList / OnHandOverrides / grid state is touched (no data loss).
+    /// Schema-version stamp (forward-compat hygiene per #208 — "any persisted JSON
+    /// should carry a schema version"). Legacy files predate the field; per the
+    /// codebase's IVersionedState convention <see cref="SchemaVersion"/> initialises
+    /// to <see cref="Version"/>, and <see cref="Migrate"/> is an identity passthrough
+    /// (no data loss). This is independent of #228 — the leveling plan is *not*
+    /// stored here (it lives in a per-character <c>LevelingPlanState</c> store);
+    /// CelebrimborSettings stays module-wide for the craft list / grid state.
     /// </summary>
     public const int Version = 1;
     public static int CurrentVersion => Version;
@@ -36,13 +39,6 @@ public sealed class CelebrimborSettings : INotifyPropertyChanged, IVersionedStat
 
     public List<CraftListEntry> CraftList { get; set; } = [];
     public List<ManualOnHandOverride> OnHandOverrides { get; set; } = [];
-
-    /// <summary>
-    /// The leveling plan (#227) currently being walked, with its phase cursor and the
-    /// sourcing snapshot it was planned under. <c>null</c> = no active plan. Survives
-    /// sessions so the player picks up where they left off (#228).
-    /// </summary>
-    public PersistedPlan? ActivePlan { get; set; }
 
     public DataGridState RecipeGrid { get; set; } = new();
     public DataGridState IngredientGrid { get; set; } = new();

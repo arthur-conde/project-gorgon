@@ -1,4 +1,3 @@
-using Celebrimbor.Domain;
 using Mithril.Leveling;
 using Mithril.Planning;
 using Mithril.Reference.Models.Recipes;
@@ -23,7 +22,7 @@ public sealed record PlanWalkState(
     PersistedSkillUnlock? NextUnlock);
 
 /// <summary>
-/// The plan-aware executor (#228, foundation): walks a persisted #227 plan
+/// The plan-aware executor (#228, foundation): walks a <see cref="SavedLevelingPlan"/>
 /// phase-by-phase and verifies phase completion against actual inventory.
 ///
 /// Phase-complete predicate (per the issue): a phase that grinds <c>N</c> crafts
@@ -33,8 +32,10 @@ public sealed record PlanWalkState(
 /// or dropped from variable output (handles random-output variance *and*
 /// externally-supplied ingredients).
 ///
-/// Pure/headless: phase evaluation takes an on-hand map; the UI surface (phase
-/// timeline, sourcing toggles, re-plan button) is #228 PR-B.
+/// Pure/headless: phase evaluation takes an on-hand map; the plan-manager UI
+/// (list/select, phase timeline, sourcing toggles, stale-refresh offer) is
+/// #228 PR-B. Plans are arbitrary-input: <see cref="CreatePlan"/> takes explicit
+/// state, with active-character / weak-ref convenience overloads.
 /// </summary>
 public sealed class PlanExecutor
 {
@@ -51,6 +52,8 @@ public sealed class PlanExecutor
         _planner = planner;
         _activeChar = activeChar;
     }
+
+    // ── Phase walking ────────────────────────────────────────────────────
 
     /// <summary>
     /// Evaluate one phase: resolve its recipe's primary output, compute the
@@ -74,10 +77,10 @@ public sealed class PlanExecutor
 
     /// <summary>
     /// The walk state for <paramref name="plan"/> given current inventory:
-    /// the current phase, its evaluation, whether the whole plan is satisfied,
-    /// and the next skill-source unlock callout (if any).
+    /// current phase, its evaluation, whether the whole plan is satisfied, and
+    /// the next skill-source unlock callout (if any).
     /// </summary>
-    public PlanWalkState Evaluate(PersistedPlan plan, IReadOnlyDictionary<string, int> onHand)
+    public PlanWalkState Evaluate(SavedLevelingPlan plan, IReadOnlyDictionary<string, int> onHand)
     {
         if (plan.Phases.Count == 0)
             return new PlanWalkState(0, null, null, IsPlanComplete: true, NextUnlock: null);
@@ -86,12 +89,9 @@ public sealed class PlanExecutor
         var phase = plan.Phases[idx];
         var eval = EvaluatePhase(phase, onHand);
 
-        // Whole plan done = on the last phase and it's complete.
         var isLast = idx >= plan.Phases.Count - 1;
         var planComplete = isLast && eval.IsComplete;
 
-        // Next unlock = the earliest unlock that fires at or after the next phase's
-        // starting level — drives the "Phase N unlocks at Skill L" callout.
         PersistedSkillUnlock? nextUnlock = null;
         if (!isLast)
         {
@@ -108,11 +108,11 @@ public sealed class PlanExecutor
     /// <summary>
     /// Advance the cursor if the current phase's predicate has tripped. Returns
     /// true if it moved. Mutates <paramref name="plan"/>'s
-    /// <see cref="PersistedPlan.CurrentPhaseIndex"/> in place — the caller persists.
-    /// When the predicate has NOT tripped (e.g. random output ran cold) this is a
-    /// no-op; the caller decides whether to keep crafting or re-plan.
+    /// <see cref="SavedLevelingPlan.CurrentPhaseIndex"/> in place — the caller
+    /// persists. When the predicate has NOT tripped (e.g. random output ran cold)
+    /// this is a no-op; the caller decides whether to keep crafting or re-plan.
     /// </summary>
-    public bool TryAdvance(PersistedPlan plan, IReadOnlyDictionary<string, int> onHand)
+    public bool TryAdvance(SavedLevelingPlan plan, IReadOnlyDictionary<string, int> onHand)
     {
         if (plan.Phases.Count == 0) return false;
         var idx = Math.Clamp(plan.CurrentPhaseIndex, 0, plan.Phases.Count - 1);
@@ -122,32 +122,83 @@ public sealed class PlanExecutor
         return true;
     }
 
+    // ── Plan creation (arbitrary input) ──────────────────────────────────
+
     /// <summary>
-    /// Build a fresh plan for <paramref name="target"/> from the *current* active
-    /// character + supplied inventory and sourcing. Returns the persisted form
-    /// (cursor at phase 0), or <c>null</c> when there's no active character or no
-    /// viable path / umbrella skill.
+    /// Build a saved plan from <b>explicit</b> state — the general, arbitrary-input
+    /// entry point (a hypothetical, an alt, a UI-edited what-if). Returns
+    /// <c>null</c> on no viable path / umbrella skill.
     /// </summary>
-    public PersistedPlan? CreatePlan(
+    public SavedLevelingPlan? CreatePlan(
+        SkillTarget target,
+        SkillState state,
+        RecipeHistory history,
+        IReadOnlyDictionary<string, int> onHand,
+        SourcingPolicy sourcing,
+        PlanCharacterRef? character)
+    {
+        var plan = _planner.Plan(target, state, history, onHand, sourcing);
+        return plan is null ? null : SavedLevelingPlan.From(plan, target, state, history, sourcing, character);
+    }
+
+    /// <summary>
+    /// Convenience: plan for the active character, embedding its full state and a
+    /// weak ref to it. <c>null</c> if no active character / no viable path.
+    /// </summary>
+    public SavedLevelingPlan? CreatePlanForActiveCharacter(
         SkillTarget target,
         SourcingPolicy sourcing,
         IReadOnlyDictionary<string, int> onHand)
     {
-        var snapshot = _activeChar.ActiveCharacter;
-        if (snapshot is null) return null;
-
-        var plan = _planner.Plan(
-            target, ToSkillState(snapshot), ToRecipeHistory(snapshot), onHand, sourcing);
-        return plan is null ? null : PersistedPlan.From(plan, target, sourcing);
+        var snap = _activeChar.ActiveCharacter;
+        if (snap is null) return null;
+        return CreatePlan(target, ToSkillState(snap), ToRecipeHistory(snap), onHand,
+            sourcing, PlanCharacterRef.FromSnapshot(snap));
     }
 
     /// <summary>
-    /// Re-plan from current state, reusing the existing plan's target + sourcing
-    /// snapshot — "re-plan from current state" (#228). Cheap; the caller swaps the
-    /// persisted plan and resets the cursor.
+    /// Re-plan an existing saved plan, reusing its target + sourcing. If its weak
+    /// character ref resolves to a live export, the embedded initial state is
+    /// <b>refreshed</b> from that export (intake newly learned recipes / skill-ups)
+    /// — "refresh &amp; re-plan"; otherwise it re-plans from the embedded state.
+    /// Same Id / CreatedAt (a refresh of the same logical plan), cursor reset.
     /// </summary>
-    public PersistedPlan? Replan(PersistedPlan existing, IReadOnlyDictionary<string, int> onHand)
-        => CreatePlan(existing.ToSkillTarget(), existing.ToSourcingPolicy(), onHand);
+    public SavedLevelingPlan? Replan(SavedLevelingPlan existing, IReadOnlyDictionary<string, int> onHand)
+    {
+        var live = ResolveLiveSnapshot(existing.Character);
+        SkillState state;
+        RecipeHistory history;
+        PlanCharacterRef? character;
+        if (live is not null)
+        {
+            state = ToSkillState(live);
+            history = ToRecipeHistory(live);
+            character = PlanCharacterRef.FromSnapshot(live);
+        }
+        else
+        {
+            state = existing.ToInitialSkillState();
+            history = existing.ToInitialRecipeHistory();
+            character = existing.Character;
+        }
+
+        var plan = _planner.Plan(existing.ToSkillTarget(), state, history, onHand, existing.ToSourcingPolicy());
+        if (plan is null) return null;
+
+        var refreshed = SavedLevelingPlan.From(
+            plan, existing.ToSkillTarget(), state, history, existing.ToSourcingPolicy(), character);
+        refreshed.Id = existing.Id;
+        refreshed.CreatedAt = existing.CreatedAt;
+        return refreshed;
+    }
+
+    /// <summary>Newest live export matching the weak ref's identity, or null.</summary>
+    public CharacterSnapshot? ResolveLiveSnapshot(PlanCharacterRef? r)
+        => r is null
+            ? null
+            : _activeChar.Characters.FirstOrDefault(c =>
+                string.Equals(c.Name, r.Name, StringComparison.Ordinal)
+                && string.Equals(c.Server, r.Server, StringComparison.Ordinal));
 
     /// <summary>Project a character export's progression facet into the neutral planner input.</summary>
     public static SkillState ToSkillState(CharacterSnapshot snapshot)
@@ -159,7 +210,7 @@ public sealed class PlanExecutor
             StringComparer.Ordinal));
 
     public static RecipeHistory ToRecipeHistory(CharacterSnapshot snapshot)
-        => new(snapshot.RecipeCompletions);
+        => new(new Dictionary<string, int>(snapshot.RecipeCompletions, StringComparer.Ordinal));
 
     private (string InternalName, int StackSize) PrimaryOutput(Recipe recipe)
     {
