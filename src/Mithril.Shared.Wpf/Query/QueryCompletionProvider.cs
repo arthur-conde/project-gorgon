@@ -52,16 +52,21 @@ public static class QueryCompletionProvider
         if (caret > query.Length) caret = query.Length;
 
         var tokens = QueryParser.LexPermissive(query);
+        // Inside a `<col> WITH ANY|ALL ( … )` block the caret binds against that
+        // column's element sub-schema, not the outer row schema (nested blocks /
+        // grouping parens balance on the same stack, so closing a block restores the
+        // outer schema). Everywhere else this is just `columns`.
+        var scopeColumns = ResolveScopeColumns(tokens, caret, columns);
         // The last non-EOF token strictly before the caret. "Strictly before" means
         // its end position is <= caret, so typing adjacent to a keyword still suggests
         // things that *follow* it.
-        var context = BuildContext(query, caret, tokens, columns);
+        var context = BuildContext(query, caret, tokens, scopeColumns);
 
         var results = new List<CompletionItem>();
         switch (context.Expecting)
         {
             case Expecting.ColumnOrBool:
-                AddColumnSuggestions(results, context, columns);
+                AddColumnSuggestions(results, context, scopeColumns);
                 // NOT can also begin a predicate — allow it at the top.
                 AddKeywordIfStartsWith(results, "NOT", context);
                 break;
@@ -79,7 +84,7 @@ public static class QueryCompletionProvider
                 AddKeywordIfStartsWith(results, "OR", context);
                 break;
             case Expecting.OrderColumn:
-                AddColumnSuggestions(results, context, columns);
+                AddColumnSuggestions(results, context, scopeColumns);
                 break;
             case Expecting.OrderDirection:
                 AddKeywordIfStartsWith(results, "ASC", context);
@@ -121,6 +126,49 @@ public static class QueryCompletionProvider
         int ReplaceStart,
         int ReplaceEnd,
         ColumnSchema? CurrentColumn);
+
+    /// <summary>
+    /// Single forward pass over the tokens before <paramref name="caret"/>,
+    /// maintaining a stack of "schema in effect". A <c>(</c> immediately preceded by
+    /// <c>&lt;ident&gt; WITH ANY|ALL</c> pushes that column's element sub-schema;
+    /// any other <c>(</c> pushes the current schema again (so grouping parens balance
+    /// without changing scope); <c>)</c> pops. The top of the stack is the schema the
+    /// caret should complete against — element schema inside a quantifier block,
+    /// outer schema once the block (and any nesting) is closed.
+    /// </summary>
+    private static IReadOnlyList<ColumnSchema> ResolveScopeColumns(
+        IReadOnlyList<QueryParser.Token> tokens, int caret, IReadOnlyList<ColumnSchema> outer)
+    {
+        var stack = new Stack<IReadOnlyList<ColumnSchema>>();
+        stack.Push(outer);
+        var toks = tokens.Where(t => t.Kind != QueryParser.TokenKind.Eof).ToList();
+        for (int i = 0; i < toks.Count; i++)
+        {
+            var t = toks[i];
+            if (t.Position >= caret) break; // only already-typed tokens shape the scope
+            if (t.Kind == QueryParser.TokenKind.LParen)
+            {
+                IReadOnlyList<ColumnSchema>? element = null;
+                if (i >= 3
+                    && toks[i - 1].Kind is QueryParser.TokenKind.Any or QueryParser.TokenKind.All
+                    && toks[i - 2].Kind == QueryParser.TokenKind.With
+                    && toks[i - 3].Kind == QueryParser.TokenKind.Identifier)
+                {
+                    var col = LookupColumn(toks[i - 3].Text, stack.Peek());
+                    if (col is not null)
+                    {
+                        element = ColumnBindingHelper.TryGetElementSchema(col.ValueType);
+                    }
+                }
+                stack.Push(element ?? stack.Peek());
+            }
+            else if (t.Kind == QueryParser.TokenKind.RParen)
+            {
+                if (stack.Count > 1) stack.Pop();
+            }
+        }
+        return stack.Peek();
+    }
 
     private static Context BuildContext(
         string query, int caret, IReadOnlyList<QueryParser.Token> tokens, IReadOnlyList<ColumnSchema> columns)
@@ -365,6 +413,20 @@ public static class QueryCompletionProvider
 
     private static void AddOperatorSuggestions(List<CompletionItem> results, Context ctx, ColumnSchema? col)
     {
+        // An object-collection column takes a quantifier, not scalar operators —
+        // offer only WITH ANY|ALL (and IS [NOT] NULL when the collection is nullable).
+        if (col is not null && ColumnBindingHelper.TryGetElementSchema(col.ValueType) is not null)
+        {
+            Add(results, ctx, "WITH ANY (", CompletionKind.Keyword);
+            Add(results, ctx, "WITH ALL (", CompletionKind.Keyword);
+            if (col.IsNullable)
+            {
+                Add(results, ctx, "IS NULL", CompletionKind.Keyword);
+                Add(results, ctx, "IS NOT NULL", CompletionKind.Keyword);
+            }
+            return;
+        }
+
         var underlying = col is null ? null : Nullable.GetUnderlyingType(col.ValueType) ?? col.ValueType;
         var isString = underlying == typeof(string);
         var isBool = underlying == typeof(bool);

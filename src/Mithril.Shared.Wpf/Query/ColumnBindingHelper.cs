@@ -77,6 +77,31 @@ public static class ColumnBindingHelper
         return map;
     }
 
+    /// <summary>
+    /// The element sub-schema for an object-collection column (the schema the
+    /// completion provider / highlighter should use <em>inside</em> a
+    /// <c>WITH ANY|ALL ( … )</c> block for that column), or <see langword="null"/>
+    /// when <paramref name="collectionType"/> is not a quantifiable object
+    /// collection (a scalar, a string collection, or an <c>IQueryStringValue</c>
+    /// collection — those use <c>CONTAINS</c>, not a quantifier).
+    /// </summary>
+    internal static IReadOnlyList<ColumnSchema>? TryGetElementSchema(Type collectionType)
+    {
+        var underlying = Nullable.GetUnderlyingType(collectionType) ?? collectionType;
+        var elementType = QueryCompiler.GetCollectionElementType(underlying);
+        if (elementType is null
+            || elementType == typeof(string)
+            || typeof(Mithril.Reference.IQueryStringValue).IsAssignableFrom(elementType))
+        {
+            return null;
+        }
+        var classification = PolymorphicSchemaClassifier.Classify(elementType);
+        var bindings = classification is null
+            ? BuildFromProperties(elementType)
+            : BuildElementSchema(classification);
+        return ToSchema(bindings);
+    }
+
     public static IReadOnlyList<ColumnSchema> ToSchema(IReadOnlyDictionary<string, ColumnBinding> bindings)
     {
         var list = new List<ColumnSchema>(bindings.Count);

@@ -306,7 +306,7 @@ public static class QueryCompiler
     /// the string-collection <c>CONTAINS</c> path and the <c>WITH ANY|ALL</c>
     /// quantified-subquery path.
     /// </summary>
-    private static Type? GetCollectionElementType(Type t)
+    internal static Type? GetCollectionElementType(Type t)
     {
         if (t == typeof(string)) return null;
         foreach (var iface in t.GetInterfaces())
