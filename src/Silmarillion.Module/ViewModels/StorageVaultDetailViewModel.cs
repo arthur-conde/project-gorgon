@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Mithril.Reference.Models.Misc;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 using StorageVaultPoco = Mithril.Reference.Models.Misc.StorageVault;
@@ -38,18 +39,6 @@ namespace Silmarillion.ViewModels;
 /// </summary>
 public sealed class StorageVaultDetailViewModel
 {
-    /// <summary>
-    /// Canonical in-game favor progression (mirrors <c>Arwen.Domain.FavorTier</c>, kept
-    /// local to avoid a cross-module dependency). The favor table orders rows by this, NOT
-    /// by the JSON dictionary's enumeration order. Any unrecognised future tier sorts last
-    /// (alpha) so a PG patch surfaces visibly rather than silently.
-    /// </summary>
-    private static readonly string[] FavorOrder =
-    {
-        "Despised", "Hatred", "Disliked", "Tolerated", "Neutral", "Comfortable",
-        "Friends", "CloseFriends", "BestFriends", "LikeFamily", "SoulMates",
-    };
-
     public StorageVaultDetailViewModel(
         StorageVaultListRow row,
         IReferenceDataService refData,
@@ -240,11 +229,12 @@ public sealed class StorageVaultDetailViewModel
         if (levels is null || levels.Count == 0)
             return Array.Empty<StorageVaultCapacityRow>();
 
-        int Rank(string tier)
-        {
-            var i = Array.IndexOf(FavorOrder, tier);
-            return i < 0 ? int.MaxValue : i;
-        }
+        // Order by the canonical favor ladder (#370/#373): FavorTier's underlying
+        // value IS a signed, floor-grounded rank, so the enum cast is the sort key.
+        // An unrecognised future token → FavorTier.Unknown (int.MinValue) and sorts
+        // below every real tier (the canonical sentinel contract); the alpha ThenBy
+        // keeps such rows deterministic.
+        static int Rank(string tier) => (int)FavorTierExtensions.Parse(tier);
 
         return levels
             // A 0-slot favor tier (e.g. Despised:0, Comfortable:0) is the universal
