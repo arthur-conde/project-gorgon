@@ -234,6 +234,83 @@ public class CrossSkillPlannerTests
         plan.FinalState.LevelOf(Skill).Should().Be(4);
     }
 
+    // ── OtherRequirements gates ──────────────────────────────────────────
+
+    [Fact]
+    public void OtherRequirements_AlwaysFail_RecipeNeverScheduled()
+    {
+        // AlwaysFail recipe advertises the highest XP but can never succeed
+        // (the ImproveProphesied* family) — it must never be picked.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Idol").AddItem(2, "Plank")
+            .AddRecipe("ImproveProphesiedIdol", Skill, xp: 1000, produces: (1, 1), skillLevelReq: 1,
+                otherRequirements: [new AlwaysFailRequirement()])
+            .AddRecipe("CarvePlank", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 4), State(1), RecipeHistory.Empty)!;
+
+        plan.Phases.Should().NotContain(p => p.RecipeInternalName == "ImproveProphesiedIdol",
+            because: "an AlwaysFail recipe can never succeed regardless of XP");
+        plan.Phases.Should().OnlyContain(p => p.RecipeInternalName == "CarvePlank");
+        plan.FinalState.LevelOf(Skill).Should().Be(4);
+    }
+
+    [Fact]
+    public void OtherRequirements_RecipeUsed_SelfReferentialCap_IsHonoured()
+    {
+        // WeatherWitching shape: the recipe requires itself used ≤0 times ⇒
+        // craftable exactly once per character, then the planner must switch.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Sun").AddItem(2, "Twig")
+            .AddRecipe("SongOfTheSun", Skill, xp: 100, produces: (1, 1), skillLevelReq: 1,
+                otherRequirements: [new RecipeUsedRequirement { Recipe = "SongOfTheSun", MaxTimesUsed = 0 }])
+            .AddRecipe("SnapTwig", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 5), State(1), RecipeHistory.Empty)!;
+
+        plan.Phases.Where(p => p.RecipeInternalName == "SongOfTheSun").Sum(p => p.PredictedCrafts)
+            .Should().Be(1, because: "RecipeUsed{self, 0} ⇒ exactly one craft ever");
+        plan.Phases.Should().Contain(p => p.RecipeInternalName == "SnapTwig");
+        plan.FinalState.LevelOf(Skill).Should().Be(5);
+    }
+
+    [Fact]
+    public void OtherRequirements_RecipeUsed_PriorHistoryCountsAgainstTheCap()
+    {
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Sun").AddItem(2, "Twig")
+            .AddRecipe("SongOfTheSun", Skill, xp: 100, produces: (1, 1), skillLevelReq: 1,
+                otherRequirements: [new RecipeUsedRequirement { Recipe = "SongOfTheSun", MaxTimesUsed = 0 }])
+            .AddRecipe("SnapTwig", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        var history = new RecipeHistory(new Dictionary<string, int> { ["SongOfTheSun"] = 1 });
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 4), State(1), history)!;
+
+        plan.Phases.Should().NotContain(p => p.RecipeInternalName == "SongOfTheSun",
+            because: "cap 0+1=1 already spent by history");
+        plan.Phases.Should().OnlyContain(p => p.RecipeInternalName == "SnapTwig");
+    }
+
+    [Fact]
+    public void OtherRequirements_RecipeKnown_GatesUntilTheReferencedRecipeIsKnown()
+    {
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Augury").AddItem(2, "Note")
+            .AddRecipe("Augury2", Skill, xp: 100, produces: (1, 1), skillLevelReq: 1,
+                otherRequirements: [new RecipeKnownRequirement { Recipe = "Augury1" }])
+            .AddRecipe("Scribble", Skill, xp: 40, produces: (2, 1), skillLevelReq: 1);
+
+        // Augury1 unknown ⇒ Augury2 gated out; plan falls back to Scribble.
+        var gated = Planner(data).Plan(new SkillTarget(Skill, 4), State(1), RecipeHistory.Empty)!;
+        gated.Phases.Should().OnlyContain(p => p.RecipeInternalName == "Scribble");
+
+        // Augury1 known ⇒ Augury2 available and (higher XP) preferred.
+        var known = new RecipeHistory(new Dictionary<string, int> { ["Augury1"] = 1 });
+        var ok = Planner(data).Plan(new SkillTarget(Skill, 4), State(1), known)!;
+        ok.Phases.Should().Contain(p => p.RecipeInternalName == "Augury2",
+            because: "the RecipeKnown gate is satisfied once Augury1 is known");
+    }
+
     // ── Minimal IReferenceDataService fake ───────────────────────────────
 
     private sealed class FakeRef : IReferenceDataService
@@ -271,7 +348,7 @@ public class CrossSkillPlannerTests
             string internalName, string rewardSkill, int xp,
             (long id, int stack) produces,
             int firstTime = 0, int skillLevelReq = 0, (long id, int stack)? ingredients = null,
-            int? maxUses = null)
+            int? maxUses = null, IReadOnlyList<RecipeRequirement>? otherRequirements = null)
         {
             var r = new Recipe
             {
@@ -284,6 +361,7 @@ public class CrossSkillPlannerTests
                 RewardSkillXp = xp,
                 RewardSkillXpFirstTime = firstTime,
                 MaxUses = maxUses,
+                OtherRequirements = otherRequirements,
                 Ingredients = ingredients is { } ing
                     ? [new RecipeItemIngredient { ItemCode = ing.id, StackSize = ing.stack }]
                     : [],

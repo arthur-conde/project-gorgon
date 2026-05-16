@@ -135,10 +135,11 @@ public sealed class CrossSkillPlanner
                     return (recipe: r, baseXp, reuse, effXp: baseXp + reuse);
                 })
                 .Where(x => x.effXp > 0 || unusedBonuses.Contains(x.recipe.Key))
-                // Respect the recipe's per-character lifetime cap (Recipe.MaxUses):
-                // a recipe exhausted by prior history or earlier phases this run is
-                // no longer craftable, so it can't be a grind OR a bonus source.
-                .Where(x => RemainingUses(x.recipe, completions) > 0)
+                // Respect per-character craft caps — Recipe.MaxUses and the
+                // OtherRequirements RecipeUsed gate — against prior history +
+                // this run. A recipe with no budget left can't be a grind OR a
+                // bonus source. (AlwaysFail / RecipeKnown gates live in IsAvailable.)
+                .Where(x => RemainingCraftBudget(x.recipe, completions) > 0)
                 .ToList();
 
             if (available.Count == 0) break;
@@ -184,10 +185,10 @@ public sealed class CrossSkillPlanner
             var needed = xpForLevel - xp;
             var crafts = (int)Math.Ceiling((double)needed / best.effXp);
             if (crafts < 1) crafts = 1;
-            // Never schedule a recipe past its lifetime cap; if that's short of
-            // the level, the loop re-picks the next-best recipe next iteration
-            // (this recipe is now exhausted ⇒ filtered out of `available`).
-            var remaining = RemainingUses(best.recipe, completions);
+            // Never schedule a recipe past its craft budget (MaxUses + RecipeUsed);
+            // if that's short of the level, the loop re-picks the next-best recipe
+            // next iteration (this recipe is now exhausted ⇒ filtered out).
+            var remaining = RemainingCraftBudget(best.recipe, completions);
             if (crafts > remaining) crafts = remaining;
 
             xp += (long)crafts * best.effXp;
@@ -263,6 +264,25 @@ public sealed class CrossSkillPlanner
 
         if (recipe.SkillLevelReq > gatingLevel) return false;
         if (!string.IsNullOrEmpty(recipe.PrereqRecipe) && !completed.Contains(recipe.PrereqRecipe!)) return false;
+
+        // OtherRequirements gates the planner can resolve from data it already
+        // has. RecipeUsed (per-character craft cap) is dynamic ⇒ enforced in the
+        // RemainingCraftBudget path, not here. Non-skill gates (pet/form/buff/
+        // location/event) are a deliberate punt to AssertedUnlocks — see
+        // docs/planner-recipe-field-consumption.md.
+        if (recipe.OtherRequirements is { } reqs)
+        {
+            foreach (var req in reqs)
+            {
+                // Can never succeed (the ImproveProphesied* recipes) — must never
+                // be scheduled despite advertising large XP.
+                if (req is AlwaysFailRequirement) return false;
+                // "Recipe X must be known" — same shape as the PrereqRecipe gate.
+                if (req is RecipeKnownRequirement { Recipe: { } needed }
+                    && !completed.Contains(needed) && !history.IsKnown(needed))
+                    return false;
+            }
+        }
 
         return history.IsKnown(name) || asserted.IsAsserted(name) || recipe.SkillLevelReq > 0;
     }
@@ -354,6 +374,34 @@ public sealed class CrossSkillPlanner
         => recipe.MaxUses is int max
             ? Math.Max(0, max - (completions.TryGetValue(recipe.InternalName ?? "", out var c) ? c : 0))
             : int.MaxValue;
+
+    /// <summary>
+    /// Craft allowance from the <c>OtherRequirements</c> <see cref="RecipeUsedRequirement"/>
+    /// gates: each says "the referenced recipe must have been used ≤ MaxTimesUsed".
+    /// Self-referential ones (the WeatherWitching litany — recipe X requires
+    /// <c>RecipeUsed{X, n}</c>) are a per-character cap of <c>n + 1</c> crafts;
+    /// cross-referential ones are a static gate (0 once the other recipe is over
+    /// its cap, unbounded otherwise — this recipe doesn't increment it). Min over
+    /// all such gates; no gate ⇒ unbounded.
+    /// </summary>
+    private static int OtherReqUsesRemaining(Recipe recipe, IReadOnlyDictionary<string, int> completions)
+    {
+        if (recipe.OtherRequirements is not { } reqs) return int.MaxValue;
+        var budget = int.MaxValue;
+        foreach (var r in reqs)
+        {
+            if (r is not RecipeUsedRequirement { Recipe: { } target } used) continue;
+            var max = used.MaxTimesUsed ?? 0;
+            var done = completions.TryGetValue(target, out var c) ? c : 0;
+            budget = Math.Min(budget, Math.Max(0, max + 1 - done));
+        }
+        return budget;
+    }
+
+    /// <summary>The min of every per-character craft cap that applies (MaxUses +
+    /// RecipeUsed). Zero ⇒ the recipe is exhausted and must be skipped.</summary>
+    private static int RemainingCraftBudget(Recipe recipe, IReadOnlyDictionary<string, int> completions)
+        => Math.Min(RemainingUses(recipe, completions), OtherReqUsesRemaining(recipe, completions));
 
     /// <summary>
     /// Merge consecutive non-bonus steps for the same recipe into one phase, then
