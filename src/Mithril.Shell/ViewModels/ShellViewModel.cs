@@ -87,9 +87,6 @@ public sealed partial class ShellViewModel : ObservableObject
         _perf = perf;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
-        var initial = Modules.FirstOrDefault(e => e.Module.Id == settings.ActiveModuleId)
-                      ?? Modules.FirstOrDefault();
-        if (initial is not null) ActivateModule(initial);
 
         _activeChar.ActiveCharacterChanged += (_, _) => DispatchRefreshCharacter();
         _activeChar.CharacterExportsChanged += (_, _) => DispatchRefreshCharacter();
@@ -108,6 +105,25 @@ public sealed partial class ShellViewModel : ObservableObject
         _gameClockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _gameClockTimer.Tick += (_, _) => RefreshGameTime();
         _gameClockTimer.Start();
+    }
+
+    private bool _initialized;
+
+    /// <summary>
+    /// Activates the initial module (last-session <see cref="ShellSettings.ActiveModuleId"/>,
+    /// else the first). Deliberately <em>not</em> done in the constructor: activation resolves
+    /// a module's <c>ViewType</c> through the container, and if that graph transitively reaches
+    /// <see cref="ShellViewModel"/> again the singleton would be constructed re-entrantly and
+    /// deadlock the provider (#365). Call this once, from the shell bootstrap, <em>after</em>
+    /// the window is shown and this singleton is fully built and cached. Idempotent.
+    /// </summary>
+    public void Initialize()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        var initial = Modules.FirstOrDefault(e => e.Module.Id == _settings.ActiveModuleId)
+                      ?? Modules.FirstOrDefault();
+        if (initial is not null) ActivateModule(initial);
     }
 
     private void RefreshGameTime()

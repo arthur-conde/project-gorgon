@@ -243,7 +243,8 @@ public static class Program
 
             Boot("resolving ShellWindow");
             var shell = host.Services.GetRequiredService<ShellWindow>();
-            shell.DataContext = host.Services.GetRequiredService<ShellViewModel>();
+            var shellViewModel = host.Services.GetRequiredService<ShellViewModel>();
+            shell.DataContext = shellViewModel;
             shell.Left = shellSettings.WindowLeft;
             shell.Top = shellSettings.WindowTop;
             shell.Width = shellSettings.WindowWidth;
@@ -253,6 +254,10 @@ public static class Program
 
             Boot("calling shell.Show()");
             shell.Show();
+            // Activate the initial module now — after the window is shown and the
+            // ShellViewModel singleton is fully constructed/cached. Doing this in the
+            // VM ctor risks a re-entrant resolution deadlock (#365).
+            shellViewModel.Initialize();
             shell.Closing += (_, _) =>
             {
                 if (shell.WindowState == WindowState.Normal)
