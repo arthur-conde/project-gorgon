@@ -81,21 +81,29 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   data-level reason crop-selection optimization stays a soft non-feature, not a
   temporary gap.
 
-## Pippin — Gourmand support (food-variety tracking)
+## Pippin — Gourmand support (food-variety + provenance)
 
 - **Owns: ✅ confirmed (owner, 2026-05-16)** — supplementing PG's **Gourmand** skill,
   which levels from eating foods *not previously eaten*. Pippin tracks the per-character
-  set of foods already eaten (from the log) against the food catalog and surfaces the
-  not-yet-eaten foods so the player can progress Gourmand. It is about food
-  *novelty/variety*, not buffs.
+  set of foods already eaten against the food catalog and surfaces the not-yet-eaten
+  foods so the player can progress Gourmand. **Food provenance is in scope** — *where*
+  a not-yet-eaten food can be obtained is part of Pippin's responsibility. (This is
+  food-specific provenance in service of Gourmand; it does not collide with
+  Silmarillion's *generic* reference browsing — different surface, different purpose.)
+  About food *novelty/variety*, not buffs.
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *Food buffs.* Pippin tracks nothing about
     buff effects or buff uptime. Gourmand novelty only.
-  - **✅ confirmed** — *Crafting food* → Celebrimbor, per the cross-cutting
-    recipe/crafting rule.
-  - ⚠️ *Food provenance browsing* (where a food comes from). That's Silmarillion.
-- **Reference data:** `Items` (food catalog / `FoodDesc` to enumerate the universe of
-  foods and identify which items are food).
+  - **✅ confirmed** — *Crafting food itself* → Celebrimbor, per the cross-cutting
+    recipe/crafting rule. (Pippin may *point at* where a food comes from, including
+    "it's crafted"; it does not own the crafting.)
+- **Primary data source: ✅ owner-stated (2026-05-16)** — the **in-game reporting
+  tool**'s character report (the eaten-food record). *Not* `Player.log`, *not* the CDN.
+- **Reference data:** CDN `Items` (`FoodDesc`) for the food catalog/identity — used to
+  compute not-yet-eaten and to resolve where un-eaten foods come from.
+- **Endorsed opportunity (owner, 2026-05-16; untracked):** combine the two — "what
+  haven't I eaten *and where do I find it*." Genuinely useful per owner; not yet an
+  issue. (Charters don't list issues — file separately and link back here if pursued.)
 
 ## Legolas — surveying & route optimization
 
@@ -217,6 +225,12 @@ libraries; the charter follows the code:
   tracker — interprets `Player.log` to track plantings + state transitions and alarms
   so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
   confirmed.
+- **2026-05-16** — Pippin corrected again by owner: **food provenance IS in scope**
+  — the prior ⚠️ "→ Silmarillion" was a wrong inference, removed. Primary data source
+  clarified as the in-game reporting tool's character report (not `Player.log`/CDN; the
+  earlier "from the log" Owns wording was also wrong). Owner endorsed an integrated
+  "what haven't I eaten + where to find it" feature — recorded as an untracked
+  opportunity (charter doesn't list issues; filing offered separately).
 - **2026-05-16** — Celebrimbor charter confirmed & tightened by owner: scope is exactly
   "what is needed to make N units of X" + on-hand, no logic beyond the quantity math.
   Owns + the no-extra-logic boundary → ✅; Elrond's reciprocal "multi-recipe shopping →
