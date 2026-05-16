@@ -177,6 +177,11 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
     Celebrimbor's territory, "not a Silmarillion tab."
+    **Carve-out (owner-clarified 2026-05-16):** *displaying* parsed treasure-effect
+    previews via the shared `ResultEffectsParser` is browsing, not calculation — it is
+    within Silmarillion's charter and is exactly the intent of #214. "Does not
+    calculate" ≠ "cannot render parser output." Silmarillion not showing effects today
+    is a gap, not a prohibition.
 - **Reference data:** effectively all sources (it is the browser), per the bucketing
   rule in the roadmap.
 
@@ -194,8 +199,14 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     *consumes* a target list; whatever decides that list (Elrond / the #227 cross-skill
     planner) is upstream. #228's "plan-aware craft list" means Celebrimbor *receives* a
     computed plan as targets — it does not compute it.
-  - ⚠️ *Reference browsing.* That's Silmarillion. (The "no logic beyond N-of-X" scope
-    strongly implies this, but Celebrimbor↔Silmarillion was not explicitly ruled on.)
+  - **✅ confirmed (owner, 2026-05-16)** — *Generic reference browsing / cross-link
+    navigation* → Silmarillion. **Recipe *display* deliberately overlaps** — both
+    modules show a recipe — differentiated by *purpose*: Silmarillion browses it;
+    Celebrimbor shows it in service of a craft plan and additionally previews its
+    treasure (ResultEffects) outcomes ("what you might get"). The effect-preview
+    capability is **shared infra** (`Mithril.Shared.ResultEffectsParser`), owned by
+    neither; Silmarillion just does not consume it yet — tracked as #214, a *gap, not
+    a boundary*.
 - **Reference data:** `Recipes`, `Items`, `ResultEffectsParser` previews, `Areas`
   (source resolution), inventory.
 
@@ -206,6 +217,11 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 Some responsibilities are deliberately being lifted *out* of modules into shared
 libraries; the charter follows the code:
 
+- **`ResultEffectsParser` (Mithril.Shared) — shipped, shared.** Parses recipe
+  treasure-effect strings into typed previews. Owned by *neither* recipe-displaying
+  module: consumed by Celebrimbor today, by Silmarillion per #214. The canonical
+  "shared infra, not module turf" case — effect *display* is appropriate in any
+  recipe surface; the parser is the single source of truth both lean on.
 - **`Mithril.Leveling` (#225)** — skill-XP math, lifted from Elrond. Future owner of
   the math both Elrond and the #227 planner consume.
 - **Shared demand-driven recipe expander (#226, supersedes #121)** — generalises
@@ -225,6 +241,12 @@ libraries; the charter follows the code:
   tracker — interprets `Player.log` to track plantings + state transitions and alarms
   so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
   confirmed.
+- **2026-05-16** — Celebrimbor↔Silmarillion ⚠️ resolved by owner (the last genuine
+  open charter ruling): recipe *display* deliberately overlaps — both show recipes,
+  differentiated by purpose — and Celebrimbor additionally previews treasure effects
+  while Silmarillion currently does not (#214: gap, not boundary). Added a carve-out
+  to Silmarillion's "no computation" line so #214 can't be misread as a charter
+  violation; listed `ResultEffectsParser` as shipped shared infra owned by neither.
 - **2026-05-16** — Pippin corrected again by owner: **food provenance IS in scope**
   — the prior ⚠️ "→ Silmarillion" was a wrong inference, removed. Primary data source
   clarified as the in-game reporting tool's character report (not `Player.log`/CDN; the
