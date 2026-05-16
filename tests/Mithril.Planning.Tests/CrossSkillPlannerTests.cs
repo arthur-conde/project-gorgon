@@ -311,6 +311,69 @@ public class CrossSkillPlannerTests
             because: "the RecipeKnown gate is satisfied once Augury1 is known");
     }
 
+    // ── Learnability policy (trainer/quest gating, #401) ─────────────────
+
+    [Fact]
+    public void TrainerGatedRecipe_DefaultPolicy_StillAutoLearned_NoRegression()
+    {
+        // A skill-gated recipe the game trains at an NPC. Under the default
+        // (optimistic) policy the planner still assumes it's learned at the gate.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Blade")
+            .AddRecipe("ForgeBlade", Skill, xp: 50, skillLevelReq: 1, produces: (1, 1))
+            .AddRecipeSource("ForgeBlade", "Training", npc: "NPC_Smith");
+
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 3), State(1), RecipeHistory.Empty)!;
+
+        plan.Phases.Should().ContainSingle().Which.RecipeInternalName.Should().Be("ForgeBlade",
+            because: "default LearnabilityPolicy keeps the v1 auto-learn behavior");
+    }
+
+    [Fact]
+    public void TrainerOrQuestGatedRecipe_StrictPolicy_GatedUnlessKnownOrAsserted()
+    {
+        FakeRef Data() => new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Blade").AddItem(2, "Charmstone")
+            .AddRecipe("ForgeBlade", Skill, xp: 50, skillLevelReq: 1, produces: (1, 1))
+            .AddRecipeSource("ForgeBlade", "Training", npc: "NPC_Smith")
+            .AddRecipe("CutCharmstone", Skill, xp: 50, skillLevelReq: 1, produces: (2, 1))
+            .AddRecipeSource("CutCharmstone", "Quest");
+
+        var strict = LearnabilityPolicy.RequireKnownForTrainerAndQuest;
+
+        // Unknown + unasserted ⇒ both gated out ⇒ no viable path.
+        Planner(Data()).Plan(new SkillTarget(Skill, 3), State(1), RecipeHistory.Empty,
+            learnability: strict).Should().BeNull(
+            because: "strict policy refuses to assume trainer/quest recipes are auto-learned");
+
+        // Asserted ⇒ the escape hatch reinstates it.
+        var asserted = Planner(Data()).Plan(new SkillTarget(Skill, 3), State(1), RecipeHistory.Empty,
+            asserted: new AssertedUnlocks(["ForgeBlade"]), learnability: strict)!;
+        asserted.Phases.Should().OnlyContain(p => p.RecipeInternalName == "ForgeBlade");
+
+        // Already known ⇒ also fine.
+        var known = Planner(Data()).Plan(new SkillTarget(Skill, 3), State(1),
+            new RecipeHistory(new Dictionary<string, int> { ["CutCharmstone"] = 1 }),
+            learnability: strict)!;
+        known.Phases.Should().Contain(p => p.RecipeInternalName == "CutCharmstone");
+    }
+
+    [Fact]
+    public void SourcelessSkillGatedRecipe_StrictPolicy_StillAutoLearned()
+    {
+        // No Training/Quest source ⇒ a genuine skill-up unlock; even strict
+        // policy keeps the auto-learn pass for it.
+        var data = new FakeRef().AddSkill(Skill).AddXpTable(100)
+            .AddItem(1, "Ingot")
+            .AddRecipe("SmeltIngot", Skill, xp: 50, skillLevelReq: 1, produces: (1, 1));
+
+        var plan = Planner(data).Plan(new SkillTarget(Skill, 3), State(1), RecipeHistory.Empty,
+            learnability: LearnabilityPolicy.RequireKnownForTrainerAndQuest)!;
+
+        plan.Phases.Should().ContainSingle().Which.RecipeInternalName.Should().Be("SmeltIngot",
+            because: "source-less skill-gated recipes are genuine auto-learns");
+    }
+
     // ── Minimal IReferenceDataService fake ───────────────────────────────
 
     private sealed class FakeRef : IReferenceDataService
@@ -321,6 +384,7 @@ public class CrossSkillPlannerTests
         private readonly Dictionary<string, Recipe> _recipesByName = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
         private readonly Dictionary<string, XpTableEntry> _xp = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, IReadOnlyList<RecipeSource>> _recipeSources = new(StringComparer.Ordinal);
         private int _serial;
 
         public FakeRef AddSkill(string key, string xpTable = "T")
@@ -372,6 +436,15 @@ public class CrossSkillPlannerTests
             return this;
         }
 
+        public FakeRef AddRecipeSource(string recipeInternalName, string type, string? npc = null)
+        {
+            if (_recipeSources.TryGetValue(recipeInternalName, out var existing))
+                ((List<RecipeSource>)existing).Add(new RecipeSource(type, npc, null));
+            else
+                _recipeSources[recipeInternalName] = new List<RecipeSource> { new(type, npc, null) };
+            return this;
+        }
+
         public IReadOnlyList<string> Keys { get; } = ["skills", "xptables", "recipes", "items"];
         public IReadOnlyDictionary<long, Item> Items => _items;
         public IReadOnlyDictionary<string, Item> ItemsByInternalName => _itemsByName;
@@ -383,6 +456,7 @@ public class CrossSkillPlannerTests
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, IReadOnlyList<RecipeSource>> RecipeSources => _recipeSources;
         public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
         public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
