@@ -1,12 +1,25 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+using Mithril.Shared.Character;
 using Mithril.Shared.Wpf;
 
 namespace Celebrimbor.Domain;
 
-public sealed class CelebrimborSettings : INotifyPropertyChanged
+public sealed class CelebrimborSettings : INotifyPropertyChanged, IVersionedState<CelebrimborSettings>
 {
+    /// <summary>
+    /// First versioned schema. Legacy files predate versioning and deserialize with
+    /// <see cref="SchemaVersion"/> = 0; the loader migrates them to <see cref="Version"/>.
+    /// v1 only *adds* nullable plan state, so the migration is a pure identity passthrough —
+    /// no existing CraftList / OnHandOverrides / grid state is touched (no data loss).
+    /// </summary>
+    public const int Version = 1;
+    public static int CurrentVersion => Version;
+    public static CelebrimborSettings Migrate(CelebrimborSettings loaded) => loaded;
+
+    public int SchemaVersion { get; set; } = Version;
+
     private bool _knownRecipesOnly;
     private bool _enforceSkillLevel;
     private int _expansionDepth;
@@ -23,6 +36,13 @@ public sealed class CelebrimborSettings : INotifyPropertyChanged
 
     public List<CraftListEntry> CraftList { get; set; } = [];
     public List<ManualOnHandOverride> OnHandOverrides { get; set; } = [];
+
+    /// <summary>
+    /// The leveling plan (#227) currently being walked, with its phase cursor and the
+    /// sourcing snapshot it was planned under. <c>null</c> = no active plan. Survives
+    /// sessions so the player picks up where they left off (#228).
+    /// </summary>
+    public PersistedPlan? ActivePlan { get; set; }
 
     public DataGridState RecipeGrid { get; set; } = new();
     public DataGridState IngredientGrid { get; set; } = new();

@@ -3,6 +3,7 @@ using Celebrimbor.Domain;
 using Celebrimbor.Services;
 using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
+using Mithril.Planning.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
@@ -28,11 +29,19 @@ public sealed class CelebrimborModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var settingsPath = Path.Combine(localApp, "Mithril", "Celebrimbor", "settings.json");
 
-        services.AddMithrilSettings<CelebrimborSettings>(settingsPath, CelebrimborSettingsJsonContext.Default.CelebrimborSettings);
+        // Versioned now (#228): the persisted root carries ActivePlan. Legacy
+        // unversioned settings.json files load with SchemaVersion 0 and migrate
+        // (identity — only nullable plan state was added) to v1 on first load.
+        services.AddMithrilVersionedSettings<CelebrimborSettings>(settingsPath, CelebrimborSettingsJsonContext.Default.CelebrimborSettings);
+
+        // #227 planner engine (LevelingMath + RecipeExpander + CrossSkillPlanner).
+        // All depend only on IReferenceDataService — no shell/module-activator edge.
+        services.AddMithrilPlanning();
 
         services.AddSingleton<RecipeAggregator>();
         services.AddSingleton<RecipeSearchIndex>();
         services.AddSingleton<OnHandInventoryQuery>();
+        services.AddSingleton<PlanExecutor>();
         services.AddSingleton<ICraftListImportTarget, CraftListImportTarget>();
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new CraftListDeepLinkHandler(sp.GetRequiredService<ICraftListImportTarget>()));
