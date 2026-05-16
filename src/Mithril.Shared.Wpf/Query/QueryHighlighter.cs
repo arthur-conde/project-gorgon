@@ -92,7 +92,8 @@ public static class QueryHighlighter
             or QueryParser.TokenKind.Contains or QueryParser.TokenKind.StartsWith
             or QueryParser.TokenKind.EndsWith
             or QueryParser.TokenKind.With or QueryParser.TokenKind.Any or QueryParser.TokenKind.All
-            or QueryParser.TokenKind.Is or QueryParser.TokenKind.Null
+            or QueryParser.TokenKind.None
+            or QueryParser.TokenKind.Is or QueryParser.TokenKind.Null or QueryParser.TokenKind.Empty
             or QueryParser.TokenKind.True or QueryParser.TokenKind.False
             or QueryParser.TokenKind.OrderBy or QueryParser.TokenKind.SortBy
             or QueryParser.TokenKind.Asc or QueryParser.TokenKind.Desc => HighlightKind.Keyword,

@@ -45,10 +45,24 @@ public sealed record BetweenNode(string Column, ValueNode Low, ValueNode High, b
 
 public sealed record IsNullNode(string Column, bool Negated) : QueryNode;
 
+/// <summary>
+/// Collection cardinality test: <c>&lt;Column&gt; IS EMPTY</c> /
+/// <c>&lt;Column&gt; IS NOT EMPTY</c> (<see cref="Negated"/> = the NOT form).
+/// Distinct from <see cref="IsNullNode"/>: a non-null but zero-element collection
+/// is empty, and a <see langword="null"/> collection also counts as empty (it
+/// contains nothing — consistent with <c>CONTAINS</c>-over-null).
+/// </summary>
+public sealed record IsEmptyNode(string Column, bool Negated) : QueryNode;
+
 public enum Quantifier
 {
     Any,
     All,
+
+    /// <summary><c>WITH NONE</c> — no element satisfies the inner predicate.
+    /// Equivalent to <c>NOT (col WITH ANY (...))</c>; vacuously true over an
+    /// empty or null collection.</summary>
+    None,
 }
 
 /// <summary>

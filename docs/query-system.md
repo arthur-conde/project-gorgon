@@ -22,11 +22,13 @@ Name CONTAINS 'fire' / STARTSWITH 'X'        — substring helpers (friendlier t
 Power IN (10, 20, 30)                        — set membership
 Cost BETWEEN 5 AND 15                        — inclusive range
 MinLevel IS NULL / IS NOT NULL               — null check
+Keywords IS EMPTY / IS NOT EMPTY             — collection cardinality (null counts as empty)
 avg > 1m30s                                  — duration literals: 30s, 1m30s, 2h, 150ms
 Timestamp BEFORE NOW()                       — English-aliased <, >; NOW() and TODAY() functions
 NOT LIKE / NOT IN / NOT BETWEEN              — negation prefix
 Services WITH ANY (Type='Store' AND Favor='Friends')   — quantified subquery over an object collection
 Reqs WITH ALL (T='MinSkillLevel')            — ANY = ≥1 element; ALL = every element (vacuously true if empty)
+Reqs WITH NONE (T='MinSkillLevel')           — NONE = no element matches (≡ NOT(WITH ANY); vacuously true if empty)
 ORDER BY Cost DESC, Name                     — sort clause (SORT BY also accepted; ASC implicit)
 ```
 
@@ -283,6 +285,27 @@ soft-warning channel (`QueryCompiler.Compile(…, ICollection<QueryDiagnostic>
 warnings, …)`) is plumbed but not yet surfaced in the UI. Rationale, the
 A-vs-B decision, and the per-hierarchy narrowing contract are in
 [`query-quantified-subqueries.md`](query-quantified-subqueries.md).
+
+### Collection cardinality — `IS [NOT] EMPTY`, `WITH NONE`
+
+`<col> IS EMPTY` / `IS NOT EMPTY` tests a *collection* column's cardinality
+(any collection: string, `IQueryStringValue`, or object). A **null** collection
+counts as empty — it contains nothing, consistent with `CONTAINS`-over-null.
+It's a compile error on a non-collection column (use `IS NULL` / `= ''` for
+scalars). Because it's an ordinary leaf predicate it composes inside a
+quantifier element schema — e.g. *Store NPCs with a cap row that applies to any
+item* (empty keyword list):
+
+```
+ServiceTypes CONTAINS 'Store' AND CapIncreases WITH ANY (Keywords IS EMPTY)
+```
+
+`<col> WITH NONE (<pred>)` completes the `ANY`/`ALL`/`NONE` quantifier trio:
+true when *no* element satisfies `<pred>` — exactly `NOT (col WITH ANY (<pred>))`,
+including vacuously true over an empty or null collection. There is no
+`COUNT()` / arbitrary-cardinality operator by design (deliberately deferred —
+`IS EMPTY` covers the empty-vs-populated case without a function-expression
+grammar).
 
 ### Ordinal enum columns (e.g. favor `Tier`)
 

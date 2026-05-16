@@ -108,6 +108,8 @@ public static class QueryCompiler
                 return CompileBetween(b, columns);
             case IsNullNode n:
                 return CompileIsNull(n, columns);
+            case IsEmptyNode e:
+                return CompileIsEmpty(e, columns);
             case QuantifiedNode q:
                 return CompileQuantified(q, columns, caseSensitive, warnings);
             default:
@@ -369,12 +371,16 @@ public static class QueryCompiler
 
         var elementPredicate = CompileNode(node.Inner, subSchema, caseSensitive, warnings);
         bool isAll = node.Quantifier == Quantifier.All;
+        bool isNone = node.Quantifier == Quantifier.None;
 
         return item =>
         {
             if (col.GetValue(item) is not System.Collections.IEnumerable seq)
             {
-                return false;
+                // null / non-enumerable: ANY = false, ALL = false (the
+                // CONTAINS-over-null convention, #351), NONE = true (nothing
+                // matches → equivalent to NOT (col WITH ANY (...))).
+                return isNone;
             }
             bool sawAny = false;
             bool allMatch = true;
@@ -397,6 +403,7 @@ public static class QueryCompiler
                     if (isAll) break;
                 }
             }
+            if (isNone) return !anyMatch;
             return isAll ? (!sawAny || allMatch) : (sawAny && anyMatch);
         };
     }
@@ -596,6 +603,7 @@ public static class QueryCompiler
                 case InNode i: foreach (var p in Emit(i.Column)) yield return p; break;
                 case BetweenNode b: foreach (var p in Emit(b.Column)) yield return p; break;
                 case IsNullNode isn: foreach (var p in Emit(isn.Column)) yield return p; break;
+                case IsEmptyNode ise: foreach (var p in Emit(ise.Column)) yield return p; break;
             }
         }
 
@@ -766,6 +774,48 @@ public static class QueryCompiler
                 return false;
             }
             return (v is null) == wantNull;
+        };
+    }
+
+    /// <summary>
+    /// <c>&lt;col&gt; IS [NOT] EMPTY</c> — collection cardinality. Compile-time error
+    /// on a non-collection column (use <c>= ''</c> / <c>IS NULL</c> for scalars). A
+    /// <see langword="null"/> collection counts as empty (it contains nothing —
+    /// consistent with <c>CONTAINS</c>-over-null). Honours the <see cref="QueryAbsent"/>
+    /// sentinel like every other leaf, so it composes inside a <c>WITH ANY|ALL</c>
+    /// element schema (e.g. <c>CapIncreases WITH ANY (Keywords IS EMPTY)</c>).
+    /// </summary>
+    private static Func<object, bool> CompileIsEmpty(
+        IsEmptyNode node, Dictionary<string, ColumnBinding> columns)
+    {
+        var col = ResolveColumn(node.Column, columns);
+        var underlying = Nullable.GetUnderlyingType(col.ValueType) ?? col.ValueType;
+        if (GetCollectionElementType(underlying) is null)
+        {
+            throw new QueryException(
+                $"IS [NOT] EMPTY requires a collection column; '{node.Column}' is " +
+                $"{underlying.Name}. Use IS NULL / = '' for scalar columns.", 0);
+        }
+        bool wantEmpty = !node.Negated;
+        return item =>
+        {
+            var v = col.GetValue(item);
+            if (IsAbsent(v))
+            {
+                return false;
+            }
+            bool empty;
+            if (v is null)
+            {
+                empty = true;
+            }
+            else
+            {
+                var e = ((System.Collections.IEnumerable)v).GetEnumerator();
+                empty = !e.MoveNext();
+                (e as IDisposable)?.Dispose();
+            }
+            return empty == wantEmpty;
         };
     }
 
