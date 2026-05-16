@@ -1,4 +1,5 @@
 using System.Windows;
+using Celebrimbor.Domain;
 using Celebrimbor.ViewModels;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
@@ -34,21 +35,44 @@ public sealed class CraftListImportTarget : ICraftListImportTarget
     public void ImportFromLinkPayload(string base64UrlPayload)
     {
         var result = CraftListFormat.DecodeShareLink(base64UrlPayload, _refData);
-
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess())
-            Apply(result);
-        else
-            dispatcher.InvokeAsync(() => Apply(result));
+        Dispatch(() => Apply(result, "Import from link"));
     }
 
-    private void Apply(ParseResult result)
+    public void ImportRecipes(IReadOnlyList<CraftListImportEntry> recipes, string source)
+    {
+        var entries = new List<CraftListEntry>();
+        var warnings = new List<string>();
+        foreach (var r in recipes)
+        {
+            if (string.IsNullOrWhiteSpace(r.RecipeInternalName) || r.Quantity <= 0) continue;
+            if (!_refData.RecipesByInternalName.ContainsKey(r.RecipeInternalName))
+            {
+                warnings.Add($"Unknown recipe: \"{r.RecipeInternalName}\"");
+                continue;
+            }
+            entries.Add(new CraftListEntry { RecipeInternalName = r.RecipeInternalName, Quantity = r.Quantity });
+        }
+
+        var result = new ParseResult(entries, warnings);
+        Dispatch(() => Apply(result, source));
+    }
+
+    private static void Dispatch(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            action();
+        else
+            dispatcher.InvokeAsync(action);
+    }
+
+    private void Apply(ParseResult result, string dialogTitleSuffix)
     {
         // Bring the Celebrimbor tab forward first so the dialog owner is the right window and
         // the user sees the list populate after confirming.
         if (_activator is not null && !_activator.Activate("celebrimbor"))
-            _diag?.Info("Celebrimbor", "Deep-link import: module activator could not find 'celebrimbor'.");
+            _diag?.Info("Celebrimbor", "Craft-list import: module activator could not find 'celebrimbor'.");
 
-        _picker.PromptAndApply(result, "Import from link");
+        _picker.PromptAndApply(result, dialogTitleSuffix);
     }
 }
