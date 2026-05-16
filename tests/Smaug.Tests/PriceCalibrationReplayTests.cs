@@ -37,8 +37,8 @@ public sealed class PriceCalibrationReplayTests
             // Live ingestion of one sell, then replay of the same (Mithril
             // relaunched mid-PG-session and the seed buffer re-emits).
             var ts = Ts(13, 0);
-            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, ts);
-            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, ts);
+            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, ts);
+            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, ts);
 
             svc.Data.Observations.Should().HaveCount(1,
                 "second call has the same session + log-line timestamp → key collision");
@@ -59,9 +59,9 @@ public sealed class PriceCalibrationReplayTests
             var session = new FakeSession("char|2026-05-11T12:25:04Z");
             var svc = BuildService(dir, session);
 
-            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, Ts(13, 0));
+            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, Ts(13, 0));
             session.Set("char|2026-05-11T14:00:00Z");
-            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, Ts(15, 0));
+            svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, Ts(15, 0));
 
             svc.Data.Observations.Should().HaveCount(2);
             svc.Data.Observations[0].SessionId.Should().NotBe(svc.Data.Observations[1].SessionId);
@@ -82,14 +82,14 @@ public sealed class PriceCalibrationReplayTests
             var ts = Ts(13, 0);
 
             var first = BuildService(dir, session);
-            first.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, ts);
+            first.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, ts);
             first.Data.Observations.Should().HaveCount(1);
 
             // Mithril relaunch: fresh service loads the observation from disk,
             // then the seed re-fires.
             var second = BuildService(dir, session);
             second.Data.Observations.Should().HaveCount(1);
-            second.RecordObservation("NPC_Therese", "BottleOfWater", 100, FavorTierName.Neutral, 0, ts);
+            second.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, ts);
             second.Data.Observations.Should().HaveCount(1, "replay short-circuited on key collision");
         }
         finally

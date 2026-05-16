@@ -1,5 +1,7 @@
 using Mithril.Shared.Reference;
 using Smaug.Domain;
+using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
+using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 
 namespace Smaug.State;
 
@@ -78,7 +80,7 @@ public sealed class VendorCatalogService
                 var storeService = npc?.Services.FirstOrDefault(s =>
                     string.Equals(s.Type, "Store", StringComparison.Ordinal));
 
-                string? playerTier = null;
+                FavorTier? playerTier = null;
                 int? maxGold = null;
                 bool? acceptable = null;
                 if (storeService is not null)
@@ -87,7 +89,7 @@ public sealed class VendorCatalogService
                     if (playerTier is not null)
                     {
                         maxGold = VendorCapResolver.ResolveMaxGold(
-                            storeService, playerTier, itemKeywords, _sellContext.CivicPrideLevel);
+                            storeService, playerTier.Value, itemKeywords, _sellContext.CivicPrideLevel);
                         acceptable = maxGold is not null && item.Value <= maxGold.Value;
                     }
                 }
@@ -101,7 +103,7 @@ public sealed class VendorCatalogService
                     NpcName: npc?.Name ?? src.Npc.Replace("NPC_", ""),
                     Area: npc?.Area ?? "",
                     MinFavorTier: storeService?.MinFavorTier,
-                    PlayerFavorTier: playerTier,
+                    PlayerFavorTier: playerTier?.DisplayName(),
                     EffectiveMaxGold: maxGold,
                     IsAcceptable: acceptable));
             }
