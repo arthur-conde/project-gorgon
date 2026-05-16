@@ -50,21 +50,31 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   satisfies* is a read-only state query owned by **Bilbo** (its data domain), not
   planning/leveling. This rule governs crafting-*as-activity* (plan / level / execute),
   not "what is makeable from what I hold right now."
-- **Each data domain has exactly one owning browser/evaluator; *rendering* it
-  elsewhere is not turf.** Any module may render data its own purpose needs
-  (Celebrimbor shows recipes/effects to plan; modules surface bits of state in
-  passing). That does **not** make it a co-owner. Each domain has a single owner,
-  all owner-confirmed 2026-05-16:
-  - **Silmarillion** — reference (CDN) data.
-  - **Bilbo** — the player's inventory/storage export (incl. immediate craftability).
-  - **Pippin** — the player's eaten-food state (Gourmand novelty + provenance).
-  - **Elrond** — the player's progression state (as leveling constraints).
+- **Two layers: the *data* (a shared single-source service) and the *browse/evaluate
+  surface* (exactly one owning module). Rendering elsewhere is not turf.** Plumbing
+  verified against code 2026-05-16:
 
-  "Renders some data" ≠ "owns the browser/evaluator role." (Same shape as the
-  shared-infra rule: ubiquitous capability, single owner. The owner may *consume*
-  shared infra — e.g. a shared inventory-query service — while remaining the owner.)
+  | Domain | Data owner — shared single source of truth | Surface owner — module |
+  |---|---|---|
+  | Reference (CDN) data | `IReferenceDataService` (Mithril.Shared) | **Silmarillion** |
+  | Static storage *export* | `IActiveCharacterService` / `StorageReport` (Mithril.Shared) | **Bilbo** (+ immediate craftability) |
+  | Live inventory simulation | `IInventoryService` (**Mithril.GameState**) — tails `IPlayerLogStream` `ProcessAddItem/…` + chat `[Status]` for stack sizes | **Palantir** (`LiveInventoryView`) |
+  | Eaten-food state | in-game report (dumped to `Player.log`) | **Pippin** (Gourmand) |
+  | Progression state | character export | **Elrond** (as leveling constraints) |
+
+  Owning a *surface* ≠ owning the *data*: the shared service is the single source of
+  truth; modules `Subscribe`/query it (this is *why* it's centralised — the service
+  docstring calls out the late-subscribe race a per-module rebuild would hit).
+  "Renders some data" ≠ "owns the surface," and "owns the surface" ≠ "owns the data."
+  *Recollection correction, verified:* the live-inventory sim is in **Mithril.GameState**,
+  not Mithril.Shared; Mithril.Shared owns the static *export* only.
 
 ---
+
+> **Not yet charactered:** **Palantir** (live-inventory surface over
+> `IInventoryService`), **Smaug**, and **Saruman** are real modules with no charter
+> entry yet — out of scope for this pass. The data-domain table references Palantir
+> only as the live-inventory surface owner; its full charter is owed.
 
 ## Samwise — garden tracker
 
@@ -187,24 +197,24 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Bilbo — storage/inventory management
 
-- **Owns: ✅ confirmed (owner, 2026-05-16)** — Bilbo is, at root, **the browser/
-  evaluator for the player's inventory/storage export** (parallel to Silmarillion for
-  reference data): (1) parse the inv/storage export, query it, location chips; (2) a
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — the **browse/evaluate *surface* over
+  the static storage export**: (1) present/query the export, location chips; (2) a
   read-only **craftability evaluator** — "what is craftable *right now* given current
-  inv/storage state." Both are properties/queries *over the player-state export*, not
-  forward activity.
+  export state." Bilbo owns the *surface*, **not the data**: the export is
+  `IActiveCharacterService` / `StorageReport` (Mithril.Shared, single source of truth);
+  Bilbo consumes it.
 - **Does NOT own:**
-  - **✅ confirmed** — *Craft planning* (multi-recipe shopping lists, what-to-acquire,
-    quantity math) → Celebrimbor. The line: "what can I make from what I hold *now*"
-    is Bilbo (a state property); "what do I need to make N of X" is Celebrimbor (a
-    plan). See the recipe/crafting carve-out above.
-  - **✅ confirmed** — *Leveling advice* → Elrond, per the cross-cutting rule
-    (leveling via recipes is Elrond's).
-- **Reference data:** `Items`, `Recipes`, keyword index — joined *against the inv/
-  storage state* to compute immediate craftability.
-  *(The inventory-query surface is a candidate for shared extraction — Celebrimbor §1
-  `IInventoryQueryService`; Bilbo would consume the shared service while remaining the
-  owning evaluator.)*
+  - **✅ confirmed (verified 2026-05-16)** — *Live inventory simulation.* The live
+    `instanceId→item` + stack-size model is `IInventoryService` in **Mithril.GameState**
+    (tails `ProcessAddItem/…` + chat `[Status]`); its user-facing surface is
+    **Palantir** (`LiveInventoryView`), not Bilbo. Bilbo is export-*snapshot*, not live.
+  - **✅ confirmed** — *Craft planning* (shopping lists, what-to-acquire, quantity
+    math) → Celebrimbor. "What can I make from what I hold *now*" is Bilbo (a state
+    property); "what do I need to make N of X" is Celebrimbor (a plan). See the
+    recipe/crafting carve-out above.
+  - **✅ confirmed** — *Leveling advice* → Elrond (cross-cutting rule).
+- **Reference data:** `Items`, `Recipes`, keyword index — joined against the export
+  state to compute immediate craftability.
 
 ## Silmarillion — reference-data browser
 
@@ -298,6 +308,14 @@ libraries; the charter follows the code:
   cross-cutting rule: each data domain has exactly one owning browser/evaluator. Added
   a recipe/crafting carve-out so "what's makeable from what I hold now" stays Bilbo's
   (state query) vs. Celebrimbor's planning.
+- **2026-05-16** — Layering corrected after code verification: split the single-owner
+  rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
+  is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
+  `ProcessAddItem/…` + chat `[Status]`; its surface is **Palantir**, not Bilbo. Bilbo
+  scoped to the static-*export* surface (data = Mithril.Shared `IActiveCharacterService`/
+  `StorageReport`). Dropped the stale "candidate for shared extraction" note (the
+  shared inventory service already exists). Added a "not yet charactered" note
+  (Palantir/Smaug/Saruman).
 - **2026-05-16** — Elrond Owns expanded by owner: Elrond owns the **player's
   progression state** (learned skills, progress, known recipes) as the leveling
   calculator's constraint set — scoped to the progression facet (distinct from Bilbo's
