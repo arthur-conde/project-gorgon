@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Mithril.Reference;
@@ -20,18 +21,42 @@ public static class QueryCompiler
         QueryNode node,
         IReadOnlyDictionary<string, ColumnBinding> columns,
         bool caseSensitive = false)
+        => Compile(node, columns, warnings: null, caseSensitive);
+
+    /// <summary>
+    /// Compile <paramref name="node"/>, collecting any non-fatal narrowing
+    /// diagnostics (optional-hierarchy single-subtype field referenced without a
+    /// discriminator guard) into <paramref name="warnings"/>. Additive overload —
+    /// the no-warnings overloads delegate here with <paramref name="warnings"/> null,
+    /// so the public surface stays backward compatible.
+    /// </summary>
+    public static Func<object, bool> Compile(
+        QueryNode node,
+        IReadOnlyDictionary<string, ColumnBinding> columns,
+        ICollection<QueryDiagnostic>? warnings,
+        bool caseSensitive = false)
     {
         var normalized = NormalizeColumns(columns, caseSensitive);
-        return CompileNode(node, normalized, caseSensitive);
+        return CompileNode(node, normalized, caseSensitive, warnings);
     }
 
     public static Func<object, bool>? Compile(
         string query,
         IReadOnlyDictionary<string, ColumnBinding> columns,
         bool caseSensitive = false)
+        => Compile(query, columns, warnings: null, caseSensitive);
+
+    /// <summary>Warnings-collecting counterpart of the string overload.</summary>
+    public static Func<object, bool>? Compile(
+        string query,
+        IReadOnlyDictionary<string, ColumnBinding> columns,
+        ICollection<QueryDiagnostic>? warnings,
+        bool caseSensitive = false)
     {
         var parsed = QueryParser.Parse(query);
-        return parsed?.Predicate is null ? null : Compile(parsed.Predicate, columns, caseSensitive);
+        return parsed?.Predicate is null
+            ? null
+            : Compile(parsed.Predicate, columns, warnings, caseSensitive);
     }
 
     private static Dictionary<string, ColumnBinding> NormalizeColumns(
@@ -49,25 +74,26 @@ public static class QueryCompiler
     private static Func<object, bool> CompileNode(
         QueryNode node,
         Dictionary<string, ColumnBinding> columns,
-        bool caseSensitive)
+        bool caseSensitive,
+        ICollection<QueryDiagnostic>? warnings)
     {
         switch (node)
         {
             case AndNode a:
             {
-                var l = CompileNode(a.Left, columns, caseSensitive);
-                var r = CompileNode(a.Right, columns, caseSensitive);
+                var l = CompileNode(a.Left, columns, caseSensitive, warnings);
+                var r = CompileNode(a.Right, columns, caseSensitive, warnings);
                 return item => l(item) && r(item);
             }
             case OrNode o:
             {
-                var l = CompileNode(o.Left, columns, caseSensitive);
-                var r = CompileNode(o.Right, columns, caseSensitive);
+                var l = CompileNode(o.Left, columns, caseSensitive, warnings);
+                var r = CompileNode(o.Right, columns, caseSensitive, warnings);
                 return item => l(item) || r(item);
             }
             case NotNode n:
             {
-                var inner = CompileNode(n.Inner, columns, caseSensitive);
+                var inner = CompileNode(n.Inner, columns, caseSensitive, warnings);
                 return item => !inner(item);
             }
             case ComparisonNode c:
@@ -83,11 +109,17 @@ public static class QueryCompiler
             case IsNullNode n:
                 return CompileIsNull(n, columns);
             case QuantifiedNode q:
-                return CompileQuantified(q, columns, caseSensitive);
+                return CompileQuantified(q, columns, caseSensitive, warnings);
             default:
                 throw new QueryException($"Unsupported node: {node.GetType().Name}", 0);
         }
     }
+
+    // A polymorphic element-schema binding returns this when the queried property is
+    // not declared on the element's runtime subtype. Every leaf predicate treats it
+    // as an unconditional non-match (absent ≠ null; even IS NULL is false), so a
+    // predicate that names a sibling-subtype field just skips that element.
+    private static bool IsAbsent(object? v) => ReferenceEquals(v, QueryAbsent.Value);
 
     private static ColumnBinding ResolveColumn(string name, Dictionary<string, ColumnBinding> columns)
     {
@@ -106,11 +138,11 @@ public static class QueryCompiler
         {
             if (node.Op == ComparisonOp.Eq)
             {
-                return item => col.GetValue(item) is null;
+                return item => { var v = col.GetValue(item); return !IsAbsent(v) && v is null; };
             }
             if (node.Op == ComparisonOp.Neq)
             {
-                return item => col.GetValue(item) is not null;
+                return item => { var v = col.GetValue(item); return !IsAbsent(v) && v is not null; };
             }
             throw new QueryException($"NULL only supports '=' and '!=' (use IS NULL / IS NOT NULL).", 0);
         }
@@ -123,8 +155,8 @@ public static class QueryCompiler
             var stringCmp = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
             return node.Op switch
             {
-                ComparisonOp.Eq => item => StringEquals(col.GetValue(item), rhs, stringCmp),
-                ComparisonOp.Neq => item => !StringEquals(col.GetValue(item), rhs, stringCmp),
+                ComparisonOp.Eq => item => { var v = col.GetValue(item); return !IsAbsent(v) && StringEquals(v, rhs, stringCmp); },
+                ComparisonOp.Neq => item => { var v = col.GetValue(item); return !IsAbsent(v) && !StringEquals(v, rhs, stringCmp); },
                 _ => throw new QueryException($"String columns only support '=' and '!='; use LIKE for pattern matching.", 0),
             };
         }
@@ -151,6 +183,10 @@ public static class QueryCompiler
         return item =>
         {
             var v = col.GetValue(item);
+            if (IsAbsent(v))
+            {
+                return false;
+            }
             if (v is null)
             {
                 return op == ComparisonOp.Neq;
@@ -198,7 +234,12 @@ public static class QueryCompiler
             var elementCmp = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
             return item =>
             {
-                if (col.GetValue(item) is not System.Collections.IEnumerable seq)
+                var raw = col.GetValue(item);
+                if (IsAbsent(raw))
+                {
+                    return false;
+                }
+                if (raw is not System.Collections.IEnumerable seq)
                 {
                     return negated;
                 }
@@ -234,7 +275,12 @@ public static class QueryCompiler
         };
         return item =>
         {
-            if (col.GetValue(item) is not string s)
+            var raw = col.GetValue(item);
+            if (IsAbsent(raw))
+            {
+                return false;
+            }
+            if (raw is not string s)
             {
                 return negated;
             }
@@ -286,7 +332,10 @@ public static class QueryCompiler
     /// <c>CONTAINS</c>, the single way to match flat keyword lists.
     /// </summary>
     private static Func<object, bool> CompileQuantified(
-        QuantifiedNode node, Dictionary<string, ColumnBinding> columns, bool caseSensitive)
+        QuantifiedNode node,
+        Dictionary<string, ColumnBinding> columns,
+        bool caseSensitive,
+        ICollection<QueryDiagnostic>? warnings)
     {
         var col = ResolveColumn(node.Column, columns);
         var underlying = Nullable.GetUnderlyingType(col.ValueType) ?? col.ValueType;
@@ -300,9 +349,25 @@ public static class QueryCompiler
                 $"'{node.Column}' is {underlying.Name}. Use CONTAINS for string/keyword collections.", 0);
         }
 
-        var subSchema = NormalizeColumns(
-            ColumnBindingHelper.BuildFromProperties(elementType), caseSensitive);
-        var elementPredicate = CompileNode(node.Inner, subSchema, caseSensitive);
+        // Homogeneous element (the v1 consumer's shape) → plain property reflection.
+        // Polymorphic element (a registered discriminated-union base) → union schema
+        // with per-query narrowing: a colliding property is typed by the in-scope
+        // discriminator guard; a sibling-subtype property reads as QueryAbsent.
+        var classification = PolymorphicSchemaClassifier.Classify(elementType);
+        Dictionary<string, ColumnBinding> subSchema;
+        if (classification is null)
+        {
+            subSchema = NormalizeColumns(
+                ColumnBindingHelper.BuildFromProperties(elementType), caseSensitive);
+        }
+        else
+        {
+            var resolved = EnforceNarrowing(node, classification, warnings);
+            subSchema = NormalizeColumns(
+                ColumnBindingHelper.BuildElementSchema(classification, resolved), caseSensitive);
+        }
+
+        var elementPredicate = CompileNode(node.Inner, subSchema, caseSensitive, warnings);
         bool isAll = node.Quantifier == Quantifier.All;
 
         return item =>
@@ -336,6 +401,214 @@ public static class QueryCompiler
         };
     }
 
+    /// <summary>
+    /// Per-hierarchy narrowing for a polymorphic <c>WITH ANY|ALL</c>. The inner
+    /// predicate is compiled <em>once</em>, so a type-colliding property
+    /// (e.g. <c>QuestRequirement.Level</c> — <c>string?</c> on some subtypes,
+    /// <c>int?</c> on others) can only have one <see cref="ColumnBinding.ValueType"/>.
+    /// We expand the inner AST to DNF conjunctive scopes (split on OR, descend AND;
+    /// a <c>NOT</c> subtree gives no positive guard but still counts as a reference),
+    /// and within each scope a <c>&lt;discriminator&gt; = 'literal'</c> equality
+    /// resolves each colliding/subtype-specific property to its concrete type.
+    /// </summary>
+    /// <returns>colliding property name → its resolved CLR type for this query.</returns>
+    /// <remarks>
+    /// v1 limitations (documented in <c>docs/query-system.md</c> and the #349 design
+    /// note): a Mandatory-hierarchy colliding/subtype-specific property referenced
+    /// with no in-scope guard throws; a colliding property that resolves to
+    /// <em>divergent</em> types across OR-branches throws (split the query). Only
+    /// <c>QuestRequirement</c> is Mandatory today and it is test-only (not
+    /// consumer-wired), so the mandatory path never fires for a shipped consumer.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, Type> EnforceNarrowing(
+        QuantifiedNode node,
+        HierarchyClassification cls,
+        ICollection<QueryDiagnostic>? warnings)
+    {
+        var perPropTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
+        var warnedSingles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var scope in ConjunctiveScopes(node.Inner))
+        {
+            string? guard = FindDiscriminatorGuard(scope, cls.DiscriminatorField);
+
+            foreach (var prop in ReferencedProps(scope, cls.DiscriminatorField))
+            {
+                bool colliding = cls.CollidingProps.Contains(prop);
+                bool single = cls.SingleSubtypeProps.Contains(prop);
+                if (!colliding && !single)
+                {
+                    // Non-colliding, multi-subtype: one consistent union type — fine.
+                    continue;
+                }
+
+                if (guard is null)
+                {
+                    if (cls.Mode == NarrowingMode.Mandatory)
+                    {
+                        throw new QueryException(
+                            $"'{prop}' is not the same type across {cls.BaseType.Name} subtypes; " +
+                            $"scope it with a {cls.DiscriminatorField} = '<value>' guard in the same " +
+                            $"conjunction (e.g. {cls.DiscriminatorField} = 'MinCombatSkillLevel' AND {prop} > 5).",
+                            0);
+                    }
+
+                    // Optional hierarchy, subtype-specific property, no guard: soft
+                    // warning (matches no other subtype's elements), never fatal.
+                    if (single && warnedSingles.Add(prop))
+                    {
+                        warnings?.Add(new QueryDiagnostic(
+                            $"'{prop}' is declared on only one {cls.BaseType.Name} subtype; " +
+                            $"without a {cls.DiscriminatorField} = '<value>' guard it can only ever " +
+                            $"match that subtype's elements.", 0));
+                    }
+                    continue;
+                }
+
+                // Guarded: resolve the property's concrete type on the guarded subtype.
+                var resolvedType = cls.ResolvePropType(guard, prop);
+                if (resolvedType is null)
+                {
+                    throw new QueryException(
+                        $"{cls.DiscriminatorField} = '{guard}' does not declare '{prop}' " +
+                        $"(or '{guard}' is not a known {cls.BaseType.Name} discriminator).", 0);
+                }
+                if (colliding)
+                {
+                    if (!perPropTypes.TryGetValue(prop, out var set))
+                    {
+                        set = new HashSet<Type>();
+                        perPropTypes[prop] = set;
+                    }
+                    set.Add(resolvedType);
+                }
+            }
+        }
+
+        var resolved = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (prop, types) in perPropTypes)
+        {
+            if (types.Count > 1)
+            {
+                var names = string.Join(", ", types.Select(t => t.Name));
+                throw new QueryException(
+                    $"'{prop}' resolves to multiple types ({names}) across the OR-branches of this " +
+                    $"quantifier; the inner predicate compiles once so this is a v1 limitation — " +
+                    $"split it into separate {node.Quantifier.ToString().ToUpperInvariant()} queries.",
+                    0);
+            }
+            resolved[prop] = types.First();
+        }
+        return resolved;
+    }
+
+    /// <summary>
+    /// DNF-expand <paramref name="node"/> into conjunctive scopes: OR yields separate
+    /// scopes, AND is the cross-product (a single scope is a flat conjunct list), and
+    /// any other node (including <see cref="NotNode"/>) is an opaque leaf. Inner
+    /// predicates are tiny, so the cross-product never blows up in practice.
+    /// </summary>
+    private static List<List<QueryNode>> ConjunctiveScopes(QueryNode node)
+    {
+        switch (node)
+        {
+            case OrNode o:
+            {
+                var scopes = ConjunctiveScopes(o.Left);
+                scopes.AddRange(ConjunctiveScopes(o.Right));
+                return scopes;
+            }
+            case AndNode a:
+            {
+                var left = ConjunctiveScopes(a.Left);
+                var right = ConjunctiveScopes(a.Right);
+                var combined = new List<List<QueryNode>>(left.Count * right.Count);
+                foreach (var l in left)
+                {
+                    foreach (var r in right)
+                    {
+                        var merged = new List<QueryNode>(l.Count + r.Count);
+                        merged.AddRange(l);
+                        merged.AddRange(r);
+                        combined.Add(merged);
+                    }
+                }
+                return combined;
+            }
+            default:
+                return new List<List<QueryNode>> { new() { node } };
+        }
+    }
+
+    // A positive discriminator guard is a top-of-scope `<disc> = 'literal'` equality.
+    // `!=` does not count; a guard nested inside a NOT subtree does not count (the
+    // NotNode is an opaque scope leaf, so its inner equality is never inspected here).
+    private static string? FindDiscriminatorGuard(
+        IReadOnlyList<QueryNode> scope, string discriminatorField)
+    {
+        string? value = null;
+        foreach (var n in scope)
+        {
+            if (n is ComparisonNode { Op: ComparisonOp.Eq } c
+                && string.Equals(c.Column, discriminatorField, StringComparison.OrdinalIgnoreCase)
+                && c.Value is StringValue sv)
+            {
+                if (value is not null && !string.Equals(value, sv.Text, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new QueryException(
+                        $"Conflicting {discriminatorField} guards ('{value}' and '{sv.Text}') in one " +
+                        $"conjunction — an element can only have one discriminator value.", 0);
+                }
+                value = sv.Text;
+            }
+        }
+        return value;
+    }
+
+    // Every property name referenced anywhere in the scope (descending NOT subtrees:
+    // a colliding property used under NOT still needs a concrete type to compile),
+    // excluding the discriminator field itself.
+    private static IEnumerable<string> ReferencedProps(
+        IReadOnlyList<QueryNode> scope, string discriminatorField)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var stack = new Stack<QueryNode>(scope);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            switch (n)
+            {
+                case AndNode a: stack.Push(a.Left); stack.Push(a.Right); break;
+                case OrNode o: stack.Push(o.Left); stack.Push(o.Right); break;
+                case NotNode not: stack.Push(not.Inner); break;
+                case QuantifiedNode q:
+                    // A nested quantifier rebinds to its own element schema; its
+                    // Column is the only name resolved in THIS scope.
+                    if (!string.Equals(q.Column, discriminatorField, StringComparison.OrdinalIgnoreCase)
+                        && seen.Add(q.Column))
+                    {
+                        yield return q.Column;
+                    }
+                    break;
+                case ComparisonNode c: foreach (var p in Emit(c.Column)) yield return p; break;
+                case LikeNode l: foreach (var p in Emit(l.Column)) yield return p; break;
+                case StringMatchNode sm: foreach (var p in Emit(sm.Column)) yield return p; break;
+                case InNode i: foreach (var p in Emit(i.Column)) yield return p; break;
+                case BetweenNode b: foreach (var p in Emit(b.Column)) yield return p; break;
+                case IsNullNode isn: foreach (var p in Emit(isn.Column)) yield return p; break;
+            }
+        }
+
+        IEnumerable<string> Emit(string column)
+        {
+            if (!string.Equals(column, discriminatorField, StringComparison.OrdinalIgnoreCase)
+                && seen.Add(column))
+            {
+                yield return column;
+            }
+        }
+    }
+
     private static Func<object, bool> CompileLike(
         LikeNode node, Dictionary<string, ColumnBinding> columns, bool caseSensitive)
     {
@@ -349,8 +622,12 @@ public static class QueryCompiler
         bool negated = node.Negated;
         return item =>
         {
-            var v = col.GetValue(item) as string;
-            if (v is null)
+            var raw = col.GetValue(item);
+            if (IsAbsent(raw))
+            {
+                return false;
+            }
+            if (raw is not string v)
             {
                 return negated;
             }
@@ -404,8 +681,12 @@ public static class QueryCompiler
             bool negated = node.Negated;
             return item =>
             {
-                var s = col.GetValue(item) as string;
-                if (s is null)
+                var raw = col.GetValue(item);
+                if (IsAbsent(raw))
+                {
+                    return false;
+                }
+                if (raw is not string s)
                 {
                     return negated;
                 }
@@ -423,6 +704,10 @@ public static class QueryCompiler
         return item =>
         {
             var v = col.GetValue(item);
+            if (IsAbsent(v))
+            {
+                return false;
+            }
             if (v is null)
             {
                 return neg;
@@ -453,6 +738,10 @@ public static class QueryCompiler
         return item =>
         {
             var v = col.GetValue(item);
+            if (IsAbsent(v))
+            {
+                return false;
+            }
             if (v is null)
             {
                 return negated;
@@ -467,7 +756,17 @@ public static class QueryCompiler
     {
         var col = ResolveColumn(node.Column, columns);
         bool wantNull = !node.Negated;
-        return item => (col.GetValue(item) is null) == wantNull;
+        // Absent ≠ null: an element whose subtype doesn't declare this property does
+        // not match IS NULL *or* IS NOT NULL — it is simply skipped.
+        return item =>
+        {
+            var v = col.GetValue(item);
+            if (IsAbsent(v))
+            {
+                return false;
+            }
+            return (v is null) == wantNull;
+        };
     }
 
     // ──────────────── coercion ────────────────
