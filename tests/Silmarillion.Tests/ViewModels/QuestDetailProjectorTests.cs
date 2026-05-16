@@ -315,6 +315,74 @@ public sealed class QuestDetailProjectorTests
         groups[1].Label.Should().Be("Internal flags");
     }
 
+    [Fact]
+    public void PetCount_BucketedAsPets_ResolvesPetTypeTagThroughStringsAll_NotCamelSplit()
+    {
+        // Sibling of RecipeRequirementProjectorTests.PetTypeTag_ResolvesThroughStringsAll_NotCamelSplit.
+        // PG models pet/summon types as NPC entities → real name lives in strings_all under
+        // npc_<tag>_Name. "SummonedBakingBread" must read "Rising Dough", not the invented
+        // CamelCase split "Summoned Baking Bread".
+        var refData = new StubRefData();
+        refData.StringsMap["npc_SummonedBakingBread_Name"] = "Rising Dough";
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[]
+            {
+                new PetCountRequirement { T = "PetCount", PetTypeTag = "SummonedBakingBread", MaxCount = 4 },
+            },
+            refData, resolver, nav);
+
+        groups.Should().ContainSingle(g => g.Label == "Pets")
+            .Which.Requirements.Single().Text.Should().Be("Owns 4 Rising Dough pets");
+    }
+
+    [Fact]
+    public void PetCount_FallsBackToCamelSplit_WhenStringsAllKeyAbsent_AndDedupesPetNoun()
+    {
+        // No npc_<tag>_Name entry ⇒ CamelCase split (the fallback). A tag that already ends
+        // in a pet noun ("CowPet") must not double up into "Cow Pet pets" — same suffix
+        // dedup the recipe projector does.
+        var refData = new StubRefData();
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[]
+            {
+                new PetCountRequirement { T = "PetCount", PetTypeTag = "WolfPup", MinCount = 1 },
+                new PetCountRequirement { T = "PetCount", PetTypeTag = "CowPet", MinCount = 2, MaxCount = 3 },
+            },
+            refData, resolver, nav);
+
+        var reqs = groups.Should().ContainSingle(g => g.Label == "Pets").Which.Requirements;
+        reqs.Should().HaveCount(2);
+        reqs[0].Text.Should().Be("Owns 1 Wolf Pup pet");      // CamelCase split + singular noun appended
+        reqs[1].Text.Should().Be("Owns 2–3 Cow Pet");         // tag is already a pet-noun ⇒ no "pets" suffix
+    }
+
+    [Fact]
+    public void Appearance_StaysCamelSplit_DeliberatelyNotResolvedViaStringsAll()
+    {
+        // Audit guard (issue #405): the per-tag audit found AppearanceRequirement.Appearance
+        // has no reliable strings_all key. Even when a *coincidental* npc_<tag>_Name exists
+        // (the rabbit monster), the projector must NOT resolve through it — that would
+        // mislabel a player morph. Locks the scope-discipline decision so it isn't
+        // re-litigated by a future "make it consistent with PetTypeTag" change.
+        var refData = new StubRefData();
+        refData.StringsMap["npc_Rabbit_Name"] = "Rabbit (monster — wrong label)";
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var resolver = new ReferenceDataEntityNameResolver(refData);
+
+        var groups = QuestDetailProjector.BuildRequirementGroups(
+            new QuestRequirement[] { new AppearanceRequirement { T = "Appearance", Appearance = "Rabbit" } },
+            refData, resolver, nav);
+
+        groups.Should().ContainSingle(g => g.Label == "Identity / state")
+            .Which.Requirements.Single().Text.Should().Be("Appearance: Rabbit");
+    }
+
     // ─── Rewards ───────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -620,6 +688,7 @@ public sealed class QuestDetailProjectorTests
         public Dictionary<string, Quest> QuestsByInternalNameMap { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, SkillEntry> Skills { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AreaEntry> AreasMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> StringsMap { get; } = new(StringComparer.Ordinal);
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
@@ -638,7 +707,7 @@ public sealed class QuestDetailProjectorTests
         public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
         public IReadOnlyDictionary<string, Quest> Quests { get; } = new Dictionary<string, Quest>();
         public IReadOnlyDictionary<string, Quest> QuestsByInternalName => QuestsByInternalNameMap;
-        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>();
+        public IReadOnlyDictionary<string, string> Strings => StringsMap;
 
         public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 0);
         public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;

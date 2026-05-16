@@ -313,11 +313,17 @@ public static class QuestDetailProjector
 
             case PetCountRequirement p:
                 {
-                    var kind = SplitCamelCase(p.PetTypeTag);
+                    var kind = ResolvePetKind(p.PetTypeTag, refData);
+                    // Append "pet"/"pets" only when the resolved name isn't already a pet
+                    // noun, killing the "… Cow Pet pets" redundancy (recipe-side shape).
+                    var kindIsPetNoun =
+                        kind.EndsWith("pet", StringComparison.OrdinalIgnoreCase)
+                        || kind.EndsWith("pets", StringComparison.OrdinalIgnoreCase);
+                    string Noun(int n) => kindIsPetNoun ? kind : $"{kind} pet{(n == 1 ? "" : "s")}";
                     if (p.MinCount is { } mn && p.MaxCount is { } mx && mn != mx)
-                        return new QuestRequirementDisplay($"Owns {mn}–{mx} {kind} pets", null, false);
+                        return new QuestRequirementDisplay($"Owns {mn}–{mx} {Noun(mx)}", null, false);
                     var n = p.MinCount ?? p.MaxCount ?? 1;
-                    return new QuestRequirementDisplay($"Owns {n} {kind} pet{(n == 1 ? "" : "s")}", null, false);
+                    return new QuestRequirementDisplay($"Owns {n} {Noun(n)}", null, false);
                 }
 
             case OrRequirement or:
@@ -711,6 +717,44 @@ public static class QuestDetailProjector
             IsNavigable: navigator.CanOpen(reference),
             Prefix: prefix,
             ChipName: name);
+    }
+
+    /// <summary>
+    /// Resolve a <c>PetTypeTag</c> to its real in-game display name. PG models pet/summon
+    /// types as NPC/monster entities, so the name lives in <c>strings_all</c> under
+    /// <c>npc_&lt;tag&gt;_Name</c> ("SummonedBakingBread" → "Rising Dough"). These tags are
+    /// <em>not</em> in <c>npcs.json</c>, so <see cref="IEntityNameResolver"/>'s NPC path
+    /// can't reach them — consult <see cref="IReferenceDataService.Strings"/> directly (the
+    /// id→display-name convention; mirrors <c>RecipeRequirementProjector.DescribePetCount</c>
+    /// / PR #400). <see cref="SplitCamelCase"/> is the fallback when the key is absent.
+    /// <para>
+    /// <b>Per-tag audit — issue #405.</b> Only <c>PetTypeTag</c> resolves through
+    /// <c>strings_all</c>. Every other quest requirement tag that still falls back to
+    /// <see cref="SplitCamelCase"/> was checked against the bundled string table and has
+    /// <em>no</em> reliable, non-coincidental key — speculatively resolving them risks a
+    /// coincidental wrong label (the recipe-side rationale this mirrors):
+    /// <list type="bullet">
+    ///   <item><description><c>AppearanceRequirement.Appearance</c> ("Rabbit"): no
+    ///   <c>npc_Rabbit_Name</c> / <c>appearance_*</c> key exists; resolving via the rabbit
+    ///   monster would mislabel a player morph. Stays CamelCase-split.</description></item>
+    ///   <item><description><c>RaceRequirement</c> ("Fae"), <c>OtherHasTypeTagRequirement</c>
+    ///   ("Sentient"), <c>EquipmentSlotEmptyRequirement.Slot</c> ("Head"/"Chest"/…),
+    ///   <c>MoonPhaseRequirement</c>, <c>AreaEvent*Requirement</c>,
+    ///   <c>EquippedItemKeywordRequirement</c>, <c>HangOutCompletedRequirement</c>: no
+    ///   string-table key pattern; the CamelCase split already reads cleanly.</description></item>
+    /// </list>
+    /// (<c>HasEffectKeywordRequirement</c> is separately chip-anchored on
+    /// <see cref="EntityRef.EffectKeyword"/>; abilities get the future Abilities-tab
+    /// resolver.) Do not broaden this without repeating the audit.
+    /// </para>
+    /// </summary>
+    private static string ResolvePetKind(string? petTypeTag, IReferenceDataService refData)
+    {
+        if (string.IsNullOrEmpty(petTypeTag)) return "pet";
+        return refData.Strings.TryGetValue($"npc_{petTypeTag}_Name", out var resolved)
+               && !string.IsNullOrEmpty(resolved)
+            ? resolved!
+            : SplitCamelCase(petTypeTag);
     }
 
     /// <summary>
