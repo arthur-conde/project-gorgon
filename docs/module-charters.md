@@ -230,21 +230,29 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   `AugmentPoolPreview` pool surface Celebrimbor uses, fed by the shared
   `ResultEffectsParser`. Silmarillion is the **master** view (full pool for any
   browsed recipe); **Celebrimbor is the planning-narrowed slice** of that *same* data
-  (the pool for recipes in your craft plan). **Mechanic — verified against `recipes.json` + `ResultEffectsParser`
-  2026-05-16:** the `*E` *"(enchanted)"* recipes carry generic `Crystal`
-  keyword-ingredient slots (`ItemKeys:["Crystal"]`) and a
-  `TSysCraftedEquipment(template)` ResultEffect; `TryBuildCraftedEquipmentPool`
-  derives the displayable pool from the crafted-equipment template's `TSysProfile` →
-  `IReferenceDataService.Profiles` — so the pool is **template/profile-derived and
-  crystal-independent in reference data.** ⚠️ **Correction:** the owner-stated "rolls
-  influenced by the crystal used" is **not reflected in reference data or the parser**
-  — the crystal slots are consumed ingredients with no effect on the parsed pool; any
-  crystal→roll influence is game-engine *runtime* behaviour, outside browsable data.
-  Consequence: Silmarillion can show the **full possible pool per recipe/template**
-  (browsing, within charter); it **cannot** show "crystal X narrows the pool" — that
-  linkage isn't in the data, and deriving it would be calculation, not browsing
-  (reinforces the no-computation carve-out below). Showing the *possible* pool is
-  **browsing**; it is **not** simulating a specific roll. Relates to #214.
+  (the pool for recipes in your craft plan). **Mechanic — verified against `recipes.json`, `items.json` &
+  `ResultEffectsParser` 2026-05-16 (owner was right; a first, too-narrow check was
+  wrong — see History):** two reference-data pieces combine.
+  1. *Base pool:* the `*E` *"(enchanted)"* recipe's `TSysCraftedEquipment(template)`
+     ResultEffect → `TryBuildCraftedEquipmentPool` → the crafted-equipment template's
+     `TSysProfile` → `IReferenceDataService.Profiles`. This is the full power pool for
+     that equipment template.
+  2. *Crystal scoping:* each `Crystal`-keyword item carries the enchantment family on
+     **its own item record** — `Item.Description` `"Associated Primary Skill: <Skill>"`
+     (+ optional Secondary) and `Item.DynamicCraftingSummary`
+     `"…create items that have <Skill> enchantments."` (e.g. `Moonstone` →
+     *Lycanthropy*; `LapisLazuli` → *Priest*; `Tsavorite` → *Ice Magic*). The crystal
+     slotted into the recipe selects the enchantment family/skill.
+  So the owner-stated "rolls are influenced by the crystal used" **is data-backed** —
+  the linkage lives on the crystal item (`items.json`), not the recipe/parser path
+  (which is why the first verification, tracing only recipe→parser, wrongly concluded
+  "crystal-independent"). **Consequence:** because both pieces are browsable reference
+  data, Silmarillion **can** surface the relationship — browse an enchanted recipe →
+  its `Crystal` slot → candidate crystals → each crystal's associated skill /
+  enchantment family, alongside the template's pool. That is **browsing/cross-linking
+  (within charter)**, *not* calculation. What would be calculation (still not
+  Silmarillion's): computing the precise rolled-power probabilities or the exact
+  template-pool ∩ crystal-skill intersection. Relates to #214.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
@@ -337,14 +345,20 @@ libraries; the charter follows the code:
   relationship: Silmarillion = master list / full pool; Celebrimbor = planning-narrowed
   slice of the same data.
 - **2026-05-16** — TSys-pool shape **verified** against `recipes.json` +
-  `ResultEffectsParser`. Confirmed the popup is data-supported (`*E` "(enchanted)" →
+  `ResultEffectsParser`: confirmed the popup is data-supported (`*E` "(enchanted)" →
   `Crystal` keyword slots + `TSysCraftedEquipment(template)` → `AugmentPoolPreview`
-  from `template.TSysProfile`/`Profiles`). **Corrected:** owner-stated "rolls
-  influenced by the crystal" is *not* in reference data — pool is template/profile-
-  derived, crystal-independent; any crystal influence is engine runtime, not
-  browsable. Charter mechanic line moved from owner-stated to verified, discrepancy
-  flagged ⚠️. (Verification overturned the stated mechanic — same pattern as gardening
-  XP and the inv-layering corrections.)
+  from `template.TSysProfile`/`Profiles`).
+- **2026-05-16** — **Self-correction reverted.** The above check also concluded
+  "crystal-independent / engine-runtime only" and flagged the owner's mechanic as
+  unsupported. That was wrong — the check traced only recipe→parser and missed the
+  crystal *item* record. Owner pointed at `Moonstone` (`item_18038`): `Description`
+  *"Associated Primary Skill: Lycanthropy"* + `DynamicCraftingSummary` *"…Lycanthropy
+  enchantments"* (siblings: LapisLazuli→Priest, Tsavorite→Ice Magic). The crystal→
+  enchantment-family linkage **is** in `items.json` — owner was right, the correction
+  was the error. Charter rewritten: two-piece data-backed mechanic; Silmarillion *can*
+  cross-link recipe→crystal→skill (browsing). Lesson: verifying one path and
+  generalising to "not in data" is itself an unverified assertion — scope the check to
+  the claim, not the first path that comes to hand.
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
   is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
