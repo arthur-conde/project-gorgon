@@ -58,9 +58,11 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   |---|---|---|
   | Reference (CDN) data | `IReferenceDataService` (Mithril.Shared) | **Silmarillion** |
   | Static storage *export* | `IActiveCharacterService` / `StorageReport` (Mithril.Shared) | **Bilbo** (+ immediate craftability) |
-  | Live inventory simulation | `IInventoryService` (**Mithril.GameState**) — tails `IPlayerLogStream` `ProcessAddItem/…` + chat `[Status]` for stack sizes | **Palantir** (`LiveInventoryView`) |
+  | Live inventory simulation | `IInventoryService` (**Mithril.GameState**) — tails `IPlayerLogStream` `ProcessAddItem/…` + chat `[Status]` for stack sizes | **Palantir** (debug surface — `LiveInventoryView`) |
   | Eaten-food state | in-game report (dumped to `Player.log`) | **Pippin** (Gourmand) |
   | Progression state | character export | **Elrond** (as leveling constraints) |
+  | NPC store state | **Smaug** mines it itself (no shared service) | **Smaug** — the one domain where a single module owns *both* layers |
+  | Words-of-Power known-state | player logs (learn + utterance) | **Saruman** |
 
   Owning a *surface* ≠ owning the *data*: the shared service is the single source of
   truth; modules `Subscribe`/query it (this is *why* it's centralised — the service
@@ -71,10 +73,10 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ---
 
-> **Not yet charactered:** **Palantir** (live-inventory surface over
-> `IInventoryService`), **Smaug**, and **Saruman** are real modules with no charter
-> entry yet — out of scope for this pass. The data-domain table references Palantir
-> only as the live-inventory surface owner; its full charter is owed.
+> **Coverage:** all 12 `*.Module` projects are charactered (owner-confirmed
+> 2026-05-16). `Mithril.Shared` / `Mithril.GameState` / `Mithril.Shell` are shared
+> libraries, not modules — they appear in the data-domain table as *data owners*, not
+> as charter entries.
 
 ## Samwise — garden tracker
 
@@ -304,6 +306,54 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 - **Reference data:** `Recipes`, `Items`, `ResultEffectsParser` previews, `Areas`
   (source resolution), inventory.
 
+## Palantir — debug / dev tools
+
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — a **debug module** (not player-facing):
+  the browser/inspector over **Mithril.GameState** state (incl. the live-inventory
+  view, `LiveInventoryView` over `IInventoryService`), plus dev tools — currently a
+  **badge tester**. A development/diagnostic surface.
+- **Does NOT own:**
+  - **✅ confirmed (owner, 2026-05-16)** — *Any player-facing feature.* Debug-only by
+    charter: exposes engine/GameState internals for development, never a user workflow.
+    (Hard boundary, by the module's nature.)
+- **Data:** reads Mithril.GameState services (`IInventoryService`, …) as a debug
+  surface — owns no player data domain of its own.
+
+## Smaug — NPC stores & sale economics
+
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — viewing NPC stores; the **gold value of
+  the player's inv/storage**; **mining store states** (capturing NPC store
+  contents/state); **sale min/maxing** (optimising what/where to sell).
+- **Does NOT own:**
+  - **✅ confirmed** — *NPC favor / gifts* → Arwen. Smaug is NPC *economics*
+    (buy/sell, store contents, gold) — a distinct purpose from Arwen's relationship/favor.
+  - **✅ confirmed** — *Inv/storage browsing & craftability* → Bilbo. Smaug *consumes*
+    inv/storage state to value it in gold / optimise sales (a distinct purpose-surface
+    over the same shared data); it does not own the inventory browser.
+  - ⚠️ *NPC gold tracking* — owner-noted as a **possible future**, not current scope;
+    provisional until built (cf. the Elrond/#225 line).
+- **Data:** NPC store state — **Smaug mines it itself** (owns both acquisition and
+  surface for this domain). Inv/storage from the shared owners
+  (`IActiveCharacterService`/`StorageReport`) + `Item.Value` for gold valuation.
+
+## Saruman — Words of Power
+
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — the **Words of Power** mechanic: a WoP
+  is an RNG'd string gained via a recipe or item; typing it into chat activates
+  effects. Saruman **monitors the logs** to detect when a WoP is *learned* and tracks
+  the known set, and detects when a known word is *uttered* while logged in and
+  **strikes it from the record** (consumed). Owns the player's WoP known-state
+  lifecycle.
+- **Does NOT own:**
+  - **✅ confirmed** — *The recipe/item as a WoP source in reference data* — that's
+    `ResultEffectsParser` `WordOfPowerPreview` (`DiscoverWordOfPower{N}`), browsable in
+    Silmarillion. Saruman owns the *player's* learned/known/consumed state, not the
+    reference datum "this recipe grants WoP N." (Same data-owner-vs-surface split.)
+- **Data source: ✅ owner-stated (2026-05-16)** — log monitoring: learn-detection +
+  utterance/consumption while logged in. ⚠️ Channel split inferred (not owner-stated):
+  learn likely `Player.log` (recipe/item), utterance the chat log (typed into chat) —
+  verify when the module is next touched.
+
 ---
 
 ## Cross-module shared infra (charter-adjacent)
@@ -329,6 +379,14 @@ libraries; the charter follows the code:
 
 ## History
 
+- **2026-05-16** — Final three modules charactered by owner, closing the set (all 12
+  `*.Module` projects now covered): **Palantir** (debug module — browser over
+  Mithril.GameState + badge tester; not player-facing), **Smaug** (NPC stores, inv/
+  storage gold valuation, store-state mining, sale min/maxing; NPC-gold tracking ⚠️
+  future), **Saruman** (Words-of-Power known-state lifecycle from log monitoring).
+  Added NPC-store-state and WoP-known-state rows to the data-domain table (Smaug is
+  the one domain where a single module owns both acquisition and surface). "Not yet
+  charactered" note replaced with a coverage statement.
 - **2026-05-16** — Doc created. `Owns` grounded in current code; ✅ entries are
   owner/design-doc-confirmed (Gandalf eligibility confirmed by owner this date; Elrond
   recipe-anchoring and Silmarillion browser-not-calculator from existing design docs).
