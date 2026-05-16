@@ -211,7 +211,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         // Store caps are kept one-per-row: each tier raises a distinct gold cap and the per-row
         // keyword tuple is surfaced as a chip strip that flips to the Items tab pre-filtered.
         StoreService store when store.CapIncreases is { Count: > 0 } =>
-            store.CapIncreases.Select(FormatCapIncrease).ToList(),
+            store.ParsedCapIncreases.Select(FormatCapIncrease).ToList(),
 
         BarterService barter when barter.AdditionalUnlocks is { Count: > 0 } =>
             BuildLabeledLines(("Unlocks at higher favor", barter.AdditionalUnlocks)),
@@ -275,27 +275,20 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     }
 
     /// <summary>
-    /// Format one Store cap-increase entry. Prose is <c>"Tier → 5,000g"</c>; the keyword tuple
-    /// (when present) becomes the per-line chip strip — each chip targets the Items tab via
-    /// <see cref="EntityKind.ItemByKeyword"/> (the single-keyword Items filter pivot restored
-    /// in #327; not the retired #270 fan-out kind). Mirrors the colon-separated parser shape
-    /// in <see cref="Mithril.Shared.Reference.ReferenceDataService"/>.
+    /// Format one parsed Store <see cref="StoreCapIncrease"/> row. Prose is
+    /// <c>"Tier → 5,000g"</c>; the keyword tuple (when present) becomes the per-line chip
+    /// strip — each chip targets the Items tab via <see cref="EntityKind.ItemByKeyword"/>
+    /// (the single-keyword Items filter pivot restored in #327; not the retired #270 fan-out
+    /// kind). Parsing now lives in <see cref="StoreCapIncreaseParser"/> (#350) — this method
+    /// is presentation only.
     /// </summary>
-    private NpcServiceDetailLine FormatCapIncrease(string raw)
+    private NpcServiceDetailLine FormatCapIncrease(StoreCapIncrease cap)
     {
-        // Raw line shape: "Despised:5000:Armor,Weapon,CorpseTrophy". Three colon-separated parts;
-        // last part may be empty.
-        var parts = raw.Split(':', 3);
-        if (parts.Length < 2) return NpcServiceDetailLine.TextOnly(raw);
-        var tier = parts[0];
-        var gold = int.TryParse(parts[1], out var g) ? g.ToString("N0") + "g" : parts[1];
-        var prose = $"{tier} → {gold}";
-        if (parts.Length < 3 || string.IsNullOrWhiteSpace(parts[2]))
+        var gold = cap.GoldCap is { } g ? g.ToString("N0") + "g" : "—";
+        var prose = $"{cap.Tier} → {gold}";
+        if (cap.Keywords.Count == 0)
             return NpcServiceDetailLine.TextOnly(prose);
-        var keywords = parts[2].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (keywords.Length == 0) return NpcServiceDetailLine.TextOnly(prose);
-        var chips = BuildKeywordChips(keywords);
-        return new NpcServiceDetailLine(prose, chips);
+        return new NpcServiceDetailLine(prose, BuildKeywordChips(cap.Keywords));
     }
 
     /// <summary>

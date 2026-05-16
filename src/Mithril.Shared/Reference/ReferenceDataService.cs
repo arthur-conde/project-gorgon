@@ -21,6 +21,8 @@ using PocoNpc = Mithril.Reference.Models.Npcs.Npc;
 using PocoNpcPreference = Mithril.Reference.Models.Npcs.NpcPreference;
 using PocoNpcService = Mithril.Reference.Models.Npcs.NpcService;
 using PocoNpcStoreService = Mithril.Reference.Models.Npcs.StoreService;
+using StoreCapIncrease = Mithril.Reference.Models.Npcs.StoreCapIncrease;
+using StoreCapIncreaseParser = Mithril.Reference.Models.Npcs.StoreCapIncreaseParser;
 using PocoPower = Mithril.Reference.Models.Misc.PowerProfile;
 using DirectedGoal = Mithril.Reference.Models.Misc.DirectedGoal;
 using AbilityKeyword = Mithril.Reference.Models.Misc.AbilityKeyword;
@@ -1108,7 +1110,7 @@ public sealed class ReferenceDataService : IReferenceDataService
                 .Select(s => new NpcService(
                     s.Type,
                     s.Favor,
-                    s is PocoNpcStoreService store ? ParseCapIncreases(store.CapIncreases) : (IReadOnlyList<NpcStoreCapIncrease>)[]))
+                    s is PocoNpcStoreService store ? StoreCapIncreaseParser.ParseRequiringGold(store.CapIncreases) : (IReadOnlyList<StoreCapIncrease>)[]))
                 .ToList();
 
             var entry = new NpcEntry(
@@ -1359,25 +1361,6 @@ public sealed class ReferenceDataService : IReferenceDataService
         // strings_all changes the answer. The other two indices are unaffected but rebuilding
         // them is cheap (single recipe walk).
         BuildRecipeCrossLinkIndices();
-    }
-
-    /// <summary>Parses <c>"Despised:5000:Armor,Weapon,CorpseTrophy"</c> strings.</summary>
-    private static IReadOnlyList<NpcStoreCapIncrease> ParseCapIncreases(IReadOnlyList<string>? raw)
-    {
-        if (raw is null || raw.Count == 0) return [];
-        var result = new List<NpcStoreCapIncrease>(raw.Count);
-        foreach (var line in raw)
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            var parts = line.Split(':', 3);
-            if (parts.Length < 2) continue;
-            if (!int.TryParse(parts[1], out var cap)) continue;
-            var keywords = parts.Length == 3 && !string.IsNullOrWhiteSpace(parts[2])
-                ? (IReadOnlyList<string>)parts[2].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                : [];
-            result.Add(new NpcStoreCapIncrease(parts[0], cap, keywords));
-        }
-        return result;
     }
 
     private void ParseAndSwapItemSources(IReadOnlyDictionary<string, PocoSourceEnvelope> raw, ReferenceFileMetadata meta)

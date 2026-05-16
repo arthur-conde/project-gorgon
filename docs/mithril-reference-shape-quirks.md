@@ -205,6 +205,44 @@ and the test fakes' `AddRecipe` signatures retyped to match. Real bundled
 data only ships `0.1` as a literal double, so production behaviour matches
 the pre-unification path; the only behaviour change is at the test seam.
 
+### `StoreService.ParsedCapIncreases`: computed companion, not a converter-time deviation
+
+**Where:** [Models/Npcs/NpcService.cs](../src/Mithril.Reference/Models/Npcs/NpcService.cs)
+(`StoreService`), parsed by
+[StoreCapIncreaseParser](../src/Mithril.Reference/Models/Npcs/StoreCapIncreaseParser.cs).
+
+`StoreService.CapIncreases` ships as raw colon strings
+(`"Despised:5000:Armor,Weapon,CorpseTrophy"` — `Tier:GoldCap:keyword,…`). Two
+consumers historically re-parsed it independently: Smaug's
+`ReferenceDataService.ParseCapIncreases` (→ a slim `NpcStoreCapIncrease`
+record) and Silmarillion's `NpcsTabViewModel.FormatCapIncrease` split logic.
+#350 unified both on the canonical `StoreCapIncrease` record + parser in this
+project.
+
+**Why a computed companion, not the `Item.Keywords` converter pattern:** the
+`Item`/`Recipe` deviations *replace* the raw shape at the JSON-converter seam
+(`Keywords: IReadOnlyList<ItemKeyword>?` was `IReadOnlyList<string>?`). Here we
+instead keep `CapIncreases` JSON-faithful and add a get-only
+`ParsedCapIncreases => StoreCapIncreaseParser.Parse(CapIncreases)`. Reasons:
+
+- No bespoke `JsonConverter` needed — the parse is a pure string split, not a
+  deserialization concern; a converter would be ceremony.
+- The model stays **attribute-free** per the `Models/` README. The computed
+  property carries *no* `[JsonIgnore]`: reference data is deserialize-only and
+  no test serializes models back, so a get-only property never round-trips and
+  the attribute would be both unnecessary and a README violation.
+- Both raw and parsed forms stay available — the raw list is still the literal
+  JSON contract for the drift-validation harness; the parsed list is the
+  queryable seam for nested store-cap filtering (#351 `WITH ANY|ALL`).
+
+**The rule this implies:** when a field's parse is a pure transform of its own
+raw value (no cross-field or envelope-key input), prefer a computed companion
+over a converter-time replacement — it keeps the JSON contract honest, needs no
+serialization plumbing, and is the cheapest place to expose a queryable shape.
+Reach for the converter pattern (`Item.Keywords`) only when *every* consumer
+pays the un-shape tax or the lifted value depends on out-of-field context
+(`Item.Id` from the envelope key).
+
 ### `RecipeRequirement` is a separate hierarchy from `QuestRequirement`
 
 **Where:** [Models/Quests/QuestRequirement.cs](../src/Mithril.Reference/Models/Quests/QuestRequirement.cs)

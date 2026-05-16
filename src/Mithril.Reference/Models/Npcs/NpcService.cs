@@ -11,7 +11,11 @@ public abstract class NpcService
 {
     public string Type { get; set; } = "";
 
-    /// <summary>Minimum favor level required to access this service. Always present.</summary>
+    /// <summary>
+    /// Minimum favor level required to access this service <em>at all</em>. Always present.
+    /// Distinct from <see cref="StoreCapIncrease.Tier"/>, which is the per-row threshold at
+    /// which an individual Store gold-cap unlocks — this gates the whole service.
+    /// </summary>
     public string? Favor { get; set; }
 }
 
@@ -52,7 +56,21 @@ public sealed class StorageService : NpcService
 
 public sealed class StoreService : NpcService
 {
+    /// <summary>
+    /// Raw per-tier gold-cap rows, each a colon string
+    /// <c>"&lt;Tier&gt;:&lt;GoldCap&gt;:&lt;keyword,keyword,…&gt;"</c>. JSON-faithful shape;
+    /// consume the parsed view via <see cref="ParsedCapIncreases"/>.
+    /// </summary>
     public IReadOnlyList<string>? CapIncreases { get; set; }
+
+    /// <summary>
+    /// Structured view of <see cref="CapIncreases"/>, parsed via
+    /// <see cref="StoreCapIncreaseParser"/>. Computed get-only (no JSON attribute by
+    /// the attribute-free model convention; reference data is deserialize-only so it
+    /// never round-trips). This is the queryable shape for nested store-cap filtering.
+    /// </summary>
+    public IReadOnlyList<StoreCapIncrease> ParsedCapIncreases =>
+        StoreCapIncreaseParser.Parse(CapIncreases);
 }
 
 public sealed class TrainingService : NpcService
