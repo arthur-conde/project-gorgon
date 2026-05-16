@@ -23,7 +23,7 @@ currency fields are not — see "Correctly ignored".
 
 | Field | How `CrossSkillPlanner` uses it |
 |---|---|
-| `Skill` + `SkillLevelReq` | `IsAvailable`: recipe ineligible until the gating skill ≥ req. |
+| `Skill` + `SkillLevelReq` | `IsAvailable`: recipe ineligible until the gating skill ≥ req. **Caveat:** once the gate is met, the planner *optimistically* treats the recipe as auto-learned (`SkillLevelReq > 0` ⇒ available). PG only auto-grants a minority of these — see "Learnability" below (#401). |
 | `PrereqRecipe` | `IsAvailable`: ineligible until the prereq recipe is in `completed`. |
 | `RewardSkill` / `RewardSkillXp` / `RewardSkillXpFirstTime` / drop-off | XP math (`LevelingMath`) — phase sizing + first-time-bonus ordering. |
 | `Ingredients` | `RecipeExpander` / `SourcingPolicy` — intermediate-reuse credit + sub-DAG pruning. |
@@ -65,6 +65,28 @@ gates are rare, situational, and outside the planner's "skill grind path"
 remit. Do not file "increase coverage" issues against this list; if a future
 audit re-flags it, point here.
 
+## Learnability — `RecipeSources` (external, not a `Recipe` field) (#401)
+
+The `Recipe` model carries **no** "auto-learned on skill-up" flag. The only
+signal that separates an innate skill-up unlock from a trainer/quest-gated one
+lives in `sources_recipes.json` (`IReferenceDataService.RecipeSources` — the
+same index Silmarillion surfaces). As of v470, **~63% of `SkillLevelReq ≥ 1`
+recipes have a `Training` source** and 143 are `Quest`-gated, so the optimistic
+default schedules many recipes a fresh character can't actually craft yet.
+
+`LearnabilityPolicy` (`PlanInputs.cs`) is the opt-in fix:
+
+| Policy | Behavior |
+|---|---|
+| `AssumeAutoLearned` (**default**) | v1 behavior — any `SkillLevelReq > 0` recipe rides the auto-learn pass. No regression for existing callers. |
+| `RequireKnownForTrainerAndQuest` | A recipe with a `Training`/`Quest` `RecipeSource` no longer rides the pass — it must be `history.IsKnown` or `AssertedUnlocks`-asserted. Source-less skill-gated recipes still auto-learn. |
+
+Default stays optimistic deliberately: the user-facing surface to assert "I'll
+go train this" is #227. Strict mode is the engine half and becomes the sensible
+default once that surface ships. **Item-bestow learning**
+(`BestowRecipeIfNotKnown` item result-effects) is not in `sources_recipes` and
+is intentionally *not* treated as blocking — noted caveat, not an oversight.
+
 ## Correctly ignored — not planner-relevant
 
 | Field(s) | Why ignored |
@@ -98,3 +120,6 @@ audit re-flags it, point here.
   prevalence and the kind taxonomy came from a full-corpus audit of bundled
   `recipes.json` (v470, 4427 recipes). Builds on the `MaxUses` fix (#396);
   `RecipeUsed` shares its `RemainingCraftBudget` path.
+- **2026-05-16** — Added `LearnabilityPolicy` (opt-in trainer/quest gating,
+  [#401](https://github.com/moumantai-gg/mithril/issues/401)). Engine companion
+  to the asserted-unlocks surface (#227); default behavior unchanged.

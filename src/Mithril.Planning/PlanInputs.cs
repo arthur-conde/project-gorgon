@@ -66,3 +66,34 @@ public sealed class AssertedUnlocks
     public bool IsAsserted(string recipeInternalName)
         => !string.IsNullOrEmpty(recipeInternalName) && _recipes.Contains(recipeInternalName);
 }
+
+/// <summary>
+/// Whether the planner trusts a skill-gated recipe to be auto-learned the moment
+/// its level gate is crossed. Most Project Gorgon leveling recipes are *not*
+/// auto-granted — they're trained at an NPC or unlocked by a quest (~63% of the
+/// skill-gated corpus as of v470). See #401.
+///
+/// <para><see cref="AssumeAutoLearned"/> is the v1 behavior and the default, so
+/// existing callers don't regress. <see cref="RequireKnownForTrainerAndQuest"/>
+/// makes a recipe carrying a <c>Training</c>/<c>Quest</c>
+/// <see cref="Mithril.Shared.Reference.RecipeSource"/> pass *only* when it's
+/// already known or user-asserted — it becomes the meaningful default once the
+/// assertion surface (#227) ships. Item-bestow learning isn't in
+/// <c>sources_recipes</c> and is deliberately not gated here.</para>
+/// </summary>
+public sealed class LearnabilityPolicy
+{
+    private LearnabilityPolicy(bool gateTrainerAndQuest) => GateTrainerAndQuest = gateTrainerAndQuest;
+
+    /// <summary>v1 / default: any <c>SkillLevelReq &gt; 0</c> recipe is assumed
+    /// learnable at its gate, regardless of how the game actually grants it.</summary>
+    public static LearnabilityPolicy AssumeAutoLearned { get; } = new(false);
+
+    /// <summary>Trainer/quest-gated recipes must be known or asserted; only
+    /// genuinely source-less skill-gated recipes keep the auto-learn free pass.</summary>
+    public static LearnabilityPolicy RequireKnownForTrainerAndQuest { get; } = new(true);
+
+    /// <summary>When true, a recipe with a <c>Training</c>/<c>Quest</c> source
+    /// does not satisfy availability on its skill gate alone.</summary>
+    public bool GateTrainerAndQuest { get; }
+}

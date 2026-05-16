@@ -48,10 +48,12 @@ public sealed class CrossSkillPlanner
         RecipeHistory history,
         IReadOnlyDictionary<string, int>? onHand = null,
         SourcingPolicy? sourcing = null,
-        AssertedUnlocks? asserted = null)
+        AssertedUnlocks? asserted = null,
+        LearnabilityPolicy? learnability = null)
     {
         sourcing ??= SourcingPolicy.CraftEverything;
         asserted ??= AssertedUnlocks.None;
+        learnability ??= LearnabilityPolicy.AssumeAutoLearned;
         onHand ??= new Dictionary<string, int>(StringComparer.Ordinal);
 
         var skill = target.Skill;
@@ -90,10 +92,12 @@ public sealed class CrossSkillPlanner
             {
                 if (history.CompletionCount(name) == 0) unusedBonuses.Add(r.Key);
             }
-            else if (asserted.IsAsserted(name) || r.SkillLevelReq > 0)
+            else if (asserted.IsAsserted(name) || AutoLearnableSkillGate(r, learnability))
             {
                 // Auto-considered: a skill-gated recipe's first craft still carries
-                // its one-shot bonus once we reach the gate.
+                // its one-shot bonus once we reach the gate — but only if it's
+                // actually schedulable under the learnability policy (a gated
+                // trainer/quest recipe we can't reach earns no phantom bonus).
                 unusedBonuses.Add(r.Key);
             }
         }
@@ -110,7 +114,7 @@ public sealed class CrossSkillPlanner
         // Seed: any skill-gated recipe already past its gate at the start level is
         // not an "unlock event" — only crossings *during* the plan are marked.
         foreach (var r in candidates)
-            if (IsAvailable(r, level, state, completed, history, asserted))
+            if (IsAvailable(r, level, state, completed, history, asserted, learnability))
                 unlockEmitted.Add(r.Key);
 
         var guard = 0;
@@ -121,17 +125,17 @@ public sealed class CrossSkillPlanner
                 xp -= xpForLevel;
                 level++;
                 if (level - 1 < xpAmounts.Count) xpForLevel = xpAmounts[level - 1];
-                EmitNewUnlocks(candidates, level, state, completed, history, asserted,
+                EmitNewUnlocks(candidates, level, state, completed, history, asserted, learnability,
                     unlockEmitted, unlocks, reuseCache);
                 continue;
             }
 
             var available = candidates
-                .Where(r => IsAvailable(r, level, state, completed, history, asserted))
+                .Where(r => IsAvailable(r, level, state, completed, history, asserted, learnability))
                 .Select(r =>
                 {
                     var baseXp = _math.EffectiveXpPerCraft(r, level);
-                    var reuse = IntermediateReuseXpPerCraft(r, level, state, completed, history, asserted, onHand, sourcing, reuseCache);
+                    var reuse = IntermediateReuseXpPerCraft(r, level, state, completed, history, asserted, learnability, onHand, sourcing, reuseCache);
                     return (recipe: r, baseXp, reuse, effXp: baseXp + reuse);
                 })
                 .Where(x => x.effXp > 0 || unusedBonuses.Contains(x.recipe.Key))
@@ -165,7 +169,7 @@ public sealed class CrossSkillPlanner
                     level++;
                     if (level - 1 < xpAmounts.Count) xpForLevel = xpAmounts[level - 1]; else break;
                 }
-                EmitNewUnlocks(candidates, level, state, completed, history, asserted,
+                EmitNewUnlocks(candidates, level, state, completed, history, asserted, learnability,
                     unlockEmitted, unlocks, reuseCache);
                 rawSteps.Add(new PlanPhase(0, bonus.recipe.Key, bonus.recipe.InternalName!,
                     bonus.recipe.Name ?? "", bonus.recipe.IconId, PredictedCrafts: 1,
@@ -200,7 +204,7 @@ public sealed class CrossSkillPlanner
                 level++;
                 if (level - 1 < xpAmounts.Count) xpForLevel = xpAmounts[level - 1]; else break;
             }
-            EmitNewUnlocks(candidates, level, state, completed, history, asserted,
+            EmitNewUnlocks(candidates, level, state, completed, history, asserted, learnability,
                 unlockEmitted, unlocks, reuseCache);
             rawSteps.Add(new PlanPhase(0, best.recipe.Key, best.recipe.InternalName!,
                 best.recipe.Name ?? "", best.recipe.IconId, PredictedCrafts: crafts,
@@ -248,11 +252,15 @@ public sealed class CrossSkillPlanner
     /// <summary>
     /// A recipe is grindable when its skill gate is met, its prereq is complete,
     /// and it's either known, user-asserted, or skill-gated (skill-source unlocks
-    /// are auto-considered — that's the planner's job vs. Elrond's sim).
+    /// are auto-considered — that's the planner's job vs. Elrond's sim). Under a
+    /// strict <paramref name="learnability"/> policy a skill-gated recipe that the
+    /// game actually trains/quest-gates (per <see cref="IReferenceDataService.RecipeSources"/>)
+    /// no longer rides the auto-learn pass — it must be known or asserted (#401).
     /// </summary>
     private bool IsAvailable(
         Recipe recipe, int targetSkillLevel, SkillState state,
-        ISet<string> completed, RecipeHistory history, AssertedUnlocks asserted)
+        ISet<string> completed, RecipeHistory history, AssertedUnlocks asserted,
+        LearnabilityPolicy learnability)
     {
         var name = recipe.InternalName ?? "";
         var gatingSkill = string.IsNullOrEmpty(recipe.Skill) ? null : recipe.Skill;
@@ -284,12 +292,46 @@ public sealed class CrossSkillPlanner
             }
         }
 
-        return history.IsKnown(name) || asserted.IsAsserted(name) || recipe.SkillLevelReq > 0;
+        return history.IsKnown(name) || asserted.IsAsserted(name)
+            || AutoLearnableSkillGate(recipe, learnability);
+    }
+
+    /// <summary>
+    /// True when a recipe's skill gate alone is enough to consider it learnable.
+    /// Optimistically that's any <c>SkillLevelReq &gt; 0</c>; under a strict
+    /// <see cref="LearnabilityPolicy"/> a recipe the game trains/quest-gates
+    /// (a <c>Training</c>/<c>Quest</c> <see cref="RecipeSource"/>) is excluded —
+    /// it has to be explicitly known or asserted instead (#401). Recipes with no
+    /// such source keep the auto-learn pass (genuine skill-up unlocks).
+    /// </summary>
+    private bool AutoLearnableSkillGate(Recipe recipe, LearnabilityPolicy learnability)
+    {
+        if (recipe.SkillLevelReq <= 0) return false;
+        if (!learnability.GateTrainerAndQuest) return true;
+        return !HasBlockingSource(recipe.InternalName ?? "");
+    }
+
+    /// <summary>
+    /// Does the game gate this recipe behind a trainer or a quest? Read from
+    /// <see cref="IReferenceDataService.RecipeSources"/> (the same index
+    /// Silmarillion surfaces). Item-bestow learning lives in item result-effects,
+    /// not <c>sources_recipes</c>, so it is intentionally not treated as blocking.
+    /// </summary>
+    private bool HasBlockingSource(string recipeInternalName)
+    {
+        if (string.IsNullOrEmpty(recipeInternalName)) return false;
+        if (!_ref.RecipeSources.TryGetValue(recipeInternalName, out var sources)) return false;
+        foreach (var s in sources)
+            if (string.Equals(s.Type, "Training", StringComparison.Ordinal)
+                || string.Equals(s.Type, "Quest", StringComparison.Ordinal))
+                return true;
+        return false;
     }
 
     private void EmitNewUnlocks(
         IReadOnlyList<Recipe> candidates, int level, SkillState state,
         ISet<string> completed, RecipeHistory history, AssertedUnlocks asserted,
+        LearnabilityPolicy learnability,
         ISet<string> unlockEmitted, List<SkillSourceUnlock> unlocks,
         Dictionary<(string, int), int> reuseCache)
     {
@@ -297,7 +339,7 @@ public sealed class CrossSkillPlanner
         {
             if (unlockEmitted.Contains(r.Key)) continue;
             if (r.SkillLevelReq <= 0) continue; // only skill-source unlocks are auto-marked
-            if (!IsAvailable(r, level, state, completed, history, asserted)) continue;
+            if (!IsAvailable(r, level, state, completed, history, asserted, learnability)) continue;
 
             unlockEmitted.Add(r.Key);
             unlocks.Add(new SkillSourceUnlock(
@@ -319,7 +361,7 @@ public sealed class CrossSkillPlanner
     /// </summary>
     private int IntermediateReuseXpPerCraft(
         Recipe recipe, int level, SkillState state, ISet<string> completed,
-        RecipeHistory history, AssertedUnlocks asserted,
+        RecipeHistory history, AssertedUnlocks asserted, LearnabilityPolicy learnability,
         IReadOnlyDictionary<string, int> onHand, SourcingPolicy sourcing,
         Dictionary<(string, int), int> cache)
     {
@@ -349,7 +391,7 @@ public sealed class CrossSkillPlanner
             if (qty <= 0) continue;
             if (!_expander.Producers.TryGetDefault(itemName, out var sub)) continue;
             if (!string.Equals(sub.RewardSkill, recipe.RewardSkill, StringComparison.Ordinal)) continue;
-            if (!IsAvailable(sub, level, state, completed, history, asserted)) continue;
+            if (!IsAvailable(sub, level, state, completed, history, asserted, learnability)) continue;
 
             var stack = Math.Max(1, _expander.OutputStackSize(sub, itemName));
             var subBatches = (int)Math.Ceiling(qty / stack);
