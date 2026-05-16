@@ -141,8 +141,14 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Elrond — skill leveling advisor
 
-- **Owns:** per-recipe leveling math (effective XP, first-time bonuses, drop-off),
-  the optimal grind path *within a skill*, and the cookbook view.
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — (1) the **player's progression state**
+  — learned skills, skill progress, and known recipes — which is the *constraint set*
+  the leveling calculator runs against; (2) per-recipe leveling math (effective XP,
+  first-time bonuses, drop-off) and the optimal grind path *within a skill*; (3) the
+  cookbook view. Scope of "player state" here is the **progression facet only** —
+  inventory/storage state is Bilbo's, raw character-data parsing is shared
+  (`ICharacterDataService`); Elrond owns the progression model the calculator
+  constrains on.
 - **Does NOT own:**
   - **✅ confirmed** — *Non-recipe skills.* Recipe-anchored by design: skills without
     recipes (combat/gathering/etc.) intentionally never appear; Elrond cannot advise
@@ -150,8 +156,11 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   - **✅ confirmed (by entailment, 2026-05-16)** — *Multi-recipe shopping / inventory.*
     Celebrimbor's Owns is owner-confirmed as exactly this; Elrond not owning it is the
     direct complement.
-  - ⚠️ *The skill-XP math itself, post-#225.* Slated to lift into shared
-    `Mithril.Leveling`; after #225 Elrond consumes that engine rather than owning it.
+  - **✅ confirmed (owner, 2026-05-16) — provisional/future** — *The skill-XP **math**,
+    post-#225.* Owner-confirmed technically correct: the math is slated to lift into
+    shared `Mithril.Leveling`; after #225 Elrond *consumes* that engine, not owns the
+    math. Clean split: **math → shared `Mithril.Leveling`; the player-progression-state
+    constraints it runs against stay Elrond's** (see Owns). Contingent on #225 landing.
 - **Reference data:** `Recipes`, `Skills`, `XpTables`.
 
 ## Gandalf — timers & repeatable-quest cooldowns
@@ -237,8 +246,10 @@ libraries; the charter follows the code:
   module: consumed by Celebrimbor today, by Silmarillion per #214. The canonical
   "shared infra, not module turf" case — effect *display* is appropriate in any
   recipe surface; the parser is the single source of truth both lean on.
-- **`Mithril.Leveling` (#225)** — skill-XP math, lifted from Elrond. Future owner of
-  the math both Elrond and the #227 planner consume.
+- **`Mithril.Leveling` (#225)** — skill-XP **math**, lifted from Elrond; future owner
+  of the math both Elrond and the #227 planner consume. **Player-progression state
+  (learned skills, progress, known recipes) does *not* lift — it stays Elrond's**, fed
+  into the calculator as its constraint set (owner-confirmed 2026-05-16).
 - **Shared demand-driven recipe expander (#226, supersedes #121)** — generalises
   Celebrimbor's aggregator; future shared consumer set = Bilbo + Elrond + #227 planner.
 - **`PrereqRecipe` resolver (latent, unfiled)** — three surfaces want the same
@@ -262,6 +273,13 @@ libraries; the charter follows the code:
   while Silmarillion currently does not (#214: gap, not boundary). Added a carve-out
   to Silmarillion's "no computation" line so #214 can't be misread as a charter
   violation; listed `ResultEffectsParser` as shipped shared infra owned by neither.
+- **2026-05-16** — Elrond Owns expanded by owner: Elrond owns the **player's
+  progression state** (learned skills, progress, known recipes) as the leveling
+  calculator's constraint set — scoped to the progression facet (distinct from Bilbo's
+  inventory state and shared character-data parsing). Post-#225 split clarified: math
+  lifts to `Mithril.Leveling`, progression-state constraints stay Elrond's. The #225
+  line owner-confirmed technically correct — retagged ✅ provisional/future, no longer
+  bare ⚠️.
 - **2026-05-16** — Owner sharpened the asymmetry: it is *not* symmetric overlap —
   **Silmarillion is *the* reference browser; Celebrimbor is just another place the
   data is displayed.** Generalised into a cross-cutting rule ("displaying data is not
