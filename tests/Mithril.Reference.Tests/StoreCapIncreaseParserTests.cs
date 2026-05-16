@@ -21,7 +21,7 @@ public class StoreCapIncreaseParserTests
         var cap = StoreCapIncreaseParser.ParseLine("Despised:5000:Armor,Weapon,CorpseTrophy");
 
         cap.Should().NotBeNull();
-        cap!.Tier.Should().Be("Despised");
+        cap!.Tier.Should().Be(FavorTier.Despised);
         cap.GoldCap.Should().Be(5000);
         cap.Keywords.Should().Equal("Armor", "Weapon", "CorpseTrophy");
     }
@@ -32,7 +32,7 @@ public class StoreCapIncreaseParserTests
         var cap = StoreCapIncreaseParser.ParseLine("Friends:1000");
 
         cap.Should().NotBeNull();
-        cap!.Tier.Should().Be("Friends");
+        cap!.Tier.Should().Be(FavorTier.Friends);
         cap.GoldCap.Should().Be(1000);
         cap.Keywords.Should().BeEmpty();
     }
@@ -60,7 +60,7 @@ public class StoreCapIncreaseParserTests
         var cap = StoreCapIncreaseParser.ParseLine("Friends:notanumber:Armor");
 
         cap.Should().NotBeNull();
-        cap!.Tier.Should().Be("Friends");
+        cap!.Tier.Should().Be(FavorTier.Friends);
         cap.GoldCap.Should().BeNull();
         cap.Keywords.Should().Equal("Armor");
     }
@@ -83,7 +83,7 @@ public class StoreCapIncreaseParserTests
 
         var parsed = StoreCapIncreaseParser.Parse(raw);
 
-        parsed.Select(c => c.Tier).Should().Equal("Despised", "Friends");
+        parsed.Select(c => c.Tier).Should().Equal(FavorTier.Despised, FavorTier.Friends);
         parsed[1].GoldCap.Should().BeNull();
     }
 
@@ -96,7 +96,7 @@ public class StoreCapIncreaseParserTests
         var parsed = StoreCapIncreaseParser.ParseRequiringGold(raw);
 
         parsed.Should().ContainSingle();
-        parsed[0].Tier.Should().Be("Despised");
+        parsed[0].Tier.Should().Be(FavorTier.Despised);
         parsed[0].GoldCap.Should().Be(5000);
     }
 

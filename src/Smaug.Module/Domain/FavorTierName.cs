@@ -1,3 +1,5 @@
+using Mithril.Reference.Models.Npcs;
+
 namespace Smaug.Domain;
 
 /// <summary>
@@ -36,4 +38,15 @@ public static class FavorTierName
 
     public static bool IsAtLeast(string? current, string? required) =>
         RankOf(current) >= RankOf(required);
+
+    /// <summary>
+    /// Rank a typed <see cref="FavorTier"/> on <em>this</em> ladder by round-tripping
+    /// through its reference-data token. Deliberately delegates to the string
+    /// <see cref="RankOf(string?)"/> so Smaug's existing (currently mis-ordered, see
+    /// #371) <see cref="Ordered"/> semantics are preserved byte-identically — the
+    /// #368 type change must not shift vendor pricing. <see cref="FavorTier.Unknown"/>
+    /// → token "Unknown" → not in <see cref="Ordered"/> → -1, exactly as an
+    /// unrecognised raw string was before.
+    /// </summary>
+    public static int RankOf(FavorTier tier) => RankOf(tier.ToToken());
 }

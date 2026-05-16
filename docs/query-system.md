@@ -284,6 +284,22 @@ warnings, …)`) is plumbed but not yet surfaced in the UI. Rationale, the
 A-vs-B decision, and the per-hierarchy narrowing contract are in
 [`query-quantified-subqueries.md`](query-quantified-subqueries.md).
 
+### Ordinal enum columns (e.g. favor `Tier`)
+
+Enum-typed columns compare **by the enum's underlying value, not its name** — the
+engine coerces a quoted literal via case-insensitive name match and then compares
+ordinally. So a rank-encoded enum is queryable with the full operator set, no
+special-casing: `StoreCapIncrease.Tier` is `FavorTier` (a Neutral-centred signed
+rank — `Despised −4 … Tolerated −1, Neutral 0 … SoulMates +6`), so
+`CapIncreases WITH ANY (Tier >= 'Friends')` means *Friends-or-better by favor
+rank* (not string ≥), and `=`, `BETWEEN`, etc. work the same way. The literal is
+the raw token (`'CloseFriends'`), not the friendly label. Display surfaces use the
+curated `FavorTier.DisplayName()` ("Close Friends") because every tier token is
+**absent from the game's `strings_all.json`** — there is no upstream string to
+resolve through, so the map is deliberately curated rather than CamelCase-split.
+(Favor-tier model convergence across modules is tracked separately — see issue
+#370; this is the narrow query-facing slice.)
+
 ### Schema is reflected, not declared
 
 `QueryableSource<T>()` and `QueryFilter` both reflect over the item type's

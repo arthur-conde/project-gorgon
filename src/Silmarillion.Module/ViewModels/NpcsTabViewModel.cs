@@ -312,7 +312,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     private NpcServiceDetailLine FormatCapIncrease(StoreCapIncrease cap)
     {
         var gold = cap.GoldCap is { } g ? g.ToString("N0") + "g" : "—";
-        var prose = $"{cap.Tier} → {gold}";
+        var prose = $"{cap.Tier.DisplayName()} → {gold}";
         if (cap.Keywords.Count == 0)
             return NpcServiceDetailLine.TextOnly(prose);
         return new NpcServiceDetailLine(prose, BuildKeywordChips(cap.Keywords));

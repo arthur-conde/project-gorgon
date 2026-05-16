@@ -26,7 +26,7 @@ public static class StoreCapIncreaseParser
         var keywords = parts.Length == 3 && !string.IsNullOrWhiteSpace(parts[2])
             ? (IReadOnlyList<string>)parts[2].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             : [];
-        return new StoreCapIncrease(parts[0], gold, keywords);
+        return new StoreCapIncrease(FavorTierExtensions.Parse(parts[0]), gold, keywords);
     }
 
     /// <summary>

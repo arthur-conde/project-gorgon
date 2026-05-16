@@ -9,8 +9,11 @@ namespace Mithril.Reference.Models.Npcs;
 /// absent or empty, meaning the cap applies to any item.
 /// </summary>
 /// <param name="Tier">
-/// The favor tier at which <em>this gold-cap row</em> unlocks (e.g. <c>"Despised"</c>,
-/// <c>"Neutral"</c>). Kept verbatim — <c>"Despised"</c> is a real tier, not a sentinel.
+/// The favor tier at which <em>this gold-cap row</em> unlocks, as the ordinal
+/// <see cref="FavorTier"/> (every real tier — incl. <c>Despised</c> — is a named
+/// member; an unrecognised token parses to <see cref="FavorTier.Unknown"/>, never a
+/// silent sentinel). Ordinal so the query engine answers <c>Tier &gt;= 'Friends'</c>;
+/// the raw token still round-trips via <see cref="FavorTierExtensions.ToToken"/>.
 /// Distinct from <see cref="NpcService.Favor"/>, which gates access to the Store
 /// service itself; this is the per-row cap-unlock threshold.
 /// </param>
@@ -22,6 +25,6 @@ namespace Mithril.Reference.Models.Npcs;
 /// Item keyword tags this cap applies to; an empty list means the cap applies to any item.
 /// </param>
 public sealed record StoreCapIncrease(
-    string Tier,
+    FavorTier Tier,
     int? GoldCap,
     IReadOnlyList<string> Keywords);
