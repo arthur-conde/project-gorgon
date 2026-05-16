@@ -27,15 +27,18 @@ what the module legitimately consumes within its charter (not everything it *cou
 
 ---
 
-## Samwise — garden/crop tracking
+## Samwise — garden tracker
 
-- **Owns:** identification of garden events from `Player.log`, per-plot crop state,
-  growth/ripeness timing, and harvest-ready alarms. The authority on *when a plot is
-  ready* and *what is planted*, derived from the log. (See `samwise-parser` memory:
-  identification trade-offs, alias-learning convergence.)
+- **Owns: ✅ confirmed (owner, 2026-05-16)** — Samwise is *first and foremost a garden
+  tracker*. It interprets `Player.log` to track what the player has planted, tracks
+  crop state transitions, and raises alarms **so plants don't die**. The authority on
+  *what is planted* and *where each plot is in its lifecycle*, derived from the log.
+  Alarms are loss-prevention, not merely a ripeness/harvest-ready notification.
+  (See `samwise-parser` memory: identification trade-offs, alias-learning convergence.)
 - **Does NOT own:**
   - ⚠️ *What to plant / crop economics / yield optimization.* It tracks the garden; it
-    does not advise on it.
+    does not advise on it. (The "first and foremost a *tracker*" framing leans this
+    way, but the exact boundary is not owner-confirmed.)
   - ⚠️ *Cooking/crafting use of crops.* Crop-as-ingredient is Celebrimbor/Pippin.
 - **Reference data:** `Items` (seed→crop identity via `ItemsByInternalName`).
 
@@ -156,6 +159,11 @@ libraries; the charter follows the code:
   owner/design-doc-confirmed (Gandalf eligibility confirmed by owner this date; Elrond
   recipe-anchoring and Silmarillion browser-not-calculator from existing design docs).
   All ⚠️ entries are unconfirmed Claude drafts pending owner sign-off.
+- **2026-05-16** — Samwise charter confirmed by owner: first and foremost a garden
+  tracker — interprets `Player.log` to track plantings + state transitions and alarms
+  so plants don't die (loss-prevention, not just ripeness). Owns promoted to ✅
+  confirmed; ⚠️ tracker-not-advisor boundary left inferred (framing leans that way,
+  not explicitly ruled on).
 - **2026-05-16** — Pippin charter corrected by owner: it supplements the **Gourmand**
   skill (food-novelty tracking — foods *not yet eaten*), not buff/consumption tracking.
   Owns + the no-buffs boundary promoted to ✅ confirmed. The earlier draft's
