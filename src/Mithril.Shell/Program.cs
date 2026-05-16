@@ -65,6 +65,14 @@ public static class Program
             return;
         }
 
+        // Headless DI-graph self-check (#365 guard). Process-isolated, before the
+        // single-instance mutex and any UI/host work: composes the real graph,
+        // resolves every startup root under a hard watchdog, exits 0/1/2.
+        if (Array.IndexOf(args, SelfCheck.Switch) >= 0)
+        {
+            Environment.Exit(SelfCheck.Run(args));
+        }
+
         Mutex? mutex = null;
         EventWaitHandle? activateEvent = null;
         CancellationTokenSource? activateCts = null;
@@ -154,36 +162,10 @@ public static class Program
             // shared across modules, not nested under Shell/.
             var preferencesPath = Path.Combine(localApp, "Mithril", "preferences.json");
 
-            builder.Services
-                .AddMithrilSettings<UserPreferences>(preferencesPath, UserPreferencesJsonContext.Default.UserPreferences)
-                .AddSingleton<ISettingsStore<ShellSettings>>(shellStore)
-                .AddSingleton(shellSettings)
-                .AddSingleton<IActiveCharacterPersistence>(shellSettings)
-                .AddSingleton(gameConfig)
-                .AddMithrilDiagnostics(logDir)
-                .AddMithrilPerfTrace(perfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
-                .AddMithrilGameServices()
-                .AddMithrilGameState()
-                .AddMithrilPerCharacterStorage(charactersRootDir)
-                .AddMithrilReferenceData(referenceCacheDir)
-                .AddMithrilCommunityCalibration(communityCalibrationCacheDir)
-                .AddMithrilIcons(iconCacheDir)
-                .AddMithrilAudio()
-                .AddMithrilHotkeys()
-                .AddMithrilDialogs()
-                .AddMithrilModuleGates()
-                // Register NoOp navigator BEFORE modules so module Register() calls
-                // (which run inside AddMithrilModules) can override via AddSingleton.
-                // Without this ordering, the NoOp would win and CanOpen would always
-                // return false — chip cross-links would render disabled.
-                .AddSingleton<IReferenceNavigator, NoOpReferenceNavigator>()
-                .AddMithrilModules(Boot)
-                .AddMithrilAttention()
-                .AddMithrilShellUpdates()
-                .AddMithrilShellViews()
-                .AddMithrilItemDetail()
-                .AddMithrilIngredientSources()
-                .AddMithrilShellCommands();
+            builder.Services.AddMithrilShell(new ShellCompositionOptions(
+                preferencesPath, shellStore, shellSettings, gameConfig,
+                logDir, perfDir, charactersRootDir, referenceCacheDir,
+                communityCalibrationCacheDir, iconCacheDir, Boot));
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();
@@ -243,7 +225,8 @@ public static class Program
 
             Boot("resolving ShellWindow");
             var shell = host.Services.GetRequiredService<ShellWindow>();
-            shell.DataContext = host.Services.GetRequiredService<ShellViewModel>();
+            var shellViewModel = host.Services.GetRequiredService<ShellViewModel>();
+            shell.DataContext = shellViewModel;
             shell.Left = shellSettings.WindowLeft;
             shell.Top = shellSettings.WindowTop;
             shell.Width = shellSettings.WindowWidth;
@@ -253,6 +236,10 @@ public static class Program
 
             Boot("calling shell.Show()");
             shell.Show();
+            // Activate the initial module now — after the window is shown and the
+            // ShellViewModel singleton is fully constructed/cached. Doing this in the
+            // VM ctor risks a re-entrant resolution deadlock (#365).
+            shellViewModel.Initialize();
             shell.Closing += (_, _) =>
             {
                 if (shell.WindowState == WindowState.Normal)
