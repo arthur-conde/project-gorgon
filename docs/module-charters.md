@@ -251,11 +251,19 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   **data-availability ceiling, not a charter line**: no module can show roll resolution
   from reference data because it isn't there (same class as Samwise's gardening-XP
   absence), distinct from "calculation Silmarillion is barred from."
-  **Consequence:** Silmarillion *can* surface what's in the data — cross-link an
-  enchanted recipe → its `Crystal` slot → candidate crystals → each crystal's
-  associated skill / enchantment family, alongside the template's pool (browsing /
-  cross-linking, within charter). It cannot show roll *resolution* — not because that
-  would be calculation, but because the data simply doesn't carry it. Relates to #214.
+  **Consequence:** Silmarillion *can* surface what's in the data — browse an enchanted
+  recipe → its `Crystal` slot → candidate crystals, and on each crystal show its
+  enchantment-family **text**. ⚠️ That text is **prose/category, frequently NOT a
+  resolvable `skills.json` entity**, and the data is **heterogeneous**: the only
+  consistent signal is `Item.DynamicCraftingSummary` (*"…<family> enchantments"*); a
+  `Description` `"Associated Primary Skill: <X>"` line exists on *some* crystals
+  (Moonstone, LapisLazuli, Tsavorite) but **not others** (Rubywall Crystal has none),
+  and the family term is often not a skill at all — *"survival-related"* has no
+  `Survival` skill. So treat it as **display text, not a guaranteed navigable Skill
+  cross-link** — it degrades to plain text per Silmarillion's existing
+  chip-degradation rule; don't promise a skill-entity link. It cannot show roll
+  *resolution* — not because that would be calculation, but because the data simply
+  doesn't carry it. Relates to #214.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
@@ -368,7 +376,16 @@ libraries; the charter follows the code:
   all**. Reframed the "what's out" from "calculation Silmarillion is barred from" to a
   **data-availability ceiling** (same class as gardening-XP absence) — Silmarillion
   surfaces the data-backed association; roll resolution is unshowable because it's
-  absent upstream, not because it'd be calculation. This is the settled version.
+  absent upstream, not because it'd be calculation.
+- **2026-05-16** — Resolvability precision (owner pointed at Rubywall Crystal,
+  `item_1002`): the crystal enchantment-family signal is **prose/category, often not a
+  `skills.json` entity**, and **heterogeneous** — `DynamicCraftingSummary` is the only
+  consistent field; the `Description` "Associated Primary Skill" line is present on
+  some crystals (Moonstone/LapisLazuli/Tsavorite) but absent on others (Rubywall), and
+  *"survival-related"* maps to no `Survival` skill. Corrected the charter's
+  overclaimed "cross-link to the associated skill" → surface as **text, degrading per
+  the chip-degradation rule**, not a guaranteed Skill cross-link. This is the settled
+  version.
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
   is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
