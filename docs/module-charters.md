@@ -225,6 +225,17 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   Silmarillion's charter alone. Field-level scope:
   [silmarillion-field-coverage.md](silmarillion-field-coverage.md); tab scope:
   [silmarillion-roadmap.md](silmarillion-roadmap.md).
+- **In scope — owner-endorsed (2026-05-16):** Silmarillion should be able to show a
+  recipe's **possible TSys (treasure-system) rolls** in a popup — the same
+  `AugmentPoolPreview` pool surface Celebrimbor uses, fed by the shared
+  `ResultEffectsParser`. Silmarillion is the **master** view (full pool for any
+  browsed recipe); **Celebrimbor is the planning-narrowed slice** of that *same* data
+  (the pool for recipes in your craft plan). Mechanic (owner-stated): the roll pool is
+  influenced by the **crystal** (keyword ingredient) used in recipes whose name
+  contains *"(enchanted)"* — the `*E` enchanted-equipment recipes with
+  `RecipeKeywordIngredient` crystal slots. Showing the *possible* pool is **browsing**
+  (within charter, consistent with the carve-out below); it is **not** simulating a
+  specific roll. Relates to #214.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
@@ -255,10 +266,13 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     reference browser; Celebrimbor rendering recipe/effect data is **incidental to
     planning, not a co-owned browsing role** — "just another place the data is
     displayed." It shows a recipe in service of a craft plan and previews its treasure
-    (ResultEffects) outcomes. That effect-preview capability is **shared infra**
-    (`Mithril.Shared.ResultEffectsParser`), owned by neither; Silmarillion simply does
-    not consume it yet — #214, a *gap, not a boundary*. (Displaying data ≠ owning the
-    browser role — see the data-display cross-cutting rule above.)
+    (ResultEffects) outcomes — including the TSys augment **pool** for that recipe.
+    Celebrimbor's view is the **planning-narrowed slice** of the master catalogue
+    Silmarillion browses: the *same* shared `ResultEffectsParser` pool surface, scoped
+    to the recipes in the plan rather than the full list. The capability is **shared
+    infra**, owned by neither; Silmarillion does not consume it yet — #214 (*gap, not
+    boundary*; owner-endorsed, see Silmarillion's *In scope*). (Displaying data ≠
+    owning the browser role — see the data-display cross-cutting rule above.)
 - **Reference data:** `Recipes`, `Items`, `ResultEffectsParser` previews, `Areas`
   (source resolution), inventory.
 
@@ -308,6 +322,13 @@ libraries; the charter follows the code:
   cross-cutting rule: each data domain has exactly one owning browser/evaluator. Added
   a recipe/crafting carve-out so "what's makeable from what I hold now" stays Bilbo's
   (state query) vs. Celebrimbor's planning.
+- **2026-05-16** — Owner endorsed Silmarillion showing **possible TSys rolls** via a
+  popup (the `AugmentPoolPreview` surface, shared `ResultEffectsParser`) — promoted
+  from "#214 gap" to explicit in-scope. Sharpened the Silmarillion↔Celebrimbor
+  relationship: Silmarillion = master list / full pool; Celebrimbor = planning-narrowed
+  slice of the same data. Recorded the mechanic (roll pool influenced by the crystal /
+  keyword ingredient in *"(enchanted)"* `*E` recipes). Browsing the *possible* pool ≠
+  simulating a roll, so consistent with the no-computation carve-out.
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
   is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
