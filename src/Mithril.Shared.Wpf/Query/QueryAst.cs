@@ -45,6 +45,31 @@ public sealed record BetweenNode(string Column, ValueNode Low, ValueNode High, b
 
 public sealed record IsNullNode(string Column, bool Negated) : QueryNode;
 
+public enum Quantifier
+{
+    Any,
+    All,
+}
+
+/// <summary>
+/// Quantified subquery over an object-collection column:
+/// <c>&lt;Column&gt; WITH ANY (&lt;Inner&gt;)</c> / <c>&lt;Column&gt; WITH ALL (&lt;Inner&gt;)</c>.
+/// <see cref="Inner"/> is a full predicate AST whose column names bind against the
+/// collection's <em>element-type</em> sub-schema, not the outer row schema, so a
+/// conjunction inside the parens is evaluated <em>per element</em> (this is what
+/// makes correlated nested filtering accurate). Negation is the engine's existing
+/// prefix <c>NOT (...)</c> wrapping a <see cref="NotNode"/> — there is no inline
+/// <c>NOT WITH</c>.
+/// </summary>
+public sealed record QuantifiedNode(string Column, Quantifier Quantifier, QueryNode Inner) : QueryNode;
+
+/// <summary>
+/// A non-fatal compile diagnostic (e.g. an optional-narrowing single-subtype-field
+/// reference with no discriminator guard). Collected via the warnings overload of
+/// <c>QueryCompiler.Compile</c>; never thrown.
+/// </summary>
+public readonly record struct QueryDiagnostic(string Message, int Position);
+
 public abstract record ValueNode;
 
 public sealed record StringValue(string Text) : ValueNode;

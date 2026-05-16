@@ -16,6 +16,9 @@ internal static class AbilityDiscriminators
         BuildSpecialCasterRequirementConverter()
         => new("T", RequirementMap);
 
+    internal static PolymorphicHierarchy Hierarchy =>
+        new(typeof(AbilitySpecialCasterRequirement), "T", RequirementMap);
+
     private static readonly IReadOnlyDictionary<string, Type> RequirementMap = new Dictionary<string, Type>
     {
         ["EffectKeywordUnset"] = typeof(EffectKeywordUnsetAbilityRequirement),

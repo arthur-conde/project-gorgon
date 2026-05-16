@@ -18,6 +18,9 @@ internal static class SourceDiscriminators
         BuildEntryConverter()
         => new("type", EntryMap);
 
+    internal static PolymorphicHierarchy Hierarchy =>
+        new(typeof(SourceEntry), "type", EntryMap);
+
     private static readonly IReadOnlyDictionary<string, Type> EntryMap = new Dictionary<string, Type>
     {
         ["Angling"] = typeof(AnglingSource),

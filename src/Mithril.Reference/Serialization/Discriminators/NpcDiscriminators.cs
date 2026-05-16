@@ -15,6 +15,9 @@ internal static class NpcDiscriminators
         BuildServiceConverter()
         => new("Type", ServiceMap);
 
+    internal static PolymorphicHierarchy Hierarchy =>
+        new(typeof(NpcService), "Type", ServiceMap);
+
     private static readonly IReadOnlyDictionary<string, Type> ServiceMap = new Dictionary<string, Type>
     {
         ["AnimalHusbandry"] = typeof(AnimalHusbandryService),

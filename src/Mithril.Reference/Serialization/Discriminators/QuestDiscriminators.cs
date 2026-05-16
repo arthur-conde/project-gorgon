@@ -22,6 +22,12 @@ internal static class QuestDiscriminators
         BuildRewardConverter()
         => new("T", RewardMap);
 
+    internal static PolymorphicHierarchy RequirementHierarchy =>
+        new(typeof(QuestRequirement), "T", RequirementMap);
+
+    internal static PolymorphicHierarchy RewardHierarchy =>
+        new(typeof(QuestReward), "T", RewardMap);
+
     private static readonly IReadOnlyDictionary<string, Type> RequirementMap = new Dictionary<string, Type>
     {
         ["MinSkillLevel"] = typeof(MinSkillLevelRequirement),

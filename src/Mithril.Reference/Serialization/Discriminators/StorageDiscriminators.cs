@@ -15,6 +15,9 @@ internal static class StorageDiscriminators
         BuildRequirementConverter()
         => new("T", RequirementMap);
 
+    internal static PolymorphicHierarchy Hierarchy =>
+        new(typeof(StorageRequirement), "T", RequirementMap);
+
     private static readonly IReadOnlyDictionary<string, Type> RequirementMap = new Dictionary<string, Type>
     {
         ["InteractionFlagSet"] = typeof(StorageInteractionFlagSetRequirement),

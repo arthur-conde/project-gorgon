@@ -16,6 +16,9 @@ internal static class RecipeDiscriminators
         BuildRequirementConverter()
         => new("T", RequirementMap);
 
+    internal static PolymorphicHierarchy Hierarchy =>
+        new(typeof(RecipeRequirement), "T", RequirementMap);
+
     private static readonly IReadOnlyDictionary<string, Type> RequirementMap = new Dictionary<string, Type>
     {
         ["AlwaysFail"] = typeof(AlwaysFailRequirement),

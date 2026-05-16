@@ -89,6 +89,9 @@ public static class QueryHighlighter
             or QueryParser.TokenKind.Lte or QueryParser.TokenKind.Gt or QueryParser.TokenKind.Gte => HighlightKind.Operator,
         QueryParser.TokenKind.And or QueryParser.TokenKind.Or or QueryParser.TokenKind.Not
             or QueryParser.TokenKind.Like or QueryParser.TokenKind.In or QueryParser.TokenKind.Between
+            or QueryParser.TokenKind.Contains or QueryParser.TokenKind.StartsWith
+            or QueryParser.TokenKind.EndsWith
+            or QueryParser.TokenKind.With or QueryParser.TokenKind.Any or QueryParser.TokenKind.All
             or QueryParser.TokenKind.Is or QueryParser.TokenKind.Null
             or QueryParser.TokenKind.True or QueryParser.TokenKind.False
             or QueryParser.TokenKind.OrderBy or QueryParser.TokenKind.SortBy
