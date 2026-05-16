@@ -151,6 +151,7 @@ public static class QueryCompletionProvider
                 IReadOnlyList<ColumnSchema>? element = null;
                 if (i >= 3
                     && toks[i - 1].Kind is QueryParser.TokenKind.Any or QueryParser.TokenKind.All
+                        or QueryParser.TokenKind.None
                     && toks[i - 2].Kind == QueryParser.TokenKind.With
                     && toks[i - 3].Kind == QueryParser.TokenKind.Identifier)
                 {
@@ -241,7 +242,8 @@ public static class QueryCompletionProvider
     private static bool IsKeywordKind(QueryParser.TokenKind k) =>
         k is QueryParser.TokenKind.And or QueryParser.TokenKind.Or or QueryParser.TokenKind.Not
           or QueryParser.TokenKind.Like or QueryParser.TokenKind.In or QueryParser.TokenKind.Between
-          or QueryParser.TokenKind.Is or QueryParser.TokenKind.Null
+          or QueryParser.TokenKind.Is or QueryParser.TokenKind.Null or QueryParser.TokenKind.Empty
+          or QueryParser.TokenKind.None
           or QueryParser.TokenKind.True or QueryParser.TokenKind.False;
 
     private static (Expecting, ColumnSchema?) ClassifyExpecting(
@@ -413,12 +415,16 @@ public static class QueryCompletionProvider
 
     private static void AddOperatorSuggestions(List<CompletionItem> results, Context ctx, ColumnSchema? col)
     {
-        // An object-collection column takes a quantifier, not scalar operators —
-        // offer only WITH ANY|ALL (and IS [NOT] NULL when the collection is nullable).
+        // An object-collection column takes a quantifier or a cardinality test,
+        // not scalar operators — WITH ANY|ALL|NONE, IS [NOT] EMPTY, and IS [NOT]
+        // NULL when nullable.
         if (col is not null && ColumnBindingHelper.TryGetElementSchema(col.ValueType) is not null)
         {
             Add(results, ctx, "WITH ANY (", CompletionKind.Keyword);
             Add(results, ctx, "WITH ALL (", CompletionKind.Keyword);
+            Add(results, ctx, "WITH NONE (", CompletionKind.Keyword);
+            Add(results, ctx, "IS EMPTY", CompletionKind.Keyword);
+            Add(results, ctx, "IS NOT EMPTY", CompletionKind.Keyword);
             if (col.IsNullable)
             {
                 Add(results, ctx, "IS NULL", CompletionKind.Keyword);

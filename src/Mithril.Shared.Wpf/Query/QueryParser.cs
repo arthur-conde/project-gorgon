@@ -26,7 +26,7 @@ public static class QueryParser
         "AND", "OR", "NOT", "LIKE", "IN", "BETWEEN", "IS", "NULL", "TRUE", "FALSE",
         "BEFORE", "AFTER",
         "CONTAINS", "STARTSWITH", "ENDSWITH",
-        "WITH", "ANY", "ALL",
+        "WITH", "ANY", "ALL", "NONE", "EMPTY",
         "ASC", "ASCENDING", "DESC", "DESCENDING",
     };
 
@@ -115,8 +115,10 @@ public static class QueryParser
         With,
         Any,
         All,
+        None,
         Is,
         Null,
+        Empty,
         True,
         False,
         OrderBy,        // single token: lexer joins "ORDER" + "BY"
@@ -143,8 +145,10 @@ public static class QueryParser
         ["WITH"] = TokenKind.With,
         ["ANY"] = TokenKind.Any,
         ["ALL"] = TokenKind.All,
+        ["NONE"] = TokenKind.None,
         ["IS"] = TokenKind.Is,
         ["NULL"] = TokenKind.Null,
+        ["EMPTY"] = TokenKind.Empty,
         ["TRUE"] = TokenKind.True,
         ["FALSE"] = TokenKind.False,
         ["ASC"] = TokenKind.Asc,
@@ -715,15 +719,19 @@ public static class QueryParser
                     {
                         quant = Quantifier.All;
                     }
+                    else if (Peek.Kind == TokenKind.None)
+                    {
+                        quant = Quantifier.None;
+                    }
                     else
                     {
-                        throw new QueryException($"Expected ANY or ALL after WITH but found '{Peek.Text}'.", Peek.Position);
+                        throw new QueryException($"Expected ANY, ALL or NONE after WITH but found '{Peek.Text}'.", Peek.Position);
                     }
-                    Consume(); // ANY | ALL
+                    Consume(); // ANY | ALL | NONE
                     Expect(TokenKind.LParen, "'('");
                     if (Peek.Kind == TokenKind.RParen)
                     {
-                        throw new QueryException("Expected a predicate inside `WITH ANY/ALL (...)`.", Peek.Position);
+                        throw new QueryException("Expected a predicate inside `WITH ANY/ALL/NONE (...)`.", Peek.Position);
                     }
                     var inner = ParseExpression();
                     Expect(TokenKind.RParen, "')'");
@@ -733,17 +741,22 @@ public static class QueryParser
                 {
                     if (negated)
                     {
-                        throw new QueryException("Use `IS NOT NULL` instead of `NOT IS NULL`.", Peek.Position);
+                        throw new QueryException("Use `IS NOT NULL` / `IS NOT EMPTY` instead of `NOT IS …`.", Peek.Position);
                     }
                     Consume();
-                    bool isNotNull = false;
+                    bool isNot = false;
                     if (Peek.Kind == TokenKind.Not)
                     {
                         Consume();
-                        isNotNull = true;
+                        isNot = true;
                     }
-                    Expect(TokenKind.Null, "NULL");
-                    return new IsNullNode(column, Negated: isNotNull);
+                    if (Peek.Kind == TokenKind.Empty)
+                    {
+                        Consume();
+                        return new IsEmptyNode(column, Negated: isNot);
+                    }
+                    Expect(TokenKind.Null, "NULL or EMPTY");
+                    return new IsNullNode(column, Negated: isNot);
                 }
                 default:
                     throw new QueryException($"Expected comparison operator, LIKE, IN, BETWEEN, or IS after column '{column}'.", Peek.Position);

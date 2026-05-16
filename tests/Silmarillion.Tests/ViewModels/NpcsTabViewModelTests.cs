@@ -919,6 +919,37 @@ public sealed class NpcsTabViewModelTests
             .Should().BeEquivalentTo(["NPC_Friends", "NPC_Closer"]);
     }
 
+    [Fact]
+    public void QueryText_StoreNpcs_WithAnEmptyKeywordCapRow_ViaIsEmpty()
+    {
+        // The motivating #375 query, end-to-end over the NPC list-row schema:
+        // Store NPCs that have a cap row applying to ANY item (empty Keywords).
+        var refData = new StubReferenceData
+        {
+            NpcsByKey =
+            {
+                // "Despised:5000" → no keyword segment → Keywords == [] (any item).
+                ["NPC_AnyItemCap"] = StoreNpc("AnyItemCap", "Despised:5000", "Friends:9000:Armor"),
+                // Every cap row is keyword-scoped → no empty-Keywords row.
+                ["NPC_Scoped"] = StoreNpc("Scoped", "Despised:5000:Armor", "Friends:9000:Weapon"),
+                ["NPC_NoStore"] = new Npc
+                {
+                    Name = "NoStore",
+                    Services = new NpcServicePoco[] { new NpcTrainingServicePoco { Type = "Training" } },
+                },
+            },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        var columns = ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow));
+        var predicate = QueryCompiler.Compile(
+            "ServiceTypes CONTAINS 'Store' AND CapIncreases WITH ANY (Keywords IS EMPTY)", columns);
+        predicate.Should().NotBeNull();
+
+        vm.AllNpcs.Where(r => predicate!(r)).Select(r => r.InternalName)
+            .Should().BeEquivalentTo(["NPC_AnyItemCap"]);
+    }
+
     private static Npc StoreNpc(string name, params string[] capIncreases) => new()
     {
         Name = name,
