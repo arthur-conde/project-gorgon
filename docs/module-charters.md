@@ -243,16 +243,19 @@ Applies to *every* module; owner-confirmed 2026-05-16:
      `"…create items that have <Skill> enchantments."` (e.g. `Moonstone` →
      *Lycanthropy*; `LapisLazuli` → *Priest*; `Tsavorite` → *Ice Magic*). The crystal
      slotted into the recipe selects the enchantment family/skill.
-  So the owner-stated "rolls are influenced by the crystal used" **is data-backed** —
-  the linkage lives on the crystal item (`items.json`), not the recipe/parser path
-  (which is why the first verification, tracing only recipe→parser, wrongly concluded
-  "crystal-independent"). **Consequence:** because both pieces are browsable reference
-  data, Silmarillion **can** surface the relationship — browse an enchanted recipe →
-  its `Crystal` slot → candidate crystals → each crystal's associated skill /
-  enchantment family, alongside the template's pool. That is **browsing/cross-linking
-  (within charter)**, *not* calculation. What would be calculation (still not
-  Silmarillion's): computing the precise rolled-power probabilities or the exact
-  template-pool ∩ crystal-skill intersection. Relates to #214.
+  **Settled (owner, 2026-05-16):** crystals **do** influence enchanted crafts, and the
+  crystal→enchantment-family *association* is in CDN data (the crystal item's
+  `Description`/`DynamicCraftingSummary`, plus the template's `TSysProfile` pool). But
+  the **treasure-system *specifics* — how a roll actually resolves (probabilities, the
+  precise rolled power) — are not in CDN data at all.** That second fact is a
+  **data-availability ceiling, not a charter line**: no module can show roll resolution
+  from reference data because it isn't there (same class as Samwise's gardening-XP
+  absence), distinct from "calculation Silmarillion is barred from."
+  **Consequence:** Silmarillion *can* surface what's in the data — cross-link an
+  enchanted recipe → its `Crystal` slot → candidate crystals → each crystal's
+  associated skill / enchantment family, alongside the template's pool (browsing /
+  cross-linking, within charter). It cannot show roll *resolution* — not because that
+  would be calculation, but because the data simply doesn't carry it. Relates to #214.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
     Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
@@ -359,6 +362,13 @@ libraries; the charter follows the code:
   cross-link recipe→crystal→skill (browsing). Lesson: verifying one path and
   generalising to "not in data" is itself an unverified assertion — scope the check to
   the claim, not the first path that comes to hand.
+- **2026-05-16** — Owner settled the boundary: crystals **do** influence enchanted
+  crafts; the crystal→enchantment-family *association* is in CDN data, but the
+  treasure-system *specifics* (roll resolution/probabilities) are **not in CDN data at
+  all**. Reframed the "what's out" from "calculation Silmarillion is barred from" to a
+  **data-availability ceiling** (same class as gardening-XP absence) — Silmarillion
+  surfaces the data-backed association; roll resolution is unshowable because it's
+  absent upstream, not because it'd be calculation. This is the settled version.
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
   is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
