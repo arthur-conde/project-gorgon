@@ -50,7 +50,11 @@ The one entity audited against source directly
 `Skill`+`SkillLevelReq` (chip, skill resolved to display name), `MaxUses` (chip),
 `Ingredients` (item chips), keyword-slot ingredients (provenance popup, #318),
 `ResultItems`/`ProtoResultItems`→"Produces", `ResultEffects` (plain-text stub, #214),
-recipe sources ("Taught by", from `sources_recipes.json`).
+recipe sources ("Taught by", from `sources_recipes.json`), `OtherRequirements`
+(typed "Requirements" lines + `RecipeKnown`/cross-recipe-`RecipeUsed` cross-link
+chips, via `RecipeRequirementProjector`; #342), `Costs` ("Cost" lines; #342),
+`ResetTimeInSeconds` (cooldown chip beside `MaxUses`) + `SharesResetTimerWith`
+(resolved "Shares its cooldown with …" note; #342).
 
 **Deliberate omissions** (taxonomy classes 1–4): `Key`, `UsageAnimation`,
 `UsageAnimationEnd`, `UsageDelay`, `UsageDelayMessage`, `ActionLabel`, `Particle`,
@@ -65,27 +69,28 @@ against the bundled `recipes.json` (v470, 4427 entries) on 2026-05-16 — the ga
 | Property | Recipes carrying it | Why it matters | Precedent |
 |---|---|---|---|
 | **`PrereqRecipe`** | **2004 (~45%)** | Prerequisite-recipe chain — a primary crafting-progression axis | Navigable cross-link shape already exists (`EntityRef` → same Recipes tab); identical to how `Ingredients`/`Produces` chips work |
-| `OtherRequirements` | 90 (~2%) | Polymorphic recipe gating (who/what can run it) | Quest & StorageVault render their `Requirements` as typed rows |
-| `ResetTimeInSeconds` | 51 (~1.2%) | Cooldown duration | We render the *cap* half (`MaxUsesChip`, 91 recipes ≈ same prevalence); the *cooldown* half is conspicuously absent |
-| `SharesResetTimerWith` | 21 (~0.5%) | Shared-cooldown grouping | Pairs with the above |
-| `Costs` | 55 (~1.2%) | Currency/item cost to perform the recipe | No equivalent rendered anywhere; standalone |
 
-**This is two findings, not one:**
+`OtherRequirements` (90, ~2%), `ResetTimeInSeconds` (51, ~1.2%),
+`SharesResetTimerWith` (21, ~0.5%), and `Costs` (55, ~1.2%) **were** in this table
+and are **now surfaced** (see "Surfaced" above) — resolved 2026-05-16, #342.
 
-1. **`PrereqRecipe` — broad, structural, high-value.** ~45% of all recipes have a
-   prerequisite the browser shows nowhere. It is a *navigable cross-link* (recipe →
-   prerequisite recipe), which is precisely what Silmarillion's chip model is built for
-   — the same shape as the already-shipped ingredient/produces chips, just an unwired
-   edge. This is the priority and stands alone as an issue.
-2. **`OtherRequirements` + `Costs` + reset-timer pair — long-tail completeness.**
-   1–2% each. Worth a single "recipe-detail completeness" pass for parity with how we
-   treat Quest/StorageVault requirements and our own `MaxUsesChip`, but low-traffic and
-   clearly secondary to (1). The reset-timer omission is the sharpest of these because
-   the *consistency* break is measurable: comparable prevalence to `MaxUses`, which we
-   do surface.
+**Remaining gap — `PrereqRecipe`, broad, structural, high-value.** ~45% of all
+recipes have a prerequisite the browser shows nowhere. It is a *navigable
+cross-link* (recipe → prerequisite recipe), precisely what Silmarillion's chip
+model is built for — the same shape as the shipped ingredient/produces chips, just
+an unwired edge. This is the priority and stands alone.
 
-**Tracked in:** #341 (`PrereqRecipe` cross-link — priority) · #342 (completeness
-trio: `OtherRequirements` + `Costs` + reset-timer — lower-priority).
+> **Why the trio was resolved ahead of its "long-tail" priority.** It wasn't just
+> Quest/StorageVault parity. These exact fields are the ones `CrossSkillPlanner`
+> *deliberately punts on* (see
+> [planner-recipe-field-consumption.md](planner-recipe-field-consumption.md)). The
+> planner's punt is justified by a "user-asserted" contract — the user is assumed
+> to know the gate exists. If the browser also hides it, that knowledge has no
+> source: a silent trap, the `MaxUses`-bug shape one layer up. Surfacing them here
+> is the *load-bearing complement* to the planner punt, not cosmetic completeness.
+
+**Tracked in:** #341 (`PrereqRecipe` cross-link — priority, open) · #342
+(`OtherRequirements` + `Costs` + reset-timer — **resolved 2026-05-16**).
 
 ---
 
@@ -124,14 +129,24 @@ trio: `OtherRequirements` + `Costs` + reset-timer — lower-priority).
 
 - **`PrereqRecipe` cross-link** (#341) — the priority. ~45% of recipes affected; a
   navigable edge in Silmarillion's existing chip model.
-- **Recipe-detail completeness pass** (#342) — `OtherRequirements` + `Costs` +
-  reset-timer; long-tail (1–2% each) but a parity/consistency fix. Do after #341.
+- **Recipe-detail completeness pass** (#342) — **done 2026-05-16.**
+  `OtherRequirements` + `Costs` + reset-timer now render. This was the
+  load-bearing complement to the `CrossSkillPlanner` punt, not just
+  Quest/StorageVault parity — keep it in lockstep: a new planner-punted
+  `RecipeRequirement` arm must also get a `RecipeRequirementProjector` arm.
 - Quest narrative prose is a *judgement call*, not a clear gap — decide before filing.
 - Everything else unsurfaced is deliberate; do not file "increase coverage" issues
   against it. If a future audit re-flags class 1–4 properties, point it here.
 
 ## History
 
+- **2026-05-16** — #342 resolved: `OtherRequirements` (typed lines + recipe
+  cross-link chips, `RecipeRequirementProjector`), `Costs`, and reset-timer
+  surfaced in the recipe detail. Reframed from "long-tail completeness" to the
+  *load-bearing complement* to the `CrossSkillPlanner` deliberate punt — the
+  display axis and the planner-consumption axis are now coupled by an explicit
+  lockstep rule in both this doc and
+  [planner-recipe-field-consumption.md](planner-recipe-field-consumption.md).
 - **2026-05-16** — Recipe candidate gaps quantified against bundled `recipes.json`
   (v470). Reframed from one combined issue to two: `PrereqRecipe` (~45%, broad,
   cross-linkable — priority) vs. a long-tail completeness trio (1–2% each). Grounding

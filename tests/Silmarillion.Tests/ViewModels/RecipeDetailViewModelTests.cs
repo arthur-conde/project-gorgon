@@ -15,7 +15,10 @@ public sealed class RecipeDetailViewModelTests
         int skillLevel = 12,
         string? description = null,
         IReadOnlyList<string>? resultEffects = null,
-        int? maxUses = null) => new()
+        int? maxUses = null,
+        IReadOnlyList<RecipeCost>? costs = null,
+        int? resetTimeInSeconds = null,
+        string? sharesResetTimerWith = null) => new()
     {
         Key = "recipe_1",
         InternalName = internalName,
@@ -27,6 +30,9 @@ public sealed class RecipeDetailViewModelTests
         Ingredients = [],
         ResultEffects = resultEffects,
         MaxUses = maxUses,
+        Costs = costs,
+        ResetTimeInSeconds = resetTimeInSeconds,
+        SharesResetTimerWith = sharesResetTimerWith,
     };
 
     [Fact]
@@ -135,5 +141,74 @@ public sealed class RecipeDetailViewModelTests
             resultEffectsText: []);
 
         vm.MaxUsesChip.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData(0, "")]
+    [InlineData(45, "Reuse every 45s")]
+    [InlineData(90, "Reuse every 1m 30s")]
+    [InlineData(5400, "Reuse every 1h 30m")]
+    [InlineData(180000, "Reuse every 2d 2h")]
+    public void CooldownChip_FormatsResetTime_OrEmptyWhenAbsent(int? resetSeconds, string expected)
+    {
+        // The planner is time-stateless: it surfaces the MaxUses cap but never the
+        // cooldown. The browser is the only place this reaches the player (#342).
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(resetTimeInSeconds: resetSeconds), [], [], []);
+
+        vm.CooldownChip.Should().Be(expected);
+    }
+
+    [Fact]
+    public void SharedCooldownNote_UsesResolvedDisplayName_WhenProvided()
+    {
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [],
+            sharesResetTimerDisplayName: "Make Roux");
+
+        vm.SharedCooldownNote.Should().Be("Shares its cooldown with Make Roux");
+    }
+
+    [Fact]
+    public void SharedCooldownNote_FallsBackToInternalName_AndIsEmptyWhenAbsent()
+    {
+        new RecipeDetailViewModel(SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [])
+            .SharedCooldownNote.Should().Be("Shares its cooldown with MakeRouxInternal");
+
+        new RecipeDetailViewModel(SampleRecipe(), [], [], [])
+            .SharedCooldownNote.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CostLines_FormatCurrencyAndSkipNonPositive_OrEmptyWhenAbsent()
+    {
+        new RecipeDetailViewModel(SampleRecipe(), [], [], []).CostLines.Should().BeEmpty();
+
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(costs: new[]
+            {
+                new RecipeCost { Currency = "FaeEnergy", Price = 1500 },     // camel-split
+                new RecipeCost { Currency = "CombatWisdom", Price = 0 },      // skipped (≤0)
+                new RecipeCost { Currency = null, Price = 25 },
+            }),
+            [], [], []);
+
+        vm.CostLines.Should().Equal("1,500 Fae Energy", "25 currency");
+    }
+
+    [Fact]
+    public void RequirementCollections_DefaultEmpty_AndPassThroughWhenProvided()
+    {
+        new RecipeDetailViewModel(SampleRecipe(), [], [], []).OtherRequirementLines.Should().BeEmpty();
+
+        var chips = new[] { new EntityChipVm("Make Roux", 0, EntityRef.Recipe("MakeRoux"), true) };
+        var vm = new RecipeDetailViewModel(
+            SampleRecipe(), [], [], [],
+            otherRequirementLines: new[] { "Only during the full moon." },
+            recipeRequirementChips: chips);
+
+        vm.OtherRequirementLines.Should().ContainSingle().Which.Should().Be("Only during the full moon.");
+        vm.RecipeRequirementChips.Should().BeEquivalentTo(chips);
     }
 }

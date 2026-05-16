@@ -40,7 +40,10 @@ public sealed class RecipeDetailViewModel
         ICommand? openEntityCommand = null,
         string? skillDisplayName = null,
         IReadOnlyList<ItemSourceChipVm>? sources = null,
-        IReadOnlyList<RecipeKeywordSlotVm>? keywordSlots = null)
+        IReadOnlyList<RecipeKeywordSlotVm>? keywordSlots = null,
+        IReadOnlyList<string>? otherRequirementLines = null,
+        IReadOnlyList<EntityChipVm>? recipeRequirementChips = null,
+        string? sharesResetTimerDisplayName = null)
     {
         Recipe = recipe;
         Ingredients = ingredients;
@@ -50,6 +53,13 @@ public sealed class RecipeDetailViewModel
         SkillDisplayName = skillDisplayName ?? recipe.Skill;
         Sources = sources;
         KeywordSlots = keywordSlots ?? [];
+        OtherRequirementLines = otherRequirementLines ?? [];
+        RecipeRequirementChips = recipeRequirementChips ?? [];
+        CostLines = BuildCostLines(recipe.Costs);
+        CooldownChip = BuildCooldownChip(recipe.ResetTimeInSeconds);
+        SharedCooldownNote = string.IsNullOrEmpty(recipe.SharesResetTimerWith)
+            ? ""
+            : $"Shares its cooldown with {sharesResetTimerDisplayName ?? recipe.SharesResetTimerWith}";
     }
 
     /// <summary>
@@ -128,6 +138,85 @@ public sealed class RecipeDetailViewModel
     /// <c>Sources</c> shape used by <see cref="ItemDetailViewModel"/>.
     /// </summary>
     public IReadOnlyList<ItemSourceChipVm>? Sources { get; }
+
+    /// <summary>
+    /// Plain readable lines for the non-navigable <see cref="Recipe.OtherRequirements"/>
+    /// gates — the time/RNG-cyclical and user-asserted unlocks the planner deliberately
+    /// punts on (<c>docs/planner-recipe-field-consumption.md</c>). Empty when the recipe
+    /// has none; the view hides the section on a zero count. Built by
+    /// <see cref="RecipeRequirementProjector"/> in <see cref="RecipesTabViewModel"/>.
+    /// </summary>
+    public IReadOnlyList<string> OtherRequirementLines { get; }
+
+    /// <summary>
+    /// 1:1 navigable chips for the recipe-referencing requirement kinds
+    /// (<c>RecipeKnown</c> / cross-recipe <c>RecipeUsed</c>) — real cross-links into the
+    /// same Recipes tab, same shape as <see cref="Ingredients"/>/<see cref="ProducedItems"/>.
+    /// A self-referential <c>RecipeUsed</c> (per-character craft cap) is folded into
+    /// <see cref="OtherRequirementLines"/> instead, not a dead self-chip.
+    /// </summary>
+    public IReadOnlyList<EntityChipVm> RecipeRequirementChips { get; }
+
+    /// <summary>
+    /// Currency cost lines from <see cref="Recipe.Costs"/> (e.g. "1,500 Councils"). The
+    /// planner ignores <c>Costs</c> by design (it doesn't change XP or craft count) — so
+    /// the browser is the only surface that can tell the player a recipe costs money.
+    /// Empty when absent.
+    /// </summary>
+    public IReadOnlyList<string> CostLines { get; }
+
+    /// <summary>
+    /// Reuse-cooldown chip (e.g. "Reuse every 1h 30m") from
+    /// <see cref="Recipe.ResetTimeInSeconds"/>. Sits beside <see cref="MaxUsesChip"/>:
+    /// the planner is time-stateless so it surfaces the cap half but not this — closing
+    /// the consistency break called out in <c>docs/silmarillion-field-coverage.md</c>.
+    /// Empty string when absent (view hides on empty, string-only NullOrEmptyToVis).
+    /// </summary>
+    public string CooldownChip { get; }
+
+    /// <summary>
+    /// "Shares its cooldown with {recipe}" when <see cref="Recipe.SharesResetTimerWith"/>
+    /// is set (the referenced recipe resolved to its display name by the hosting tab);
+    /// empty string otherwise.
+    /// </summary>
+    public string SharedCooldownNote { get; }
+
+    private static IReadOnlyList<string> BuildCostLines(IReadOnlyList<RecipeCost>? costs)
+    {
+        if (costs is null || costs.Count == 0) return [];
+        var lines = new List<string>(costs.Count);
+        foreach (var c in costs)
+        {
+            if (c.Price <= 0) continue;
+            lines.Add($"{c.Price:N0} {FriendlyCurrency(c.Currency)}");
+        }
+        return lines;
+    }
+
+    // Recipe Costs currencies in the bundled corpus are exotic crafting currencies
+    // (FaeEnergy, CombatWisdom, GlamourCredits, GuildCredits) — never Councils/Cera.
+    // Camel-split the token so it reads "Fae Energy" not the raw id, per the
+    // skill-key→display-name convention. Single-token names ("Cera") pass through.
+    private static string FriendlyCurrency(string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? "currency"
+            : System.Text.RegularExpressions.Regex.Replace(currency, "(?<=[a-z])([A-Z])", " $1");
+
+    /// <summary>Seconds → compact "1d 2h", "1h 30m", "45m", "30s" (largest two units).</summary>
+    private static string BuildCooldownChip(int? resetSeconds)
+    {
+        if (resetSeconds is not { } secs || secs <= 0) return "";
+        var d = secs / 86400;
+        var h = secs % 86400 / 3600;
+        var m = secs % 3600 / 60;
+        var s = secs % 60;
+        var parts = new List<string>(2);
+        if (d > 0) parts.Add($"{d}d");
+        if (h > 0) parts.Add($"{h}h");
+        if (m > 0 && parts.Count < 2) parts.Add($"{m}m");
+        if (s > 0 && parts.Count < 2) parts.Add($"{s}s");
+        return $"Reuse every {string.Join(" ", parts)}";
+    }
 }
 
 /// <summary>

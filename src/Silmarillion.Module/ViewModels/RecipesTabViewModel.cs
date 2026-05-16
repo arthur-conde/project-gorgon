@@ -95,8 +95,14 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var effects = recipe.ResultEffects ?? Array.Empty<string>();
         var sources = BuildSourceChips(recipe);
         var keywordSlots = BuildKeywordSlots(recipe);
+        var (reqLines, reqChips) = RecipeRequirementProjector.Build(
+            recipe.OtherRequirements, recipe.InternalName, _navigator, _nameResolver);
+        var sharesResetWith = string.IsNullOrEmpty(recipe.SharesResetTimerWith)
+            ? null
+            : _nameResolver.Resolve(EntityRef.Recipe(recipe.SharesResetTimerWith!));
         DetailViewModel = new RecipeDetailViewModel(
-            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots);
+            recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots,
+            reqLines, reqChips, sharesResetWith);
     }
 
     private void OnFileUpdated(object? sender, string fileKey)

@@ -51,6 +51,15 @@
                     <TextBlock Text="{Binding MaxUsesChip}" Foreground="#CCFFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}"/>
                 </Border>
+                <!-- Reuse cooldown. The planner is time-stateless and surfaces the cap
+                     (MaxUses) but not this — the browser is the only place a player learns
+                     a recipe is on a timer. Mirrors MaxUsesChip's self-hide on empty. -->
+                <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
+                        CornerRadius="3" Padding="6,2" HorizontalAlignment="Left" Margin="0,0,6,0"
+                        Visibility="{Binding CooldownChip, Converter={StaticResource NullOrEmptyToVis}}">
+                    <TextBlock Text="{Binding CooldownChip}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                </Border>
             </WrapPanel>
 
             <!-- Description (FormattedText parses any inline <i>/<b> markup). -->
@@ -58,6 +67,76 @@
                        FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
                        MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
                        Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+            <!-- Requirements: the polymorphic OtherRequirements gates. Plain readable
+                 lines for the time/RNG-cyclical + user-asserted unlocks the planner
+                 deliberately punts on (docs/planner-recipe-field-consumption.md — this
+                 section is the display half that makes that punt sound), plus 1:1
+                 navigable chips for the recipe-referencing kinds (RecipeKnown /
+                 cross-recipe RecipeUsed), plus the shared-cooldown note. Whole section
+                 self-hides when the recipe carries none of the three. -->
+            <StackPanel Margin="0,0,0,10">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding OtherRequirementLines.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding SharedCooldownNote, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <TextBlock Text="Requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding OtherRequirementLines}"
+                              Visibility="{Binding OtherRequirementLines.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding SharedCooldownNote}" Foreground="#CCFFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           TextWrapping="Wrap" Margin="0,0,0,2"
+                           Visibility="{Binding SharedCooldownNote, Converter={StaticResource NullOrEmptyToVis}}"/>
+                <ItemsControl ItemsSource="{Binding RecipeRequirementChips}" Margin="0,4,0,0"
+                              Visibility="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Cost: currency to perform the recipe. The planner ignores Costs by
+                 design (no XP/count impact) so the browser is the only surface for it. -->
+            <StackPanel Margin="0,0,0,10"
+                        Visibility="{Binding CostLines.Count, Converter={StaticResource PositiveIntToVis}}">
+                <TextBlock Text="Cost" FontWeight="SemiBold" Foreground="#88FFFFFF"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                <ItemsControl ItemsSource="{Binding CostLines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"
+                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
 
             <!-- Taught by (sources_recipes.json projection). Renders as ItemSourceChip:
                  navigable chip when the source's EntityReference resolves to a tabbed kind
