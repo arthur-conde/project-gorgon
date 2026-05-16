@@ -40,7 +40,7 @@ public class GenerateLevelingPlanViewModelTests
     {
         data ??= Data();
         return new GenerateLevelingPlanViewModel(
-            new FakeActiveChar(snap), Planner(data),
+            new FakeActiveChar(snap), Planner(data), data,
             sink is null ? null : () => sink);
     }
 
@@ -58,7 +58,7 @@ public class GenerateLevelingPlanViewModelTests
     {
         var vm = Vm(Char(12));
         vm.HasActiveCharacter.Should().BeTrue();
-        vm.AvailableSkills.Should().ContainSingle().Which.Should().Be(Skill);
+        vm.AvailableSkills.Should().ContainSingle().Which.Key.Should().Be(Skill);
         vm.HasPreview.Should().BeFalse();
         vm.CanGenerate.Should().BeFalse();
     }
@@ -131,6 +131,32 @@ public class GenerateLevelingPlanViewModelTests
         vm.GoalLevel = 9;
         vm.SeedFromAdvisor(Skill, 20);
         vm.GoalLevel.Should().Be(9, because: "the user edited the generate inputs; seed must not clobber");
+    }
+
+    [Fact]
+    public void SkillPicker_ShowsDisplayName_ButModelKeepsTheKey()
+    {
+        // id-shaped key vs human display — the convention this fix restores.
+        var data = new FakeRef()
+            .AddSkill("WeaponAugmentBrewing", displayName: "Weapon Augmentation").AddXpTable(100)
+            .AddItem(1, "Wax").AddRecipe("BrewWax", "WeaponAugmentBrewing", xp: 50, produces: (1, 1));
+        var snap = new CharacterSnapshot("Galadriel", "Eltibule", DateTimeOffset.Now,
+            new Dictionary<string, CharacterSkill> { ["WeaponAugmentBrewing"] = new(1, 0, 0, 100) },
+            new Dictionary<string, int> { ["BrewWax"] = 1 }, new Dictionary<string, string>());
+        var sink = new RecordingPlanImportTarget();
+        var vm = Vm(snap, data, sink);
+
+        vm.AvailableSkills.Should().ContainSingle();
+        vm.AvailableSkills[0].DisplayName.Should().Be("Weapon Augmentation");
+        vm.AvailableSkills[0].Key.Should().Be("WeaponAugmentBrewing");
+
+        vm.SeedFromAdvisor("WeaponAugmentBrewing", 3);
+        vm.SelectedSkill.Should().Be("WeaponAugmentBrewing", because: "the model binds the id-shaped key");
+
+        vm.GenerateCommand.Execute(null);
+        var plan = JsonSerializer.Deserialize(
+            sink.Calls[0].Json, SavedLevelingPlanJsonContext.Default.SavedLevelingPlan);
+        plan!.Skill.Should().Be("WeaponAugmentBrewing", because: "the persisted plan stores the key, not the display name");
     }
 
     [Fact]

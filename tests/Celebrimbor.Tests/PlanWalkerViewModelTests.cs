@@ -183,4 +183,17 @@ public class PlanWalkerViewModelTests
         vm.DismissStaleCommand.Execute(null);
         vm.IsStale.Should().BeFalse(because: "\"Walk anyway\" dismisses the warning for the session");
     }
+
+    [Fact]
+    public void Skill_ResolvesIdKeyToDisplayName_FallingBackToKey()
+    {
+        var withDisplay = Data().WithSkill("Smithing", "Blacksmithing");
+        var (vm, _) = Walker(withDisplay, new FakeActiveCharacter());
+        vm.Load(PlanFixtures.Plan("Smithing", 1, 5, 0, [PlanFixtures.Phase(0, "ForgeBar", 5, 1, 3)]));
+        vm.Skill.Should().Be("Blacksmithing", because: "the id-shaped key resolves to the human display name");
+
+        var (vm2, _) = Walker(Data(), new FakeActiveCharacter()); // no skill entry seeded
+        vm2.Load(PlanFixtures.Plan("Smithing", 1, 5, 0, [PlanFixtures.Phase(0, "ForgeBar", 5, 1, 3)]));
+        vm2.Skill.Should().Be("Smithing", because: "unknown skill falls back to the key");
+    }
 }

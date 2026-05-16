@@ -45,7 +45,16 @@ internal sealed class FakeReferenceData : IReferenceDataService
     private readonly ItemKeywordIndex _keywordIndex;
     public IReadOnlyDictionary<string, Recipe> Recipes => _recipes;
     public IReadOnlyDictionary<string, Recipe> RecipesByInternalName => _recipesByName;
-    public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+    private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
+
+    /// <summary>Seed a skill key → display-name mapping (for the internalName→display convention).</summary>
+    public FakeReferenceData WithSkill(string key, string displayName)
+    {
+        _skills[key] = new SkillEntry(key, displayName, 0, false, "T", 0, [],
+            new Dictionary<string, SkillRewardEntry>());
+        return this;
+    }
     public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
     public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
     public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);

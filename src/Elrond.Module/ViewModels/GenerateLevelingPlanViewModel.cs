@@ -5,6 +5,7 @@ using Elrond.Services;
 using Mithril.Planning;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Reference;
 
 namespace Elrond.ViewModels;
 
@@ -36,13 +37,17 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
     private bool _userEdited;
     private bool _seeding;
 
+    private readonly IReferenceDataService _ref;
+
     public GenerateLevelingPlanViewModel(
         IActiveCharacterService activeChar,
         CrossSkillPlanner planner,
+        IReferenceDataService referenceData,
         Func<ISavedLevelingPlanImportTarget?>? importAccessor = null)
     {
         _activeChar = activeChar;
         _planner = planner;
+        _ref = referenceData;
         _importAccessor = importAccessor;
 
         _activeChar.ActiveCharacterChanged += (_, _) => RefreshSnapshot();
@@ -57,7 +62,11 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
     [ObservableProperty] private string _snapshotRelTime = "";
 
     // ── Target ───────────────────────────────────────────────────────────
-    [ObservableProperty] private IReadOnlyList<string> _availableSkills = [];
+    /// <summary>A pickable skill: the id-shaped <see cref="Key"/> is the model
+    /// value; <see cref="DisplayName"/> is what the user sees/types.</summary>
+    public readonly record struct SkillChoice(string Key, string DisplayName);
+
+    [ObservableProperty] private IReadOnlyList<SkillChoice> _availableSkills = [];
     [ObservableProperty] private string? _selectedSkill;
     [ObservableProperty] private int? _currentLevel;
     [ObservableProperty] private int? _goalLevel;
@@ -88,7 +97,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
         _seeding = true;
         try
         {
-            if (!string.IsNullOrEmpty(skill) && AvailableSkills.Contains(skill))
+            if (!string.IsNullOrEmpty(skill) && AvailableSkills.Any(c => c.Key == skill))
                 SelectedSkill = skill;
             if (goalLevel is { } g)
                 GoalLevel = g;
@@ -123,7 +132,13 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
         SnapshotName = snap.Name;
         SnapshotServer = snap.Server;
         SnapshotRelTime = HumanizeAge(DateTimeOffset.Now - snap.ExportedAt);
-        AvailableSkills = snap.Skills.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+        // Resolve id-shaped keys → human display names (convention); the model
+        // (SelectedSkill / SkillTarget) still carries the key. Order by display.
+        AvailableSkills = snap.Skills.Keys
+            .Select(k => new SkillChoice(
+                k, _ref.Skills.TryGetValue(k, out var e) ? e.DisplayName : k))
+            .OrderBy(c => c.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         Recompute();
     }
 

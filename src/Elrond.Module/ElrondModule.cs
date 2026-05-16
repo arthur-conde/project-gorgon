@@ -43,6 +43,7 @@ public sealed class ElrondModule : IMithrilModule
         services.AddSingleton<GenerateLevelingPlanViewModel>(sp => new GenerateLevelingPlanViewModel(
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<CrossSkillPlanner>(),
+            sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             // Deferred for the same reason as the craft-list accessor below:
             // resolving Celebrimbor's ISavedLevelingPlanImportTarget eagerly
             // closes a DI cycle (→ IModuleActivator → ShellViewModel → eager

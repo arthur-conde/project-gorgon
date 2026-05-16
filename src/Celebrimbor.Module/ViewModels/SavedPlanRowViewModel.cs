@@ -21,7 +21,7 @@ public enum SavedPlanStatus
 /// </summary>
 public sealed class SavedPlanRowViewModel
 {
-    public SavedPlanRowViewModel(SavedLevelingPlan plan, bool isStale)
+    public SavedPlanRowViewModel(SavedLevelingPlan plan, bool isStale, string? skillDisplayName = null)
     {
         Plan = plan;
         var phaseCount = plan.Phases.Count;
@@ -33,7 +33,8 @@ public sealed class SavedPlanRowViewModel
             : plan.CurrentPhaseIndex > 0 ? SavedPlanStatus.InProgress
             : SavedPlanStatus.NeverWalked;
 
-        Title = $"{plan.Skill}  {plan.StartLevel}→{plan.GoalLevel}";
+        // Display the human skill name; the plan still stores the id-shaped key.
+        Title = $"{skillDisplayName ?? plan.Skill}  {plan.StartLevel}→{plan.GoalLevel}";
 
         var span = phaseCount > 0
             ? $"{plan.Phases[0].RecipeName} → {plan.Phases[^1].RecipeName} path · "
@@ -82,6 +83,8 @@ public sealed class SavedPlanRowViewModel
     {
         if (string.IsNullOrWhiteSpace(query)) return true;
         if (Title.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+        // Also match the id-shaped key so deep-link / advanced users can still find it.
+        if (Plan.Skill.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
         if (CharacterLabel.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
         return Plan.Phases.Any(p => p.RecipeName.Contains(query, StringComparison.OrdinalIgnoreCase));
     }

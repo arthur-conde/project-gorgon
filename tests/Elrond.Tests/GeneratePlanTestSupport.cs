@@ -47,9 +47,9 @@ internal sealed class FakeRef : IReferenceDataService
     private readonly Dictionary<string, XpTableEntry> _xp = new(StringComparer.Ordinal);
     private int _serial;
 
-    public FakeRef AddSkill(string key, string xpTable = "T")
+    public FakeRef AddSkill(string key, string xpTable = "T", string? displayName = null)
     {
-        _skills[key] = new SkillEntry(key, key, 0, false, xpTable, 0, [],
+        _skills[key] = new SkillEntry(key, displayName ?? key, 0, false, xpTable, 0, [],
             new Dictionary<string, SkillRewardEntry>());
         return this;
     }
