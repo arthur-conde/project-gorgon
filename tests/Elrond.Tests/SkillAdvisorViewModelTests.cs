@@ -309,6 +309,33 @@ public class SkillAdvisorViewModelTests
         importTarget.LastSource.Should().Contain(recipe.RecipeName);
     }
 
+    [Fact]
+    public void Ctor_DoesNotResolveImportTarget_DiCycleRegressionGuard()
+    {
+        // The #359 deadlock: the VM factory resolved ICraftListImportTarget eagerly at
+        // construction, closing a DI cycle (→ Celebrimbor → IModuleActivator →
+        // ShellViewModel → eager ActivateModule → back here) that MS.DI turns into a
+        // silent UI-thread hang. Construction must NEVER invoke the accessor — only the
+        // explicit Send click may. An accessor that throws if touched proves it.
+        var refData = new FakeRefData();
+        refData.AddSkill("Cooking", parents: []);
+        refData.AddRecipe(rewardSkill: "Cooking");
+        var characterSvc = new FakeActiveCharacterService();
+        characterSvc.SetCharacter(new CharacterSnapshot(
+            "C", "S", DateTimeOffset.UtcNow,
+            new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
+            new Dictionary<string, int>(), new Dictionary<string, string>()));
+        var engine = new SkillAdvisorEngine(refData);
+        var sim = new LevelingSimulator(refData, engine);
+
+        var act = () => new SkillAdvisorViewModel(
+            engine, sim, characterSvc, refData, new ElrondSettings(),
+            () => throw new InvalidOperationException("import target resolved during construction"));
+
+        act.Should().NotThrow(
+            because: "the VM ctor must not resolve the import target — that edge is the #359 DI cycle");
+    }
+
     private static SkillAdvisorViewModel MakeVmWithImportTarget(
         out FakeRefData refData, out FakeCraftListImportTarget importTarget)
     {
@@ -323,7 +350,9 @@ public class SkillAdvisorViewModelTests
         var engine = new SkillAdvisorEngine(refData);
         var sim = new LevelingSimulator(refData, engine);
         importTarget = new FakeCraftListImportTarget();
-        return new SkillAdvisorViewModel(engine, sim, characterSvc, refData, new ElrondSettings(), importTarget);
+        var captured = importTarget;
+        return new SkillAdvisorViewModel(engine, sim, characterSvc, refData, new ElrondSettings(),
+            () => captured);
     }
 
     private sealed class FakeCraftListImportTarget : Mithril.Shared.Modules.ICraftListImportTarget

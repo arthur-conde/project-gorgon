@@ -58,7 +58,13 @@ public sealed partial class SkillAdvisorViewModel
     private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
-    private readonly ICraftListImportTarget? _craftListImport;
+    // Resolved lazily, ONLY on the explicit Send click. Resolving ICraftListImportTarget
+    // eagerly at ctor time closes a DI cycle: it pulls Celebrimbor's CraftListImportTarget
+    // → IModuleActivator → ShellModuleActivator(ShellViewModel) → ShellViewModel..ctor's
+    // eager ActivateModule() → back to this VM, before any singleton is cached. MS.DI's
+    // StackGuard turns that into a silent UI-thread deadlock (boot.log stops at
+    // "creating App"), invisible to unit tests. Deferring to user-action time breaks it.
+    private readonly Func<ICraftListImportTarget?>? _craftListImportAccessor;
 
     private readonly ObservableCollection<RecipeAnalysis> _recipes = [];
 
@@ -70,14 +76,14 @@ public sealed partial class SkillAdvisorViewModel
         IActiveCharacterService characterData,
         IReferenceDataService referenceData,
         ElrondSettings settings,
-        ICraftListImportTarget? craftListImport = null)
+        Func<ICraftListImportTarget?>? craftListImportAccessor = null)
     {
         _engine = engine;
         _simulator = simulator;
         _activeChar = characterData;
         _referenceData = referenceData;
         _settings = settings;
-        _craftListImport = craftListImport;
+        _craftListImportAccessor = craftListImportAccessor;
 
         _goalLevel = settings.LastGoalLevel;
         _viewMode = settings.ViewMode;
@@ -338,10 +344,11 @@ public sealed partial class SkillAdvisorViewModel
     }
 
     /// <summary>
-    /// True when a craft-list import target (Celebrimbor) is registered. Drives the
-    /// "Send to craft list" button's visibility so it stays hidden if Celebrimbor is absent.
+    /// True when the craft-list import path is wired (Celebrimbor present). Checks only
+    /// whether the accessor exists — it does NOT resolve the target, so command-can-execute
+    /// re-queries during boot can't re-enter the DI graph (see the accessor field comment).
     /// </summary>
-    public bool IsCraftListImportAvailable => _craftListImport is not null;
+    public bool IsCraftListImportAvailable => _craftListImportAccessor is not null;
 
     /// <summary>
     /// Pushes the selected recipe into the craft-list module (Celebrimbor) in-process —
@@ -352,16 +359,21 @@ public sealed partial class SkillAdvisorViewModel
     [RelayCommand(CanExecute = nameof(CanSendToCraftList))]
     private void SendToCraftList()
     {
-        if (_craftListImport is null || SelectedRecipe is not { } recipe) return;
-        if (string.IsNullOrWhiteSpace(recipe.InternalName)) return;
+        if (SelectedRecipe is not { } recipe || string.IsNullOrWhiteSpace(recipe.InternalName)) return;
 
-        _craftListImport.ImportRecipes(
+        // Resolve the target HERE — on the user's click, long after boot — so the
+        // ICraftListImportTarget → ShellViewModel resolution path can never run while
+        // the container is still building the shell graph.
+        var target = _craftListImportAccessor?.Invoke();
+        if (target is null) return;
+
+        target.ImportRecipes(
             [new CraftListImportEntry(recipe.InternalName, 1)],
             $"Elrond · {recipe.RecipeName}");
     }
 
     private bool CanSendToCraftList()
-        => _craftListImport is not null
+        => _craftListImportAccessor is not null
            && SelectedRecipe is { } r
            && !string.IsNullOrWhiteSpace(r.InternalName);
 
