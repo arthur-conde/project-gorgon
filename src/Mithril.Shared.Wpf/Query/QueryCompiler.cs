@@ -82,6 +82,8 @@ public static class QueryCompiler
                 return CompileBetween(b, columns);
             case IsNullNode n:
                 return CompileIsNull(n, columns);
+            case QuantifiedNode q:
+                return CompileQuantified(q, columns, caseSensitive);
             default:
                 throw new QueryException($"Unsupported node: {node.GetType().Name}", 0);
         }
@@ -246,21 +248,92 @@ public static class QueryCompiler
     // can be matched by tag without flattening to string at the model layer).
     private static bool IsStringCollection(Type t)
     {
-        if (t == typeof(string)) return false;
+        var element = GetCollectionElementType(t);
+        return element is not null
+            && (element == typeof(string) || typeof(IQueryStringValue).IsAssignableFrom(element));
+    }
+
+    /// <summary>
+    /// The element type of the first <see cref="IEnumerable{T}"/> a column type
+    /// implements, or <see langword="null"/> when the type is not a generic
+    /// collection (<see cref="string"/> is treated as a non-collection). Shared by
+    /// the string-collection <c>CONTAINS</c> path and the <c>WITH ANY|ALL</c>
+    /// quantified-subquery path.
+    /// </summary>
+    private static Type? GetCollectionElementType(Type t)
+    {
+        if (t == typeof(string)) return null;
         foreach (var iface in t.GetInterfaces())
         {
             if (iface.IsGenericType
                 && iface.GetGenericTypeDefinition() == typeof(IEnumerable<>))
             {
-                var element = iface.GetGenericArguments()[0];
-                if (element == typeof(string)
-                    || typeof(IQueryStringValue).IsAssignableFrom(element))
-                {
-                    return true;
-                }
+                return iface.GetGenericArguments()[0];
             }
         }
-        return false;
+        return null;
+    }
+
+    /// <summary>
+    /// Compile a <c>&lt;col&gt; WITH ANY|ALL (&lt;inner&gt;)</c> quantified subquery.
+    /// The inner predicate is compiled once against a sub-schema reflected from the
+    /// collection's element type and evaluated <em>per element</em>, so a conjunction
+    /// inside the parens correlates on a single element (the accuracy property the
+    /// whole feature exists for). <c>ANY</c> short-circuits on first match; <c>ALL</c>
+    /// is vacuously true over an empty collection; a null collection is false for
+    /// both (matching the <c>CONTAINS</c>-over-null-collection convention).
+    /// String / <see cref="IQueryStringValue"/> collections are rejected — those use
+    /// <c>CONTAINS</c>, the single way to match flat keyword lists.
+    /// </summary>
+    private static Func<object, bool> CompileQuantified(
+        QuantifiedNode node, Dictionary<string, ColumnBinding> columns, bool caseSensitive)
+    {
+        var col = ResolveColumn(node.Column, columns);
+        var underlying = Nullable.GetUnderlyingType(col.ValueType) ?? col.ValueType;
+        var elementType = GetCollectionElementType(underlying);
+        if (elementType is null
+            || elementType == typeof(string)
+            || typeof(IQueryStringValue).IsAssignableFrom(elementType))
+        {
+            throw new QueryException(
+                $"{node.Quantifier.ToString().ToUpperInvariant()} requires an object-collection column; " +
+                $"'{node.Column}' is {underlying.Name}. Use CONTAINS for string/keyword collections.", 0);
+        }
+
+        var subSchema = NormalizeColumns(
+            ColumnBindingHelper.BuildFromProperties(elementType), caseSensitive);
+        var elementPredicate = CompileNode(node.Inner, subSchema, caseSensitive);
+        bool isAll = node.Quantifier == Quantifier.All;
+
+        return item =>
+        {
+            if (col.GetValue(item) is not System.Collections.IEnumerable seq)
+            {
+                return false;
+            }
+            bool sawAny = false;
+            bool allMatch = true;
+            bool anyMatch = false;
+            foreach (var element in seq)
+            {
+                if (element is null) continue;
+                sawAny = true;
+                bool m;
+                try { m = elementPredicate(element); }
+                catch { m = false; }
+                if (m)
+                {
+                    anyMatch = true;
+                    if (!isAll) break;
+                }
+                else
+                {
+                    allMatch = false;
+                    if (isAll) break;
+                }
+            }
+            return isAll ? (!sawAny || allMatch) : (sawAny && anyMatch);
+        };
     }
 
     private static Func<object, bool> CompileLike(

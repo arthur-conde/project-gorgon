@@ -26,6 +26,7 @@ public static class QueryParser
         "AND", "OR", "NOT", "LIKE", "IN", "BETWEEN", "IS", "NULL", "TRUE", "FALSE",
         "BEFORE", "AFTER",
         "CONTAINS", "STARTSWITH", "ENDSWITH",
+        "WITH", "ANY", "ALL",
         "ASC", "ASCENDING", "DESC", "DESCENDING",
     };
 
@@ -111,6 +112,9 @@ public static class QueryParser
         EndsWith,
         In,
         Between,
+        With,
+        Any,
+        All,
         Is,
         Null,
         True,
@@ -136,6 +140,9 @@ public static class QueryParser
         ["ENDSWITH"] = TokenKind.EndsWith,
         ["IN"] = TokenKind.In,
         ["BETWEEN"] = TokenKind.Between,
+        ["WITH"] = TokenKind.With,
+        ["ANY"] = TokenKind.Any,
+        ["ALL"] = TokenKind.All,
         ["IS"] = TokenKind.Is,
         ["NULL"] = TokenKind.Null,
         ["TRUE"] = TokenKind.True,
@@ -621,7 +628,7 @@ public static class QueryParser
             {
                 var nextKind = PeekAhead(1).Kind;
                 if (nextKind is TokenKind.Like or TokenKind.Contains or TokenKind.StartsWith
-                    or TokenKind.EndsWith or TokenKind.In or TokenKind.Between)
+                    or TokenKind.EndsWith or TokenKind.In or TokenKind.Between or TokenKind.With)
                 {
                     negated = true;
                     Consume();
@@ -690,6 +697,37 @@ public static class QueryParser
                     Expect(TokenKind.And, "AND");
                     var high = ParseValue();
                     return new BetweenNode(column, low, high, negated);
+                }
+                case TokenKind.With:
+                {
+                    if (negated)
+                    {
+                        throw new QueryException(
+                            "For a negated quantifier use prefix form: `NOT (col WITH ANY (...))`.", Peek.Position);
+                    }
+                    Consume(); // WITH
+                    Quantifier quant;
+                    if (Peek.Kind == TokenKind.Any)
+                    {
+                        quant = Quantifier.Any;
+                    }
+                    else if (Peek.Kind == TokenKind.All)
+                    {
+                        quant = Quantifier.All;
+                    }
+                    else
+                    {
+                        throw new QueryException($"Expected ANY or ALL after WITH but found '{Peek.Text}'.", Peek.Position);
+                    }
+                    Consume(); // ANY | ALL
+                    Expect(TokenKind.LParen, "'('");
+                    if (Peek.Kind == TokenKind.RParen)
+                    {
+                        throw new QueryException("Expected a predicate inside `WITH ANY/ALL (...)`.", Peek.Position);
+                    }
+                    var inner = ParseExpression();
+                    Expect(TokenKind.RParen, "')'");
+                    return new QuantifiedNode(column, quant, inner);
                 }
                 case TokenKind.Is:
                 {
