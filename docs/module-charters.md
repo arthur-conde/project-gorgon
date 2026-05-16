@@ -98,12 +98,16 @@ Applies to *every* module; owner-confirmed 2026-05-16:
     recipe/crafting rule. (Pippin may *point at* where a food comes from, including
     "it's crafted"; it does not own the crafting.)
 - **Primary data source: ✅ owner-stated (2026-05-16)** — the **in-game reporting
-  tool**'s character report (the eaten-food record). *Not* `Player.log`, *not* the CDN.
+  tool**'s character report (the eaten-food record). That report is *dumped into*
+  `Player.log` — where Pippin reads it today — and is *also* written as a standalone
+  raw text file that Pippin does **not** currently consume (a potentially cleaner
+  input). Not the CDN. (An earlier draft's flat "*not* `Player.log`" was wrong —
+  corrected: the report content lands in `Player.log`.)
 - **Reference data:** CDN `Items` (`FoodDesc`) for the food catalog/identity — used to
   compute not-yet-eaten and to resolve where un-eaten foods come from.
-- **Endorsed opportunity (owner, 2026-05-16; untracked):** combine the two — "what
-  haven't I eaten *and where do I find it*." Genuinely useful per owner; not yet an
-  issue. (Charters don't list issues — file separately and link back here if pursued.)
+- **Endorsed opportunity → Tracked: #348** — combine the two: "what haven't I eaten
+  *and where do I find it*." Owner-endorsed (2026-05-16) as good value; filed as #348.
+  (Charter carries the stable pointer; the issue holds the spec.)
 
 ## Legolas — surveying & route optimization
 
@@ -247,6 +251,11 @@ libraries; the charter follows the code:
   while Silmarillion currently does not (#214: gap, not boundary). Added a carve-out
   to Silmarillion's "no computation" line so #214 can't be misread as a charter
   violation; listed `ResultEffectsParser` as shipped shared infra owned by neither.
+- **2026-05-16** — Pippin data source corrected: the in-game report is *dumped into*
+  `Player.log` (Pippin reads it there today) and *also* exists as an un-consumed
+  standalone raw text file — the prior flat "not `Player.log`" was wrong. Endorsed
+  food-provenance opportunity filed as **#348**; charter now carries the pointer
+  instead of "untracked".
 - **2026-05-16** — Pippin corrected again by owner: **food provenance IS in scope**
   — the prior ⚠️ "→ Silmarillion" was a wrong inference, removed. Primary data source
   clarified as the in-game reporting tool's character report (not `Player.log`/CDN; the
