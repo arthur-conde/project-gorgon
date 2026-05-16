@@ -718,6 +718,159 @@
                             </Grid>
                         </DockPanel>
                     </TabItem>
+
+                    <!-- ── Plan tab (#228 PR-B/B2) ─────────────────────────── -->
+                    <TabItem Header="Plan">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0"
+                                      DataContext="{Binding GeneratePlan}">
+                            <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                                <TextBlock Margin="0,0,0,4" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeLarge}"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Text="Generate leveling plan"/>
+                                <TextBlock Margin="0,0,0,12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                           Text="Pick a target skill and goal. The active character's progression is captured into the plan as its initial state; Celebrimbor walks the resulting phases."/>
+
+                                <!-- Snapshot card (embedded initial state) -->
+                                <Border Background="{StaticResource BgSurfaceBrush}" BorderThickness="2,0,0,0"
+                                        BorderBrush="{StaticResource AccentBrush}" Padding="12,8" Margin="0,0,0,10"
+                                        Visibility="{Binding HasActiveCharacter, Converter={x:Static vm:BoolToVisConverter.Instance}}">
+                                    <StackPanel>
+                                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   Text="Initial state · embedded · read-only"/>
+                                        <TextBlock Margin="0,2,0,0" Foreground="{StaticResource TextPrimaryBrush}">
+                                            <Run Text="{Binding SnapshotName, Mode=OneWay}"/>
+                                            <Run Text=" @ " Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <Run Text="{Binding SnapshotServer, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <Run Text="  ·  exported " Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <Run Text="{Binding SnapshotRelTime, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- No active character -->
+                                <Border Background="{StaticResource BgSurfaceBrush}" BorderThickness="1"
+                                        BorderBrush="#4DC9A24A" Padding="12,8" Margin="0,0,0,10"
+                                        Visibility="{Binding HasActiveCharacter, Converter={x:Static vm:BoolToVisConverter.Instance}, ConverterParameter=invert}">
+                                    <TextBlock TextWrapping="Wrap" Foreground="#FFC7A872"
+                                               Text="No active character. Export a character (in-game /charexport) and select it so the plan can capture its skills and recipes as the initial state."/>
+                                </Border>
+
+                                <!-- Target -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="110"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Skill" Margin="0,0,8,3"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Current" Margin="8,0,8,3"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Goal (1–250)" Margin="8,0,0,3"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="0" Margin="0,0,8,0"
+                                              IsEditable="True" IsTextSearchEnabled="True"
+                                              ItemsSource="{Binding AvailableSkills}"
+                                              Text="{Binding SelectedSkill, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEnabled="{Binding HasActiveCharacter}"/>
+                                    <Border Grid.Row="1" Grid.Column="1" Margin="8,0,8,0"
+                                            Background="{StaticResource BgSurfaceBrush}"
+                                            BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                                            Padding="8,5">
+                                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Text="{Binding CurrentLevel, Mode=OneWay, TargetNullValue='—'}"/>
+                                    </Border>
+                                    <TextBox Grid.Row="1" Grid.Column="2" Margin="8,0,0,0"
+                                             IsEnabled="{Binding HasActiveCharacter}"
+                                             Text="{Binding GoalLevel, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"/>
+                                </Grid>
+
+                                <!-- Goal ≤ current (no-op) -->
+                                <Border Background="#14C7A872" BorderBrush="#4DC7A872" BorderThickness="1"
+                                        Padding="12,8" Margin="0,0,0,10"
+                                        Visibility="{Binding AlreadyAtGoal, Converter={x:Static vm:BoolToVisConverter.Instance}}">
+                                    <TextBlock TextWrapping="Wrap" Foreground="#FFC7A872">
+                                        <Run Text="Already at goal — the goal level is not above the current level ("/>
+                                        <Run Text="{Binding CurrentLevel, Mode=OneWay}"/>
+                                        <Run Text="). Raise the goal to generate a plan."/>
+                                    </TextBlock>
+                                </Border>
+
+                                <!-- Preview -->
+                                <Border Background="{StaticResource BgSurfaceBrush}"
+                                        BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                                        Padding="14,10" Margin="0,0,0,12"
+                                        Visibility="{Binding HasPreview, Converter={x:Static vm:BoolToVisConverter.Instance}}">
+                                    <StackPanel>
+                                        <TextBlock Text="Plan preview" Margin="0,0,0,8"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                        <UniformGrid Columns="4">
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="Phases" Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                                <TextBlock Text="{Binding PreviewPhases, Mode=OneWay}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="Total crafts" Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                                <TextBlock Text="{Binding PreviewTotalCrafts, Mode=OneWay}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="Range" Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                                <TextBlock Foreground="{StaticResource TextPrimaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}">
+                                                    <Run Text="{Binding PreviewStartLevel, Mode=OneWay}"/>
+                                                    <Run Text="→"/>
+                                                    <Run Text="{Binding PreviewGoalLevel, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <StackPanel>
+                                                <TextBlock Text="Skill unlocks" Foreground="{StaticResource TextSecondaryBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                                <TextBlock Text="{Binding PreviewUnlocks, Mode=OneWay}"
+                                                           Foreground="{StaticResource AccentBrush}"
+                                                           FontSize="{DynamicResource AppFontSizeLarge}"/>
+                                            </StackPanel>
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Action -->
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Padding="14,6" Command="{Binding GenerateCommand}"
+                                            Background="{StaticResource AccentBrush}" Foreground="#FF0E1B19"
+                                            BorderThickness="0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <icon:PackIconLucide Kind="Send" Width="13" Height="13"
+                                                                 VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBlock Text="Generate &amp; send to Celebrimbor" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                               Text="Embeds the snapshot and hands the plan to Celebrimbor to execute."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
                 </TabControl>
             </DockPanel>
         </Grid>

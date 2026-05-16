@@ -4,6 +4,8 @@ using Elrond.Services;
 using Elrond.ViewModels;
 using Elrond.Views;
 using Mithril.Leveling.DependencyInjection;
+using Mithril.Planning;
+using Mithril.Planning.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
@@ -32,8 +34,21 @@ public sealed class ElrondModule : IMithrilModule
         services.AddMithrilSettings<ElrondSettings>(settingsPath, ElrondSettingsJsonContext.Default.ElrondSettings);
 
         services.AddMithrilLeveling();
+        // #227 converged planner engine (CrossSkillPlanner + LevelingMath +
+        // RecipeExpander). All depend only on IReferenceDataService — no
+        // shell/module-activator edge. Powers B2 "Generate leveling plan".
+        services.AddMithrilPlanning();
         services.AddSingleton<SkillAdvisorEngine>();
         services.AddSingleton<LevelingSimulator>();
+
+        services.AddSingleton<GenerateLevelingPlanViewModel>(sp => new GenerateLevelingPlanViewModel(
+            sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
+            sp.GetRequiredService<CrossSkillPlanner>(),
+            // Deferred for the same reason as the craft-list accessor below:
+            // resolving Celebrimbor's ISavedLevelingPlanImportTarget eagerly
+            // closes a DI cycle (→ IModuleActivator → ShellViewModel → eager
+            // ActivateModule → back here). Resolved only on the Generate click.
+            () => sp.GetService<ISavedLevelingPlanImportTarget>()));
 
         services.AddSingleton<SkillAdvisorViewModel>(sp => new SkillAdvisorViewModel(
             sp.GetRequiredService<SkillAdvisorEngine>(),
@@ -41,6 +56,7 @@ public sealed class ElrondModule : IMithrilModule
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ElrondSettings>(),
+            sp.GetRequiredService<GenerateLevelingPlanViewModel>(),
             // Deferred, NOT sp.GetService<ICraftListImportTarget>() eagerly: resolving it
             // at VM-construction time closes a DI cycle (→ Celebrimbor's
             // CraftListImportTarget → IModuleActivator → ShellViewModel → eager

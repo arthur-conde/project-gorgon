@@ -5,7 +5,10 @@ using Elrond.Domain;
 using Elrond.Services;
 using Elrond.ViewModels;
 using FluentAssertions;
+using Mithril.Leveling;
+using Mithril.Planning;
 using Mithril.Shared.Character;
+using Mithril.Shared.Crafting;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
 using Xunit;
@@ -254,7 +257,8 @@ public class SkillAdvisorViewModelTests
         };
         var engine = new SkillAdvisorEngine(refData);
         var sim = new LevelingSimulator(refData, engine);
-        var vm = new SkillAdvisorViewModel(engine, sim, characterSvc, refData, settings);
+        var vm = new SkillAdvisorViewModel(engine, sim, characterSvc, refData, settings,
+            Gen(refData, characterSvc));
 
         vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
         settings.ActiveSortKeys.Should().BeEmpty("legacy field cleared after migration");
@@ -330,11 +334,16 @@ public class SkillAdvisorViewModelTests
 
         var act = () => new SkillAdvisorViewModel(
             engine, sim, characterSvc, refData, new ElrondSettings(),
+            Gen(refData, characterSvc),
             () => throw new InvalidOperationException("import target resolved during construction"));
 
         act.Should().NotThrow(
             because: "the VM ctor must not resolve the import target — that edge is the #359 DI cycle");
     }
+
+    // #228 PR-B/B2: SkillAdvisorViewModel now hosts the Generate-plan child VM.
+    private static GenerateLevelingPlanViewModel Gen(IReferenceDataService refData, IActiveCharacterService chr)
+        => new(chr, new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)));
 
     private static SkillAdvisorViewModel MakeVmWithImportTarget(
         out FakeRefData refData, out FakeCraftListImportTarget importTarget)
@@ -352,6 +361,7 @@ public class SkillAdvisorViewModelTests
         importTarget = new FakeCraftListImportTarget();
         var captured = importTarget;
         return new SkillAdvisorViewModel(engine, sim, characterSvc, refData, new ElrondSettings(),
+            Gen(refData, characterSvc),
             () => captured);
     }
 
@@ -388,7 +398,8 @@ public class SkillAdvisorViewModelTests
         var settings = new ElrondSettings();
         var engine = new SkillAdvisorEngine(refData);
         var simulator = new LevelingSimulator(refData, engine);
-        var vm = new SkillAdvisorViewModel(engine, simulator, characterSvc, refData, settings);
+        var vm = new SkillAdvisorViewModel(engine, simulator, characterSvc, refData, settings,
+            Gen(refData, characterSvc));
         return (vm, refData, characterSvc, settings);
     }
 

@@ -13,6 +13,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Elrond.Module\Elrond.Module.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.Planning\Mithril.Planning.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
 </Project>
