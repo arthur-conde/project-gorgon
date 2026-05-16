@@ -834,7 +834,7 @@ public sealed class NpcsTabViewModelTests
         var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
 
         var caps = vm.AllNpcs.Single().CapIncreases;
-        caps.Select(c => c.Tier).Should().Equal("Friends", "Comfortable", "Despised");
+        caps.Select(c => c.Tier).Should().Equal(FavorTier.Friends, FavorTier.Comfortable, FavorTier.Despised);
         caps.Select(c => c.GoldCap).Should().Equal(5000, 50000, 200000);
         caps[0].Keywords.Should().Equal("Armor", "Weapon");
         caps[1].Keywords.Should().BeEmpty();
@@ -891,6 +891,42 @@ public sealed class NpcsTabViewModelTests
         var matches = vm.AllNpcs.Where(r => predicate!(r)).Select(r => r.InternalName).ToList();
         matches.Should().BeEquivalentTo(["NPC_Match"]);
     }
+
+    [Fact]
+    public void QueryText_CapIncreasesWithAny_TierIsOrdinal_FriendsOrBetter()
+    {
+        // #368: Tier is now FavorTier (ordinal). "Friends or better" must filter by
+        // favor RANK, not string equality/alphabetical — Comfortable (below Friends)
+        // is excluded; CloseFriends (above) is included.
+        var refData = new StubReferenceData
+        {
+            NpcsByKey =
+            {
+                ["NPC_Friends"] = StoreNpc("Friends", "Friends:5000:Armor"),
+                ["NPC_Closer"] = StoreNpc("Closer", "CloseFriends:5000:Armor"),
+                ["NPC_TooLow"] = StoreNpc("TooLow", "Comfortable:5000:Armor"),
+                ["NPC_WayLow"] = StoreNpc("WayLow", "Despised:5000:Armor"),
+            },
+        };
+        var vm = new NpcsTabViewModel(refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()), new ReferenceDataEntityNameResolver(refData));
+
+        var columns = ColumnBindingHelper.BuildFromProperties(typeof(NpcListRow));
+        var predicate = QueryCompiler.Compile(
+            "CapIncreases WITH ANY (Tier >= 'Friends')", columns);
+        predicate.Should().NotBeNull();
+
+        vm.AllNpcs.Where(r => predicate!(r)).Select(r => r.InternalName)
+            .Should().BeEquivalentTo(["NPC_Friends", "NPC_Closer"]);
+    }
+
+    private static Npc StoreNpc(string name, params string[] capIncreases) => new()
+    {
+        Name = name,
+        Services = new NpcServicePoco[]
+        {
+            new NpcStoreServicePoco { Type = "Store", CapIncreases = capIncreases },
+        },
+    };
 
     private sealed class StubReferenceData : IReferenceDataService
     {
