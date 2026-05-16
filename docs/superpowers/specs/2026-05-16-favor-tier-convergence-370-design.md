@@ -184,3 +184,9 @@ re-verify discipline applies on the eventual rebase (this is favor-touching, as
 - Rebase exposure if other favor-touching work merges first (mitigated by
   post-merge-reverify; observed with #373).
 - `TierBreakdown` open-tier behaviour delta — covered by the red-first test.
+
+---
+
+## Implementation status
+
+Implemented on branch `fix/370-favor-tier-convergence` (2026-05-16): FavorScale + Arwen converge + Smaug converge. Follow-up #385 (Smaug `MinFavorTier` field retype) deferred as designed. Full solution green at convergence.
