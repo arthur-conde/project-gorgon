@@ -81,6 +81,29 @@ public sealed class StorageVaultDetailViewModelTests
     }
 
     [Fact]
+    public void FavorTable_HatedTier_SortsByFavorFloor_NotCollapsedToLast()
+    {
+        // #374: capacity rows now rank via the canonical Mithril.Reference.FavorTier
+        // (#373), replacing a hand-rolled FavorOrder array that misspelled the -600 rung
+        // "Hatred". A "Hated" Levels key must rank near the bottom of the ladder
+        // (FavorTier.Hated = -3), not collapse to last as the old misspelling did.
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "NPC_H", new StorageVaultPoco
+        {
+            NpcFriendlyName = "H",
+            Levels = new Dictionary<string, int>
+            {
+                ["SoulMates"] = 64,
+                ["Hated"] = 8,
+                ["Comfortable"] = 16,
+            },
+        });
+
+        vm.CapacityRows.Select(r => r.Tier).Should()
+            .ContainInOrder("Hated", "Comfortable", "Soul Mates");
+    }
+
+    [Fact]
     public void FlatSlots_WhenNoLevels_AndTransferChestDoesNotCrashOnZero()
     {
         var refData = new FakeReferenceData();
