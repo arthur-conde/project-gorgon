@@ -21,7 +21,7 @@ public sealed class FavorTierTests
     [InlineData(-1, FavorTier.Tolerated)]
     [InlineData(-100, FavorTier.Tolerated)]
     [InlineData(-101, FavorTier.Disliked)]
-    [InlineData(-600, FavorTier.Hatred)]
+    [InlineData(-600, FavorTier.Hated)]
     [InlineData(-601, FavorTier.Despised)]
     public void TierForFavor_ReturnsCorrectTier(double favor, FavorTier expected) =>
         FavorTiers.TierForFavor(favor).Should().Be(expected);
@@ -91,5 +91,25 @@ public sealed class FavorTierTests
         var result = FavorTiers.TryParse(input, out var tier);
         result.Should().Be(expectedSuccess);
         tier.Should().Be(expectedTier);
+    }
+
+    // Guard for #372: every FavorTier member name must be the canonical game-log token,
+    // so it round-trips through TryParse of its own name. (Regression: "Hatred" vs "Hated".)
+    [Theory]
+    [MemberData(nameof(AllTiers))]
+    public void TryParse_RoundTripsEveryMemberName(FavorTier tier)
+    {
+        FavorTiers.TryParse(tier.ToString(), out var parsed).Should().BeTrue();
+        parsed.Should().Be(tier);
+    }
+
+    public static TheoryData<FavorTier> AllTiers() =>
+        [.. Enum.GetValues<FavorTier>()];
+
+    [Fact]
+    public void TryParse_Hated_ResolvesToHatedTier()
+    {
+        FavorTiers.TryParse("Hated", out var tier).Should().BeTrue();
+        tier.Should().Be(FavorTier.Hated);
     }
 }
