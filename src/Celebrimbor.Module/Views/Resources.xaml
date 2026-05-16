@@ -9,11 +9,16 @@
     <views:ZeroToGhostBrushConverter x:Key="ZeroToGhost"/>
     <views:ViewModeToVisibilityConverter x:Key="PickerVisibility" Target="Picker"/>
     <views:ViewModeToVisibilityConverter x:Key="ShoppingVisibility" Target="Shopping"/>
+    <views:ViewModeToVisibilityConverter x:Key="PlansVisibility" Target="Plans"/>
     <views:ViewModeToAccentBrushConverter x:Key="PickerAccent" Target="Picker"/>
     <views:ViewModeToAccentBrushConverter x:Key="ShoppingAccent" Target="Shopping"/>
     <views:CountToVisibilityConverter x:Key="CountToVisibility"/>
     <views:CountToVisibilityConverter x:Key="CountToVisibilityInverted" Invert="True"/>
+    <views:BoolToAccentBrushConverter x:Key="AreaAccent"/>
+    <views:PlanStatusToBrushConverter x:Key="PlanStatusBrush"/>
+    <views:PhaseRailStateToBrushConverter x:Key="PhaseRailBrush"/>
     <wpf:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    <wpf:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
 
     <!-- Shared rich recipe card template.
          Consumers bind to anything exposing Name, IconId, Skill, SkillLevelReq,

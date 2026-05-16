@@ -15,7 +15,10 @@
     </UserControl.Resources>
 
     <DockPanel>
-        <!-- Shell header with module title + wizard indicator -->
+        <!-- Shell header: module identity · crafting wizard breadcrumb · area pivot.
+             The Pick→Shop wizard and Plans are *peer areas* (not wizard steps):
+             the breadcrumb only shows in the crafting area; the pivot switches
+             between the two. -->
         <Border DockPanel.Dock="Top" Padding="12,10" Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
@@ -25,7 +28,21 @@
                                FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="SemiBold"
                                Foreground="#FFD4A847" VerticalAlignment="Center"/>
                 </StackPanel>
-                <views:WizardStepIndicator HorizontalAlignment="Center"/>
+
+                <views:WizardStepIndicator HorizontalAlignment="Center"
+                                           Visibility="{Binding IsCraftingArea, Converter={StaticResource BoolToVis}}"/>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Command="{Binding GoToCraftingCommand}" Cursor="Hand"
+                            BorderThickness="0" Background="Transparent" Padding="10,4"
+                            Foreground="{Binding IsCraftingArea, Converter={StaticResource AreaAccent}}"
+                            Content="Crafting"/>
+                    <Border Width="1" Height="14" Background="#33FFFFFF" Margin="6,0"/>
+                    <Button Command="{Binding GoToPlansCommand}" Cursor="Hand"
+                            BorderThickness="0" Background="Transparent" Padding="10,4"
+                            Foreground="{Binding IsPlansArea, Converter={StaticResource AreaAccent}}"
+                            Content="Plans"/>
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -34,6 +51,8 @@
                                     Visibility="{Binding DataContext.CurrentView, ElementName=ShellRoot, Converter={StaticResource PickerVisibility}}"/>
             <views:ShoppingListView DataContext="{Binding Shopping}"
                                     Visibility="{Binding DataContext.CurrentView, ElementName=ShellRoot, Converter={StaticResource ShoppingVisibility}}"/>
+            <views:PlansView DataContext="{Binding Plans}"
+                             Visibility="{Binding DataContext.CurrentView, ElementName=ShellRoot, Converter={StaticResource PlansVisibility}}"/>
         </Grid>
     </DockPanel>
 </UserControl>
