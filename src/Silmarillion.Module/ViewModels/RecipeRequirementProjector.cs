@@ -29,13 +29,16 @@ namespace Silmarillion.ViewModels;
 public static class RecipeRequirementProjector
 {
     /// <summary>
-    /// Project <paramref name="requirements"/> into (plain readable lines, navigable
-    /// recipe-cross-link chips). <paramref name="ownerInternalName"/> is the recipe these
-    /// requirements belong to — used to recognise a self-referential <c>RecipeUsed</c>
-    /// (the per-character craft cap, the WeatherWitching litany) and render it as a
-    /// count line rather than a dead self-chip.
+    /// Project <paramref name="requirements"/> into an ordered list of display rows.
+    /// Each row is <em>either</em> prose <em>or</em> a sentence with an inline navigable
+    /// chip (<see cref="RecipeRequirementRow.Prefix"/> + <see cref="RecipeRequirementRow.Chip"/>) —
+    /// the Quest dual-shape idiom. Authored order is preserved so chip rows read in the
+    /// same flow as prose ones rather than as an orphaned trailing pill cluster.
+    /// <paramref name="ownerInternalName"/> identifies the owning recipe so a
+    /// self-referential <c>RecipeUsed</c> (per-character craft cap, the WeatherWitching
+    /// litany) renders as a count line rather than a dead self-chip.
     /// </summary>
-    public static (IReadOnlyList<string> Lines, IReadOnlyList<EntityChipVm> RecipeChips) Build(
+    public static IReadOnlyList<RecipeRequirementRow> Build(
         IReadOnlyList<RecipeRequirement>? requirements,
         string? ownerInternalName,
         IReferenceNavigator navigator,
@@ -43,19 +46,20 @@ public static class RecipeRequirementProjector
         IReadOnlyDictionary<string, string> strings)
     {
         if (requirements is null || requirements.Count == 0)
-            return (Array.Empty<string>(), Array.Empty<EntityChipVm>());
+            return Array.Empty<RecipeRequirementRow>();
 
-        var lines = new List<string>();
-        var chips = new List<EntityChipVm>();
+        var rows = new List<RecipeRequirementRow>();
 
-        EntityChipVm RecipeChip(string internalName)
+        RecipeRequirementRow ChipRow(string prefix, string internalName)
         {
             var reference = EntityRef.Recipe(internalName);
-            return new EntityChipVm(
+            var chip = new EntityChipVm(
                 DisplayName: resolver.Resolve(reference),
                 IconId: 0,
                 Reference: reference,
                 IsNavigable: navigator.CanOpen(reference));
+            // Text is the accessible / fallback rendering; the view prefers Prefix+Chip.
+            return new RecipeRequirementRow($"{prefix} {chip.DisplayName}", prefix, chip);
         }
 
         foreach (var req in requirements)
@@ -65,11 +69,11 @@ public static class RecipeRequirementProjector
                 case AlwaysFailRequirement:
                     // The planner's hard-exclude case (ImproveProphesied* etc.) — the recipe
                     // can never succeed despite any advertised XP. Say so plainly.
-                    lines.Add("This recipe can never be completed (unavailable placeholder).");
+                    rows.Add(new("This recipe can never be completed (unavailable placeholder)."));
                     break;
 
                 case RecipeKnownRequirement r when !string.IsNullOrEmpty(r.Recipe):
-                    chips.Add(RecipeChip(r.Recipe!));
+                    rows.Add(ChipRow("Requires recipe:", r.Recipe!));
                     break;
 
                 case RecipeUsedRequirement u when !string.IsNullOrEmpty(u.Recipe):
@@ -78,97 +82,97 @@ public static class RecipeRequirementProjector
                         // Self-referential RecipeUsed{self, n} ⇒ a per-character lifetime
                         // cap of n+1 crafts (the planner folds this into RemainingCraftBudget
                         // alongside MaxUses). A self-chip would be a dead loop, so render the
-                        // cap as a line instead.
-                        lines.Add(u.MaxTimesUsed is { } n
+                        // cap as prose instead.
+                        rows.Add(new(u.MaxTimesUsed is { } n
                             ? $"Limited to {n + 1} craft{(n + 1 == 1 ? "" : "s")} per character."
-                            : "Limited per-character craft count.");
+                            : "Limited per-character craft count."));
                     }
                     else
                     {
-                        chips.Add(RecipeChip(u.Recipe!));
+                        rows.Add(ChipRow("Requires having crafted:", u.Recipe!));
                     }
                     break;
 
                 case WeatherRequirement w:
-                    lines.Add(w.ClearSky switch
+                    rows.Add(new(w.ClearSky switch
                     {
                         true => "Only when the sky is clear.",
                         false => "Only when the weather is overcast.",
                         null => "Weather-dependent.",
-                    });
+                    }));
                     break;
 
                 case MoonPhaseRecipeRequirement m when !string.IsNullOrEmpty(m.MoonPhase):
-                    lines.Add($"Only during the {Humanise(m.MoonPhase!).ToLowerInvariant()} moon.");
+                    rows.Add(new($"Only during the {Humanise(m.MoonPhase!).ToLowerInvariant()} moon."));
                     break;
 
                 case FullMoonRecipeRequirement:
-                    lines.Add("Only during the full moon.");
+                    rows.Add(new("Only during the full moon."));
                     break;
 
                 case TimeOfDayRecipeRequirement t:
-                    lines.Add((t.MinHour, t.MaxHour) switch
+                    rows.Add(new((t.MinHour, t.MaxHour) switch
                     {
                         ({ } lo, { } hi) => $"Only between {lo:00}:00 and {hi:00}:00 in-game time.",
                         ({ } lo, null) => $"Only after {lo:00}:00 in-game time.",
                         (null, { } hi) => $"Only before {hi:00}:00 in-game time.",
                         _ => "Time-of-day dependent.",
-                    });
+                    }));
                     break;
 
                 case IsHardcoreRequirement:
-                    lines.Add("Hardcore characters only.");
+                    rows.Add(new("Hardcore characters only."));
                     break;
 
                 case IsLycanthropeRequirement:
-                    lines.Add("Werewolf characters only.");
+                    rows.Add(new("Werewolf characters only."));
                     break;
 
                 case HasHandsRequirement:
-                    lines.Add("Requires hands (not available in animal form).");
+                    rows.Add(new("Requires hands (not available in animal form)."));
                     break;
 
                 case HasGuildHallRequirement:
-                    lines.Add("Requires a guild hall.");
+                    rows.Add(new("Requires a guild hall."));
                     break;
 
                 case InGraveyardRequirement:
-                    lines.Add("Must be in a graveyard.");
+                    rows.Add(new("Must be in a graveyard."));
                     break;
 
                 case PetCountRecipeRequirement p:
-                    lines.Add(DescribePetCount(p, strings));
+                    rows.Add(new(DescribePetCount(p, strings)));
                     break;
 
                 case HasEffectKeywordRecipeRequirement h when !string.IsNullOrEmpty(h.Keyword):
-                    lines.Add(h.MinCount is > 1
+                    rows.Add(new(h.MinCount is > 1
                         ? $"Requires the effect “{Humanise(h.Keyword!)}” ×{h.MinCount}."
-                        : $"Requires the effect “{Humanise(h.Keyword!)}”.");
+                        : $"Requires the effect “{Humanise(h.Keyword!)}”."));
                     break;
 
                 case EquipmentSlotEmptyRecipeRequirement e when !string.IsNullOrEmpty(e.Slot):
-                    lines.Add($"The {Humanise(e.Slot!).ToLowerInvariant()} equipment slot must be empty.");
+                    rows.Add(new($"The {Humanise(e.Slot!).ToLowerInvariant()} equipment slot must be empty."));
                     break;
 
                 case AppearanceRecipeRequirement a when !string.IsNullOrEmpty(a.Appearance):
-                    lines.Add($"Requires appearance: {Humanise(a.Appearance!)}.");
+                    rows.Add(new($"Requires appearance: {Humanise(a.Appearance!)}."));
                     break;
 
                 case EntityPhysicalStateRecipeRequirement s when s.AllowedStates is { Count: > 0 }:
-                    lines.Add($"Requires physical state: {string.Join(", ", s.AllowedStates!)}.");
+                    rows.Add(new($"Requires physical state: {string.Join(", ", s.AllowedStates!)}."));
                     break;
 
                 case DruidEventStateRequirement d when d.DisallowedStates is { Count: > 0 }:
-                    lines.Add($"Not available during druid event: {string.Join(", ", d.DisallowedStates!)}.");
+                    rows.Add(new($"Not available during druid event: {string.Join(", ", d.DisallowedStates!)}."));
                     break;
 
                 case EntitiesNearRequirement n:
                     if (!string.IsNullOrEmpty(n.ErrorMsg))
-                        lines.Add(n.ErrorMsg!);
+                        rows.Add(new(n.ErrorMsg!));
                     else
                     {
                         var what = string.IsNullOrEmpty(n.EntityTypeTag) ? "entities" : Humanise(n.EntityTypeTag!);
-                        lines.Add($"Requires {n.MinCount ?? 1} {what} nearby.");
+                        rows.Add(new($"Requires {n.MinCount ?? 1} {what} nearby."));
                     }
                     break;
 
@@ -176,20 +180,20 @@ public static class RecipeRequirementProjector
                     // Graceful degrade for a future PG-added discriminator — surface it so
                     // it's diagnosable, behind a clearly-noise-filtered label (never blank,
                     // never a crash). Same contract as StorageVault's unknown handling.
-                    lines.Add(string.IsNullOrEmpty(u.DiscriminatorValue)
+                    rows.Add(new(string.IsNullOrEmpty(u.DiscriminatorValue)
                         ? "(unrecognised requirement)"
-                        : $"(unrecognised requirement: {u.DiscriminatorValue})");
+                        : $"(unrecognised requirement: {u.DiscriminatorValue})"));
                     break;
 
                 default:
                     // A known subclass with an empty payload (defensive — RecipeKnown /
                     // RecipeUsed with no Recipe, MoonPhase with no phase). Skip silently
-                    // rather than emit a blank line.
+                    // rather than emit a blank row.
                     break;
             }
         }
 
-        return (lines, chips);
+        return rows;
     }
 
     /// <summary>
@@ -268,3 +272,19 @@ public static class RecipeRequirementProjector
         return sb.ToString().Trim();
     }
 }
+
+/// <summary>
+/// One projected recipe-requirement row. Two render shapes, chosen at projection time
+/// (the Quest dual-shape idiom — see <c>QuestRequirementDisplay</c>):
+/// <list type="bullet">
+///   <item><description><b>Prose row:</b> <see cref="Text"/> set, <see cref="Chip"/> null.
+///   A plain sentence ("Only during the full moon.").</description></item>
+///   <item><description><b>Chip row:</b> <see cref="Prefix"/> + <see cref="Chip"/> set.
+///   Renders as "{Prefix} [chip]" with the recipe as an inline navigable
+///   <see cref="EntityChipVm"/> — so a cross-link reads in the same flow as the prose
+///   rows instead of as an orphaned pill.</description></item>
+/// </list>
+/// <see cref="Text"/> is always populated as the accessible / fallback rendering; the
+/// view prefers <see cref="Prefix"/>/<see cref="Chip"/> when <see cref="Chip"/> is set.
+/// </summary>
+public sealed record RecipeRequirementRow(string Text, string? Prefix = null, EntityChipVm? Chip = null);

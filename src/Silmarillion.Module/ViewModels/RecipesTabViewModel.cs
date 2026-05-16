@@ -95,12 +95,12 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var effects = recipe.ResultEffects ?? Array.Empty<string>();
         var sources = BuildSourceChips(recipe);
         var keywordSlots = BuildKeywordSlots(recipe);
-        var (reqLines, reqChips) = RecipeRequirementProjector.Build(
+        var requirements = RecipeRequirementProjector.Build(
             recipe.OtherRequirements, recipe.InternalName, _navigator, _nameResolver, _refData.Strings);
         var sharedCooldownChip = BuildSharedCooldownChip(recipe);
         DetailViewModel = new RecipeDetailViewModel(
             recipe, ingredients, produced, effects, _openEntityCommand, value.SkillDisplayName, sources, keywordSlots,
-            reqLines, reqChips, sharedCooldownChip);
+            requirements, sharedCooldownChip);
     }
 
     private void OnFileUpdated(object? sender, string fileKey)

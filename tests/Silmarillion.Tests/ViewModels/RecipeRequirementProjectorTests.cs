@@ -11,7 +11,8 @@ namespace Silmarillion.Tests.ViewModels;
 /// Covers the requirement projection that closes the planner-punt ↔ Silmarillion-display
 /// blind spot: the gates <c>CrossSkillPlanner</c> deliberately does not pursue
 /// (<c>docs/planner-recipe-field-consumption.md</c>) must be visible here, or the
-/// user-asserted contract is unverifiable. Synthetic fixtures verify projection shape.
+/// user-asserted contract is unverifiable. Rows are the Quest dual-shape: prose, or a
+/// "{Prefix} [chip]" sentence with an inline navigable chip.
 /// </summary>
 public sealed class RecipeRequirementProjectorTests
 {
@@ -43,17 +44,18 @@ public sealed class RecipeRequirementProjectorTests
     private static readonly IReadOnlyDictionary<string, string> NoStrings =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    private static IReadOnlyList<string> Texts(IEnumerable<RecipeRequirementRow> rows) =>
+        rows.Select(r => r.Text).ToList();
+
     [Fact]
-    public void EmptyOrNull_YieldsNoLinesOrChips()
+    public void EmptyOrNull_YieldsNoRows()
     {
         var (nav, resolver) = Deps();
-        var (lines, chips) = RecipeRequirementProjector.Build(null, "Self", nav, resolver, NoStrings);
-        lines.Should().BeEmpty();
-        chips.Should().BeEmpty();
+        RecipeRequirementProjector.Build(null, "Self", nav, resolver, NoStrings).Should().BeEmpty();
     }
 
     [Fact]
-    public void CyclicalAndUserAssertedGates_RenderAsReadableLines()
+    public void CyclicalAndUserAssertedGates_RenderAsProseRows()
     {
         var (nav, resolver) = Deps();
         var reqs = new RecipeRequirement[]
@@ -69,10 +71,10 @@ public sealed class RecipeRequirementProjectorTests
             new HasGuildHallRequirement { T = "HasGuildHall" },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
+        var rows = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
 
-        chips.Should().BeEmpty();
-        lines.Should().Equal(
+        rows.Should().OnlyContain(r => r.Chip == null && r.Prefix == null);
+        Texts(rows).Should().Equal(
             "Only during the full moon.",
             "Only during the waning crescent moon.",
             "Only when the sky is clear.",
@@ -85,10 +87,33 @@ public sealed class RecipeRequirementProjectorTests
     }
 
     [Fact]
+    public void ProseAndChipRows_StayInterleavedInAuthoredOrder()
+    {
+        // The whole point of the row model: a cross-link chip reads in the same flow as
+        // the prose gates around it, not as a trailing orphaned cluster.
+        var (nav, resolver) = Deps();
+        var reqs = new RecipeRequirement[]
+        {
+            new FullMoonRecipeRequirement { T = "FullMoon" },
+            new RecipeKnownRequirement { T = "RecipeKnown", Recipe = "Augury1" },
+            new HasGuildHallRequirement { T = "HasGuildHall" },
+        };
+
+        var rows = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
+
+        rows.Should().HaveCount(3);
+        rows[0].Chip.Should().BeNull();
+        rows[0].Text.Should().Be("Only during the full moon.");
+        rows[1].Chip.Should().NotBeNull();                         // chip sits *between* prose rows
+        rows[1].Prefix.Should().Be("Requires recipe:");
+        rows[2].Chip.Should().BeNull();
+        rows[2].Text.Should().Be("Requires a guild hall.");
+    }
+
+    [Fact]
     public void PetCount_TreatsMinMaxAsBounds_NotARequiredQuantity()
     {
         var (nav, resolver) = Deps();
-        // The only two shapes in the bundled corpus, plus a floor-only and a non-pet-noun.
         var reqs = new RecipeRequirement[]
         {
             new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "SummonedBakingBread", MaxCount = 4 },
@@ -96,9 +121,9 @@ public sealed class RecipeRequirementProjectorTests
             new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "Wolf", MinCount = 2 },
         };
 
-        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
+        var rows = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
 
-        lines.Should().Equal(
+        Texts(rows).Should().Equal(
             "Requires at most 4 Summoned Baking Bread pets.",   // cap, not "requires 4"
             "Must not own any Storage Crate Druid.",            // Max 0 ⇒ disallowed, not "0 pets"
             "Requires at least 2 Wolf pets.");                  // "pet" appended (tag isn't a pet-noun)
@@ -108,9 +133,6 @@ public sealed class RecipeRequirementProjectorTests
     public void PetTypeTag_ResolvesThroughStringsAll_NotCamelSplit()
     {
         var (nav, resolver) = Deps();
-        // PG models pet types as NPC/monster entities — the real in-game name lives in
-        // strings_all under npc_<tag>_Name. Camel-splitting "SummonedBakingBread" to
-        // "Summoned Baking Bread" fabricates a label the game never shows ("Rising Dough").
         var strings = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["npc_SummonedBakingBread_Name"] = "Rising Dough",
@@ -122,15 +144,15 @@ public sealed class RecipeRequirementProjectorTests
             new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "StorageCrateDruid", MaxCount = 0 },
         };
 
-        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, strings);
+        var rows = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, strings);
 
-        lines.Should().Equal(
+        Texts(rows).Should().Equal(
             "Requires at most 4 Rising Dough pets.",
             "Must not own any Druidic Storage Crate.");
     }
 
     [Fact]
-    public void RecipeKnown_AndCrossRecipeUsed_BecomeNavigableChips()
+    public void RecipeKnown_AndCrossRecipeUsed_BecomeNavigableChipRows_WithPrefixes()
     {
         var (nav, resolver) = Deps();
         var reqs = new RecipeRequirement[]
@@ -139,16 +161,18 @@ public sealed class RecipeRequirementProjectorTests
             new RecipeUsedRequirement { T = "RecipeUsed", Recipe = "OtherRecipe", MaxTimesUsed = 3 },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "MakeStew", nav, resolver, NoStrings);
+        var rows = RecipeRequirementProjector.Build(reqs, "MakeStew", nav, resolver, NoStrings);
 
-        lines.Should().BeEmpty();
-        chips.Should().HaveCount(2);
-        chips[0].Reference!.Kind.Should().Be(EntityKind.Recipe);
-        chips.Should().OnlyContain(c => c.IsNavigable);
+        rows.Should().HaveCount(2);
+        rows.Should().OnlyContain(r => r.Chip != null && r.Chip!.IsNavigable
+                                       && r.Chip.Reference!.Kind == EntityKind.Recipe);
+        rows[0].Prefix.Should().Be("Requires recipe:");
+        rows[0].Text.Should().Be("Requires recipe: MakeRoux");          // prose fallback = prefix + name
+        rows[1].Prefix.Should().Be("Requires having crafted:");
     }
 
     [Fact]
-    public void SelfReferentialRecipeUsed_IsACraftCapLine_NotADeadSelfChip()
+    public void SelfReferentialRecipeUsed_IsACraftCapProseRow_NotADeadSelfChip()
     {
         var (nav, resolver) = Deps();
         var reqs = new RecipeRequirement[]
@@ -156,38 +180,38 @@ public sealed class RecipeRequirementProjectorTests
             new RecipeUsedRequirement { T = "RecipeUsed", Recipe = "WeatherWitchRitual", MaxTimesUsed = 4 },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "WeatherWitchRitual", nav, resolver, NoStrings);
+        var rows = RecipeRequirementProjector.Build(reqs, "WeatherWitchRitual", nav, resolver, NoStrings);
 
-        chips.Should().BeEmpty();
-        lines.Should().ContainSingle().Which.Should().Be("Limited to 5 crafts per character.");
+        rows.Should().ContainSingle().Which.Chip.Should().BeNull();
+        rows.Single().Text.Should().Be("Limited to 5 crafts per character.");
     }
 
     [Fact]
     public void AlwaysFail_SaysItCanNeverBeCompleted()
     {
         var (nav, resolver) = Deps();
-        var (lines, _) = RecipeRequirementProjector.Build(
+        var rows = RecipeRequirementProjector.Build(
             new RecipeRequirement[] { new AlwaysFailRequirement { T = "AlwaysFail" } }, "Self", nav, resolver, NoStrings);
-        lines.Should().ContainSingle().Which.Should().Contain("never be completed");
+        rows.Should().ContainSingle().Which.Text.Should().Contain("never be completed");
     }
 
     [Fact]
     public void UnknownRequirement_DegradesGracefullyWithDiscriminator()
     {
         var (nav, resolver) = Deps();
-        var (lines, _) = RecipeRequirementProjector.Build(
+        var rows = RecipeRequirementProjector.Build(
             new RecipeRequirement[] { new UnknownRecipeRequirement { T = "Brand_New", DiscriminatorValue = "Brand_New" } },
             "Self", nav, resolver, NoStrings);
-        lines.Should().ContainSingle().Which.Should().Be("(unrecognised requirement: Brand_New)");
+        rows.Should().ContainSingle().Which.Text.Should().Be("(unrecognised requirement: Brand_New)");
     }
 
     [Fact]
-    public void RecipeChips_DegradeToNonNavigable_WhenRecipesTabAbsent()
+    public void ChipRow_DegradesToNonNavigable_WhenRecipesTabAbsent()
     {
         var (nav, resolver) = Deps(recipesTabbed: false);
-        var (_, chips) = RecipeRequirementProjector.Build(
+        var rows = RecipeRequirementProjector.Build(
             new RecipeRequirement[] { new RecipeKnownRequirement { T = "RecipeKnown", Recipe = "MakeRoux" } },
             "Self", nav, resolver, NoStrings);
-        chips.Should().ContainSingle().Which.IsNavigable.Should().BeFalse();
+        rows.Should().ContainSingle().Which.Chip!.IsNavigable.Should().BeFalse();
     }
 }

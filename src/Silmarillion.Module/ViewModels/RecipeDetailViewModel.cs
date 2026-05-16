@@ -41,8 +41,7 @@ public sealed class RecipeDetailViewModel
         string? skillDisplayName = null,
         IReadOnlyList<ItemSourceChipVm>? sources = null,
         IReadOnlyList<RecipeKeywordSlotVm>? keywordSlots = null,
-        IReadOnlyList<string>? otherRequirementLines = null,
-        IReadOnlyList<EntityChipVm>? recipeRequirementChips = null,
+        IReadOnlyList<RecipeRequirementRow>? requirements = null,
         EntityChipVm? sharedCooldownChip = null)
     {
         Recipe = recipe;
@@ -53,11 +52,18 @@ public sealed class RecipeDetailViewModel
         SkillDisplayName = skillDisplayName ?? recipe.Skill;
         Sources = sources;
         KeywordSlots = keywordSlots ?? [];
-        OtherRequirementLines = otherRequirementLines ?? [];
-        RecipeRequirementChips = recipeRequirementChips ?? [];
+        Requirements = requirements ?? [];
         CostLines = BuildCostLines(recipe.Costs);
         CooldownChip = BuildCooldownChip(recipe.ResetTimeInSeconds);
-        SharedCooldownChip = sharedCooldownChip;
+        // Shared-cooldown is a recipe→recipe edge too, but not a requirement gate — render
+        // it through the same row template (prefix + inline chip) so it reads consistently
+        // with the requirement chip rows instead of as a separate visual register.
+        SharedCooldownRow = sharedCooldownChip is null
+            ? null
+            : new RecipeRequirementRow(
+                $"Shares cooldown with {sharedCooldownChip.DisplayName}",
+                "Shares cooldown with",
+                sharedCooldownChip);
     }
 
     /// <summary>
@@ -138,22 +144,15 @@ public sealed class RecipeDetailViewModel
     public IReadOnlyList<ItemSourceChipVm>? Sources { get; }
 
     /// <summary>
-    /// Plain readable lines for the non-navigable <see cref="Recipe.OtherRequirements"/>
-    /// gates — the time/RNG-cyclical and user-asserted unlocks the planner deliberately
-    /// punts on (<c>docs/planner-recipe-field-consumption.md</c>). Empty when the recipe
-    /// has none; the view hides the section on a zero count. Built by
-    /// <see cref="RecipeRequirementProjector"/> in <see cref="RecipesTabViewModel"/>.
+    /// Ordered <see cref="Recipe.OtherRequirements"/> rows — each either prose or a
+    /// sentence with an inline navigable chip (the Quest dual-shape idiom), in authored
+    /// order so cross-links read in the same flow as the prose gates rather than as an
+    /// orphaned pill cluster. Covers the time/RNG-cyclical and user-asserted unlocks the
+    /// planner deliberately punts on (<c>docs/planner-recipe-field-consumption.md</c>).
+    /// Empty when the recipe has none; the view hides the section on a zero count. Built
+    /// by <see cref="RecipeRequirementProjector"/> in <see cref="RecipesTabViewModel"/>.
     /// </summary>
-    public IReadOnlyList<string> OtherRequirementLines { get; }
-
-    /// <summary>
-    /// 1:1 navigable chips for the recipe-referencing requirement kinds
-    /// (<c>RecipeKnown</c> / cross-recipe <c>RecipeUsed</c>) — real cross-links into the
-    /// same Recipes tab, same shape as <see cref="Ingredients"/>/<see cref="ProducedItems"/>.
-    /// A self-referential <c>RecipeUsed</c> (per-character craft cap) is folded into
-    /// <see cref="OtherRequirementLines"/> instead, not a dead self-chip.
-    /// </summary>
-    public IReadOnlyList<EntityChipVm> RecipeRequirementChips { get; }
+    public IReadOnlyList<RecipeRequirementRow> Requirements { get; }
 
     /// <summary>
     /// Currency cost lines from <see cref="Recipe.Costs"/> (e.g. "1,500 Councils"). The
@@ -173,18 +172,14 @@ public sealed class RecipeDetailViewModel
     public string CooldownChip { get; }
 
     /// <summary>
-    /// Navigable cross-link for <see cref="Recipe.SharesResetTimerWith"/> — every value
-    /// in the corpus (19/19) is a real recipe <c>InternalName</c>, so this is a recipe→
-    /// recipe edge of the same shape as <see cref="RecipeRequirementChips"/>, not prose.
-    /// Built by the hosting tab (resolves the name + <c>navigator.CanOpen</c>); null when
-    /// the field is absent. Kept distinct from <see cref="RecipeRequirementChips"/>
-    /// because a shared-cooldown grouping is not a requirement gate — the view labels it
-    /// "<see cref="SharedCooldownLabel"/>" so the two don't read as the same thing.
+    /// Navigable cross-link row for <see cref="Recipe.SharesResetTimerWith"/> — every
+    /// value in the corpus (19/19) is a real recipe <c>InternalName</c>, so this is a
+    /// recipe→recipe edge, not prose. Same <see cref="RecipeRequirementRow"/> shape as
+    /// <see cref="Requirements"/> so it renders through the identical prefix+inline-chip
+    /// template, but exposed separately and labelled "Shares cooldown with" because a
+    /// shared-cooldown grouping is not a requirement gate. Null when the field is absent.
     /// </summary>
-    public EntityChipVm? SharedCooldownChip { get; }
-
-    /// <summary>Prefix shown before <see cref="SharedCooldownChip"/>.</summary>
-    public string SharedCooldownLabel => "Shares cooldown with";
+    public RecipeRequirementRow? SharedCooldownRow { get; }
 
     private static IReadOnlyList<string> BuildCostLines(IReadOnlyList<RecipeCost>? costs)
     {

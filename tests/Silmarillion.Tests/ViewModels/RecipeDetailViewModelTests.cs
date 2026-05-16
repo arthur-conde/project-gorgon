@@ -161,10 +161,11 @@ public sealed class RecipeDetailViewModelTests
     }
 
     [Fact]
-    public void SharedCooldownChip_IsANavigableRecipeCrossLink_WhenProvided()
+    public void SharedCooldownRow_IsANavigableChipRow_WithDistinctPrefix_WhenProvided()
     {
         // SharesResetTimerWith is a recipe→recipe edge (19/19 corpus values are real
-        // recipe InternalNames) — it must be a navigable chip, not dead prose.
+        // recipe InternalNames) — a chip row, not dead prose, but labelled distinctly
+        // from the requirement gates (a cooldown grouping isn't a gate).
         var chip = new EntityChipVm("Make Roux", IconId: 7,
             Reference: EntityRef.Recipe("MakeRouxInternal"), IsNavigable: true);
 
@@ -172,17 +173,18 @@ public sealed class RecipeDetailViewModelTests
             SampleRecipe(sharesResetTimerWith: "MakeRouxInternal"), [], [], [],
             sharedCooldownChip: chip);
 
-        vm.SharedCooldownChip.Should().BeSameAs(chip);
-        vm.SharedCooldownChip!.Reference!.Kind.Should().Be(EntityKind.Recipe);
-        vm.SharedCooldownChip.IsNavigable.Should().BeTrue();
-        vm.SharedCooldownLabel.Should().Be("Shares cooldown with");
+        vm.SharedCooldownRow.Should().NotBeNull();
+        vm.SharedCooldownRow!.Chip.Should().BeSameAs(chip);
+        vm.SharedCooldownRow.Chip!.Reference!.Kind.Should().Be(EntityKind.Recipe);
+        vm.SharedCooldownRow.Prefix.Should().Be("Shares cooldown with");
+        vm.SharedCooldownRow.Text.Should().Be("Shares cooldown with Make Roux");
     }
 
     [Fact]
-    public void SharedCooldownChip_IsNullWhenAbsent()
+    public void SharedCooldownRow_IsNullWhenAbsent()
     {
         new RecipeDetailViewModel(SampleRecipe(), [], [], [])
-            .SharedCooldownChip.Should().BeNull();
+            .SharedCooldownRow.Should().BeNull();
     }
 
     [Fact]
@@ -203,17 +205,18 @@ public sealed class RecipeDetailViewModelTests
     }
 
     [Fact]
-    public void RequirementCollections_DefaultEmpty_AndPassThroughWhenProvided()
+    public void Requirements_DefaultEmpty_AndPassThroughWhenProvided()
     {
-        new RecipeDetailViewModel(SampleRecipe(), [], [], []).OtherRequirementLines.Should().BeEmpty();
+        new RecipeDetailViewModel(SampleRecipe(), [], [], []).Requirements.Should().BeEmpty();
 
-        var chips = new[] { new EntityChipVm("Make Roux", 0, EntityRef.Recipe("MakeRoux"), true) };
-        var vm = new RecipeDetailViewModel(
-            SampleRecipe(), [], [], [],
-            otherRequirementLines: new[] { "Only during the full moon." },
-            recipeRequirementChips: chips);
+        var rows = new[]
+        {
+            new RecipeRequirementRow("Only during the full moon."),
+            new RecipeRequirementRow("Requires recipe: Make Roux", "Requires recipe:",
+                new EntityChipVm("Make Roux", 0, EntityRef.Recipe("MakeRoux"), true)),
+        };
+        var vm = new RecipeDetailViewModel(SampleRecipe(), [], [], [], requirements: rows);
 
-        vm.OtherRequirementLines.Should().ContainSingle().Which.Should().Be("Only during the full moon.");
-        vm.RecipeRequirementChips.Should().BeEquivalentTo(chips);
+        vm.Requirements.Should().BeEquivalentTo(rows, o => o.WithStrictOrdering());
     }
 }

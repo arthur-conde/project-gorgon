@@ -51,8 +51,10 @@ The one entity audited against source directly
 `Ingredients` (item chips), keyword-slot ingredients (provenance popup, #318),
 `ResultItems`/`ProtoResultItems`→"Produces", `ResultEffects` (plain-text stub, #214),
 recipe sources ("Taught by", from `sources_recipes.json`), `OtherRequirements`
-(typed "Requirements" lines + `RecipeKnown`/cross-recipe-`RecipeUsed` cross-link
-chips, via `RecipeRequirementProjector`; `PetTypeTag` resolved through
+(one "Requirements" list of dual-shape rows — prose, or "{prefix} [inline chip]"
+for `RecipeKnown`/cross-recipe-`RecipeUsed` — in authored order, the Quest
+dual-shape idiom so cross-links read in the prose flow not as an orphaned pill
+cluster; via `RecipeRequirementProjector`; `PetTypeTag` resolved through
 `strings_all["npc_<tag>_Name"]` per the id→display-name convention — pets are
 NPC/monster entities, "SummonedBakingBread" → "Rising Dough", not camel-split;
 #342), `Costs` ("Cost" lines; #342),

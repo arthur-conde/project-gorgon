@@ -4,6 +4,7 @@
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -14,6 +15,46 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- One projected requirement row. Dual-shape, mirroring QuestDetailView:
+                   - Chip set: "{Prefix} [chip]" — the recipe is an inline navigable
+                     EntityChip (degrades to a plain pill when the Recipes tab isn't
+                     open). Used for RecipeKnown / cross-recipe RecipeUsed and the
+                     shared-cooldown grouping.
+                   - Otherwise: plain Text (cyclical / user-asserted gates).
+                 Switching is on Chip (object) via NullToVis — NOT the string-only
+                 NullOrEmptyToVis, which silently collapses an EntityChipVm binding. -->
+            <DataTemplate DataType="{x:Type vm:RecipeRequirementRow}">
+                <Grid Margin="0,0,0,3">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding Chip, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding Chip}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               TextWrapping="Wrap" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Chip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -68,27 +109,24 @@
                        MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
                        Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
 
-            <!-- Requirements: the polymorphic OtherRequirements gates. Plain readable
-                 lines for the time/RNG-cyclical + user-asserted unlocks the planner
-                 deliberately punts on (docs/planner-recipe-field-consumption.md — this
-                 section is the display half that makes that punt sound), plus 1:1
-                 navigable chips for the recipe-referencing kinds (RecipeKnown /
-                 cross-recipe RecipeUsed), plus the shared-cooldown cross-link chip.
-                 Whole section self-hides when the recipe carries none of the three. -->
+            <!-- Requirements: the polymorphic OtherRequirements gates + the
+                 shared-cooldown grouping, all rendered through one RecipeRequirementRow
+                 template (prose, or "{Prefix} [inline chip]"), in authored order — so
+                 recipe cross-links read in the same flow as the prose gates instead of
+                 as an orphaned trailing pill cluster. This section is the display half
+                 that makes the planner's deliberate punt sound
+                 (docs/planner-recipe-field-consumption.md). Self-hides when the recipe
+                 carries neither requirements nor a shared-cooldown edge. -->
             <StackPanel Margin="0,0,0,10">
                 <StackPanel.Style>
                     <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding OtherRequirementLines.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                            <DataTrigger Binding="{Binding Requirements.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
-                            <DataTrigger Binding="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                            <!-- NullToVis (not NullOrEmptyToVis — that's string-only and
-                                 silently collapses an object binding). -->
-                            <DataTrigger Binding="{Binding SharedCooldownChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                            <!-- NullToVis (object) — NOT the string-only NullOrEmptyToVis. -->
+                            <DataTrigger Binding="{Binding SharedCooldownRow, Converter={StaticResource NullToVis}}" Value="Visible">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                         </Style.Triggers>
@@ -96,46 +134,16 @@
                 </StackPanel.Style>
                 <TextBlock Text="Requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
                            FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                <ItemsControl ItemsSource="{Binding OtherRequirementLines}"
-                              Visibility="{Binding OtherRequirementLines.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                       TextWrapping="Wrap" Margin="0,0,0,2"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <ItemsControl ItemsSource="{Binding RecipeRequirementChips}" Margin="0,4,0,0"
-                              Visibility="{Binding RecipeRequirementChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <!-- Shared-cooldown grouping. A recipe→recipe edge (every corpus value is
-                     a real recipe InternalName), so it's a navigable chip, not prose —
-                     but labelled distinctly from the requirement chips above because a
-                     cooldown grouping isn't a gate. Mirrors QuestDetailView's
-                     giver/turn-in prefix+chip pattern; StackPanel collapses on a null
-                     chip so the ContentControl template never instantiates dead. -->
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
-                            Visibility="{Binding SharedCooldownChip, Converter={StaticResource NullToVis}}">
-                    <TextBlock Text="{Binding SharedCooldownLabel}" Foreground="#88FFFFFF"
-                               FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"
-                               VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ContentControl Content="{Binding SharedCooldownChip}">
-                        <ContentControl.ContentTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
-                            </DataTemplate>
-                        </ContentControl.ContentTemplate>
-                    </ContentControl>
-                </StackPanel>
+                <!-- No ItemTemplate: the implicit DataType-keyed RecipeRequirementRow
+                     template in Resources renders each row (prose vs prefix+chip). -->
+                <ItemsControl ItemsSource="{Binding Requirements}"
+                              Visibility="{Binding Requirements.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                <!-- Shared-cooldown: same RecipeRequirementRow shape/template, exposed
+                     separately and labelled "Shares cooldown with" — a cooldown grouping
+                     isn't a requirement gate. ContentControl picks up the implicit
+                     template; collapses on a null row so it never instantiates dead. -->
+                <ContentControl Content="{Binding SharedCooldownRow}"
+                                Visibility="{Binding SharedCooldownRow, Converter={StaticResource NullToVis}}"/>
             </StackPanel>
 
             <!-- Cost: currency to perform the recipe. The planner ignores Costs by
