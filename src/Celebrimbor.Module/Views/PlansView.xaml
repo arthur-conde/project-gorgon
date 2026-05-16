@@ -1,0 +1,514 @@
+<UserControl x:Class="Celebrimbor.Views.PlansView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Celebrimbor.ViewModels"
+             xmlns:planning="clr-namespace:Mithril.Planning;assembly=Mithril.Planning"
+             mc:Ignorable="d"
+             Background="#FF1A1A1A">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="PlanActionButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#FFB0B0B0"/>
+                <Setter Property="BorderBrush" Value="#22FFFFFF"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="9,3"/>
+                <Setter Property="Margin" Value="4,0,0,0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FontSize" Value="{DynamicResource AppFontSizeHint}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#26FFFFFF"/>
+                        <Setter Property="Foreground" Value="#FFE6E6E6"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Opacity" Value="0.4"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="PrimaryActionButton" TargetType="Button" BasedOn="{StaticResource PlanActionButton}">
+                <Setter Property="Background" Value="#FF4FB3A5"/>
+                <Setter Property="Foreground" Value="#FF0F1A18"/>
+                <Setter Property="BorderBrush" Value="#FF4FB3A5"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#FF5BC2B3"/>
+                        <Setter Property="Foreground" Value="#FF0F1A18"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Opacity" Value="0.4"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Tri-state segment. Tag is bound to the row's Is{Mode} bool; the
+                 active segment gets surface fill + accent text (frame 03). -->
+            <Style x:Key="SegButton" TargetType="Button" BasedOn="{StaticResource PlanActionButton}">
+                <Setter Property="Margin" Value="0"/>
+                <Setter Property="MinWidth" Value="58"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                        <Setter Property="Background" Value="#FF2A2A2A"/>
+                        <Setter Property="Foreground" Value="#FF4FB3A5"/>
+                        <Setter Property="BorderBrush" Value="#FF4FB3A5"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid>
+        <!-- ════════════ MANAGER ════════════ -->
+        <Grid Visibility="{Binding IsWalking, Converter={StaticResource InvBoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Toolbar: search + filter chips -->
+            <Grid Grid.Row="0" Margin="16,12,16,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="#FF171717" BorderBrush="#22FFFFFF" BorderThickness="1"
+                        CornerRadius="2" Padding="8,4" MaxWidth="340" HorizontalAlignment="Left">
+                    <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             Background="Transparent" BorderThickness="0" Foreground="#FFB0B0B0"
+                             FontSize="{DynamicResource AppFontSizeHint}"
+                             d:Text="Filter plans by skill, character, recipe…"/>
+                </Border>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ItemsControl>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <Button Style="{StaticResource PlanActionButton}"
+                                Command="{Binding SetFilterCommand}" CommandParameter="{x:Static vm:PlanFilter.All}">
+                            <TextBlock><Run Text="All "/><Run Text="{Binding AllCount, Mode=OneWay}"/></TextBlock>
+                        </Button>
+                        <Button Style="{StaticResource PlanActionButton}"
+                                Command="{Binding SetFilterCommand}" CommandParameter="{x:Static vm:PlanFilter.InProgress}">
+                            <TextBlock><Run Text="In progress "/><Run Text="{Binding InProgressCount, Mode=OneWay}"/></TextBlock>
+                        </Button>
+                        <Button Style="{StaticResource PlanActionButton}"
+                                Command="{Binding SetFilterCommand}" CommandParameter="{x:Static vm:PlanFilter.Stale}">
+                            <TextBlock><Run Text="Stale "/><Run Text="{Binding StaleCount, Mode=OneWay}"/></TextBlock>
+                        </Button>
+                        <Button Style="{StaticResource PlanActionButton}"
+                                Command="{Binding SetFilterCommand}" CommandParameter="{x:Static vm:PlanFilter.Done}">
+                            <TextBlock><Run Text="Done "/><Run Text="{Binding DoneCount, Mode=OneWay}"/></TextBlock>
+                        </Button>
+                    </ItemsControl>
+                </StackPanel>
+            </Grid>
+
+            <!-- Empty state -->
+            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="No plans in your library" FontWeight="SemiBold"
+                           FontSize="{DynamicResource AppFontSizeLarge}" Foreground="#FFB0B0B0"
+                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="#FF7A7A7A"
+                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,16"
+                           Text="Celebrimbor walks plans you've received. Generate one from Elrond, the skill advisor — for the active character or a hypothetical — and it will land here."/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Style="{StaticResource PrimaryActionButton}" Padding="12,5"
+                            Command="{Binding OpenPlanSourceCommand}" Content="Open Elrond"/>
+                    <Button Style="{StaticResource PlanActionButton}" Padding="12,5"
+                            Command="{Binding ImportPlanFromFileCommand}" Content="Import .plan…"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Library list -->
+            <ListBox Grid.Row="1" Margin="8,0,8,8" Background="Transparent" BorderThickness="0"
+                     ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     HorizontalContentAlignment="Stretch"
+                     Visibility="{Binding IsEmpty, Converter={StaticResource InvBoolToVis}}">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0,1"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="rowBorder" Background="{TemplateBinding Background}"
+                                            BorderThickness="2,0,0,0" BorderBrush="Transparent" Padding="14,8">
+                                        <ContentPresenter/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="rowBorder" Property="Background" Value="#FF262626"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="rowBorder" Property="Background" Value="#FF222222"/>
+                                            <Setter TargetName="rowBorder" Property="BorderBrush" Value="#FF4FB3A5"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="22"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="{Binding Glyph}" VerticalAlignment="Center"
+                                       Foreground="{Binding Status, Converter={StaticResource PlanStatusBrush}}"/>
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0">
+                                <TextBlock Text="{Binding Title}" Foreground="#FFE6E6E6"
+                                           FontSize="{DynamicResource AppFontSizeNormal}"/>
+                                <TextBlock Text="{Binding Subtitle}" Foreground="#FF7A7A7A"
+                                           FontSize="{DynamicResource AppFontSizeSmall}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="2" Text="{Binding CharacterLabel}" VerticalAlignment="Center"
+                                       Foreground="#FFB0B0B0" FontSize="{DynamicResource AppFontSizeHint}"/>
+
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding PhaseText}" Foreground="#FFB0B0B0"
+                                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,8,0"/>
+                                <ProgressBar Width="44" Height="4" Minimum="0" Maximum="1"
+                                             Value="{Binding ProgressFraction, Mode=OneWay}"
+                                             Background="#FF2A2A2A" Foreground="#FF4FB3A5" BorderThickness="0"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="4" Text="{Binding AgeText}" VerticalAlignment="Center"
+                                       Foreground="#FF5A5A5A" FontSize="{DynamicResource AppFontSizeSmall}"/>
+
+                            <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Style="{StaticResource PrimaryActionButton}" Content="Walk"
+                                        Command="{Binding DataContext.OpenWalkerCommand,
+                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}"/>
+                                <Button Style="{StaticResource PlanActionButton}" Content="Re-plan"
+                                        Command="{Binding DataContext.ReplanCommand,
+                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}"/>
+                                <Button Style="{StaticResource PlanActionButton}" Content="Delete"
+                                        Command="{Binding DataContext.DeleteCommand,
+                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- ════════════ WALKER ════════════ -->
+        <Grid DataContext="{Binding Walker}"
+              Visibility="{Binding DataContext.IsWalking,
+                           RelativeSource={RelativeSource AncestorType=UserControl},
+                           Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Stale banner -->
+            <Border Grid.Row="0" Background="#1FC9A24A" BorderBrush="#4DC9A24A" BorderThickness="0,0,0,1"
+                    Padding="22,10" Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="The live character outpaced this plan." Foreground="#FFC9A24A"
+                                   FontWeight="SemiBold" FontSize="{DynamicResource AppFontSizeHint}"/>
+                        <TextBlock Text="{Binding StaleSummary}" Foreground="#FF7A7A7A"
+                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource PlanActionButton}" Content="Walk anyway"
+                                Command="{Binding DismissStaleCommand}"/>
+                        <Button Style="{StaticResource PrimaryActionButton}" Content="Refresh &amp; re-plan"
+                                Command="{Binding RefreshAndReplanCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Header -->
+            <Border Grid.Row="1" Padding="22,12" BorderBrush="#14FFFFFF" BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock FontSize="{DynamicResource AppFontSizeSmall}" Foreground="#FF5A5A5A">
+                            <Run Text="{Binding Skill, Mode=OneWay}"/><Run Text=" · "/>
+                            <Run Text="{Binding CharacterLabel, Mode=OneWay}"/><Run Text=" · "/>
+                            <Run Text="{Binding GoalLabel, Mode=OneWay}"/>
+                        </TextBlock>
+                        <TextBlock Text="{Binding DetailTitle}" Foreground="#FFE6E6E6"
+                                   FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="SemiBold"
+                                   Visibility="{Binding HasCurrentPhase, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="Plan complete" Foreground="#FF7BA876"
+                                   FontSize="{DynamicResource AppFontSizeLarge}" FontWeight="SemiBold"
+                                   Visibility="{Binding IsPlanComplete, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource PlanActionButton}" Content="↩ Library"
+                            VerticalAlignment="Top" Command="{Binding BackToLibraryCommand}"/>
+                </Grid>
+            </Border>
+
+            <!-- Three columns: rail · detail · sourcing -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="280"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Rail -->
+                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto"
+                              BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+                    <ItemsControl ItemsSource="{Binding Rail}" Margin="0,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <!-- Phase -->
+                                    <Border Padding="18,10" Margin="0,1"
+                                            Visibility="{Binding IsUnlock, Converter={StaticResource InvBoolToVis}}">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                         Fill="{Binding State, Converter={StaticResource PhaseRailBrush}}"/>
+                                                <TextBlock Text="{Binding RecipeName}" Foreground="#FFE6E6E6"
+                                                           FontSize="{DynamicResource AppFontSizeHint}"/>
+                                            </StackPanel>
+                                            <TextBlock Margin="17,2,0,0" Foreground="#FF5A5A5A"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}">
+                                                <Run Text="{Binding LevelRange, Mode=OneWay}"/><Run Text="   "/>
+                                                <Run Text="{Binding Meta, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="first-time bonus" Margin="17,1,0,0" Foreground="#FF4FB3A5"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}"
+                                                       Visibility="{Binding UsesFirstTimeBonus, Converter={StaticResource BoolToVis}}"/>
+                                            <StackPanel Orientation="Horizontal" Margin="17,5,0,0"
+                                                        Visibility="{Binding ShowMiniProgress, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Foreground="#FFB0B0B0" FontSize="{DynamicResource AppFontSizeSmall}"
+                                                           Margin="0,0,8,0">
+                                                    <Run Text="{Binding MiniOnHand, Mode=OneWay}"/><Run Text=" / "/>
+                                                    <Run Text="{Binding MiniThreshold, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <ProgressBar Width="120" Height="3" Minimum="0" Maximum="1"
+                                                             Value="{Binding MiniFraction, Mode=OneWay}"
+                                                             Background="#FF262626" Foreground="#FF4FB3A5" BorderThickness="0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                    <!-- Unlock callout -->
+                                    <Border Margin="42,2,18,2" Padding="8,6"
+                                            Background="#0DC9A24A" BorderBrush="#73C9A24A" BorderThickness="2,0,0,0"
+                                            Visibility="{Binding IsUnlock, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#FFC9A24A" FontWeight="SemiBold"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}">
+                                                <Run Text="Unlocks at L"/><Run Text="{Binding UnlockAtLevel, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock Foreground="#FFB0B0B0" FontSize="{DynamicResource AppFontSizeSmall}">
+                                                <Run Text="{Binding RecipeName, Mode=OneWay}"/><Run Text=" · "/>
+                                                <Run Text="{Binding UnlockXp, Mode=OneWay}"/><Run Text=" xp/craft"/>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding UnlockReason}" Foreground="#FF5A5A5A"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="already known on live character" Foreground="#FFC9A24A"
+                                                       FontSize="{DynamicResource AppFontSizeSmall}" FontStyle="Italic"
+                                                       Visibility="{Binding AlreadyKnown, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Center detail -->
+                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="22,18">
+                        <!-- Current phase -->
+                        <StackPanel Visibility="{Binding HasCurrentPhase, Converter={StaticResource BoolToVis}}">
+                            <WrapPanel>
+                                <TextBlock Foreground="#FF7A7A7A" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,16,4">
+                                    <Run Text="{Binding DetailLevels, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Foreground="#FF7A7A7A" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,16,4">
+                                    <Run Text="predicted crafts: "/><Run Text="{Binding DetailPredictedCrafts, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Foreground="#FF7A7A7A" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,16,4">
+                                    <Run Text="xp / craft: "/><Run Text="{Binding DetailXpPerCraft, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Foreground="#FF7A7A7A" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,16,4">
+                                    <Run Text="reuse-intermediate: "/><Run Text="{Binding DetailReuseXp, Mode=OneWay}"/>
+                                </TextBlock>
+                                <TextBlock Text="first-time bonus active" Foreground="#FF4FB3A5"
+                                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,16,4"
+                                           Visibility="{Binding DetailUsesFirstTimeBonus, Converter={StaticResource BoolToVis}}"/>
+                            </WrapPanel>
+
+                            <Border Margin="0,14,0,0" Padding="14,12" Background="#FF1F1F1F"
+                                    BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="2">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <TextBlock Text="Phase completion · on hand" Foreground="#FF7A7A7A"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                        <TextBlock HorizontalAlignment="Right" Foreground="#FFE6E6E6"
+                                                   FontSize="{DynamicResource AppFontSizeLarge}">
+                                            <Run Text="{Binding PredicateOnHand, Mode=OneWay}"
+                                                 Foreground="#FF4FB3A5"/><Run Text=" / "/>
+                                            <Run Text="{Binding PredicateThreshold, Mode=OneWay}"/>
+                                        </TextBlock>
+                                    </Grid>
+                                    <ProgressBar Height="6" Minimum="0" Maximum="1"
+                                                 Value="{Binding PredicateFraction, Mode=OneWay}"
+                                                 Background="#FF262626" Foreground="#FF4FB3A5" BorderThickness="0"/>
+                                    <TextBlock Margin="0,10,0,0" Foreground="#FF7A7A7A" TextWrapping="Wrap"
+                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                               Text="Phase advances when on-hand of the recipe's output ≥ the produced threshold — crafted, bought or dropped."/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Plan-complete terminal -->
+                        <Border Visibility="{Binding IsPlanComplete, Converter={StaticResource BoolToVis}}"
+                                Padding="22,24" Background="#FF1F1F1F" BorderBrush="#22FFFFFF"
+                                BorderThickness="1" CornerRadius="2">
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock Foreground="#FF7BA876" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource AppFontSizeLarge}"
+                                           HorizontalAlignment="Center" Margin="0,0,0,6">
+                                    <Run Text="{Binding Skill, Mode=OneWay}"/><Run Text=" goal reached"/>
+                                </TextBlock>
+                                <TextBlock Foreground="#FF7A7A7A" TextWrapping="Wrap" TextAlignment="Center"
+                                           FontSize="{DynamicResource AppFontSizeHint}" MaxWidth="380"
+                                           Text="The plan reached its goal level — nothing more to walk. Re-plan from here for a new goal, or open another plan from the library."/>
+                                <TextBlock Foreground="#FF5A5A5A" HorizontalAlignment="Center" Margin="0,10,0,0"
+                                           FontSize="{DynamicResource AppFontSizeSmall}">
+                                    <Run Text="created "/><Run Text="{Binding CreatedAgeText, Mode=OneWay}"/>
+                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                                    <Button Style="{StaticResource PlanActionButton}" Content="Re-plan"
+                                            Command="{Binding ReplanCommand}"/>
+                                    <Button Style="{StaticResource PlanActionButton}" Content="↩ Back to library"
+                                            Command="{Binding BackToLibraryCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Sourcing -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Padding="16,10" BorderBrush="#14FFFFFF" BorderThickness="1,0,0,1">
+                        <TextBlock Text="SOURCING" Foreground="#FFE6E6E6" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
+                    </Border>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  BorderBrush="#14FFFFFF" BorderThickness="1,0,0,0">
+                        <ItemsControl ItemsSource="{Binding SourcingRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="16,7" BorderBrush="#14FFFFFF" BorderThickness="0,0,0,1">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,5">
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#FFE6E6E6"
+                                                           FontSize="{DynamicResource AppFontSizeHint}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock HorizontalAlignment="Right" Foreground="#FF5A5A5A"
+                                                           FontSize="{DynamicResource AppFontSizeSmall}">
+                                                    <Run Text="×"/><Run Text="{Binding Need, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </Grid>
+                                            <UniformGrid Columns="3">
+                                                <Button Style="{StaticResource SegButton}" Content="Craft"
+                                                        Command="{Binding SetModeCommand}"
+                                                        CommandParameter="{x:Static planning:SourcingMode.Craft}"
+                                                        Tag="{Binding IsCraft}"/>
+                                                <Button Style="{StaticResource SegButton}" Content="Supply"
+                                                        Command="{Binding SetModeCommand}"
+                                                        CommandParameter="{x:Static planning:SourcingMode.SupplyExternally}"
+                                                        Tag="{Binding IsSupply}"/>
+                                                <Button Style="{StaticResource SegButton}" Content="Ignore"
+                                                        Command="{Binding SetModeCommand}"
+                                                        CommandParameter="{x:Static planning:SourcingMode.Ignore}"
+                                                        Tag="{Binding IsIgnore}"/>
+                                            </UniformGrid>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+
+            <!-- Footer -->
+            <Border Grid.Row="3" Background="#FF181818" BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
+                    Padding="22,0" Height="46">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="#FFB0B0B0"
+                               FontSize="{DynamicResource AppFontSizeHint}">
+                        <Run Text="{Binding PositionText, Mode=OneWay}"/><Run Text="   ·   "/>
+                        <Run Text="{Binding RemainingText, Mode=OneWay}"/>
+                    </TextBlock>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource PlanActionButton}" Content="Re-plan"
+                                Command="{Binding ReplanCommand}"
+                                Visibility="{Binding HasCurrentPhase, Converter={StaticResource BoolToVis}}"/>
+                        <Button Style="{StaticResource PlanActionButton}" Content="Advance phase"
+                                Command="{Binding AdvancePhaseCommand}"
+                                Visibility="{Binding HasCurrentPhase, Converter={StaticResource BoolToVis}}"/>
+                        <Button Style="{StaticResource PrimaryActionButton}" Content="Send to craft list"
+                                Command="{Binding SendPhaseToCraftListCommand}"
+                                Visibility="{Binding HasCurrentPhase, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

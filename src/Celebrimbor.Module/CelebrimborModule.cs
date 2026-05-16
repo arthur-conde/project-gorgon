@@ -51,12 +51,15 @@ public sealed class CelebrimborModule : IMithrilModule
         services.AddSingleton<OnHandInventoryQuery>();
         services.AddSingleton<PlanExecutor>();
         services.AddSingleton<ICraftListImportTarget, CraftListImportTarget>();
+        services.AddSingleton<ISavedLevelingPlanImportTarget, SavedLevelingPlanImportTarget>();
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new CraftListDeepLinkHandler(sp.GetRequiredService<ICraftListImportTarget>()));
         services.AddSingleton<IAugmentPoolPresenter, CelebrimborAugmentPoolPresenter>();
 
         services.AddSingleton<RecipePickerViewModel>();
         services.AddSingleton<ShoppingListViewModel>();
+        services.AddSingleton<PlanWalkerViewModel>();
+        services.AddSingleton<PlansViewModel>();
         services.AddSingleton<CelebrimborShellViewModel>();
         services.AddSingleton<CelebrimborSettingsViewModel>();
 

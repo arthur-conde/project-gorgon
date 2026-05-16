@@ -23,4 +23,7 @@ public sealed class SavedLevelingPlanLibrary : IVersionedState<SavedLevelingPlan
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(SavedLevelingPlanLibrary))]
+// A single plan is the share / hand-off unit (Elrond → Celebrimbor #228 PR-B/B2,
+// plan share/import #384) — same canonical context as the persisted library.
+[JsonSerializable(typeof(SavedLevelingPlan))]
 public partial class SavedLevelingPlanJsonContext : JsonSerializerContext;
