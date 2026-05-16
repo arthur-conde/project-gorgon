@@ -10,9 +10,10 @@ namespace Smaug.Tests;
 /// Parity lock for #368: <see cref="StoreCapIncrease.Tier"/> became a typed
 /// <see cref="FavorTier"/>, so Smaug now ranks it via the new
 /// <see cref="FavorTierName.RankOf(FavorTier)"/> overload. That overload MUST be
-/// byte-identical to the old raw-string path against Smaug's existing
-/// <see cref="FavorTierName.Ordered"/> ladder — the (separately tracked, #371)
-/// mis-order is intentionally preserved here so vendor pricing does not shift.
+/// byte-identical to the raw-string path against Smaug's <see cref="FavorTierName.Ordered"/>
+/// ladder — these tests lock the typed↔string delegation and the Unknown→-1 sentinel,
+/// not any specific order, so they hold across #371's order correction (which both
+/// paths inherit equally).
 /// </summary>
 public sealed class FavorTierNameParityTests
 {

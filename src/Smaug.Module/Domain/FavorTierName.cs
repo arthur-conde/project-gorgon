@@ -20,10 +20,14 @@ public static class FavorTierName
     public const string LikeFamily = "LikeFamily";
     public const string SoulMates = "SoulMates";
 
-    /// <summary>Ascending order from lowest (Despised) to highest (SoulMates).</summary>
+    /// <summary>
+    /// Ascending order from lowest (Despised) to highest (SoulMates). Grounded in the
+    /// signed favor-point scale: Tolerated (−100) is below Neutral (0). See #371 / the
+    /// floor table in Arwen.Domain.FavorTiers, the authority for ordering.
+    /// </summary>
     public static readonly IReadOnlyList<string> Ordered =
     [
-        Despised, Hated, Disliked, Neutral, Tolerated, Comfortable,
+        Despised, Hated, Disliked, Tolerated, Neutral, Comfortable,
         Friends, CloseFriends, BestFriends, LikeFamily, SoulMates,
     ];
 
@@ -42,11 +46,13 @@ public static class FavorTierName
     /// <summary>
     /// Rank a typed <see cref="FavorTier"/> on <em>this</em> ladder by round-tripping
     /// through its reference-data token. Deliberately delegates to the string
-    /// <see cref="RankOf(string?)"/> so Smaug's existing (currently mis-ordered, see
-    /// #371) <see cref="Ordered"/> semantics are preserved byte-identically — the
-    /// #368 type change must not shift vendor pricing. <see cref="FavorTier.Unknown"/>
-    /// → token "Unknown" → not in <see cref="Ordered"/> → -1, exactly as an
-    /// unrecognised raw string was before.
+    /// <see cref="RankOf(string?)"/> so the typed and raw-string paths rank
+    /// byte-identically on the one <see cref="Ordered"/> ladder (now floor-grounded —
+    /// #371 corrected the prior Tolerated/Neutral mis-order). The #368 type change is
+    /// itself pricing-neutral; the only intended pricing shift is #371's boundary fix,
+    /// which both paths inherit equally. <see cref="FavorTier.Unknown"/> → token
+    /// "Unknown" → not in <see cref="Ordered"/> → -1, exactly as an unrecognised raw
+    /// string was before.
     /// </summary>
     public static int RankOf(FavorTier tier) => RankOf(tier.ToToken());
 }
