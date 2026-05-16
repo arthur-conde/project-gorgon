@@ -60,7 +60,7 @@
                 <Setter Property="ItemTemplate">
                     <Setter.Value>
                         <DataTemplate>
-                            <c:EntityChip ClickCommand="{Binding DataContext.ChipClickCommand,
+                            <c:EntityChip ClickCommand="{Binding ChipClickCommand,
                                               RelativeSource={RelativeSource AncestorType={x:Type local:ProvenancePopupWindow}}}"/>
                         </DataTemplate>
                     </Setter.Value>
