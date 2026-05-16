@@ -52,7 +52,10 @@ The one entity audited against source directly
 `ResultItems`/`ProtoResultItems`→"Produces", `ResultEffects` (plain-text stub, #214),
 recipe sources ("Taught by", from `sources_recipes.json`), `OtherRequirements`
 (typed "Requirements" lines + `RecipeKnown`/cross-recipe-`RecipeUsed` cross-link
-chips, via `RecipeRequirementProjector`; #342), `Costs` ("Cost" lines; #342),
+chips, via `RecipeRequirementProjector`; `PetTypeTag` resolved through
+`strings_all["npc_<tag>_Name"]` per the id→display-name convention — pets are
+NPC/monster entities, "SummonedBakingBread" → "Rising Dough", not camel-split;
+#342), `Costs` ("Cost" lines; #342),
 `ResetTimeInSeconds` (cooldown chip beside `MaxUses`) + `SharesResetTimerWith`
 (resolved "Shares its cooldown with …" note; #342).
 

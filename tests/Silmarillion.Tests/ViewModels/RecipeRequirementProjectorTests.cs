@@ -39,11 +39,15 @@ public sealed class RecipeRequirementProjectorTests
         public string Resolve(EntityRef reference) => reference.InternalName;
     }
 
+    /// <summary>No strings_all entries ⇒ tag projection falls back to Humanise.</summary>
+    private static readonly IReadOnlyDictionary<string, string> NoStrings =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     [Fact]
     public void EmptyOrNull_YieldsNoLinesOrChips()
     {
         var (nav, resolver) = Deps();
-        var (lines, chips) = RecipeRequirementProjector.Build(null, "Self", nav, resolver);
+        var (lines, chips) = RecipeRequirementProjector.Build(null, "Self", nav, resolver, NoStrings);
         lines.Should().BeEmpty();
         chips.Should().BeEmpty();
     }
@@ -65,7 +69,7 @@ public sealed class RecipeRequirementProjectorTests
             new HasGuildHallRequirement { T = "HasGuildHall" },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver);
+        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
 
         chips.Should().BeEmpty();
         lines.Should().Equal(
@@ -92,12 +96,37 @@ public sealed class RecipeRequirementProjectorTests
             new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "Wolf", MinCount = 2 },
         };
 
-        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver);
+        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, NoStrings);
 
         lines.Should().Equal(
             "Requires at most 4 Summoned Baking Bread pets.",   // cap, not "requires 4"
             "Must not own any Storage Crate Druid.",            // Max 0 ⇒ disallowed, not "0 pets"
             "Requires at least 2 Wolf pets.");                  // "pet" appended (tag isn't a pet-noun)
+    }
+
+    [Fact]
+    public void PetTypeTag_ResolvesThroughStringsAll_NotCamelSplit()
+    {
+        var (nav, resolver) = Deps();
+        // PG models pet types as NPC/monster entities — the real in-game name lives in
+        // strings_all under npc_<tag>_Name. Camel-splitting "SummonedBakingBread" to
+        // "Summoned Baking Bread" fabricates a label the game never shows ("Rising Dough").
+        var strings = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["npc_SummonedBakingBread_Name"] = "Rising Dough",
+            ["npc_StorageCrateDruid_Name"] = "Druidic Storage Crate",
+        };
+        var reqs = new RecipeRequirement[]
+        {
+            new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "SummonedBakingBread", MaxCount = 4 },
+            new PetCountRecipeRequirement { T = "PetCount", PetTypeTag = "StorageCrateDruid", MaxCount = 0 },
+        };
+
+        var (lines, _) = RecipeRequirementProjector.Build(reqs, "Self", nav, resolver, strings);
+
+        lines.Should().Equal(
+            "Requires at most 4 Rising Dough pets.",
+            "Must not own any Druidic Storage Crate.");
     }
 
     [Fact]
@@ -110,7 +139,7 @@ public sealed class RecipeRequirementProjectorTests
             new RecipeUsedRequirement { T = "RecipeUsed", Recipe = "OtherRecipe", MaxTimesUsed = 3 },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "MakeStew", nav, resolver);
+        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "MakeStew", nav, resolver, NoStrings);
 
         lines.Should().BeEmpty();
         chips.Should().HaveCount(2);
@@ -127,7 +156,7 @@ public sealed class RecipeRequirementProjectorTests
             new RecipeUsedRequirement { T = "RecipeUsed", Recipe = "WeatherWitchRitual", MaxTimesUsed = 4 },
         };
 
-        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "WeatherWitchRitual", nav, resolver);
+        var (lines, chips) = RecipeRequirementProjector.Build(reqs, "WeatherWitchRitual", nav, resolver, NoStrings);
 
         chips.Should().BeEmpty();
         lines.Should().ContainSingle().Which.Should().Be("Limited to 5 crafts per character.");
@@ -138,7 +167,7 @@ public sealed class RecipeRequirementProjectorTests
     {
         var (nav, resolver) = Deps();
         var (lines, _) = RecipeRequirementProjector.Build(
-            new RecipeRequirement[] { new AlwaysFailRequirement { T = "AlwaysFail" } }, "Self", nav, resolver);
+            new RecipeRequirement[] { new AlwaysFailRequirement { T = "AlwaysFail" } }, "Self", nav, resolver, NoStrings);
         lines.Should().ContainSingle().Which.Should().Contain("never be completed");
     }
 
@@ -148,7 +177,7 @@ public sealed class RecipeRequirementProjectorTests
         var (nav, resolver) = Deps();
         var (lines, _) = RecipeRequirementProjector.Build(
             new RecipeRequirement[] { new UnknownRecipeRequirement { T = "Brand_New", DiscriminatorValue = "Brand_New" } },
-            "Self", nav, resolver);
+            "Self", nav, resolver, NoStrings);
         lines.Should().ContainSingle().Which.Should().Be("(unrecognised requirement: Brand_New)");
     }
 
@@ -158,7 +187,7 @@ public sealed class RecipeRequirementProjectorTests
         var (nav, resolver) = Deps(recipesTabbed: false);
         var (_, chips) = RecipeRequirementProjector.Build(
             new RecipeRequirement[] { new RecipeKnownRequirement { T = "RecipeKnown", Recipe = "MakeRoux" } },
-            "Self", nav, resolver);
+            "Self", nav, resolver, NoStrings);
         chips.Should().ContainSingle().Which.IsNavigable.Should().BeFalse();
     }
 }

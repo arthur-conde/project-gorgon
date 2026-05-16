@@ -39,7 +39,8 @@ public static class RecipeRequirementProjector
         IReadOnlyList<RecipeRequirement>? requirements,
         string? ownerInternalName,
         IReferenceNavigator navigator,
-        IEntityNameResolver resolver)
+        IEntityNameResolver resolver,
+        IReadOnlyDictionary<string, string> strings)
     {
         if (requirements is null || requirements.Count == 0)
             return (Array.Empty<string>(), Array.Empty<EntityChipVm>());
@@ -136,7 +137,7 @@ public static class RecipeRequirementProjector
                     break;
 
                 case PetCountRecipeRequirement p:
-                    lines.Add(DescribePetCount(p));
+                    lines.Add(DescribePetCount(p, strings));
                     break;
 
                 case HasEffectKeywordRecipeRequirement h when !string.IsNullOrEmpty(h.Keyword):
@@ -195,12 +196,26 @@ public static class RecipeRequirementProjector
     /// Phrase a pet-count gate. <c>MinCount</c>/<c>MaxCount</c> are bounds, not a required
     /// quantity — the corpus only carries upper bounds (<c>SummonedBakingBread</c> ≤4,
     /// <c>StorageCrateDruid</c> ≤0), so "Requires N …" would be doubly wrong (it's a cap,
-    /// and N=0 means *none allowed*). The word "pet" is appended only when the humanised
-    /// tag doesn't already end in it, killing the "… Cow Pet pets" redundancy.
+    /// and N=0 means *none allowed*). The word "pet" is appended only when the resolved
+    /// kind doesn't already end in it, killing the "… Cow Pet pets" redundancy.
+    /// <para>
+    /// A <c>PetTypeTag</c> is an NPC/monster entity in PG's data model, so its real
+    /// in-game name lives in <c>strings_all</c> under <c>npc_&lt;tag&gt;_Name</c>
+    /// ("SummonedBakingBread" → "Rising Dough"). Resolve through there per the
+    /// id→display-name convention; <see cref="Humanise"/> is only the fallback when the
+    /// tag has no string entry (these aren't in <c>npcs.json</c>, so the
+    /// <see cref="IEntityNameResolver"/>'s NPC path can't help).
+    /// </para>
     /// </summary>
-    private static string DescribePetCount(PetCountRecipeRequirement p)
+    private static string DescribePetCount(PetCountRecipeRequirement p, IReadOnlyDictionary<string, string> strings)
     {
-        var kind = string.IsNullOrEmpty(p.PetTypeTag) ? "pet" : Humanise(p.PetTypeTag!);
+        string kind;
+        if (string.IsNullOrEmpty(p.PetTypeTag))
+            kind = "pet";
+        else if (strings.TryGetValue($"npc_{p.PetTypeTag}_Name", out var resolved) && !string.IsNullOrEmpty(resolved))
+            kind = resolved;
+        else
+            kind = Humanise(p.PetTypeTag!);
         var kindIsPetNoun =
             kind.EndsWith("pet", StringComparison.OrdinalIgnoreCase)
             || kind.EndsWith("pets", StringComparison.OrdinalIgnoreCase);

@@ -96,7 +96,7 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var sources = BuildSourceChips(recipe);
         var keywordSlots = BuildKeywordSlots(recipe);
         var (reqLines, reqChips) = RecipeRequirementProjector.Build(
-            recipe.OtherRequirements, recipe.InternalName, _navigator, _nameResolver);
+            recipe.OtherRequirements, recipe.InternalName, _navigator, _nameResolver, _refData.Strings);
         var sharesResetWith = string.IsNullOrEmpty(recipe.SharesResetTimerWith)
             ? null
             : _nameResolver.Resolve(EntityRef.Recipe(recipe.SharesResetTimerWith!));
