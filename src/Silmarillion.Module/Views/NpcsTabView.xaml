@@ -40,6 +40,11 @@
                            FontSize="{DynamicResource AppFontSizeHint}"
                            Margin="0,4,0,0"
                            Visibility="{Binding QueryError, Converter={StaticResource NullOrEmptyToVis}}"/>
+                <TextBlock Text="{Binding QueryWarning}"
+                           Foreground="#FFD9B36A" FontStyle="Italic"
+                           FontSize="{DynamicResource AppFontSizeHint}"
+                           Margin="0,4,0,0" TextWrapping="Wrap"
+                           Visibility="{Binding QueryWarning, Converter={StaticResource NullOrEmptyToVis}}"/>
             </StackPanel>
         </Border>
 
@@ -49,6 +54,7 @@
                  SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                  query:QueryFilter.QueryText="{Binding QueryText}"
                  query:QueryFilter.QueryError="{Binding QueryError, Mode=OneWayToSource}"
+                 query:QueryFilter.QueryWarning="{Binding QueryWarning, Mode=OneWayToSource}"
                  Background="#FF1A1A1A" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"

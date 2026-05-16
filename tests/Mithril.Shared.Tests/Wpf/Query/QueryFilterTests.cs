@@ -3,9 +3,11 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading;
+using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Data;
 using FluentAssertions;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Wpf.Query;
 using Xunit;
 
@@ -223,6 +225,58 @@ public class QueryFilterTests
             view.SortDescriptions.Should().ContainSingle()
                 .Which.PropertyName.Should().Be("Crop");
             view.Cast<Row>().Select(r => r.Crop).Should().BeInAscendingOrder();
+        });
+    }
+
+    // Polymorphic-collection row exercising the QueryWarning attached DP wiring
+    // (the channel PR-3 plumbs for the Silmarillion NPC tab). NpcService is an
+    // Optional-narrowing hierarchy; CapIncreases is single-subtype (StoreService),
+    // so an unguarded reference is a soft warning, never a hard error.
+    private sealed record NpcRow(string Name, IReadOnlyList<NpcService> Services);
+
+    private static ObservableCollection<NpcRow> NpcDataset() => new(new[]
+    {
+        new NpcRow("Vendor", new NpcService[]
+        {
+            new StoreService { Type = "Store", CapIncreases = ["Friends:5000:Armor"] },
+            new AnimalHusbandryService { Type = "AnimalHusbandry" },
+        }),
+        new NpcRow("Trainer", new NpcService[]
+        {
+            new TrainingService { Type = "Training", Skills = ["Unarmed"] },
+        }),
+    });
+
+    [Fact]
+    public void Optional_unguarded_subtype_field_surfaces_QueryWarning_but_still_filters()
+    {
+        RunOnSta(() =>
+        {
+            var listBox = new ListBox { ItemsSource = NpcDataset() };
+            QueryFilter.SetQueryText(listBox, "Services WITH ANY (CapIncreases CONTAINS 'Friends:5000:Armor')");
+            QueryFilter.ForceAttachForTests(listBox);
+
+            var view = CollectionViewSource.GetDefaultView(listBox.ItemsSource);
+            view.Cast<NpcRow>().Select(r => r.Name).Should().BeEquivalentTo("Vendor");
+            QueryFilter.GetQueryError(listBox).Should().BeNull();
+            QueryFilter.GetQueryWarning(listBox).Should()
+                .NotBeNullOrEmpty().And.Contain("CapIncreases");
+        });
+    }
+
+    [Fact]
+    public void Guarded_query_clears_QueryWarning()
+    {
+        RunOnSta(() =>
+        {
+            var listBox = new ListBox { ItemsSource = NpcDataset() };
+            QueryFilter.SetQueryText(listBox,
+                "Services WITH ANY (Type = 'Store' AND CapIncreases CONTAINS 'Friends:5000:Armor')");
+            QueryFilter.ForceAttachForTests(listBox);
+
+            var view = CollectionViewSource.GetDefaultView(listBox.ItemsSource);
+            view.Cast<NpcRow>().Select(r => r.Name).Should().BeEquivalentTo("Vendor");
+            QueryFilter.GetQueryWarning(listBox).Should().BeNull();
         });
     }
 

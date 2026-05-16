@@ -65,6 +65,15 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     private string? _queryError;
 
     /// <summary>
+    /// Non-fatal narrowing diagnostics from the last compiled query (e.g. an
+    /// optional-hierarchy single-subtype field referenced without a discriminator
+    /// guard). Distinct from <see cref="QueryError"/> — the query still ran. Wired
+    /// from <c>QueryFilter.QueryWarning</c> OneWayToSource; surfaced as an amber hint.
+    /// </summary>
+    [ObservableProperty]
+    private string? _queryWarning;
+
+    /// <summary>
     /// ListBox-bound selection. Setting it from an <see cref="Npc"/> POCO (in tests or via the
     /// navigator) resolves to the matching row.
     /// </summary>
@@ -123,7 +132,25 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         Name: _nameResolver.Resolve(EntityRef.Npc(internalName)),
         AreaName: npc.AreaName ?? "",
         AreaDisplayName: npc.AreaFriendlyName ?? npc.AreaName ?? "(unknown)",
-        ServiceTypes: BuildServiceTypes(npc));
+        ServiceTypes: BuildServiceTypes(npc),
+        CapIncreases: BuildCapIncreases(npc));
+
+    /// <summary>
+    /// Flatten every <see cref="StoreService"/>'s parsed cap-increase rows into one
+    /// homogeneous list on the row so the query box can ask the originating #349
+    /// question (<c>CapIncreases WITH ANY (Tier = 'Friends' AND GoldCap &gt; 1000)</c>).
+    /// Parsing lives in <see cref="StoreCapIncreaseParser"/> (#350) — this is a pure
+    /// projection. NPCs with no store service yield an empty list (the engine's
+    /// quantifier treats that as no-match for <c>ANY</c>, vacuously true for <c>ALL</c>).
+    /// </summary>
+    private static IReadOnlyList<StoreCapIncrease> BuildCapIncreases(Npc npc)
+    {
+        if (npc.Services is null || npc.Services.Count == 0) return [];
+        return npc.Services
+            .OfType<StoreService>()
+            .SelectMany(s => s.ParsedCapIncreases)
+            .ToList();
+    }
 
     private static IReadOnlyList<NpcServiceTypeValue> BuildServiceTypes(Npc npc)
     {
