@@ -253,7 +253,7 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         // effect→abilities decision): the popup-from-index is the count-bearing surface;
         // the labeled-lossy To-Query projection is a deliberate fast-follow.
         var popup = new ProvenancePopupViewModel(
-            title: $"Recipes that use {item.Name ?? itemName}",
+            title: $"Recipes using {item.Name ?? itemName}",
             sections: new List<ProvenancePopupSection>
             {
                 new("Used in", allChips),
@@ -343,7 +343,7 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         // count-bearing surface; the labeled-lossy To-Query projection is a deliberate
         // fast-follow.
         var popup = new ProvenancePopupViewModel(
-            title: $"Recipes that use {item.Name ?? item.InternalName} as an ingredient keyword",
+            title: $"Recipes using {item.Name ?? item.InternalName} by keyword",
             sections: new List<ProvenancePopupSection>
             {
                 new("Used as", allChips),
