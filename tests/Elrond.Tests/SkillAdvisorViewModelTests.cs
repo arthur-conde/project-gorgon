@@ -256,8 +256,7 @@ public class SkillAdvisorViewModelTests
             ],
         };
         var engine = new SkillAdvisorEngine(refData);
-        var sim = new LevelingSimulator(refData, engine);
-        var vm = new SkillAdvisorViewModel(engine, sim, characterSvc, refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, refData, settings,
             Gen(refData, characterSvc));
 
         vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
@@ -330,10 +329,9 @@ public class SkillAdvisorViewModelTests
             new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
             new Dictionary<string, int>(), new Dictionary<string, string>()));
         var engine = new SkillAdvisorEngine(refData);
-        var sim = new LevelingSimulator(refData, engine);
 
         var act = () => new SkillAdvisorViewModel(
-            engine, sim, characterSvc, refData, new ElrondSettings(),
+            engine, characterSvc, refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => throw new InvalidOperationException("import target resolved during construction"));
 
@@ -357,10 +355,9 @@ public class SkillAdvisorViewModelTests
             new Dictionary<string, CharacterSkill> { ["Cooking"] = new(10, 0, 0, 100) },
             new Dictionary<string, int>(), new Dictionary<string, string>()));
         var engine = new SkillAdvisorEngine(refData);
-        var sim = new LevelingSimulator(refData, engine);
         importTarget = new FakeCraftListImportTarget();
         var captured = importTarget;
-        return new SkillAdvisorViewModel(engine, sim, characterSvc, refData, new ElrondSettings(),
+        return new SkillAdvisorViewModel(engine, characterSvc, refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => captured);
     }
@@ -397,8 +394,7 @@ public class SkillAdvisorViewModelTests
 
         var settings = new ElrondSettings();
         var engine = new SkillAdvisorEngine(refData);
-        var simulator = new LevelingSimulator(refData, engine);
-        var vm = new SkillAdvisorViewModel(engine, simulator, characterSvc, refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, refData, settings,
             Gen(refData, characterSvc));
         return (vm, refData, characterSvc, settings);
     }

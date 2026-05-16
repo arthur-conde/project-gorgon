@@ -54,7 +54,6 @@ public sealed partial class SkillAdvisorViewModel
     private string? _queryError;
 
     private readonly SkillAdvisorEngine _engine;
-    private readonly LevelingSimulator _simulator;
     private readonly IActiveCharacterService _activeChar;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
@@ -78,7 +77,6 @@ public sealed partial class SkillAdvisorViewModel
 
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
-        LevelingSimulator simulator,
         IActiveCharacterService characterData,
         IReferenceDataService referenceData,
         ElrondSettings settings,
@@ -86,7 +84,6 @@ public sealed partial class SkillAdvisorViewModel
         Func<ICraftListImportTarget?>? craftListImportAccessor = null)
     {
         _engine = engine;
-        _simulator = simulator;
         _activeChar = characterData;
         _referenceData = referenceData;
         _settings = settings;
@@ -95,8 +92,6 @@ public sealed partial class SkillAdvisorViewModel
 
         _goalLevel = settings.LastGoalLevel;
         _viewMode = settings.ViewMode;
-        _onlyAlreadyLearnedRecipes = settings.SimOnlyAlreadyLearnedRecipes;
-        _useFirstTimeBonuses = settings.SimUseFirstTimeBonuses;
 
         // Filters declared here so each closure captures `this` and reads live state
         // (e.g. CraftableOnly compares against the current Analysis at predicate-call time).
@@ -231,53 +226,7 @@ public sealed partial class SkillAdvisorViewModel
     private int? _goalLevel;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UseResultAsNextStartCommand))]
-    private SimulationResult? _simulationResult;
-
-    [ObservableProperty]
     private string _viewMode = "Rows";
-
-    // ── Simulator decoupled state ────────────────────────────────────────
-    // The Recipes tab continues to read live from _activeChar; only the
-    // Simulation tab is decoupled so the user can forecast from a future
-    // hypothetical state, chain runs, and toggle constraints. Inputs are
-    // transient (no persistence beyond constraint toggles).
-
-    /// <summary>
-    /// Frozen snapshot the simulator runs against. <c>null</c> falls back to
-    /// the live active character — preserves the zero-click "from now" UX.
-    /// Populated by <see cref="CopyFromCurrentCharacterCommand"/> or
-    /// <see cref="UseResultAsNextStartCommand"/>.
-    /// </summary>
-    [ObservableProperty]
-    private CharacterSnapshot? _simulationStartState;
-
-    /// <summary>
-    /// User-supplied override for the selected skill's starting level. <c>null</c>
-    /// means "use whatever's in the snapshot" (active or chained). Empty TextBox
-    /// in the UI maps to <c>null</c>.
-    /// </summary>
-    [ObservableProperty]
-    private int? _simulationStartLevel;
-
-    /// <summary>
-    /// User-supplied override for the selected skill's starting XP-toward-next-level.
-    /// </summary>
-    [ObservableProperty]
-    private long? _simulationStartXpTowardNext;
-
-    /// <summary>
-    /// Caption describing where the working snapshot came from. Independent of the
-    /// level/XP override fields, which only modify the *selected skill's* row.
-    /// </summary>
-    [ObservableProperty]
-    private string _simulationStartSource = "Active character";
-
-    [ObservableProperty]
-    private bool _onlyAlreadyLearnedRecipes;
-
-    [ObservableProperty]
-    private bool _useFirstTimeBonuses = true;
 
     // ── Property change handlers ─────────────────────────────────────────
 
@@ -286,21 +235,13 @@ public sealed partial class SkillAdvisorViewModel
         if (value is not null)
             _settings.LastSkill = value;
         UpdateSelectedSkillSummary(value);
-        ResetSimulationStartState();
         GeneratePlan?.SeedFromAdvisor(value, GoalLevel);
         Reanalyze();
     }
 
-    partial void OnOnlyAlreadyLearnedRecipesChanged(bool value)
-        => _settings.SimOnlyAlreadyLearnedRecipes = value;
-
-    partial void OnUseFirstTimeBonusesChanged(bool value)
-        => _settings.SimUseFirstTimeBonuses = value;
-
     partial void OnGoalLevelChanged(int? value)
     {
         _settings.LastGoalLevel = value;
-        SimulationResult = null;
         GeneratePlan?.SeedFromAdvisor(SelectedSkill, value);
         Reanalyze();
     }
@@ -393,77 +334,6 @@ public sealed partial class SkillAdvisorViewModel
     /// </summary>
     [RelayCommand]
     private void ToggleChip(string id) => _controller?.ToggleChip(id);
-
-    [RelayCommand]
-    private void Simulate()
-    {
-        if (string.IsNullOrEmpty(SelectedSkill) || GoalLevel is not { } goal)
-        {
-            SimulationResult = null;
-            return;
-        }
-
-        var startState = BuildSimulationStartState(SelectedSkill);
-        if (startState is null)
-        {
-            SimulationResult = null;
-            return;
-        }
-
-        var constraints = new SimulationConstraints(
-            OnlyAlreadyLearnedRecipes: OnlyAlreadyLearnedRecipes,
-            UseFirstTimeBonuses: UseFirstTimeBonuses);
-
-        SimulationResult = _simulator.Simulate(SelectedSkill, startState, goal, constraints);
-    }
-
-    /// <summary>
-    /// Snapshots the live active character into <see cref="SimulationStartState"/>
-    /// and seeds the Level / XP inputs from the selected skill. Lets the user edit
-    /// from a known starting point rather than typing values from scratch.
-    /// </summary>
-    [RelayCommand]
-    private void CopyFromCurrentCharacter()
-    {
-        var active = _activeChar.ActiveCharacter;
-        if (active is null) return;
-
-        SimulationStartState = active;
-        SimulationStartSource = "Active character (snapshot)";
-
-        if (!string.IsNullOrEmpty(SelectedSkill) && active.Skills.TryGetValue(SelectedSkill, out var s))
-        {
-            SimulationStartLevel = s.Level;
-            SimulationStartXpTowardNext = s.XpTowardNextLevel;
-        }
-    }
-
-    /// <summary>
-    /// Feeds the most recent <see cref="SimulationResult.FinalState"/> back in as
-    /// the next simulation's starting point. Enables chained forecasts (Lv 30 → 50,
-    /// then 50 → 70 *with* the recipes consumed by the first run already crossed
-    /// off the first-time-bonus list).
-    /// </summary>
-    [RelayCommand(CanExecute = nameof(CanUseResultAsNextStart))]
-    private void UseResultAsNextStart()
-    {
-        if (SimulationResult is not { } result) return;
-
-        SimulationStartState = result.FinalState;
-        SimulationStartSource = "Previous simulation result";
-
-        if (!string.IsNullOrEmpty(SelectedSkill)
-            && result.FinalState.Skills.TryGetValue(SelectedSkill, out var s))
-        {
-            SimulationStartLevel = s.Level;
-            SimulationStartXpTowardNext = s.XpTowardNextLevel;
-        }
-
-        // Clear so the user clicks Simulate again with the carried-over inputs.
-        SimulationResult = null;
-    }
-
-    private bool CanUseResultAsNextStart() => SimulationResult is not null;
 
     // ── ISortableViewModel ───────────────────────────────────────────────
 
@@ -654,62 +524,6 @@ public sealed partial class SkillAdvisorViewModel
             : null;
     }
 
-    /// <summary>
-    /// Resolves the snapshot the simulator should run against, applying the
-    /// user-supplied level/XP overrides for the selected skill if set. Falls
-    /// back to the live active character when no snapshot has been captured.
-    /// Returns null when no character is available at all.
-    /// </summary>
-    private CharacterSnapshot? BuildSimulationStartState(string skillKey)
-    {
-        var baseSnapshot = SimulationStartState ?? _activeChar.ActiveCharacter;
-        if (baseSnapshot is null) return null;
-
-        // No overrides → return the snapshot as-is.
-        if (SimulationStartLevel is null && SimulationStartXpTowardNext is null)
-            return baseSnapshot;
-
-        if (!baseSnapshot.Skills.TryGetValue(skillKey, out var existingSkill))
-            return baseSnapshot;
-
-        var newLevel = SimulationStartLevel ?? existingSkill.Level;
-        var newXp = SimulationStartXpTowardNext ?? existingSkill.XpTowardNextLevel;
-
-        // Re-derive XpNeededForNextLevel from the XP table for the new level
-        // (otherwise editing level-up would carry the *old* level's curve point).
-        var xpAmounts = _engine.ResolveXpTable(skillKey);
-        long newXpNeeded = xpAmounts is not null && newLevel - 1 >= 0 && newLevel - 1 < xpAmounts.Count
-            ? xpAmounts[newLevel - 1]
-            : existingSkill.XpNeededForNextLevel;
-
-        var newSkills = new Dictionary<string, CharacterSkill>(baseSnapshot.Skills, StringComparer.Ordinal)
-        {
-            [skillKey] = new CharacterSkill(newLevel, existingSkill.BonusLevels, newXp, newXpNeeded),
-        };
-
-        return new CharacterSnapshot(
-            baseSnapshot.Name,
-            baseSnapshot.Server,
-            baseSnapshot.ExportedAt,
-            newSkills,
-            baseSnapshot.RecipeCompletions,
-            baseSnapshot.NpcFavor);
-    }
-
-    /// <summary>
-    /// Drops any captured snapshot and clears the level/XP overrides. Called
-    /// when the selected skill or active character changes — both invalidate
-    /// any in-flight "what-if" the user was building.
-    /// </summary>
-    private void ResetSimulationStartState()
-    {
-        SimulationStartState = null;
-        SimulationStartLevel = null;
-        SimulationStartXpTowardNext = null;
-        SimulationStartSource = "Active character";
-        SimulationResult = null;
-    }
-
     private void Reanalyze()
     {
         var active = _activeChar.ActiveCharacter;
@@ -755,11 +569,6 @@ public sealed partial class SkillAdvisorViewModel
     {
         OnUiThread(() =>
         {
-            // Different character → simulator's previous what-if is no longer
-            // meaningful (the snapshot was for the old character). Reset before
-            // rebuilding the skill list so OnSelectedSkillChanged doesn't have
-            // stale state to clear.
-            ResetSimulationStartState();
             BuildSkillNodes();
             Reanalyze();
         });
