@@ -140,6 +140,42 @@ public sealed class LinkTests
         vm.Glyph.Should().Be(LinkGlyph.Npc);
     }
 
+    // ── G-d (#431) reference-state axis ──
+
+    [Fact]
+    public void From_ItemSourceChip_CarriesUnconfirmedState_OrthogonalToNavigable()
+    {
+        // A declared-only residue chip: navigable AND unconfirmed at once. Both
+        // axes must ride through independently (G-d composes with G-c).
+        var chip = new ItemSourceChipVm(
+            "CraftedSnailBoots12", Detail: null, IconId: null,
+            EntityReference: EntityRef.Recipe("CraftedSnailBoots12"), IsNavigable: true,
+            IsUnconfirmed: true,
+            UnconfirmedTooltip: "Declared as a source … does not list this item among its products.");
+
+        var vm = LinkVm.From(chip);
+
+        vm.IsUnconfirmed.Should().BeTrue();
+        vm.UnconfirmedTooltip.Should().Contain("does not list this item among its products");
+        vm.IsNavigable.Should().BeTrue("Unconfirmed is orthogonal to the IsNavigable/Degraded axis");
+        // The provenance slot stays free — the caveat is the state, not provenance.
+        vm.ProvenanceSuffix.Should().BeNull();
+    }
+
+    [Fact]
+    public void From_ItemSourceChip_UnconfirmedDefaultsOff_ForOrdinarySources()
+    {
+        // Back-compat: existing 5-arg constructions stay Confirmed (no underline,
+        // no tail, no tooltip) — every non-residue source is unaffected.
+        var chip = new ItemSourceChipVm("Joeh", Detail: "Vendor", IconId: null,
+            EntityReference: EntityRef.Npc("NPC_Joeh"), IsNavigable: true);
+
+        var vm = LinkVm.From(chip);
+
+        vm.IsUnconfirmed.Should().BeFalse();
+        vm.UnconfirmedTooltip.Should().BeNull();
+    }
+
     // ── Glyph enum → PackIconLucideKind ──
 
     [Theory]

@@ -20,10 +20,20 @@ public sealed record EntityChipVm(
 /// item-detail. Many sources don't map to a v1-tabbed entity kind, so
 /// <see cref="EntityReference"/> is nullable and <see cref="IsNavigable"/> may be false even
 /// when <see cref="EntityReference"/> is present (e.g. an Npc source until NPCs get a tab).
+/// <para>
+/// G-d (#431): <see cref="IsUnconfirmed"/> + <see cref="UnconfirmedTooltip"/> carry the
+/// reference-state axis through to <see cref="LinkVm"/>. A declared-but-uncorroborated
+/// source (the #407 declared-only residue) sets <see cref="IsUnconfirmed"/> and leaves
+/// <see cref="Detail"/> null — the dashed-underline + one-word-tail + tooltip treatment
+/// replaces the #407 stopgap that overloaded <see cref="Detail"/> (→ provenance suffix)
+/// with the verbose caveat. Both default off so every other source row is unaffected.
+/// </para>
 /// </summary>
 public sealed record ItemSourceChipVm(
     string DisplayName,
     string? Detail,
     int? IconId,
     EntityRef? EntityReference,
-    bool IsNavigable);
+    bool IsNavigable,
+    bool IsUnconfirmed = false,
+    string? UnconfirmedTooltip = null);

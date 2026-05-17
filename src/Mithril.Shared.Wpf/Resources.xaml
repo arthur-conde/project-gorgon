@@ -1204,7 +1204,8 @@
                                              FontSize — the text itself already scales
                                              with the Appearance slider via inheritance;
                                              no converter needed at 1em. -->
-                                        <TextBlock Text="{Binding DisplayName}"
+                                        <TextBlock x:Name="NameText"
+                                                   Text="{Binding DisplayName}"
                                                    Foreground="{StaticResource AccentBrush}"
                                                    FontWeight="Normal"
                                                    VerticalAlignment="Center"/>
@@ -1225,6 +1226,23 @@
                                                    FontStyle="Italic"
                                                    VerticalAlignment="Center"
                                                    Visibility="{Binding KindLabel, Converter={StaticResource NullToVis}}"/>
+                                        <!-- G-d (#431) reference-state tail: the one-word
+                                             "· unconfirmed" token for a declared edge the
+                                             inverse data doesn't back. Quaternary, NOT
+                                             italic (distinct register from the italic
+                                             provenance suffix — this is a state token,
+                                             not provenance). Collapsed at rest; revealed
+                                             by the IsUnconfirmed trigger. The dashed
+                                             underline on NameText is the primary signal;
+                                             this tail is the secondary, and the long
+                                             caveat is the HoverBox ToolTip. -->
+                                        <TextBlock x:Name="UnconfirmedTail"
+                                                   Text="· unconfirmed"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="Collapsed"/>
                                         <!-- G-c pending copy affordance: 11px Copy glyph,
                                              revealed only on hover of a non-navigable Link
                                              (HoverCopyGlyph trigger below). Hidden by
@@ -1307,6 +1325,39 @@
                                     <DataTrigger Binding="{Binding Copied, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}}" Value="True">
                                         <Setter TargetName="CopyGlyph" Property="Visibility" Value="Collapsed"/>
                                         <Setter TargetName="CopiedAck" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <!-- G-d (#431) Unconfirmed reference state: declared
+                                         edge the inverse data doesn't corroborate. PRIMARY
+                                         scan-time signal = a 1px dashed underline on the
+                                         gold name in rgba(212,168,71,0.55) (= #8CD4A847);
+                                         no new pigment (the gold name still navigates, the
+                                         underline qualifies it). SECONDARY = the one-word
+                                         "· unconfirmed" tail. The full data-integrity
+                                         caveat is the HoverBox ToolTip (data-driven from
+                                         UnconfirmedTooltip). ORTHOGONAL to IsNavigable
+                                         (Degraded/G-c) — both can be set; the underline
+                                         (border on the name) and the copy-cue (inline
+                                         glyph) live on different sub-elements and stay
+                                         legible together. Provenance suffix is untouched
+                                         and stays free for real provenance. -->
+                                    <DataTrigger Binding="{Binding IsUnconfirmed}" Value="True">
+                                        <Setter TargetName="NameText" Property="TextBlock.TextDecorations">
+                                            <Setter.Value>
+                                                <TextDecorationCollection>
+                                                    <TextDecoration Location="Underline">
+                                                        <TextDecoration.Pen>
+                                                            <Pen Thickness="1" Brush="#8CD4A847">
+                                                                <Pen.DashStyle>
+                                                                    <DashStyle Dashes="2 2"/>
+                                                                </Pen.DashStyle>
+                                                            </Pen>
+                                                        </TextDecoration.Pen>
+                                                    </TextDecoration>
+                                                </TextDecorationCollection>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Setter TargetName="UnconfirmedTail" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="HoverBox" Property="ToolTip" Value="{Binding UnconfirmedTooltip}"/>
                                     </DataTrigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>

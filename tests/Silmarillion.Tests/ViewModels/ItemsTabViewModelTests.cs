@@ -699,7 +699,11 @@ public sealed class ItemsTabViewModelTests
         var chip = vm.DetailViewModel!.Sources!.Single();
         // No "Recipe:" prefix — kind is carried by the Link lead-glyph standard.
         chip.DisplayName.Should().Be("CraftedSnailBoots12");
-        chip.Detail.Should().Be("declared recipe source — not confirmed by recipe data");
+        // G-d (#431): the caveat is the Unconfirmed reference state, NOT an
+        // overloaded provenance suffix. Detail (→ ProvenanceSuffix) stays free.
+        chip.Detail.Should().BeNull();
+        chip.IsUnconfirmed.Should().BeTrue();
+        chip.UnconfirmedTooltip.Should().Contain("does not list this item among its products");
         chip.EntityReference.Should().Be(EntityRef.Recipe("CraftedSnailBoots12"));
     }
 
@@ -722,7 +726,9 @@ public sealed class ItemsTabViewModelTests
 
         var chip = vm.DetailViewModel!.Sources!.Single();
         chip.DisplayName.Should().Be("LiveEvent_BunFu_Flopsy");
-        chip.Detail.Should().Be("declared quest source — not confirmed by quest data");
+        chip.Detail.Should().BeNull();
+        chip.IsUnconfirmed.Should().BeTrue();
+        chip.UnconfirmedTooltip.Should().Contain("does not list this item among its rewards");
         chip.EntityReference.Should().Be(EntityRef.Quest("LiveEvent_BunFu_Flopsy"));
     }
 
@@ -755,7 +761,8 @@ public sealed class ItemsTabViewModelTests
         var sources = vm.DetailViewModel!.Sources!;
         sources.Should().ContainSingle();
         sources[0].EntityReference.Should().Be(EntityRef.Recipe("OrphanApple"));
-        sources[0].Detail.Should().Be("declared recipe source — not confirmed by recipe data");
+        sources[0].Detail.Should().BeNull();
+        sources[0].IsUnconfirmed.Should().BeTrue();
     }
 
     private sealed class StubKindTarget : IReferenceKindTarget

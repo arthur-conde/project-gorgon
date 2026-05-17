@@ -449,26 +449,28 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
 
             var reference = ResolveSourceReference(s);
 
-            // #407 (2)+(3) declared-only residue: a Recipe/Quest declared source with
-            // NO reverse twin survives (never silently dropped), drops its now-
-            // redundant kind prefix (entity kind is carried by the Link lead-glyph
-            // standard, LinkVm.GlyphFor), and carries an in-pane warning — through
-            // the existing ProvenanceSuffix slot (ItemSourceChipVm.Detail) the
-            // migrated grammar already renders — that the declared↔reverse
-            // relationship is asymmetrical (uncorroborated by the recipe/quest
-            // reverse data; a sources/relational coverage signal, see
-            // docs/silmarillion-field-coverage.md §#407). Projection-layer only —
-            // no view / grammar-primitive change.
+            // #407 (2)+(3) declared-only residue: a Recipe/Quest declared source
+            // with NO reverse twin survives (never silently dropped) and drops its
+            // now-redundant kind prefix (entity kind is carried by the Link
+            // lead-glyph standard, LinkVm.GlyphFor). G-d (#431, supersedes the
+            // #407 projection-only stopgap): instead of overloading the provenance
+            // suffix with the verbose caveat, mark the chip Unconfirmed — the Link
+            // primitive renders the ratified dashed-underline + one-word
+            // "· unconfirmed" tail and surfaces the long-form caveat as the
+            // control ToolTip. Detail stays null so the provenance slot is freed.
+            // (see docs/silmarillion-visual-grammar.md §G-d.)
             if (isRecipe || isQuest)
             {
                 chips.Add(new ItemSourceChipVm(
                     DisplayName: reference is not null ? _nameResolver.Resolve(reference) : s.Context!,
-                    Detail: isRecipe
-                        ? "declared recipe source — not confirmed by recipe data"
-                        : "declared quest source — not confirmed by quest data",
+                    Detail: null,
                     IconId: null,
                     EntityReference: reference,
-                    IsNavigable: reference is not null && _navigator.CanOpen(reference)));
+                    IsNavigable: reference is not null && _navigator.CanOpen(reference),
+                    IsUnconfirmed: true,
+                    UnconfirmedTooltip: isRecipe
+                        ? "Declared as a source in this item's sources data, but the linked recipe does not list this item among its products — an unconfirmed cross-reference."
+                        : "Declared as a source in this item's sources data, but the linked quest does not list this item among its rewards — an unconfirmed cross-reference."));
                 continue;
             }
 

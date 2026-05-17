@@ -302,6 +302,17 @@ public sealed partial class ItemDetailViewModel
     /// provenance suffix rides from <see cref="ItemSourceChipVm.Detail"/>).</summary>
     public IReadOnlyList<LinkVm> SourceLinks { get; }
 
+    /// <summary>
+    /// G-d (#431) section-level compounding signal: true iff there is at least one
+    /// Sources row and <em>every</em> one of them is Unconfirmed — the residue is
+    /// the item's only declared provenance (the #407 screenshot case). Drives the
+    /// quaternary <c>unlink</c> glyph on the "Sources" section label so the pane
+    /// doesn't imply provenance it effectively lacks. Get-only; the VM is rebuilt
+    /// per selection so no change notification is needed.
+    /// </summary>
+    public bool SourcesAllUnconfirmed =>
+        SourceLinks.Count > 0 && SourceLinks.All(l => l.IsUnconfirmed);
+
     /// <summary>"Produced by" recipe cross-links as <see cref="LinkVm"/> (matrix #12).</summary>
     public IReadOnlyList<LinkVm> ProducedByRecipeLinks { get; }
 
