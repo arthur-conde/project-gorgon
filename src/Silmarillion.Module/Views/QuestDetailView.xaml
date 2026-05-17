@@ -15,46 +15,44 @@
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Local converter declaration: keeps the resource scoped to this view (no
-                 cross-view merge of the module's Resources.xaml needed). -->
-            <vm:RequirementChipVmConverter x:Key="RequirementChipVmConverter"/>
+            <!-- The bespoke RequirementChipVmConverter is no longer referenced:
+                 the dual-shape rows wrap to a LinkVm in the VM (the pilot
+                 RecipeRequirementRowVm idiom) so no row→EntityChip coercion is
+                 needed. The converter class is now dead code — a follow-up
+                 cleanup, out of this view's 3-file diff-guard scope. -->
 
-            <!-- One projected requirement row. Two render paths chosen by the projector:
-                   - Prefix + ChipName set: "{Prefix} [chip:{ChipName}]" — the entity is a
-                     proper clickable EntityChip when IsNavigable is true; degrades to a
-                     plain pill when the kind isn't tabbed yet. Used for story prerequisites
-                     (Completed: Wolf: Hunt Deer), favor gates (Friends with Joeh (Serbule)),
-                     inventory gates (Has Skinning Knife), etc.
-                   - Otherwise: plain Text only (skill levels, time-of-day, identity, flags). -->
-            <DataTemplate DataType="{x:Type vm:QuestRequirementDisplay}">
+            <!-- One Link, list-density (canonical pilot enumeration pattern). -->
+            <DataTemplate x:Key="EntityLinkListTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="List" Margin="0,0,0,3"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+            </DataTemplate>
+            <!-- One inline Prose Link (giver / turn-in). -->
+            <DataTemplate x:Key="InlineLinkTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="Prose"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
+            </DataTemplate>
+
+            <!-- The canonical dual-shape row (verbatim from the merged Recipe
+                 pilot, which itself was modelled on THIS view): chip row ⇒
+                 Structure inline prefix + Prose Link; prose row ⇒ inert Fact
+                 text. Switch is on Link (object) via NullToVis — never the
+                 string-only NullOrEmptyToVis. -->
+            <DataTemplate DataType="{x:Type vm:QuestRequirementRowVm}">
                 <Grid Margin="0,0,0,3">
-                    <!-- Chip-rendered path: Prefix + EntityChip. -->
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding Link, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="{Binding Prefix}"
+                                   Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
-                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
+                        <ContentControl Content="{Binding Link}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"/>
                     </StackPanel>
-                    <!-- Plain-text path: shown only when ChipName is empty. -->
-                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Text}" VerticalAlignment="Center">
                         <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource FactBodyStyle}">
                                 <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
+                                    <DataTrigger Binding="{Binding Link, Converter={StaticResource NullToVis}}" Value="Visible">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -64,90 +62,74 @@
                 </Grid>
             </DataTemplate>
 
-            <!-- One labelled requirement group (e.g. "Skill / ability gates"). Renders the
-                 group header + nested item rows. Empty groups don't reach the renderer — the
-                 projector culls them. -->
-            <DataTemplate DataType="{x:Type vm:QuestRequirementGroup}">
+            <DataTemplate DataType="{x:Type vm:QuestRewardRowVm}">
+                <Grid Margin="0,0,0,3">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding Link, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="{Binding Prefix}"
+                                   Style="{StaticResource StructureInlinePrefixStyle}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                   Visibility="{Binding Prefix, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <ContentControl Content="{Binding Link}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Text}" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource FactBodyStyle}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Link, Converter={StaticResource NullToVis}}" Value="Visible">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Group container: the Border is layout scaffolding (Phase-1: out
+                 of audit scope) — retained. The gold Label is the #404
+                 box-as-everything collision: dropped → StructureGroupHeaderStyle
+                 (G-b: Structure is never gold). -->
+            <DataTemplate DataType="{x:Type vm:QuestRequirementGroupVm}">
                 <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
                         CornerRadius="3" Padding="8,6" Margin="0,0,0,4">
                     <StackPanel>
-                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"
-                                   Foreground="#FFD4A847"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,3"/>
+                        <TextBlock Text="{Binding Label}"
+                                   Style="{StaticResource StructureGroupHeaderStyle}" Margin="0,0,0,3"/>
                         <ItemsControl ItemsSource="{Binding Requirements}"/>
                     </StackPanel>
                 </Border>
             </DataTemplate>
 
-            <!-- Reward row: prose path for value-shaped rewards (XP, currency), chip path for
-                 entity-shaped rewards (learned ability, taught recipe, lorebook, title). Same
-                 visibility-switch idiom as the requirement template. -->
-            <DataTemplate DataType="{x:Type vm:QuestRewardDisplay}">
-                <Grid Margin="0,0,0,3">
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="{Binding Prefix}" Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center" Margin="0,0,6,0"
-                                   Visibility="{Binding Prefix, Converter={StaticResource NullOrEmptyToVis}}"/>
-                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"
-                                      DataContext="{Binding Converter={StaticResource RequirementChipVmConverter}}"/>
-                    </StackPanel>
-                    <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ChipName, Converter={StaticResource NullOrEmptyToVis}}" Value="Visible">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </Grid>
-            </DataTemplate>
-
-            <DataTemplate DataType="{x:Type vm:QuestRewardGroup}">
+            <DataTemplate DataType="{x:Type vm:QuestRewardGroupVm}">
                 <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
                         CornerRadius="3" Padding="8,6" Margin="0,0,0,4">
                     <StackPanel>
-                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"
-                                   Foreground="#FFD4A847"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,3"/>
+                        <TextBlock Text="{Binding Label}"
+                                   Style="{StaticResource StructureGroupHeaderStyle}" Margin="0,0,0,3"/>
                         <ItemsControl ItemsSource="{Binding Rewards}"/>
                     </StackPanel>
                 </Border>
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:QuestObjectiveRow}">
+            <DataTemplate DataType="{x:Type vm:QuestObjectiveRowVm}">
                 <Border Margin="0,0,0,6" Padding="8,4" Background="#FF1F1F1F"
                         BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="3">
                     <StackPanel>
                         <DockPanel>
+                            <!-- Numbered-list ordinal marker (layout). The index
+                                 gold is dropped (G-b — a Fact value is never gold);
+                                 it reads as inert Fact in its marker box. -->
                             <Border DockPanel.Dock="Left" Background="#FF252525" CornerRadius="3"
                                     Padding="6,1" Margin="0,0,8,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Index}" Foreground="#FFD4A847"
-                                           FontSize="{DynamicResource AppFontSizeSmall}"/>
+                                <TextBlock Text="{Binding Index}" Style="{StaticResource FactBodyStyle}"/>
                             </Border>
-                            <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#FFFFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <TextBlock c:FormattedText.Text="{Binding Description}"
+                                       Style="{StaticResource FactBodyStyle}" VerticalAlignment="Center"/>
                         </DockPanel>
-                        <TextBlock Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeSmall}"
-                                   Margin="32,2,0,0"
+                        <TextBlock Style="{StaticResource FactBodyStyle}" Margin="32,2,0,0"
                                    Visibility="{Binding Number, Converter={StaticResource NullOrEmptyToVis}}">
                             <Run Text="Repeat ×"/>
                             <Run Text="{Binding Number, Mode=OneWay}"/>
@@ -160,213 +142,146 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterText="{Binding InternalName}">
+    <!-- Phase-5 fan-out · view 8 of 8 (Quest — the dual-shape origin) — a
+         consistency-diff against the merged Recipe pilot, NOT fresh design.
+         The pilot's RecipeRequirementRowVm was modelled on THIS view's
+         dual-shape rows; the migration applies that exact wrapper back to its
+         source. #404 Phase-2: giver/turn-in + reward/pre-give/follow-up chips =
+         1:1 Link; gold group labels + RepeatabilityChip (T11) + the named G-b
+         "Quest favor line" = inert Fact (gold dropped); the dialogue Expander =
+         Control (ratified E3 — correctly classified, chrome left as-is).
+
+         Footer (matrix #14 / G-a · ratified E5): stop binding
+         DetailExportHost.FooterText, place <c:FactFooter/> at the foot (host
+         retained). InternalName is a cross-entity reference key ⇒ copyable KEY. -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
-
             <StackPanel>
-                <!-- Header: name + location chip + badges -->
+                <!-- Header: Fact-title + collapsed badge strip + badges line. -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
-                               Foreground="#FFD4A847"
-                               FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                CornerRadius="3" Padding="6,2"
-                                Visibility="{Binding Level, Converter={StaticResource NullOrEmptyToVis}}">
-                            <TextBlock Foreground="#CCFFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}">
-                                <Run Text="Level "/>
-                                <Run Text="{Binding Level, Mode=OneWay}"/>
-                            </TextBlock>
-                        </Border>
-                        <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
-                                Visibility="{Binding LocationDisplay, Converter={StaticResource NullOrEmptyToVis}}">
-                            <TextBlock Text="{Binding LocationDisplay}" Foreground="#CCFFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}"/>
-                        </Border>
-                        <!-- Repeatability cadence. Gold-tinted to draw the eye — distinguishing
-                             a daily from a one-shot is the first piece of info a player wants. -->
-                        <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
-                                CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
-                                ToolTip="{Binding RepeatabilityDetail}"
-                                Visibility="{Binding RepeatabilityChip, Converter={StaticResource NullOrEmptyToVis}}">
-                            <TextBlock Text="{Binding RepeatabilityChip}" Foreground="#FFD4A847"
-                                       FontWeight="SemiBold"
-                                       FontSize="{DynamicResource AppFontSizeHint}"/>
-                        </Border>
-                    </StackPanel>
-                    <TextBlock Text="{Binding BadgesDisplay}" Foreground="#88FFFFFF" FontStyle="Italic"
-                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,4,0,0"
+                    <TextBlock Text="{Binding DisplayName}"
+                               Style="{StaticResource FactTitleStyle}"/>
+                    <c:FactTable DataContext="{Binding HeaderStrip}"
+                                 HorizontalAlignment="Left" Margin="0,4,0,0"/>
+                    <TextBlock Text="{Binding BadgesDisplay}"
+                               Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                               Margin="0,4,0,0"
                                Visibility="{Binding BadgesDisplay, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
 
-                <!-- Description sits high in the layout so it sets context before the player
-                     scans objectives / requirements. Embedded <i>/<b> markup parsed by the
-                     FormattedText attached property. -->
-                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                <!-- Description -->
+                <TextBlock c:FormattedText.Text="{Binding Description}"
+                           Style="{StaticResource FactBodyStyle}"
                            MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
                            Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
 
-                <!-- Giver / turn-in NPCs. Two labelled chip slots — these typically refer to the
-                     same NPC for repeatable quests (giver = turn-in); render both regardless so the
-                     player can verify, and the chip degradation handles missing data. -->
+                <!-- Giver / Turn-in — Structure inline prefix + Prose Link. -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding GiverChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Giver:" Foreground="#88FFFFFF" FontWeight="SemiBold"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding GiverLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Giver:" Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding GiverChip}">
-                            <ContentControl.ContentTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.ContentTemplate>
-                        </ContentControl>
+                        <ContentControl Content="{Binding GiverLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                Visibility="{Binding TurnInChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Turn in:" Foreground="#88FFFFFF" FontWeight="SemiBold"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding TurnInLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Turn in:" Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding TurnInChip}">
-                            <ContentControl.ContentTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.ContentTemplate>
-                        </ContentControl>
+                        <ContentControl Content="{Binding TurnInLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
 
                 <!-- Objectives -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding Objectives.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Objectives" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding Objectives}"/>
+                            Visibility="{Binding ObjectiveRowVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Objectives" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ObjectiveRowVms}"/>
                 </StackPanel>
 
                 <!-- Requirements -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding RequirementGroups.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding RequirementGroups}"/>
+                            Visibility="{Binding RequirementGroupVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Requirements" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding RequirementGroupVms}"/>
                 </StackPanel>
 
-                <!-- Requirements to sustain — separately labelled so the player can tell apart
-                     "to bestow" from "to keep". Same shape, different label. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SustainRequirementGroups.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Maintain to keep quest" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SustainRequirementGroups}"/>
+                            Visibility="{Binding SustainRequirementGroupVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Maintain to keep quest" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding SustainRequirementGroupVms}"/>
                 </StackPanel>
 
-                <!-- Rewards: items + recipes (clickable chips) + grouped value rewards + favor.
-                     Order matters — clickable cross-link rewards first, value rewards second. -->
+                <!-- Item / recipe rewards — Link enumerations. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding RewardItemChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Item rewards" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding RewardItemChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding RewardItemLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Item rewards" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding RewardItemLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding RewardRecipeChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Recipe rewards" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding RewardRecipeChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding RewardRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Recipe rewards" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding RewardRecipeLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding RewardGroups.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <ItemsControl ItemsSource="{Binding RewardGroups}"/>
+                            Visibility="{Binding RewardGroupVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <ItemsControl ItemsSource="{Binding RewardGroupVms}"/>
                 </StackPanel>
 
-                <TextBlock Foreground="#FFD4A847" FontStyle="Italic"
-                           FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,10"
+                <!-- Favor reward — the NAMED G-b "Quest favor line": gold
+                     dropped → inert Fact (italic kept). -->
+                <TextBlock Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                           Margin="0,0,0,10"
                            Visibility="{Binding FavorRewardDisplay, Converter={StaticResource NullOrEmptyToVis}}"
                            Text="{Binding FavorRewardDisplay}"/>
 
-                <!-- Pre-give: items + recipes handed over when the quest is accepted. -->
+                <!-- Pre-give: items + recipes -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding PreGiveItemChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Given when accepted" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding PreGiveItemChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding PreGiveItemLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Given when accepted" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding PreGiveItemLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding PreGiveRecipeChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Recipes given when accepted" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding PreGiveRecipeChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding PreGiveRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Recipes given when accepted" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding PreGiveRecipeLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Follow-up quests — clickable from day one since they self-reference this tab. -->
+                <!-- Follow-up quests -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding FollowUpQuestChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Leads to" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding FollowUpQuestChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:QuestDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding FollowUpQuestLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Leads to" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding FollowUpQuestLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- NPC dialogue (preface / midway / completion). Mostly flavor text — tucked
-                     into an Expander that defaults closed so it doesn't dominate the pane. PG's
-                     <i>Speaker:</i> dialogue markup is parsed by the FormattedText attached
-                     property. -->
+                <!-- NPC dialogue — ratified E3: in-place disclosure of
+                     non-entity prose = Control (correctly classified). The
+                     Expander chrome is left as-is (the canonical pattern
+                     defines no Expander treatment — restyling it would be fresh
+                     design); only the inner flavor prose moves to FactBody. -->
                 <Expander Header="Quest dialogue"
                           Foreground="#88FFFFFF" Background="Transparent"
                           BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
@@ -374,20 +289,25 @@
                           IsExpanded="False"
                           Visibility="{Binding HasFlavorText, Converter={StaticResource BoolToVis}}">
                     <StackPanel Margin="0,6,0,0">
-                        <TextBlock c:FormattedText.Text="{Binding PrefaceFormatted}" Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                        <TextBlock c:FormattedText.Text="{Binding PrefaceFormatted}"
+                                   Style="{StaticResource FactBodyStyle}"
                                    MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
                                    Visibility="{Binding PrefaceFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
-                        <TextBlock c:FormattedText.Text="{Binding MidwayFormatted}" Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                        <TextBlock c:FormattedText.Text="{Binding MidwayFormatted}"
+                                   Style="{StaticResource FactBodyStyle}"
                                    MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
                                    Visibility="{Binding MidwayFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
-                        <TextBlock c:FormattedText.Text="{Binding SuccessFormatted}" Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeSmall}" TextWrapping="Wrap"
+                        <TextBlock c:FormattedText.Text="{Binding SuccessFormatted}"
+                                   Style="{StaticResource FactBodyStyle}"
                                    MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,8"
                                    Visibility="{Binding SuccessFormatted, Converter={StaticResource NullOrEmptyToVis}}"/>
                     </StackPanel>
                 </Expander>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). Quest
+                     InternalName is a cross-entity reference KEY ⇒ copyable.
+                     FactFooterVm.None() self-hides at 0 ids. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>
