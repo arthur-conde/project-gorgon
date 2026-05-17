@@ -144,9 +144,10 @@ an unwired edge. This is the priority and stands alone.
 - Everything else unsurfaced is deliberate; do not file "increase coverage" issues
   against it. If a future audit re-flags class 1–4 properties, point it here.
 
-### Visual grammar (#404) — RESOLVED
+### Visual grammar (#404) — RESOLVED for the Silmarillion tab detail views
 
-- **No fact / control / link visual grammar** (#404) — **RESOLVED 2026-05-17.**
+- **No fact / control / link visual grammar** (#404) — **RESOLVED 2026-05-17
+  for the nine Silmarillion *tab* detail views.**
   The original debt: the shared `EntityChip` was visually identical to the
   header stat badges (`Skill N`, `MaxUses`, cooldown) and broke prose in
   `{prefix} [chip]` rows; root cause was the *absence of a grammar*
@@ -157,20 +158,36 @@ an unwired edge. This is the priority and stands alone.
   Closed by the #404 program: the ratified five-tier grammar
   (Fact · Control · Link · Set-reference · Structure) is encoded as shared WPF
   primitives (`Link` / `SetRef` / `FactTable` / `FactFooter` + the Structure
-  styles — Phase 4) and **every** Silmarillion detail view is migrated to them
-  (Phase 5: the Recipe pilot + the eight-view fan-out — PlayerTitle, Lorebook,
-  Area, Effect, Npc, StorageVault, Ability, Quest). The link tier is the V2
+  styles — Phase 4) and **every Silmarillion *tab* detail view** is migrated to
+  them (Phase 5: the Recipe pilot + the eight-view fan-out — PlayerTitle,
+  Lorebook, Area, Effect, Npc, StorageVault, Ability, Quest). The link tier is the V2
   form (small lead-icon + gold name, no box); stat badges read inert via
   `FactTable`; keyword/stacking chips are Set-reference (ratified E4); the
   footer is the G-a/E5 `FactFooter`. The full grammar +
   amendments + decision log: [`docs/silmarillion-visual-grammar.md`](silmarillion-visual-grammar.md).
 
   A Phase-6 conformance guardrail
-  (`DetailViewGrammarConformanceTests`) fails the build if any Silmarillion
-  detail view re-introduces a legacy entity-reference chip
-  (`EntityChip`/`ItemSourceChip`) instead of the shared primitive, so this
-  cannot silently regress. Do not re-flag detail-pane chips as a coverage gap;
-  the presentation axis is closed.
+  (`DetailViewGrammarConformanceTests`) fails the build if any
+  `src/Silmarillion.Module/Views/*DetailView.xaml` re-introduces a legacy
+  entity-reference chip (`EntityChip`/`ItemSourceChip`) instead of the shared
+  primitive, so the Silmarillion tab detail views cannot silently regress. Do
+  not re-flag *those* detail-pane chips as a coverage gap; that surface is
+  closed.
+
+- **Remaining grammar surface (NOT closed): the shared
+  `Mithril.Shared.Wpf/ItemDetailView` / `ItemDetailWindow`.** Item has no
+  Silmarillion *tab* detail by design (see "Modeled but no detail view"
+  above) — its detail is the cross-module shared pane (`ItemDetailWindow`
+  popups, Bilbo, cross-link "open in window"). That pane was deliberately
+  **out of #404 Phase-5 scope** (Phase-5 anti-goal #3 forbade editing shared
+  `Mithril.Shared.Wpf` primitives) and still carries the pre-#404 boxed-chip
+  grammar — so clicking an item Link from a now-migrated Silmarillion view
+  lands in an un-migrated window (the grammar break is visible at that
+  navigation boundary). The Phase-4 primitives + the pilot pattern make this
+  migration mechanical, but it is shared infra with cross-module blast radius
+  and is its **own** gated effort, tracked separately — NOT presumed closed by
+  the #404 program. The conformance guardrail intentionally does **not** cover
+  it (it scopes to `src/Silmarillion.Module/Views`).
 
 ## History
 

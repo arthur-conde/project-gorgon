@@ -22,6 +22,15 @@ namespace Silmarillion.Tests.Views;
 /// guarantee (see <c>docs/silmarillion-field-coverage.md</c> §"Visual grammar
 /// (#404) — RESOLVED" and <c>docs/silmarillion-visual-grammar.md</c>).
 /// </para>
+/// <para>
+/// <b>Scope:</b> intentionally only <c>src/Silmarillion.Module/Views/*DetailView.xaml</c>
+/// — the nine Silmarillion <em>tab</em> detail panes #404 Phase-5 migrated. It does
+/// NOT cover the shared <c>Mithril.Shared.Wpf/ItemDetailView</c> /
+/// <c>ItemDetailWindow</c>: Item has no Silmarillion tab detail by design, that pane
+/// is cross-module shared infra (Phase-5 anti-goal #3 forbade editing it), and its
+/// grammar migration is its own separately-tracked effort — explicitly NOT closed by
+/// #404 (see the "Remaining grammar surface" bullet in the coverage doc).
+/// </para>
 /// </summary>
 public sealed class DetailViewGrammarConformanceTests
 {
