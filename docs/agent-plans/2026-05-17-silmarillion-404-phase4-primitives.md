@@ -118,3 +118,70 @@ resource key in the PR description.
   `ItemSourceChip`, `DetailExportHost`, `Resources.xaml`).
 - Ratified target: [`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md) (+ its Phase-4 carry-forward).
 - Phase 3 provenance: [`2026-05-17-silmarillion-404-phase3-design.md`](2026-05-17-silmarillion-404-phase3-design.md) (EXECUTED).
+
+---
+
+## Execution outcome (2026-05-17) — built, verified, NOT pushed
+
+Status: **EXECUTED, local-only.** Six commits on `claude/silmarillion-404-phase4`
+(`be03cee` token reconciliation · `1b4b7d7` Link · `0dcbcfa` SetRef ·
+`e2bb73a` FactTable · `c014f4e` FactFooter · `58c6546` Fact/Structure/Control
+styles). Not pushed; no PR (per maintainer instruction).
+
+Verification: `Mithril.slnx` build clean (0W/0E, no RG1000 flake);
+`Mithril.Shared.Tests` 1094/1094 (incl. 67 new: Link 31, SetRef 11, FactTable
+11, FactFooter 14); `Silmarillion.Tests` 478/478 (consumer unaffected); guard
+green — **no `*DetailView.xaml` / EntityChip / ItemSourceChip / DetailExportHost
+modified** (legacy controls coexist; Phase 5 migrates call sites).
+
+**Shell-boot smoke — deferred to an interactive run, with rationale.** A WPF
+GUI launch isn't feasible from the automated context. Residual risk is
+unusually low *by construction*: additions are purely additive (new types +
+**opt-in `x:Key`'d** styles — no implicit `TargetType` override, so no existing
+control's render changes); no DI service / ctor injection / new project added
+(Shell already `ProjectReference`s Mithril.Shared.Wpf); the 1094 STA WPF tests
+load the edited `Resources.xaml`. The specific failure modes the smoke exists
+to catch (stale-DLL deploy, DI cycle, missing ProjectReference, implicit-style
+regression) are structurally absent here. Still owed before "shipped" per the
+project's "tests green ≠ shipped" rule — flagged, not claimed.
+
+### Phase-4 reconciliation flags & under-specs (for designer / maintainer)
+
+None silently decided. Each is a genuine grammar under-specification or a
+WPF-platform constraint; all are cheap to re-tune (mostly one token/trigger).
+
+1. **`SetRefTextBrush` pigment** — grammar's literal `--info #88B0E0` reconciled
+   to the repo's real query-keyword `#FFCFE8FF` (intent = q-keyword kinship;
+   literal was a designer approximation). Designer: confirm or pin `#88B0E0`.
+2. **Link pending-hover tint** — grammar specifies only "neutral/cooler tint";
+   used `#14FFFFFF` (~8% white). Invented within a qualitative constraint —
+   designer pin a token.
+3. **Link `Ingredient` glyph** — no `EntityKind` maps to it; adapters yield it
+   never. Phase-5 ingredient-slot call sites must pass `LinkGlyph.Ingredient`
+   explicitly.
+4. **Link `KindLabel` + `ProvenanceSuffix` co-occurrence** — grammar shares one
+   trailing slot; rendered provenance-then-kind. Confirm intended order /
+   mutual-exclusion.
+5. **SetRef unwired-click** — grammar specifies only the never-grey-pill rest
+   guarantee, no click behavior; chose safe no-op. Designer may want a "filter
+   not available yet" affordance.
+6. **SetRef hover "border brightens"** — used neutral `BorderStrongBrush`; may
+   be intended blue-tinted (one-token swap).
+7. **FactTable range / event-gated Capacity shapes** — per carry-forward #3,
+   Phase 5 maps these to Grid/Scalar or plain Fact lines; not built, not
+   precluded (free-string Value).
+8. **FactTable `Quiet` weight** — grammar footer-quiet is 9.5pt; used nearest
+   committed token `AppFontSizeSmall` (10). No 9.5 token invented.
+9. **FactFooter hover-reveal** — grammar says "declares only on contact"; used
+   a hard Collapsed→Visible swap (mirrors Link's ratified G-c precedent), no
+   fade/opacity invented.
+10. **FactFooter divider width vs right-alignment** — divider stretches full
+    content width, cells right-aligned; host placement (Phase 5) governs the
+    container.
+11. **Structure tracked-uppercase** — WPF `TextBlock` has no letter-spacing /
+    `CharacterCasing`. Styles deliver family/size/weight/pigment/margin;
+    uppercasing + 0.08em tracking deferred to Phase-5 call site (or a future
+    behavior). Not hacked.
+12. **Control accent-fill variant** — primary/accent-fill ("`--accent` with
+    `--accent-fg`") not built; no `--accent-fg` token exists yet. Phase-5
+    concern when a primary Control is first needed.
