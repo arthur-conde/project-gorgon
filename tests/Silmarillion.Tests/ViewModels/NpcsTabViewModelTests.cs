@@ -4,6 +4,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.Query;
 using Mithril.TestSupport;
 using Silmarillion.Navigation;
@@ -958,6 +959,100 @@ public sealed class NpcsTabViewModelTests
             new NpcStoreServicePoco { Type = "Store", CapIncreases = capIncreases },
         },
     };
+
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void AreaLink_AndCrossLinkLinks_ProjectLegacyChips()
+    {
+        var recipe = new Recipe { Key = "r1", InternalName = "BakeBread", Name = "Bake Bread", IconId = 7 };
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple", IconId = 3 };
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh", AreaName = "AreaSerbule", AreaFriendlyName = "Serbule" } },
+            RecipesTaughtByNpcMap = { ["NPC_Joeh"] = new[] { recipe } },
+            ItemsSoldByNpcMap = { ["NPC_Joeh"] = new[] { apple } },
+        };
+        var vm = new NpcsTabViewModel(
+            refData, NavFactory.WithKinds(EntityKind.Area, EntityKind.Recipe, EntityKind.Item),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var d = vm.DetailViewModel!;
+
+        d.AreaLink.Should().NotBeNull();
+        d.AreaLink!.DisplayName.Should().Be(d.AreaChip!.DisplayName);
+        d.AreaLink.Glyph.Should().Be(LinkGlyph.Location);
+        d.TaughtRecipeLinks.Select(l => l.DisplayName)
+            .Should().Equal(d.TaughtRecipes.Select(c => c.DisplayName));
+        d.TaughtRecipeLinks.Should().OnlyContain(l => l.Glyph == LinkGlyph.Recipe);
+        d.SoldItemLinks.Select(l => l.DisplayName)
+            .Should().Equal(d.SoldItems.Select(c => c.DisplayName));
+        d.AreaLink.IsNavigable.Should().Be(d.AreaChip.IsNavigable, "adapter preserves navigability");
+    }
+
+    [Fact]
+    public void ServiceRowVms_StoreCapKeywords_BecomeTagFormSetRefs_ActionableMirrorsNavigability()
+    {
+        var npc = new Npc
+        {
+            Name = "Joeh",
+            Services = new NpcServicePoco[]
+            {
+                new NpcStoreServicePoco
+                {
+                    Type = "Store",
+                    CapIncreases = ["Despised:10000:Food,Potion", "Comfortable:50000:"],
+                },
+            },
+        };
+        var refData = new StubReferenceData { NpcsByKey = { ["NPC_Joeh"] = npc } };
+
+        // Wired: ItemByKeyword target registered ⇒ navigable ⇒ actionable Set-ref.
+        var vm = new NpcsTabViewModel(
+            refData, NavFactory.WithKinds(EntityKind.ItemByKeyword),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var store = vm.DetailViewModel!.ServiceRowVms.Single();
+
+        store.Type.Should().Be("Store");
+        var line0 = store.Details[0];
+        line0.SetRefs.Select(s => s.SetRef.Label).Should().Equal("Food", "Potion");
+        line0.SetRefs.Should().OnlyContain(s =>
+            !s.SetRef.IsSummaryForm && s.SetRef.IsActionable && s.Activate != null,
+            "Store-cap keyword chips are actionable tag-form Set-refs (ratified E4)");
+        store.Details[1].SetRefs.Should().BeEmpty("the empty-keyword row carries no chips");
+
+        // Unwired: no ItemByKeyword target ⇒ availability corollary (tag-form
+        // Set-ref, IsActionable=false, no command — NOT a Fact box).
+        var vmU = new NpcsTabViewModel(
+            refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+        vmU.SelectedRow = vmU.AllNpcs.Single();
+        var u = vmU.DetailViewModel!.ServiceRowVms.Single().Details[0].SetRefs[0];
+        u.SetRef.IsActionable.Should().BeFalse();
+        u.Activate.Should().BeNull();
+        SetRef.ResolveClick(u.SetRef).Should().Be(SetRefClickAction.Unavailable);
+    }
+
+    [Fact]
+    public void Footer_NpcInternalName_IsCopyableCrossReferenceKey()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
+        };
+        var vm = new NpcsTabViewModel(
+            refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllNpcs.Single();
+
+        var f = vm.DetailViewModel!.Footer;
+        f.Ids.Should().ContainSingle();
+        f.Ids[0].LabelTag.Should().Be("KEY");
+        f.Ids[0].Value.Should().Be("NPC_Joeh");
+        f.Ids[0].Copyable.Should().BeTrue("the NPC InternalName is a cross-entity reference key");
+        FactFooter.ResolveCellClick(f.Ids[0]).Should().Be(FactFooterCellAction.Copy);
+    }
 
     private sealed class StubReferenceData : IReferenceDataService
     {

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:local="clr-namespace:Silmarillion.Views"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -14,36 +14,67 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- One Set-reference chip (the pilot keyword-slot idiom). Item
+                 DataContext is an NpcFilterSetRefVm (SetRef + per-chip
+                 Activate); unwired (Activate null / IsActionable false) ⇒
+                 availability-corollary no-op on the blue chassis. -->
+            <DataTemplate x:Key="FilterSetRefTemplate" DataType="{x:Type vm:NpcFilterSetRefVm}">
+                <ContentControl Content="{Binding SetRef}" Margin="0,0,4,4">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate>
+                            <c:SetRef ActivateCommand="{Binding DataContext.Activate, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </DataTemplate>
+
+            <!-- One Link, list-density (canonical pilot enumeration pattern). -->
+            <DataTemplate x:Key="EntityLinkListTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="List" Margin="0,0,0,3"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterText="{Binding InternalName}">
+    <!-- Phase-5 fan-out · view 5 (Npc) — a consistency-diff against the merged
+         Recipe pilot, NOT fresh design. #404 Phase-2: the Area chip is an
+         inline Link; Teaches/Sells/Quests are Link enumerations; the Store-cap
+         ItemKeyword detail chips are Set-references (ratified E4 — keyword
+         filters, NOT Link); the gold service-Type label is the named G-b
+         "Npc service type" violation; the NPC InternalName footer is a
+         cross-entity reference key (copyable KEY). The service card Border is
+         layout scaffolding (Phase-1: out of audit scope) — retained.
+
+         Footer (matrix #14 / G-a · ratified E5): the pilot move — stop binding
+         DetailExportHost.FooterText, place <c:FactFooter/> at the foot (host
+         retained unchanged). -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
             <StackPanel>
-                <!-- Header: name + area + position -->
+                <!-- Header: Fact-title + Area Link + position ───
+                     Title T4 → FactTitleStyle (bold/gold/size dropped, G-b).
+                     "Area:" → Structure inline prefix (E1); AreaChip → Prose
+                     Link. Pos is a quiet mono coordinate Fact (#404 ✅ T2
+                     "mono flags"; no gold violation) — left as-is. -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
-                               Foreground="#FFD4A847"
-                               FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DisplayName}"
+                               Style="{StaticResource FactTitleStyle}"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                        <!-- Area chip: navigable EntityChip into the Areas tab. NullToVis (NOT
-                             NullOrEmptyToVis) because the binding is object-typed; the latter
-                             tests `value as string` and silently collapses chip references —
-                             bitten twice already (PR #298, PR #302). -->
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                                    Visibility="{Binding AreaChip, Converter={StaticResource NullToVis}}">
-                            <TextBlock Text="Area: " Foreground="#88FFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                       VerticalAlignment="Center"/>
-                            <ContentControl Content="{Binding AreaChip}" VerticalAlignment="Center">
-                                <ContentControl.Resources>
-                                    <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
+                                    Visibility="{Binding AreaLink, Converter={StaticResource NullToVis}}">
+                            <TextBlock Text="Area:"
+                                       Style="{StaticResource StructureInlinePrefixStyle}"
+                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ContentControl Content="{Binding AreaLink}" VerticalAlignment="Center">
+                                <ContentControl.ContentTemplate>
+                                    <DataTemplate>
+                                        <c:Link Density="Prose"
+                                                ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
                                     </DataTemplate>
-                                </ContentControl.Resources>
+                                </ContentControl.ContentTemplate>
                             </ContentControl>
                         </StackPanel>
                         <TextBlock Text="{Binding Pos}" Foreground="#88FFFFFF"
@@ -54,52 +85,42 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Services -->
+                <!-- Services — section label → Structure. The card Border is
+                     layout scaffolding (kept). Type → StructureGroupHeaderStyle
+                     (the named G-b "Npc service type" gold dropped). Favor →
+                     inert Fact (de-boxed). Detail text → FactBody; Store-cap
+                     ItemKeyword chips → tag-form Set-references (E4). -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding Services.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Services" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding Services}">
+                            Visibility="{Binding ServiceRowVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Services" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ServiceRowVms}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Background="#FF222222" BorderBrush="#22FFFFFF" BorderThickness="1"
                                         CornerRadius="3" Padding="8,6" Margin="0,0,0,4">
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Type}" FontWeight="SemiBold"
-                                                       Foreground="#FFD4A847"
-                                                       FontSize="{DynamicResource AppFontSizeHint}"/>
-                                            <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                                    CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
-                                                    Visibility="{Binding MinFavorTier, Converter={StaticResource NullOrEmptyToVis}}">
-                                                <TextBlock Foreground="#CCFFFFFF"
-                                                           FontSize="{DynamicResource AppFontSizeSmall}">
-                                                    <Run Text="Favor: "/>
-                                                    <Run Text="{Binding MinFavorTier, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </Border>
+                                            <TextBlock Text="{Binding Type}"
+                                                       Style="{StaticResource StructureGroupHeaderStyle}"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Style="{StaticResource FactBodyStyle}"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0"
+                                                       Visibility="{Binding HasMinFavorTier, Converter={StaticResource BoolToVis}}">
+                                                <Run Text="Favor: "/><Run Text="{Binding MinFavorTier, Mode=OneWay}"/>
+                                            </TextBlock>
                                         </StackPanel>
                                         <ItemsControl ItemsSource="{Binding Details}" Margin="0,4,0,0"
                                                       Visibility="{Binding Details.Count, Converter={StaticResource PositiveIntToVis}}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <StackPanel Margin="0,0,0,1">
-                                                        <TextBlock Text="{Binding Text}" Foreground="#CCFFFFFF"
-                                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                                   TextWrapping="Wrap"/>
-                                                        <!-- Per-line chip strip — Store cap rows surface their keyword tuple
-                                                             as ItemKeyword chips (filter the Items tab on click). Hidden when
-                                                             the line carries no chips (every non-Store row). -->
-                                                        <ItemsControl ItemsSource="{Binding Chips}" Margin="0,2,0,0"
-                                                                      Visibility="{Binding Chips.Count, Converter={StaticResource PositiveIntToVis}}">
+                                                        <TextBlock Text="{Binding Text}" Style="{StaticResource FactBodyStyle}"/>
+                                                        <ItemsControl ItemsSource="{Binding SetRefs}" Margin="0,2,0,0"
+                                                                      ItemTemplate="{StaticResource FilterSetRefTemplate}"
+                                                                      Visibility="{Binding SetRefs.Count, Converter={StaticResource PositiveIntToVis}}">
                                                             <ItemsControl.ItemsPanel>
                                                                 <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                                                             </ItemsControl.ItemsPanel>
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
                                                     </StackPanel>
                                                 </DataTemplate>
@@ -112,117 +133,82 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Teaches recipes -->
+                <!-- Teaches recipes — Link enumeration (Density="List"). -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding TaughtRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Teaches recipes" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding TaughtRecipes}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding TaughtRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Teaches recipes" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding TaughtRecipeLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Teaches abilities -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding TaughtAbilities.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Teaches abilities" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding TaughtAbilities}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding TaughtAbilityLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Teaches abilities" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding TaughtAbilityLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Sells items -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SoldItems.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Sells items" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SoldItems}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding SoldItemLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Sells items" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding SoldItemLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Quests this NPC gives, turns in, or anchors favor for. Routes through
-                     QuestsByGiverNpc — chips become navigable once the Quests tab ships. -->
+                <!-- Quests this NPC gives, turns in, or anchors favor for. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding Quests.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Quests" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding Quests}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:NpcDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding QuestLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Quests" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding QuestLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Gift preferences -->
+                <!-- Gift preferences — section label → Structure. The Desire
+                     gold-boxed pill is the #404 box-as-everything collision:
+                     de-boxed + gold dropped (G-b) → inert Fact prose. -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding Preferences.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Gift preferences" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Gift preferences" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding Preferences}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <DockPanel Margin="0,0,0,3">
-                                    <Border DockPanel.Dock="Left" Background="#FF252525" BorderBrush="#33FFFFFF"
-                                            BorderThickness="1" CornerRadius="3" Padding="5,1" Margin="0,0,6,0"
-                                            VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Desire}" Foreground="#FFD4A847"
-                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                    </Border>
-                                    <TextBlock Foreground="#CCFFFFFF"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
-                                               TextWrapping="Wrap" VerticalAlignment="Center">
-                                        <Run Text="{Binding DisplayName, Mode=OneWay}"/>
-                                        <Run Text=" ("/><Run Text="{Binding Pref, Mode=OneWay, StringFormat={}{0:+0.#;-0.#}}"/><Run Text="×)"/>
-                                    </TextBlock>
-                                </DockPanel>
+                                <TextBlock Style="{StaticResource FactBodyStyle}" Margin="0,0,0,3">
+                                    <Run Text="{Binding Desire, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text=" — "/>
+                                    <Run Text="{Binding DisplayName, Mode=OneWay}"/>
+                                    <Run Text=" ("/><Run Text="{Binding Pref, Mode=OneWay, StringFormat={}{0:+0.#;-0.#}}"/><Run Text="×)"/>
+                                </TextBlock>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <!-- Gift sentiment tiers (Friends, BestFriends, ...) — the thresholds at which
-                         this NPC accepts gifts. Rendered as a comma-joined plain line below the
-                         preference rows. -->
-                    <TextBlock Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeSmall}"
-                               Margin="0,4,0,0" TextWrapping="Wrap"
+                    <TextBlock Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                               Margin="0,4,0,0"
                                Visibility="{Binding GiftSentimentTiers.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <Run Text="Accepts gifts at: " FontStyle="Italic"/>
+                        <Run Text="Accepts gifts at: "/>
                         <Run Text="{Binding GiftSentimentTiersDisplay, Mode=OneWay}"/>
                     </TextBlock>
                 </StackPanel>
 
-                <!-- Description (FormattedText parses any inline <i>/<b> markup). -->
-                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF" FontStyle="Italic"
-                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                <!-- Description (FormattedText parses inline <i>/<b>). -->
+                <TextBlock c:FormattedText.Text="{Binding Description}"
+                           Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
                            MaxWidth="460" HorizontalAlignment="Left" Margin="0,0,0,10"
                            Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). The NPC
+                     InternalName is a cross-entity reference KEY ⇒ copyable.
+                     FactFooterVm.None() self-hides at 0 ids. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>
