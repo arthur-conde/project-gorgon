@@ -4,6 +4,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -230,6 +231,101 @@ public sealed class QuestsTabViewModelTests
         columns.Should().Contain("IsCancellable");
         columns.Should().Contain("FavorNpcDisplayName");
         columns.Should().Contain("DisplayedLocation");
+    }
+
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void HeaderStrip_CollapsesBadges_AndFooterIsCopyableKey()
+    {
+        var refData = new StubReferenceData
+        {
+            QuestsByInternalNameMap =
+            {
+                ["Q1"] = new Quest
+                {
+                    InternalName = "Q1", Name = "Quest One",
+                    Level = 25, DisplayedLocation = "Serbule", ReuseTime_Hours = 24,
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllQuests.Single();
+        var d = vm.DetailViewModel!;
+
+        // Level / Location / Repeatability badge boxes collapse into ONE inert
+        // Strip (value-only); the named G-b T11 Repeatability gold is gone by
+        // construction (FactTableVm has no brush).
+        d.HeaderStrip.Layout.Should().Be(FactTableLayout.Strip);
+        d.HeaderStrip.Pairs.Select(p => p.Value).Should().Equal("Level 25", "Serbule", "Daily");
+        d.HeaderStrip.Pairs.Should().OnlyContain(p => p.Label == null);
+
+        // Quest InternalName is a cross-entity reference key ⇒ copyable KEY.
+        d.Footer.Ids.Should().ContainSingle();
+        d.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        d.Footer.Ids[0].Value.Should().Be("Q1");
+        d.Footer.Ids[0].Copyable.Should().BeTrue();
+        FactFooter.ResolveCellClick(d.Footer.Ids[0]).Should().Be(FactFooterCellAction.Copy);
+    }
+
+    [Fact]
+    public void LinkProjections_GiverAndRewardItems_MirrorLegacyChips()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByInternalNameMap = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
+            QuestsByInternalNameMap =
+            {
+                ["Q1"] = new Quest
+                {
+                    InternalName = "Q1", Name = "Quest One", QuestNpc = "NPC_Joeh",
+                    Rewards_Items = new[] { new QuestItemRef { Item = "Apple", StackSize = 2 } },
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllQuests.Single();
+        var d = vm.DetailViewModel!;
+
+        d.GiverLink.Should().NotBeNull();
+        d.GiverLink!.DisplayName.Should().Be(d.GiverChip!.DisplayName);
+        d.GiverLink.Glyph.Should().Be(LinkGlyph.Npc);
+        d.GiverLink.IsNavigable.Should().Be(d.GiverChip.IsNavigable, "adapter preserves navigability");
+        d.RewardItemLinks.Select(l => l.DisplayName)
+            .Should().Equal(d.RewardItemChips.Select(c => c.DisplayName));
+    }
+
+    [Fact]
+    public void RequirementGroupVms_WrapGroups_PreservingProseRowsWithNullLink()
+    {
+        var refData = new StubReferenceData
+        {
+            QuestsByInternalNameMap =
+            {
+                ["Q1"] = new Quest
+                {
+                    InternalName = "Q1", Name = "Quest One",
+                    Requirements = new QuestRequirement[]
+                    {
+                        new MinSkillLevelRequirement { Skill = "Sword", Level = "10" },
+                    },
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllQuests.Single();
+        var d = vm.DetailViewModel!;
+
+        // Wrapper count/labels mirror the legacy groups (the pilot
+        // RecipeRequirementRowVm idiom applied to its origin).
+        d.RequirementGroupVms.Select(g => g.Label)
+            .Should().Equal(d.RequirementGroups.Select(g => g.Label));
+        var rows = d.RequirementGroupVms.SelectMany(g => g.Requirements).ToList();
+        rows.Should().NotBeEmpty();
+        // A skill-level gate is a prose row ⇒ Link null, Text preserved verbatim.
+        rows.Should().OnlyContain(r => r.Link == null);
+        rows.Select(r => r.Text).Should().BeEquivalentTo(
+            d.RequirementGroups.SelectMany(g => g.Requirements).Select(x => x.Text));
     }
 
     private static QuestsTabViewModel BuildVm(StubReferenceData refData) =>
