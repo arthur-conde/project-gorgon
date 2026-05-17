@@ -5,7 +5,6 @@
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -20,62 +19,82 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterSegments="{Binding FooterSegments}">
+    <!-- Phase-5 fan-out · view 2 (Lorebook) — a consistency-diff against the
+         merged Recipe pilot, NOT fresh design. #404 Phase-2 classified
+         Lorebook's elements: one inline Link (the folded-in area chip), one
+         Set-reference (the "Bestowed by N →" ghost-gold button), Fact body, and
+         the E5 "carries BOTH identifiers" footer.
+
+         Footer (matrix #14 / G-a · ratified E5): the pilot move — stop binding
+         DetailExportHost.FooterSegments and place <c:FactFooter/> at the foot
+         of the wrapped content. The host wrapper is RETAINED unchanged
+         (export-camera + snapshot — shared infra, not edited). Lorebook is the
+         2-identifier case: ROW (storage-only Book_N, inert) · KEY (cross-ref
+         InternalName, copyable). -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer is owned by the wrapping DetailExportHost via FooterSegments (independent click-to-copy chips: envelope key + InternalName). -->
-
             <StackPanel>
-                <!-- ─── Header: title + category subtitle ─── -->
+                <!-- ─── Header: Fact-title + category subtitle ───
+                     Matrix T4 → FactTitleStyle (inline gold/header-font/XLarge
+                     dropped, G-b). No title-glyph: Lorebook has no entity icon.
+                     CategorySubtitle "from <category>" is a Fact (the book's
+                     category) at quiet weight → FactBodyStyle + italic (the
+                     pilot description treatment); string-typed binding so
+                     NullOrEmptyToVis is correct here. -->
                 <StackPanel Margin="0,0,0,10">
                     <TextBlock Text="{Binding DisplayName}"
-                               FontFamily="{DynamicResource AppHeaderFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeXLarge}"
-                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                               Style="{StaticResource FactTitleStyle}"/>
                     <TextBlock Text="{Binding CategorySubtitle}"
-                               Foreground="#88FFFFFF" FontStyle="Italic"
-                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
                                Margin="0,2,0,0"
                                Visibility="{Binding CategorySubtitle, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
 
-                <!-- ─── Metadata strip: location hint + folded-in area chip ─── -->
+                <!-- ─── Metadata strip: location hint + folded-in area Link ───
+                     LocationHint: Fact body (matrix T2) → FactBodyStyle +
+                     italic. "Found in: [area]" is the pilot inline-ref idiom:
+                     Structure inline prefix (E1 — auto-UPPERCASE+tracked by the
+                     shared StructureLabel behavior; keep the ':') + a
+                     Density="Prose" Link via the LinkVm adapter, ClickCommand
+                     wired exactly as the old chip. -->
                 <StackPanel Margin="0,0,0,10">
                     <TextBlock Text="{Binding LocationHint}"
-                               Foreground="#CCFFFFFF" FontStyle="Italic"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" Margin="0,0,0,4"
+                               Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                               Margin="0,0,0,4"
                                Visibility="{Binding HasLocationHint, Converter={StaticResource BoolToVis}}"/>
                     <StackPanel Orientation="Horizontal"
                                 Visibility="{Binding HasArea, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Found in: " Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ContentControl Content="{Binding AreaChip}">
-                            <ContentControl.Resources>
-                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:LorebookDetailView}}}"/>
+                        <TextBlock Text="Found in:"
+                                   Style="{StaticResource StructureInlinePrefixStyle}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding AreaLink}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:Link Density="Prose"
+                                            ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:LorebookDetailView}}}"/>
                                 </DataTemplate>
-                            </ContentControl.Resources>
+                            </ContentControl.ContentTemplate>
                         </ContentControl>
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── Body ─── -->
+                <!-- ─── Body ───
+                     Matrix T2 → FactBodyStyle (inline #EEFFFFFF / size /
+                     LineHeight dropped — the style owns them). FormattedText
+                     parses inline markup. The external-guide placeholder is the
+                     same Fact-body prose at quieter weight, kept inline-italic
+                     via BasedOn FactBodyStyle. -->
                 <Border Margin="0,0,0,10">
                     <Grid>
                         <TextBlock wpf:FormattedText.Text="{Binding BodyText}"
-                                   Foreground="#EEFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeLarge}"
-                                   TextWrapping="Wrap" LineHeight="22"
+                                   Style="{StaticResource FactBodyStyle}"
                                    Visibility="{Binding HasBody, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock Text="This book points to an external resource — see the in-game Volunteer Guide."
-                                   Foreground="#88FFFFFF" FontStyle="Italic"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   TextWrapping="Wrap">
+                        <TextBlock Text="This book points to an external resource — see the in-game Volunteer Guide.">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FactBodyStyle}">
+                                    <Setter Property="FontStyle" Value="Italic"/>
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding HasBody}" Value="True">
@@ -89,46 +108,31 @@
                 </Border>
 
                 <!-- ─── Items that bestow this book (#318 popup-from-index) ───
-                     Single-reason 1:N. A one-line affordance opens the shared
-                     ProvenancePopupWindow fed ItemsBestowingLorebook[InternalName]
-                     directly (single flat section, no synthetic kind, no deep-link,
-                     no navigator history). Hidden entirely when nothing bestows it. -->
-                <Button HorizontalAlignment="Left" Cursor="Hand" Padding="6,2"
-                        Command="{Binding ShowBestowingItemsPopupCommand}"
-                        Visibility="{Binding HasBestowingItems, Converter={StaticResource BoolToVis}}">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="BorderBrush" Value="#66D4A847"/>
-                            <Setter Property="BorderThickness" Value="1"/>
-                            <Setter Property="Foreground" Value="#FFD4A847"/>
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#22D4A847"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                <StackPanel Orientation="Horizontal">
-                                    <icon:PackIconLucide Kind="BookMarked" Width="12" Height="12"
-                                                         Foreground="{TemplateBinding Foreground}"
-                                                         Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                    <TextBlock Foreground="{TemplateBinding Foreground}"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
-                                               VerticalAlignment="Center">
-                                        <Run Text="Bestowed by "/><Run Text="{Binding BestowingItemsTotal, Mode=OneWay}"/><Run Text=" item(s) →"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Border>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
+                     Matrix T7′ ghost-gold action button → the shared
+                     Set-reference summary-form. The bespoke gold button +
+                     bespoke ControlTemplate collapse into <c:SetRef>:
+                     "Bestowed by · N matches →", actionable via the existing
+                     ShowBestowingItemsPopupCommand (no command rewiring). The
+                     pilot keyword-slot SetRef idiom verbatim: ContentControl
+                     hosts the SetRefVm, ActivateCommand resolves the command on
+                     the ContentControl's (view-model) DataContext. Gold→blue is
+                     the ratified G-b correction. Section hides via
+                     HasBestowingItems. -->
+                <ContentControl Content="{Binding BestowingItemsSetRef}"
+                                HorizontalAlignment="Left" Margin="0,0,0,4"
+                                Visibility="{Binding HasBestowingItems, Converter={StaticResource BoolToVis}}">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate>
+                            <c:SetRef ActivateCommand="{Binding DataContext.ShowBestowingItemsPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). 2 ids:
+                     ROW (storage-only Book_N, inert) · KEY (cross-ref
+                     InternalName, copyable). FactFooterVm collapses to one KEY
+                     in the defensive equal case; None() self-hides at 0. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>

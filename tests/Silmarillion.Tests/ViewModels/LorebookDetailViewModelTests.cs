@@ -206,6 +206,110 @@ public sealed class LorebookDetailViewModelTests
             .Which.Reference.InternalName.Should().Be("Only");
     }
 
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void Footer_DivergentIds_AreInertRow_PlusCopyableKey_InOrder()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("Book_101", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "TheWastedWishes",
+            Title = "The Wasted Wishes", Text = "x",
+        });
+        var vm = BuildDetail(refData, "TheWastedWishes");
+
+        // E5 "carries BOTH" case, order preserved from the legacy pair: the
+        // storage-only Book_N envelope key is the INERT ROW; the cross-entity
+        // reference InternalName is the copyable KEY.
+        vm.Footer.Ids.Should().HaveCount(2);
+        var row = vm.Footer.Ids[0];
+        row.LabelTag.Should().Be("ROW");
+        row.Value.Should().Be("Book_101");
+        row.Copyable.Should().BeFalse("the Book_N envelope key is storage-only (E5)");
+        var key = vm.Footer.Ids[1];
+        key.LabelTag.Should().Be("KEY");
+        key.Value.Should().Be("TheWastedWishes");
+        key.Copyable.Should().BeTrue("InternalName is the cross-entity reference key (E5)");
+        FactFooter.ResolveCellClick(row).Should().Be(FactFooterCellAction.Inert);
+        FactFooter.ResolveCellClick(key).Should().Be(FactFooterCellAction.Copy);
+    }
+
+    [Fact]
+    public void Footer_KeyEqualsName_CollapsesToSingleCopyableKey()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("SameName", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "SameName", Title = "Same", Text = "x",
+        });
+        var vm = BuildDetail(refData, "SameName");
+
+        vm.Footer.Ids.Should().ContainSingle();
+        vm.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        vm.Footer.Ids[0].Value.Should().Be("SameName");
+        vm.Footer.Ids[0].Copyable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AreaLink_ProjectsTheFoldedInAreaChip_AsAProseLink()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddArea(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        refData.AddLorebook("Book_1", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "B", Title = "B",
+            Keywords = new[] { "AreaSerbule" }, Text = "x",
+        });
+        var vm = BuildDetail(refData, "B", areaKey: "AreaSerbule");
+
+        vm.AreaLink.Should().NotBeNull();
+        vm.AreaLink!.DisplayName.Should().Be("Serbule");
+        // Glyph proves the Area-kind → Link adapter mapping (GlyphFor).
+        vm.AreaLink.Glyph.Should().Be(LinkGlyph.Location, "Area kind maps to the location glyph");
+        vm.AreaLink.IsNavigable.Should().Be(vm.AreaChip!.IsNavigable, "adapter preserves navigability");
+    }
+
+    [Fact]
+    public void AreaLink_IsNull_WhenNoArea()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("Book_1", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "B", Title = "B", Text = "x",
+        });
+        BuildDetail(refData, "B").AreaLink.Should().BeNull();
+    }
+
+    [Fact]
+    public void BestowingItemsSetRef_IsActionableSummaryForm_OrNull()
+    {
+        var refData = new FakeReferenceData();
+        refData.AddLorebook("Book_101", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "TheWastedWishes", Title = "The Wasted Wishes", Text = "x",
+        });
+        refData.SetBestowing("TheWastedWishes",
+            new Item { InternalName = "ItemA", Name = "Item A" },
+            new Item { InternalName = "ItemB", Name = "Item B" });
+        var vm = BuildDetail(refData, "TheWastedWishes");
+
+        vm.BestowingItemsSetRef.Should().NotBeNull();
+        vm.BestowingItemsSetRef!.Label.Should().Be("Bestowed by");
+        vm.BestowingItemsSetRef.MatchCount.Should().Be(2);
+        vm.BestowingItemsSetRef.IsSummaryForm.Should().BeTrue();
+        vm.BestowingItemsSetRef.IsActionable.Should().BeTrue();
+        vm.BestowingItemsSetRef.DisplayText.Should().Be("Bestowed by · 2 matches →");
+
+        // No bestowing items → no Set-ref (section hides).
+        var refData2 = new FakeReferenceData();
+        refData2.AddLorebook("Book_1", new LorebookPoco
+        {
+            Category = "Stories", InternalName = "Lonely", Title = "Lonely", Text = "x",
+        });
+        BuildDetail(refData2, "Lonely").BestowingItemsSetRef.Should().BeNull();
+    }
+
     // ── Real-data sanity walk (cookbook *Verification ladder* — load-bearing per #298) ──
 
     [Fact]
