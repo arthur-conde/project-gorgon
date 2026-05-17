@@ -85,7 +85,7 @@ Net: gold now reads as **title** (serif, large, no glyph) or **link** (sans, bod
 
 The Link primitive **is** `<icon> <gold name>` plus:
 
-- **provenance suffix** *(optional)* — italic, `--fg-quaternary`, 10pt, trailing: *— from Distil Brine.* Renders when Link acts as ItemSourceChip; absent everywhere else.
+- **provenance suffix** *(optional)* — italic, `--fg-quaternary`, 10pt, trailing: *— from Distil Brine.* Renders when Link acts as ItemSourceChip; absent everywhere else. **Not for name discriminators** — strings that are part of the entity's canonical name (`(Enchanted)`, `(Max-Enchanted)`, Mk. N suffixes, variant parentheticals) stay inside the gold name span. Provenance is *where this thing came from*, not *which variant of it this is*.
 - **kind label** *(optional, rare)* — same slot: *— skill*, *— consumable*. Used when icon+name aren't enough.
 - **degrade flag** *(optional)* — changes hover only (see above).
 
@@ -123,8 +123,8 @@ EntityChip and ItemSourceChip both collapse into this primitive in Phase 4.
 |---|---|
 | **Role** | Navigate to another row in the master-detail. Subsumes EntityChip and ItemSourceChip. |
 | **Pigment** | Name: `--accent` `#D4A847`. Provenance suffix: `--fg-quaternary` italic. |
-| **Glyph** | Lucide, **12px**, **lead** (before name). Type-coded: `sparkles` (skill), `flask-conical` (recipe), `droplet`/`flask-round` (ingredient), `user-round` (NPC), `map-pin` (location), `package` (item), `sword` (combat ability). |
-| **Shape · spacing** | No border. No surface at rest. 2px tap padding (`margin: 0 -2px`) so the tint hover-box fits visually. Inline with text baseline. |
+| **Glyph** | **Hybrid icon family — CDN sprite if `iconId` is set, Lucide otherwise** *(G3 amendments 2026-05-17 — see decision log)*. Sprites resolved as `https://cdn.projectgorgon.com/{version}/icons/icon_{iconId}.png`, rendered with `image-rendering: pixelated`. Tangible entities (items, recipes, NPCs, monsters) carry an `iconId`; abstract entities (skills, abilities, locations, keywords, factions) do not, and fall back to a kind-mapped Lucide glyph. **Sizes are em-relative, not px**, so they scale with the user's Appearance font-size slider: prose-density Link `1em` sprite / `0.75em` Lucide; list-density Link `1.5em` sprite / `1.125em` Lucide. One Link primitive, two inputs — `iconId` (drives family) and `density` (drives size); no entity-kind discriminator at the call site. |
+| **Shape · spacing** | No border. No surface at rest. 2px tap padding (`margin: 0 -2px`) so the tint hover-box fits visually. Inline with text baseline. **Two row modes:** `Density="Prose"` — inline in a sentence, single Link or short list; `Density="List"` — own line per entry, sprite scaled up to `1.5em`, line-height ~1.7. |
 | **Hover** | 10% gold tint background (`rgba(212,168,71,0.10)`). |
 | **Degrade** | Rest = identical to shipped. Hover swaps nav-tint for neutral row-tint + trailing `⧉` copy glyph. Click copies the canonical name. |
 | **Replaces** | EntityChip, ItemSourceChip. |
@@ -181,6 +181,29 @@ Set-reference also spans loud (toolbar filter chip) → quiet (inline keyword in
 
 ---
 
+## All sizes are em-relative, not px
+
+Mithril's Appearance settings give users a body-font picker and a base-size slider (~11–18pt). The Link primitive — and every tier in this spec — sizes itself in `em` relative to inherited font-size, so a user bumping body to 15pt gets sprites at 20px and Lucide at 15px without anything in the spec changing.
+
+**Exception: the title-glyph (entity icon next to the Fact-title) stays a fixed 40px.** It's an entity stamp, not a UI element subject to accessibility scaling. Pixel art at non-integer scale multiples looks bad; fixing the size keeps the sprite at integer-pixel render. No border, no surface fill when an image is present — the image just sits in the slot.
+
+| Element | Size | At 12pt default | At 15pt | At 18pt |
+|---|---|---|---|---|
+| Body | `1em` (defined by user) | 16px | 20px | 24px |
+| Title (Fact-title) | `1.5em` | 24px | 30px | 36px |
+| Title-glyph (entity icon) | **`40px` fixed** | 40px | 40px | 40px |
+| Link prose sprite | `1em` | 16px | 20px | 24px |
+| Link list sprite | `1.5em` | 24px | 30px | 36px |
+| Link prose Lucide | `0.75em` | 12px | 15px | 18px |
+| Link list Lucide | `1.125em` | 18px | ~22px | 27px |
+| Stat strip | `0.9em` | ~14px | ~18px | ~22px |
+| Footer ID | `0.78em` | ~12.5px | ~15.6px | ~18.7px |
+| Section / Structure label | `0.78em` (tracked) | ~12.5px | ~15.6px | ~18.7px |
+
+Phase 4 implements the Link primitive with `Density="Prose|List"` as its sole sizing input; the renderer multiplies inherited `FontSize` by the appropriate factor (a `FontSize × n` converter is the cleanest XAML approach).
+
+---
+
 ## Decision log
 
 Reconciled to the authoritative #404 thread (the bundle draft's speculative
@@ -194,6 +217,8 @@ log can't drift).
 | Phase 2 | [comment 4468177334](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4468177334) | Nine-view consolidated matrix + 16-treatment inventory. |
 | G2 | [comment 4468464536](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4468464536) | Inventory cleared; E1/E3/E4 ratified, E5/E6 scoped; G-a / G-b / G-c flagged open. |
 | **G3** | this document (2026-05-17) | **G-a / G-b / G-c closed; one visual target per tier ratified. Phase 4 unblocked.** |
+| **G3 amend 1** | [#404 comment 4469052562](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4469052562) (2026-05-17) | **Link lead element → hybrid icon family** (sprite for tangible nouns, Lucide fallback for abstract). + provenance suffix ≠ name-discriminator. Surgical single-rule; Phase-5 Recipe pilot G4 finding. |
+| **G3 amend 2** | #404 (2026-05-17) | **System-wide em-relative sizing + Link `Density`** (Prose/List) + **new fixed-40px title-glyph** rule. Root-cause of the pilot's "sprites too small at 12px" finding (px ignored the Appearance accessibility slider). Scope expansion *consciously accepted by maintainer* — re-touches Link + FactTable + FactFooter + Structure + Fact-title (all Phase-4 primitives) + adds the title-glyph element. Supersedes amend-1's fixed-12px. Pilot re-run on PR #411. |
 
 ---
 

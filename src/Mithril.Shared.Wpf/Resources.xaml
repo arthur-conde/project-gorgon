@@ -1156,18 +1156,56 @@
                                         CornerRadius="{StaticResource GrammarRadiusMd}"
                                         Padding="2,0">
                                     <StackPanel Orientation="Horizontal">
-                                        <!-- 12px LEAD glyph. Collapsed for LinkGlyph.None. -->
-                                        <icon:PackIconLucide
-                                            Width="12" Height="12"
+                                        <!-- LEAD element · G3 hybrid icon family
+                                             (amend 1) + em-relative size (amend 2,
+                                             SUPERSEDES amend-1's fixed 12px). Two
+                                             mutually-exclusive elements in the one lead
+                                             slot: a real CDN sprite (preferred when
+                                             IconId>0 / HasSprite) ELSE the type-coded
+                                             Lucide fallback. Switch is HasSprite
+                                             (LinkVm bool: int>0, object-safe — no
+                                             converter) via the DataTriggers below.
+                                             SIZE: em-relative — Width/Height bind the
+                                             Link's INHERITED FontSize (AncestorType
+                                             c:Link) through FontSizeTimes with the
+                                             ratified per-family factor. Defaults are
+                                             the Prose factors (sprite ×1.0, Lucide
+                                             ×0.75); the Density=List trigger swaps to
+                                             the list factors (×1.5 / ×1.125). Mirrors
+                                             Link.LeadFactor (unit-tested). -->
+                                        <!-- Preferred: real game-art sprite. Collapsed
+                                             by default; the HasSprite=True trigger
+                                             reveals it (and hides the Lucide). IconImage
+                                             self-collapses internally if IconId<=0.
+                                             NearestNeighbor = the WPF equivalent of the
+                                             grammar's image-rendering: pixelated, so
+                                             pixel-art stays crisp at any em scale. -->
+                                        <c:IconImage x:Name="LeadSprite"
+                                            Width="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.0}"
+                                            Height="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.0}"
+                                            RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                            Margin="0,0,4,0"
+                                            VerticalAlignment="Center"
+                                            IconId="{Binding IconId}"
+                                            Visibility="Collapsed"/>
+                                        <!-- Fallback: em-relative LEAD Lucide. Collapsed
+                                             for LinkGlyph.None (LinkGlyphToVis); ALSO
+                                             hidden when a sprite is present
+                                             (HasSprite=True trigger). -->
+                                        <icon:PackIconLucide x:Name="LeadLucide"
+                                            Width="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.75}"
+                                            Height="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.75}"
                                             Margin="0,0,4,0"
                                             VerticalAlignment="Center"
                                             Foreground="{StaticResource AccentBrush}"
                                             Kind="{Binding Glyph, Converter={StaticResource LinkGlyphToLucideKind}}"
                                             Visibility="{Binding Glyph, Converter={StaticResource LinkGlyphToVis}}"/>
-                                        <!-- Name: gold, body weight, AppFontSize. -->
+                                        <!-- Name: gold, body weight, inherited (em)
+                                             FontSize — the text itself already scales
+                                             with the Appearance slider via inheritance;
+                                             no converter needed at 1em. -->
                                         <TextBlock Text="{Binding DisplayName}"
                                                    Foreground="{StaticResource AccentBrush}"
-                                                   FontSize="{DynamicResource AppFontSize}"
                                                    FontWeight="Normal"
                                                    VerticalAlignment="Center"/>
                                         <!-- Trailing ProvenanceSuffix: italic, quaternary,
@@ -1211,6 +1249,34 @@
                                     </StackPanel>
                                 </Border>
                                 <ControlTemplate.Triggers>
+                                    <!-- G3 hybrid lead switch: a real sprite present
+                                         (HasSprite = IconId>0) wins — reveal the sprite,
+                                         hide the Lucide fallback. When False, both
+                                         elements keep their default visibility (sprite
+                                         Collapsed; Lucide per LinkGlyphToVis), i.e. the
+                                         pre-amendment Lucide-only behaviour. -->
+                                    <DataTrigger Binding="{Binding HasSprite}" Value="True">
+                                        <Setter TargetName="LeadSprite" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="LeadLucide" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <!-- G3-amend-2 Density=List: swap the lead em
+                                         factors from the Prose defaults (sprite ×1.0,
+                                         Lucide ×0.75) to the list factors (×1.5 /
+                                         ×1.125). Density is a DP on the c:Link
+                                         ancestor (mirrors the Copied AncestorType
+                                         binding below); the size still binds the
+                                         Link's inherited FontSize so it stays
+                                         em-relative. Exactly Link.LeadFactor. -->
+                                    <DataTrigger Binding="{Binding Density, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}}" Value="List">
+                                        <Setter TargetName="LeadSprite" Property="Width"
+                                                Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.5}"/>
+                                        <Setter TargetName="LeadSprite" Property="Height"
+                                                Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.5}"/>
+                                        <Setter TargetName="LeadLucide" Property="Width"
+                                                Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.125}"/>
+                                        <Setter TargetName="LeadLucide" Property="Height"
+                                                Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.125}"/>
+                                    </DataTrigger>
                                     <!-- Navigable hover: 10% gold tint + Hand cursor. -->
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
@@ -1293,34 +1359,36 @@
                             Background="Transparent" BorderThickness="0" Padding="0">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <!-- The chassis. Rest state is token-fixed and does
-                                     NOT vary with IsActionable (availability
-                                     corollary). Hover-only setters below. -->
-                                <Border x:Name="Chassis"
-                                        Background="{StaticResource SetRefIdleFillBrush}"
-                                        BorderBrush="{StaticResource SetRefBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource GrammarRadiusSm}"
-                                        Padding="8,1">
-                                    <StackPanel Orientation="Horizontal">
-                                        <!-- Stacking ordinal prefix: small,
-                                             quaternary, leading. Hidden via the VM
-                                             bool HasOrdinal (object-safe; no
-                                             converter). -->
-                                        <TextBlock x:Name="OrdinalPrefix"
-                                                   Text="{Binding OrdinalText}"
-                                                   Margin="0,0,4,0"
-                                                   Foreground="{StaticResource TextQuaternaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSizeXSmall}"
-                                                   VerticalAlignment="Center"/>
-                                        <!-- The shape-baked body: tag-form = bare
-                                             Label; summary-form = "{Label} · N →". -->
+                                <!-- Row = ordinal list-marker OUTSIDE the chassis
+                                     (dim mono, left gutter ~8px, ordered-list
+                                     style — ratified specimen) + the blue chip
+                                     box. The ordinal is NOT inside the rectangle. -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="OrdinalPrefix"
+                                               Text="{Binding OrdinalText}"
+                                               Margin="0,0,8,0"
+                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                               FontSize="{DynamicResource AppFontSizeXSmall}"
+                                               VerticalAlignment="Center"/>
+                                    <!-- The chassis. Rest state is token-fixed and
+                                         does NOT vary with IsActionable
+                                         (availability corollary). Hover-only
+                                         setters below. Holds only the shape-baked
+                                         body: tag-form = bare Label; summary-form
+                                         = "{Label} · N matches →". -->
+                                    <Border x:Name="Chassis"
+                                            Background="{StaticResource SetRefIdleFillBrush}"
+                                            BorderBrush="{StaticResource SetRefBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{StaticResource GrammarRadiusSm}"
+                                            Padding="8,1">
                                         <TextBlock Text="{Binding DisplayText}"
                                                    Foreground="{StaticResource SetRefTextBrush}"
                                                    FontSize="{DynamicResource AppFontSizeHint}"
                                                    VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+                                </StackPanel>
                                 <ControlTemplate.Triggers>
                                     <!-- Hide the ordinal prefix entirely when the VM
                                          carries no SlotOrdinal (positionally inert /
@@ -1409,13 +1477,18 @@
                     <Grid x:Name="Root" Grid.IsSharedSizeScope="True">
                         <!-- STRIP: one TextBlock bound to the pure StripText
                              helper (separator injected between segments only). -->
+                        <!-- G3-amend-2: stat-strip text = 0.9em (was the fixed
+                             AppFontSizeHint=11). EM-SOURCE: the c:FactTable
+                             ancestor's inherited FontSize (FactTable sets no
+                             FontSize itself → no cycle, AncestorType not Self).
+                             ×0.9 via FontSizeTimes. -->
                         <TextBlock x:Name="StripView"
                                    Visibility="Collapsed"
                                    Text="{Binding StripText}"
                                    TextWrapping="Wrap"
                                    Foreground="{StaticResource TextPrimaryBrush}"
                                    FontFamily="{DynamicResource AppFontFamily}"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                   FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.9}"/>
 
                         <!-- GRID: vertical 2-column, label left, value
                              right-aligned on a shared column. -->
@@ -1434,13 +1507,13 @@
                                                    Margin="0,0,16,0"
                                                    Foreground="{StaticResource TextTertiaryBrush}"
                                                    FontFamily="{DynamicResource AppFontFamily}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                   FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.9}"/>
                                         <TextBlock Grid.Column="1"
                                                    Text="{Binding Value}"
                                                    HorizontalAlignment="Right"
                                                    Foreground="{StaticResource TextPrimaryBrush}"
                                                    FontFamily="{DynamicResource AppFontFamily}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                                   FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.9}"/>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -1453,7 +1526,7 @@
                                    Text="{Binding Pairs[0].Value}"
                                    Foreground="{StaticResource TextPrimaryBrush}"
                                    FontFamily="{DynamicResource AppFontFamily}"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                   FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.9}"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <!-- ONE trigger set selects the layout view. This IS the
@@ -1478,8 +1551,12 @@
                             <Setter TargetName="StripView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
                             <Setter TargetName="ScalarView" Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
                             <Setter TargetName="ScalarView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
-                            <Setter TargetName="StripView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
-                            <Setter TargetName="ScalarView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
+                            <!-- G3-amend-2: footer-quiet weight = the Footer-ID
+                                 tier size, 0.78em (was the fixed AppFontSizeSmall=
+                                 10). Same em-source as the strip (c:FactTable
+                                 ancestor), ×0.78. -->
+                            <Setter TargetName="StripView" Property="FontSize" Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"/>
+                            <Setter TargetName="ScalarView" Property="FontSize" Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactTable}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"/>
                         </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -1568,23 +1645,35 @@
                                                          only; the first cell
                                                          suppresses it. Never part
                                                          of any copy payload. -->
+                                                    <!-- G3-amend-2: Footer-ID tier =
+                                                         0.78em (was fixed
+                                                         AppFontSizeSmall=10). The tiny
+                                                         KEY/ROW label is the same
+                                                         0.78em (grammar: "the tiny
+                                                         KEY/ROW label"), was
+                                                         AppFontSizeXSmall=9. EM-SOURCE:
+                                                         the c:FactFooter ancestor's
+                                                         inherited FontSize (FactFooter
+                                                         sets no FontSize → no cycle).
+                                                         Sep middot tracks the value
+                                                         size so it stays on-line. -->
                                                     <TextBlock x:Name="Sep"
                                                                Text="{x:Static c:FactFooterVm.CellSeparator}"
                                                                Foreground="{StaticResource TextQuaternaryBrush}"
-                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactFooter}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"
                                                                VerticalAlignment="Center"/>
-                                                    <!-- Tiny UPPERCASE tag. -->
+                                                    <!-- Tiny UPPERCASE KEY/ROW tag. -->
                                                     <TextBlock x:Name="Tag"
                                                                Text="{Binding LabelTag}"
                                                                Margin="0,0,4,0"
                                                                Foreground="{StaticResource TextQuaternaryBrush}"
-                                                               FontSize="{DynamicResource AppFontSizeXSmall}"
+                                                               FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactFooter}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"
                                                                VerticalAlignment="Center"/>
                                                     <!-- Mono value (tertiary). -->
                                                     <TextBlock Text="{Binding Value}"
                                                                Foreground="{StaticResource TextTertiaryBrush}"
                                                                FontFamily="{DynamicResource AppMonoFontFamily}"
-                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactFooter}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"
                                                                VerticalAlignment="Center"/>
                                                     <!-- Hover-revealed 11px Copy
                                                          glyph (copyable only).
@@ -1605,7 +1694,7 @@
                                                                Text="copied ✓"
                                                                Margin="4,0,0,0"
                                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType={x:Type c:FactFooter}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"
                                                                VerticalAlignment="Center"
                                                                Visibility="Collapsed"/>
                                                 </StackPanel>
@@ -1682,13 +1771,37 @@
          Phase 5 call site (pass already-upper text; tracking would need a
          custom behavior). Surfaced in the Phase 4 reconciliation flags. -->
 
-    <!-- Fact · title-loud: Cambria 18 / 600 / accent, one per pane. -->
+    <!-- Fact · title-loud: Cambria / 600 / accent, one per pane. G3-amend-2:
+         size is 1.5em (was the fixed AppFontSizeHeader=18, which equalled 1.5×
+         the AppFontSize=12 default — now it TRACKS the Appearance slider).
+         EM-SOURCE MECHANISM (documented per the dispatch): a Style setter cannot
+         RelativeSource Self FontSize without a circular self-reference (the
+         setter writes FontSize; reading Self.FontSize re-reads the written
+         value). So the 1em source is the NEAREST ANCESTOR's inherited
+         (TextElement.FontSize) via FindAncestor (FindAncestor skips Self → no
+         cycle); that ancestor carries the body em the title would otherwise
+         inherit. ×1.5 through FontSizeTimes. -->
     <Style x:Key="FactTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource AppHeaderFontFamily}"/>
-        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeHeader}"/>
+        <Setter Property="FontSize"
+                Value="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type FrameworkElement}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=1.5}"/>
         <Setter Property="FontWeight" Value="SemiBold"/><!-- WPF SemiBold == weight 600 -->
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- G3-amend-2 NEW: the title-glyph rule. The entity icon shown next to a
+         Fact-title is a FIXED 40px IconImage — an "entity stamp", explicitly
+         EXEMPT from accessibility (em) scaling (pixel art at non-integer scale
+         looks bad; 40px keeps an integer-pixel render). No border, no surface /
+         fill: the image just sits in the slot. NearestNeighbor = the WPF
+         equivalent of the grammar's image-rendering: pixelated. Opt-in x:Key'd
+         (TargetType IconImage) so only the explicitly-tagged header icon picks
+         it up; nothing else changes. -->
+    <Style x:Key="FactTitleGlyphStyle" TargetType="{x:Type c:IconImage}">
+        <Setter Property="Width"  Value="40"/>
+        <Setter Property="Height" Value="40"/>
+        <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor"/>
     </Style>
 
     <!-- Fact · body: Segoe UI 12 / fg-primary. -->
@@ -1699,14 +1812,26 @@
         <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
 
-    <!-- Structure · section label: fg-tertiary, SemiBold, ~9pt, 10px top gap.
-         Never gold, no glyph (enforced by being a bare TextBlock style). -->
+    <!-- Structure · section label: fg-tertiary, SemiBold, 10px top gap.
+         Never gold, no glyph (enforced by being a bare TextBlock style).
+         G3-amend-2: size = 0.78em (was the fixed AppFontSizeXSmall=9; only the
+         SIZE changes). Same circular-Style-setter constraint as FactTitleStyle
+         → 1em source is the NEAREST ANCESTOR's inherited (TextElement.FontSize)
+         via FindAncestor (skips Self → no cycle), ×0.78.
+         G4 (ratified): the tracked-UPPERCASE treatment (text-transform:uppercase
+         + letter-spacing ≈0.08em) is now applied — previously deferred because
+         WPF TextBlock has no native letter-spacing. c:StructureLabel.IsEnabled
+         rebuilds Inlines as upper-cased chars interleaved with a hair-space
+         spacer (em-relative → tracks the Appearance slider). Applied here so all
+         ~9 fan-out views inherit it with zero per-call-site work. -->
     <Style x:Key="StructureSectionLabelStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
-        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <Setter Property="FontSize"
+                Value="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type FrameworkElement}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
         <Setter Property="Margin"     Value="0,10,0,4"/>
+        <Setter Property="c:StructureLabel.IsEnabled" Value="True"/>
     </Style>
 
     <!-- Structure · inline field-label prefix (terminating ':' is the call
@@ -1714,12 +1839,22 @@
          no top margin (it sits inline before a value). -->
     <Style x:Key="StructureInlinePrefixStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
-        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <!-- G3-amend-2: 0.78em (was AppFontSizeXSmall=9). Same FindAncestor
+             em-source as StructureSectionLabelStyle (no Style-setter self-cycle). -->
+        <Setter Property="FontSize"
+                Value="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type FrameworkElement}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+        <!-- G4: same tracked-UPPERCASE behavior as the section label. The
+             terminating ':' (call-site text, e.g. "Field:") is preserved
+             literally (ToUpperInvariant is a no-op on punctuation) and tracks
+             with the letters so the prefix reads as one tracked label. -->
+        <Setter Property="c:StructureLabel.IsEnabled" Value="True"/>
     </Style>
 
-    <!-- Structure · group header: dimmer (fg-quaternary), else as section label. -->
+    <!-- Structure · group header: dimmer (fg-quaternary), else as section label.
+         G4: inherits the tracked-UPPERCASE c:StructureLabel.IsEnabled setter via
+         BasedOn StructureSectionLabelStyle (only the pigment is overridden). -->
     <Style x:Key="StructureGroupHeaderStyle" TargetType="TextBlock"
            BasedOn="{StaticResource StructureSectionLabelStyle}">
         <Setter Property="Foreground" Value="{StaticResource TextQuaternaryBrush}"/>

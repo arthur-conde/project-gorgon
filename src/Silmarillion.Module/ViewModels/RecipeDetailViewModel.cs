@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Recipes;
@@ -64,7 +65,110 @@ public sealed class RecipeDetailViewModel
                 $"Shares cooldown with {sharedCooldownChip.DisplayName}",
                 "Shares cooldown with",
                 sharedCooldownChip);
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // The legacy string/chip members above stay (tests + planner-facing
+        // contract); these are the grammar-tier carriers the view binds. Built
+        // here (not in RecipesTabViewModel) because the VM already holds every
+        // source datum — the Phase-5 mapping is mechanical, not data-bearing.
+
+        // Fact stat strip (matrix #3) replacing the three bordered stat-badge
+        // boxes. Grammar ratifies the stat strip as label-value pairs (doc
+        // lines 105/169/247; weight-axis example "Skill **Alchemy 55**"), so
+        // the Skill stat carries its "Skill" label (renders "Skill
+        // Toolcrafting 98", matching the ratified specimen). MaxUses/Cooldown
+        // are self-describing phrase-form ("Limited to 2 uses", "Reuse every
+        // 1h 30m") — kept label-null; the grammar only exemplified the
+        // labelled Skill case, so phrase-stats-bare is a flagged sensible
+        // reading, and a fan-out consideration for views with other stats.
+        // Empties skipped → self-elides like the old per-chip NullOrEmptyToVis.
+        var stat = new List<FactPair>(3);
+        if (!string.IsNullOrEmpty(SkillRequirementChip)) stat.Add(new FactPair("Skill", SkillRequirementChip));
+        if (!string.IsNullOrEmpty(MaxUsesChip)) stat.Add(new FactPair(null, MaxUsesChip));
+        if (!string.IsNullOrEmpty(CooldownChip)) stat.Add(new FactPair(null, CooldownChip));
+        StatStrip = FactTableVm.Strip(stat);
+
+        // Link projections (matrix #6/#9/#10/#12). EntityChip/ItemSourceChip →
+        // LinkVm via the ratified adapters; the G3-amended adapters now carry the
+        // chip's IconId through as the preferred lead sprite. Ingredients still set
+        // LinkGlyph.Ingredient explicitly, but per the G3 amendment that glyph is now
+        // the Lucide *fallback* only: `with { Glyph = ... }` preserves the IconId from
+        // LinkVm.From(c), so a real ingredient sprite renders when present and the
+        // flask Lucide shows only for icon-less ingredients (reconciliation flag #3
+        // CLOSED — the adapter no longer needs to infer Ingredient when art exists).
+        IngredientLinks = Ingredients
+            .Select(c => LinkVm.From(c) with { Glyph = LinkGlyph.Ingredient })
+            .ToList();
+        ProducedItemLinks = ProducedItems.Select(LinkVm.From).ToList();
+        SourceLinks = Sources is null
+            ? []
+            : Sources.Select(LinkVm.From).ToList();
+
+        // Requirement rows: same prose-or-(prefix+link) dual shape, but the inline
+        // chip is now a LinkVm (matrix #6). The row record lives in a file outside
+        // this pilot's edit scope, so wrap it rather than extend it.
+        RequirementRows = Requirements.Select(RecipeRequirementRowVm.From).ToList();
+        SharedCooldownRowVm = SharedCooldownRow is null
+            ? null
+            : RecipeRequirementRowVm.From(SharedCooldownRow);
+
+        // Footer ID: InternalName is a cross-entity reference KEY ⇒ copyable
+        // (matrix #14, G-a). None() when absent so the strip self-hides.
+        Footer = string.IsNullOrEmpty(InternalName)
+            ? FactFooterVm.None()
+            : FactFooterVm.Key(InternalName);
     }
+
+    /// <summary>
+    /// Inert Fact stat strip (matrix #3) — the dot-separated value-only segments
+    /// (<see cref="SkillRequirementChip"/> · <see cref="MaxUsesChip"/> ·
+    /// <see cref="CooldownChip"/>, empties skipped) replacing the three legacy
+    /// bordered stat-badge boxes. G-b: no box, no gold; the
+    /// <c>FactTableLayout.Strip</c> Style carries the (inert) pigment.
+    /// </summary>
+    public FactTableVm StatStrip { get; }
+
+    /// <summary>
+    /// Ingredient cross-links as the unified <see cref="LinkVm"/> (matrix #10).
+    /// <see cref="LinkVm.Glyph"/> is set to <see cref="LinkGlyph.Ingredient"/> as the
+    /// Lucide <em>fallback</em>; per the G3 amendment the chip's
+    /// <see cref="LinkVm.IconId"/> sprite is preferred when present (reconciliation
+    /// flag #3 closed — a real ingredient sprite now shows; the flask Lucide is the
+    /// icon-less fallback only).
+    /// </summary>
+    public IReadOnlyList<LinkVm> IngredientLinks { get; }
+
+    /// <summary>Produced-item cross-links as <see cref="LinkVm"/> (matrix #12);
+    /// glyph derived from kind by the adapter (Item ⇒ package).</summary>
+    public IReadOnlyList<LinkVm> ProducedItemLinks { get; }
+
+    /// <summary>
+    /// "Taught by" source rows as <see cref="LinkVm"/> (matrix #9). The provenance
+    /// suffix rides from <see cref="ItemSourceChipVm.Detail"/>; glyph by kind.
+    /// Empty (never null) so the view's count-based section hide is uniform.
+    /// </summary>
+    public IReadOnlyList<LinkVm> SourceLinks { get; }
+
+    /// <summary>
+    /// <see cref="Requirements"/> reshaped so each row's inline chip is a
+    /// <see cref="LinkVm"/> (matrix #6). Wraps the underlying
+    /// <see cref="RecipeRequirementRow"/> (whose record lives outside this pilot's
+    /// edit scope) rather than mutating it.
+    /// </summary>
+    public IReadOnlyList<RecipeRequirementRowVm> RequirementRows { get; }
+
+    /// <summary>
+    /// <see cref="SharedCooldownRow"/> reshaped to the Link-carrying row VM
+    /// (matrix #7 — same template as the requirement rows). Null when absent.
+    /// </summary>
+    public RecipeRequirementRowVm? SharedCooldownRowVm { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14, G-a). <see cref="InternalName"/> is a
+    /// cross-entity reference KEY ⇒ a single copyable cell; <c>None()</c> (the
+    /// strip self-hides) when the recipe has no internal name.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     /// <summary>
     /// Human-readable skill name (resolved by the page VM via <c>IReferenceDataService.Skills</c>),
@@ -79,6 +183,14 @@ public sealed class RecipeDetailViewModel
     public string? Description => Recipe.Description;
     public string? Skill => Recipe.Skill;
     public int SkillLevelReq => Recipe.SkillLevelReq;
+
+    /// <summary>
+    /// The recipe's own CDN icon. G3-amend-2: this is the <em>title-glyph</em> (the
+    /// entity icon next to the Fact-title) — the view renders it through the FIXED
+    /// 40px <c>FactTitleGlyphStyle</c> ("entity stamp", exempt from em/accessibility
+    /// scaling), not an em-scaled lead. The size lives entirely in the style; the VM
+    /// only supplies the id.
+    /// </summary>
     public int IconId => Recipe.IconId;
 
     /// <summary>
@@ -120,6 +232,19 @@ public sealed class RecipeDetailViewModel
     /// <see cref="Views.RecipeDetailView"/>.
     /// </summary>
     public IReadOnlyList<RecipeKeywordSlotVm> KeywordSlots { get; }
+
+    /// <summary>
+    /// Section-label text for the "Keyword ingredients" block. G4 Stacking
+    /// semantics (docs/silmarillion-visual-grammar.md · "Stacking semantics"):
+    /// when there are ≥2 positionally-material slots the label gets a slot-count
+    /// suffix (<c>"Keyword ingredients · 2 slots"</c>); 0/1 slot keeps the plain
+    /// label. The VM owns the text (count logic must NOT live in XAML) so the
+    /// view binds one string under <c>StructureSectionLabelStyle</c>.
+    /// </summary>
+    public string KeywordIngredientsLabel =>
+        KeywordSlots.Count >= 2
+            ? $"Keyword ingredients · {KeywordSlots.Count} slots"
+            : "Keyword ingredients";
 
     public IReadOnlyList<EntityChipVm> ProducedItems { get; }
 
@@ -231,13 +356,37 @@ public sealed class RecipeDetailViewModel
 /// </summary>
 public sealed class RecipeKeywordSlotVm
 {
-    public RecipeKeywordSlotVm(string label, ProvenancePopupViewModel popup, ICommand? chipClickCommand)
+    public RecipeKeywordSlotVm(
+        string label,
+        ProvenancePopupViewModel popup,
+        ICommand? chipClickCommand,
+        int? slotOrdinal = null)
     {
         Label = label;
         Popup = popup;
         MatchCount = popup.TotalCount;
         ShowPopupCommand = new RelayCommand(
             () => RecipeDetailViewModel.ProvenancePopupOpener(popup, chipClickCommand));
+        // Matrix #11: the bespoke ghost-gold "{Label} — view all N →" Button
+        // becomes the shared Set-reference primitive. Summary-form (MatchCount
+        // non-null ⇒ "{Label} · N →"), actionable (the reveal is wired to
+        // ShowPopupCommand). Gold→blue is intentional per G-b, not a regression.
+        //
+        // G4 Stacking semantics (docs/silmarillion-visual-grammar.md ·
+        // "Stacking semantics"): recipe keyword-ingredient slots are
+        // positionally MATERIAL — the grammar's own canonical example is
+        // "two 'any Crystal' slots where TSysCraftedEquipment references the
+        // actual crystal bound in each slot", so position is material for
+        // crafted-equipment recipes regardless of whether the constraints are
+        // identical. The builder therefore passes a 1-based slotOrdinal ONLY
+        // when the slot list has ≥2 entries; null (single/0 slot) ⇒ no prefix
+        // (positionally inert path — not exercised by the Recipe pilot since a
+        // recipe slot is never count-only). This SetRefVm population is the
+        // CANONICAL stacking pattern the 8 fan-out views copy: ordinal in the
+        // VM (SlotOrdinal), prefix rendered by the shared SetRef control —
+        // never re-decide the visual values per call site.
+        SetRef = new SetRefVm(
+            Label, MatchCount: MatchCount, IsActionable: true, SlotOrdinal: slotOrdinal);
     }
 
     /// <summary>Friendly slot description, e.g. "any Crystal" / "Main-Hand Item".</summary>
@@ -266,4 +415,62 @@ public sealed class RecipeKeywordSlotVm
     /// (#229 contract; mirrors the surface-1 <c>ItemDetailViewModel</c> command).
     /// </summary>
     public ICommand ShowPopupCommand { get; }
+
+    /// <summary>
+    /// The keyword slot as the shared Set-reference primitive (matrix #11): a
+    /// summary-form <see cref="SetRefVm"/> (<c>"{Label} · {MatchCount} →"</c>),
+    /// actionable — its reveal is <see cref="ShowPopupCommand"/>. Replaces the
+    /// bespoke ghost-gold "view all N" Button; the gold→blue shift is the ratified
+    /// G-b correction, not a regression.
+    /// <para>
+    /// G4 Stacking semantics: carries <see cref="SetRefVm.SlotOrdinal"/> = the
+    /// slot's 1-based position when the recipe has ≥2 keyword slots (positionally
+    /// material per the <c>TSysCraftedEquipment</c> canonical example), null
+    /// otherwise. The shared <c>SetRef</c> control renders the ordinal prefix; this
+    /// VM only populates it — the canonical stacking pattern the fan-out views copy.
+    /// </para>
+    /// </summary>
+    public SetRefVm SetRef { get; }
+}
+
+/// <summary>
+/// View-side reshape of a <see cref="RecipeRequirementRow"/> for the Phase-5
+/// grammar primitives: the prose-or-(prefix + inline chip) dual shape is
+/// preserved, but the inline chip is the unified <see cref="LinkVm"/> instead of
+/// the legacy <see cref="EntityChipVm"/> (matrix #6/#7). This wraps rather than
+/// extends the underlying record because <see cref="RecipeRequirementRow"/> is
+/// declared outside this pilot's edit scope (<c>RecipeRequirementProjector.cs</c>).
+/// <see cref="Link"/> is null for a prose-only row (drives the same NullToVis
+/// object self-switch the legacy template used on <c>Chip</c>).
+/// </summary>
+public sealed class RecipeRequirementRowVm
+{
+    private RecipeRequirementRowVm(string text, string? prefix, LinkVm? link)
+    {
+        Text = text;
+        Prefix = prefix;
+        Link = link;
+    }
+
+    /// <summary>Accessible / fallback prose rendering (used when <see cref="Link"/> is null).</summary>
+    public string Text { get; }
+
+    /// <summary>Inline field-label prefix shown before the <see cref="Link"/> (Structure tier).</summary>
+    public string? Prefix { get; }
+
+    /// <summary>
+    /// The inline navigable cross-link, or null for a prose-only row. Recipe→recipe
+    /// edges (RecipeKnown / RecipeUsed / shared-cooldown) are Recipe-kind, so the
+    /// adapter yields the recipe glyph by kind (matrix #6 — acceptable).
+    /// </summary>
+    public LinkVm? Link { get; }
+
+    /// <summary>
+    /// Adapts a legacy <see cref="RecipeRequirementRow"/>: a row carrying a
+    /// <see cref="RecipeRequirementRow.Chip"/> becomes a prefix + <see cref="LinkVm"/>
+    /// row (chip → <see cref="LinkVm.From(EntityChipVm)"/>); a prose row stays prose
+    /// (<see cref="Link"/> null).
+    /// </summary>
+    public static RecipeRequirementRowVm From(RecipeRequirementRow row) =>
+        new(row.Text, row.Prefix, row.Chip is null ? null : LinkVm.From(row.Chip));
 }

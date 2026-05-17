@@ -23,7 +23,19 @@ public sealed class SetRefTests
         var vm = new SetRefVm("Crystal", MatchCount: 150);
 
         vm.IsSummaryForm.Should().BeTrue();
-        vm.DisplayText.Should().Be("Crystal · 150 →");
+        // Ratified summary-form text (grammar doc "Crystal · 150 matches →").
+        vm.DisplayText.Should().Be("Crystal · 150 matches →");
+    }
+
+    [Fact]
+    public void MatchCountOne_SummaryForm_UsesSingularNoun()
+    {
+        // The grammar exemplified only the plural; "1 matches" reads as a bug,
+        // so the noun is count-aware (sensible reading of the spec).
+        var vm = new SetRefVm("Main-Hand Item", MatchCount: 1);
+
+        vm.IsSummaryForm.Should().BeTrue();
+        vm.DisplayText.Should().Be("Main-Hand Item · 1 match →");
     }
 
     [Fact]
@@ -45,7 +57,7 @@ public sealed class SetRefTests
         var vm = new SetRefVm("Potion", MatchCount: 0);
 
         vm.IsSummaryForm.Should().BeTrue();
-        vm.DisplayText.Should().Be("Potion · 0 →");
+        vm.DisplayText.Should().Be("Potion · 0 matches →");
     }
 
     // ── Stacking ordinal prefix (Stacking semantics clause) ──
@@ -140,7 +152,7 @@ public sealed class SetRefTests
         var unwired = new SetRefVm("Crystal", MatchCount: 150, IsActionable: false, SlotOrdinal: 2);
 
         unwired.DisplayText.Should().Be(wired.DisplayText);
-        unwired.DisplayText.Should().Be("Crystal · 150 →");
+        unwired.DisplayText.Should().Be("Crystal · 150 matches →");
         unwired.OrdinalText.Should().Be(wired.OrdinalText);
     }
 }

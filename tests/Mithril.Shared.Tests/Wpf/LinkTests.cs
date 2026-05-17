@@ -28,9 +28,25 @@ public sealed class LinkTests
         vm.DisplayName.Should().Be("Iron Sword");
         vm.Reference.Should().Be(EntityRef.Item("IronSword"));
         vm.IsNavigable.Should().BeTrue();
-        // Link is glyph-coded, not icon-imaged — IconId is intentionally dropped.
+        // G3 amendment: the chip's IconId rides through as the preferred lead sprite.
+        vm.IconId.Should().Be(42);
+        vm.HasSprite.Should().BeTrue();
         vm.ProvenanceSuffix.Should().BeNull();
         vm.KindLabel.Should().BeNull();
+    }
+
+    [Fact]
+    public void From_EntityChip_NoIcon_HasNoSprite()
+    {
+        var chip = new EntityChipVm("Alchemy", IconId: 0,
+            EntityRef.Skill("Alchemy"), IsNavigable: true);
+
+        var vm = LinkVm.From(chip);
+
+        vm.IconId.Should().Be(0);
+        vm.HasSprite.Should().BeFalse();
+        // Abstract ref → Lucide fallback retained.
+        vm.Glyph.Should().Be(LinkGlyph.Skill);
     }
 
     [Theory]
@@ -79,6 +95,22 @@ public sealed class LinkTests
         vm.Reference.Should().Be(EntityRef.Recipe("DistilBrine"));
         vm.Glyph.Should().Be(LinkGlyph.Recipe);
         vm.IsNavigable.Should().BeTrue();
+        // G3 amendment: ItemSourceChip.IconId (non-null) rides through.
+        vm.IconId.Should().Be(7);
+        vm.HasSprite.Should().BeTrue();
+    }
+
+    [Fact]
+    public void From_ItemSourceChip_NullIconId_NormalisedToZeroNoSprite()
+    {
+        var chip = new ItemSourceChipVm("X", Detail: null, IconId: null,
+            EntityReference: EntityRef.Npc("NPC_X"), IsNavigable: false);
+
+        var vm = LinkVm.From(chip);
+
+        vm.IconId.Should().Be(0);
+        vm.HasSprite.Should().BeFalse();
+        vm.Glyph.Should().Be(LinkGlyph.Npc);
     }
 
     [Fact]
@@ -182,5 +214,121 @@ public sealed class LinkTests
         Link.ResolveClick(navigable).Should().Be(LinkClickAction.Navigate);
         Link.ResolveClick(pending).Should().Be(LinkClickAction.CopyName);
         pending.ProvenanceSuffix.Should().Be("from Trader Joe");
+    }
+
+    // ── Lead decision: hybrid icon family (G3 amendment 2026-05-17) ──
+
+    [Fact]
+    public void ResolveLead_SpritePresent_RendersSprite_EvenWhenGlyphSet()
+    {
+        // Sprite wins over Lucide: a tangible noun with real CDN art shows the art,
+        // not the type-coded fallback glyph.
+        var vm = new LinkVm("Iron Sword", LinkGlyph.Item,
+            EntityRef.Item("IronSword"), IsNavigable: true, IconId: 42);
+
+        var lead = Link.ResolveLead(vm);
+
+        lead.Kind.Should().Be(LinkLeadKind.Sprite);
+        lead.IconId.Should().Be(42);
+        lead.LucideKind.Should().Be(PackIconLucideKind.None);
+    }
+
+    [Fact]
+    public void ResolveLead_NoSprite_GlyphSet_RendersLucideFallback()
+    {
+        // Abstract ref (skill) — no sprite → type-coded Lucide fallback.
+        var vm = new LinkVm("Alchemy", LinkGlyph.Skill,
+            EntityRef.Skill("Alchemy"), IsNavigable: true, IconId: 0);
+
+        var lead = Link.ResolveLead(vm);
+
+        lead.Kind.Should().Be(LinkLeadKind.Lucide);
+        lead.LucideKind.Should().Be(PackIconLucideKind.Sparkles);
+    }
+
+    [Fact]
+    public void ResolveLead_NoSprite_NoGlyph_RendersNone()
+    {
+        var vm = new LinkVm("Orphan", LinkGlyph.None,
+            Reference: null, IsNavigable: false, IconId: 0);
+
+        Link.ResolveLead(vm).Should().Be(LinkLead.None);
+        Link.ResolveLead(vm).Kind.Should().Be(LinkLeadKind.None);
+    }
+
+    [Fact]
+    public void ResolveLead_NullVm_RendersNone()
+    {
+        Link.ResolveLead(null).Should().Be(LinkLead.None);
+    }
+
+    // ── Density DP default + lead em-factor (G3 amendment 2 · 2026-05-17) ──
+
+    [Fact]
+    public void Density_DefaultsToProse()
+    {
+        // The DP default — existing wrapped-chip call sites keep inline layout.
+        // (Pure metadata read; no visual tree needed.)
+        Link.DensityProperty.DefaultMetadata.DefaultValue
+            .Should().Be(LinkDensity.Prose);
+    }
+
+    [Theory]
+    // Sprite — Prose ×1.0, List ×1.5 (the ratified em size table).
+    [InlineData(LinkDensity.Prose, LinkLeadKind.Sprite, 1.0)]
+    [InlineData(LinkDensity.List, LinkLeadKind.Sprite, 1.5)]
+    // Lucide — Prose ×0.75, List ×1.125.
+    [InlineData(LinkDensity.Prose, LinkLeadKind.Lucide, 0.75)]
+    [InlineData(LinkDensity.List, LinkLeadKind.Lucide, 1.125)]
+    public void LeadFactor_MatchesRatifiedEmTable(
+        LinkDensity density, LinkLeadKind lead, double expected)
+    {
+        Link.LeadFactor(density, lead).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(LinkDensity.Prose)]
+    [InlineData(LinkDensity.List)]
+    public void LeadFactor_None_HasNoLead_FactorZero(LinkDensity density)
+    {
+        // LinkLeadKind.None renders no lead element → factor is irrelevant (0).
+        Link.LeadFactor(density, LinkLeadKind.None).Should().Be(0.0);
+    }
+
+    [Fact]
+    public void LeadFactor_ComposesWithResolveLead_SpriteWinsAtListSize()
+    {
+        // End-to-end: a tangible noun with real art at List density resolves to a
+        // Sprite lead sized ×1.5em — the supersession of ec0a49e's fixed 12px.
+        var vm = new LinkVm("Iron Sword", LinkGlyph.Item,
+            EntityRef.Item("IronSword"), IsNavigable: true, IconId: 42);
+
+        var lead = Link.ResolveLead(vm);
+        Link.LeadFactor(LinkDensity.List, lead.Kind).Should().Be(1.5);
+        Link.LeadFactor(LinkDensity.Prose, lead.Kind).Should().Be(1.0);
+    }
+
+    [Fact]
+    public void ResolveLead_IngredientGlyphOverride_StillShowsRealSprite()
+    {
+        // Reconciliation flag #3 closure: the Recipe pilot forces
+        // Glyph = LinkGlyph.Ingredient, but a real ingredient sprite (IconId>0)
+        // must still win — the flask Lucide is the icon-less fallback only.
+        var withArt = LinkVm.From(
+            new EntityChipVm("Moonlit Brine", IconId: 99,
+                EntityRef.Item("MoonlitBrine"), IsNavigable: true))
+            with { Glyph = LinkGlyph.Ingredient };
+        var noArt = LinkVm.From(
+            new EntityChipVm("Generic Reagent", IconId: 0,
+                EntityRef.Item("GenericReagent"), IsNavigable: true))
+            with { Glyph = LinkGlyph.Ingredient };
+
+        var leadArt = Link.ResolveLead(withArt);
+        leadArt.Kind.Should().Be(LinkLeadKind.Sprite);
+        leadArt.IconId.Should().Be(99);
+
+        var leadFallback = Link.ResolveLead(noArt);
+        leadFallback.Kind.Should().Be(LinkLeadKind.Lucide);
+        leadFallback.LucideKind.Should().Be(PackIconLucideKind.FlaskRound);
     }
 }

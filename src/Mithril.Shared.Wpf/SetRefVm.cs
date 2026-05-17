@@ -78,7 +78,12 @@ public sealed record SetRefVm(
     /// string instead of re-deciding the shape in XAML.
     /// </summary>
     public string DisplayText =>
-        IsSummaryForm ? $"{Label} · {MatchCount} →" : Label;
+        IsSummaryForm
+            // Ratified summary-form (grammar doc "Crystal · 150 matches →"). The spec
+            // only exemplified the plural; "1 matches" reads as a bug, so the noun is
+            // count-aware — sensible reading of the spec, flagged not silently decided.
+            ? $"{Label} · {MatchCount} {(MatchCount == 1 ? "match" : "matches")} →"
+            : Label;
 
     /// <summary>The leading ordinal prefix glyph (e.g. <c>"1"</c>), or empty when none.</summary>
     public string OrdinalText => HasOrdinal ? SlotOrdinal!.Value.ToString() : string.Empty;

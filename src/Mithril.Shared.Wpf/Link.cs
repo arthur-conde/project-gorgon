@@ -27,6 +27,48 @@ public enum LinkClickAction
 }
 
 /// <summary>
+/// What the lead element of a <see cref="Link"/> should render, decided purely from
+/// the bound <see cref="LinkVm"/>. The G3-amended hybrid icon family: a CDN sprite
+/// when present (preferred), else the type-coded Lucide fallback, else nothing.
+/// Factored out (mirroring <see cref="LinkClickAction"/> / <see cref="Link.ResolveClick"/>)
+/// so the sprite-vs-Lucide-vs-none branch is unit-testable without the visual tree.
+/// </summary>
+public enum LinkLeadKind
+{
+    /// <summary>No <see cref="LinkVm.IconId"/> and <see cref="LinkGlyph.None"/> — no lead element.</summary>
+    None,
+
+    /// <summary>Real CDN game-art sprite (<see cref="LinkVm.IconId"/> &gt; 0). Wins over Lucide.</summary>
+    Sprite,
+
+    /// <summary>No sprite; type-coded Lucide fallback (<see cref="LinkVm.Glyph"/> != None).</summary>
+    Lucide,
+}
+
+/// <summary>
+/// Discriminated result of <see cref="Link.ResolveLead(LinkVm)"/>. Exactly one of
+/// <see cref="IconId"/> (when <see cref="Kind"/> is <see cref="LinkLeadKind.Sprite"/>)
+/// or <see cref="LucideKind"/> (when <see cref="LinkLeadKind.Lucide"/>) is meaningful;
+/// <see cref="LinkLeadKind.None"/> carries neither.
+/// </summary>
+public readonly record struct LinkLead(
+    LinkLeadKind Kind,
+    int IconId,
+    PackIconLucideKind LucideKind)
+{
+    /// <summary>Sprite lead: render the CDN art for <paramref name="iconId"/>.</summary>
+    public static LinkLead Sprite(int iconId) =>
+        new(LinkLeadKind.Sprite, iconId, PackIconLucideKind.None);
+
+    /// <summary>Lucide fallback lead: render <paramref name="lucide"/>.</summary>
+    public static LinkLead Lucide(PackIconLucideKind lucide) =>
+        new(LinkLeadKind.Lucide, 0, lucide);
+
+    /// <summary>No lead element.</summary>
+    public static readonly LinkLead None = new(LinkLeadKind.None, 0, PackIconLucideKind.None);
+}
+
+/// <summary>
 /// The Phase-4 shared <b>Link</b> primitive (G3 visual grammar · "Link · navigates ·
 /// V2"). One templated control subsuming both <see cref="EntityChip"/> and
 /// <see cref="ItemSourceChip"/>; DataContext is a <see cref="LinkVm"/>.
@@ -75,6 +117,25 @@ public sealed class Link : Control
         typeof(Link),
         new PropertyMetadata(null));
 
+    /// <summary>
+    /// Row-density — the G3-amend-2 sole sizing input (<c>docs/silmarillion-visual-grammar.md</c>
+    /// · em size table). Drives <em>only</em> the lead element's em factor (see
+    /// <see cref="LeadFactor"/>); nothing else about the Link changes. Defaults to
+    /// <see cref="LinkDensity.Prose"/> so existing wrapped-chip call sites keep their
+    /// inline layout. The Style's lead-size triggers key off this DP.
+    /// </summary>
+    public LinkDensity Density
+    {
+        get => (LinkDensity)GetValue(DensityProperty);
+        set => SetValue(DensityProperty, value);
+    }
+
+    public static readonly DependencyProperty DensityProperty = DependencyProperty.Register(
+        nameof(Density),
+        typeof(LinkDensity),
+        typeof(Link),
+        new PropertyMetadata(LinkDensity.Prose));
+
     private static readonly DependencyPropertyKey CopiedKey =
         DependencyProperty.RegisterReadOnly(
             nameof(Copied), typeof(bool), typeof(Link),
@@ -119,6 +180,47 @@ public sealed class Link : Control
         if (vm.IsNavigable && vm.Reference is not null) return LinkClickAction.Navigate;
         return LinkClickAction.CopyName;
     }
+
+    /// <summary>
+    /// Pure decision (G3 amendment 2026-05-17): given a (possibly null) bound VM, what
+    /// should the 12px lead element render? The hybrid icon family — a real CDN sprite
+    /// is <em>preferred</em> when present (<see cref="LinkVm.IconId"/> &gt; 0 ⇒
+    /// <see cref="LinkLead.Sprite"/>, beating any <see cref="LinkVm.Glyph"/>); else the
+    /// type-coded Lucide fallback (<see cref="LinkVm.Glyph"/> != <see cref="LinkGlyph.None"/>
+    /// ⇒ <see cref="LinkLead.Lucide"/>); else <see cref="LinkLead.None"/>. Mirrors
+    /// <see cref="ResolveClick"/> so it's unit-testable without the visual tree. Does
+    /// not touch the G-c degrade / pending behaviour — the amendment is lead-only.
+    /// </summary>
+    public static LinkLead ResolveLead(LinkVm? vm)
+    {
+        if (vm is null) return LinkLead.None;
+        if (vm.IconId > 0) return LinkLead.Sprite(vm.IconId);
+        if (vm.Glyph != LinkGlyph.None) return LinkLead.Lucide(ToLucideKind(vm.Glyph));
+        return LinkLead.None;
+    }
+
+    /// <summary>
+    /// Pure G3-amend-2 lead em-factor: the multiplier applied to the inherited
+    /// <c>FontSize</c> (via <see cref="FontSizeTimesConverter"/>) to size the lead
+    /// element, decided solely by <paramref name="density"/> × the lead family
+    /// (<paramref name="lead"/>). The exact ratified table
+    /// (<c>docs/silmarillion-visual-grammar.md</c> · "All sizes are em-relative"):
+    /// <list type="bullet">
+    ///   <item>Sprite — Prose <c>1.0</c>, List <c>1.5</c></item>
+    ///   <item>Lucide — Prose <c>0.75</c>, List <c>1.125</c></item>
+    /// </list>
+    /// <see cref="LinkLeadKind.None"/> has no lead element, so its factor is
+    /// irrelevant (returns <c>0</c>). Factored out (mirroring <see cref="ResolveLead"/> /
+    /// <see cref="ResolveClick"/>) so the density→size math is unit-testable without
+    /// the visual tree. <b>This supersedes the prior fixed-12px lead</b> (commit
+    /// <c>ec0a49e</c>): the lead is now em-relative, not a hard 12px.
+    /// </summary>
+    public static double LeadFactor(LinkDensity density, LinkLeadKind lead) => lead switch
+    {
+        LinkLeadKind.Sprite => density == LinkDensity.List ? 1.5 : 1.0,
+        LinkLeadKind.Lucide => density == LinkDensity.List ? 1.125 : 0.75,
+        _ => 0.0,
+    };
 
     private Button? _button;
 
