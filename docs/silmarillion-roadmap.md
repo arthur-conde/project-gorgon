@@ -120,10 +120,19 @@ These would each require their own master-detail just to render a row count and 
 | `advancementtables` | Internal advancement mechanic |
 | `attributes` | Low-level effect-attribute primitives consumed by the Effects renderer |
 | `ai` | NPC behaviour trees; engine-side, not player-browsable |
-| `tsysclientinfo` | TSys augment metadata; calculator-shaped, not card-shaped |
-| `tsysprofiles` | TSys profile envelopes; same as above |
 
-`tsysclientinfo` / `tsysprofiles` could plausibly become a "Powers" surface in the future, but the natural shape is a calculator (Celebrimbor's territory), not a card browse. Out of scope for Silmarillion until Celebrimbor migrates per Step 5 of the reference-DB epic — and even then likely as a calculator pane embedded in Celebrimbor, not a Silmarillion tab.
+> **Reclassified 2026-05-17 — `tsysclientinfo` / `tsysprofiles` left Bucket D.**
+> Previously listed here as "calculator-shaped, not card-shaped… not a Silmarillion
+> tab." That verdict reasoned from the raw-JSON label, not the contents. Verified
+> v470: `tsysclientinfo` is a faceted **Power** entity table (skill-tagged, tiered,
+> slot/rarity-gated) and `tsysprofiles` is 40 named **Profile** pools (flat power-name
+> arrays) — card-shaped and **crystal-free**. The only calculator-shaped thing, roll
+> *resolution* (probabilities/precise rolled power), is absent from CDN data entirely
+> (data-availability ceiling, same class as item drop rates) — so it is out of scope
+> by *data*, not by shape. Owner-ratified as a dedicated **Treasure System tab**
+> (**#412**); recipe detail (#214, rescoped) deep-links into it. Only roll
+> *calculation* stays Celebrimbor's. See `module-charters.md` Silmarillion *In scope*
+> + its 2026-05-17 History entry for the full ruling.
 
 ## History
 
@@ -133,3 +142,4 @@ These would each require their own master-detail just to render a row count and 
 - **2026-05-14 → 05-15** — **Bucket B fully shipped.** NPCs #241 (PR #280), Quests #242 (#286), Abilities #243 (#293), Effects #244 (#298) on 05-14; Areas #245 (#310), Lorebooks #247 (#322), PlayerTitles #248 (#328), StorageVaults #249 (#329) on 05-15. Cross-link-dependency order (NPCs first to light up recipe-teacher links; Abilities before Effects). The #233 tab-style refactor (PR #272) and the #243 `ITabViewModel` refactor were the multi-tab enablers.
 - **2026-05-15** — **Plan deviation recorded:** `Landmark` did *not* become a sibling tab as the Areas/Landmarks section predicted. It folded into the Areas detail pane as a grouped provenance popup (#318 slice 4 surface 4, PR #324). Bucket B count unchanged (9 kinds, 8 tabs).
 - **2026-05-16** — Doc reframed from deferral plan to as-built record now that all Bucket B tabs shipped; [silmarillion-field-coverage.md](silmarillion-field-coverage.md) split off as the per-field axis. Bucket C "(when shipped)" markers resolved against source: `sources_abilities` and `lorebookinfo` fold-ins confirmed shipped; **`directedgoals` confirmed *not* built** (no module reference; Quests tab shipped without it) — and, by decision the same day, **consciously dropped** after inspecting the v470 data: it is the only Bucket C source with no foreign keys (self-contained prose hint cards), so Silmarillion's cross-link model has nothing to anchor. Recorded as a closed, evidence-backed decision in its Bucket C row.
+- **2026-05-17** — **`tsysclientinfo` / `tsysprofiles` left Bucket D → Treasure System tab (#412).** Owner-ratified reversal of the "calculator-shaped, not a Silmarillion tab" Bucket-D verdict, which had reasoned from the raw-JSON label rather than the contents. v470 inspection: `tsysclientinfo` is a faceted Power entity table (skill-tagged, tiered, slot/rarity-gated), `tsysprofiles` is 40 named Profile pools (flat power-name arrays) — card-shaped, crystal-free; only roll *resolution* is calculator-shaped and it is absent from CDN data entirely (data ceiling, not shape). #214 rescoped from inline pool render to a deep-link into the new tab (single render site). The companion naming collision — `Create{Region}TreasureMap{Quality}` is the `TreasureCartography` skill, a different system — was flagged out of scope on #214/#412. Charter (`module-charters.md`) updated in the same PR. Echoes the 2026-05-13 "deep-link to a tab with pre-filled query" kind-target precedent.
