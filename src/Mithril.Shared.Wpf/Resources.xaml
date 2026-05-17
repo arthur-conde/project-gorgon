@@ -59,6 +59,46 @@
     <SolidColorBrush x:Key="BorderSubtleBrush"   Color="#33FFFFFF"/>
     <SolidColorBrush x:Key="BorderStrongBrush"   Color="#55FFFFFF"/>
 
+    <!-- ===== Silmarillion #404 visual-grammar tokens (Phase 4) =====
+         Design token to resource key reconciliation ledger for the G3 ratified
+         grammar (docs/silmarillion-visual-grammar.md). Keys that already
+         existed are REUSED (no duplication); only genuinely missing tokens are
+         added here. Per the Phase 4 dispatch the design tokens are the source
+         of truth and the WPF set is reconciled to them.
+
+           token accent  D4A847        => AccentBrush         (exists; Fact-title, Link name)
+           token fg.primary            => TextPrimaryBrush    (exists; Fact values)
+           token fg.secondary          => TextSecondaryBrush  (exists)
+           token fg.tertiary           => TextTertiaryBrush   (exists; Structure label, footer KEY/ROW value)
+           token fg.quaternary         => TextQuaternaryBrush (ADDED)
+           token bg.surface            => BgSurfaceBrush      (exists; Control chassis only)
+           token bg.surface.hover      => BgSurfaceHoverBrush (exists)
+           token border.subtle         => BorderSubtleBrush   (exists)
+           token border.strong         => BorderStrongBrush   (exists)
+           token border.faint          => BorderFaintBrush    (ADDED; footer divider)
+           token accent.soft 1E3A5F    => AccentSoftBrush     (exists; SetRef active fill)
+           token radius.sm (2)         => GrammarRadiusSm     (ADDED; SetRef)
+           token radius.md (3)         => GrammarRadiusMd     (ADDED; general)
+
+         FLAGGED RECONCILIATION (designer confirm, see Phase 4 carry-forward):
+         the grammar specifies Set-reference text as token info #88B0E0,
+         explicitly "matching q.keyword from MithrilQueryBox". The repo's actual
+         query keyword brush is AccentSoftTextBrush / QueryKeywordBrush =
+         #FFCFE8FF, not #88B0E0. The literal hex was the designer's
+         approximation of a token they did not have; the ratified intent is
+         pigment kinship with the query keyword colour. Honoring intent over the
+         approximated literal, SetRefTextBrush is reconciled to the real query
+         keyword value (#FFCFE8FF). One resource key, trivially re-tuned if the
+         designer wants the literal #88B0E0. Surfaced here and in the PR, not a
+         silent override. ===== -->
+    <SolidColorBrush x:Key="TextQuaternaryBrush" Color="#66FFFFFF"/>
+    <SolidColorBrush x:Key="BorderFaintBrush"    Color="#22FFFFFF"/>
+    <SolidColorBrush x:Key="SetRefTextBrush"     Color="#FFCFE8FF"/>
+    <SolidColorBrush x:Key="SetRefIdleFillBrush" Color="#4D1E3A5F"/>
+    <SolidColorBrush x:Key="SetRefBorderBrush"   Color="#553398FF"/>
+    <CornerRadius x:Key="GrammarRadiusSm">2</CornerRadius>
+    <CornerRadius x:Key="GrammarRadiusMd">3</CornerRadius>
+
     <!-- Implicit styles — inline Foreground/Background attributes in existing views
          override these, so Samwise, the shell views and the Legolas overlays all
          keep their current hand-authored look. Only unstyled markup picks this up. -->
