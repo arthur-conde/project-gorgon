@@ -17,313 +17,249 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterText="{Binding InternalName}">
+    <!-- #424 — the shared item-detail pane migrated to the #404 visual grammar.
+         A consistency-diff against the merged Recipe pilot
+         (src/Silmarillion.Module/Views/RecipeDetailView.xaml) + the merged
+         EffectDetailView fan-out (#418), NOT fresh design. Tier classification
+         (a mini Phase-1; Item has no Phase-1/2 matrix row by design):
+           • title → FactTitleStyle; header icon → fixed-40px FactTitleGlyphStyle
+           • EquipSlot + skill-req pills → ONE inert Fact strip (FactTable Strip,
+             no box/gold — G-b); the legacy boxed "Skill requirements" section
+             and EquipSlot subtitle are folded into it (the pilot StatStrip idiom)
+           • Sources / Produced by / Awarded by / Bestows lorebook / Used in /
+             Used as = entity refs → Link enumeration (Density="List"); the two
+             "View all N →" ghost-gold buttons → Set-ref summary-form on the
+             EXISTING popup commands (gold→blue, ratified G-b) — exactly
+             EffectDetailView §7 "Required by abilities"
+           • every *Preview.DisplayLine/DisplayText section = plain-text Fact →
+             FactBodyStyle (gold sub-headers dropped, G-b)
+           • Augment/Wax/Infusion per-group DisplayLine headers → Structure
+             group header; nested effect rows keep the SHARED EffectLineTemplate
+             (already inert — shared template, intentionally untouched per the
+             flag-and-stop anti-goal)
+           • section labels → Structure section labels
+           • Treasure/Extraction #252525 boxes dropped (Fact has no surface);
+             "Browse pool" → Control (GrammarControlChassisStyle); the "?" help
+             tooltip is not a grammar tier — kept verbatim
+           • footer → c:FactFooter (matrix #14 · G-a). The Item InternalName is a
+             cross-entity reference KEY ⇒ copyable (NOT the inert ROW). The
+             DetailExportHost wrapper is RETAINED unchanged for the export-camera
+             affordance; we simply stop binding FooterText and place
+             <c:FactFooter/> at the foot of the wrapped content — no shared-infra
+             surgery, purely a per-view change (the pilot move).
+         WPF footgun honoured: object/record bindings use NullToVis, never the
+         string-only NullOrEmptyToVis (string bindings keep the latter). -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
             <StackPanel>
-                <!-- children below, reordered: cross-links float up to right
-                     after Description (was rows 19-21, now rows 2-4). -->
 
-                <!-- Header: icon + equip slot -->
+                <!-- ─── Header: title-glyph + Fact-title ───
+                     Icon → the fixed-40px FactTitleGlyphStyle (entity stamp,
+                     exempt from em/accessibility scaling). Title → FactTitleStyle
+                     (inline gold/bold/Large dropped — the style owns it, G-b). -->
                 <DockPanel Margin="0,0,0,10">
                     <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                 Width="48" Height="48" Margin="0,0,12,0" VerticalAlignment="Top"/>
+                                 Style="{StaticResource FactTitleGlyphStyle}"
+                                 Margin="0,0,12,0" VerticalAlignment="Top"/>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
-                                   Foreground="#FFD4A847"
-                                   FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding EquipSlot, Converter={StaticResource CamelCaseSplit}}"
-                                   Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,2,0,0"
-                                   Visibility="{Binding EquipSlot, Converter={StaticResource NullOrEmptyToVis}}"/>
+                        <TextBlock Text="{Binding DisplayName}"
+                                   Style="{StaticResource FactTitleStyle}"/>
                     </StackPanel>
                 </DockPanel>
 
-                <!-- Description + optional food effect (FormattedText parses any inline <i>/<b> markup). -->
+                <!-- One inert Fact stat strip (matrix #3): EquipSlot + skill
+                     requirements as dot-separated segments. No box, no gold
+                     (G-b — the FactTable Strip Style carries the inert pigment).
+                     Self-renders nothing when empty (StripText ""). Replaces
+                     both the EquipSlot subtitle and the boxed "Skill
+                     requirements" section (the pilot/Effect single-strip idiom,
+                     maintainer-confirmed for #424). -->
+                <c:FactTable DataContext="{Binding StatStrip}" HorizontalAlignment="Left"
+                             Margin="0,0,0,10"/>
+
+                <!-- Description + optional food effect. Matrix #4 / Effect §2,9:
+                     FactBodyStyle (+ keep italic); the inline #CCFFFFFF / #88 /
+                     hint-size dropped — the style owns family·size·fg·wrap.
+                     FormattedText parses any inline <i>/<b> markup. -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
-                               FontStyle="Italic" FontSize="{DynamicResource AppFontSize}"
-                               TextWrapping="Wrap" MaxWidth="460"
-                               HorizontalAlignment="Left"
+                    <TextBlock c:FormattedText.Text="{Binding Description}"
+                               FontStyle="Italic"
+                               Style="{StaticResource FactBodyStyle}"
+                               MaxWidth="460" HorizontalAlignment="Left"
                                Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
-                    <TextBlock Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" MaxWidth="460" Margin="0,4,0,0"
-                               HorizontalAlignment="Left"
+                    <TextBlock Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                               MaxWidth="460" HorizontalAlignment="Left" Margin="0,4,0,0"
                                Visibility="{Binding FoodDesc, Converter={StaticResource NullOrEmptyToVis}}">
-                        <Run Text="Food effect: " FontWeight="SemiBold"/>
-                        <Run Text="{Binding FoodDesc, Mode=OneWay}"/>
+                        <Run Text="Food effect: " FontWeight="SemiBold"/><Run Text="{Binding FoodDesc, Mode=OneWay}"/>
                     </TextBlock>
                 </StackPanel>
 
-                <!-- Sources (vendor / drop / quest reward / …). Renders as ItemSourceChip:
-                     navigable chip when the source resolves to a tabbed entity (e.g. NPC vendors
-                     after #241 shipped the NPCs tab), plain-text otherwise. -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding Sources.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Sources" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding Sources}">
+                <!-- Sources (vendor / drop / quest reward / …). ItemSourceChip →
+                     Link enumeration (Density="List"; provenance suffix rides
+                     from the source Detail via LinkVm.From). -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding SourceLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Sources" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding SourceLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:ItemSourceChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Produced by recipes — cross-link to recipes whose result is this item -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding ProducedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Produced by" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding ProducedByRecipes}">
+                <!-- Produced by recipes — cross-link to recipes whose result is
+                     this item. EntityChip → Link enumeration. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding ProducedByRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Produced by" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ProducedByRecipeLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Awarded by quests — chips fed from QuestsRewardingItem. Each chip
-                     deep-links to the Quests tab via EntityRef.Quest; degrades to plain text
-                     when the Quests kind target isn't registered. -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding AwardedByQuests.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Awarded by" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding AwardedByQuests}">
+                <!-- Awarded by quests. EntityChip → Link enumeration; degrades
+                     to copy-on-click when the Quests tab isn't open (G-c). -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding AwardedByQuestLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Awarded by" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding AwardedByQuestLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Bestows lorebook — inbound 1:1 cross-link (#247). Item.BestowLoreBook
-                     resolved to the lorebook via LorebooksById; a single navigable chip
-                     (becomes clickable once the Lorebooks kind target is registered, plain
-                     text otherwise). Hidden when the item bestows no book. -->
-                <StackPanel Margin="0,10,0,0"
-                            Visibility="{Binding BestowsLorebook, Converter={StaticResource NullToVis}}">
-                    <TextBlock Text="Bestows lorebook" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ContentControl Content="{Binding BestowsLorebook}" HorizontalAlignment="Left">
-                        <ContentControl.Resources>
-                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                <!-- Bestows lorebook — inbound 1:1 cross-link (#247). A single
+                     Link; section hides when the item bestows no book.
+                     NullToVis (object) — NOT the string-only NullOrEmptyToVis,
+                     which silently collapses a LinkVm binding (repo footgun). -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding BestowsLorebookLink, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="Bestows lorebook" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ContentControl Content="{Binding BestowsLorebookLink}" HorizontalAlignment="Left">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:Link Density="List"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
-                        </ContentControl.Resources>
+                        </ContentControl.ContentTemplate>
                     </ContentControl>
                 </StackPanel>
 
-                <!-- Used in recipes — cross-link to recipes that consume this item. Capped at
-                     SilmarillionSettings.UsedInChipCap to keep selection-change cheap (long-tail
-                     items like MetalSlab1 ship 60+ recipes). The trailing always-visible
-                     "View all N →" affordance opens the shared provenance popup fed the source
-                     index (RecipesByIngredientItemWithReason) directly (#318 slice 4) — no
-                     longer a RecipeIngredientItem synthetic-kind deep link. The popup renders
-                     the full set with no second derivation, so its count cannot diverge from
-                     the index. Single-reason (DirectIngredient) ⇒ the popup is a flat list. -->
-                <StackPanel Margin="0,10,0,0">
+                <!-- Used in — recipes that consume this item directly (#318
+                     slice 4, surface 1). Capped Link cluster + always-visible
+                     "Used in · N matches →" Set-ref summary-form opening the
+                     existing provenance popup. Mirrors EffectDetailView §7
+                     exactly. Visible whenever either the capped cluster OR the
+                     drawer exists. -->
+                <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding ConsumedByRecipes.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding ConsumedByRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding ConsumedByRecipesPopup, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <!-- NullToVis (object) — NOT NullOrEmptyToVis. -->
+                                <DataTrigger Binding="{Binding ConsumedByRecipesSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4">
-                        <Run Text="Used in" />
-                    </TextBlock>
-                    <ItemsControl ItemsSource="{Binding ConsumedByRecipes}">
+                    <TextBlock Text="Used in" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ConsumedByRecipeLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <!-- "View all N →" — opens the shared provenance popup (#318). Always
-                         visible whenever any recipe consumes the item (independent of the
-                         chip cap), styled like ActionChip (ghost fill, ListFilter glyph) so
-                         it reads as "go see the full set", not "open an entity". Mirrors the
-                         slice-2 EffectDetailView affordance. -->
-                    <Button Margin="0,4,0,0" Padding="6,2"
-                            HorizontalAlignment="Left" Cursor="Hand"
-                            Command="{Binding ShowConsumedByRecipesPopupCommand}"
-                            Visibility="{Binding ConsumedByRecipesPopup, Converter={StaticResource NullToVis}}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderBrush" Value="#66D4A847"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Foreground" Value="#FFD4A847"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#22D4A847"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
-                                                             Foreground="{TemplateBinding Foreground}"
-                                                             Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                        <TextBlock Foreground="{TemplateBinding Foreground}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   VerticalAlignment="Center">
-                                            <Run Text="View all "/><Run Text="{Binding ConsumedByRecipesTotal, Mode=OneWay}"/><Run Text=" →"/>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
+                    <ContentControl Content="{Binding ConsumedByRecipesSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding ConsumedByRecipesSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowConsumedByRecipesPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- Used as: recipes that consume this item via a keyword-ingredient slot.
-                     #318 slice 4, surface 2 — the per-keyword RecipeIngredientKeyword
-                     synthetic-kind ActionChips are retired. Mirrors the "Used in" section:
-                     a chip cluster capped at SilmarillionSettings.UsedInChipCap plus a
-                     trailing always-visible "View all N →" affordance that opens the shared
-                     provenance popup fed the source index (RecipesByIngredientKeywordWithReason)
-                     directly — no query re-derivation, so the count cannot diverge from the
-                     index. Single-reason (KeywordIngredientSlot) ⇒ the popup is a flat list. -->
-                <StackPanel Margin="0,10,0,0">
+                <!-- Used as — recipes that consume this item via a keyword
+                     ingredient slot (#318 slice 4, surface 2). Same shape as
+                     "Used in": capped Link cluster + summary-form Set-ref. -->
+                <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding ConsumedAsKeywordIn.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding ConsumedAsKeywordInLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding ConsumedAsKeywordInPopup, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding ConsumedAsKeywordInSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="Used as" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding ConsumedAsKeywordIn}">
+                    <TextBlock Text="Used as" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ConsumedAsKeywordInLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <!-- "View all N →" — opens the shared provenance popup (#318). Always
-                         visible whenever any recipe consumes the item via a keyword slot
-                         (independent of the chip cap), styled like ActionChip (ghost fill,
-                         ListFilter glyph). Mirrors the surface-1 "Used in" affordance. -->
-                    <Button Margin="0,4,0,0" Padding="6,2"
-                            HorizontalAlignment="Left" Cursor="Hand"
-                            Command="{Binding ShowConsumedAsKeywordInPopupCommand}"
-                            Visibility="{Binding ConsumedAsKeywordInPopup, Converter={StaticResource NullToVis}}">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderBrush" Value="#66D4A847"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Foreground" Value="#FFD4A847"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#22D4A847"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
-                                                             Foreground="{TemplateBinding Foreground}"
-                                                             Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                        <TextBlock Foreground="{TemplateBinding Foreground}"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   VerticalAlignment="Center">
-                                            <Run Text="View all "/><Run Text="{Binding ConsumedAsKeywordInTotal, Mode=OneWay}"/><Run Text=" →"/>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
+                    <ContentControl Content="{Binding ConsumedAsKeywordInSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding ConsumedAsKeywordInSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowConsumedAsKeywordInPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- Skill requirements (hidden when empty) -->
+                <!-- Effects — inert Fact rows via the SHARED EffectLineTemplate
+                     (icon + text, no box/gold). The template lives in
+                     Resources.xaml and is consumed by many views; it is already
+                     grammar-inert, so it is intentionally left untouched
+                     (flag-and-stop anti-goal). Section label → Structure. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SkillReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Skill requirements" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SkillReqChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="#FF252525" BorderBrush="#33FFFFFF"
-                                        BorderThickness="1" CornerRadius="3"
-                                        Padding="6,2" Margin="0,0,4,4">
-                                    <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                               FontSize="{DynamicResource AppFontSizeHint}"/>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-
-                <!-- Effects -->
-                <StackPanel>
-                    <TextBlock Text="Effects" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"
-                               Visibility="{Binding EffectLines.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                            Visibility="{Binding EffectLines.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Effects" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   MaxHeight="480">
                         <ItemsControl ItemsSource="{Binding EffectLines}"
@@ -331,19 +267,18 @@
                     </ScrollViewer>
                 </StackPanel>
 
-                <!-- Augmentation (hidden when empty) -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Augmentation — per-augment group header → Structure group
+                     header (gold dropped, G-b); nested effect rows keep the
+                     shared inert EffectLineTemplate. -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding Augments.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Augmentation" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Augmentation" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding Augments}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,6">
-                                    <TextBlock Text="{Binding DisplayLine}" FontWeight="SemiBold"
-                                               Foreground="#FFD4A847"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource StructureGroupHeaderStyle}"
                                                Margin="0,0,0,2"/>
                                     <ItemsControl ItemsSource="{Binding EffectLines}"
                                                   ItemTemplate="{StaticResource EffectLineTemplate}"
@@ -355,18 +290,15 @@
                 </StackPanel>
 
                 <!-- Applied augment waxes -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding WaxAugments.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Applied augment waxes" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Applied augment waxes" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding WaxAugments}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,6">
-                                    <TextBlock Text="{Binding DisplayLine}" FontWeight="SemiBold"
-                                               Foreground="#FFD4A847"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource StructureGroupHeaderStyle}"
                                                Margin="0,0,0,2"/>
                                     <ItemsControl ItemsSource="{Binding EffectLines}"
                                                   ItemTemplate="{StaticResource EffectLineTemplate}"
@@ -378,18 +310,15 @@
                 </StackPanel>
 
                 <!-- Infusions -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding WaxItems.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Infusions" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Infusions" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding WaxItems}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,6">
-                                    <TextBlock Text="{Binding DisplayLine}" FontWeight="SemiBold"
-                                               Foreground="#FFD4A847"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource StructureGroupHeaderStyle}"
                                                Margin="0,0,0,2"/>
                                     <ItemsControl ItemsSource="{Binding EffectLines}"
                                                   ItemTemplate="{StaticResource EffectLineTemplate}"
@@ -400,13 +329,16 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Treasure effects -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Treasure effects — section label → Structure. The "?" help
+                     tooltip is a help affordance, not a grammar tier — kept
+                     verbatim. Per-pool: the #252525 box is dropped (Fact has no
+                     surface, G-b); DisplayLine → Fact body; "Browse pool" →
+                     Control chassis (GrammarControlChassisStyle). -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding AugmentPools.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                        <TextBlock Text="Treasure Effects" FontWeight="SemiBold"
-                                   Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Treasure Effects"
+                                   Style="{StaticResource StructureSectionLabelStyle}"
                                    VerticalAlignment="Center"/>
                         <Border Background="Transparent" Cursor="Help"
                                 VerticalAlignment="Center" Margin="5,0,0,0">
@@ -417,58 +349,47 @@
                                 </ToolTip>
                             </Border.ToolTip>
                             <icon:PackIconLucide Kind="CircleQuestionMark" Width="12" Height="12"
-                                                 Foreground="#88FFFFFF"/>
+                                                 Foreground="{DynamicResource TextTertiaryBrush}"/>
                         </Border>
                     </StackPanel>
                     <ItemsControl ItemsSource="{Binding AugmentPools}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#FF252525" BorderBrush="#33FFFFFF"
-                                        BorderThickness="1" CornerRadius="3"
-                                        Padding="8,6" Margin="0,0,0,6">
-                                    <DockPanel>
-                                        <Button DockPanel.Dock="Right" VerticalAlignment="Center"
-                                                Margin="8,0,0,0" Padding="8,3"
-                                                Content="Browse pool"
-                                                Cursor="Hand"
-                                                Command="{Binding DataContext.BrowsePoolCommand,
-                                                          RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"
-                                                CommandParameter="{Binding}"
-                                                Visibility="{Binding DataContext.HasPoolPresenter,
-                                                             RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}},
-                                                             Converter={StaticResource BoolToVis}}"/>
-                                        <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   VerticalAlignment="Center"
-                                                   TextWrapping="Wrap"/>
-                                    </DockPanel>
-                                </Border>
+                                <DockPanel Margin="0,0,0,6">
+                                    <Button DockPanel.Dock="Right" VerticalAlignment="Center"
+                                            Margin="8,0,0,0"
+                                            Content="Browse pool"
+                                            Style="{StaticResource GrammarControlChassisStyle}"
+                                            Command="{Binding DataContext.BrowsePoolCommand,
+                                                      RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"
+                                            CommandParameter="{Binding}"
+                                            Visibility="{Binding DataContext.HasPoolPresenter,
+                                                         RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}},
+                                                         Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource FactBodyStyle}"
+                                               VerticalAlignment="Center"/>
+                                </DockPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Teaches recipe -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Teaches recipe — plain-text preview (no EntityRef) → Fact
+                     body; the gold "Teaches: X" is gold-in-prose for a
+                     non-navigable proper noun, dropped per G-b. -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding TaughtRecipes.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Teaches recipe" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Teaches recipe" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding TaughtRecipes}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,6">
-                                    <TextBlock FontWeight="SemiBold" Foreground="#FFD4A847"
-                                               FontSize="{DynamicResource AppFontSizeHint}">
-                                        <Run Text="Teaches: "/>
-                                        <Run Text="{Binding DisplayName, Mode=OneWay}"/>
+                                    <TextBlock Style="{StaticResource FactBodyStyle}">
+                                        <Run Text="Teaches: " FontWeight="SemiBold"/><Run Text="{Binding DisplayName, Mode=OneWay}"/>
                                     </TextBlock>
-                                    <TextBlock Foreground="#88FFFFFF"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
-                                               Margin="10,1,0,0">
-                                        <Run Text="{Binding Skill, Mode=OneWay}"/>
-                                        <Run Text=" "/>
-                                        <Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
+                                    <TextBlock Style="{StaticResource FactBodyStyle}" Margin="10,1,0,0">
+                                        <Run Text="{Binding Skill, Mode=OneWay}"/><Run Text=" "/><Run Text="{Binding SkillLevelReq, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
                             </DataTemplate>
@@ -477,96 +398,83 @@
                 </StackPanel>
 
                 <!-- Additional effects -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding EffectTags.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Additional effects" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Additional effects" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding EffectTags}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayText}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayText}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Research progress -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding ResearchProgress.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Progresses research" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Progresses research" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding ResearchProgress}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- XP grants -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding XpGrants.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Grants XP" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Grants XP" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding XpGrants}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Words of Power -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding WordsOfPower.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Reveals words of power" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Reveals words of power" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding WordsOfPower}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Learned abilities -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Learned abilities — plain-text preview (no EntityRef) →
+                     Fact body. (If a future projection carried an Ability ref
+                     this would become a Link; the preview is plain text by
+                     design — the Recipe-pilot ResultEffects-stub precedent.) -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding LearnedAbilities.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Teaches ability" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Teaches ability" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding LearnedAbilities}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Produces -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Produces — inert Fact rows (small leading icon + text),
+                     mirroring the shared EffectLine row shape. -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding ProducedItems.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Produces" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Produces" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding ProducedItems}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -575,10 +483,9 @@
                                                  Width="20" Height="20" Margin="0,0,8,0"
                                                  VerticalAlignment="Center"
                                                  Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
-                                    <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                               FontSize="{DynamicResource AppFontSizeHint}"
-                                               VerticalAlignment="Center"
-                                               TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource FactBodyStyle}"
+                                               VerticalAlignment="Center"/>
                                 </DockPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -586,85 +493,76 @@
                 </StackPanel>
 
                 <!-- Equip bonuses -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding EquipBonuses.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Bonuses while equipped" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Bonuses while equipped" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding EquipBonuses}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Crafting enhancements -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding CraftingEnhancements.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Modifies crafted item" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Modifies crafted item" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding CraftingEnhancements}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayLine}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayLine}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
                 <!-- Recipe cooldowns -->
-                <StackPanel Margin="0,10,0,0"
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding RecipeCooldowns.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Cooldown adjustments" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Cooldown adjustments" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding RecipeCooldowns}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayText}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding DisplayText}"
+                                           Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Unpreviewable extractions -->
-                <StackPanel Margin="0,10,0,0"
+                <!-- Unpreviewable extractions — the #252525 box is dropped (Fact
+                     has no surface, G-b); icon + italic DisplayLine → Fact body
+                     (mirrors the italic Description treatment). -->
+                <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding UnpreviewableExtractions.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Extraction" FontWeight="SemiBold"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Extraction" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding UnpreviewableExtractions}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#FF252525" BorderBrush="#33FFFFFF"
-                                        BorderThickness="1" CornerRadius="3"
-                                        Padding="8,6" Margin="0,0,0,6">
-                                    <DockPanel>
-                                        <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
-                                                     Width="20" Height="20" Margin="0,0,8,0"
-                                                     VerticalAlignment="Center"
-                                                     Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
-                                        <TextBlock Text="{Binding DisplayLine}"
-                                                   Foreground="#AAFFFFFF"
-                                                   FontStyle="Italic"
-                                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                                   VerticalAlignment="Center"
-                                                   TextWrapping="Wrap"/>
-                                    </DockPanel>
-                                </Border>
+                                <DockPanel Margin="0,0,0,6">
+                                    <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconId}"
+                                                 Width="20" Height="20" Margin="0,0,8,0"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IconId, Converter={StaticResource PositiveIntToVis}}"/>
+                                    <TextBlock Text="{Binding DisplayLine}"
+                                               Style="{StaticResource FactBodyStyle}"
+                                               FontStyle="Italic"
+                                               VerticalAlignment="Center"/>
+                                </DockPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
+
+                <!-- Footer ID strip (matrix #14 · G-a). InternalName is a
+                     cross-entity reference KEY ⇒ a copyable cell;
+                     FactFooterVm.None() self-hides at 0 ids. The DetailExportHost
+                     wrapper is retained unchanged (no FooterText binding). -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
 
             </StackPanel>
         </DockPanel>
