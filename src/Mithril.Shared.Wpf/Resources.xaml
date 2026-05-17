@@ -1250,4 +1250,108 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== SetRef · the Phase-4 shared Set-reference primitive (G3 grammar:
+         "Set-reference · filter / keyword / group / stacking" + carry-forward #4).
+         One polymorphic control carrying BOTH shapes on one blue chassis;
+         DataContext is a SetRefVm. Mirrors the Link templated-control pattern
+         above (PART_-named child wired in SetRef.cs OnApplyTemplate).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · A blue chip WITH a chassis (unlike Link): idle fill
+             SetRefIdleFillBrush, 1px SetRefBorderBrush border,
+             GrammarRadiusSm (2) corner, 1×8 padding, AppFontSizeHint text in
+             SetRefTextBrush.
+           · summary-form (MatchCount != null) → DisplayText is
+             "{Label} · {count} →"; tag-form (MatchCount == null) → bare Label
+             (no count, no arrow, NO lead glyph — grammar "glyph: None by
+             default"). The VM bakes the shape into DisplayText so the template
+             binds one string and the two shapes never fork.
+           · Optional leading SlotOrdinal prefix (stacking semantics): small,
+             TextQuaternaryBrush, hidden when null via the VM bool HasOrdinal
+             (a bool, NOT a converter — dodges the string-only NullOrEmptyToVis
+             repo footgun and avoids a bespoke int?->Visibility converter).
+           · Hover: fill darkens toward AccentSoftBrush (active fill), border
+             brightens to BorderStrongBrush — the drawer-pulling feel.
+             Cursor=Hand ONLY when IsActionable.
+           · AVAILABILITY COROLLARY (never-grey-pill guarantee): IsActionable
+             changes interaction ONLY. The at-rest chassis (fill/border/text/
+             radius/padding) is IDENTICAL regardless of IsActionable — an
+             un-wired tag-form Set-ref stays on the FULL blue chassis and is
+             NEVER demoted to an inert grey Fact pill (the forbidden inverted-
+             affordance lie). The only IsActionable-conditioned setters are the
+             hover fill/border and Cursor; none touch the rest state. ===== -->
+    <Style TargetType="{x:Type c:SetRef}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:SetRef}">
+                    <Button x:Name="PART_Button"
+                            HorizontalAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <!-- The chassis. Rest state is token-fixed and does
+                                     NOT vary with IsActionable (availability
+                                     corollary). Hover-only setters below. -->
+                                <Border x:Name="Chassis"
+                                        Background="{StaticResource SetRefIdleFillBrush}"
+                                        BorderBrush="{StaticResource SetRefBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource GrammarRadiusSm}"
+                                        Padding="8,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- Stacking ordinal prefix: small,
+                                             quaternary, leading. Hidden via the VM
+                                             bool HasOrdinal (object-safe; no
+                                             converter). -->
+                                        <TextBlock x:Name="OrdinalPrefix"
+                                                   Text="{Binding OrdinalText}"
+                                                   Margin="0,0,4,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeXSmall}"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- The shape-baked body: tag-form = bare
+                                             Label; summary-form = "{Label} · N →". -->
+                                        <TextBlock Text="{Binding DisplayText}"
+                                                   Foreground="{StaticResource SetRefTextBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <!-- Hide the ordinal prefix entirely when the VM
+                                         carries no SlotOrdinal (positionally inert /
+                                         single). VM bool, not a converter. -->
+                                    <DataTrigger Binding="{Binding HasOrdinal}" Value="False">
+                                        <Setter TargetName="OrdinalPrefix" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <!-- Actionable: hand cursor + drawer-pulling
+                                         hover (fill -> active, border -> strong).
+                                         Rest state untouched. -->
+                                    <DataTrigger Binding="{Binding IsActionable}" Value="True">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsActionable}" Value="True"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="Chassis" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                        <Setter TargetName="Chassis" Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/>
+                                    </MultiDataTrigger>
+                                    <!-- IsActionable=false: NO hover/cursor setters
+                                         at all. The chassis above is the entire look
+                                         (identical to actionable at rest) — never a
+                                         grey pill. -->
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
