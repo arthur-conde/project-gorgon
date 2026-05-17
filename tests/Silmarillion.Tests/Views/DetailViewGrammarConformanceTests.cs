@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -7,10 +8,10 @@ using Xunit;
 namespace Silmarillion.Tests.Views;
 
 /// <summary>
-/// Phase-6 conformance guardrail for the #404 visual grammar. Every Silmarillion
-/// <c>*DetailView.xaml</c> renders entity references through the shared Phase-4
-/// primitives (<c>Link</c> / <c>SetRef</c> / <c>FactTable</c> / <c>FactFooter</c>);
-/// the legacy bordered-box entity chips (<c>EntityChip</c> / <c>ItemSourceChip</c>)
+/// Phase-6 conformance guardrail for the #404 visual grammar. Every migrated
+/// detail view renders entity references through the shared Phase-4 primitives
+/// (<c>Link</c> / <c>SetRef</c> / <c>FactTable</c> / <c>FactFooter</c>); the
+/// legacy bordered-box entity chips (<c>EntityChip</c> / <c>ItemSourceChip</c>)
 /// are the exact "raw bordered box for an entity reference" the #404 program
 /// removed (the Fact↔Link↔Set-reference collision).
 /// <para>
@@ -20,16 +21,16 @@ namespace Silmarillion.Tests.Views;
 /// fails the build the moment a detail view regresses to the legacy control —
 /// the Phase-6 "flip the visual-debt note to resolved, and keep it resolved"
 /// guarantee (see <c>docs/silmarillion-field-coverage.md</c> §"Visual grammar
-/// (#404) — RESOLVED" and <c>docs/silmarillion-visual-grammar.md</c>).
+/// (#404)" and <c>docs/silmarillion-visual-grammar.md</c>).
 /// </para>
 /// <para>
-/// <b>Scope:</b> intentionally only <c>src/Silmarillion.Module/Views/*DetailView.xaml</c>
-/// — the nine Silmarillion <em>tab</em> detail panes #404 Phase-5 migrated. It does
-/// NOT cover the shared <c>Mithril.Shared.Wpf/ItemDetailView</c> /
-/// <c>ItemDetailWindow</c>: Item has no Silmarillion tab detail by design, that pane
-/// is cross-module shared infra (Phase-5 anti-goal #3 forbade editing it), and its
-/// grammar migration is its own separately-tracked effort — explicitly NOT closed by
-/// #404 (see the "Remaining grammar surface" bullet in the coverage doc).
+/// <b>Scope:</b> the nine Silmarillion <em>tab</em> detail panes
+/// (<c>src/Silmarillion.Module/Views/*DetailView.xaml</c>) <b>and</b> the shared
+/// cross-module <c>src/Mithril.Shared.Wpf/ItemDetailView.xaml</c>. The shared
+/// item-detail pane was deliberately out of #404 Phase-5 scope (Phase-5
+/// anti-goal #3 forbade editing shared <c>Mithril.Shared.Wpf</c> primitives) and
+/// was migrated by its own gated follow-up (#424); it is now covered here so it
+/// cannot silently regress to the pre-#404 boxed-chip grammar either.
 /// </para>
 /// </summary>
 public sealed class DetailViewGrammarConformanceTests
@@ -43,20 +44,28 @@ public sealed class DetailViewGrammarConformanceTests
         new(@"<[A-Za-z0-9_]+:(EntityChip|ItemSourceChip)\b", RegexOptions.Compiled);
 
     [Fact]
-    public void NoSilmarillionDetailView_RendersAnEntityReferenceAsALegacyBorderedChip()
+    public void NoMigratedDetailView_RendersAnEntityReferenceAsALegacyBorderedChip()
     {
-        var viewsDir = FindViewsDir();
-        if (viewsDir is null) return; // source tree not reachable (packaged run) — skip, don't false-fail
+        var repoRoot = FindRepoRoot();
+        if (repoRoot is null) return; // source tree not reachable (packaged run) — skip, don't false-fail
 
-        var detailViews = Directory
-            .EnumerateFiles(viewsDir, "*DetailView.xaml", SearchOption.AllDirectories)
+        var detailViews = EnumerateGuardedViews(repoRoot)
             .OrderBy(p => p)
             .ToList();
 
         // Sanity: the scan must actually see the detail views (a glob that
         // matched nothing would make this guard vacuously pass forever).
         detailViews.Should().NotBeEmpty(
-            "the Silmarillion detail views must be discoverable for the guardrail to be meaningful");
+            "the migrated detail views must be discoverable for the guardrail to be meaningful");
+
+        // Sanity: the shared item-detail pane (#424) is explicitly part of the
+        // guarded set — if the path moves, fail loudly rather than silently
+        // dropping coverage of the highest-blast-radius pane.
+        detailViews.Select(Path.GetFileName)
+            .Should().Contain("ItemDetailView.xaml",
+                "#424 brought the shared Mithril.Shared.Wpf/ItemDetailView into the "
+                + "Phase-6 guardrail scope; losing it would let the cross-module pane "
+                + "silently regress.");
 
         var offenders = detailViews
             .Where(xaml => LegacyEntityChip.IsMatch(File.ReadAllText(xaml)))
@@ -65,26 +74,48 @@ public sealed class DetailViewGrammarConformanceTests
             .ToList();
 
         offenders.Should().BeEmpty(
-            "#404 is RESOLVED — every detail view must render entity references through the "
-            + "shared grammar primitives (c:Link / c:SetRef / c:FactTable / c:FactFooter), "
-            + "never the legacy bordered-box EntityChip/ItemSourceChip. A view in this list "
-            + "has regressed to the pre-#404 debt; migrate it per "
+            "#404 is RESOLVED — every migrated detail view (the nine Silmarillion tab "
+            + "panes + the shared ItemDetailView, #424) must render entity references "
+            + "through the shared grammar primitives (c:Link / c:SetRef / c:FactTable / "
+            + "c:FactFooter), never the legacy bordered-box EntityChip/ItemSourceChip. A "
+            + "view in this list has regressed to the pre-#404 debt; migrate it per "
             + "docs/silmarillion-visual-grammar.md.");
     }
 
     /// <summary>
-    /// Walk up from the test bin dir to the repo root (marked by <c>Mithril.slnx</c>),
-    /// then resolve <c>src/Silmarillion.Module/Views</c>. Returns null if not found
-    /// (mirrors <see cref="TabViewCodeBehindGuardTests"/>'s convention).
+    /// The full guarded set: every <c>*DetailView.xaml</c> under
+    /// <c>src/Silmarillion.Module/Views</c> plus the shared cross-module
+    /// <c>src/Mithril.Shared.Wpf/ItemDetailView.xaml</c> (#424). Missing
+    /// directories/files are skipped silently (a packaged run); the
+    /// not-empty + must-contain assertions catch a genuine scope loss.
     /// </summary>
-    private static string? FindViewsDir()
+    private static IEnumerable<string> EnumerateGuardedViews(string repoRoot)
+    {
+        var silmarillionViews = Path.Combine(repoRoot, "src", "Silmarillion.Module", "Views");
+        if (Directory.Exists(silmarillionViews))
+        {
+            foreach (var v in Directory.EnumerateFiles(
+                         silmarillionViews, "*DetailView.xaml", SearchOption.AllDirectories))
+                yield return v;
+        }
+
+        var sharedItemDetail = Path.Combine(
+            repoRoot, "src", "Mithril.Shared.Wpf", "ItemDetailView.xaml");
+        if (File.Exists(sharedItemDetail))
+            yield return sharedItemDetail;
+    }
+
+    /// <summary>
+    /// Walk up from the test bin dir to the repo root (marked by
+    /// <c>Mithril.slnx</c>). Returns null if not found (mirrors
+    /// <see cref="TabViewCodeBehindGuardTests"/>'s convention).
+    /// </summary>
+    private static string? FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Mithril.slnx")))
             dir = dir.Parent;
 
-        if (dir is null) return null;
-        var views = Path.Combine(dir.FullName, "src", "Silmarillion.Module", "Views");
-        return Directory.Exists(views) ? views : null;
+        return dir?.FullName;
     }
 }

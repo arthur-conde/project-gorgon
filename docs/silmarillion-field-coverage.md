@@ -144,10 +144,11 @@ an unwired edge. This is the priority and stands alone.
 - Everything else unsurfaced is deliberate; do not file "increase coverage" issues
   against it. If a future audit re-flags class 1–4 properties, point it here.
 
-### Visual grammar (#404) — RESOLVED for the Silmarillion tab detail views
+### Visual grammar (#404) — RESOLVED (all detail panes, incl. the shared item-detail #424)
 
 - **No fact / control / link visual grammar** (#404) — **RESOLVED 2026-05-17
-  for the nine Silmarillion *tab* detail views.**
+  for the nine Silmarillion *tab* detail views; the shared cross-module
+  item-detail pane followed via #424 (2026-05-17).**
   The original debt: the shared `EntityChip` was visually identical to the
   header stat badges (`Skill N`, `MaxUses`, cooldown) and broke prose in
   `{prefix} [chip]` rows; root cause was the *absence of a grammar*
@@ -168,26 +169,32 @@ an unwired edge. This is the priority and stands alone.
 
   A Phase-6 conformance guardrail
   (`DetailViewGrammarConformanceTests`) fails the build if any
-  `src/Silmarillion.Module/Views/*DetailView.xaml` re-introduces a legacy
+  `src/Silmarillion.Module/Views/*DetailView.xaml` **or the shared
+  `src/Mithril.Shared.Wpf/ItemDetailView.xaml`** re-introduces a legacy
   entity-reference chip (`EntityChip`/`ItemSourceChip`) instead of the shared
-  primitive, so the Silmarillion tab detail views cannot silently regress. Do
-  not re-flag *those* detail-pane chips as a coverage gap; that surface is
-  closed.
+  primitive, so neither the Silmarillion tab detail views nor the cross-module
+  item-detail pane can silently regress. Do not re-flag *those* detail-pane
+  chips as a coverage gap; that surface is closed.
 
-- **Remaining grammar surface (NOT closed): the shared
-  `Mithril.Shared.Wpf/ItemDetailView` / `ItemDetailWindow`.** Item has no
-  Silmarillion *tab* detail by design (see "Modeled but no detail view"
-  above) — its detail is the cross-module shared pane (`ItemDetailWindow`
-  popups, Bilbo, cross-link "open in window"). That pane was deliberately
-  **out of #404 Phase-5 scope** (Phase-5 anti-goal #3 forbade editing shared
-  `Mithril.Shared.Wpf` primitives) and still carries the pre-#404 boxed-chip
-  grammar — so clicking an item Link from a now-migrated Silmarillion view
-  lands in an un-migrated window (the grammar break is visible at that
-  navigation boundary). The Phase-4 primitives + the pilot pattern make this
-  migration mechanical, but it is shared infra with cross-module blast radius
-  and is its **own** gated effort, tracked separately — NOT presumed closed by
-  the #404 program. The conformance guardrail intentionally does **not** cover
-  it (it scopes to `src/Silmarillion.Module/Views`).
+- **Shared cross-module item-detail pane — RESOLVED (#424, 2026-05-17).** The
+  shared `Mithril.Shared.Wpf/ItemDetailView` / `ItemDetailWindow` (Item has no
+  Silmarillion *tab* detail by design — see "Modeled but no detail view"
+  above; its detail is the cross-module pane used by `ItemDetailWindow`
+  popups, Bilbo, Celebrimbor, and cross-link "open in window") was
+  deliberately **out of #404 Phase-5 scope** (Phase-5 anti-goal #3 forbade
+  editing shared `Mithril.Shared.Wpf` primitives during the fan-out). It was
+  migrated by its **own gated follow-up #424**: a mini-Phase-1 classification
+  then a consistency-diff against the merged pilot + `EffectDetailView` —
+  EquipSlot + skill-req pills folded into one inert `FactTable` strip;
+  Sources / Produced by / Awarded by / Bestows lorebook / Used in / Used as
+  rendered through `Link`; the two "View all N →" drawers as summary-form
+  `SetRef`; the InternalName footer as the copyable-`KEY` `FactFooter`; the
+  per-`*Preview` sections as inert Fact body. The grammar break at the
+  Silmarillion→item-window navigation boundary is closed, and the Phase-6
+  guardrail now covers this pane too (above). The VM change was additive — the
+  legacy chip/string members the `ItemsTabViewModel` tests assert are
+  retained. Do not re-flag this pane as a remaining grammar surface; it is
+  closed.
 
 ## History
 
