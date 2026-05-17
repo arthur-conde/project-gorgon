@@ -108,6 +108,58 @@ public sealed class LinkGlyphToVisibilityConverter : IValueConverter
 }
 
 /// <summary>
+/// The G3-amend-2 "<c>FontSize × n</c>" converter — the single mechanism by which every
+/// Silmarillion grammar tier sizes itself in <em>em</em> (relative to inherited
+/// <c>FontSize</c>) rather than fixed px, so sizes track the Appearance base-size slider
+/// (<c>docs/silmarillion-visual-grammar.md</c> · "All sizes are em-relative, not px").
+/// <para>
+/// <c>value</c> is the inherited <c>FontSize</c> (a <see cref="double"/>, supplied via a
+/// <c>RelativeSource Self</c>/<c>AncestorType</c> binding to the element whose inherited
+/// font-size defines 1em); <c>parameter</c> is the factor (a <see cref="double"/>,
+/// parsed culture-<em>invariantly</em> so a XAML <c>ConverterParameter=1.125</c> is not
+/// mis-read under comma-decimal locales). Returns <c>value * factor</c>.
+/// </para>
+/// Null / non-numeric / non-positive inputs degrade to <see cref="double.NaN"/> ("size
+/// to content") rather than throwing — a missing inherited FontSize must never crash a
+/// detail pane.
+/// </summary>
+public sealed class FontSizeTimesConverter : IValueConverter
+{
+    /// <summary>
+    /// Pure size math, factored out so it is unit-testable without the converter /
+    /// visual tree. Returns <c>fontSize * factor</c>; <see cref="double.NaN"/> when
+    /// <paramref name="fontSize"/> is not a positive finite number.
+    /// </summary>
+    public static double Scale(double fontSize, double factor) =>
+        double.IsFinite(fontSize) && fontSize > 0 ? fontSize * factor : double.NaN;
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        double fontSize = value switch
+        {
+            double d => d,
+            float f => f,
+            int i => i,
+            _ => double.NaN,
+        };
+
+        double factor = parameter switch
+        {
+            double d => d,
+            float f => f,
+            int i => i,
+            string s when double.TryParse(
+                s, NumberStyles.Float, CultureInfo.InvariantCulture, out var p) => p,
+            _ => double.NaN,
+        };
+
+        return double.IsFinite(factor) ? Scale(fontSize, factor) : double.NaN;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Two-way converter between an enum value and <c>bool</c> for radio-button bindings.
 /// Usage: <c>IsChecked="{Binding Foo, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=SomeEnumValue}"</c>.
 /// </summary>

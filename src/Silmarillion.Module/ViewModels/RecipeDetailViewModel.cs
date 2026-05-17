@@ -177,6 +177,14 @@ public sealed class RecipeDetailViewModel
     public string? Description => Recipe.Description;
     public string? Skill => Recipe.Skill;
     public int SkillLevelReq => Recipe.SkillLevelReq;
+
+    /// <summary>
+    /// The recipe's own CDN icon. G3-amend-2: this is the <em>title-glyph</em> (the
+    /// entity icon next to the Fact-title) — the view renders it through the FIXED
+    /// 40px <c>FactTitleGlyphStyle</c> ("entity stamp", exempt from em/accessibility
+    /// scaling), not an em-scaled lead. The size lives entirely in the style; the VM
+    /// only supplies the id.
+    /// </summary>
     public int IconId => Recipe.IconId;
 
     /// <summary>

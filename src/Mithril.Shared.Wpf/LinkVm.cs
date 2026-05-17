@@ -21,6 +21,23 @@ public enum LinkGlyph
 }
 
 /// <summary>
+/// Row-density of a <see cref="Link"/> — the G3-amend-2 sole sizing input
+/// (<c>docs/silmarillion-visual-grammar.md</c> · "Link · navigates · V2", "Shape ·
+/// spacing", and the em size table). It selects the em factor the lead element scales
+/// by; <see cref="Prose"/> is the default (inline in a sentence, single Link or short
+/// list). <see cref="List"/> is own-line-per-entry — a layout-changing per-section
+/// design call, deliberately NOT applied by the Recipe pilot (left a G4 decision).
+/// </summary>
+public enum LinkDensity
+{
+    /// <summary>Inline in a sentence / short list. Sprite ×1.0em, Lucide ×0.75em.</summary>
+    Prose,
+
+    /// <summary>Own line per entry. Sprite ×1.5em, Lucide ×1.125em (line-height ~1.7).</summary>
+    List,
+}
+
+/// <summary>
 /// The unified data-carrier for the Phase-4 <see cref="Link"/> primitive — the single
 /// VM that subsumes both <see cref="EntityChipVm"/> (cross-entity navigation chip) and
 /// <see cref="ItemSourceChipVm"/> (item/recipe source row with a provenance suffix).

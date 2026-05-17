@@ -117,6 +117,25 @@ public sealed class Link : Control
         typeof(Link),
         new PropertyMetadata(null));
 
+    /// <summary>
+    /// Row-density — the G3-amend-2 sole sizing input (<c>docs/silmarillion-visual-grammar.md</c>
+    /// · em size table). Drives <em>only</em> the lead element's em factor (see
+    /// <see cref="LeadFactor"/>); nothing else about the Link changes. Defaults to
+    /// <see cref="LinkDensity.Prose"/> so existing wrapped-chip call sites keep their
+    /// inline layout. The Style's lead-size triggers key off this DP.
+    /// </summary>
+    public LinkDensity Density
+    {
+        get => (LinkDensity)GetValue(DensityProperty);
+        set => SetValue(DensityProperty, value);
+    }
+
+    public static readonly DependencyProperty DensityProperty = DependencyProperty.Register(
+        nameof(Density),
+        typeof(LinkDensity),
+        typeof(Link),
+        new PropertyMetadata(LinkDensity.Prose));
+
     private static readonly DependencyPropertyKey CopiedKey =
         DependencyProperty.RegisterReadOnly(
             nameof(Copied), typeof(bool), typeof(Link),
@@ -179,6 +198,29 @@ public sealed class Link : Control
         if (vm.Glyph != LinkGlyph.None) return LinkLead.Lucide(ToLucideKind(vm.Glyph));
         return LinkLead.None;
     }
+
+    /// <summary>
+    /// Pure G3-amend-2 lead em-factor: the multiplier applied to the inherited
+    /// <c>FontSize</c> (via <see cref="FontSizeTimesConverter"/>) to size the lead
+    /// element, decided solely by <paramref name="density"/> × the lead family
+    /// (<paramref name="lead"/>). The exact ratified table
+    /// (<c>docs/silmarillion-visual-grammar.md</c> · "All sizes are em-relative"):
+    /// <list type="bullet">
+    ///   <item>Sprite — Prose <c>1.0</c>, List <c>1.5</c></item>
+    ///   <item>Lucide — Prose <c>0.75</c>, List <c>1.125</c></item>
+    /// </list>
+    /// <see cref="LinkLeadKind.None"/> has no lead element, so its factor is
+    /// irrelevant (returns <c>0</c>). Factored out (mirroring <see cref="ResolveLead"/> /
+    /// <see cref="ResolveClick"/>) so the density→size math is unit-testable without
+    /// the visual tree. <b>This supersedes the prior fixed-12px lead</b> (commit
+    /// <c>ec0a49e</c>): the lead is now em-relative, not a hard 12px.
+    /// </summary>
+    public static double LeadFactor(LinkDensity density, LinkLeadKind lead) => lead switch
+    {
+        LinkLeadKind.Sprite => density == LinkDensity.List ? 1.5 : 1.0,
+        LinkLeadKind.Lucide => density == LinkDensity.List ? 1.125 : 0.75,
+        _ => 0.0,
+    };
 
     private Button? _button;
 

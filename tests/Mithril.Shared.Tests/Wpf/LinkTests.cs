@@ -262,6 +262,52 @@ public sealed class LinkTests
         Link.ResolveLead(null).Should().Be(LinkLead.None);
     }
 
+    // ── Density DP default + lead em-factor (G3 amendment 2 · 2026-05-17) ──
+
+    [Fact]
+    public void Density_DefaultsToProse()
+    {
+        // The DP default — existing wrapped-chip call sites keep inline layout.
+        // (Pure metadata read; no visual tree needed.)
+        Link.DensityProperty.DefaultMetadata.DefaultValue
+            .Should().Be(LinkDensity.Prose);
+    }
+
+    [Theory]
+    // Sprite — Prose ×1.0, List ×1.5 (the ratified em size table).
+    [InlineData(LinkDensity.Prose, LinkLeadKind.Sprite, 1.0)]
+    [InlineData(LinkDensity.List, LinkLeadKind.Sprite, 1.5)]
+    // Lucide — Prose ×0.75, List ×1.125.
+    [InlineData(LinkDensity.Prose, LinkLeadKind.Lucide, 0.75)]
+    [InlineData(LinkDensity.List, LinkLeadKind.Lucide, 1.125)]
+    public void LeadFactor_MatchesRatifiedEmTable(
+        LinkDensity density, LinkLeadKind lead, double expected)
+    {
+        Link.LeadFactor(density, lead).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(LinkDensity.Prose)]
+    [InlineData(LinkDensity.List)]
+    public void LeadFactor_None_HasNoLead_FactorZero(LinkDensity density)
+    {
+        // LinkLeadKind.None renders no lead element → factor is irrelevant (0).
+        Link.LeadFactor(density, LinkLeadKind.None).Should().Be(0.0);
+    }
+
+    [Fact]
+    public void LeadFactor_ComposesWithResolveLead_SpriteWinsAtListSize()
+    {
+        // End-to-end: a tangible noun with real art at List density resolves to a
+        // Sprite lead sized ×1.5em — the supersession of ec0a49e's fixed 12px.
+        var vm = new LinkVm("Iron Sword", LinkGlyph.Item,
+            EntityRef.Item("IronSword"), IsNavigable: true, IconId: 42);
+
+        var lead = Link.ResolveLead(vm);
+        Link.LeadFactor(LinkDensity.List, lead.Kind).Should().Be(1.5);
+        Link.LeadFactor(LinkDensity.Prose, lead.Kind).Should().Be(1.0);
+    }
+
     [Fact]
     public void ResolveLead_IngredientGlyphOverride_StillShowsRealSprite()
     {
