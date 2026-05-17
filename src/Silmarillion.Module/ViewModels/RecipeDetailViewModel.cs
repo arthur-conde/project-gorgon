@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Recipes;
@@ -64,7 +65,98 @@ public sealed class RecipeDetailViewModel
                 $"Shares cooldown with {sharedCooldownChip.DisplayName}",
                 "Shares cooldown with",
                 sharedCooldownChip);
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // The legacy string/chip members above stay (tests + planner-facing
+        // contract); these are the grammar-tier carriers the view binds. Built
+        // here (not in RecipesTabViewModel) because the VM already holds every
+        // source datum — the Phase-5 mapping is mechanical, not data-bearing.
+
+        // Fact stat strip (matrix #3): one inert dot-separated value-only strip
+        // replacing the three bordered stat-badge boxes. Each segment is a
+        // value-only FactPair (null label) and empties are skipped, so the strip
+        // self-elides exactly like the old per-chip NullOrEmptyToVis did.
+        StatStrip = FactTableVm.Strip(
+            new[] { SkillRequirementChip, MaxUsesChip, CooldownChip }
+                .Where(s => !string.IsNullOrEmpty(s))
+                .Select(s => new FactPair(null, s))
+                .ToList());
+
+        // Link projections (matrix #6/#9/#10/#12). EntityChip/ItemSourceChip →
+        // LinkVm via the ratified adapters. Ingredients force LinkGlyph.Ingredient
+        // explicitly (reconciliation flag #3: the adapter can't infer Ingredient
+        // from EntityKind.Item — it would yield Item/package).
+        IngredientLinks = Ingredients
+            .Select(c => LinkVm.From(c) with { Glyph = LinkGlyph.Ingredient })
+            .ToList();
+        ProducedItemLinks = ProducedItems.Select(LinkVm.From).ToList();
+        SourceLinks = Sources is null
+            ? []
+            : Sources.Select(LinkVm.From).ToList();
+
+        // Requirement rows: same prose-or-(prefix+link) dual shape, but the inline
+        // chip is now a LinkVm (matrix #6). The row record lives in a file outside
+        // this pilot's edit scope, so wrap it rather than extend it.
+        RequirementRows = Requirements.Select(RecipeRequirementRowVm.From).ToList();
+        SharedCooldownRowVm = SharedCooldownRow is null
+            ? null
+            : RecipeRequirementRowVm.From(SharedCooldownRow);
+
+        // Footer ID: InternalName is a cross-entity reference KEY ⇒ copyable
+        // (matrix #14, G-a). None() when absent so the strip self-hides.
+        Footer = string.IsNullOrEmpty(InternalName)
+            ? FactFooterVm.None()
+            : FactFooterVm.Key(InternalName);
     }
+
+    /// <summary>
+    /// Inert Fact stat strip (matrix #3) — the dot-separated value-only segments
+    /// (<see cref="SkillRequirementChip"/> · <see cref="MaxUsesChip"/> ·
+    /// <see cref="CooldownChip"/>, empties skipped) replacing the three legacy
+    /// bordered stat-badge boxes. G-b: no box, no gold; the
+    /// <c>FactTableLayout.Strip</c> Style carries the (inert) pigment.
+    /// </summary>
+    public FactTableVm StatStrip { get; }
+
+    /// <summary>
+    /// Ingredient cross-links as the unified <see cref="LinkVm"/> (matrix #10).
+    /// Glyph is forced to <see cref="LinkGlyph.Ingredient"/> (reconciliation flag
+    /// #3 — the kind-driven adapter yields <see cref="LinkGlyph.Item"/> for
+    /// <see cref="EntityKind.Item"/>; this list is semantically ingredients).
+    /// </summary>
+    public IReadOnlyList<LinkVm> IngredientLinks { get; }
+
+    /// <summary>Produced-item cross-links as <see cref="LinkVm"/> (matrix #12);
+    /// glyph derived from kind by the adapter (Item ⇒ package).</summary>
+    public IReadOnlyList<LinkVm> ProducedItemLinks { get; }
+
+    /// <summary>
+    /// "Taught by" source rows as <see cref="LinkVm"/> (matrix #9). The provenance
+    /// suffix rides from <see cref="ItemSourceChipVm.Detail"/>; glyph by kind.
+    /// Empty (never null) so the view's count-based section hide is uniform.
+    /// </summary>
+    public IReadOnlyList<LinkVm> SourceLinks { get; }
+
+    /// <summary>
+    /// <see cref="Requirements"/> reshaped so each row's inline chip is a
+    /// <see cref="LinkVm"/> (matrix #6). Wraps the underlying
+    /// <see cref="RecipeRequirementRow"/> (whose record lives outside this pilot's
+    /// edit scope) rather than mutating it.
+    /// </summary>
+    public IReadOnlyList<RecipeRequirementRowVm> RequirementRows { get; }
+
+    /// <summary>
+    /// <see cref="SharedCooldownRow"/> reshaped to the Link-carrying row VM
+    /// (matrix #7 — same template as the requirement rows). Null when absent.
+    /// </summary>
+    public RecipeRequirementRowVm? SharedCooldownRowVm { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14, G-a). <see cref="InternalName"/> is a
+    /// cross-entity reference KEY ⇒ a single copyable cell; <c>None()</c> (the
+    /// strip self-hides) when the recipe has no internal name.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     /// <summary>
     /// Human-readable skill name (resolved by the page VM via <c>IReferenceDataService.Skills</c>),
@@ -238,6 +330,11 @@ public sealed class RecipeKeywordSlotVm
         MatchCount = popup.TotalCount;
         ShowPopupCommand = new RelayCommand(
             () => RecipeDetailViewModel.ProvenancePopupOpener(popup, chipClickCommand));
+        // Matrix #11: the bespoke ghost-gold "{Label} — view all N →" Button
+        // becomes the shared Set-reference primitive. Summary-form (MatchCount
+        // non-null ⇒ "{Label} · N →"), actionable (the reveal is wired to
+        // ShowPopupCommand). Gold→blue is intentional per G-b, not a regression.
+        SetRef = new SetRefVm(Label, MatchCount: MatchCount, IsActionable: true);
     }
 
     /// <summary>Friendly slot description, e.g. "any Crystal" / "Main-Hand Item".</summary>
@@ -266,4 +363,55 @@ public sealed class RecipeKeywordSlotVm
     /// (#229 contract; mirrors the surface-1 <c>ItemDetailViewModel</c> command).
     /// </summary>
     public ICommand ShowPopupCommand { get; }
+
+    /// <summary>
+    /// The keyword slot as the shared Set-reference primitive (matrix #11): a
+    /// summary-form <see cref="SetRefVm"/> (<c>"{Label} · {MatchCount} →"</c>),
+    /// actionable — its reveal is <see cref="ShowPopupCommand"/>. Replaces the
+    /// bespoke ghost-gold "view all N" Button; the gold→blue shift is the ratified
+    /// G-b correction, not a regression.
+    /// </summary>
+    public SetRefVm SetRef { get; }
+}
+
+/// <summary>
+/// View-side reshape of a <see cref="RecipeRequirementRow"/> for the Phase-5
+/// grammar primitives: the prose-or-(prefix + inline chip) dual shape is
+/// preserved, but the inline chip is the unified <see cref="LinkVm"/> instead of
+/// the legacy <see cref="EntityChipVm"/> (matrix #6/#7). This wraps rather than
+/// extends the underlying record because <see cref="RecipeRequirementRow"/> is
+/// declared outside this pilot's edit scope (<c>RecipeRequirementProjector.cs</c>).
+/// <see cref="Link"/> is null for a prose-only row (drives the same NullToVis
+/// object self-switch the legacy template used on <c>Chip</c>).
+/// </summary>
+public sealed class RecipeRequirementRowVm
+{
+    private RecipeRequirementRowVm(string text, string? prefix, LinkVm? link)
+    {
+        Text = text;
+        Prefix = prefix;
+        Link = link;
+    }
+
+    /// <summary>Accessible / fallback prose rendering (used when <see cref="Link"/> is null).</summary>
+    public string Text { get; }
+
+    /// <summary>Inline field-label prefix shown before the <see cref="Link"/> (Structure tier).</summary>
+    public string? Prefix { get; }
+
+    /// <summary>
+    /// The inline navigable cross-link, or null for a prose-only row. Recipe→recipe
+    /// edges (RecipeKnown / RecipeUsed / shared-cooldown) are Recipe-kind, so the
+    /// adapter yields the recipe glyph by kind (matrix #6 — acceptable).
+    /// </summary>
+    public LinkVm? Link { get; }
+
+    /// <summary>
+    /// Adapts a legacy <see cref="RecipeRequirementRow"/>: a row carrying a
+    /// <see cref="RecipeRequirementRow.Chip"/> becomes a prefix + <see cref="LinkVm"/>
+    /// row (chip → <see cref="LinkVm.From(EntityChipVm)"/>); a prose row stays prose
+    /// (<see cref="Link"/> null).
+    /// </summary>
+    public static RecipeRequirementRowVm From(RecipeRequirementRow row) =>
+        new(row.Text, row.Prefix, row.Chip is null ? null : LinkVm.From(row.Chip));
 }
