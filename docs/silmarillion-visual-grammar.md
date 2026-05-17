@@ -232,3 +232,20 @@ so Phase 4 **decides** them rather than improvising (the original failure mode
    decides which shapes the one primitive renders vs. which stay plain Fact
    body lines. No grammar change: every shape is Fact-inert (G-b still strips
    gold from these values).
+4. **One polymorphic Set-reference primitive — summary-form and tag-form.**
+   The Phase 3 handoff's Bendith artboard makes explicit that Set-reference has
+   two shapes on one blue chassis: *summary-form* (`Crystal · 150 matches →` —
+   count + arrow ride on the chip) and *tag-form* (bare keyword chips:
+   `Alchemy`, `Potion`, … — no count, no arrow, no lead glyph; the chip shape
+   carries the tier). The designer confirmed the **grammar already covers this**
+   (Set-reference Role: "filter / keyword / group / stacking"; glyph "None by
+   default") — so this is **not** a grammar change. It is pinned here only so
+   the Phase 4 `<mithril:SetRef/>` primitive is built shape-flexible (one
+   primitive, the count+arrow optional), **not** forked into separate
+   "filter chip" vs "keyword tag" controls — the identical anti-fork rationale
+   as #3 and the single-Link mandate. Additionally: a tag-form Set-ref whose
+   filter action is not yet wired is, by the ratified **availability
+   corollary**, still a Set-reference in a non-activated state — it must render
+   on the blue Set-ref chassis, **never** degrade to an inert grey Fact pill
+   (the forbidden inverted-affordance lie; today's StorageVault keyword tags are
+   exactly that degrade and Phase 5 must correct it, not preserve it).
