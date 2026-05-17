@@ -1354,4 +1354,136 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== FactTable · the Phase-4 shared Fact-group primitive (G3 grammar:
+         "Fact · inert · weight-axis" + carry-forward #3). ONE polymorphic
+         control rendering a label/value group in THREE layouts from one
+         FactTableVm; DataContext is a FactTableVm. Mirrors the Link/SetRef
+         templated-control pattern above, but Fact is INERT — no PART_Button, no
+         ClickCommand, no hover, zero interactivity.
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · Value text  = TextPrimaryBrush   (NEVER gold — G-b strips gold
+             from every Fact value; the model carries no brush at all).
+           · Label text  = TextTertiaryBrush  (Structure-weight label).
+           · NO border, NO surface/background anywhere (Fact is the only fully
+             inert tier).
+           · ANTI-FORK (carry-forward #3): this is ONE control. The Style binds
+             the control's Layout DP to the VM's Layout and DataTriggers the
+             presented template off it — Strip / Grid / Scalar are three
+             ContentControl templates selected by ONE trigger set, NOT three
+             forked controls (same rationale as the single-Link mandate).
+           · Strip  → ItemsControl-free single TextBlock bound to the VM's pure
+             StripText helper: "Label Value · Label Value · …". The middot is
+             injected BETWEEN segments by StripText only — it is NOT part of any
+             value (grammar: "inline dot separators that are NOT part of any
+             value"). One bound string ⇒ separator logic is unit-tested in
+             FactTableVm.StripText, never re-decided in XAML.
+           · Grid   → vertical 2-column ItemsControl: a Grid per row, label
+             (TextTertiaryBrush, left) + value (TextPrimaryBrush, right-aligned,
+             tabular-style alignment via a shared SharedSizeGroup label column so
+             values line up). One Label … Value per row, pair order preserved.
+           · Scalar → a single bare value TextBlock, no label, no rows (the
+             degenerate case the carry-forward demands the SAME primitive
+             degrade to — Pairs has exactly one label-less entry).
+           · Quiet (footer-quiet weight, orthogonal/P2): when the VM's Quiet is
+             true the value run switches to AppMonoFontFamily + TextTertiaryBrush
+             (the InternalName footer-quiet case). Default OFF — weight is not
+             over-engineered here. ===== -->
+    <Style TargetType="{x:Type c:FactTable}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <!-- The VM is the single source of truth: mirror its Layout onto the
+             control's Layout DP so the DataTriggers below have a control-level
+             enum target. One control, layout-switched — not a fork. -->
+        <Setter Property="Layout" Value="{Binding Layout}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:FactTable}">
+                    <!-- Grid.IsSharedSizeScope so the Grid-layout rows share a
+                         label-column width ⇒ values right-align on a common
+                         column (tabular-nums-style alignment). The three layout
+                         views live directly in this ONE template; the trigger
+                         set below toggles which is visible — that IS the
+                         anti-fork (one control, not three). -->
+                    <Grid x:Name="Root" Grid.IsSharedSizeScope="True">
+                        <!-- STRIP: one TextBlock bound to the pure StripText
+                             helper (separator injected between segments only). -->
+                        <TextBlock x:Name="StripView"
+                                   Visibility="Collapsed"
+                                   Text="{Binding StripText}"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontFamily="{DynamicResource AppFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+
+                        <!-- GRID: vertical 2-column, label left, value
+                             right-aligned on a shared column. -->
+                        <ItemsControl x:Name="GridView"
+                                      Visibility="Collapsed"
+                                      ItemsSource="{Binding Pairs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FactLabel"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Label}"
+                                                   Margin="0,0,16,0"
+                                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                                   FontFamily="{DynamicResource AppFontFamily}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Value}"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontFamily="{DynamicResource AppFontFamily}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- SCALAR: a single bare value, no label, no rows.
+                             Pairs[0].Value is the lone label-less entry. -->
+                        <TextBlock x:Name="ScalarView"
+                                   Visibility="Collapsed"
+                                   Text="{Binding Pairs[0].Value}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontFamily="{DynamicResource AppFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- ONE trigger set selects the layout view. This IS the
+                             anti-fork: three templates, one control, switched by
+                             the Layout DP (mirrored from the VM). -->
+                        <Trigger Property="Layout" Value="Strip">
+                            <Setter TargetName="StripView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Layout" Value="Grid">
+                            <Setter TargetName="GridView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Layout" Value="Scalar">
+                            <Setter TargetName="ScalarView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+
+                        <!-- Footer-quiet weight (orthogonal/P2): mono +
+                             TextTertiaryBrush on the value run. Applies to the
+                             single-value views (Strip/Scalar); Grid stays at
+                             body weight. Default OFF (Quiet=false). -->
+                        <DataTrigger Binding="{Binding Quiet}" Value="True">
+                            <Setter TargetName="StripView" Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                            <Setter TargetName="StripView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                            <Setter TargetName="ScalarView" Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                            <Setter TargetName="ScalarView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                            <Setter TargetName="StripView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
+                            <Setter TargetName="ScalarView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
