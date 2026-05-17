@@ -83,6 +83,53 @@ public sealed class LorebookDetailViewModel
         ShowBestowingItemsPopupCommand = new RelayCommand(
             () => ProvenancePopupOpener(BestowingItemsPopup!, OpenEntityCommand),
             () => BestowingItemsPopup is not null);
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // Legacy chip/string/command members above stay (the existing tests +
+        // the detail-pane contract); these are the grammar-tier carriers the
+        // view binds. Built here — the VM already holds every source datum, the
+        // mapping is mechanical. #404 Phase-2: Lorebook has one inline Link
+        // (the folded-in area chip), one Set-reference (the "Bestowed by N →"
+        // ghost-gold button), and the E5 "carries BOTH identifiers" footer.
+
+        // Inline area Link (matrix #6 — "Found in: [area]"). The folded-in
+        // EntityChip becomes the unified Link via the ratified adapter; the
+        // view renders it Density="Prose" (inline in a sentence — exactly the
+        // pilot requirement-row idiom: Structure inline prefix + Prose Link).
+        AreaLink = AreaChip is null ? null : LinkVm.From(AreaChip);
+
+        // "Bestowed by N →" (matrix T7′ ghost-gold action button → Set-ref).
+        // The bespoke gold button becomes the shared Set-reference summary-form
+        // (MatchCount ⇒ "Bestowed by · N matches →"), actionable — its reveal is
+        // the existing ShowBestowingItemsPopupCommand. Gold→blue is the ratified
+        // G-b correction, not a regression. Null when nothing bestows it (the
+        // section hides). SlotOrdinal null: a single, positionally-inert ref —
+        // not the recipe keyword-slot stacking case.
+        BestowingItemsSetRef = BestowingItemsPopup is null
+            ? null
+            : new SetRefVm("Bestowed by", MatchCount: BestowingItemsTotal, IsActionable: true);
+
+        // Footer ids (matrix #14 / G-a · ratified E5). Lorebook is the E5
+        // "carries BOTH identifiers" case (rule 1: 0/1/2 ids). Order preserved
+        // verbatim from the legacy FooterSegments / "Book_101 / TheWastedWishes"
+        // pair: the "Book_N" envelope key is a display/storage-only key ⇒ the
+        // INERT `ROW` cell; the PascalCase InternalName is the cross-entity
+        // reference key other entities point at (recipes/items resolve a book by
+        // it) ⇒ the copyable `KEY` (E5 rule 2). The defensive equal case
+        // collapses to the single copyable KEY (mirrors the legacy
+        // FooterSegments single-segment collapse).
+        Footer = BuildFooter(EnvelopeKey, InternalName);
+    }
+
+    private static FactFooterVm BuildFooter(string envelopeKey, string internalName)
+    {
+        if (string.IsNullOrEmpty(internalName) && string.IsNullOrEmpty(envelopeKey))
+            return FactFooterVm.None();
+        if (string.Equals(envelopeKey, internalName, StringComparison.Ordinal))
+            return FactFooterVm.Key(internalName);
+        return FactFooterVm.Of(
+            new FactFooterId("ROW", envelopeKey, copyable: false),
+            new FactFooterId("KEY", internalName, copyable: true));
     }
 
     private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
@@ -128,6 +175,33 @@ public sealed class LorebookDetailViewModel
     /// <summary>Single area chip folded into the metadata strip (<c>Found in: [chip]</c>).</summary>
     public EntityChipVm? AreaChip { get; }
     public bool HasArea => AreaChip is not null;
+
+    /// <summary>
+    /// The folded-in area cross-link as the unified <see cref="LinkVm"/> (matrix
+    /// #6). Rendered <c>Density="Prose"</c> behind the Structure "Found in:"
+    /// inline prefix — the pilot inline-ref idiom. Null when no area (section
+    /// hides via <see cref="HasArea"/>).
+    /// </summary>
+    public LinkVm? AreaLink { get; }
+
+    /// <summary>
+    /// "Bestowed by N item(s)" as the shared Set-reference summary-form (matrix
+    /// T7′): <c>"Bestowed by · {N} matches →"</c>, actionable — its reveal is
+    /// <see cref="ShowBestowingItemsPopupCommand"/>. Replaces the bespoke
+    /// ghost-gold button; gold→blue is the ratified G-b correction. Null when
+    /// nothing bestows the book (section hides via <see cref="HasBestowingItems"/>).
+    /// </summary>
+    public SetRefVm? BestowingItemsSetRef { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14, G-a · ratified E5). The E5
+    /// "carries BOTH identifiers" case: <c>ROW</c> (the storage-only
+    /// <c>Book_N</c> envelope key, inert) · <c>KEY</c> (the cross-entity
+    /// reference <see cref="InternalName"/>, copyable), order preserved from the
+    /// legacy footer pair. Defensive equal case collapses to the single
+    /// copyable <c>KEY</c>.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     /// <summary>Body prose, or null for the 12 external-guide books (placeholder shown instead).</summary>
     public string? BodyText { get; }
