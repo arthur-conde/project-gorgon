@@ -85,7 +85,7 @@ Net: gold now reads as **title** (serif, large, no glyph) or **link** (sans, bod
 
 The Link primitive **is** `<icon> <gold name>` plus:
 
-- **provenance suffix** *(optional)* — italic, `--fg-quaternary`, 10pt, trailing: *— from Distil Brine.* Renders when Link acts as ItemSourceChip; absent everywhere else.
+- **provenance suffix** *(optional)* — italic, `--fg-quaternary`, 10pt, trailing: *— from Distil Brine.* Renders when Link acts as ItemSourceChip; absent everywhere else. **Not for name discriminators** — strings that are part of the entity's canonical name (`(Enchanted)`, `(Max-Enchanted)`, Mk. N suffixes, variant parentheticals) stay inside the gold name span. Provenance is *where this thing came from*, not *which variant of it this is*.
 - **kind label** *(optional, rare)* — same slot: *— skill*, *— consumable*. Used when icon+name aren't enough.
 - **degrade flag** *(optional)* — changes hover only (see above).
 
@@ -123,7 +123,7 @@ EntityChip and ItemSourceChip both collapse into this primitive in Phase 4.
 |---|---|
 | **Role** | Navigate to another row in the master-detail. Subsumes EntityChip and ItemSourceChip. |
 | **Pigment** | Name: `--accent` `#D4A847`. Provenance suffix: `--fg-quaternary` italic. |
-| **Glyph** | Lucide, **12px**, **lead** (before name). Type-coded: `sparkles` (skill), `flask-conical` (recipe), `droplet`/`flask-round` (ingredient), `user-round` (NPC), `map-pin` (location), `package` (item), `sword` (combat ability). |
+| **Glyph** | **Hybrid icon family** *(G3 amendment 2026-05-17 — see decision log)*. Sprite (from CDN game art) when the entity is a tangible noun with established player-recognized art (items, recipes, NPCs, monsters); Lucide when the entity is abstract (skills, abilities, locations, keywords, factions). Both render at 12px lead position. One Link primitive, two glyph inputs (`sprite_url` preferred when present, `kind` drives Lucide fallback). |
 | **Shape · spacing** | No border. No surface at rest. 2px tap padding (`margin: 0 -2px`) so the tint hover-box fits visually. Inline with text baseline. |
 | **Hover** | 10% gold tint background (`rgba(212,168,71,0.10)`). |
 | **Degrade** | Rest = identical to shipped. Hover swaps nav-tint for neutral row-tint + trailing `⧉` copy glyph. Click copies the canonical name. |
@@ -194,6 +194,7 @@ log can't drift).
 | Phase 2 | [comment 4468177334](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4468177334) | Nine-view consolidated matrix + 16-treatment inventory. |
 | G2 | [comment 4468464536](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4468464536) | Inventory cleared; E1/E3/E4 ratified, E5/E6 scoped; G-a / G-b / G-c flagged open. |
 | **G3** | this document (2026-05-17) | **G-a / G-b / G-c closed; one visual target per tier ratified. Phase 4 unblocked.** |
+| **G3 amend** | [#404 comment 4469052562](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4469052562) (2026-05-17) | **Link lead element → hybrid icon family** (sprite for tangible nouns, Lucide fallback for abstract; both 12px). + provenance suffix ≠ name-discriminator. Surgical single-rule amendment; Phase-5 Recipe pilot G4 finding. Phase 4 Link primitive re-implemented + pilot re-run on PR #411. |
 
 ---
 
