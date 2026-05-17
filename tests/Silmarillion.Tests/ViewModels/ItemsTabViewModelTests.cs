@@ -581,8 +581,10 @@ public sealed class ItemsTabViewModelTests
     [Fact]
     public void SourceChips_NonNpcSource_LeavesEntityReferenceNull_AndChipNotNavigable()
     {
-        // Source kinds without an Npc field (Monster drop, Recipe, Quest, Skill, …) leave the
-        // chip's EntityReference null so the UI renders them as plain text in a transparent frame.
+        // Non-entity-resolving source kinds (Monster drop, Skill, plain-text kinds) leave the
+        // chip's EntityReference null so the UI renders them as plain text in a transparent
+        // frame. (Recipe/Quest DO resolve to an EntityRef now and are either suppressed as a
+        // reverse-twin dup or kept as declared-only residue — see the #407 tests below.)
         var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
         var refData = new ItemSourceStub
         {
@@ -606,6 +608,156 @@ public sealed class ItemsTabViewModelTests
         chip.IsNavigable.Should().BeFalse();
     }
 
+    // ── #407 declared-vs-reverse source-duplication policy ─────────────────────
+    // Ratified policy (docs/silmarillion-field-coverage.md §#407): suppress a
+    // declared Recipe/Quest "Sources" row per (item,entity) edge when the same
+    // entity is already shown under its reverse header; declared-only residue
+    // survives prefix-less with an in-pane asymmetry warning (the ProvenanceSuffix
+    // slot, i.e. ItemSourceChipVm.Detail). Projection-layer only.
+
+    [Fact]
+    public void Source407_RecipeDeclared_AlsoProducedBy_IsSuppressedFromSources()
+    {
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["Apple"] = apple },
+            ItemSourcesByName = { ["Apple"] = new[] { new ItemSource("Recipe", null, "MakeApple") } },
+            ProducedByByName =
+            {
+                ["Apple"] = new[] { new Recipe { Key = "recipe_1", InternalName = "MakeApple", Name = "Make Apple" } },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver());
+
+        vm.SelectedItem = apple;
+
+        // The only declared source is the reverse-twin dup → "Sources" collapses to null;
+        // the entity still appears, once, under its dedicated "Produced by" header.
+        vm.DetailViewModel!.Sources.Should().BeNullOrEmpty();
+        vm.DetailViewModel!.ProducedByRecipes.Select(c => c.DisplayName).Should().ContainSingle()
+            .Which.Should().Be("Make Apple");
+    }
+
+    [Fact]
+    public void Source407_QuestDeclared_AlsoAwardedBy_IsSuppressedFromSources()
+    {
+        var slab = new Item { Id = 1, InternalName = "MetalSlab1", Name = "Simple Metal Slab" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["MetalSlab1"] = slab },
+            ItemSourcesByName =
+            {
+                ["MetalSlab1"] = new[]
+                {
+                    new ItemSource("Quest", null, "AllTheFishYouCouldWant"),
+                    new ItemSource("Vendor", "NPC_Way", null),
+                },
+            },
+            AwardedByByName =
+            {
+                ["MetalSlab1"] = new[]
+                {
+                    new Mithril.Reference.Models.Quests.Quest
+                    { InternalName = "AllTheFishYouCouldWant", Name = "All The Fish You Could Want" },
+                },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Npc) }),
+            new FakeEntityNameResolver());
+
+        vm.SelectedItem = slab;
+
+        // The Quest dup is gone from Sources; the NPC-mechanic row survives with its
+        // (deliberately kept) acquisition-method prefix. The quest stays under "Awarded by".
+        vm.DetailViewModel!.Sources!.Select(c => c.DisplayName).Should().ContainSingle()
+            .Which.Should().Be("Vendor: NPC_Way");
+        // FakeEntityNameResolver (no map) echoes the InternalName — the assertion is
+        // that the quest is *present* under "Awarded by", not its friendly form.
+        vm.DetailViewModel!.AwardedByQuests.Select(c => c.Reference)
+            .Should().Equal(EntityRef.Quest("AllTheFishYouCouldWant"));
+    }
+
+    [Fact]
+    public void Source407_RecipeDeclaredOnly_NoReverseTwin_SurvivesPrefixlessWithAsymmetryWarning()
+    {
+        var boots = new Item { Id = 1, InternalName = "CraftedSnailBoots12", Name = "Snail Boots" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["CraftedSnailBoots12"] = boots },
+            ItemSourcesByName =
+            {
+                ["CraftedSnailBoots12"] = new[] { new ItemSource("Recipe", null, "CraftedSnailBoots12") },
+            },
+            // ProducedByByName intentionally empty — the declared-only residue case.
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver());
+
+        vm.SelectedItem = boots;
+
+        var chip = vm.DetailViewModel!.Sources!.Single();
+        // No "Recipe:" prefix — kind is carried by the Link lead-glyph standard.
+        chip.DisplayName.Should().Be("CraftedSnailBoots12");
+        chip.Detail.Should().Be("declared recipe source — not confirmed by recipe data");
+        chip.EntityReference.Should().Be(EntityRef.Recipe("CraftedSnailBoots12"));
+    }
+
+    [Fact]
+    public void Source407_QuestDeclaredOnly_NoReverseTwin_SurvivesPrefixlessWithAsymmetryWarning()
+    {
+        var seed = new Item { Id = 1, InternalName = "CarrotSeedling", Name = "Carrot Seedling" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["CarrotSeedling"] = seed },
+            ItemSourcesByName =
+            {
+                ["CarrotSeedling"] = new[] { new ItemSource("Quest", null, "LiveEvent_BunFu_Flopsy") },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            Array.Empty<IReferenceKindTarget>()), new FakeEntityNameResolver());
+
+        vm.SelectedItem = seed;
+
+        var chip = vm.DetailViewModel!.Sources!.Single();
+        chip.DisplayName.Should().Be("LiveEvent_BunFu_Flopsy");
+        chip.Detail.Should().Be("declared quest source — not confirmed by quest data");
+        chip.EntityReference.Should().Be(EntityRef.Quest("LiveEvent_BunFu_Flopsy"));
+    }
+
+    [Fact]
+    public void Source407_PartialOverlap_DupSuppressed_ResidueKept_PerEdge()
+    {
+        // Two declared Recipe sources for the same item: one has a reverse twin
+        // (suppressed), one does not (kept as residue). Proves the test is per-edge.
+        var apple = new Item { Id = 1, InternalName = "Apple", Name = "Apple" };
+        var refData = new ItemSourceStub
+        {
+            ItemsByName = { ["Apple"] = apple },
+            ItemSourcesByName =
+            {
+                ["Apple"] = new[]
+                {
+                    new ItemSource("Recipe", null, "MakeApple"),     // reverse twin → suppressed
+                    new ItemSource("Recipe", null, "OrphanApple"),   // no reverse twin → residue
+                },
+            },
+            ProducedByByName =
+            {
+                ["Apple"] = new[] { new Recipe { Key = "recipe_1", InternalName = "MakeApple", Name = "Make Apple" } },
+            },
+        };
+        var vm = new ItemsTabViewModel(refData, NavWithRecipe(), new FakeEntityNameResolver());
+
+        vm.SelectedItem = apple;
+
+        var sources = vm.DetailViewModel!.Sources!;
+        sources.Should().ContainSingle();
+        sources[0].EntityReference.Should().Be(EntityRef.Recipe("OrphanApple"));
+        sources[0].Detail.Should().Be("declared recipe source — not confirmed by recipe data");
+    }
+
     private sealed class StubKindTarget : IReferenceKindTarget
     {
         public StubKindTarget(EntityKind kind) => Kind = kind;
@@ -621,6 +773,13 @@ public sealed class ItemsTabViewModelTests
         public Dictionary<string, Item> ItemsByName { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<ItemSource>> ItemSourcesByName { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Mithril.Reference.Models.Npcs.Npc> NpcsByKey { get; } = new(StringComparer.Ordinal);
+        // #407: reverse-header membership. When seeded, BuildSourceChips suppresses a
+        // declared Recipe/Quest "Sources" row whose Context is present here (the
+        // per-edge dedupe); unseeded entries default to the interface's empty index.
+        public Dictionary<string, IReadOnlyList<Recipe>> ProducedByByName { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> AwardedByByName { get; } = new(StringComparer.Ordinal);
+        public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => ProducedByByName;
+        public IReadOnlyDictionary<string, IReadOnlyList<Mithril.Reference.Models.Quests.Quest>> QuestsRewardingItem => AwardedByByName;
 
         public IReadOnlyList<string> Keys { get; } = [];
         public IReadOnlyDictionary<long, Item> Items => ItemsByName.Values.ToDictionary(i => i.Id);
