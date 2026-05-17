@@ -80,6 +80,118 @@ public sealed class EffectDetailViewModel
         ShowRequiredByAbilitiesPopupCommand = new RelayCommand(
             () => ProvenancePopupOpener(RequiredByAbilitiesPopup!, OpenEntityCommand),
             () => RequiredByAbilitiesPopup is not null);
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // Legacy chip/string/command members above stay (the existing tab tests
+        // + the detail-pane contract); these are the grammar-tier carriers the
+        // view binds. #404 Phase-2 / ratified E4 classification for Effect:
+        //   • keyword chips + StackingType chip = SET-REFERENCE, not Link
+        //     (activation scopes the Effects tab to a set of N — E4 RATIFIED,
+        //     "Phase 5 must NOT migrate these into Link");
+        //   • the "View all N →" RequiredBy ghost-gold button = Set-ref
+        //     summary-form (matrix T7);
+        //   • the RequiredBy ability chips = 1:1 entity refs = Link enumeration;
+        //   • Duration / Display-mode = inert label-value Fact (→ FactTable);
+        //   • the ProcsFromAbilityKeyword bordered non-nav tags = the forbidden
+        //     inverted-affordance "grey Fact pill" the availability corollary
+        //     says Phase 5 MUST correct, not preserve → tag-form Set-ref
+        //     (IsActionable=false, still the blue chassis);
+        //   • the inert-mono EnvelopeKey footer (matrix T14) = storage-only ⇒
+        //     the inert `ROW` cell (E5), exactly PlayerTitle's path.
+
+        // Keyword chips → tag-form Set-ref (no count/arrow; the chip shape
+        // carries the tier). Actionable iff the keyword-filter target is wired
+        // (navigable); the per-chip Activate bridges Set-ref's VM-param click to
+        // the host OpenEntityCommand(reference) — the pilot RecipeKeywordSlotVm
+        // "SetRefVm + own command" idiom. Non-navigable ⇒ IsActionable=false:
+        // availability corollary (blue chassis, safe no-op), never a grey pill.
+        KeywordSetRefs = KeywordChips.Select(BuildFilterSetRef).ToList();
+
+        // StackingType → summary-form Set-ref ("{type} · {peers} matches →").
+        // The legacy chip baked the peer count into its DisplayName ("Food
+        // (325)"); the grammar puts the count on the chip via MatchCount.
+        StackingTypeSetRef = BuildStackingTypeSetRef(
+            effect, StackingTypeChip, OpenEntityCommand);
+
+        // "Procs from abilities with keyword" tags: reverse-direction
+        // ability-keyword tags with no wired surface (VM doc: "navigation is
+        // deferred"). Carry-forward #4 / availability corollary: this is the
+        // forbidden inert-bordered-box "grey pill" lie — Phase 5 corrects it to
+        // a tag-form Set-ref on the blue chassis, IsActionable=false (unwired),
+        // NOT preserved as a Fact box.
+        ProcsFromAbilityKeywordSetRefs = ProcsFromAbilityKeywordRows
+            .Select(r => new EffectFilterSetRefVm(
+                new SetRefVm(r.Tag, MatchCount: null, IsActionable: false), null))
+            .ToList();
+
+        // RequiredBy ability chips → unified Link enumeration (Density="List").
+        RequiredByAbilityLinks = RequiredByAbilityChips.Select(LinkVm.From).ToList();
+
+        // "View all N →" RequiredBy ghost-gold button → Set-ref summary-form,
+        // actionable via the EXISTING ShowRequiredByAbilitiesPopupCommand
+        // (parameterless — SetRef passes the VM, RelayCommand ignores it). Null
+        // when no ability relates (section hides). Gold→blue per ratified G-b.
+        RequiredByAbilitiesSetRef = RequiredByAbilitiesPopup is null
+            ? null
+            : new SetRefVm("Required by abilities",
+                MatchCount: RequiredByAbilitiesTotal, IsActionable: true);
+
+        // Duration / Display-mode → ONE inert Fact strip (label-value pairs,
+        // empties skipped; StripText "" ⇒ the shared Style self-hides) —
+        // exactly the pilot StatStrip pattern. StackingType is NOT in here: it
+        // is a Set-ref, not a Fact (kept separate, same visual band).
+        var meta = new List<FactPair>(2);
+        if (!string.IsNullOrEmpty(DurationLabel)) meta.Add(new FactPair("Duration", DurationLabel!));
+        if (!string.IsNullOrEmpty(DisplayMode)) meta.Add(new FactPair("Display mode", DisplayMode!));
+        MetadataStrip = FactTableVm.Strip(meta);
+
+        // Footer (matrix #14 / G-a · ratified E5). The EnvelopeKey was already
+        // an inert mono footer (matrix T14, not click-to-copy) — the author's
+        // data judgement that it is a display/storage-only key. Its grammar
+        // form is the inert `ROW` cell (copyable:false), exactly PlayerTitle's
+        // path — NOT the copyable `KEY`. None() self-hides if keyless.
+        Footer = string.IsNullOrEmpty(EnvelopeKey)
+            ? FactFooterVm.None()
+            : FactFooterVm.Of(new FactFooterId("ROW", EnvelopeKey, copyable: false));
+    }
+
+    private EffectFilterSetRefVm BuildFilterSetRef(EntityChipVm chip)
+    {
+        var wired = chip.IsNavigable && OpenEntityCommand is not null;
+        var activate = wired
+            ? new RelayCommand(() => OpenEntityCommand!.Execute(chip.Reference))
+            : null;
+        // Tag-form (MatchCount null — bare keyword, no count/arrow). IsActionable
+        // mirrors LinkVm.IsNavigable's inverse-of-legacy stance: unwired ⇒ blue
+        // chassis + no-op (availability corollary), never a degraded grey pill.
+        return new EffectFilterSetRefVm(
+            new SetRefVm(chip.DisplayName, MatchCount: null, IsActionable: wired),
+            activate);
+    }
+
+    private static EffectFilterSetRefVm? BuildStackingTypeSetRef(
+        PocoEffect effect, EntityChipVm? legacyChip, ICommand? openEntityCommand)
+    {
+        if (legacyChip is null || string.IsNullOrEmpty(effect.StackingType)) return null;
+        // Recover the peer count the legacy chip baked into "Type (N)" — the
+        // single source of truth is the same DisplayName the tests assert, so
+        // the Set-ref count can't diverge from the legacy chip.
+        var open = legacyChip.DisplayName.LastIndexOf('(');
+        var close = legacyChip.DisplayName.LastIndexOf(')');
+        int? count = open >= 0 && close > open
+            && int.TryParse(
+                legacyChip.DisplayName.AsSpan(open + 1, close - open - 1),
+                out var n)
+            ? n
+            : null;
+        var wired = legacyChip.IsNavigable && openEntityCommand is not null;
+        var activate = wired
+            ? new RelayCommand(() => openEntityCommand!.Execute(legacyChip.Reference))
+            : null;
+        // Summary-form: count rides on the chip ("{type} · N matches →").
+        return new EffectFilterSetRefVm(
+            new SetRefVm(effect.StackingType!, MatchCount: count, IsActionable: wired),
+            activate);
     }
 
     private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
@@ -155,6 +267,67 @@ public sealed class EffectDetailViewModel
     public string? SpewText { get; }
 
     public ICommand? OpenEntityCommand { get; }
+
+    // ── Phase 5 grammar-primitive carriers ──────────────────────────────────
+
+    /// <summary>
+    /// Keyword chips as tag-form Set-references (ratified E4 — keyword chips are
+    /// Set-reference, not Link). Each carries its own Activate command bridging
+    /// the shared <c>SetRef</c>'s VM-param click to <see cref="OpenEntityCommand"/>;
+    /// non-navigable ⇒ <see cref="SetRefVm.IsActionable"/> false (availability
+    /// corollary — blue chassis, safe no-op, never a grey Fact pill).
+    /// </summary>
+    public IReadOnlyList<EffectFilterSetRefVm> KeywordSetRefs { get; }
+
+    /// <summary>
+    /// The StackingType as a summary-form Set-reference
+    /// (<c>"{type} · {peers} matches →"</c>; ratified E4). The count is recovered
+    /// from <see cref="StackingTypeChip"/>'s <c>"Type (N)"</c> DisplayName so it
+    /// cannot diverge from the legacy chip the tests assert. Null when there is
+    /// no StackingType / no peers (the row hides), exactly like the legacy chip.
+    /// </summary>
+    public EffectFilterSetRefVm? StackingTypeSetRef { get; }
+
+    /// <summary>
+    /// "Procs from abilities with keyword" tags as tag-form Set-references with
+    /// <see cref="SetRefVm.IsActionable"/> = false (the reverse-direction filter
+    /// is not wired). Carry-forward #4 / availability corollary: this replaces
+    /// the forbidden inert-bordered-box "grey pill" — still the blue Set-ref
+    /// chassis, NOT a Fact box (Phase 5 must correct, not preserve).
+    /// </summary>
+    public IReadOnlyList<EffectFilterSetRefVm> ProcsFromAbilityKeywordSetRefs { get; }
+
+    /// <summary>
+    /// RequiredBy ability cross-links as the unified <see cref="LinkVm"/>
+    /// (matrix #6/#10). The view renders these <c>Density="List"</c> — the
+    /// canonical pilot enumeration pattern. Projection of
+    /// <see cref="RequiredByAbilityChips"/> (same cap).
+    /// </summary>
+    public IReadOnlyList<LinkVm> RequiredByAbilityLinks { get; }
+
+    /// <summary>
+    /// The "View all N →" RequiredBy drawer as a summary-form Set-reference
+    /// (matrix T7): <c>"Required by abilities · N matches →"</c>, actionable via
+    /// <see cref="ShowRequiredByAbilitiesPopupCommand"/>. Null when no ability
+    /// relates (section hides). Gold→blue per ratified G-b.
+    /// </summary>
+    public SetRefVm? RequiredByAbilitiesSetRef { get; }
+
+    /// <summary>
+    /// Duration / Display-mode as one inert Fact strip (label-value pairs,
+    /// empties skipped; empty ⇒ <see cref="FactTableVm.StripText"/> "" so the
+    /// shared <c>FactTable</c> Style self-hides). Mirrors the pilot StatStrip;
+    /// StackingType is deliberately NOT here (it is a Set-ref, not a Fact).
+    /// </summary>
+    public FactTableVm MetadataStrip { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14 / G-a · ratified E5). The EnvelopeKey
+    /// was already an inert-mono footer (matrix T14) — a display/storage-only
+    /// key ⇒ the inert <c>ROW</c> cell (PlayerTitle's path), not a copyable
+    /// <c>KEY</c>. <see cref="FactFooterVm.None"/> (self-hides) if keyless.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -463,3 +636,31 @@ public sealed record EffectConditionalSpecialValueRow(string Display, IReadOnlyL
 /// navigation is deferred to a follow-up.
 /// </summary>
 public sealed record EffectProcsFromAbilityKeywordRow(string Tag);
+
+/// <summary>
+/// A Set-reference carrier (the pilot <c>RecipeKeywordSlotVm</c> idiom): the
+/// <see cref="SetRefVm"/> the shared <c>SetRef</c> binds, plus the per-chip
+/// <see cref="Activate"/> command that bridges <c>SetRef.ActivateCommand</c>
+/// (which passes the <see cref="SetRefVm"/>) to the host's
+/// <c>OpenEntityCommand(reference)</c>. <see cref="Activate"/> is null for an
+/// unwired tag (availability corollary — the chip still renders on the blue
+/// chassis; the click is a safe no-op).
+/// </summary>
+public sealed class EffectFilterSetRefVm
+{
+    public EffectFilterSetRefVm(SetRefVm setRef, System.Windows.Input.ICommand? activate)
+    {
+        SetRef = setRef;
+        Activate = activate;
+    }
+
+    /// <summary>The data carrier the shared <c>SetRef</c> control binds.</summary>
+    public SetRefVm SetRef { get; }
+
+    /// <summary>
+    /// Parameterless reveal/filter command wired to <c>SetRef.ActivateCommand</c>
+    /// (it ignores the passed <see cref="SetRefVm"/> and invokes the host
+    /// <c>OpenEntityCommand</c> with the captured reference). Null when unwired.
+    /// </summary>
+    public System.Windows.Input.ICommand? Activate { get; }
+}

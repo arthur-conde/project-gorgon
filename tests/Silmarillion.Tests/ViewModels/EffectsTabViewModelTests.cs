@@ -490,6 +490,187 @@ public sealed class EffectsTabViewModelTests
         vm.DetailViewModel!.RequiredByAbilityChips.Should().HaveCount(2);
     }
 
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void KeywordSetRefs_AreTagForm_ActionableMirrorsNavigability()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey =
+            {
+                ["effect_1"] = new PocoEffect { InternalName = "effect_1", Name = "X", Keywords = ["FrostShard"] },
+            },
+        };
+        // EffectKeyword target registered ⇒ navigable ⇒ the filter is wired.
+        var vm = new EffectsTabViewModel(
+            refData, NavFactory.WithKinds(EntityKind.EffectKeyword),
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings());
+        vm.SelectedRow = vm.AllEffects.Single();
+        var d = vm.DetailViewModel!;
+
+        d.KeywordSetRefs.Should().ContainSingle();
+        var k = d.KeywordSetRefs[0];
+        k.SetRef.Label.Should().Be("FrostShard");
+        k.SetRef.IsSummaryForm.Should().BeFalse("keyword chips are tag-form (no count/arrow)");
+        k.SetRef.MatchCount.Should().BeNull();
+        k.SetRef.IsActionable.Should().BeTrue("EffectKeyword target registered ⇒ filter wired");
+        k.Activate.Should().NotBeNull();
+
+        // Unwired: no EffectKeyword target ⇒ availability corollary (still a
+        // tag-form Set-ref, IsActionable=false, no command — NOT a Fact pill).
+        var unwired = BuildVm(refData);
+        unwired.SelectedRow = unwired.AllEffects.Single();
+        var ku = unwired.DetailViewModel!.KeywordSetRefs[0];
+        ku.SetRef.IsActionable.Should().BeFalse();
+        ku.Activate.Should().BeNull();
+        SetRef.ResolveClick(ku.SetRef).Should().Be(SetRefClickAction.Unavailable);
+    }
+
+    [Fact]
+    public void StackingTypeSetRef_IsSummaryForm_CountMatchesLegacyChip()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey =
+            {
+                ["effect_1"] = new PocoEffect { InternalName = "effect_1", Name = "A", StackingType = "Food" },
+            },
+            EffectsByStackingTypeMap =
+            {
+                ["Food"] = new[]
+                {
+                    new PocoEffect { InternalName = "effect_1" },
+                    new PocoEffect { InternalName = "effect_2" },
+                    new PocoEffect { InternalName = "effect_3" },
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllEffects.First(r => r.EnvelopeKey == "effect_1");
+        var d = vm.DetailViewModel!;
+
+        // Legacy chip still "Food (2)" (2 peers excluding self); the Set-ref
+        // count is recovered from it so the two can't diverge.
+        d.StackingTypeChip!.DisplayName.Should().Be("Food (2)");
+        d.StackingTypeSetRef.Should().NotBeNull();
+        d.StackingTypeSetRef!.SetRef.Label.Should().Be("Food");
+        d.StackingTypeSetRef.SetRef.MatchCount.Should().Be(2);
+        d.StackingTypeSetRef.SetRef.IsSummaryForm.Should().BeTrue();
+        d.StackingTypeSetRef.SetRef.DisplayText.Should().Be("Food · 2 matches →");
+
+        // No StackingType ⇒ no Set-ref (row hides), exactly like the chip.
+        var noStack = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_9"] = new PocoEffect { InternalName = "effect_9", Name = "Z" } },
+        };
+        var vm2 = BuildVm(noStack);
+        vm2.SelectedRow = vm2.AllEffects.Single();
+        vm2.DetailViewModel!.StackingTypeSetRef.Should().BeNull();
+    }
+
+    [Fact]
+    public void ProcsFromAbilityKeyword_AreUnwiredTagFormSetRefs_NotFactPills()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey =
+            {
+                ["effect_1"] = new PocoEffect
+                {
+                    InternalName = "effect_1", Name = "X", AbilityKeywords = ["FireSpell", "NiceAttack"],
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllEffects.Single();
+        var d = vm.DetailViewModel!;
+
+        d.ProcsFromAbilityKeywordSetRefs.Select(s => s.SetRef.Label)
+            .Should().Equal("FireSpell", "NiceAttack");
+        d.ProcsFromAbilityKeywordSetRefs.Should().OnlyContain(s =>
+            !s.SetRef.IsSummaryForm && !s.SetRef.IsActionable && s.Activate == null,
+            "availability corollary: unwired tag-form Set-ref on the blue chassis, never a Fact box");
+    }
+
+    [Fact]
+    public void RequiredByAbilityLinks_AndSetRef_ProjectChipsAndPopupAffordance()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey =
+            {
+                ["effect_1"] = new PocoEffect { InternalName = "effect_1", Name = "X", Keywords = ["K"] },
+            },
+            AbilitiesByEffectKeywordMap =
+            {
+                ["K"] = new[]
+                {
+                    new Ability { InternalName = "AbilA", Name = "Ability A", Skill = "S", Level = 1 },
+                    new Ability { InternalName = "AbilB", Name = "Ability B", Skill = "S", Level = 2 },
+                },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllEffects.Single();
+        var d = vm.DetailViewModel!;
+
+        d.RequiredByAbilityLinks.Select(l => l.DisplayName)
+            .Should().Equal(d.RequiredByAbilityChips.Select(c => c.DisplayName));
+        d.RequiredByAbilityLinks.Should().OnlyContain(l => l.Glyph == LinkGlyph.CombatAbility);
+        d.RequiredByAbilitiesSetRef.Should().NotBeNull();
+        d.RequiredByAbilitiesSetRef!.IsSummaryForm.Should().BeTrue();
+        d.RequiredByAbilitiesSetRef.IsActionable.Should().BeTrue();
+        d.RequiredByAbilitiesSetRef.DisplayText.Should().Be("Required by abilities · 2 matches →");
+    }
+
+    [Fact]
+    public void MetadataStrip_IsLabelValueFact_SelfHidingWhenEmpty()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey =
+            {
+                ["effect_1"] = new PocoEffect
+                {
+                    InternalName = "effect_1", Name = "A", Duration = "30", DisplayMode = "Curse",
+                },
+                ["effect_2"] = new PocoEffect { InternalName = "effect_2", Name = "B" },
+            },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllEffects.First(r => r.EnvelopeKey == "effect_1");
+        var d = vm.DetailViewModel!;
+
+        d.MetadataStrip.Layout.Should().Be(FactTableLayout.Strip);
+        d.MetadataStrip.Pairs.Should().BeEquivalentTo(new[]
+        {
+            new FactPair("Duration", "30 seconds"),
+            new FactPair("Display mode", "Curse"),
+        }, o => o.WithStrictOrdering());
+
+        vm.SelectedRow = vm.AllEffects.First(r => r.EnvelopeKey == "effect_2");
+        vm.DetailViewModel!.MetadataStrip.StripText.Should().BeEmpty("no duration/mode ⇒ strip self-hides");
+    }
+
+    [Fact]
+    public void Footer_EnvelopeKey_IsInertStorageRow_NotCopyable()
+    {
+        var refData = new StubReferenceData
+        {
+            EffectsByKey = { ["effect_10003"] = new PocoEffect { InternalName = "effect_10003", Name = "Sticky!" } },
+        };
+        var vm = BuildVm(refData);
+        vm.SelectedRow = vm.AllEffects.Single();
+
+        var f = vm.DetailViewModel!.Footer;
+        f.Ids.Should().ContainSingle();
+        f.Ids[0].LabelTag.Should().Be("ROW");
+        f.Ids[0].Value.Should().Be("effect_10003");
+        f.Ids[0].Copyable.Should().BeFalse("the effect EnvelopeKey was already an inert mono footer (matrix T14)");
+        FactFooter.ResolveCellClick(f.Ids[0]).Should().Be(FactFooterCellAction.Inert);
+    }
+
     private static EffectsTabViewModel BuildVm(StubReferenceData refData) =>
         new EffectsTabViewModel(
             refData,
