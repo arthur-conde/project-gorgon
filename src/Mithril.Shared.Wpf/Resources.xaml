@@ -1115,4 +1115,139 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== Link · the Phase-4 shared navigation primitive (G3 grammar:
+         "Link · navigates · V2"). Subsumes EntityChip + ItemSourceChip;
+         DataContext is a LinkVm. Mirrors the DetailExportHost templated-control
+         pattern above (PART_-named child wired in Link.cs OnApplyTemplate).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md:
+           · No border, no surface/background AT REST.
+           · 12px LEAD Lucide glyph before the name (hidden for LinkGlyph.None).
+           · Name: AccentBrush gold, body weight, AppFontSize.
+           · Trailing ProvenanceSuffix / KindLabel: italic, TextQuaternaryBrush,
+             ~10pt (AppFontSizeSmall), hidden when null via NullToVis (the
+             object-safe converter — NullOrEmptyToVis is the string-only repo
+             footgun and is deliberately NOT used here).
+           · Navigable hover: 10% gold tint #1AD4A847 over GrammarRadiusMd,
+             Margin 0,-2 tap padding so the tint box fits; Cursor=Hand.
+           · G-c pending (IsNavigable=false): rest state IDENTICAL to navigable
+             (same gold, same glyph — zero shipping-schedule leak; NOT greyed).
+             Difference shows only on hover: a NEUTRAL tint (#14FFFFFF, not gold)
+             plus a trailing 11px Copy glyph; click copies DisplayName (handled
+             in Link.cs) and flips to a transient "copied" ack (Copied DP). ===== -->
+    <Style TargetType="{x:Type c:Link}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:Link}">
+                    <Button x:Name="PART_Button"
+                            HorizontalAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0"
+                            Margin="0,-2,0,-2">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <!-- Hover tint box. Transparent at rest (grammar: no
+                                     surface at rest). IsMouseOver swaps the fill:
+                                     navigable → 10% gold; pending → neutral white. -->
+                                <Border x:Name="HoverBox"
+                                        Background="Transparent"
+                                        CornerRadius="{StaticResource GrammarRadiusMd}"
+                                        Padding="2,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- 12px LEAD glyph. Collapsed for LinkGlyph.None. -->
+                                        <icon:PackIconLucide
+                                            Width="12" Height="12"
+                                            Margin="0,0,4,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{StaticResource AccentBrush}"
+                                            Kind="{Binding Glyph, Converter={StaticResource LinkGlyphToLucideKind}}"
+                                            Visibility="{Binding Glyph, Converter={StaticResource LinkGlyphToVis}}"/>
+                                        <!-- Name: gold, body weight, AppFontSize. -->
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="{DynamicResource AppFontSize}"
+                                                   FontWeight="Normal"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- Trailing ProvenanceSuffix: italic, quaternary,
+                                             ~10pt, hidden when null (NullToVis, object-safe). -->
+                                        <TextBlock Text="{Binding ProvenanceSuffix}"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   FontStyle="Italic"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding ProvenanceSuffix, Converter={StaticResource NullToVis}}"/>
+                                        <!-- Trailing KindLabel: same slot, same rule. -->
+                                        <TextBlock Text="{Binding KindLabel}"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   FontStyle="Italic"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding KindLabel, Converter={StaticResource NullToVis}}"/>
+                                        <!-- G-c pending copy affordance: 11px Copy glyph,
+                                             revealed only on hover of a non-navigable Link
+                                             (HoverCopyGlyph trigger below). Hidden by
+                                             default and entirely absent for navigable. -->
+                                        <icon:PackIconLucide x:Name="CopyGlyph"
+                                            Kind="Copy"
+                                            Width="11" Height="11"
+                                            Margin="5,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{StaticResource TextTertiaryBrush}"
+                                            Visibility="Collapsed"/>
+                                        <!-- Transient "copied" ack (G-c useful action),
+                                             driven by the read-only Copied DP set in
+                                             Link.cs for ~1.2s after a pending click. -->
+                                        <TextBlock x:Name="CopiedAck"
+                                                   Text="copied ✓"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <!-- Navigable hover: 10% gold tint + Hand cursor. -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsNavigable}" Value="True"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="HoverBox" Property="Background" Value="#1AD4A847"/>
+                                    </MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding IsNavigable}" Value="True">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <!-- Pending hover: neutral (non-gold) tint + reveal
+                                         the trailing Copy glyph. Rest state is untouched
+                                         → identical to navigable (zero schedule leak). -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsNavigable}" Value="False"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="HoverBox" Property="Background" Value="#14FFFFFF"/>
+                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding IsNavigable}" Value="False">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <!-- Copied ack: swap the copy glyph for the ack text
+                                         while the Copied DP is set. -->
+                                    <DataTrigger Binding="{Binding Copied, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}}" Value="True">
+                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Collapsed"/>
+                                        <Setter TargetName="CopiedAck" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

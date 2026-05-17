@@ -9,4 +9,6 @@
     <c:PositiveIntToVisibilityConverter x:Key="PositiveIntToVis"/>
     <c:NullToVisibilityConverter x:Key="NullToVis"/>
     <c:CamelCaseSplitConverter x:Key="CamelCaseSplit"/>
+    <c:LinkGlyphToLucideKindConverter x:Key="LinkGlyphToLucideKind"/>
+    <c:LinkGlyphToVisibilityConverter x:Key="LinkGlyphToVis"/>
 </ResourceDictionary>
