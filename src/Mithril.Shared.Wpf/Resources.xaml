@@ -1359,34 +1359,36 @@
                             Background="Transparent" BorderThickness="0" Padding="0">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <!-- The chassis. Rest state is token-fixed and does
-                                     NOT vary with IsActionable (availability
-                                     corollary). Hover-only setters below. -->
-                                <Border x:Name="Chassis"
-                                        Background="{StaticResource SetRefIdleFillBrush}"
-                                        BorderBrush="{StaticResource SetRefBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource GrammarRadiusSm}"
-                                        Padding="8,1">
-                                    <StackPanel Orientation="Horizontal">
-                                        <!-- Stacking ordinal prefix: small,
-                                             quaternary, leading. Hidden via the VM
-                                             bool HasOrdinal (object-safe; no
-                                             converter). -->
-                                        <TextBlock x:Name="OrdinalPrefix"
-                                                   Text="{Binding OrdinalText}"
-                                                   Margin="0,0,4,0"
-                                                   Foreground="{StaticResource TextQuaternaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSizeXSmall}"
-                                                   VerticalAlignment="Center"/>
-                                        <!-- The shape-baked body: tag-form = bare
-                                             Label; summary-form = "{Label} · N →". -->
+                                <!-- Row = ordinal list-marker OUTSIDE the chassis
+                                     (dim mono, left gutter ~8px, ordered-list
+                                     style — ratified specimen) + the blue chip
+                                     box. The ordinal is NOT inside the rectangle. -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="OrdinalPrefix"
+                                               Text="{Binding OrdinalText}"
+                                               Margin="0,0,8,0"
+                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                               FontSize="{DynamicResource AppFontSizeXSmall}"
+                                               VerticalAlignment="Center"/>
+                                    <!-- The chassis. Rest state is token-fixed and
+                                         does NOT vary with IsActionable
+                                         (availability corollary). Hover-only
+                                         setters below. Holds only the shape-baked
+                                         body: tag-form = bare Label; summary-form
+                                         = "{Label} · N matches →". -->
+                                    <Border x:Name="Chassis"
+                                            Background="{StaticResource SetRefIdleFillBrush}"
+                                            BorderBrush="{StaticResource SetRefBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{StaticResource GrammarRadiusSm}"
+                                            Padding="8,1">
                                         <TextBlock Text="{Binding DisplayText}"
                                                    Foreground="{StaticResource SetRefTextBrush}"
                                                    FontSize="{DynamicResource AppFontSizeHint}"
                                                    VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+                                </StackPanel>
                                 <ControlTemplate.Triggers>
                                     <!-- Hide the ordinal prefix entirely when the VM
                                          carries no SlotOrdinal (positionally inert /

@@ -72,15 +72,21 @@ public sealed class RecipeDetailViewModel
         // here (not in RecipesTabViewModel) because the VM already holds every
         // source datum — the Phase-5 mapping is mechanical, not data-bearing.
 
-        // Fact stat strip (matrix #3): one inert dot-separated value-only strip
-        // replacing the three bordered stat-badge boxes. Each segment is a
-        // value-only FactPair (null label) and empties are skipped, so the strip
-        // self-elides exactly like the old per-chip NullOrEmptyToVis did.
-        StatStrip = FactTableVm.Strip(
-            new[] { SkillRequirementChip, MaxUsesChip, CooldownChip }
-                .Where(s => !string.IsNullOrEmpty(s))
-                .Select(s => new FactPair(null, s))
-                .ToList());
+        // Fact stat strip (matrix #3) replacing the three bordered stat-badge
+        // boxes. Grammar ratifies the stat strip as label-value pairs (doc
+        // lines 105/169/247; weight-axis example "Skill **Alchemy 55**"), so
+        // the Skill stat carries its "Skill" label (renders "Skill
+        // Toolcrafting 98", matching the ratified specimen). MaxUses/Cooldown
+        // are self-describing phrase-form ("Limited to 2 uses", "Reuse every
+        // 1h 30m") — kept label-null; the grammar only exemplified the
+        // labelled Skill case, so phrase-stats-bare is a flagged sensible
+        // reading, and a fan-out consideration for views with other stats.
+        // Empties skipped → self-elides like the old per-chip NullOrEmptyToVis.
+        var stat = new List<FactPair>(3);
+        if (!string.IsNullOrEmpty(SkillRequirementChip)) stat.Add(new FactPair("Skill", SkillRequirementChip));
+        if (!string.IsNullOrEmpty(MaxUsesChip)) stat.Add(new FactPair(null, MaxUsesChip));
+        if (!string.IsNullOrEmpty(CooldownChip)) stat.Add(new FactPair(null, CooldownChip));
+        StatStrip = FactTableVm.Strip(stat);
 
         // Link projections (matrix #6/#9/#10/#12). EntityChip/ItemSourceChip →
         // LinkVm via the ratified adapters; the G3-amended adapters now carry the
