@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using MahApps.Metro.IconPacks;
 
 namespace Mithril.Shared.Wpf;
 
@@ -77,6 +78,32 @@ public sealed class CamelCaseSplitConverter : IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         => value is string s ? Split(s) : (value ?? "");
 
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Maps a <see cref="LinkGlyph"/> to its concrete <see cref="PackIconLucideKind"/> for
+/// the <see cref="Link"/> template's lead glyph. Delegates to
+/// <see cref="Link.ToLucideKind"/> so the mapping has one home (and is unit-tested
+/// there). <see cref="LinkGlyph.None"/> yields <see cref="PackIconLucideKind.None"/> —
+/// the template independently collapses the glyph element via
+/// <see cref="LinkGlyphToVisibilityConverter"/>.
+/// </summary>
+public sealed class LinkGlyphToLucideKindConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is LinkGlyph g ? Link.ToLucideKind(g) : PackIconLucideKind.None;
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Collapses the <see cref="Link"/> lead-glyph element when the glyph is
+/// <see cref="LinkGlyph.None"/> (the name stands alone), Visible otherwise.
+/// </summary>
+public sealed class LinkGlyphToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is LinkGlyph g && g != LinkGlyph.None ? Visibility.Visible : Visibility.Collapsed;
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 

@@ -59,6 +59,46 @@
     <SolidColorBrush x:Key="BorderSubtleBrush"   Color="#33FFFFFF"/>
     <SolidColorBrush x:Key="BorderStrongBrush"   Color="#55FFFFFF"/>
 
+    <!-- ===== Silmarillion #404 visual-grammar tokens (Phase 4) =====
+         Design token to resource key reconciliation ledger for the G3 ratified
+         grammar (docs/silmarillion-visual-grammar.md). Keys that already
+         existed are REUSED (no duplication); only genuinely missing tokens are
+         added here. Per the Phase 4 dispatch the design tokens are the source
+         of truth and the WPF set is reconciled to them.
+
+           token accent  D4A847        => AccentBrush         (exists; Fact-title, Link name)
+           token fg.primary            => TextPrimaryBrush    (exists; Fact values)
+           token fg.secondary          => TextSecondaryBrush  (exists)
+           token fg.tertiary           => TextTertiaryBrush   (exists; Structure label, footer KEY/ROW value)
+           token fg.quaternary         => TextQuaternaryBrush (ADDED)
+           token bg.surface            => BgSurfaceBrush      (exists; Control chassis only)
+           token bg.surface.hover      => BgSurfaceHoverBrush (exists)
+           token border.subtle         => BorderSubtleBrush   (exists)
+           token border.strong         => BorderStrongBrush   (exists)
+           token border.faint          => BorderFaintBrush    (ADDED; footer divider)
+           token accent.soft 1E3A5F    => AccentSoftBrush     (exists; SetRef active fill)
+           token radius.sm (2)         => GrammarRadiusSm     (ADDED; SetRef)
+           token radius.md (3)         => GrammarRadiusMd     (ADDED; general)
+
+         FLAGGED RECONCILIATION (designer confirm, see Phase 4 carry-forward):
+         the grammar specifies Set-reference text as token info #88B0E0,
+         explicitly "matching q.keyword from MithrilQueryBox". The repo's actual
+         query keyword brush is AccentSoftTextBrush / QueryKeywordBrush =
+         #FFCFE8FF, not #88B0E0. The literal hex was the designer's
+         approximation of a token they did not have; the ratified intent is
+         pigment kinship with the query keyword colour. Honoring intent over the
+         approximated literal, SetRefTextBrush is reconciled to the real query
+         keyword value (#FFCFE8FF). One resource key, trivially re-tuned if the
+         designer wants the literal #88B0E0. Surfaced here and in the PR, not a
+         silent override. ===== -->
+    <SolidColorBrush x:Key="TextQuaternaryBrush" Color="#66FFFFFF"/>
+    <SolidColorBrush x:Key="BorderFaintBrush"    Color="#22FFFFFF"/>
+    <SolidColorBrush x:Key="SetRefTextBrush"     Color="#FFCFE8FF"/>
+    <SolidColorBrush x:Key="SetRefIdleFillBrush" Color="#4D1E3A5F"/>
+    <SolidColorBrush x:Key="SetRefBorderBrush"   Color="#553398FF"/>
+    <CornerRadius x:Key="GrammarRadiusSm">2</CornerRadius>
+    <CornerRadius x:Key="GrammarRadiusMd">3</CornerRadius>
+
     <!-- Implicit styles — inline Foreground/Background attributes in existing views
          override these, so Samwise, the shell views and the Legolas overlays all
          keep their current hand-authored look. Only unstyled markup picks this up. -->
@@ -1071,6 +1111,652 @@
                                                  Foreground="#66FFFFFF"/>
                         </Button>
                     </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== Link · the Phase-4 shared navigation primitive (G3 grammar:
+         "Link · navigates · V2"). Subsumes EntityChip + ItemSourceChip;
+         DataContext is a LinkVm. Mirrors the DetailExportHost templated-control
+         pattern above (PART_-named child wired in Link.cs OnApplyTemplate).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md:
+           · No border, no surface/background AT REST.
+           · 12px LEAD Lucide glyph before the name (hidden for LinkGlyph.None).
+           · Name: AccentBrush gold, body weight, AppFontSize.
+           · Trailing ProvenanceSuffix / KindLabel: italic, TextQuaternaryBrush,
+             ~10pt (AppFontSizeSmall), hidden when null via NullToVis (the
+             object-safe converter — NullOrEmptyToVis is the string-only repo
+             footgun and is deliberately NOT used here).
+           · Navigable hover: 10% gold tint #1AD4A847 over GrammarRadiusMd,
+             Margin 0,-2 tap padding so the tint box fits; Cursor=Hand.
+           · G-c pending (IsNavigable=false): rest state IDENTICAL to navigable
+             (same gold, same glyph — zero shipping-schedule leak; NOT greyed).
+             Difference shows only on hover: a NEUTRAL tint (#14FFFFFF, not gold)
+             plus a trailing 11px Copy glyph; click copies DisplayName (handled
+             in Link.cs) and flips to a transient "copied" ack (Copied DP). ===== -->
+    <Style TargetType="{x:Type c:Link}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:Link}">
+                    <Button x:Name="PART_Button"
+                            HorizontalAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0"
+                            Margin="0,-2,0,-2">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <!-- Hover tint box. Transparent at rest (grammar: no
+                                     surface at rest). IsMouseOver swaps the fill:
+                                     navigable → 10% gold; pending → neutral white. -->
+                                <Border x:Name="HoverBox"
+                                        Background="Transparent"
+                                        CornerRadius="{StaticResource GrammarRadiusMd}"
+                                        Padding="2,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- 12px LEAD glyph. Collapsed for LinkGlyph.None. -->
+                                        <icon:PackIconLucide
+                                            Width="12" Height="12"
+                                            Margin="0,0,4,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{StaticResource AccentBrush}"
+                                            Kind="{Binding Glyph, Converter={StaticResource LinkGlyphToLucideKind}}"
+                                            Visibility="{Binding Glyph, Converter={StaticResource LinkGlyphToVis}}"/>
+                                        <!-- Name: gold, body weight, AppFontSize. -->
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="{DynamicResource AppFontSize}"
+                                                   FontWeight="Normal"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- Trailing ProvenanceSuffix: italic, quaternary,
+                                             ~10pt, hidden when null (NullToVis, object-safe). -->
+                                        <TextBlock Text="{Binding ProvenanceSuffix}"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   FontStyle="Italic"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding ProvenanceSuffix, Converter={StaticResource NullToVis}}"/>
+                                        <!-- Trailing KindLabel: same slot, same rule. -->
+                                        <TextBlock Text="{Binding KindLabel}"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   FontStyle="Italic"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding KindLabel, Converter={StaticResource NullToVis}}"/>
+                                        <!-- G-c pending copy affordance: 11px Copy glyph,
+                                             revealed only on hover of a non-navigable Link
+                                             (HoverCopyGlyph trigger below). Hidden by
+                                             default and entirely absent for navigable. -->
+                                        <icon:PackIconLucide x:Name="CopyGlyph"
+                                            Kind="Copy"
+                                            Width="11" Height="11"
+                                            Margin="5,0,0,0"
+                                            VerticalAlignment="Center"
+                                            Foreground="{StaticResource TextTertiaryBrush}"
+                                            Visibility="Collapsed"/>
+                                        <!-- Transient "copied" ack (G-c useful action),
+                                             driven by the read-only Copied DP set in
+                                             Link.cs for ~1.2s after a pending click. -->
+                                        <TextBlock x:Name="CopiedAck"
+                                                   Text="copied ✓"
+                                                   Margin="5,0,0,0"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <!-- Navigable hover: 10% gold tint + Hand cursor. -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsNavigable}" Value="True"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="HoverBox" Property="Background" Value="#1AD4A847"/>
+                                    </MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding IsNavigable}" Value="True">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <!-- Pending hover: neutral (non-gold) tint + reveal
+                                         the trailing Copy glyph. Rest state is untouched
+                                         → identical to navigable (zero schedule leak). -->
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsNavigable}" Value="False"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="HoverBox" Property="Background" Value="#14FFFFFF"/>
+                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding IsNavigable}" Value="False">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <!-- Copied ack: swap the copy glyph for the ack text
+                                         while the Copied DP is set. -->
+                                    <DataTrigger Binding="{Binding Copied, RelativeSource={RelativeSource AncestorType={x:Type c:Link}}}" Value="True">
+                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Collapsed"/>
+                                        <Setter TargetName="CopiedAck" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== SetRef · the Phase-4 shared Set-reference primitive (G3 grammar:
+         "Set-reference · filter / keyword / group / stacking" + carry-forward #4).
+         One polymorphic control carrying BOTH shapes on one blue chassis;
+         DataContext is a SetRefVm. Mirrors the Link templated-control pattern
+         above (PART_-named child wired in SetRef.cs OnApplyTemplate).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · A blue chip WITH a chassis (unlike Link): idle fill
+             SetRefIdleFillBrush, 1px SetRefBorderBrush border,
+             GrammarRadiusSm (2) corner, 1×8 padding, AppFontSizeHint text in
+             SetRefTextBrush.
+           · summary-form (MatchCount != null) → DisplayText is
+             "{Label} · {count} →"; tag-form (MatchCount == null) → bare Label
+             (no count, no arrow, NO lead glyph — grammar "glyph: None by
+             default"). The VM bakes the shape into DisplayText so the template
+             binds one string and the two shapes never fork.
+           · Optional leading SlotOrdinal prefix (stacking semantics): small,
+             TextQuaternaryBrush, hidden when null via the VM bool HasOrdinal
+             (a bool, NOT a converter — dodges the string-only NullOrEmptyToVis
+             repo footgun and avoids a bespoke int?->Visibility converter).
+           · Hover: fill darkens toward AccentSoftBrush (active fill), border
+             brightens to BorderStrongBrush — the drawer-pulling feel.
+             Cursor=Hand ONLY when IsActionable.
+           · AVAILABILITY COROLLARY (never-grey-pill guarantee): IsActionable
+             changes interaction ONLY. The at-rest chassis (fill/border/text/
+             radius/padding) is IDENTICAL regardless of IsActionable — an
+             un-wired tag-form Set-ref stays on the FULL blue chassis and is
+             NEVER demoted to an inert grey Fact pill (the forbidden inverted-
+             affordance lie). The only IsActionable-conditioned setters are the
+             hover fill/border and Cursor; none touch the rest state. ===== -->
+    <Style TargetType="{x:Type c:SetRef}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:SetRef}">
+                    <Button x:Name="PART_Button"
+                            HorizontalAlignment="Left"
+                            Background="Transparent" BorderThickness="0" Padding="0">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <!-- The chassis. Rest state is token-fixed and does
+                                     NOT vary with IsActionable (availability
+                                     corollary). Hover-only setters below. -->
+                                <Border x:Name="Chassis"
+                                        Background="{StaticResource SetRefIdleFillBrush}"
+                                        BorderBrush="{StaticResource SetRefBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource GrammarRadiusSm}"
+                                        Padding="8,1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- Stacking ordinal prefix: small,
+                                             quaternary, leading. Hidden via the VM
+                                             bool HasOrdinal (object-safe; no
+                                             converter). -->
+                                        <TextBlock x:Name="OrdinalPrefix"
+                                                   Text="{Binding OrdinalText}"
+                                                   Margin="0,0,4,0"
+                                                   Foreground="{StaticResource TextQuaternaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeXSmall}"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- The shape-baked body: tag-form = bare
+                                             Label; summary-form = "{Label} · N →". -->
+                                        <TextBlock Text="{Binding DisplayText}"
+                                                   Foreground="{StaticResource SetRefTextBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <!-- Hide the ordinal prefix entirely when the VM
+                                         carries no SlotOrdinal (positionally inert /
+                                         single). VM bool, not a converter. -->
+                                    <DataTrigger Binding="{Binding HasOrdinal}" Value="False">
+                                        <Setter TargetName="OrdinalPrefix" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <!-- Actionable: hand cursor + drawer-pulling
+                                         hover (fill -> active, border -> strong).
+                                         Rest state untouched. -->
+                                    <DataTrigger Binding="{Binding IsActionable}" Value="True">
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsActionable}" Value="True"/>
+                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="Chassis" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                        <Setter TargetName="Chassis" Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/>
+                                    </MultiDataTrigger>
+                                    <!-- IsActionable=false: NO hover/cursor setters
+                                         at all. The chassis above is the entire look
+                                         (identical to actionable at rest) — never a
+                                         grey pill. -->
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== FactTable · the Phase-4 shared Fact-group primitive (G3 grammar:
+         "Fact · inert · weight-axis" + carry-forward #3). ONE polymorphic
+         control rendering a label/value group in THREE layouts from one
+         FactTableVm; DataContext is a FactTableVm. Mirrors the Link/SetRef
+         templated-control pattern above, but Fact is INERT — no PART_Button, no
+         ClickCommand, no hover, zero interactivity.
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · Value text  = TextPrimaryBrush   (NEVER gold — G-b strips gold
+             from every Fact value; the model carries no brush at all).
+           · Label text  = TextTertiaryBrush  (Structure-weight label).
+           · NO border, NO surface/background anywhere (Fact is the only fully
+             inert tier).
+           · ANTI-FORK (carry-forward #3): this is ONE control. The Style binds
+             the control's Layout DP to the VM's Layout and DataTriggers the
+             presented template off it — Strip / Grid / Scalar are three
+             ContentControl templates selected by ONE trigger set, NOT three
+             forked controls (same rationale as the single-Link mandate).
+           · Strip  → ItemsControl-free single TextBlock bound to the VM's pure
+             StripText helper: "Label Value · Label Value · …". The middot is
+             injected BETWEEN segments by StripText only — it is NOT part of any
+             value (grammar: "inline dot separators that are NOT part of any
+             value"). One bound string ⇒ separator logic is unit-tested in
+             FactTableVm.StripText, never re-decided in XAML.
+           · Grid   → vertical 2-column ItemsControl: a Grid per row, label
+             (TextTertiaryBrush, left) + value (TextPrimaryBrush, right-aligned,
+             tabular-style alignment via a shared SharedSizeGroup label column so
+             values line up). One Label … Value per row, pair order preserved.
+           · Scalar → a single bare value TextBlock, no label, no rows (the
+             degenerate case the carry-forward demands the SAME primitive
+             degrade to — Pairs has exactly one label-less entry).
+           · Quiet (footer-quiet weight, orthogonal/P2): when the VM's Quiet is
+             true the value run switches to AppMonoFontFamily + TextTertiaryBrush
+             (the InternalName footer-quiet case). Default OFF — weight is not
+             over-engineered here. ===== -->
+    <Style TargetType="{x:Type c:FactTable}">
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <!-- The VM is the single source of truth: mirror its Layout onto the
+             control's Layout DP so the DataTriggers below have a control-level
+             enum target. One control, layout-switched — not a fork. -->
+        <Setter Property="Layout" Value="{Binding Layout}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:FactTable}">
+                    <!-- Grid.IsSharedSizeScope so the Grid-layout rows share a
+                         label-column width ⇒ values right-align on a common
+                         column (tabular-nums-style alignment). The three layout
+                         views live directly in this ONE template; the trigger
+                         set below toggles which is visible — that IS the
+                         anti-fork (one control, not three). -->
+                    <Grid x:Name="Root" Grid.IsSharedSizeScope="True">
+                        <!-- STRIP: one TextBlock bound to the pure StripText
+                             helper (separator injected between segments only). -->
+                        <TextBlock x:Name="StripView"
+                                   Visibility="Collapsed"
+                                   Text="{Binding StripText}"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontFamily="{DynamicResource AppFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+
+                        <!-- GRID: vertical 2-column, label left, value
+                             right-aligned on a shared column. -->
+                        <ItemsControl x:Name="GridView"
+                                      Visibility="Collapsed"
+                                      ItemsSource="{Binding Pairs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FactLabel"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Label}"
+                                                   Margin="0,0,16,0"
+                                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                                   FontFamily="{DynamicResource AppFontFamily}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Value}"
+                                                   HorizontalAlignment="Right"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontFamily="{DynamicResource AppFontFamily}"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- SCALAR: a single bare value, no label, no rows.
+                             Pairs[0].Value is the lone label-less entry. -->
+                        <TextBlock x:Name="ScalarView"
+                                   Visibility="Collapsed"
+                                   Text="{Binding Pairs[0].Value}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontFamily="{DynamicResource AppFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- ONE trigger set selects the layout view. This IS the
+                             anti-fork: three templates, one control, switched by
+                             the Layout DP (mirrored from the VM). -->
+                        <Trigger Property="Layout" Value="Strip">
+                            <Setter TargetName="StripView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Layout" Value="Grid">
+                            <Setter TargetName="GridView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Layout" Value="Scalar">
+                            <Setter TargetName="ScalarView" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+
+                        <!-- Footer-quiet weight (orthogonal/P2): mono +
+                             TextTertiaryBrush on the value run. Applies to the
+                             single-value views (Strip/Scalar); Grid stays at
+                             body weight. Default OFF (Quiet=false). -->
+                        <DataTrigger Binding="{Binding Quiet}" Value="True">
+                            <Setter TargetName="StripView" Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                            <Setter TargetName="StripView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                            <Setter TargetName="ScalarView" Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+                            <Setter TargetName="ScalarView" Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+                            <Setter TargetName="StripView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
+                            <Setter TargetName="ScalarView" Property="FontSize" Value="{DynamicResource AppFontSizeSmall}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== FactFooter · the Phase-4 shared footer-ID primitive (G3 grammar:
+         "G-a — Fact identifiers, copyable without becoming Control"). 0/1/2
+         FactFooterId cells; DataContext is a FactFooterVm. COEXISTS with
+         DetailExportHost's legacy footer (Phase 5 migrates hosts) — this is the
+         standalone G-a primitive only. Mirrors the FactTable templated-control
+         pattern above (DefaultStyleKeyProperty.OverrideMetadata in FactFooter.cs;
+         per-cell ButtonBase wired in OnApplyTemplate, not a single named PART).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · LOCATION, NOT CHASSIS: the strip sits BELOW a thin 1px
+             BorderFaintBrush TOP divider, beneath the read-flow. NO surface,
+             NO fill, NO border other than that one top divider. This is a Fact,
+             not a Control — it declares itself only on contact.
+           · Right-aligned (matches the detail-view footer convention), but the
+             divider spans the FULL content width (the Border is stretched; the
+             cells DockPanel inside is right-aligned).
+           · 0 ids → the whole control is Collapsed (HasIds=false → no divider
+             with nothing under it). 1 id → a single cell. 2 ids → the two cells
+             with an INERT middot `·` between them. The separator is NEVER part
+             of any copied value (the first cell suppresses its leading middot
+             via the VM IsFirst-style index; the copy payload is the cell Value
+             ONLY — mirrors FooterSegmentItem / FactTableVm.StripSeparator).
+           · Each cell: tiny UPPERCASE LabelTag in TextQuaternaryBrush at
+             AppFontSizeXSmall, then Value in TextTertiaryBrush +
+             AppMonoFontFamily at AppFontSizeSmall.
+           · COPYABLE cell (Copyable=true — a cross-entity reference KEY): on
+             HOVER reveal an 11px Copy PackIconLucide trailing the value;
+             Cursor=Hand; click copies EXACTLY that cell's Value (handled in
+             FactFooter.cs, try/catch like DetailExportHost) and flips that
+             cell's Copied for ~1.2s (per-cell ack — the OTHER cell is
+             unaffected, exactly like FooterSegmentItem.Copied). At REST the
+             copy glyph is NOT shown (G-a: "declares itself only on contact").
+           · INERT cell (Copyable=false — a storage-only ROW): Cursor=Default,
+             NO hover state, NO glyph EVER, click does nothing. The Copyable
+             bool is the sole discriminator — NOT the LabelTag string. ===== -->
+    <ItemsPanelTemplate x:Key="FactFooterCellsPanel">
+        <StackPanel Orientation="Horizontal"/>
+    </ItemsPanelTemplate>
+    <Style TargetType="{x:Type c:FactFooter}">
+        <!-- Right-aligned strip (detail-footer convention); the divider Border
+             below still stretches the full content width. -->
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:FactFooter}">
+                    <!-- The ONLY surface: a 1px TOP divider spanning the content
+                         width. No fill, no other border (Fact = no chassis). The
+                         whole control collapses at 0 ids (no divider with
+                         nothing under it). -->
+                    <Border x:Name="Root"
+                            BorderBrush="{StaticResource BorderFaintBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="0,4,0,0"
+                            Background="Transparent">
+                        <!-- Cells right-aligned within the full-width divider. -->
+                        <ItemsControl x:Name="PART_Cells"
+                                      HorizontalAlignment="Right"
+                                      AlternationCount="2"
+                                      ItemsSource="{Binding Ids}"
+                                      ItemsPanel="{StaticResource FactFooterCellsPanel}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- A ButtonBase per cell (FactFooter.cs walks
+                                         the realised tree and wires Click). No
+                                         chassis: transparent, borderless, no
+                                         padding — the button is a hit-target, not
+                                         a Control surface. -->
+                                    <Button Background="Transparent"
+                                            BorderThickness="0"
+                                            Padding="0"
+                                            HorizontalContentAlignment="Left">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <StackPanel x:Name="CellRoot"
+                                                            Orientation="Horizontal"
+                                                            Background="Transparent">
+                                                    <!-- Inert middot BETWEEN cells
+                                                         only; the first cell
+                                                         suppresses it. Never part
+                                                         of any copy payload. -->
+                                                    <TextBlock x:Name="Sep"
+                                                               Text="{x:Static c:FactFooterVm.CellSeparator}"
+                                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Tiny UPPERCASE tag. -->
+                                                    <TextBlock x:Name="Tag"
+                                                               Text="{Binding LabelTag}"
+                                                               Margin="0,0,4,0"
+                                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeXSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Mono value (tertiary). -->
+                                                    <TextBlock Text="{Binding Value}"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Hover-revealed 11px Copy
+                                                         glyph (copyable only).
+                                                         Collapsed at rest (G-a:
+                                                         declares itself only on
+                                                         contact). -->
+                                                    <icon:PackIconLucide x:Name="CopyGlyph"
+                                                        Kind="Copy"
+                                                        Width="11" Height="11"
+                                                        Margin="4,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{StaticResource TextTertiaryBrush}"
+                                                        Visibility="Collapsed"/>
+                                                    <!-- Per-cell transient ack
+                                                         (FactFooterId.Copied,
+                                                         set in FactFooter.cs). -->
+                                                    <TextBlock x:Name="CopiedAck"
+                                                               Text="copied ✓"
+                                                               Margin="4,0,0,0"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="Collapsed"/>
+                                                </StackPanel>
+                                                <ControlTemplate.Triggers>
+                                                    <!-- First cell → no leading
+                                                         middot (separator is
+                                                         BETWEEN cells only). -->
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(ItemsControl.AlternationIndex)}" Value="0">
+                                                        <Setter TargetName="Sep" Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <!-- COPYABLE (KEY): hand
+                                                         cursor; hover reveals the
+                                                         Copy glyph. At rest the
+                                                         glyph stays Collapsed. -->
+                                                    <DataTrigger Binding="{Binding Copyable}" Value="True">
+                                                        <Setter Property="Cursor" Value="Hand"/>
+                                                    </DataTrigger>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding Copyable}" Value="True"/>
+                                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Visible"/>
+                                                    </MultiDataTrigger>
+                                                    <!-- Per-cell ack: swap the
+                                                         copy glyph for the ack
+                                                         text while Copied is set
+                                                         (this cell only). -->
+                                                    <DataTrigger Binding="{Binding Copied}" Value="True">
+                                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Collapsed"/>
+                                                        <Setter TargetName="CopiedAck" Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                    <!-- INERT (ROW): Copyable
+                                                         false → NO hover/cursor/
+                                                         glyph setters at all. The
+                                                         default Cursor + Collapsed
+                                                         glyph IS the entire look.
+                                                         (Defensive: explicit
+                                                         default cursor.) -->
+                                                    <DataTrigger Binding="{Binding Copyable}" Value="False">
+                                                        <Setter Property="Cursor" Value="Arrow"/>
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 0 ids → the whole control renders nothing (no divider
+                             with nothing under it). G-a: "Strip hidden at 0". -->
+                        <DataTrigger Binding="{Binding HasIds}" Value="False">
+                            <Setter TargetName="Root" Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== Silmarillion #404 grammar — Fact / Structure / Control shared styles (Phase 4) =====
+         Opt-in x:Key'd styles (NOT implicit TargetType overrides) so existing
+         hand-authored views are untouched until Phase 5 migrates call sites.
+         Values are taken verbatim from docs/silmarillion-visual-grammar.md
+         (Fact tier + weight axis; Structure tier; Control tier). No view edited.
+
+         WPF LIMITATION FLAG (not silently dropped, not hacked): the Structure
+         tier specifies "tracked uppercase (letter-spacing 0.08em)". WPF
+         TextBlock has no native letter-spacing and no CharacterCasing. These
+         styles deliver the expressible parts (family / size / weight / pigment
+         / margin); the *uppercasing* and *letter-tracking* are deferred to the
+         Phase 5 call site (pass already-upper text; tracking would need a
+         custom behavior). Surfaced in the Phase 4 reconciliation flags. -->
+
+    <!-- Fact · title-loud: Cambria 18 / 600 / accent, one per pane. -->
+    <Style x:Key="FactTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppHeaderFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeHeader}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/><!-- WPF SemiBold == weight 600 -->
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- Fact · body: Segoe UI 12 / fg-primary. -->
+    <Style x:Key="FactBodyStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- Structure · section label: fg-tertiary, SemiBold, ~9pt, 10px top gap.
+         Never gold, no glyph (enforced by being a bare TextBlock style). -->
+    <Style x:Key="StructureSectionLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+        <Setter Property="Margin"     Value="0,10,0,4"/>
+    </Style>
+
+    <!-- Structure · inline field-label prefix (terminating ':' is the call
+         site's text, not the style). Same pigment/weight as section label,
+         no top margin (it sits inline before a value). -->
+    <Style x:Key="StructureInlinePrefixStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+    </Style>
+
+    <!-- Structure · group header: dimmer (fg-quaternary), else as section label. -->
+    <Style x:Key="StructureGroupHeaderStyle" TargetType="TextBlock"
+           BasedOn="{StaticResource StructureSectionLabelStyle}">
+        <Setter Property="Foreground" Value="{StaticResource TextQuaternaryBrush}"/>
+    </Style>
+
+    <!-- Control · the only tier with a real chassis. Opt-in reference style for
+         Phase-5 grammar-conformant buttons; existing button styles untouched.
+         bg-surface + border-subtle, radius-md 3, 1px, 5x12 pad; hover
+         bg-surface-hover / border-strong. (Primary/accent-fill variant is a
+         Phase-5 concern — accent-fg token not yet needed; flagged.) -->
+    <Style x:Key="GrammarControlChassisStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource BgSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Padding" Value="12,5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chassis"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource GrammarRadiusMd}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chassis" Property="Background"
+                                    Value="{StaticResource BgSurfaceHoverBrush}"/>
+                            <Setter TargetName="Chassis" Property="BorderBrush"
+                                    Value="{StaticResource BorderStrongBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
