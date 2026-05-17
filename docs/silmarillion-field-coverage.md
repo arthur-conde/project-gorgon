@@ -196,8 +196,94 @@ an unwired edge. This is the priority and stands alone.
   retained. Do not re-flag this pane as a remaining grammar surface; it is
   closed.
 
+### Declared-vs-reverse source duplication (#407) — RESOLVED (policy ratified 2026-05-17)
+
+This is the **coverage axis's** own debt, the deliberate sibling of the #404
+*presentation* axis above — the two were fenced apart on purpose. It governs
+*whether a source row appears at all*, never how it is styled.
+
+**The class.** A pane can surface the same entity twice under two headers when
+one path reads declared `sources_*.json` and the other is the reverse-lookup of
+the inverse relationship. A fresh cross-pane audit (production indices, v470 —
+[#407](https://github.com/moumantai-gg/mithril/issues/407#issuecomment-4470910146))
+found the class is **confined to the shared `Mithril.Shared.Wpf/ItemDetailView`
+pane**, exactly two pairs:
+
+| Declared "Sources" kind | Reverse twin header | Duplicate edges (v470) | Declared-only residue (no reverse twin) |
+|---|---|--:|--:|
+| `Recipe` → `EntityRef.Recipe` | **Produced by** (`RecipesByProducedItem`) | 4076 / 2702 items | **59 / 34 items** |
+| `Quest` → `EntityRef.Quest` | **Awarded by** (`QuestsRewardingItem`) | 816 / 306 items | **45 / 45 items** |
+
+RecipeDetail's "Taught by" (`sources_recipes.json`) and AbilityDetail's
+NPC-trainer sources have **no in-pane reverse twin** — the class is genuinely
+`ItemDetailView`-only (re-derived, not inherited from the prior
+`ItemDetailView`-scoped check). Overlap is near-total but **partial**: the two
+sides come from different JSON, so a real declared-only residue exists and is a
+genuine sources/relational data-coverage signal.
+
+**Ratified policy (maintainer sign-off — @arthur-conde, 2026-05-17;
+[#407](https://github.com/moumantai-gg/mithril/issues/407#issuecomment-4471012842)):**
+
+1. **Suppress declared, keep reverse — per (item, entity) edge.** A declared
+   `ItemSource` row is dropped from "Sources" iff its resolved `Context` entity
+   is already shown for that item under its dedicated reverse header
+   (`Recipe`↔"Produced by", `Quest`↔"Awarded by"). The reverse header is the
+   single role-appropriate home. The test is per-edge, never per-kind.
+2. **Declared-only residue survives + carries an in-pane asymmetry warning.**
+   Residue rows (no reverse twin) are **never silently dropped**; each carries
+   an in-pane note that the declared↔reverse relationship is asymmetrical (the
+   declared source is uncorroborated by the recipe/quest reverse data). This is
+   a **verification-owed coverage signal** — see "Verification owed" below.
+3. **Kind-prefix dropped for the entity-resolving kinds.** The leading
+   `Quest:`/`Recipe:` text prefix is removed from residue rows; entity kind is
+   carried by the established kind→lead-glyph standard (`LinkVm.GlyphFor`) the
+   migrated Link grammar already encodes, and the asymmetry-warning text names
+   the kind for `Quest` (glyph-less by grammar design). The NPC-*mechanic*
+   prefixes (`Vendor:`/`Barter:`/`NpcGift:`/`HangOut:`) are **kept** — they
+   encode acquisition method, which the NPC kind-glyph cannot.
+
+**Implementation fence (load-bearing).** Remediation is **projection-layer
+only** (`ItemsTabViewModel.BuildSourceChips`/`BuildCrossLinkContext`/
+`ResolveSourceReference`/`FormatSourceDisplayName`). The asymmetry warning
+ships through the **existing `LinkVm.ProvenanceSuffix` slot the migrated
+grammar already renders** — no `*DetailView.xaml`, no Phase-4 primitive, no
+`Resources.xaml` edit (the #404/#424 presentation axis stays frozen). A louder
+warning treatment (colour/badge) would touch the frozen Link primitive and is a
+**separate presentation-axis issue**, deliberately out of scope here. The
+additive cross-module contract (`Sources`/`ProducedByRecipes`/`AwardedByQuests`
+/`Consumed*` — asserted by `ItemsTabViewModelTests`, consumed by Bilbo /
+Celebrimbor / `ItemDetailWindow`) is preserved; the only intended behavioural
+change is `Sources` shrinking by the suppressed dupes and residue rows gaining
+the provenance-suffix warning, with the asserting tests updated deliberately
+and the delta called out in the PR. A coverage-policy regression guard
+(spirit-analogue of the Phase-6 `DetailViewGrammarConformanceTests`) asserts no
+entity appears under both "Sources" and its reverse header for the same item.
+
+> **Verification owed.** The declared-only residue (59 Recipe / 45 Quest edges
+> as of v470) is a *real sources/relational data-coverage asymmetry*, not just a
+> dedupe leftover: `sources_items.json` declares a recipe/quest the inverse
+> `recipes.json`/`quests.json` data does not corroborate. Surfaced in-pane (the
+> asymmetry warning) and tracked here; a future data-side reconciliation pass
+> against the CDN is the task side. When this residue's scale changes materially
+> on a CDN bump, re-audit and update the table above.
+
+**Out of scope (filed separately — not folded in).**
+`QuestObjectiveMacGuffin` (8/8) resolves `Context`→quest InternalName but is
+not matched by `ResolveSourceReference`, rendering as a bare
+`QuestObjectiveMacGuffin` text row that drops the resolved quest name. A latent
+display defect, **not** a dedupe target (macguffin = the quest *consumes* the
+item — the consume role, no reverse twin). Its own issue.
+
 ## History
 
+- **2026-05-17** — #407 ratified: declared-vs-reverse source-duplication
+  policy decided (suppress declared per-edge, keep reverse; declared-only
+  residue survives with an in-pane asymmetry warning; entity-kind prefix
+  dropped in favour of the kind→glyph standard). Cross-pane audit (production
+  indices, v470) confirmed the class is `ItemDetailView`-only and quantified
+  the partial overlap (4076 Recipe + 816 Quest duplicate edges; 59 + 45
+  declared-only residue). Coverage axis, fenced from the #404/#424
+  presentation axis; remediation is projection-layer only.
 - **2026-05-16** — #342 resolved: `OtherRequirements` (typed lines + recipe
   cross-link chips, `RecipeRequirementProjector`), `Costs`, and reset-timer
   surfaced in the recipe detail. Reframed from "long-tail completeness" to the
