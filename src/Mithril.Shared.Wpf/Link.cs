@@ -163,6 +163,8 @@ public sealed class Link : Control
         LinkGlyph.Location => PackIconLucideKind.MapPin,
         LinkGlyph.Item => PackIconLucideKind.Package,
         LinkGlyph.CombatAbility => PackIconLucideKind.Sword,
+        LinkGlyph.Pool => PackIconLucideKind.Layers,
+        LinkGlyph.Power => PackIconLucideKind.Zap,
         // LinkGlyph.None — no lead glyph; element is hidden, kind is unused.
         _ => PackIconLucideKind.None,
     };

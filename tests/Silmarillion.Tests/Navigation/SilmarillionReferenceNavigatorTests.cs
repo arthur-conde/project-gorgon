@@ -156,6 +156,8 @@ public sealed class SilmarillionReferenceNavigatorTests
     [InlineData(EntityKind.PlayerTitle)]
     [InlineData(EntityKind.StorageVault)]
     [InlineData(EntityKind.Effect)]
+    [InlineData(EntityKind.Power)]
+    [InlineData(EntityKind.Profile)]
     public void CanOpen_UnregisteredKind_ReturnsFalse(EntityKind kind)
     {
         var nav = new SilmarillionReferenceNavigator(NavTargets());

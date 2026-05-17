@@ -1,0 +1,137 @@
+<UserControl x:Class="Silmarillion.Views.ProfileDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate x:Key="ProfileFamilyLinkTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="Prose"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ProfileDetailView}}}"/>
+            </DataTemplate>
+
+            <!-- Clickable Power.Skill filter chip (tag-form Set-ref + Activate),
+                 mirroring AbilityDetailView's FilterSetRefTemplate idiom. -->
+            <DataTemplate x:Key="SkillFilterTemplate" DataType="{x:Type vm:TreasureSkillFilterVm}">
+                <ContentControl Content="{Binding SetRef}" Margin="0,0,5,4">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate>
+                            <c:SetRef ActivateCommand="{Binding DataContext.Activate, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </DataTemplate>
+
+            <!-- One pool-list row: navigable power Link + the power's OWN skill and
+                 tier count as inert Fact (orthogonal to the pool's family name). -->
+            <DataTemplate x:Key="PoolPowerRowTemplate" DataType="{x:Type vm:TreasureProfilePowerRow}">
+                <Border BorderBrush="#14FFFFFF" BorderThickness="0,0,0,1" Padding="0,3">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="74"/>
+                        </Grid.ColumnDefinitions>
+                        <ContentControl Grid.Column="0" Content="{Binding PowerLink}" VerticalAlignment="Center">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate>
+                                    <c:Link Density="List"
+                                            ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ProfileDetailView}}}"/>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                        <TextBlock Grid.Column="1" Text="{Binding SkillText}"
+                                   Foreground="#AAFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding TierText}"
+                                   Foreground="#66FFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <c:DetailExportHost>
+        <Border Padding="14,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top">
+                    <!-- Fact-title = pool name -->
+                    <TextBlock Text="{Binding DisplayName}"
+                               Style="{StaticResource FactTitleStyle}" Margin="0,0,0,6"/>
+
+                    <!-- Two-orthogonal-skill-axes copy (Fact body) -->
+                    <TextBlock Text="{Binding Explanation}"
+                               Style="{StaticResource FactBodyStyle}"
+                               MaxWidth="600" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                    <!-- Drawn into <family> items — Skill-shaped Link (degrades if
+                         the Skills surface is unshipped). -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Drawn into:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding FamilyLink}"
+                                        ContentTemplate="{StaticResource ProfileFamilyLinkTemplate}"
+                                        VerticalAlignment="Center"/>
+                        <TextBlock Text=" family items" Style="{StaticResource FactBodyStyle}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Filter by Power.Skill — orthogonal to the pool name -->
+                    <StackPanel Margin="0,0,0,6"
+                                Visibility="{Binding SkillFilters.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Style="{StaticResource StructureSectionLabelStyle}">
+                            <Run Text="Filter by Power.Skill"/>
+                            <Run Text="  ·  orthogonal to pool name" Foreground="#66FFFFFF"/>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding SkillFilters}"
+                                      ItemTemplate="{StaticResource SkillFilterTemplate}"
+                                      Margin="0,2,0,4">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                        <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                 Background="#FF202020" Foreground="#DDFFFFFF"
+                                 BorderBrush="#33FFFFFF" BorderThickness="1" Padding="6,4"/>
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource StructureSectionLabelStyle}" Margin="0,4,0,2">
+                        <Run Text="Powers in this pool"/>
+                        <Run Text="  ·  "/>
+                        <Run Text="{Binding CountSummary, Mode=OneWay}" Foreground="#66FFFFFF"/>
+                    </TextBlock>
+                </StackPanel>
+
+                <c:FactFooter DockPanel.Dock="Bottom" DataContext="{Binding Footer}" Margin="0,8,0,0"/>
+
+                <ListBox ItemsSource="{Binding VisiblePowerRows}"
+                         ItemTemplate="{StaticResource PoolPowerRowTemplate}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingStackPanel.IsVirtualizing="True"
+                         VirtualizingStackPanel.VirtualizationMode="Recycling">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Focusable" Value="False"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </DockPanel>
+        </Border>
+    </c:DetailExportHost>
+</UserControl>

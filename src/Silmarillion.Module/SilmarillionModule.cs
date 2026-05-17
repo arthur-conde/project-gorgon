@@ -76,6 +76,10 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetRequiredService<IReferenceNavigator>(),
             sp.GetRequiredService<IEntityNameResolver>(),
             sp.GetRequiredService<SilmarillionSettings>()));
+        services.AddSingleton<TreasureTabViewModel>(sp => new TreasureTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<IEntityNameResolver>()));
         // Forward each concrete tab VM to ITabViewModel so SilmarillionViewModel can compose
         // its Tabs collection from IEnumerable<ITabViewModel>. Adding a future tab is a single
         // pair of registrations here — no SilmarillionViewModel ctor change (refactor #243).
@@ -89,6 +93,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<LorebooksTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<PlayerTitlesTabViewModel>());
         services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<StorageVaultsTabViewModel>());
+        services.AddSingleton<ITabViewModel>(sp => sp.GetRequiredService<TreasureTabViewModel>());
         services.AddSingleton<SilmarillionViewModel>();
 
         // Kind targets registered after the tab VMs so DI can resolve them.
@@ -154,6 +159,15 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<IReferenceKindTarget>(sp => new StorageVaultsKindTarget(
             sp.GetRequiredService<StorageVaultsTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        // Treasure System (#412/#435): two kinds, one tab. Power = the catalog;
+        // Profile = the pools (also the #214 "pool-query" deep-link landing). Both
+        // share TabIndex 10 (= TreasureTabViewModel.TabOrder).
+        services.AddSingleton<IReferenceKindTarget>(sp => new PowerKindTarget(
+            sp.GetRequiredService<TreasureTabViewModel>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<IReferenceKindTarget>(sp => new ProfileKindTarget(
+            sp.GetRequiredService<TreasureTabViewModel>(),
             sp.GetService<IDiagnosticsSink>()));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).

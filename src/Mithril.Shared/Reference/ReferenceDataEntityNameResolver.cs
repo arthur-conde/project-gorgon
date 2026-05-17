@@ -26,6 +26,15 @@ public sealed class ReferenceDataEntityNameResolver : IEntityNameResolver
         EntityKind.Skill => ResolveSkill(reference.InternalName),
         EntityKind.Lorebook => ResolveLorebook(reference.InternalName),
         EntityKind.StorageVault => ResolveStorageVault(reference.InternalName),
+        // Treasure-System Power: InternalName verbatim, deliberately. The #434 Q1 ruling
+        // forecloses humanization and affix-derivation — Powers have no DisplayName and
+        // resolve_strings returns null for every candidate key, and affix-stitching is
+        // non-replicable engine-side logic (see pg_tsys_power_naming_ceiling). An explicit
+        // arm (rather than the default fall-through) so the ruling is legible at the seam.
+        EntityKind.Power => reference.InternalName,
+        // Treasure-System Profile/Pool: the bare tsysprofiles key is the player-facing
+        // pool name (e.g. "Sword"); no resolvable display form exists.
+        EntityKind.Profile => reference.InternalName,
         _ => reference.InternalName,
     };
 
