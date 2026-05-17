@@ -227,6 +227,19 @@ public sealed class RecipeDetailViewModel
     /// </summary>
     public IReadOnlyList<RecipeKeywordSlotVm> KeywordSlots { get; }
 
+    /// <summary>
+    /// Section-label text for the "Keyword ingredients" block. G4 Stacking
+    /// semantics (docs/silmarillion-visual-grammar.md · "Stacking semantics"):
+    /// when there are ≥2 positionally-material slots the label gets a slot-count
+    /// suffix (<c>"Keyword ingredients · 2 slots"</c>); 0/1 slot keeps the plain
+    /// label. The VM owns the text (count logic must NOT live in XAML) so the
+    /// view binds one string under <c>StructureSectionLabelStyle</c>.
+    /// </summary>
+    public string KeywordIngredientsLabel =>
+        KeywordSlots.Count >= 2
+            ? $"Keyword ingredients · {KeywordSlots.Count} slots"
+            : "Keyword ingredients";
+
     public IReadOnlyList<EntityChipVm> ProducedItems { get; }
 
     /// <summary>
@@ -337,7 +350,11 @@ public sealed class RecipeDetailViewModel
 /// </summary>
 public sealed class RecipeKeywordSlotVm
 {
-    public RecipeKeywordSlotVm(string label, ProvenancePopupViewModel popup, ICommand? chipClickCommand)
+    public RecipeKeywordSlotVm(
+        string label,
+        ProvenancePopupViewModel popup,
+        ICommand? chipClickCommand,
+        int? slotOrdinal = null)
     {
         Label = label;
         Popup = popup;
@@ -348,7 +365,22 @@ public sealed class RecipeKeywordSlotVm
         // becomes the shared Set-reference primitive. Summary-form (MatchCount
         // non-null ⇒ "{Label} · N →"), actionable (the reveal is wired to
         // ShowPopupCommand). Gold→blue is intentional per G-b, not a regression.
-        SetRef = new SetRefVm(Label, MatchCount: MatchCount, IsActionable: true);
+        //
+        // G4 Stacking semantics (docs/silmarillion-visual-grammar.md ·
+        // "Stacking semantics"): recipe keyword-ingredient slots are
+        // positionally MATERIAL — the grammar's own canonical example is
+        // "two 'any Crystal' slots where TSysCraftedEquipment references the
+        // actual crystal bound in each slot", so position is material for
+        // crafted-equipment recipes regardless of whether the constraints are
+        // identical. The builder therefore passes a 1-based slotOrdinal ONLY
+        // when the slot list has ≥2 entries; null (single/0 slot) ⇒ no prefix
+        // (positionally inert path — not exercised by the Recipe pilot since a
+        // recipe slot is never count-only). This SetRefVm population is the
+        // CANONICAL stacking pattern the 8 fan-out views copy: ordinal in the
+        // VM (SlotOrdinal), prefix rendered by the shared SetRef control —
+        // never re-decide the visual values per call site.
+        SetRef = new SetRefVm(
+            Label, MatchCount: MatchCount, IsActionable: true, SlotOrdinal: slotOrdinal);
     }
 
     /// <summary>Friendly slot description, e.g. "any Crystal" / "Main-Hand Item".</summary>
@@ -384,6 +416,13 @@ public sealed class RecipeKeywordSlotVm
     /// actionable — its reveal is <see cref="ShowPopupCommand"/>. Replaces the
     /// bespoke ghost-gold "view all N" Button; the gold→blue shift is the ratified
     /// G-b correction, not a regression.
+    /// <para>
+    /// G4 Stacking semantics: carries <see cref="SetRefVm.SlotOrdinal"/> = the
+    /// slot's 1-based position when the recipe has ≥2 keyword slots (positionally
+    /// material per the <c>TSysCraftedEquipment</c> canonical example), null
+    /// otherwise. The shared <c>SetRef</c> control renders the ordinal prefix; this
+    /// VM only populates it — the canonical stacking pattern the fan-out views copy.
+    /// </para>
     /// </summary>
     public SetRefVm SetRef { get; }
 }

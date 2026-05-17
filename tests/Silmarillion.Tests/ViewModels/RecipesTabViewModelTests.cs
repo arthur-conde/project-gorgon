@@ -423,6 +423,202 @@ public sealed class RecipesTabViewModelTests
         }
     }
 
+    // ── G4 Stacking semantics (docs/silmarillion-visual-grammar.md ·
+    //    "Stacking semantics") ─────────────────────────────────────────────────
+    // Recipe keyword-ingredient slots are positionally MATERIAL whenever ≥2 (the
+    // grammar's own TSysCraftedEquipment canonical example). ≥2 ⇒ each slot's
+    // SetRefVm.SlotOrdinal = its 1-based position + the section label gets a
+    // "· N slots" suffix. 0/1 slot ⇒ null ordinal + plain label. The Recipe pilot
+    // does not exercise the positionally-inert (count-only) path.
+
+    [Fact]
+    public void KeywordSlots_TwoOrMore_AreMaterial_OrdinalsAndLabelSuffix()
+    {
+        // The grammar's canonical example: a crafted-equipment recipe with two
+        // "any Crystal" slots. Constraints are IDENTICAL — materiality must NOT
+        // be gated on "same constraint"; ≥2 slots ⇒ material per the clause.
+        var a = new Item { Id = 1, InternalName = "RoughCrystal", Name = "Rough Crystal" };
+        var b = new Item { Id = 2, InternalName = "FineCrystal", Name = "Fine Crystal" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "ForgeCrystalBlade",
+            Name = "Forge Crystal Blade",
+            Skill = "Blacksmithing",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Primary Crystal", StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Secondary Crystal", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Crystal"] = new[]
+                {
+                    new RecipeKeywordItemMatch(a, RecipeKeywordItemMatchReason.KeywordMatch),
+                    new RecipeKeywordItemMatch(b, RecipeKeywordItemMatchReason.KeywordMatch),
+                },
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        var slots = vm.DetailViewModel!.KeywordSlots;
+        slots.Should().HaveCount(2);
+        // 1-based ordinals flow into the SetRefVm.
+        slots[0].SetRef.SlotOrdinal.Should().Be(1);
+        slots[1].SetRef.SlotOrdinal.Should().Be(2);
+        slots[0].SetRef.HasOrdinal.Should().BeTrue();
+        slots[0].SetRef.OrdinalText.Should().Be("1");
+        slots[1].SetRef.OrdinalText.Should().Be("2");
+        // Section-label suffix is VM-owned.
+        vm.DetailViewModel.KeywordIngredientsLabel.Should().Be("Keyword ingredients · 2 slots");
+    }
+
+    [Fact]
+    public void KeywordSlots_ThreeSlots_OrdinalsAreOneTwoThree_LabelSaysThreeSlots()
+    {
+        var item = new Item { Id = 1, InternalName = "Gem", Name = "Gem" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "TripleSocket",
+            Name = "Triple Socket",
+            Skill = "Jewelry",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Gem"], Desc = "Slot A", StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Gem"], Desc = "Slot B", StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Gem"], Desc = "Slot C", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Gem"] = new[] { new RecipeKeywordItemMatch(item, RecipeKeywordItemMatchReason.KeywordMatch) },
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        var slots = vm.DetailViewModel!.KeywordSlots;
+        slots.Select(s => s.SetRef.SlotOrdinal).Should().Equal(1, 2, 3);
+        vm.DetailViewModel.KeywordIngredientsLabel.Should().Be("Keyword ingredients · 3 slots");
+    }
+
+    [Fact]
+    public void KeywordSlots_OrdinalGate_KeysOffSurvivingCount_NotRawIngredientPosition()
+    {
+        // A skipped slot (keys not in the index) must not consume an ordinal: the
+        // ≥2-material gate and the 1-based numbering key off the FINAL surviving
+        // list. Here 3 keyword ingredients are authored but one is not in the
+        // index → 2 survive → still material, ordinals 1,2 (no gap at the skip).
+        var item = new Item { Id = 1, InternalName = "Crystal", Name = "Crystal" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "GappedRecipe",
+            Name = "Gapped Recipe",
+            Skill = "Blacksmithing",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "First", StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["MissingKw"], Desc = "Skipped", StackSize = 1 },
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Second", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Crystal"] = new[] { new RecipeKeywordItemMatch(item, RecipeKeywordItemMatchReason.KeywordMatch) },
+                // "MissingKw" deliberately absent from the index ⇒ that slot is skipped.
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        var slots = vm.DetailViewModel!.KeywordSlots;
+        slots.Should().HaveCount(2, because: "the not-in-index slot is skipped, never reaches the list");
+        slots.Select(s => s.Label).Should().Equal("First", "Second");
+        slots.Select(s => s.SetRef.SlotOrdinal).Should().Equal(1, 2);
+        vm.DetailViewModel.KeywordIngredientsLabel.Should().Be("Keyword ingredients · 2 slots");
+    }
+
+    [Fact]
+    public void KeywordSlots_SingleSlot_IsInert_NoOrdinal_PlainLabel()
+    {
+        // Exactly 1 surviving slot ⇒ positionally inert path: SlotOrdinal null,
+        // no prefix, the section label stays plain (no "· N slots" suffix).
+        var match = new Item { Id = 1, InternalName = "RoughCrystal", Name = "Rough Crystal" };
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "SingleCrystal",
+            Name = "Single Crystal",
+            Skill = "Enchanting",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeKeywordIngredient { ItemKeys = ["Crystal"], Desc = "Auxiliary Crystal", StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            RecipesByKey = { ["r1"] = recipe },
+            KeywordSlotMatches =
+            {
+                ["Crystal"] = new[] { new RecipeKeywordItemMatch(match, RecipeKeywordItemMatchReason.KeywordMatch) },
+            },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        var slot = vm.DetailViewModel!.KeywordSlots.Should().ContainSingle().Which;
+        slot.SetRef.SlotOrdinal.Should().BeNull();
+        slot.SetRef.HasOrdinal.Should().BeFalse();
+        slot.SetRef.OrdinalText.Should().BeEmpty();
+        vm.DetailViewModel.KeywordIngredientsLabel.Should().Be("Keyword ingredients");
+    }
+
+    [Fact]
+    public void KeywordSlots_NoSlots_PlainLabel_SectionHiddenUnchanged()
+    {
+        // 0 slots ⇒ no ordinals, plain label, and the empty list still drives the
+        // section hide in the view (KeywordSlots.Count == 0) — behaviour unchanged.
+        var recipe = new Recipe
+        {
+            Key = "r1",
+            InternalName = "NoKeywordRecipe",
+            Name = "No Keyword Recipe",
+            Skill = "Cooking",
+            Ingredients = new RecipeIngredient[]
+            {
+                new RecipeItemIngredient { ItemCode = 100, StackSize = 1 },
+            },
+        };
+        var refData = new StubReferenceData
+        {
+            ItemsByCode = { [100] = new Item { Id = 100, InternalName = "Tomato", Name = "Tomato" } },
+            RecipesByKey = { ["r1"] = recipe },
+        };
+        var vm = new RecipesTabViewModel(refData, NavFactory.WithKinds(EntityKind.Item), new FakeEntityNameResolver());
+
+        vm.SelectedRecipe = recipe;
+
+        vm.DetailViewModel!.KeywordSlots.Should().BeEmpty();
+        vm.DetailViewModel.KeywordIngredientsLabel.Should().Be("Keyword ingredients");
+    }
+
     [Fact]
     public void SourceChips_NpcTrainerSource_NotNavigable_UntilNpcKindShips()
     {

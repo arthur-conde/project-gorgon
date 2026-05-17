@@ -209,7 +209,10 @@
                  popup is a flat list. -->
             <StackPanel Margin="0,0,0,10"
                         Visibility="{Binding KeywordSlots.Count, Converter={StaticResource PositiveIntToVis}}">
-                <TextBlock Text="Keyword ingredients" Style="{StaticResource StructureSectionLabelStyle}"/>
+                <!-- G4 Stacking semantics: the slot-count suffix ("· N slots")
+                     lives in the VM (KeywordIngredientsLabel); XAML never owns
+                     the count logic. StructureSectionLabelStyle unchanged. -->
+                <TextBlock Text="{Binding KeywordIngredientsLabel}" Style="{StaticResource StructureSectionLabelStyle}"/>
                 <!-- Matrix #11: the bespoke ghost-gold "{Label} — view all N →"
                      Button becomes the shared Set-reference primitive (summary-form
                      "{Label} · N →", actionable). ActivateCommand → the existing

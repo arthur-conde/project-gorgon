@@ -244,7 +244,13 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
         var ingredients = recipe.Ingredients;
         if (ingredients is null) return [];
 
-        var rows = new List<RecipeKeywordSlotVm>();
+        // Two-pass build so the G4 ≥2-slot ordinal gate keys off the FINAL count:
+        // skipped slots (empty keys / not-in-index) never reach the list, so the
+        // ordinal must be assigned after all skips are resolved — not from the raw
+        // ingredient position. Pass 1 collects the surviving (label, popup) inputs;
+        // pass 2 materializes the VMs, threading a 1-based SlotOrdinal only when ≥2
+        // slots survived (positionally material per the Stacking-semantics clause).
+        var inputs = new List<(string Label, ProvenancePopupViewModel Popup)>();
         foreach (var kwIng in ingredients.OfType<RecipeKeywordIngredient>())
         {
             if (kwIng.ItemKeys.Count == 0) continue;
@@ -281,7 +287,26 @@ public sealed partial class RecipesTabViewModel : ObservableObject, ITabViewMode
                     new(label, chips),
                 });
 
-            rows.Add(new RecipeKeywordSlotVm(label, popup, _openEntityCommand));
+            inputs.Add((label, popup));
+        }
+
+        // G4 Stacking semantics (docs/silmarillion-visual-grammar.md ·
+        // "Stacking semantics"): recipe keyword slots are positionally MATERIAL
+        // whenever there are ≥2 (the grammar's own TSysCraftedEquipment canonical
+        // example — slot position is material for crafted-equipment recipes
+        // regardless of whether the constraints are identical, so do NOT gate on
+        // "same constraint"; ≥2 ⇒ material). ≥2 ⇒ 1-based ordinal per slot; the
+        // single/0-slot case stays null (no prefix). The slot-count suffix on the
+        // section label is the VM's RecipeDetailViewModel.KeywordIngredientsLabel.
+        var material = inputs.Count >= 2;
+        var rows = new List<RecipeKeywordSlotVm>(inputs.Count);
+        for (var i = 0; i < inputs.Count; i++)
+        {
+            rows.Add(new RecipeKeywordSlotVm(
+                inputs[i].Label,
+                inputs[i].Popup,
+                _openEntityCommand,
+                slotOrdinal: material ? i + 1 : null));
         }
         return rows;
     }
