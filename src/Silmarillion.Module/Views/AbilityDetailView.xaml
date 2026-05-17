@@ -4,7 +4,6 @@
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -16,41 +15,55 @@
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Cost row (currency + price) — one row per AbilityCost in the Core mechanics section. -->
-            <DataTemplate DataType="{x:Type vm:AbilityCostRow}">
-                <TextBlock Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           TextWrapping="Wrap" Margin="0,0,0,2">
-                    <Run Text="{Binding Currency, Mode=OneWay}"/>
-                    <Run Text=": "/>
-                    <Run Text="{Binding Price, Mode=OneWay, StringFormat={}{0:N0}}"/>
-                </TextBlock>
+            <!-- One tag-form Set-reference chip (the pilot keyword-slot idiom).
+                 Item DataContext is an AbilityFilterSetRefVm (SetRef + per-chip
+                 Activate); unwired ⇒ availability-corollary no-op on the blue
+                 chassis. Used for every keyword filter (ratified E4). -->
+            <DataTemplate x:Key="FilterSetRefTemplate" DataType="{x:Type vm:AbilityFilterSetRefVm}">
+                <ContentControl Content="{Binding SetRef}" Margin="0,0,4,4">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate>
+                            <c:SetRef ActivateCommand="{Binding DataContext.Activate, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
             </DataTemplate>
 
-            <!-- Conditional-keyword row (trigger + applied keyword). The trigger half is a
-                 prefix string + an optional EffectKeyword chip (rendered when the row's
-                 EffectKeywordChip is non-null); the applied half is the keyword tag the
-                 ability adds when the condition is met. -->
-            <DataTemplate DataType="{x:Type vm:AbilityConditionalKeywordRow}">
+            <!-- Inline Prose / list-density Link (canonical pilot patterns). -->
+            <DataTemplate x:Key="InlineLinkTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="Prose"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+            </DataTemplate>
+            <DataTemplate x:Key="EntityLinkListTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="List" Margin="0,0,0,3"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
+            </DataTemplate>
+
+            <!-- DoT row — inert Fact line (matrix T2). -->
+            <DataTemplate DataType="{x:Type vm:AbilityDoTRow}">
+                <TextBlock Text="{Binding Display}" Style="{StaticResource FactBodyStyle}"
+                           Margin="0,0,0,2"/>
+            </DataTemplate>
+
+            <!-- Conditional-keyword row. The grouping Border is layout
+                 scaffolding (Phase-1: out of audit scope) — retained. Inside:
+                 Condition → Structure inline prefix; the EffectKeyword chip →
+                 tag-form Set-ref (ratified E4); the applied keyword → inert
+                 Fact. -->
+            <DataTemplate DataType="{x:Type vm:AbilityConditionalRowVm}">
                 <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
                         CornerRadius="3" Padding="6,4" Margin="0,0,0,3">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding Condition}" Foreground="#88FFFFFF"
-                                       FontSize="{DynamicResource AppFontSizeSmall}"
+                            <TextBlock Text="{Binding Condition}"
+                                       Style="{StaticResource StructureInlinePrefixStyle}"
                                        VerticalAlignment="Center"/>
-                            <ContentControl Content="{Binding EffectKeywordChip}" Margin="4,0,0,0"
-                                            VerticalAlignment="Center">
-                                <ContentControl.Resources>
-                                    <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                        <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                    </DataTemplate>
-                                </ContentControl.Resources>
-                            </ContentControl>
+                            <ContentControl Content="{Binding EffectKeywordSetRef}"
+                                            ContentTemplate="{StaticResource FilterSetRefTemplate}"
+                                            Margin="6,0,0,0" VerticalAlignment="Center"
+                                            Visibility="{Binding EffectKeywordSetRef, Converter={StaticResource NullToVis}}"/>
                         </StackPanel>
-                        <TextBlock Foreground="#CCFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   TextWrapping="Wrap" Margin="0,2,0,0">
+                        <TextBlock Style="{StaticResource FactBodyStyle}" Margin="0,2,0,0">
                             <Run Text="Adds keyword: "/>
                             <Run Text="{Binding Keyword, Mode=OneWay}" FontWeight="SemiBold"/>
                         </TextBlock>
@@ -58,160 +71,101 @@
                 </Border>
             </DataTemplate>
 
-            <!-- Ammo keyword row (clickable keyword chip + count). The chip opens the Items tab
-                 filtered by Keywords CONTAINS <keyword> (e.g. clicking "Beginner's Dense Arrow"
-                 lists every item that carries the DenseArrow1 keyword). -->
-            <DataTemplate DataType="{x:Type vm:AbilityAmmoKeywordRow}">
+            <!-- Ammo row: tag-form Set-ref (E4) + adjacent inert Fact count
+                 (carry-forward #1 — quantity is never part of the ref). -->
+            <DataTemplate DataType="{x:Type vm:AbilityAmmoRowVm}">
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                    <ContentControl Content="{Binding Chip}">
-                        <ContentControl.Resources>
-                            <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                            </DataTemplate>
-                        </ContentControl.Resources>
-                    </ContentControl>
-                    <TextBlock Text="{Binding Count, StringFormat=' × {0}'}" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
+                    <ContentControl Content="{Binding SetRef}"
+                                    ContentTemplate="{StaticResource FilterSetRefTemplate}"/>
+                    <TextBlock Text="{Binding Count, StringFormat=' × {0}'}"
+                               Style="{StaticResource FactBodyStyle}"
                                VerticalAlignment="Center" Margin="4,0,0,0"/>
                 </StackPanel>
             </DataTemplate>
 
-            <!-- Generic label/value flag row, shared by environmental / pet / internal / PvE stats. -->
-            <DataTemplate DataType="{x:Type vm:AbilityFlagRow}">
-                <DockPanel Margin="0,0,0,2">
-                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBlock Text="{Binding Value}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap"/>
-                </DockPanel>
-            </DataTemplate>
-
-            <!-- Special-value row (label + numeric value + optional suffix). -->
-            <DataTemplate DataType="{x:Type vm:AbilitySpecialValueRow}">
-                <DockPanel Margin="0,0,0,2">
-                    <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap"/>
-                </DockPanel>
-            </DataTemplate>
-
-            <!-- DoT row (rendered as a single descriptive line). -->
-            <DataTemplate DataType="{x:Type vm:AbilityDoTRow}">
-                <TextBlock Text="{Binding Display}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSizeHint}"
-                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+            <!-- De-boxed inert Fact tag (FormGate / SpecialCaster labels —
+                 caster-state prose, NOT filters: #404 Phase-2 T1-as-Fact ❌
+                 corrected to inert Fact, never a Set-ref). -->
+            <DataTemplate x:Key="InertFactTagTemplate">
+                <TextBlock Text="{Binding}" Style="{StaticResource FactBodyStyle}"
+                           Margin="0,0,10,2"/>
             </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterText="{Binding InternalName}">
+    <!-- Phase-5 fan-out · view 7 (Ability — the largest) — a consistency-diff
+         against the merged Recipe pilot, NOT fresh design. #404 Phase-2:
+         single ability refs + rosters + trainer sources = Link; ALL keyword
+         chips (ItemByKeyword / EffectKeyword filters) = Set-reference (ratified
+         E4, NOT Link); header badges + Core-mechanics + flag groups = inert
+         label-value Fact ⇒ FactTable; FormGate / SpecialCaster bordered tags =
+         de-boxed inert Fact; the named G-b "Ability Rank" gold dies by
+         construction (FactTableVm has no brush). Grouping Borders are layout
+         scaffolding (Phase-1: out of audit scope) — retained.
+
+         Footer (matrix #14 / G-a · ratified E5): the pilot move — stop binding
+         DetailExportHost.FooterText, place <c:FactFooter/> at the foot (host
+         retained unchanged). InternalName is a cross-entity reference key ⇒
+         copyable KEY (Area's path). -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
-
             <StackPanel>
-                <!-- ─── 1. Header: icon + name + skill chip + level + rank badge + group chip ─── -->
+                <!-- 1. Header: title-glyph + Fact-title + collapsed badge strip. -->
                 <DockPanel Margin="0,0,0,10">
                     <c:IconImage DockPanel.Dock="Left" IconId="{Binding IconID}"
-                                 Width="40" Height="40" Margin="0,0,10,0"
-                                 VerticalAlignment="Top"
+                                 Style="{StaticResource FactTitleGlyphStyle}"
+                                 Margin="0,0,10,0" VerticalAlignment="Top"
                                  Visibility="{Binding IconID, Converter={StaticResource PositiveIntToVis}}"/>
                     <StackPanel>
-                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"
-                                   Foreground="#FFD4A847"
-                                   FontSize="{DynamicResource AppFontSizeLarge}" TextWrapping="Wrap"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2">
-                                <TextBlock Text="{Binding SkillLevelDisplay, Mode=OneWay}"
-                                           Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"/>
-                            </Border>
-                            <Border Background="#FF2A2418" BorderBrush="#55D4A847" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
-                                    Visibility="{Binding Rank, Converter={StaticResource NullOrEmptyToVis}}">
-                                <TextBlock Text="{Binding Rank}" Foreground="#FFD4A847"
-                                           FontWeight="SemiBold"
-                                           FontSize="{DynamicResource AppFontSizeHint}"/>
-                            </Border>
-                            <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                    CornerRadius="3" Padding="6,2" Margin="6,0,0,0"
-                                    Visibility="{Binding AbilityGroupDisplayName, Converter={StaticResource NullOrEmptyToVis}}">
-                                <TextBlock Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}">
-                                    <Run Text="Group: "/>
-                                    <Run Text="{Binding AbilityGroupDisplayName, Mode=OneWay}"/>
-                                </TextBlock>
-                            </Border>
-                        </StackPanel>
+                        <TextBlock Text="{Binding DisplayName}"
+                                   Style="{StaticResource FactTitleStyle}"/>
+                        <c:FactTable DataContext="{Binding HeaderStrip}"
+                                     HorizontalAlignment="Left" Margin="0,4,0,0"/>
                     </StackPanel>
                 </DockPanel>
 
-                <!-- ─── 2. Description ─── -->
-                <TextBlock c:FormattedText.Text="{Binding Description}" Foreground="#CCFFFFFF"
-                           FontSize="{DynamicResource AppFontSize}" TextWrapping="Wrap"
+                <!-- 2. Description -->
+                <TextBlock c:FormattedText.Text="{Binding Description}"
+                           Style="{StaticResource FactBodyStyle}"
                            MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,10"
                            Visibility="{Binding Description, Converter={StaticResource NullOrEmptyToVis}}"/>
 
-                <!-- ─── 3. Core mechanics: Target, ResetTime, CombatRefreshBaseAmount, Costs, SharesResetTimerWith ─── -->
+                <!-- 3. Core mechanics -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock Text="Core mechanics" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
-                                Visibility="{Binding Target, Converter={StaticResource NullOrEmptyToVis}}">
-                        <TextBlock Text="Target:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding Target}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
-                        <TextBlock Text="Reset time:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
-                        <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}">
-                            <Run Text="{Binding ResetTime, Mode=OneWay, StringFormat={}{0:0.##}}"/>
-                            <Run Text="s"/>
-                        </TextBlock>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
-                                Visibility="{Binding CombatRefreshBaseAmount, Converter={StaticResource NullOrEmptyToVis}}">
-                        <TextBlock Text="Combat refresh:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding CombatRefreshBaseAmount}" Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </StackPanel>
-                    <ItemsControl ItemsSource="{Binding CostRows}" Margin="0,2,0,0"
-                                  Visibility="{Binding CostRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    <TextBlock Text="Core mechanics" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding CoreMechanicsStrip}"
+                                 HorizontalAlignment="Left" Margin="0,0,0,2"/>
+                    <c:FactTable DataContext="{Binding CostFact}"
+                                 HorizontalAlignment="Left"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                Visibility="{Binding SharesResetTimerWithChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Shares reset timer with:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding SharesResetTimerWithLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Shares reset timer with:"
+                                   Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding SharesResetTimerWithChip}">
-                            <ContentControl.ContentTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.ContentTemplate>
-                        </ContentControl>
+                        <ContentControl Content="{Binding SharesResetTimerWithLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── 4. Prerequisites: Prerequisite chip + UpgradeOf chip + ItemKeywordReqs chips + EffectKeywordReqChips + SpecialCasterRequirements text ─── -->
+                <!-- 4. Prerequisites -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding PrerequisiteChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding PrerequisiteLink, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding UpgradeOfChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding UpgradeOfLink, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding ItemKeywordReqSetRefs.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding EffectKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding EffectKeywordReqSetRefs.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
@@ -223,174 +177,121 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="Prerequisites" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Prerequisites" Style="{StaticResource StructureSectionLabelStyle}"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding PrerequisiteChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Requires:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding PrerequisiteLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Requires:" Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding PrerequisiteChip}">
-                            <ContentControl.ContentTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.ContentTemplate>
-                        </ContentControl>
+                        <ContentControl Content="{Binding PrerequisiteLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding UpgradeOfChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Upgrade of:" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding UpgradeOfLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Upgrade of:" Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding UpgradeOfChip}">
-                            <ContentControl.ContentTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.ContentTemplate>
-                        </ContentControl>
+                        <ContentControl Content="{Binding UpgradeOfLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
-                                Visibility="{Binding ItemKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Text="Required item keywords:" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
-                        <ItemsControl ItemsSource="{Binding ItemKeywordReqChips}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
+                                Visibility="{Binding ItemKeywordReqSetRefs.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Required item keywords:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ItemKeywordReqSetRefs}"
+                                      ItemTemplate="{StaticResource FilterSetRefTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
-                    <!-- Form-gate labels: caster-state requirements ("Must be in Cow Form") that
-                         PG packs into ItemKeywordReqs alongside real item keywords. Rendered as
-                         plain-text chips because they don't map to any Items-tab keyword. See #303. -->
                     <StackPanel Margin="0,0,0,3"
                                 Visibility="{Binding FormGateLabels.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Text="Form required:" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
-                        <ItemsControl ItemsSource="{Binding FormGateLabels}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                            CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
-                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
+                        <TextBlock Text="Form required:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding FormGateLabels}"
+                                      ItemTemplate="{StaticResource InertFactTagTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
-                                Visibility="{Binding EffectKeywordReqChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Text="Required effect keywords:" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
-                        <ItemsControl ItemsSource="{Binding EffectKeywordReqChips}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
+                                Visibility="{Binding EffectKeywordReqSetRefs.Count, Converter={StaticResource PositiveIntToVis}}">
+                        <TextBlock Text="Required effect keywords:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding EffectKeywordReqSetRefs}"
+                                      ItemTemplate="{StaticResource FilterSetRefTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
                     <StackPanel Margin="0,0,0,3"
                                 Visibility="{Binding SpecialCasterRequirementLabels.Count, Converter={StaticResource PositiveIntToVis}}">
-                        <TextBlock Text="Special requirements:" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,2"/>
-                        <ItemsControl ItemsSource="{Binding SpecialCasterRequirementLabels}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="#FF252525" BorderBrush="#33FFFFFF" BorderThickness="1"
-                                            CornerRadius="3" Padding="6,2" Margin="0,0,4,3">
-                                        <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
+                        <TextBlock Text="Special requirements:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding SpecialCasterRequirementLabels}"
+                                      ItemTemplate="{StaticResource InertFactTagTemplate}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         </ItemsControl>
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── 5. PvE stats + 6. Conditional behaviors interleaved by section header ─── -->
+                <!-- 5. PvE stats / Special values / DoT -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding PvEStats.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="PvE stats" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding PvEStats}"/>
+                    <TextBlock Text="PvE stats" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding PvEStatsFact}" HorizontalAlignment="Left"/>
                 </StackPanel>
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding SpecialValueRows.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Special values" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SpecialValueRows}"/>
+                    <TextBlock Text="Special values" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding SpecialValuesFact}" HorizontalAlignment="Left"/>
                 </StackPanel>
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding DoTRows.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Damage over time" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Damage over time" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding DoTRows}"/>
                 </StackPanel>
 
-                <!-- ─── 6. Conditional behaviors ─── -->
+                <!-- 6. Conditional behaviors -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding ConditionalKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Conditional behaviors" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding ConditionalKeywordRows}"/>
+                            Visibility="{Binding ConditionalRowVms.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Conditional behaviors" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding ConditionalRowVms}"/>
                 </StackPanel>
 
-                <!-- ─── 7. Ammo ─── -->
+                <!-- 7. Ammo -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding HasAmmoSection, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Ammo" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <TextBlock c:FormattedText.Text="{Binding AmmoDescription}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" TextWrapping="Wrap"
-                               Margin="0,0,0,3"
+                    <TextBlock Text="Ammo" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <TextBlock c:FormattedText.Text="{Binding AmmoDescription}"
+                               Style="{StaticResource FactBodyStyle}" Margin="0,0,0,3"
                                Visibility="{Binding ShowAmmoDescription, Converter={StaticResource BoolToVis}}"/>
-                    <ItemsControl ItemsSource="{Binding AmmoKeywordRows}" Margin="0,0,0,3"
-                                  Visibility="{Binding AmmoKeywordRows.Count, Converter={StaticResource PositiveIntToVis}}"/>
-                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                               Margin="0,0,0,2"
+                    <ItemsControl ItemsSource="{Binding AmmoRowVms}" Margin="0,0,0,3"
+                                  Visibility="{Binding AmmoRowVms.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    <TextBlock Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"
                                Visibility="{Binding AmmoStickChance, Converter={StaticResource NullOrEmptyToVis}}">
-                        <Run Text="Stick chance: " Foreground="#88FFFFFF"/>
+                        <Run Text="Stick chance: "/>
                         <Run Text="{Binding AmmoStickChance, Mode=OneWay, StringFormat={}{0:P0}}"/>
                     </TextBlock>
-                    <TextBlock Foreground="#CCFFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
-                               Margin="0,0,0,2"
+                    <TextBlock Style="{StaticResource FactBodyStyle}" Margin="0,0,0,2"
                                Visibility="{Binding AmmoConsumeChance, Converter={StaticResource NullOrEmptyToVis}}">
-                        <Run Text="Consume chance: " Foreground="#88FFFFFF"/>
+                        <Run Text="Consume chance: "/>
                         <Run Text="{Binding AmmoConsumeChance, Mode=OneWay, StringFormat={}{0:P0}}"/>
                     </TextBlock>
                 </StackPanel>
 
-                <!-- ─── 8. Environmental flags ─── -->
+                <!-- 8. Environmental -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding EnvironmentalFlags.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Environmental" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding EnvironmentalFlags}"/>
+                    <TextBlock Text="Environmental" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding EnvironmentalFact}" HorizontalAlignment="Left"/>
                 </StackPanel>
 
-                <!-- ─── 9. Special targeting tags ─── -->
+                <!-- 9. Special targeting -->
                 <StackPanel Margin="0,0,0,10">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}" Value="Visible">
+                                <DataTrigger Binding="{Binding TargetEffectKeywordReqSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
@@ -399,91 +300,66 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="Special targeting" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Special targeting" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,3"
-                                Visibility="{Binding TargetEffectKeywordReqChip, Converter={StaticResource NullToVis}}">
-                        <TextBlock Text="Target effect keyword:" Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                Visibility="{Binding TargetEffectKeywordReqSetRef, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Target effect keyword:"
+                                   Style="{StaticResource StructureInlinePrefixStyle}"
                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <ContentControl Content="{Binding TargetEffectKeywordReqChip}"
-                                        VerticalAlignment="Center">
-                            <ContentControl.Resources>
-                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.Resources>
-                        </ContentControl>
+                        <ContentControl Content="{Binding TargetEffectKeywordReqSetRef}"
+                                        ContentTemplate="{StaticResource FilterSetRefTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
-                    <ItemsControl ItemsSource="{Binding SpecialTargetingFlags}"
-                                  Visibility="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}"/>
+                    <c:FactTable DataContext="{Binding SpecialTargetingFact}" HorizontalAlignment="Left"
+                                 Visibility="{Binding SpecialTargetingFlags.Count, Converter={StaticResource PositiveIntToVis}}"/>
                 </StackPanel>
 
-                <!-- ─── 10. Pet-related ─── -->
+                <!-- 10. Pet-related -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding PetFlags.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Pet-related" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding PetFlags}"/>
+                    <TextBlock Text="Pet-related" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding PetFact}" HorizontalAlignment="Left"/>
                 </StackPanel>
 
-                <!-- Other abilities in group: reverse-lookup roster of siblings (AbilityGroup). -->
+                <!-- Other abilities in group — Link enumeration. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding AbilitiesInGroupChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Other abilities in group" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding AbilitiesInGroupChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding AbilitiesInGroupLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Other abilities in group" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding AbilitiesInGroupLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Upgrades to: reverse-lookup of abilities whose UpgradeOf == this ability. -->
+                <!-- Upgrades to — Link enumeration. -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding UpgradesToChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Upgrades to" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding UpgradesToChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding UpgradesToLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Upgrades to" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding UpgradesToLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- ─── 12. Sources: trainer NPCs ─── -->
+                <!-- 12. Trainers (NPC sources) — Link enumeration (E6(a)). -->
                 <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SourceChips.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Trainers" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding SourceChips}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AbilityDetailView}}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
+                            Visibility="{Binding SourceLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Trainers" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding SourceLinks}"
+                                  ItemTemplate="{StaticResource EntityLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- ─── 11. Internal flags (deprioritised — mono small text) ─── -->
+                <!-- 11. Internal flags — deliberately deprioritised. #404 ✅ T6
+                     mono-small Fact (kept inline, exactly as the pilot left its
+                     mono ResultEffects stub — FactBodyStyle would break the
+                     intent); only the section header moves to the quieter
+                     Structure group-header style. -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding InternalFlags.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Internal flags" FontWeight="SemiBold" Foreground="#66FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeSmall}" Margin="0,0,0,2"
-                               FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                    <TextBlock Text="Internal flags" Style="{StaticResource StructureGroupHeaderStyle}"
+                               Margin="0,0,0,2"/>
                     <ItemsControl ItemsSource="{Binding InternalFlags}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -501,6 +377,11 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). Ability
+                     InternalName is a cross-entity reference KEY ⇒ copyable.
+                     FactFooterVm.None() self-hides at 0 ids. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>

@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Abilities;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
@@ -69,6 +72,103 @@ public sealed class AbilityDetailViewModel
         SourceChips = BuildSourceChips(refData, nameResolver, navigator);
 
         OpenEntityCommand = openEntityCommand;
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // Legacy chip/row/string members above stay (the existing tab tests +
+        // the detail-pane contract); these are the grammar-tier carriers the
+        // view binds. Ability is the largest view — #404 Phase-2 maps it as:
+        //   • single ability refs (Prerequisite / UpgradeOf / SharesResetTimer)
+        //     + roster/sources = Link; keyword chips (ItemByKeyword /
+        //     EffectKeyword filters) = Set-reference (ratified E4, NOT Link);
+        //   • the header skill/rank/group badges + Core-mechanics + flag groups
+        //     = inert label-value Fact ⇒ FactTable (Strip / Grid); the named
+        //     G-b "Ability Rank" gold (T11) dies by construction (no brush);
+        //   • FormGate / SpecialCaster bordered non-nav tags = T1-as-Fact ❌
+        //     (caster-state prose, NOT filters) → de-boxed inert Fact;
+        //   • InternalName footer = a cross-entity reference key (abilities
+        //     prereq/upgrade each other; NPCs teach by it) ⇒ copyable KEY.
+        // Records that live in this file are projected directly; none are
+        // out of scope here.
+
+        HeaderStrip = FactTableVm.Strip(BuildHeaderPairs());
+        CoreMechanicsStrip = FactTableVm.Strip(BuildCoreMechanicsPairs());
+        CostFact = FactTableVm.Grid(CostRows
+            .Select(c => new FactPair(c.Currency, c.Price.ToString("N0"))).ToList());
+        PvEStatsFact = FlagGrid(PvEStats);
+        SpecialValuesFact = FactTableVm.Grid(SpecialValueRows
+            .Select(s => new FactPair(s.Label, s.Display)).ToList());
+        EnvironmentalFact = FlagGrid(EnvironmentalFlags);
+        SpecialTargetingFact = FlagGrid(SpecialTargetingFlags);
+        PetFact = FlagGrid(PetFlags);
+
+        PrerequisiteLink = PrerequisiteChip is null ? null : LinkVm.From(PrerequisiteChip);
+        UpgradeOfLink = UpgradeOfChip is null ? null : LinkVm.From(UpgradeOfChip);
+        SharesResetTimerWithLink =
+            SharesResetTimerWithChip is null ? null : LinkVm.From(SharesResetTimerWithChip);
+
+        AbilitiesInGroupLinks = AbilitiesInGroupChips.Select(LinkVm.From).ToList();
+        UpgradesToLinks = UpgradesToChips.Select(LinkVm.From).ToList();
+        SourceLinks = SourceChips.Select(LinkVm.From).ToList();
+
+        // Keyword filters → tag-form Set-refs (ratified E4). Per-chip Activate
+        // bridges SetRef's VM-param click to OpenEntityCommand(reference);
+        // unwired ⇒ availability corollary (blue chassis, safe no-op).
+        ItemKeywordReqSetRefs = ItemKeywordReqChips.Select(BuildFilterSetRef).ToList();
+        EffectKeywordReqSetRefs = EffectKeywordReqChips.Select(BuildFilterSetRef).ToList();
+        TargetEffectKeywordReqSetRef =
+            TargetEffectKeywordReqChip is null ? null : BuildFilterSetRef(TargetEffectKeywordReqChip);
+
+        ConditionalRowVms = ConditionalKeywordRows
+            .Select(r => new AbilityConditionalRowVm(
+                r.Condition,
+                r.Keyword,
+                r.EffectKeywordChip is null ? null : BuildFilterSetRef(r.EffectKeywordChip)))
+            .ToList();
+        AmmoRowVms = AmmoKeywordRows
+            .Select(r => new AbilityAmmoRowVm(BuildFilterSetRef(r.Chip), r.Count))
+            .ToList();
+
+        Footer = string.IsNullOrEmpty(InternalName)
+            ? FactFooterVm.None()
+            : FactFooterVm.Key(InternalName);
+    }
+
+    private static FactTableVm FlagGrid(IReadOnlyList<AbilityFlagRow> rows) =>
+        FactTableVm.Grid(rows.Select(r => new FactPair(r.Label, r.Value)).ToList());
+
+    private List<FactPair> BuildHeaderPairs()
+    {
+        // The header skill/rank/group BADGE BOXES collapse into ONE inert Fact
+        // strip (the pilot StatStrip pattern). The Rank box was the named G-b
+        // "Ability Rank" gold-tinted badge (T11); FactTableVm carries no brush,
+        // so the gold is gone by construction.
+        var p = new List<FactPair>(3);
+        if (!string.IsNullOrEmpty(SkillLevelDisplay)) p.Add(new FactPair(null, SkillLevelDisplay));
+        if (!string.IsNullOrEmpty(Rank)) p.Add(new FactPair(null, Rank!));
+        if (!string.IsNullOrEmpty(AbilityGroupDisplayName))
+            p.Add(new FactPair("Group", AbilityGroupDisplayName!));
+        return p;
+    }
+
+    private List<FactPair> BuildCoreMechanicsPairs()
+    {
+        var p = new List<FactPair>(3);
+        if (!string.IsNullOrEmpty(Target)) p.Add(new FactPair("Target", Target!));
+        p.Add(new FactPair("Reset time", $"{ResetTime:0.##}s"));
+        if (CombatRefreshBaseAmount is { } cr)
+            p.Add(new FactPair("Combat refresh", cr.ToString()));
+        return p;
+    }
+
+    private AbilityFilterSetRefVm BuildFilterSetRef(EntityChipVm chip)
+    {
+        var wired = chip.IsNavigable && OpenEntityCommand is not null;
+        var activate = wired
+            ? new RelayCommand(() => OpenEntityCommand!.Execute(chip.Reference))
+            : null;
+        return new AbilityFilterSetRefVm(
+            new SetRefVm(chip.DisplayName, MatchCount: null, IsActionable: wired),
+            activate);
     }
 
     public Ability Ability { get; }
@@ -174,6 +274,83 @@ public sealed class AbilityDetailViewModel
     /// <see cref="AbilitiesTabViewModel"/> to the navigator.
     /// </summary>
     public ICommand? OpenEntityCommand { get; }
+
+    // ── Phase 5 grammar-primitive carriers ──────────────────────────────────
+
+    /// <summary>Header skill/rank/group badge boxes collapsed to ONE inert Fact
+    /// strip (pilot StatStrip pattern). The Rank box was the named G-b
+    /// "Ability Rank" gold (T11) — gone by construction (FactTableVm has no brush).</summary>
+    public FactTableVm HeaderStrip { get; }
+
+    /// <summary>Core-mechanics label-value facts (Target · Reset time · Combat
+    /// refresh) as one inert Strip; empties skipped, self-hides when empty.</summary>
+    public FactTableVm CoreMechanicsStrip { get; }
+
+    /// <summary>Currency costs as an inert <see cref="FactTableLayout.Grid"/>
+    /// (Currency → Price). Self-hides when empty.</summary>
+    public FactTableVm CostFact { get; }
+
+    /// <summary>PvE stats as an inert label→value Grid (self-hides empty).</summary>
+    public FactTableVm PvEStatsFact { get; }
+
+    /// <summary>Special values as an inert label→value Grid (self-hides empty).</summary>
+    public FactTableVm SpecialValuesFact { get; }
+
+    /// <summary>Environmental flags as an inert label→value Grid.</summary>
+    public FactTableVm EnvironmentalFact { get; }
+
+    /// <summary>Special-targeting flags as an inert label→value Grid.</summary>
+    public FactTableVm SpecialTargetingFact { get; }
+
+    /// <summary>Pet flags as an inert label→value Grid.</summary>
+    public FactTableVm PetFact { get; }
+
+    /// <summary>Prerequisite ability as an inline Prose <see cref="LinkVm"/>; null when none.</summary>
+    public LinkVm? PrerequisiteLink { get; }
+
+    /// <summary>"Upgrade of" ability as an inline Prose <see cref="LinkVm"/>; null when none.</summary>
+    public LinkVm? UpgradeOfLink { get; }
+
+    /// <summary>"Shares reset timer with" ability as an inline Prose <see cref="LinkVm"/>.</summary>
+    public LinkVm? SharesResetTimerWithLink { get; }
+
+    /// <summary>Sibling abilities (same group) as <see cref="LinkVm"/> (Density="List").</summary>
+    public IReadOnlyList<LinkVm> AbilitiesInGroupLinks { get; }
+
+    /// <summary>Abilities upgrading from this one as <see cref="LinkVm"/> (Density="List").</summary>
+    public IReadOnlyList<LinkVm> UpgradesToLinks { get; }
+
+    /// <summary>Trainer-NPC sources as <see cref="LinkVm"/> (Density="List"; E6(a)
+    /// — the "source/taught-by" Link, now the unified primitive).</summary>
+    public IReadOnlyList<LinkVm> SourceLinks { get; }
+
+    /// <summary>Required item-keyword filters as tag-form Set-references
+    /// (ratified E4 — keyword filters, NOT Link); unwired ⇒ availability corollary.</summary>
+    public IReadOnlyList<AbilityFilterSetRefVm> ItemKeywordReqSetRefs { get; }
+
+    /// <summary>Required effect-keyword filters as tag-form Set-references (E4).</summary>
+    public IReadOnlyList<AbilityFilterSetRefVm> EffectKeywordReqSetRefs { get; }
+
+    /// <summary>Target effect-keyword filter as a single tag-form Set-ref (E4); null when unset.</summary>
+    public AbilityFilterSetRefVm? TargetEffectKeywordReqSetRef { get; }
+
+    /// <summary>Conditional-keyword rows reshaped so the EffectKeyword chip is a
+    /// tag-form Set-ref (E4); the Condition prefix is Structure, the applied
+    /// keyword inert Fact.</summary>
+    public IReadOnlyList<AbilityConditionalRowVm> ConditionalRowVms { get; }
+
+    /// <summary>Ammo rows reshaped: the ItemByKeyword chip is a tag-form Set-ref
+    /// (E4); the <c>× Count</c> is adjacent inert Fact (carry-forward #1 —
+    /// quantity is never part of the ref).</summary>
+    public IReadOnlyList<AbilityAmmoRowVm> AmmoRowVms { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14 / G-a · ratified E5). The Ability
+    /// InternalName is a cross-entity reference key (abilities prereq/upgrade
+    /// each other; NPCs teach by it) ⇒ the copyable <c>KEY</c> (Area's path),
+    /// not an inert envelope <c>ROW</c>. <see cref="FactFooterVm.None"/> if keyless.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────────
 
@@ -670,6 +847,62 @@ public sealed class AbilityDetailViewModel
     {
         if (condition) rows.Add(new AbilityFlagRow(label, "Yes"));
     }
+}
+
+/// <summary>
+/// A Set-reference carrier (the pilot <c>RecipeKeywordSlotVm</c> idiom): the
+/// <see cref="SetRefVm"/> the shared <c>SetRef</c> binds plus the per-chip
+/// <see cref="Activate"/> bridging <c>SetRef.ActivateCommand</c> (which passes
+/// the VM) to the host <c>OpenEntityCommand(reference)</c>. <see cref="Activate"/>
+/// is null for an unwired tag (availability corollary — still the blue chassis;
+/// the click is a safe no-op).
+/// </summary>
+public sealed class AbilityFilterSetRefVm
+{
+    public AbilityFilterSetRefVm(SetRefVm setRef, ICommand? activate)
+    {
+        SetRef = setRef;
+        Activate = activate;
+    }
+
+    public SetRefVm SetRef { get; }
+    public ICommand? Activate { get; }
+}
+
+/// <summary>
+/// View-side reshape of an <see cref="AbilityConditionalKeywordRow"/>: the
+/// trigger <see cref="Condition"/> prefix (Structure), the optional
+/// <see cref="EffectKeywordSetRef"/> (tag-form Set-ref — ratified E4), and the
+/// applied <see cref="Keyword"/> (inert Fact). The legacy
+/// <c>AbilityConditionalKeywordRow</c> is retained for the tests; this wraps it.
+/// </summary>
+public sealed class AbilityConditionalRowVm
+{
+    public AbilityConditionalRowVm(string condition, string keyword, AbilityFilterSetRefVm? effectKeywordSetRef)
+    {
+        Condition = condition;
+        Keyword = keyword;
+        EffectKeywordSetRef = effectKeywordSetRef;
+    }
+
+    public string Condition { get; }
+    public string Keyword { get; }
+    public AbilityFilterSetRefVm? EffectKeywordSetRef { get; }
+}
+
+/// <summary>View-side reshape of an <see cref="AbilityAmmoKeywordRow"/>: the
+/// ItemByKeyword chip as a tag-form Set-ref (E4) plus the adjacent
+/// <see cref="Count"/> (inert Fact — carry-forward #1).</summary>
+public sealed class AbilityAmmoRowVm
+{
+    public AbilityAmmoRowVm(AbilityFilterSetRefVm setRef, int count)
+    {
+        SetRef = setRef;
+        Count = count;
+    }
+
+    public AbilityFilterSetRefVm SetRef { get; }
+    public int Count { get; }
 }
 
 /// <summary>One row in <see cref="AbilityDetailViewModel.CostRows"/>.</summary>
