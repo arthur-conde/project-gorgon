@@ -144,20 +144,33 @@ an unwired edge. This is the priority and stands alone.
 - Everything else unsurfaced is deliberate; do not file "increase coverage" issues
   against it. If a future audit re-flags class 1–4 properties, point it here.
 
-### Known visual debt (axis: presentation, not coverage)
+### Visual grammar (#404) — RESOLVED
 
-- **No fact / control / link visual grammar** (#404). A design critique found
-  the shared `EntityChip` is visually identical to the header stat badges
-  (`Skill N`, `MaxUses`, cooldown) and breaks prose in `{prefix} [chip]` rows.
-  Root cause is the *absence of a grammar* distinguishing passive facts from
-  controls from navigable links — the chip collision is one symptom. This is a
-  *coverage-complete, presentation-wrong* state: #342's fields are all surfaced,
-  the visual grammar is the debt. Agreed direction: grammar-first; link tier →
-  **V2** (small lead-icon + gold name, no box — V5's prose/list dual form
-  rejected as a call-site footgun); badge tier restyled to read inert (same
-  pass, not orthogonal). Design-system change, deliberately **out of #342/#400
-  scope** — tracked in #404. Don't re-flag the recipe-detail chips as a coverage
-  gap; they're not.
+- **No fact / control / link visual grammar** (#404) — **RESOLVED 2026-05-17.**
+  The original debt: the shared `EntityChip` was visually identical to the
+  header stat badges (`Skill N`, `MaxUses`, cooldown) and broke prose in
+  `{prefix} [chip]` rows; root cause was the *absence of a grammar*
+  distinguishing passive facts from controls from navigable links (a
+  *coverage-complete, presentation-wrong* state — #342's fields were all
+  surfaced; the grammar was the debt).
+
+  Closed by the #404 program: the ratified five-tier grammar
+  (Fact · Control · Link · Set-reference · Structure) is encoded as shared WPF
+  primitives (`Link` / `SetRef` / `FactTable` / `FactFooter` + the Structure
+  styles — Phase 4) and **every** Silmarillion detail view is migrated to them
+  (Phase 5: the Recipe pilot + the eight-view fan-out — PlayerTitle, Lorebook,
+  Area, Effect, Npc, StorageVault, Ability, Quest). The link tier is the V2
+  form (small lead-icon + gold name, no box); stat badges read inert via
+  `FactTable`; keyword/stacking chips are Set-reference (ratified E4); the
+  footer is the G-a/E5 `FactFooter`. The full grammar +
+  amendments + decision log: [`docs/silmarillion-visual-grammar.md`](silmarillion-visual-grammar.md).
+
+  A Phase-6 conformance guardrail
+  (`DetailViewGrammarConformanceTests`) fails the build if any Silmarillion
+  detail view re-introduces a legacy entity-reference chip
+  (`EntityChip`/`ItemSourceChip`) instead of the shared primitive, so this
+  cannot silently regress. Do not re-flag detail-pane chips as a coverage gap;
+  the presentation axis is closed.
 
 ## History
 
