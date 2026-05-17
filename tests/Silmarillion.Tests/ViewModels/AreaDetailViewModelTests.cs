@@ -438,6 +438,88 @@ public sealed class AreaDetailViewModelTests
         popup.Sections.Single().Chips.Should().OnlyContain(c => !c.IsNavigable);
     }
 
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void NpcLinks_ProjectChips_PreservingOrderAndNavigability()
+    {
+        var stub = new StubReferenceData
+        {
+            NpcsByAreaMap =
+            {
+                ["AreaSerbule"] = new[]
+                {
+                    new NpcEntry("NPC_Norbert", "Norbert", "Serbule", [], [], []),
+                    new NpcEntry("NPC_Marna", "Marna", "Serbule", [], [], []),
+                },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        vm.NpcLinks.Select(l => l.DisplayName)
+            .Should().Equal(vm.NpcChips.Select(c => c.DisplayName), "Link list mirrors the capped cluster");
+        vm.NpcLinks.Should().OnlyContain(l => l.Glyph == LinkGlyph.Npc, "Npc kind → npc glyph");
+        vm.NpcLinks.Should().OnlyContain(l => !l.IsNavigable, "adapter preserves the chips' navigability");
+    }
+
+    [Fact]
+    public void NpcsSetRef_IsActionableSummaryForm_CountEqualsTotal_OrNull()
+    {
+        var npcs = Enumerable.Range(1, 30)
+            .Select(i => new NpcEntry($"NPC_{i:000}", $"NPC {i:000}", "Serbule", [], [], []))
+            .ToArray();
+        var stub = new StubReferenceData { NpcsByAreaMap = { ["AreaSerbule"] = npcs } };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub,
+            new SilmarillionSettings { UsedInChipCap = 12 });
+
+        vm.NpcsSetRef.Should().NotBeNull();
+        vm.NpcsSetRef!.MatchCount.Should().Be(30, "the Set-ref count is the index total, never the chip cap");
+        vm.NpcsSetRef.IsSummaryForm.Should().BeTrue();
+        vm.NpcsSetRef.IsActionable.Should().BeTrue();
+        vm.NpcsSetRef.DisplayText.Should().Be("NPCs in this area · 30 matches →");
+
+        var (empty, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        empty.NpcsSetRef.Should().BeNull("no NPCs ⇒ no Set-ref (section hides)");
+    }
+
+    [Fact]
+    public void LandmarksSetRef_IsActionableSummaryForm_OrNull()
+    {
+        var stub = new StubReferenceData
+        {
+            LandmarksMap =
+            {
+                ["AreaSerbule"] = new[]
+                {
+                    new PocoLandmark { Name = "P1", Type = "Portal", Loc = "x:0 y:0 z:0" },
+                    new PocoLandmark { Name = "P2", Type = "Portal", Loc = "x:1 y:1 z:1" },
+                },
+            },
+        };
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"), stub);
+
+        vm.LandmarksSetRef.Should().NotBeNull();
+        vm.LandmarksSetRef!.DisplayText.Should().Be("Landmarks in this area · 2 matches →");
+        vm.LandmarksSetRef.IsActionable.Should().BeTrue();
+
+        var (empty, _) = Build(new AreaEntry("AreaSerbule", "Serbule", "Serbule"));
+        empty.LandmarksSetRef.Should().BeNull();
+    }
+
+    [Fact]
+    public void Footer_AreaKey_IsCopyableCrossReferenceKey()
+    {
+        var (vm, _) = Build(new AreaEntry("AreaSerbule", "Serbule Hills", "Serbule"));
+
+        // Contrast PlayerTitle's inert envelope ROW: the Area key is referenced
+        // by other entities ⇒ the copyable KEY (E5 rule 2 / the pilot path).
+        vm.Footer.Ids.Should().ContainSingle();
+        vm.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        vm.Footer.Ids[0].Value.Should().Be("AreaSerbule");
+        vm.Footer.Ids[0].Copyable.Should().BeTrue();
+        FactFooter.ResolveCellClick(vm.Footer.Ids[0]).Should().Be(FactFooterCellAction.Copy);
+    }
+
     // ── Real-data sanity ──────────────────────────────────────────────────────
 
     [Fact]
