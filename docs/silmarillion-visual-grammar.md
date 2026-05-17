@@ -218,3 +218,17 @@ so Phase 4 **decides** them rather than improvising (the original failure mode
    **#214** ResultEffects rich-render stub, already separately tracked.
    **Deferred and bound to #214**; Phase 4 must not improvise its placement —
    it inherits whatever #214 decides.
+3. **One polymorphic Fact-group primitive — including the degenerate scalar.**
+   The recipe-header Fact-stat strip (horizontal, dot-separated `label: value`
+   pairs) and the StorageVault favor-tier capacity table (vertical, 2-column
+   `label → value` grid) are the same data rotated; Phase 4 should encode them
+   as **one** layout-switchable primitive (`FactTable`-style), **not** two —
+   same anti-fork rationale as the single-Link mandate subsuming
+   `EntityChip`/`ItemSourceChip`. It must additionally degrade to a **single
+   flat scalar** (e.g. a chest whose `Capacity` is just `16 slots` — no labels,
+   no rows) without forking into a separate control. `Capacity` is fully
+   polymorphic in the existing data — favor-tier table · flat slot count ·
+   script-atomic range · event-gated overrides (Phase 2 inventory); Phase 4
+   decides which shapes the one primitive renders vs. which stay plain Fact
+   body lines. No grammar change: every shape is Fact-inert (G-b still strips
+   gold from these values).
