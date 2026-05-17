@@ -6,6 +6,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.Query;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
@@ -750,6 +751,133 @@ public sealed class AbilitiesTabViewModelTests
         detail.ConditionalKeywordRows.Should().NotBeEmpty(because: "ManyCuts has a Default ConditionalKeyword (Melee)");
         detail.PvEStats.Should().NotBeEmpty();
         detail.DoTRows.Should().NotBeEmpty(because: "ManyCuts has a Trauma DoT");
+    }
+
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void HeaderStrip_CollapsesBadges_NoGoldByConstruction_AndFooterIsCopyableKey()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability
+                {
+                    InternalName = "SwordSlash3", Name = "Sword Slash 3", Skill = "Sword",
+                    Level = 12, Rank = "Rank 3", AbilityGroup = "SwordSlash", AbilityGroupName = "Sword Slash",
+                },
+            },
+        };
+        var vm = new AbilitiesTabViewModel(
+            refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var d = vm.DetailViewModel!;
+
+        // The skill/rank/group badge BOXES collapse into ONE inert Strip
+        // (pilot StatStrip). FactTableVm has no brush, so the named G-b
+        // "Ability Rank" gold cannot be expressed by construction.
+        d.HeaderStrip.Layout.Should().Be(FactTableLayout.Strip);
+        d.HeaderStrip.Pairs.Should().BeEquivalentTo(new[]
+        {
+            new FactPair(null, "Sword 12"),
+            new FactPair(null, "Rank 3"),
+            new FactPair("Group", "Sword Slash"),
+        }, o => o.WithStrictOrdering());
+
+        // InternalName is a cross-entity reference key ⇒ copyable KEY.
+        d.Footer.Ids.Should().ContainSingle();
+        d.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        d.Footer.Ids[0].Value.Should().Be("SwordSlash3");
+        d.Footer.Ids[0].Copyable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void KeywordReqs_AreTagFormSetRefs_ActionableMirrorsNavigability()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability
+                {
+                    InternalName = "Atk", Name = "Atk", Skill = "Sword", Level = 1,
+                    ItemKeywordReqs = ["Sword"], EffectKeywordReqs = ["Bleeding"],
+                },
+            },
+        };
+        // Wired: both keyword targets registered ⇒ actionable.
+        var vm = new AbilitiesTabViewModel(
+            refData, NavFactory.WithKinds(EntityKind.ItemByKeyword, EntityKind.EffectKeyword),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var d = vm.DetailViewModel!;
+
+        d.ItemKeywordReqSetRefs.Should().ContainSingle();
+        d.ItemKeywordReqSetRefs[0].SetRef.Label.Should().Be("Sword");
+        d.ItemKeywordReqSetRefs[0].SetRef.IsSummaryForm.Should().BeFalse("keyword chips are tag-form");
+        d.ItemKeywordReqSetRefs[0].SetRef.IsActionable.Should().BeTrue();
+        d.ItemKeywordReqSetRefs[0].Activate.Should().NotBeNull();
+        d.EffectKeywordReqSetRefs[0].SetRef.Label.Should().Be("Bleeding");
+        d.EffectKeywordReqSetRefs[0].SetRef.IsActionable.Should().BeTrue();
+
+        // Unwired ⇒ availability corollary (blue chassis, IsActionable=false, no command).
+        var vmU = new AbilitiesTabViewModel(
+            refData, NavFactory.WithKinds(), new ReferenceDataEntityNameResolver(refData));
+        vmU.SelectedRow = vmU.AllAbilities.Single();
+        var u = vmU.DetailViewModel!.ItemKeywordReqSetRefs[0];
+        u.SetRef.IsActionable.Should().BeFalse();
+        u.Activate.Should().BeNull();
+        SetRef.ResolveClick(u.SetRef).Should().Be(SetRefClickAction.Unavailable);
+    }
+
+    [Fact]
+    public void LinkProjections_PrerequisiteAndRosters_MirrorLegacyChips()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability { InternalName = "Base", Name = "Base", Skill = "Sword", Level = 1 },
+                ["ability_2"] = new Ability { InternalName = "Up", Name = "Up", Skill = "Sword", Level = 9, Prerequisite = "Base" },
+            },
+        };
+        var vm = new AbilitiesTabViewModel(
+            refData, NavFactory.WithKinds(EntityKind.Ability), new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllAbilities.Single(r => r.InternalName == "Up");
+        var d = vm.DetailViewModel!;
+
+        d.PrerequisiteLink.Should().NotBeNull();
+        d.PrerequisiteLink!.DisplayName.Should().Be(d.PrerequisiteChip!.DisplayName);
+        d.PrerequisiteLink.Glyph.Should().Be(LinkGlyph.CombatAbility);
+        d.PrerequisiteLink.IsNavigable.Should().Be(d.PrerequisiteChip.IsNavigable);
+    }
+
+    [Fact]
+    public void FlagGroups_AreInertGrids_SelfHidingWhenEmpty()
+    {
+        var refData = new StubReferenceData
+        {
+            AbilitiesByKey =
+            {
+                ["ability_1"] = new Ability
+                {
+                    InternalName = "U", Name = "U", Skill = "Sword", Level = 1,
+                    WorksUnderwater = true, WorksWhileFalling = true,
+                },
+            },
+        };
+        var vm = new AbilitiesTabViewModel(
+            refData, new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+        vm.SelectedRow = vm.AllAbilities.Single();
+        var d = vm.DetailViewModel!;
+
+        d.EnvironmentalFact.Layout.Should().Be(FactTableLayout.Grid);
+        d.EnvironmentalFact.Pairs.Select(p => p.Label)
+            .Should().Equal(d.EnvironmentalFlags.Select(f => f.Label));
+        d.PetFact.StripText.Should().BeEmpty("no pet flags ⇒ Grid self-hides");
     }
 
     private static IReferenceDataService? BuildRealRefData(string bundled)
