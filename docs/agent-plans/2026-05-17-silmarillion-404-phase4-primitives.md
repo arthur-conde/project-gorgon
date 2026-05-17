@@ -134,16 +134,14 @@ Verification: `Mithril.slnx` build clean (0W/0E, no RG1000 flake);
 green — **no `*DetailView.xaml` / EntityChip / ItemSourceChip / DetailExportHost
 modified** (legacy controls coexist; Phase 5 migrates call sites).
 
-**Shell-boot smoke — deferred to an interactive run, with rationale.** A WPF
-GUI launch isn't feasible from the automated context. Residual risk is
-unusually low *by construction*: additions are purely additive (new types +
-**opt-in `x:Key`'d** styles — no implicit `TargetType` override, so no existing
-control's render changes); no DI service / ctor injection / new project added
-(Shell already `ProjectReference`s Mithril.Shared.Wpf); the 1094 STA WPF tests
-load the edited `Resources.xaml`. The specific failure modes the smoke exists
-to catch (stale-DLL deploy, DI cycle, missing ProjectReference, implicit-style
-regression) are structurally absent here. Still owed before "shipped" per the
-project's "tests green ≠ shipped" rule — flagged, not claimed.
+**Shell-boot smoke — PASSED (2026-05-17, `start.ps1 -Clean`).** Full
+`dotnet clean` + rebuild: `Build succeeded, 0W/0E`; **`XamlResourceLint: OK
+(115 keys)`** (validates the edited `Resources.xaml` — new tokens + six shared
+styles, no dup/missing key); shell reached `Application started` then the
+expected non-interactive shutdown (not a crash). The one acceptance item
+previously owed is now satisfied; the additive Phase-4 changes do not break
+boot. (Interactive UI exercise of the primitives still only happens once Phase
+5 wires them into a view — they are not yet referenced by any pane.)
 
 ### Phase-4 reconciliation flags & under-specs (for designer / maintainer)
 
