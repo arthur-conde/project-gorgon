@@ -168,9 +168,11 @@ public sealed class TreasureTabViewModelTests
 
         // Click the "Bard" filter → only BardMaxHealth survives.
         detail.SkillFilters.Single(f => f.SetRef.Label == "Bard").Activate.Execute(null);
+        detail.QueryText.Should().Be("Skill = \"Bard\"", "the skill chip injects a real query clause");
         detail.VisiblePowerRows.Should().ContainSingle()
-            .Which.PowerInternalName.Should().Be("BardMaxHealth");
+            .Which.InternalName.Should().Be("BardMaxHealth");
         detail.CountSummary.Should().Be("1 of 2 powers");
+        detail.QueryError.Should().BeNull();
     }
 
     [Fact]

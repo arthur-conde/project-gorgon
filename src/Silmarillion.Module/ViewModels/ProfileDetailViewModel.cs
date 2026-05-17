@@ -7,14 +7,23 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
+using Mithril.Shared.Wpf.Query;
 
 namespace Silmarillion.ViewModels;
 
-/// <summary>One power row in a <see cref="ProfileDetailViewModel"/>'s pool list: the
-/// navigable power Link plus the power's own <see cref="SkillText"/> and tier count as
-/// inert Fact. <see cref="SkillText"/> is the power's <em>own</em> skill — orthogonal
-/// to the pool name (which is the equipment family).</summary>
-public sealed record TreasureProfilePowerRow(LinkVm PowerLink, string PowerInternalName, string SkillText, string TierText);
+/// <summary>One power row in a <see cref="ProfileDetailViewModel"/>'s pool list. The
+/// scalar columns (<see cref="Name"/> / <see cref="InternalName"/> / <see cref="Skill"/>
+/// / <see cref="Tiers"/>) are the surface the shared query system reflects + filters on
+/// (mirrors Celebrimbor's <c>PooledAugmentOption</c>); <see cref="PowerLink"/> and
+/// <see cref="TierText"/> are render-only. <see cref="Skill"/> is the power's <em>own</em>
+/// skill — orthogonal to the pool name (the equipment family).</summary>
+public sealed record TreasureProfilePowerRow(
+    LinkVm PowerLink,
+    string Name,
+    string InternalName,
+    string Skill,
+    int Tiers,
+    string TierText);
 
 /// <summary>A clickable Power.Skill filter chip (tag-form Set-ref + Activate),
 /// mirroring the <see cref="AbilityFilterSetRefVm"/> idiom.</summary>
@@ -39,6 +48,19 @@ public sealed class TreasureSkillFilterVm
 /// </summary>
 public sealed partial class ProfileDetailViewModel : ObservableObject
 {
+    // The pool list reuses the shared query system (the cookbook step-6 / query-system
+    // mandate), exactly mirroring Celebrimbor's AugmentPoolViewModel — which filters a
+    // tsysprofiles pool the same way. The reflected RowSchema drives both the in-VM
+    // QueryCompiler predicate and MithrilQueryBox's completion/highlighting; no bespoke
+    // substring filter. QueryCompiler is used in-VM (not the QueryFilter attached
+    // behaviour) because the ratified spec needs the post-filter count for CountSummary.
+    private static readonly Dictionary<string, ColumnBinding> RowSchema =
+        ColumnBindingHelper.BuildFromProperties(typeof(TreasureProfilePowerRow));
+
+    /// <summary>Schema snapshot bound to <c>MithrilQueryBox.Schema</c>.</summary>
+    public static IReadOnlyList<ColumnSchema> SchemaSnapshot { get; } =
+        ColumnBindingHelper.ToSchema(RowSchema);
+
     private readonly List<TreasureProfilePowerRow> _allRows;
 
     public ProfileDetailViewModel(
@@ -70,7 +92,7 @@ public sealed partial class ProfileDetailViewModel : ObservableObject
         PowerCount = _allRows.Count;
 
         SkillFilters = _allRows
-            .Select(r => r.SkillText)
+            .Select(r => r.Skill)
             .Where(s => !string.IsNullOrEmpty(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
@@ -102,9 +124,18 @@ public sealed partial class ProfileDetailViewModel : ObservableObject
     /// <summary>The filtered pool list (virtualized in the view; ~270 rows for Sword).</summary>
     public ObservableCollection<TreasureProfilePowerRow> VisiblePowerRows { get; }
 
-    /// <summary>Free-text pool filter (matches power name or its own skill, case-insensitive).</summary>
+    /// <summary>
+    /// Two-way bound to <c>MithrilQueryBox.QueryText</c>. The shared query language —
+    /// <c>Skill = "Sword"</c>, <c>Tiers &gt;= 10</c>, bare text, AND/OR — over the
+    /// reflected <see cref="SchemaSnapshot"/>; the Skill chips inject a clause into it.
+    /// </summary>
     [ObservableProperty]
-    private string _filterText = "";
+    private string _queryText = "";
+
+    /// <summary>Last query compile error, surfaced under the box (mirrors the tab VMs
+    /// / AugmentPoolViewModel); a malformed query shows everything, not nothing.</summary>
+    [ObservableProperty]
+    private string? _queryError;
 
     /// <summary>Subtitle reflecting the active filter ("270 powers" / "12 of 270 powers").</summary>
     public string CountSummary =>
@@ -117,28 +148,44 @@ public sealed partial class ProfileDetailViewModel : ObservableObject
     /// <summary>G-a footer: copyable KEY = the pool name (its only identifier).</summary>
     public FactFooterVm Footer { get; }
 
-    partial void OnFilterTextChanged(string value) => Recompute();
+    partial void OnQueryTextChanged(string value) => Recompute();
 
     private void ToggleSkillFilter(string skill)
     {
-        // Click a skill chip to filter to it; click again (or any chip whose skill is
-        // already the active filter) to clear — a lightweight one-axis toggle.
-        FilterText = string.Equals(FilterText, skill, StringComparison.OrdinalIgnoreCase)
+        // A skill chip is a shortcut that writes a real query clause; clicking the
+        // active one again clears it. The query box stays the single filter surface.
+        var clause = $"Skill = \"{skill}\"";
+        QueryText = string.Equals(QueryText, clause, StringComparison.OrdinalIgnoreCase)
             ? ""
-            : skill;
+            : clause;
+    }
+
+    private Func<TreasureProfilePowerRow, bool>? CompilePredicate(string queryText)
+    {
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            QueryError = null;
+            return null;
+        }
+        try
+        {
+            var compiled = QueryCompiler.Compile(queryText, RowSchema, caseSensitive: false);
+            QueryError = null;
+            return compiled is null ? null : row => compiled(row!);
+        }
+        catch (QueryException qex)
+        {
+            QueryError = qex.Message;
+            // Malformed query → show everything; the error renders under the box.
+            return null;
+        }
     }
 
     private void Recompute()
     {
-        var q = FilterText?.Trim();
-        IEnumerable<TreasureProfilePowerRow> filtered = _allRows;
-        if (!string.IsNullOrEmpty(q))
-        {
-            filtered = _allRows.Where(r =>
-                r.PowerLink.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || r.PowerInternalName.Contains(q, StringComparison.OrdinalIgnoreCase)
-                || r.SkillText.Contains(q, StringComparison.OrdinalIgnoreCase));
-        }
+        var predicate = CompilePredicate(QueryText);
+        IEnumerable<TreasureProfilePowerRow> filtered =
+            predicate is null ? _allRows : _allRows.Where(predicate);
 
         VisiblePowerRows.Clear();
         foreach (var r in filtered) VisiblePowerRows.Add(r);
@@ -161,7 +208,7 @@ public sealed partial class ProfileDetailViewModel : ObservableObject
             refData.Powers.TryGetValue(powerName, out var power);
 
             var skillKey = power?.Skill;
-            var skillText = string.IsNullOrEmpty(skillKey)
+            var skill = string.IsNullOrEmpty(skillKey)
                 ? ""
                 : (refData.Skills.TryGetValue(skillKey!, out var s) && !string.IsNullOrEmpty(s.DisplayName)
                     ? s.DisplayName
@@ -177,16 +224,18 @@ public sealed partial class ProfileDetailViewModel : ObservableObject
 
             rows.Add(new TreasureProfilePowerRow(
                 PowerLink: link,
-                PowerInternalName: powerName,
-                SkillText: skillText,
+                Name: link.DisplayName,
+                InternalName: powerName,
+                Skill: skill,
+                Tiers: tierCount,
                 TierText: tierCount == 1 ? "1 tier" : $"{tierCount} tiers"));
         }
 
         rows.Sort((a, b) =>
         {
-            var s = string.Compare(a.SkillText, b.SkillText, StringComparison.OrdinalIgnoreCase);
+            var s = string.Compare(a.Skill, b.Skill, StringComparison.OrdinalIgnoreCase);
             if (s != 0) return s;
-            return string.Compare(a.PowerLink.DisplayName, b.PowerLink.DisplayName, StringComparison.OrdinalIgnoreCase);
+            return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
         });
         return rows;
     }

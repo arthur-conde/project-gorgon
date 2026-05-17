@@ -50,7 +50,7 @@
                                 </DataTemplate>
                             </ContentControl.ContentTemplate>
                         </ContentControl>
-                        <TextBlock Grid.Column="1" Text="{Binding SkillText}"
+                        <TextBlock Grid.Column="1" Text="{Binding Skill}"
                                    Foreground="#AAFFFFFF"
                                    FontSize="{DynamicResource AppFontSizeHint}"
                                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -101,9 +101,14 @@
                                       Margin="0,2,0,4">
                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         </ItemsControl>
-                        <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
-                                 Background="#FF202020" Foreground="#DDFFFFFF"
-                                 BorderBrush="#33FFFFFF" BorderThickness="1" Padding="6,4"/>
+                        <c:MithrilQueryBox Schema="{x:Static vm:ProfileDetailViewModel.SchemaSnapshot}"
+                                           QueryText="{Binding QueryText, Mode=TwoWay}"
+                                           Watermark="bare text, or e.g. Skill = 'Bard' AND Tiers &gt;= 10"/>
+                        <TextBlock Text="{Binding QueryError}"
+                                   Foreground="#FFD96A6A" FontStyle="Italic"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   Margin="0,4,0,0"
+                                   Visibility="{Binding QueryError, Converter={StaticResource NullOrEmptyToVis}}"/>
                     </StackPanel>
 
                     <TextBlock Style="{StaticResource StructureSectionLabelStyle}" Margin="0,4,0,2">
