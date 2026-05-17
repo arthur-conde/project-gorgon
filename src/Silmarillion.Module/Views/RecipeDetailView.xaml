@@ -163,15 +163,19 @@
             <StackPanel Margin="0,0,0,10"
                         Visibility="{Binding SourceLinks.Count, Converter={StaticResource PositiveIntToVis}}">
                 <TextBlock Text="Taught by" Style="{StaticResource StructureSectionLabelStyle}"/>
+                <!-- CANONICAL ENUMERATION PATTERN (G4-ratified, copied by all fan-out
+                     views): a list of entity refs is Density="List" — sprite ×1.5em,
+                     one Link per line (vertical StackPanel), light row spacing for the
+                     grammar's ~1.7 line-height intent (exact 1.7 line-box doesn't map
+                     to icon+text rows; approximated, flagged). Inline-in-sentence refs
+                     (requirement rows) stay Prose. -->
                 <ItemsControl ItemsSource="{Binding SourceLinks}">
                     <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <!-- G3-amend-2: Density="Prose" (DP default, explicit).
-                                 Prose↔List for this section is a deferred G4 call. -->
-                            <c:Link Density="Prose"
+                            <c:Link Density="List" Margin="0,0,0,3"
                                     ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -184,15 +188,12 @@
                 <TextBlock Text="Ingredients" Style="{StaticResource StructureSectionLabelStyle}"/>
                 <ItemsControl ItemsSource="{Binding IngredientLinks}">
                     <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <!-- G3-amend-2: Density="Prose" (DP default, explicit).
-                                 Ingredients↔List (own-line, ×1.5) is a layout-
-                                 changing G4 design call — deliberately left Prose,
-                                 NOT silently chosen. -->
-                            <c:Link Density="Prose"
+                            <!-- G4-ratified: enumeration → Density="List" (canonical pattern). -->
+                            <c:Link Density="List" Margin="0,0,0,3"
                                     ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -238,13 +239,12 @@
                 <TextBlock Text="Produces" Style="{StaticResource StructureSectionLabelStyle}"/>
                 <ItemsControl ItemsSource="{Binding ProducedItemLinks}">
                     <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <!-- G3-amend-2: Density="Prose" (DP default, explicit).
-                                 Produces↔List is a deferred G4 design call. -->
-                            <c:Link Density="Prose"
+                            <!-- G4-ratified: enumeration → Density="List" (canonical pattern). -->
+                            <c:Link Density="List" Margin="0,0,0,3"
                                     ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:RecipeDetailView}}}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
