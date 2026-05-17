@@ -104,6 +104,61 @@ public sealed class StorageVaultDetailViewModel
             || HasItemKeywordTags
             || HasRequirementLines
             || HasQuestRequirements;
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // Legacy chip/row/string members above stay (the existing tests + the
+        // detail-pane contract); these are the grammar-tier carriers the view
+        // binds. StorageVault is the view that exercises TWO Phase-4
+        // carry-forwards by name:
+        //   • #3 — polymorphic Capacity is ONE FactTable in three layouts:
+        //     the favor-tier table = Grid, a flat count / script-atomic range =
+        //     Scalar, the rare event-gated set = more Grid rows (NOT three
+        //     bespoke controls). The gold slot count is the NAMED G-b
+        //     "StorageVault slots" violation → dropped (FactTable is inert).
+        //   • #4 — the ItemKeyword tags are the explicitly-named forbidden
+        //     "inert grey Fact pill" the availability corollary says Phase 5
+        //     MUST correct, not preserve → tag-form Set-ref on the blue
+        //     chassis, IsActionable=false (the filter is not wired; these are
+        //     keyword tags, not navigable entities).
+        // Cross-links: Area / operator-NPC / quest-completed are 1:1 entity
+        // refs ⇒ Link. EnvelopeKey was an inert mono footer (matrix T14) ⇒
+        // storage-only inert ROW (PlayerTitle's path).
+
+        AreaLink = AreaChip is null ? null : LinkVm.From(AreaChip);
+        OperatorNpcLink = OperatorNpcChip is null ? null : LinkVm.From(OperatorNpcChip);
+        QuestRequirementLinks = QuestRequirementChips.Select(LinkVm.From).ToList();
+
+        // Carry-forward #3 — ONE polymorphic FactTable. Favor table ⇒ Grid;
+        // else a flat count / script-atomic range ⇒ Scalar; empty ⇒ StripText
+        // "" so the shared Style self-hides. The gold slot count is dropped
+        // (FactTable is inert per G-b — the NAMED "StorageVault slots" G-b fix).
+        CapacityFact =
+            HasCapacityTable
+                ? FactTableVm.Grid(CapacityRows
+                    .Select(r => new FactPair(r.Tier, r.Slots.ToString())).ToList())
+            : HasFlatSlots
+                ? FactTableVm.Scalar($"{FlatSlots} slots")
+            : ScriptAtomicRange is { } sar
+                ? FactTableVm.Scalar(sar)
+                : FactTableVm.Strip(Array.Empty<FactPair>());
+
+        // Rare event-gated overrides: "just more Grid rows" (carry-forward #3),
+        // kept under its own distinct Structure label. Empty Grid ⇒ self-hide.
+        EventLevelsFact = FactTableVm.Grid(EventLevelRows
+            .Select(r => new FactPair(r.Tier, r.Slots.ToString())).ToList());
+
+        // Carry-forward #4 — the NAMED grey-pill correction. Tag-form Set-ref,
+        // IsActionable=false (the keyword filter is not wired; per the
+        // availability corollary it still renders on the FULL blue chassis and
+        // is NEVER a degraded inert grey Fact pill). No Activate command — the
+        // grammar specifies a safe no-op for an un-wired Set-ref.
+        ItemKeywordSetRefs = ItemKeywordTags
+            .Select(t => new SetRefVm(t, MatchCount: null, IsActionable: false))
+            .ToList();
+
+        Footer = string.IsNullOrEmpty(EnvelopeKey)
+            ? FactFooterVm.None()
+            : FactFooterVm.Of(new FactFooterId("ROW", EnvelopeKey, copyable: false));
     }
 
     public StorageVaultListRow Row { get; }
@@ -183,6 +238,49 @@ public sealed class StorageVaultDetailViewModel
     public bool HasQuestRequirements { get; }
 
     public bool HasAccessRequirements { get; }
+
+    // ── Phase 5 grammar-primitive carriers ──────────────────────────────────
+
+    /// <summary>Parent-area cross-link as <see cref="LinkVm"/> (inline Prose Link
+    /// behind the Structure "Area:" prefix). Null when no area.</summary>
+    public LinkVm? AreaLink { get; }
+
+    /// <summary>Operator-NPC cross-link as <see cref="LinkVm"/> (inline Prose
+    /// Link behind the Structure "Operator:" prefix). Null for a transfer chest.</summary>
+    public LinkVm? OperatorNpcLink { get; }
+
+    /// <summary>Quest-completed requirements as <see cref="LinkVm"/> (Density="List").</summary>
+    public IReadOnlyList<LinkVm> QuestRequirementLinks { get; }
+
+    /// <summary>
+    /// Carry-forward #3: the polymorphic Capacity as ONE <see cref="FactTableVm"/>
+    /// — favor-tier table ⇒ <see cref="FactTableLayout.Grid"/>, flat count /
+    /// script-atomic range ⇒ <see cref="FactTableLayout.Scalar"/>, empty ⇒
+    /// self-hiding. Inert (G-b): the legacy gold slot count is dropped.
+    /// </summary>
+    public FactTableVm CapacityFact { get; }
+
+    /// <summary>The rare event-gated overrides as a separate <see cref="FactTableVm"/>
+    /// Grid ("just more Grid rows" — carry-forward #3), kept under its own
+    /// Structure label. Empty ⇒ self-hides.</summary>
+    public FactTableVm EventLevelsFact { get; }
+
+    /// <summary>
+    /// Carry-forward #4 — the explicitly-named correction. The ItemKeyword tags
+    /// as tag-form Set-references (<see cref="SetRefVm.IsActionable"/> = false:
+    /// the keyword filter is not wired). Per the availability corollary they
+    /// render on the FULL blue Set-ref chassis and MUST NOT degrade to the
+    /// forbidden inert grey Fact pill (today's behaviour Phase 5 corrects).
+    /// </summary>
+    public IReadOnlyList<SetRefVm> ItemKeywordSetRefs { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14 / G-a · ratified E5). The EnvelopeKey
+    /// was already an inert-mono footer (matrix T14) — a display/storage-only
+    /// key ⇒ the inert <c>ROW</c> cell (PlayerTitle's path), not a copyable
+    /// <c>KEY</c>. <see cref="FactFooterVm.None"/> if keyless.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     // ── Helpers ──
 

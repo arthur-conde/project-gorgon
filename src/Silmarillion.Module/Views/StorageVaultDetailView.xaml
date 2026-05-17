@@ -4,7 +4,6 @@
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -17,178 +16,142 @@
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- One capacity row: favor tier (or event key) — mono slot count (gold). -->
-            <DataTemplate DataType="{x:Type vm:StorageVaultCapacityRow}">
-                <Grid Margin="0,0,0,2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{Binding Tier}"
-                               Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Slots}"
-                               FontFamily="{DynamicResource AppMonoFontFamily}"
-                               Foreground="#FFD4A847"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               Margin="12,0,0,0"/>
-                </Grid>
+            <!-- One inline Link, prose-density (the pilot inline-ref idiom). -->
+            <DataTemplate x:Key="InlineLinkTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="Prose"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
             </DataTemplate>
-
-            <!-- Plain item-keyword tag (NOT navigable — these are keyword tags, not entities). -->
-            <DataTemplate x:Key="ItemKeywordTagTemplate">
-                <Border Background="#FF2A2A2A" CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
-                    <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeSmall}"/>
-                </Border>
+            <!-- One Link, list-density (canonical pilot enumeration pattern). -->
+            <DataTemplate x:Key="EntityLinkListTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="List" Margin="0,0,0,3"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
             </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <!-- Phase-5 fan-out · view 6 (StorageVault) — a consistency-diff against the
+         merged Recipe pilot, NOT fresh design. This view exercises TWO Phase-4
+         carry-forwards by name:
+           • #3 — the polymorphic Capacity is ONE FactTable in three layouts
+             (favor table = Grid, flat count / script-atomic range = Scalar,
+             event-gated = more Grid rows), NOT three bespoke controls. The gold
+             slot count is the NAMED G-b "StorageVault slots" violation —
+             dropped (FactTable is inert).
+           • #4 — the ItemKeyword tags are the explicitly-named forbidden
+             "inert grey Fact pill" the availability corollary says Phase 5
+             MUST correct, not preserve → tag-form Set-ref on the blue chassis,
+             IsActionable=false (the filter is not wired).
+
+         Footer (matrix #14 / G-a · ratified E5): the inert DockPanel.Bottom
+         mono TextBlock (matrix T14 — already non-copyable) becomes
+         <c:FactFooter/> at the foot; storage-only ⇒ inert ROW. Host retained. -->
     <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer: envelope key (mono, bottom-right) — per detail-view convention. -->
-            <TextBlock DockPanel.Dock="Bottom" Text="{Binding EnvelopeKey}"
-                       Foreground="#88FFFFFF"
-                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                       FontSize="{DynamicResource AppFontSizeSmall}"
-                       Margin="0,8,0,0" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"/>
-
             <StackPanel>
-                <!-- ─── Header ─── -->
+                <!-- Header — Fact-title (inline gold/header-font/XLarge dropped, G-b). -->
                 <StackPanel Margin="0,0,0,10">
                     <TextBlock Text="{Binding DisplayName}"
-                               FontFamily="{DynamicResource AppHeaderFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeXLarge}"
-                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                               Style="{StaticResource FactTitleStyle}"/>
                 </StackPanel>
 
-                <!-- ─── Metadata row ─── -->
+                <!-- Metadata: Account-wide flag → inert Fact (the T15 colored
+                     badge box dropped). Area / Operator → Structure inline
+                     prefix (E1) + Prose Link. -->
                 <WrapPanel Margin="0,0,0,10">
-                    <!-- Account-wide badge: rendered only when true (noise-filter default). -->
-                    <Border Background="#332E7DD2" BorderBrush="#662E7DD2" BorderThickness="1"
-                            CornerRadius="3" Padding="6,2" Margin="0,0,6,4"
-                            Visibility="{Binding IsAccountWide, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Account-wide" Foreground="#FF9CC3EA"
-                                   FontSize="{DynamicResource AppFontSizeSmall}"/>
-                    </Border>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,0,6,4"
-                                Visibility="{Binding HasArea, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Area: " Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ContentControl Content="{Binding AreaChip}">
-                            <ContentControl.Resources>
-                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.Resources>
-                        </ContentControl>
+                    <TextBlock Text="Account-wide" Style="{StaticResource FactBodyStyle}"
+                               Margin="0,0,12,4"
+                               Visibility="{Binding IsAccountWide, Converter={StaticResource BoolToVis}}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,4" VerticalAlignment="Center"
+                                Visibility="{Binding AreaLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Area:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding AreaLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,0,6,4"
-                                Visibility="{Binding HasOperatorNpc, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Operator: " Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ContentControl Content="{Binding OperatorNpcChip}">
-                            <ContentControl.Resources>
-                                <DataTemplate DataType="{x:Type c:EntityChipVm}">
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
-                                </DataTemplate>
-                            </ContentControl.Resources>
-                        </ContentControl>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,4" VerticalAlignment="Center"
+                                Visibility="{Binding OperatorNpcLink, Converter={StaticResource NullToVis}}">
+                        <TextBlock Text="Operator:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ContentControl Content="{Binding OperatorNpcLink}"
+                                        ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                        VerticalAlignment="Center"/>
                     </StackPanel>
                 </WrapPanel>
 
-                <!-- ─── Capacity ─── -->
+                <!-- Capacity — carry-forward #3: ONE polymorphic FactTable
+                     (Grid favor table / Scalar flat-or-range; self-hides empty).
+                     Event-gated overrides = more Grid rows under their own
+                     Structure group label. -->
                 <StackPanel Margin="0,0,0,10">
-                    <TextBlock Text="Capacity" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-
-                    <!-- Favor-scaled: ordered favor-tier table. -->
-                    <ItemsControl ItemsSource="{Binding CapacityRows}"
-                                  Visibility="{Binding HasCapacityTable, Converter={StaticResource BoolToVis}}"/>
-
-                    <!-- Flat slot count. -->
-                    <TextBlock Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               Visibility="{Binding HasFlatSlots, Converter={StaticResource BoolToVis}}">
-                        <Run Text="{Binding FlatSlots, Mode=OneWay}"/><Run Text=" slots"/>
-                    </TextBlock>
-
-                    <!-- Dynamic / script-atomic range. -->
-                    <TextBlock Text="{Binding ScriptAtomicRange}" Foreground="#CCFFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               Margin="0,2,0,0"
-                               Visibility="{Binding HasScriptAtomicRange, Converter={StaticResource NullOrEmptyToVis}}"/>
-
-                    <!-- Rare event-gated overrides. -->
+                    <TextBlock Text="Capacity" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding CapacityFact}"
+                                 HorizontalAlignment="Left"/>
                     <StackPanel Margin="0,6,0,0"
                                 Visibility="{Binding HasEventLevels, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Event-gated capacity" Foreground="#88FFFFFF"
-                                   FontStyle="Italic"
-                                   FontSize="{DynamicResource AppFontSizeSmall}"
-                                   Margin="0,0,0,2"/>
-                        <ItemsControl ItemsSource="{Binding EventLevelRows}"/>
+                        <TextBlock Text="Event-gated capacity"
+                                   Style="{StaticResource StructureGroupHeaderStyle}" Margin="0,0,0,2"/>
+                        <c:FactTable DataContext="{Binding EventLevelsFact}"
+                                     HorizontalAlignment="Left"/>
                     </StackPanel>
                 </StackPanel>
 
-                <!-- ─── Access requirements ─── -->
+                <!-- Access requirements -->
                 <StackPanel Visibility="{Binding HasAccessRequirements, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Access requirements" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Access requirements" Style="{StaticResource StructureSectionLabelStyle}"/>
 
                     <TextBlock Text="{Binding RequirementDescription}"
-                               Foreground="#CCFFFFFF" FontStyle="Italic"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               TextWrapping="Wrap" Margin="0,0,0,4"
+                               Style="{StaticResource FactBodyStyle}" FontStyle="Italic"
+                               Margin="0,0,0,4"
                                Visibility="{Binding RequirementDescription, Converter={StaticResource NullOrEmptyToVis}}"/>
 
-                    <ItemsControl ItemsSource="{Binding ItemKeywordTags}"
-                                  ItemTemplate="{StaticResource ItemKeywordTagTemplate}"
+                    <!-- Carry-forward #4: the keyword tags as tag-form
+                         Set-references (blue chassis, IsActionable=false — the
+                         filter is not wired). NOT the old inert grey pill. -->
+                    <ItemsControl ItemsSource="{Binding ItemKeywordSetRefs}"
                                   Margin="0,0,0,4"
                                   Visibility="{Binding HasItemKeywordTags, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <c:SetRef Margin="0,0,4,4"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Quest-completed requirements → 1:1 navigable Quest chips. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                    <!-- Quest-completed requirements → 1:1 Quest Links. -->
+                    <StackPanel Margin="0,0,0,4"
                                 Visibility="{Binding HasQuestRequirements, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Completed: " Foreground="#88FFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <ItemsControl ItemsSource="{Binding QuestRequirementChips}">
+                        <TextBlock Text="Completed:" Style="{StaticResource StructureInlinePrefixStyle}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding QuestRequirementLinks}"
+                                      ItemTemplate="{StaticResource EntityLinkListTemplate}">
                             <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:StorageVaultDetailView}}}"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Non-quest polymorphic requirements as human labels (incl. the
-                         graceful "(unrecognised requirement)" degrade). -->
+                    <!-- Non-quest polymorphic requirements as inert Fact lines
+                         (incl. the graceful "(unrecognised requirement)" degrade). -->
                     <ItemsControl ItemsSource="{Binding RequirementLines}"
                                   Visibility="{Binding HasRequirementLines, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding}" Foreground="#CCFFFFFF"
-                                           FontSize="{DynamicResource AppFontSizeHint}"
-                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                                <TextBlock Text="{Binding}" Style="{StaticResource FactBodyStyle}"
+                                           Margin="0,0,0,2"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). Storage-only
+                     EnvelopeKey ⇒ inert ROW. None() self-hides at 0 ids. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>

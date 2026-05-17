@@ -5,6 +5,7 @@ using Mithril.Reference.Models.Npcs;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
+using Mithril.Shared.Wpf;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
 using Xunit;
@@ -272,6 +273,91 @@ public sealed class StorageVaultDetailViewModelTests
         nav.Current.Should().NotBeNull("clicking the Area chip should drive navigation");
         nav.Current!.Kind.Should().Be(EntityKind.Area);
         nav.Current.InternalName.Should().Be("AreaSerbule");
+    }
+
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void CapacityFact_FavorTable_IsOneInertGrid_NoGold()
+    {
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "NPC_X", new StorageVaultPoco
+        {
+            NpcFriendlyName = "X",
+            Levels = new Dictionary<string, int> { ["Neutral"] = 16, ["SoulMates"] = 64 },
+        });
+
+        // Carry-forward #3: the favor table is ONE FactTable Grid (label→value);
+        // FactTableVm carries no brush, so the named G-b "StorageVault slots"
+        // gold cannot be expressed by construction.
+        vm.CapacityFact.Layout.Should().Be(FactTableLayout.Grid);
+        vm.CapacityFact.Pairs.Select(p => p.Label)
+            .Should().Equal(vm.CapacityRows.Select(r => r.Tier));
+        vm.CapacityFact.Pairs.Select(p => p.Value)
+            .Should().Equal(vm.CapacityRows.Select(r => r.Slots.ToString()));
+    }
+
+    [Fact]
+    public void CapacityFact_FlatAndRange_AreScalar_EmptySelfHides()
+    {
+        var refData = new FakeReferenceData();
+        Build(refData, "Chest32", new StorageVaultPoco { NpcFriendlyName = "C", NumSlots = 32 })
+            .CapacityFact.Should().BeEquivalentTo(FactTableVm.Scalar("32 slots"));
+
+        var range = Build(refData, "CommunityChest", new StorageVaultPoco
+        {
+            NpcFriendlyName = "CC",
+            NumSlotsScriptAtomic = "atomic", NumSlotsScriptAtomicMinValue = 1, NumSlotsScriptAtomicMaxValue = 150,
+        });
+        range.CapacityFact.Layout.Should().Be(FactTableLayout.Scalar);
+        range.CapacityFact.Pairs.Single().Value.Should().Be("Dynamic: 1–150 slots");
+
+        // No capacity of any shape ⇒ StripText "" so the shared Style self-hides.
+        var none = Build(refData, "*AccountStorage_Empty", new StorageVaultPoco { NpcFriendlyName = "E", NumSlots = 0 });
+        none.CapacityFact.StripText.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ItemKeywordTags_AreTagFormSetRefs_OnTheBlueChassis_NeverGreyPills()
+    {
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "Chest", new StorageVaultPoco
+        {
+            NpcFriendlyName = "C",
+            RequiredItemKeywords = ["Fish", "CookingIngredient"],
+        });
+
+        // Carry-forward #4 (the explicitly-named correction): tag-form Set-refs
+        // (no count/arrow), IsActionable=false (filter unwired) — still on the
+        // FULL blue chassis, never the forbidden inert grey Fact pill.
+        vm.ItemKeywordSetRefs.Select(s => s.Label).Should().Equal("Fish", "CookingIngredient");
+        vm.ItemKeywordSetRefs.Should().OnlyContain(s => !s.IsSummaryForm && !s.IsActionable);
+        vm.ItemKeywordSetRefs.Should().OnlyContain(s =>
+            SetRef.ResolveClick(s) == SetRefClickAction.Unavailable);
+    }
+
+    [Fact]
+    public void QuestRequirementLinks_ProjectChips_AndFooterIsInertStorageRow()
+    {
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "NPC_CynthiaRolfe", new StorageVaultPoco
+        {
+            NpcFriendlyName = "Cynthia",
+            Requirements = new StorageRequirement[]
+            {
+                new StorageQuestCompletedRequirement { Quest = "SomeQuest" },
+            },
+        });
+
+        vm.QuestRequirementLinks.Select(l => l.DisplayName)
+            .Should().Equal(vm.QuestRequirementChips.Select(c => c.DisplayName));
+
+        // EnvelopeKey was an inert mono footer (matrix T14) ⇒ storage-only ROW.
+        vm.Footer.Ids.Should().ContainSingle();
+        vm.Footer.Ids[0].LabelTag.Should().Be("ROW");
+        vm.Footer.Ids[0].Value.Should().Be("NPC_CynthiaRolfe");
+        vm.Footer.Ids[0].Copyable.Should().BeFalse();
+        FactFooter.ResolveCellClick(vm.Footer.Ids[0]).Should().Be(FactFooterCellAction.Inert);
     }
 
     private static StorageVaultDetailViewModel Build(
