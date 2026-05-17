@@ -101,7 +101,23 @@
                      from the source Detail via LinkVm.From). -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding SourceLinks.Count, Converter={StaticResource PositiveIntToVis}}">
-                    <TextBlock Text="Sources" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <!-- G-d (#431) section-level compounding signal: when EVERY
+                         Sources row is Unconfirmed (the residue is the item's only
+                         declared provenance — the #407 screenshot case where the
+                         pane would otherwise imply sources it effectively lacks),
+                         prepend the label with a small quaternary `unlink` glyph.
+                         The light form of the rejected variant-E split: same
+                         gesture at the header, the rows stay under Sources. -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Sources" Style="{StaticResource StructureSectionLabelStyle}"/>
+                        <icon:PackIconLucide Kind="Unlink"
+                                             Width="11" Height="11"
+                                             Margin="6,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Foreground="{StaticResource TextQuaternaryBrush}"
+                                             ToolTip="No declared source is corroborated by the recipe/quest reverse data."
+                                             Visibility="{Binding SourcesAllUnconfirmed, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
                     <ItemsControl ItemsSource="{Binding SourceLinks}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>

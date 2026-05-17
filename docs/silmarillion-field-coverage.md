@@ -249,7 +249,20 @@ ships through the **existing `LinkVm.ProvenanceSuffix` slot the migrated
 grammar already renders** — no `*DetailView.xaml`, no Phase-4 primitive, no
 `Resources.xaml` edit (the #404/#424 presentation axis stays frozen). A louder
 warning treatment (colour/badge) would touch the frozen Link primitive and is a
-**separate presentation-axis issue**, deliberately out of scope here. The
+**separate presentation-axis issue**, deliberately out of scope here.
+
+> **Superseded (presentation only) by G-d (#431).** Claude Design's review of
+> this shipped stopgap confirmed the provenance-slot-overload concern flagged
+> on #429. The ratified **G-d Link reference-state axis**
+> ([silmarillion-visual-grammar.md](silmarillion-visual-grammar.md) · G-d;
+> #431) replaces the `ProvenanceSuffix` caveat with an additive
+> `IsUnconfirmed` flag → dashed gold underline + one-word `· unconfirmed` tail
+> + caveat `ToolTip`. **Only the presentation of the residue caveat changes**;
+> the #407 *coverage policy* (suppress-declared-keep-reverse per edge,
+> declared-only residue survives) is unchanged and remains correct. #429 was
+> left untouched; G-d ships as its own PR.
+
+The
 additive cross-module contract (`Sources`/`ProducedByRecipes`/`AwardedByQuests`
 /`Consumed*` — asserted by `ItemsTabViewModelTests`, consumed by Bilbo /
 Celebrimbor / `ItemDetailWindow`) is preserved; the only intended behavioural

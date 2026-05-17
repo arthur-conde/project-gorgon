@@ -93,6 +93,67 @@ EntityChip and ItemSourceChip both collapse into this primitive in Phase 4.
 
 ---
 
+## G-d — Link reference-state axis (Confirmed · Degraded · Unconfirmed)
+
+*Ratified 2026-05-17 (G3 amend 3). Origin: Claude Design review of the #429
+(#407) shipped baseline; design doc captured on #431. Closes the Link-tier
+**state** axis G-c opened.*
+
+G-c settled one state question (target unshipped → **Degraded**). A second,
+orthogonal one was deferred: a reference can be **declared but uncorroborated**
+— `sources_items.json` asserts an edge the inverse data (`recipes.json` /
+`quests.json` reverse) does not back. #407 shipped a deliberate
+**projection-only stopgap**: the caveat rode the Link's provenance suffix
+(*"declared recipe source — not confirmed by recipe data"*). That overloads the
+slot — provenance is *where the entity came from*; a data-integrity caveat is a
+different thing, and a Link with real provenance *and* a brokenness caveat
+fights itself. No scan-time signal, wall-of-italic at 3+ rows.
+
+**The axis.** One question: *can the reader trust this edge?* Three positions,
+**none requiring a new pigment or glyph** beyond what V2 Link ships:
+
+| State | Meaning | Visual rule | Hover | Tail |
+|---|---|---|---|---|
+| **Confirmed** | Both ends agree (or asymmetric and this is the asserting side). | Gold name + type-glyph. No underline. | 10% gold tint. | Optional provenance only (italic, `--fg-quaternary`). |
+| **Degraded** (G-c) | Reference real; target detail unshipped. | Identical to Confirmed at rest. | Neutral tint; copy-cue glyph. | None. |
+| **Unconfirmed** (G-d) | Declared in the sources data; neither entity backs it in its own data. | Gold name + **dashed underline**, 1px, `rgba(212,168,71,0.55)`. Type-glyph unchanged. | Full caveat as the control `ToolTip`. | Short word `· unconfirmed`, `--fg-quaternary`. |
+
+**Rules.**
+
+- **Dashed underline is the primary, scan-time signal.** It carries an
+  existing cross-software meaning (*this thing has a caveat*) — no new
+  convention. It modifies the primitive locally (one decoration), works for
+  sprite / Lucide / degraded Links alike, introduces **no new pigment** (stays
+  out of the G-b gold pile — the gold name still navigates, the underline
+  qualifies it).
+- **The tail shrinks to one word.** `· unconfirmed` in `--fg-quaternary`; the
+  long-form caveat moves to the hover `ToolTip` (data-driven). The provenance
+  suffix slot is **freed** — never again double-loaded with a caveat.
+- **State ⊥ availability.** Unconfirmed (assertion axis) is orthogonal to
+  Degraded (`IsNavigable`, coverage axis) — same logic as the P2 weight ⊥ tier
+  rule. A Link can be both; the dashed underline rides on top of the copy-cue
+  hover, both legible because they live on different sub-elements
+  (border-bottom vs. inline glyph). The VM carries an **additive `IsUnconfirmed`
+  flag + optional tooltip**, *not* a single `state` enum (an enum can't express
+  the compose case).
+- **Section-level signal (optional, light).** When *every* Link in a Structure
+  section is Unconfirmed — the compounding case where the residue is the
+  entity's only source, so the pane would otherwise imply provenance it
+  effectively lacks — prepend the section label with a small `unlink` Lucide
+  glyph in `--fg-quaternary`. This is the light form of the rejected
+  "separate *Declared, unconfirmed* block" (variant E): same gesture at the
+  header, not a full split (a reader scanning "Sources" should still find the
+  row under Sources). Variant E is reserved as an opt-in maintainer overlay,
+  not the default.
+
+**Rejected alternatives** (one line each, from the review): *glyph badge* —
+fragile 9px sub-glyph composite on a busy sprite, costlier in WPF; *warn-hue
+name* — gold→warn (`#D4A847`→`#E0A030`) is two ticks apart, reads as "the same
+gold" in isolation; *separated section as default* — divorces the Link from the
+section it semantically belongs in.
+
+---
+
 ## The grammar — one target per tier
 
 ### Fact · inert · weight-axis
@@ -127,6 +188,7 @@ EntityChip and ItemSourceChip both collapse into this primitive in Phase 4.
 | **Shape · spacing** | No border. No surface at rest. 2px tap padding (`margin: 0 -2px`) so the tint hover-box fits visually. Inline with text baseline. **Two row modes:** `Density="Prose"` — inline in a sentence, single Link or short list; `Density="List"` — own line per entry, sprite scaled up to `1.5em`, line-height ~1.7. |
 | **Hover** | 10% gold tint background (`rgba(212,168,71,0.10)`). |
 | **Degrade** | Rest = identical to shipped. Hover swaps nav-tint for neutral row-tint + trailing `⧉` copy glyph. Click copies the canonical name. |
+| **State** *(G-d)* | Confirmed (default) · Degraded (above) · **Unconfirmed** — declared edge the inverse data doesn't back: gold name + dashed underline `rgba(212,168,71,0.55)`, short `· unconfirmed` tail (`--fg-quaternary`), full caveat as `ToolTip`. Additive `IsUnconfirmed` flag, orthogonal to Degrade. See G-d. |
 | **Replaces** | EntityChip, ItemSourceChip. |
 
 ### Set-reference · filter / keyword / group / stacking
@@ -218,6 +280,7 @@ log can't drift).
 | G2 | [comment 4468464536](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4468464536) | Inventory cleared; E1/E3/E4 ratified, E5/E6 scoped; G-a / G-b / G-c flagged open. |
 | **G3** | this document (2026-05-17) | **G-a / G-b / G-c closed; one visual target per tier ratified. Phase 4 unblocked.** |
 | **G3 amend 1** | [#404 comment 4469052562](https://github.com/moumantai-gg/mithril/issues/404#issuecomment-4469052562) (2026-05-17) | **Link lead element → hybrid icon family** (sprite for tangible nouns, Lucide fallback for abstract). + provenance suffix ≠ name-discriminator. Surgical single-rule; Phase-5 Recipe pilot G4 finding. |
+| **G3 amend 3** | #431 (2026-05-17); origin = Claude Design review of the #429/#407 baseline | **Link reference-state axis closed (G-d): Confirmed · Degraded · Unconfirmed.** Adds an additive `IsUnconfirmed` flag (⊥ the `IsNavigable`/Degraded axis) → dashed gold underline + one-word `· unconfirmed` tail + caveat `ToolTip`; frees the provenance slot the #407 stopgap overloaded. No new pigment/glyph. Re-touches Link primitive + `LinkVm`/`ItemSourceChipVm` carriers; supersedes #407's projection-only provenance-suffix caveat. Own PR, off latest `main`; #429 untouched. |
 | **G3 amend 2** | #404 (2026-05-17) | **System-wide em-relative sizing + Link `Density`** (Prose/List) + **new fixed-40px title-glyph** rule. Root-cause of the pilot's "sprites too small at 12px" finding (px ignored the Appearance accessibility slider). Scope expansion *consciously accepted by maintainer* — re-touches Link + FactTable + FactFooter + Structure + Fact-title (all Phase-4 primitives) + adds the title-glyph element. Supersedes amend-1's fixed-12px. Pilot re-run on PR #411. |
 
 ---

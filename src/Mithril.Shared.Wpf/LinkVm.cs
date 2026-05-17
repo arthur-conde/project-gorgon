@@ -85,6 +85,22 @@ public enum LinkDensity
 /// locations, keywords, factions). The sprite, when present, wins over
 /// <see cref="Glyph"/> — both render at the 12px lead position.
 /// </param>
+/// <param name="IsUnconfirmed">
+/// G-d reference-state axis (2026-05-17, #431). True when this Link is a declared
+/// edge the inverse data does not corroborate (a <c>sources_*.json</c> assertion
+/// the <c>recipes.json</c>/<c>quests.json</c> reverse does not back). Renders the
+/// gold name with a dashed underline + a one-word <c>· unconfirmed</c> tail; the
+/// full caveat is the control <see cref="UnconfirmedTooltip"/>. <b>Orthogonal to
+/// <see cref="IsNavigable"/></b> (the Degraded/G-c axis) — a Link can be both; the
+/// two signals live on different sub-elements and stay legible. Additive flag,
+/// deliberately not a single <c>state</c> enum (an enum can't express the compose
+/// case). False everywhere it doesn't apply; <see cref="ProvenanceSuffix"/> stays
+/// reserved for real provenance and is never double-loaded with the caveat.
+/// </param>
+/// <param name="UnconfirmedTooltip">
+/// The long-form data-integrity caveat shown as the control <c>ToolTip</c> when
+/// <see cref="IsUnconfirmed"/>. Null when not unconfirmed (or no caveat text).
+/// </param>
 public sealed record LinkVm(
     string DisplayName,
     LinkGlyph Glyph,
@@ -92,7 +108,9 @@ public sealed record LinkVm(
     bool IsNavigable,
     string? ProvenanceSuffix = null,
     string? KindLabel = null,
-    int IconId = 0)
+    int IconId = 0,
+    bool IsUnconfirmed = false,
+    string? UnconfirmedTooltip = null)
 {
     /// <summary>
     /// True when a real CDN sprite is present (<see cref="IconId"/> &gt; 0) and should
@@ -139,7 +157,10 @@ public sealed record LinkVm(
     /// (the ItemSourceChip "— from X" bit); the kind-derived <see cref="LinkGlyph"/>
     /// (<see cref="LinkGlyph.None"/> when the source maps to no entity) is the Lucide
     /// fallback. Per the G3 amendment <see cref="ItemSourceChipVm.IconId"/> (null ⇒ 0)
-    /// rides through as the preferred lead sprite.
+    /// rides through as the preferred lead sprite. G-d (#431): the chip's
+    /// <see cref="ItemSourceChipVm.IsUnconfirmed"/> / <see cref="ItemSourceChipVm.UnconfirmedTooltip"/>
+    /// ride through so a declared-but-uncorroborated source renders the dashed
+    /// reference-state treatment instead of an overloaded provenance suffix.
     /// </summary>
     public static LinkVm From(ItemSourceChipVm chip) => new(
         chip.DisplayName,
@@ -147,5 +168,7 @@ public sealed record LinkVm(
         chip.EntityReference,
         chip.IsNavigable,
         ProvenanceSuffix: string.IsNullOrEmpty(chip.Detail) ? null : chip.Detail,
-        IconId: chip.IconId ?? 0);
+        IconId: chip.IconId ?? 0,
+        IsUnconfirmed: chip.IsUnconfirmed,
+        UnconfirmedTooltip: chip.UnconfirmedTooltip);
 }
