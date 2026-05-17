@@ -1667,4 +1667,98 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== Silmarillion #404 grammar — Fact / Structure / Control shared styles (Phase 4) =====
+         Opt-in x:Key'd styles (NOT implicit TargetType overrides) so existing
+         hand-authored views are untouched until Phase 5 migrates call sites.
+         Values are taken verbatim from docs/silmarillion-visual-grammar.md
+         (Fact tier + weight axis; Structure tier; Control tier). No view edited.
+
+         WPF LIMITATION FLAG (not silently dropped, not hacked): the Structure
+         tier specifies "tracked uppercase (letter-spacing 0.08em)". WPF
+         TextBlock has no native letter-spacing and no CharacterCasing. These
+         styles deliver the expressible parts (family / size / weight / pigment
+         / margin); the *uppercasing* and *letter-tracking* are deferred to the
+         Phase 5 call site (pass already-upper text; tracking would need a
+         custom behavior). Surfaced in the Phase 4 reconciliation flags. -->
+
+    <!-- Fact · title-loud: Cambria 18 / 600 / accent, one per pane. -->
+    <Style x:Key="FactTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppHeaderFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeHeader}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/><!-- WPF SemiBold == weight 600 -->
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- Fact · body: Segoe UI 12 / fg-primary. -->
+    <Style x:Key="FactBodyStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSize}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <!-- Structure · section label: fg-tertiary, SemiBold, ~9pt, 10px top gap.
+         Never gold, no glyph (enforced by being a bare TextBlock style). -->
+    <Style x:Key="StructureSectionLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+        <Setter Property="Margin"     Value="0,10,0,4"/>
+    </Style>
+
+    <!-- Structure · inline field-label prefix (terminating ':' is the call
+         site's text, not the style). Same pigment/weight as section label,
+         no top margin (it sits inline before a value). -->
+    <Style x:Key="StructureInlinePrefixStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
+        <Setter Property="FontSize"   Value="{DynamicResource AppFontSizeXSmall}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+    </Style>
+
+    <!-- Structure · group header: dimmer (fg-quaternary), else as section label. -->
+    <Style x:Key="StructureGroupHeaderStyle" TargetType="TextBlock"
+           BasedOn="{StaticResource StructureSectionLabelStyle}">
+        <Setter Property="Foreground" Value="{StaticResource TextQuaternaryBrush}"/>
+    </Style>
+
+    <!-- Control · the only tier with a real chassis. Opt-in reference style for
+         Phase-5 grammar-conformant buttons; existing button styles untouched.
+         bg-surface + border-subtle, radius-md 3, 1px, 5x12 pad; hover
+         bg-surface-hover / border-strong. (Primary/accent-fill variant is a
+         Phase-5 concern — accent-fg token not yet needed; flagged.) -->
+    <Style x:Key="GrammarControlChassisStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource BgSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Padding" Value="12,5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chassis"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource GrammarRadiusMd}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chassis" Property="Background"
+                                    Value="{StaticResource BgSurfaceHoverBrush}"/>
+                            <Setter TargetName="Chassis" Property="BorderBrush"
+                                    Value="{StaticResource BorderStrongBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
