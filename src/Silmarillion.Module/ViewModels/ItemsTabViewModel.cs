@@ -148,13 +148,21 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         }
         var (consumed, popup) = BuildConsumedBy(item);
         var (consumedAsKeyword, keywordPopup) = BuildConsumedAsKeyword(item);
+        // #407: the per-(item,entity)-edge suppression sets — the exact recipe /
+        // quest InternalNames the reverse headers ("Produced by" /
+        // "Awarded by") show for this item, read from the same indices those
+        // headers project from so the dedupe cannot drift from what is rendered.
+        var reverseRecipeNames = ReverseTargetSet(
+            _refData.RecipesByProducedItem, item.InternalName!, r => r.InternalName);
+        var reverseQuestNames = ReverseTargetSet(
+            _refData.QuestsRewardingItem, item.InternalName!, q => q.InternalName);
         return new ItemDetailContext(
             ProducedByRecipes: BuildRecipeChips(_refData.RecipesByProducedItem, item.InternalName!),
             ConsumedByRecipes: consumed,
             ConsumedAsKeywordIn: consumedAsKeyword,
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             BestowsLorebook: BuildBestowsLorebookChip(item),
-            Sources: BuildSourceChips(item.InternalName!),
+            Sources: BuildSourceChips(item.InternalName!, reverseRecipeNames, reverseQuestNames),
             ConsumedByRecipesPopup: popup,
             ConsumedAsKeywordInPopup: keywordPopup);
     }
@@ -387,7 +395,34 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         return 0;
     }
 
-    private IReadOnlyList<ItemSourceChipVm>? BuildSourceChips(string itemInternalName)
+    /// <summary>
+    /// #407: the set of reverse-header target InternalNames a given reverse index
+    /// shows for <paramref name="itemInternalName"/> (recipe names from
+    /// <c>RecipesByProducedItem</c> / quest names from <c>QuestsRewardingItem</c>).
+    /// Read from the very index the reverse header projects from so a declared
+    /// "Sources" row is suppressed iff the same entity is genuinely already on the
+    /// rendered pane under its dedicated header — per-edge, never per-kind.
+    /// </summary>
+    private static IReadOnlySet<string> ReverseTargetSet<T>(
+        IReadOnlyDictionary<string, IReadOnlyList<T>> reverseIndex,
+        string itemInternalName,
+        Func<T, string?> internalNameOf)
+    {
+        if (!reverseIndex.TryGetValue(itemInternalName, out var list) || list.Count == 0)
+            return System.Collections.Immutable.ImmutableHashSet<string>.Empty;
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in list)
+        {
+            var n = internalNameOf(t);
+            if (!string.IsNullOrEmpty(n)) set.Add(n!);
+        }
+        return set;
+    }
+
+    private IReadOnlyList<ItemSourceChipVm>? BuildSourceChips(
+        string itemInternalName,
+        IReadOnlySet<string> reverseRecipeNames,
+        IReadOnlySet<string> reverseQuestNames)
     {
         if (!_refData.ItemSources.TryGetValue(itemInternalName, out var sources) || sources.Count == 0)
         {
@@ -395,23 +430,56 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         }
         // NPC-anchored source kinds (Vendor / Barter / NpcGift / HangOut / Training) carry an
         // <see cref="EntityRef.Npc"/> — navigable since #241 shipped the NPCs kind target.
-        // Quest sources resolve s.Context to the quest InternalName via the parser's
-        // ResolveSourceContext; surface them as EntityRef.Quest chips so the moment the Quests
-        // kind target is registered (#242 — this PR), every "Quest reward" chip across the
-        // codebase becomes navigable without further changes. Other source kinds (Monster /
-        // Recipe / Skill / …) leave the reference null and render as plain text.
-        return sources
-            .Select(s =>
+        // Quest / Recipe sources resolve s.Context to the quest / recipe InternalName via the
+        // parser's ResolveSourceContext and surface as EntityRef.Quest / EntityRef.Recipe.
+        // Other source kinds (Monster / Skill / …) leave the reference null and render as text.
+        var chips = new List<ItemSourceChipVm>(sources.Count);
+        foreach (var s in sources)
+        {
+            var isRecipe = string.Equals(s.Type, "Recipe", StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(s.Context);
+            var isQuest = string.Equals(s.Type, "Quest", StringComparison.Ordinal)
+                && !string.IsNullOrEmpty(s.Context);
+
+            // #407 (1) suppress declared, keep reverse — per (item, entity) edge:
+            // drop the declared row when the same entity is already shown for this
+            // item under its dedicated reverse header ("Produced by" / "Awarded by").
+            if (isRecipe && reverseRecipeNames.Contains(s.Context!)) continue;
+            if (isQuest && reverseQuestNames.Contains(s.Context!)) continue;
+
+            var reference = ResolveSourceReference(s);
+
+            // #407 (2)+(3) declared-only residue: a Recipe/Quest declared source with
+            // NO reverse twin survives (never silently dropped), drops its now-
+            // redundant kind prefix (entity kind is carried by the Link lead-glyph
+            // standard, LinkVm.GlyphFor), and carries an in-pane warning — through
+            // the existing ProvenanceSuffix slot (ItemSourceChipVm.Detail) the
+            // migrated grammar already renders — that the declared↔reverse
+            // relationship is asymmetrical (uncorroborated by the recipe/quest
+            // reverse data; a sources/relational coverage signal, see
+            // docs/silmarillion-field-coverage.md §#407). Projection-layer only —
+            // no view / grammar-primitive change.
+            if (isRecipe || isQuest)
             {
-                var reference = ResolveSourceReference(s);
-                return new ItemSourceChipVm(
-                    DisplayName: FormatSourceDisplayName(s),
-                    Detail: s.Context,
+                chips.Add(new ItemSourceChipVm(
+                    DisplayName: reference is not null ? _nameResolver.Resolve(reference) : s.Context!,
+                    Detail: isRecipe
+                        ? "declared recipe source — not confirmed by recipe data"
+                        : "declared quest source — not confirmed by quest data",
                     IconId: null,
                     EntityReference: reference,
-                    IsNavigable: reference is not null && _navigator.CanOpen(reference));
-            })
-            .ToList();
+                    IsNavigable: reference is not null && _navigator.CanOpen(reference)));
+                continue;
+            }
+
+            chips.Add(new ItemSourceChipVm(
+                DisplayName: FormatSourceDisplayName(s),
+                Detail: s.Context,
+                IconId: null,
+                EntityReference: reference,
+                IsNavigable: reference is not null && _navigator.CanOpen(reference)));
+        }
+        return chips.Count == 0 ? null : chips;
     }
 
     private static EntityRef? ResolveSourceReference(ItemSource s)
@@ -424,14 +492,18 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
         return null;
     }
 
+    /// <summary>
+    /// Display name for the non-entity-resolving source kinds only. The NPC-anchored
+    /// kinds keep their <c>{Type}: {npc}</c> prefix — it encodes the *acquisition
+    /// mechanic* (Vendor vs Barter vs NpcGift vs HangOut), which the NPC kind-glyph
+    /// cannot convey, so it is deliberately retained (#407). Recipe/Quest sources
+    /// never reach here — they are either suppressed as reverse-twin duplicates or
+    /// rendered prefix-less as declared-only residue by <see cref="BuildSourceChips"/>.
+    /// </summary>
     private string FormatSourceDisplayName(ItemSource s)
     {
         if (!string.IsNullOrEmpty(s.Npc))
             return $"{s.Type}: {_nameResolver.Resolve(EntityRef.Npc(s.Npc!))}";
-        if (string.Equals(s.Type, "Quest", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
-            return $"Quest: {_nameResolver.Resolve(EntityRef.Quest(s.Context!))}";
-        if (string.Equals(s.Type, "Recipe", StringComparison.Ordinal) && !string.IsNullOrEmpty(s.Context))
-            return $"Recipe: {_nameResolver.Resolve(EntityRef.Recipe(s.Context!))}";
         return s.Type;
     }
 }
