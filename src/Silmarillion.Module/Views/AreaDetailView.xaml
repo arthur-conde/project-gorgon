@@ -4,7 +4,6 @@
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -18,10 +17,18 @@
             </ResourceDictionary.MergedDictionaries>
 
             <!-- ── Per-type landmark row templates ──
-                 Mixed font runs (Combo/Loc in mono, Desc italic) are achieved through separate
-                 Run elements bound to the row's pre-formatted *Display properties (which return
-                 empty string when the underlying field is null — Run can't carry Visibility, so
-                 the empty-string idiom is the WPF-friendly way to collapse missing pieces). -->
+                 #404 Phase-2 classified these as ✅ on-diagonal Fact (T2 "plain
+                 inline text any weight/shade" + "mono flags"): mixed Run fonts
+                 (Desc italic, Loc/Combo mono) are legitimate inert Fact
+                 presentation — FactBodyStyle would break the deliberate
+                 mono/italic the same way the pilot left its mono ResultEffects
+                 stub inline. So these templates are NOT restyled wholesale
+                 (that would be fresh design — anti-goal #1). The ONE required
+                 change is the ratified G-b fix: the MeditationPillar Combo Run
+                 dropped its gold #FFD4A847 (the named "Area combo" gold-in-Fact
+                 violation — gold now means Link XOR title; a Fact value is
+                 never gold). It stays mono (mono ≠ gold) and inherits the row's
+                 plain Fact pigment. -->
             <!-- Portal: bold Name — italic Desc · mono Loc. -->
             <DataTemplate DataType="{x:Type vm:AreaLandmarkPortalRow}">
                 <TextBlock Margin="0,0,0,2" TextWrapping="Wrap"
@@ -35,15 +42,14 @@
                 </TextBlock>
             </DataTemplate>
 
-            <!-- MeditationPillar: bold Name · Combo: mono (gold) · mono Loc. -->
+            <!-- MeditationPillar: bold Name · Combo mono (G-b: gold dropped) · mono Loc. -->
             <DataTemplate DataType="{x:Type vm:AreaLandmarkPillarRow}">
                 <TextBlock Margin="0,0,0,2" TextWrapping="Wrap"
                            Foreground="#CCFFFFFF"
                            FontSize="{DynamicResource AppFontSizeHint}">
                     <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold"/>
                     <Run Text="{Binding ComboDisplay, Mode=OneWay}"
-                         FontFamily="{DynamicResource AppMonoFontFamily}"
-                         Foreground="#FFD4A847"/>
+                         FontFamily="{DynamicResource AppMonoFontFamily}"/>
                     <Run Text="{Binding LocDisplay, Mode=OneWay}"
                          FontFamily="{DynamicResource AppMonoFontFamily}"
                          Foreground="#88FFFFFF"/>
@@ -62,130 +68,118 @@
                 </TextBlock>
             </DataTemplate>
 
-            <!-- One landmark group: heading + per-row layout (delegated to the row's DataTemplate). -->
+            <!-- One landmark group: Structure group header + per-row layout
+                 (delegated to the row's DataTemplate). The heading is a
+                 Structure group header (matrix T3 → Structure) — migrated to
+                 the shared StructureGroupHeaderStyle (the G4-ratified
+                 UPPERCASE+tracked treatment; zero call-site work). -->
             <DataTemplate DataType="{x:Type vm:AreaLandmarkGroup}">
                 <StackPanel Margin="0,0,0,8">
-                    <TextBlock Text="{Binding Heading}" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
-                               FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding Heading}"
+                               Style="{StaticResource StructureGroupHeaderStyle}"
+                               Margin="0,0,0,4"/>
                     <!-- In-pane preview cluster only. The full landmark set (and any
                          high-cardinality area — the ~547-row #259 precedent) is reachable
                          through the shared virtualizing ProvenancePopupWindow via the
-                         "View all N →" affordance below; there is no separate
-                         non-virtualized list path for the full set (#311 fold-in). -->
+                         Set-reference below; there is no separate non-virtualized
+                         list path for the full set (#311 fold-in). -->
                     <ItemsControl ItemsSource="{Binding Rows}"/>
                 </StackPanel>
             </DataTemplate>
-
-            <!-- Shared "View all N →" affordance (ghost fill, ListFilter glyph) — reads as
-                 "go see the full set", not "open an entity". Mirrors the surface-1
-                 ItemDetailView affordance; opens the shared provenance popup (#318). -->
-            <Style x:Key="ViewAllButtonStyle" TargetType="Button">
-                <Setter Property="Margin" Value="0,4,0,0"/>
-                <Setter Property="Padding" Value="6,2"/>
-                <Setter Property="HorizontalAlignment" Value="Left"/>
-                <Setter Property="Cursor" Value="Hand"/>
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="BorderBrush" Value="#66D4A847"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="Foreground" Value="#FFD4A847"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                <StackPanel Orientation="Horizontal">
-                                    <icon:PackIconLucide Kind="ListFilter" Width="12" Height="12"
-                                                         Foreground="{TemplateBinding Foreground}"
-                                                         Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                    <ContentPresenter VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Border>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-                <Style.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="#22D4A847"/>
-                    </Trigger>
-                </Style.Triggers>
-            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <c:DetailExportHost FooterText="{Binding InternalName}">
+    <!-- Phase-5 fan-out · view 3 (Area) — a consistency-diff against the merged
+         Recipe pilot, NOT fresh design. #404 Phase-2 element classification:
+         the NPC chip cluster is a Link enumeration; the two "View all N →"
+         ghost-gold buttons are Set-references (Phase-2 "Area ×2"); landmark
+         rows are inert Fact (✅ on-diagonal — only the G-b Combo gold actioned);
+         the Area-key footer is a copyable cross-reference KEY.
+
+         Footer (matrix #14 / G-a · ratified E5): the pilot move — stop binding
+         DetailExportHost.FooterText, place <c:FactFooter/> at the foot of the
+         wrapped content (host retained unchanged). The Area key is a
+         cross-entity reference key ⇒ copyable KEY (not PlayerTitle's inert
+         envelope ROW). -->
+    <c:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Internal-name footer is owned by the wrapping DetailExportHost (FooterText). -->
-
             <StackPanel>
-                <!-- ─── Header: friendly name + optional short form ─── -->
+                <!-- ─── Header: Fact-title + short-form ───
+                     Matrix T4 → FactTitleStyle (inline gold/header-font/XLarge
+                     dropped, G-b). No title-glyph (no entity icon).
+                     ShortFriendlyName is a Fact (the area's short name) at quiet
+                     weight → FactBodyStyle; string-typed binding so
+                     NullOrEmptyToVis is correct. -->
                 <StackPanel Margin="0,0,0,10">
                     <TextBlock Text="{Binding DisplayName}"
-                               FontFamily="{DynamicResource AppHeaderFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeXLarge}"
-                               Foreground="#FFD4A847"/>
+                               Style="{StaticResource FactTitleStyle}"/>
                     <TextBlock Text="{Binding ShortFriendlyName}"
-                               Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Style="{StaticResource FactBodyStyle}"
                                Margin="0,2,0,0"
                                Visibility="{Binding ShortFriendlyName, Converter={StaticResource NullOrEmptyToVis}}"/>
                 </StackPanel>
 
-                <!-- ─── NPCs in this area ─── -->
+                <!-- ─── NPCs in this area ───
+                     Section header: matrix T3 → StructureSectionLabelStyle
+                     (G4 UPPERCASE+tracked). NPC chips: matrix #6/#10 entity
+                     enumeration → the canonical pilot pattern — Density="List",
+                     vertical StackPanel, one Link per line (was a WrapPanel of
+                     EntityChip). "View all N →" ghost-gold button → the shared
+                     Set-reference summary-form via the existing command. -->
                 <StackPanel Margin="0,0,0,10"
                             Visibility="{Binding HasNpcs, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="NPCs in this area" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
-                    <ItemsControl ItemsSource="{Binding NpcChips}">
+                    <TextBlock Text="NPCs in this area"
+                               Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding NpcLinks}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <c:EntityChip ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
+                                <!-- G4-ratified: enumeration → Density="List" (canonical pattern). -->
+                                <c:Link Density="List" Margin="0,0,0,3"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:AreaDetailView}}}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <!-- "View all N →" — opens the shared provenance popup (#318 slice 4,
-                         surface 4) fed IReferenceDataService.NpcsByAreaWithReason directly.
-                         Always visible whenever any NPC is in the area (independent of the
-                         chip cap). Replaces the retired NpcByArea synthetic-kind shortcut. -->
-                    <Button Style="{StaticResource ViewAllButtonStyle}"
-                            Command="{Binding ShowNpcsPopupCommand}"
-                            Visibility="{Binding NpcsPopup, Converter={StaticResource NullToVis}}">
-                        <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center">
-                            <Run Text="View all "/><Run Text="{Binding NpcsTotal, Mode=OneWay}"/><Run Text=" →"/>
-                        </TextBlock>
-                    </Button>
+                    <ContentControl Content="{Binding NpcsSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding NpcsSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowNpcsPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- ─── Landmarks in this area (#311 fold-in) ─── -->
+                <!-- ─── Landmarks in this area (#311 fold-in) ───
+                     Section header → StructureSectionLabelStyle. Per-group
+                     heading → StructureGroupHeaderStyle (in the group
+                     DataTemplate). "View all N →" → the shared Set-reference
+                     summary-form via the existing command. -->
                 <StackPanel
                             Visibility="{Binding HasLandmarks, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Landmarks in this area" FontWeight="SemiBold" Foreground="#88FFFFFF"
-                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"/>
+                    <TextBlock Text="Landmarks in this area"
+                               Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding LandmarkGroups}"/>
-                    <!-- "View all N →" — opens the shared virtualizing ProvenancePopupWindow
-                         (#311 fold-in). The full landmark set (and the ~547-row #259
-                         high-cardinality precedent) renders ONLY through the popup's
-                         recycling VirtualizingStackPanel — no separate non-virtualized
-                         list path remains. Sectioned by landmark Type (genuine provenance). -->
-                    <Button Style="{StaticResource ViewAllButtonStyle}"
-                            Command="{Binding ShowLandmarksPopupCommand}"
-                            Visibility="{Binding LandmarksPopup, Converter={StaticResource NullToVis}}">
-                        <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   VerticalAlignment="Center">
-                            <Run Text="View all "/><Run Text="{Binding LandmarksTotal, Mode=OneWay}"/><Run Text=" →"/>
-                        </TextBlock>
-                    </Button>
+                    <ContentControl Content="{Binding LandmarksSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding LandmarksSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowLandmarksPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). The Area
+                     key is a cross-entity reference KEY ⇒ copyable.
+                     FactFooterVm.None() self-hides at 0 ids. -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>

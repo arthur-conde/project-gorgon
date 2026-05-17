@@ -98,6 +98,42 @@ public sealed partial class AreaDetailViewModel : ObservableObject
         ShowLandmarksPopupCommand = new RelayCommand(
             () => ProvenancePopupOpener(LandmarksPopup!, OpenEntityCommand),
             () => LandmarksPopup is not null);
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // Legacy chip/popup/command members above stay (the existing tests +
+        // the detail-pane contract); these are the grammar-tier carriers the
+        // view binds. #404 Phase-2: Area carries the NPC Link enumeration, TWO
+        // Set-references (the two "View all N →" ghost-gold buttons), Fact
+        // landmark rows, and a copyable-KEY footer.
+
+        // NPC cross-links (matrix #6/#10 — entity enumeration). The capped chip
+        // cluster becomes the unified Link list via the ratified adapter; the
+        // view renders it Density="List" (own line per entry — the canonical
+        // pilot enumeration pattern, exactly Ingredients/Produces/Sources).
+        NpcLinks = NpcChips.Select(LinkVm.From).ToList();
+
+        // The two "View all N →" ghost-gold action buttons (matrix T7 — #404
+        // Phase-2 "Area ×2") become the shared Set-reference summary-form
+        // ("{set} · N matches →"), actionable via the EXISTING popup commands
+        // (no command rewiring). Gold→blue is the ratified G-b correction. Null
+        // when the popup is null (section hides). SlotOrdinal null: a single
+        // positionally-inert drawer, not the recipe keyword-slot stacking case.
+        NpcsSetRef = NpcsPopup is null
+            ? null
+            : new SetRefVm("NPCs in this area", MatchCount: NpcsTotal, IsActionable: true);
+        LandmarksSetRef = LandmarksPopup is null
+            ? null
+            : new SetRefVm("Landmarks in this area", MatchCount: LandmarksTotal, IsActionable: true);
+
+        // Footer id (matrix #14 / G-a · ratified E5). The Area key
+        // (e.g. "AreaSerbule") IS a cross-entity reference key — NPCs, lorebooks
+        // and quests resolve an area by it — so per E5 rule 2 it is the
+        // copyable `KEY` (the pilot's FactFooterVm.Key path), NOT PlayerTitle's
+        // inert envelope ROW. None() when somehow keyless so the strip
+        // self-hides.
+        Footer = string.IsNullOrEmpty(InternalName)
+            ? FactFooterVm.None()
+            : FactFooterVm.Key(InternalName);
     }
 
     public AreaEntry Area { get; }
@@ -152,6 +188,21 @@ public sealed partial class AreaDetailViewModel : ObservableObject
     /// <summary>True when at least one NPC chip rendered (drives the section header visibility).</summary>
     public bool HasNpcs => NpcChips.Count > 0;
 
+    /// <summary>
+    /// NPC cross-links as the unified <see cref="LinkVm"/> (matrix #6/#10). The
+    /// view renders these <c>Density="List"</c> — the canonical pilot
+    /// enumeration pattern. Projection of <see cref="NpcChips"/> (same cap).
+    /// </summary>
+    public IReadOnlyList<LinkVm> NpcLinks { get; }
+
+    /// <summary>
+    /// The "NPCs in this area" drawer as the shared Set-reference summary-form
+    /// (matrix T7): <c>"NPCs in this area · N matches →"</c>, actionable — its
+    /// reveal is <see cref="ShowNpcsPopupCommand"/>. Replaces the ghost-gold
+    /// "View all N →" button; gold→blue per ratified G-b. Null when no NPCs.
+    /// </summary>
+    public SetRefVm? NpcsSetRef { get; }
+
     // ── Landmarks in this area (#311 fold-in) ──────────────────────────────────
 
     /// <summary>
@@ -189,6 +240,23 @@ public sealed partial class AreaDetailViewModel : ObservableObject
 
     /// <summary>True when at least one landmark group rendered (drives the section header visibility).</summary>
     public bool HasLandmarks => LandmarkGroups.Count > 0;
+
+    /// <summary>
+    /// The "Landmarks in this area" drawer as the shared Set-reference
+    /// summary-form (matrix T7): <c>"Landmarks in this area · N matches →"</c>,
+    /// actionable — its reveal is <see cref="ShowLandmarksPopupCommand"/>.
+    /// Replaces the ghost-gold "View all N →" button (gold→blue, ratified G-b).
+    /// Null when the area has no landmarks.
+    /// </summary>
+    public SetRefVm? LandmarksSetRef { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14, G-a · ratified E5). The Area key is
+    /// a cross-entity reference key (other entities resolve an area by it) ⇒ the
+    /// copyable <c>KEY</c> (the pilot path), not an inert envelope <c>ROW</c>.
+    /// <see cref="FactFooterVm.None"/> (self-hides) if somehow keyless.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
