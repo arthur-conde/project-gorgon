@@ -70,17 +70,35 @@ the rarity colour scheme (tracked #54), or via weight/border — not
 candidate key and the `tsysclientinfo` record has **no `DisplayName` field**
 (fields are exactly `InternalName`, `Prefix`, `Suffix`, `Skill`, `Slots`,
 `Tiers`). The #405 rule presupposes a resolvable DisplayName; for Powers none
-exists, so the rule is out of domain. Ruling:
+exists, so the rule is out of domain.
+
+**Affix-as-title is also foreclosed (owner, domain rationale).** The
+`Prefix`/`Suffix` affixes are **not a usable title source** and not just a
+deprioritised option: *we do not know the rules PG uses to apply them.* Some
+powers carry only a `Prefix`, some only a `Suffix`, some both; the logic that
+governs which apply, and how they compose onto an item name, is engine-side
+and **not deterministically replicable from CDN data**. Any affix-derived
+title would be a guess at non-replicable game logic — the same class of error
+as inventing roll-resolution. This removes affix-stitching from the option
+set entirely (not "ungrammatical, reject" but "non-replicable, cannot").
+
+Ruling:
 - Title = `InternalName` verbatim (`SwordBoost`) in the gold Cambria
-  Fact-title. Not humanized (drop V0's PascalCase split); not affix-stitched.
+  Fact-title. Not humanized (drop V0's PascalCase split); **not
+  affix-derived** (non-replicable, per above); no transformation of any kind.
 - **Consequence to handle deliberately:** the G-a footer `KEY` is also
   `InternalName` → it now duplicates the title *text*. Keep the footer KEY
   regardless — it carries the **copy affordance** (the title is not
   copyable). Treat the text redundancy as intended (Powers have no second
   identity), not a bug to design away. Annotate this in the spec card so
   Phase 4 doesn't "fix" it by removing the footer.
-- The `Prefix … «item» … Suffix` affix stays exactly as V0 has it: Fact-body
-  flavour. It is the player-facing identity but is *not* the title.
+- The affix **stays as Fact-body flavour only**, but V0's rendering must be
+  corrected: it hard-codes `Prefix … «item» … Suffix` (both present). Render
+  **only the affix parts that exist** (Prefix-only / Suffix-only / both) and
+  phrase it as *illustrative, not authoritative* — e.g. "appears on items
+  roughly as …", never as a reconstructed canonical item name. It is **not**
+  the player-facing identity in any deterministic sense; it is an
+  approximate flavour cue, and the copy must not imply otherwise.
 
 ## Confirmed gates (no change — these were correctly left open)
 
