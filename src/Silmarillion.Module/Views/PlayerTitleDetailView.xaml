@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -18,60 +17,60 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <wpf:DetailExportHost FooterText="{Binding FooterText}">
+    <!-- Phase-5 fan-out · view 1 (PlayerTitle) — a consistency-diff against the
+         merged Recipe pilot, NOT fresh design. #404 classified PlayerTitle as
+         the pure Fact+Structure+Control view (no Link / no Set-reference), so
+         every element here maps to an inert Fact or to Structure.
+
+         Footer (matrix #14 / G-a): exactly the pilot move — stop binding the
+         DetailExportHost FooterText and place <wpf:FactFooter/> at the bottom of
+         the wrapped content. The DetailExportHost wrapper is RETAINED unchanged
+         (export-camera affordance + snapshot wrapper — shared infra, not
+         edited); no host surgery, a purely per-view change. -->
+    <wpf:DetailExportHost>
 
     <Border Padding="14,12">
         <DockPanel>
-            <!-- Footer ("Title_NNNN") is owned by the wrapping DetailExportHost (FooterText). -->
-
             <StackPanel>
-                <!-- ─── Header: clean title ─── -->
+                <!-- ─── Header: Fact-title ───
+                     Matrix T4 → Fact-title. FactTitleStyle carries the
+                     Cambria/600/accent/×1.5em-wrap; the inline gold/header-font/
+                     XLarge are dropped (G-b: gold now means title XOR link, and
+                     the serif title is the title pattern). PlayerTitle has no
+                     entity icon, so there is NO title-glyph (correctly absent —
+                     not every Fact-title carries one). -->
                 <StackPanel Margin="0,0,0,10">
                     <TextBlock Text="{Binding DisplayName}"
-                               FontFamily="{DynamicResource AppHeaderFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeXLarge}"
-                               Foreground="#FFD4A847" TextWrapping="Wrap"/>
+                               Style="{StaticResource FactTitleStyle}"/>
                 </StackPanel>
 
-                <!-- ─── Scope / obtainability badges ───
-                     Account-wide / Soul-wide only render when true (false/null
-                     default is noise). "Not currently obtainable" flags the
-                     Lint_* dev/non-earnable family without hiding it. -->
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                    <Border Background="#222E7D32" BorderBrush="#664CAF50" BorderThickness="1"
-                            CornerRadius="3" Padding="6,2" Margin="0,0,6,0"
-                            Visibility="{Binding AccountWide, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Account-wide" Foreground="#FF81C784"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </Border>
-                    <Border Background="#22283593" BorderBrush="#665C6BC0" BorderThickness="1"
-                            CornerRadius="3" Padding="6,2" Margin="0,0,6,0"
-                            Visibility="{Binding SoulWide, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Soul-wide" Foreground="#FF9FA8DA"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </Border>
-                    <Border Background="#22B71C1C" BorderBrush="#66E57373" BorderThickness="1"
-                            CornerRadius="3" Padding="6,2"
-                            Visibility="{Binding IsNotObtainable, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Not currently obtainable" Foreground="#FFE57373"
-                                   FontSize="{DynamicResource AppFontSizeHint}"/>
-                    </Border>
-                </StackPanel>
+                <!-- ─── Scope / obtainability ───
+                     Matrix T15 (coloured semantic badge box, ❌ off-diagonal) →
+                     ONE inert Fact strip. The pilot stat-badge-box → strip
+                     collapse, verbatim: value-only phrase segments, no box, no
+                     pigment (the FactTable Strip Style owns the only pigment).
+                     The VM skips false flags and yields StripText "" when all
+                     are false, so the shared FactTable Style self-hides — the
+                     same self-elision the three per-badge BoolToVis gave. -->
+                <wpf:FactTable DataContext="{Binding ScopeStrip}"
+                               HorizontalAlignment="Left" Margin="0,0,0,10"/>
 
-                <!-- ─── How to earn ─── -->
+                <!-- ─── How to earn ───
+                     Matrix T2 → Fact body. Pilot description treatment: route
+                     through FactBodyStyle and drop the inline #EEFFFFFF / sizes /
+                     LineHeight (the style owns family·size·fg·wrap). FormattedText
+                     parses any inline <i>/<b> markup; the italic placeholder is
+                     the same Fact-body prose at quieter weight, kept inline-italic
+                     via BasedOn FactBodyStyle. -->
                 <Border Margin="0,0,0,10">
                     <Grid>
                         <TextBlock wpf:FormattedText.Text="{Binding Tooltip}"
-                                   Foreground="#EEFFFFFF"
-                                   FontSize="{DynamicResource AppFontSizeLarge}"
-                                   TextWrapping="Wrap" LineHeight="22"
+                                   Style="{StaticResource FactBodyStyle}"
                                    Visibility="{Binding HasTooltip, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock Text="No description of how this title is earned."
-                                   Foreground="#88FFFFFF" FontStyle="Italic"
-                                   FontSize="{DynamicResource AppFontSizeHint}"
-                                   TextWrapping="Wrap">
+                        <TextBlock Text="No description of how this title is earned.">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FactBodyStyle}">
+                                    <Setter Property="FontStyle" Value="Italic"/>
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding HasTooltip}" Value="True">
@@ -83,6 +82,13 @@
                         </TextBlock>
                     </Grid>
                 </Border>
+
+                <!-- Footer ID strip (matrix #14, G-a · ratified E5). The
+                     Title_NNNN envelope key is storage-only (#248: nothing
+                     cross-references it) ⇒ an INERT `ROW` cell, never the
+                     pilot's copyable `KEY`. FactFooterVm.None() self-hides at 0
+                     ids. -->
+                <wpf:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
         </DockPanel>
     </Border>

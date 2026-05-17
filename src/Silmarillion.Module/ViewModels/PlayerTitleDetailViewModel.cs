@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using Mithril.Shared.Wpf;
+
 namespace Silmarillion.ViewModels;
 
 /// <summary>
@@ -37,6 +40,48 @@ public sealed class PlayerTitleDetailViewModel
         AccountWide = row.AccountWide;
         SoulWide = row.SoulWide;
         IsObtainable = row.IsObtainable;
+
+        // ── Phase 5 grammar-primitive projections ──────────────────────────────
+        // The legacy bool/string members above stay (the existing tests + the
+        // detail-pane contract); these are the grammar-tier carriers the view
+        // binds. Built here (not in the tab VM) because the VM already holds
+        // every source datum — the Phase-5 mapping is mechanical, not
+        // data-bearing. PlayerTitle is the #404-classified pure Fact+Structure+
+        // Control view (no Link/Set-reference at all), so the only carriers are
+        // an inert Fact strip and the Fact footer.
+
+        // Scope / obtainability strip (matrix T15 → inert Fact). The three
+        // legacy COLOURED semantic badge boxes (Account-wide green / Soul-wide
+        // indigo / not-obtainable red) collapse into ONE inert FactTable strip
+        // — value-only phrase segments, no box, no pigment (G-b: Fact is inert;
+        // the Strip Style carries the only pigment). This is the exact pilot
+        // stat-badge-box → strip collapse (RecipeDetailViewModel.StatStrip): a
+        // self-describing phrase keeps a null label, empties are skipped, and an
+        // all-false set yields StripText "" so the FactTable Style self-hides —
+        // the same self-elision the per-badge BoolToVis gave, with the accepted
+        // grammar trade-off that the semantic colours drop (consistency over
+        // fidelity is the ratified G4 acceptance bar).
+        var scope = new List<FactPair>(3);
+        if (AccountWide) scope.Add(new FactPair(null, "Account-wide"));
+        if (SoulWide) scope.Add(new FactPair(null, "Soul-wide"));
+        if (IsNotObtainable) scope.Add(new FactPair(null, "Not currently obtainable"));
+        ScopeStrip = FactTableVm.Strip(scope);
+
+        // Footer id (matrix #14 / G-a · ratified E5). PlayerTitle's POCO carries
+        // no InternalName — the "Title_NNNN" envelope key IS the only
+        // identifier. E5 rule 2: a footer is copyable IFF it is a cross-entity
+        // reference key (something else points at it). #248 established the
+        // Title_N envelope key has NO structured cross-reference (BestowTitle
+        // args live in a different namespace, nothing resolves through it), so
+        // it is a display/storage-only key ⇒ the INERT `ROW` cell, never the
+        // copyable `KEY`. This is deliberately NOT the pilot's
+        // FactFooterVm.Key(InternalName) copyable path — it is the
+        // EnvelopeKey-inert path the Recipe pilot never exercised, the first
+        // fan-out case that proves the E5 copyable-iff-cross-ref discriminator.
+        // None() when somehow keyless so the strip self-hides (G-a: hidden at 0).
+        Footer = string.IsNullOrEmpty(EnvelopeKey)
+            ? FactFooterVm.None()
+            : FactFooterVm.Of(new FactFooterId("ROW", EnvelopeKey, copyable: false));
     }
 
     public PlayerTitleListRow Row { get; }
@@ -50,8 +95,32 @@ public sealed class PlayerTitleDetailViewModel
     /// </summary>
     public string EnvelopeKey { get; }
 
-    /// <summary>Footer text — the bare envelope key (no divergent pair to render).</summary>
+    /// <summary>
+    /// Legacy footer text — the bare envelope key. Retained (the existing test +
+    /// the detail-pane contract); the view now binds <see cref="Footer"/> instead.
+    /// </summary>
     public string FooterText => EnvelopeKey;
+
+    /// <summary>
+    /// Inert scope/obtainability Fact strip (matrix T15 → Fact-inert). The three
+    /// legacy coloured semantic badge boxes collapse into one dot-separated
+    /// value-only <see cref="FactTableVm"/> strip (no box, no pigment — G-b).
+    /// Empty (all-false) ⇒ <see cref="FactTableVm.StripText"/> is "" so the
+    /// shared <c>FactTable</c> Style self-hides, exactly the per-badge
+    /// <c>BoolToVis</c> self-elision it replaces. Mirrors the pilot's
+    /// <c>RecipeDetailViewModel.StatStrip</c>.
+    /// </summary>
+    public FactTableVm ScopeStrip { get; }
+
+    /// <summary>
+    /// Footer identifier strip (matrix #14, G-a · ratified E5). The
+    /// <c>Title_NNNN</c> envelope key is a display/storage-only key (#248: no
+    /// cross-entity reference resolves through it) ⇒ a single <b>inert</b>
+    /// <c>ROW</c> cell (<see cref="FactFooterId.Copyable"/> false), <em>not</em>
+    /// the pilot's copyable <c>KEY</c>. <see cref="FactFooterVm.None"/> (the
+    /// strip self-hides) if somehow keyless.
+    /// </summary>
+    public FactFooterVm Footer { get; }
 
     /// <summary>"How to earn" prose, or null (italic placeholder shown instead).</summary>
     public string? Tooltip { get; }
