@@ -115,8 +115,18 @@
 
                 <c:FactFooter DockPanel.Dock="Bottom" DataContext="{Binding Footer}" Margin="0,8,0,0"/>
 
+<!-- The pool list is the Profile pane's primary content and runs large
+                     (Sword ≈ 270; cross-skill pools larger). It is hosted inside the
+                     detail card's outer ScrollViewer (TreasureTabView.DetailScroller /
+                     the popup window), which measures content with infinite height —
+                     so a bare VirtualizingStackPanel would realise every row. Binding
+                     MaxHeight to the hosting ScrollViewer's viewport gives the ListBox a
+                     bounded height, engaging its own scroll region and therefore actual
+                     UI virtualization (recycling). This is the inline-list analogue of
+                     the cookbook's "large set ⇒ virtualized surface" rule. -->
                 <ListBox ItemsSource="{Binding VisiblePowerRows}"
                          ItemTemplate="{StaticResource PoolPowerRowTemplate}"
+                         MaxHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType={x:Type ScrollViewer}}}"
                          Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
