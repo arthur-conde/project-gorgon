@@ -1156,8 +1156,30 @@
                                         CornerRadius="{StaticResource GrammarRadiusMd}"
                                         Padding="2,0">
                                     <StackPanel Orientation="Horizontal">
-                                        <!-- 12px LEAD glyph. Collapsed for LinkGlyph.None. -->
-                                        <icon:PackIconLucide
+                                        <!-- 12px LEAD element · G3 hybrid icon family
+                                             (amendment 2026-05-17). Two mutually-
+                                             exclusive elements in the one lead slot:
+                                             a real CDN sprite (preferred when
+                                             IconId>0 / HasSprite) ELSE the type-coded
+                                             Lucide fallback. Both render 12×12.
+                                             Switch is HasSprite (LinkVm bool: int>0,
+                                             object-safe — no converter) via the
+                                             DataTriggers below. -->
+                                        <!-- Preferred: real game-art sprite. Collapsed
+                                             by default; the HasSprite=True trigger
+                                             reveals it (and hides the Lucide). IconImage
+                                             self-collapses internally if IconId<=0. -->
+                                        <c:IconImage x:Name="LeadSprite"
+                                            Width="12" Height="12"
+                                            Margin="0,0,4,0"
+                                            VerticalAlignment="Center"
+                                            IconId="{Binding IconId}"
+                                            Visibility="Collapsed"/>
+                                        <!-- Fallback: 12px LEAD Lucide. Collapsed for
+                                             LinkGlyph.None (LinkGlyphToVis); ALSO hidden
+                                             when a sprite is present (HasSprite=True
+                                             trigger). -->
+                                        <icon:PackIconLucide x:Name="LeadLucide"
                                             Width="12" Height="12"
                                             Margin="0,0,4,0"
                                             VerticalAlignment="Center"
@@ -1211,6 +1233,16 @@
                                     </StackPanel>
                                 </Border>
                                 <ControlTemplate.Triggers>
+                                    <!-- G3 hybrid lead switch: a real sprite present
+                                         (HasSprite = IconId>0) wins — reveal the sprite,
+                                         hide the Lucide fallback. When False, both
+                                         elements keep their default visibility (sprite
+                                         Collapsed; Lucide per LinkGlyphToVis), i.e. the
+                                         pre-amendment Lucide-only behaviour. -->
+                                    <DataTrigger Binding="{Binding HasSprite}" Value="True">
+                                        <Setter TargetName="LeadSprite" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="LeadLucide" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
                                     <!-- Navigable hover: 10% gold tint + Hand cursor. -->
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>

@@ -83,9 +83,13 @@ public sealed class RecipeDetailViewModel
                 .ToList());
 
         // Link projections (matrix #6/#9/#10/#12). EntityChip/ItemSourceChip →
-        // LinkVm via the ratified adapters. Ingredients force LinkGlyph.Ingredient
-        // explicitly (reconciliation flag #3: the adapter can't infer Ingredient
-        // from EntityKind.Item — it would yield Item/package).
+        // LinkVm via the ratified adapters; the G3-amended adapters now carry the
+        // chip's IconId through as the preferred lead sprite. Ingredients still set
+        // LinkGlyph.Ingredient explicitly, but per the G3 amendment that glyph is now
+        // the Lucide *fallback* only: `with { Glyph = ... }` preserves the IconId from
+        // LinkVm.From(c), so a real ingredient sprite renders when present and the
+        // flask Lucide shows only for icon-less ingredients (reconciliation flag #3
+        // CLOSED — the adapter no longer needs to infer Ingredient when art exists).
         IngredientLinks = Ingredients
             .Select(c => LinkVm.From(c) with { Glyph = LinkGlyph.Ingredient })
             .ToList();
@@ -120,9 +124,11 @@ public sealed class RecipeDetailViewModel
 
     /// <summary>
     /// Ingredient cross-links as the unified <see cref="LinkVm"/> (matrix #10).
-    /// Glyph is forced to <see cref="LinkGlyph.Ingredient"/> (reconciliation flag
-    /// #3 — the kind-driven adapter yields <see cref="LinkGlyph.Item"/> for
-    /// <see cref="EntityKind.Item"/>; this list is semantically ingredients).
+    /// <see cref="LinkVm.Glyph"/> is set to <see cref="LinkGlyph.Ingredient"/> as the
+    /// Lucide <em>fallback</em>; per the G3 amendment the chip's
+    /// <see cref="LinkVm.IconId"/> sprite is preferred when present (reconciliation
+    /// flag #3 closed — a real ingredient sprite now shows; the flask Lucide is the
+    /// icon-less fallback only).
     /// </summary>
     public IReadOnlyList<LinkVm> IngredientLinks { get; }
 
