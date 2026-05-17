@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.Shared.Wpf;
 using Silmarillion.ViewModels;
 using Xunit;
 using PlayerTitlePoco = Mithril.Reference.Models.Misc.PlayerTitle;
@@ -122,6 +123,61 @@ public sealed class PlayerTitleDetailViewModelTests
                 n.Contains("Quest", System.StringComparison.OrdinalIgnoreCase)
                 || n.Contains("Popup", System.StringComparison.OrdinalIgnoreCase));
         vm.Should().NotBeNull();
+    }
+
+    // ── Phase 5 grammar-primitive projections ──────────────────────────────
+
+    [Fact]
+    public void ScopeStrip_SelfHides_WhenNoFlagsTrue()
+    {
+        var vm = Build("Title_1", new PlayerTitlePoco { Title = "<color=cyan>Plain</color>" });
+
+        // All-false ⇒ no segments ⇒ StripText "" so the shared FactTable Style
+        // collapses (the per-badge BoolToVis self-elision it replaces).
+        vm.ScopeStrip.Layout.Should().Be(FactTableLayout.Strip);
+        vm.ScopeStrip.Pairs.Should().BeEmpty();
+        vm.ScopeStrip.StripText.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScopeStrip_CollectsOnlyTrueFlags_AsValueOnlyPhraseSegments()
+    {
+        var vm = Build("Title_101", new PlayerTitlePoco
+        {
+            Title = "<color=white>Content Creator</color>",
+            AccountWide = true,
+            Keywords = new[] { "Lint_NotObtainable" }, // ⇒ IsNotObtainable
+        });
+
+        // Value-only (null label) phrase segments, false flags skipped (SoulWide
+        // absent), dot-joined by the shared Strip helper — no box, no pigment.
+        vm.ScopeStrip.Pairs.Should().BeEquivalentTo(new[]
+        {
+            new FactPair(null, "Account-wide"),
+            new FactPair(null, "Not currently obtainable"),
+        }, o => o.WithStrictOrdering());
+        vm.ScopeStrip.StripText.Should().Be("Account-wide · Not currently obtainable");
+    }
+
+    [Fact]
+    public void Footer_IsInertEnvelopeRowKey_NeverCopyable()
+    {
+        var vm = Build("Title_5018", new PlayerTitlePoco
+        {
+            Title = "<color=#00cc00>Warsmith</color>", Tooltip = "Earned by completing a quest.",
+        });
+
+        // E5: the Title_NNNN envelope key is storage-only (#248 — nothing
+        // cross-references it) ⇒ the INERT `ROW` cell, NOT the pilot's copyable
+        // `KEY`. This is the EnvelopeKey-inert path the Recipe pilot never
+        // exercised — the discriminator is the explicit Copyable bool.
+        vm.Footer.HasIds.Should().BeTrue();
+        vm.Footer.Ids.Should().ContainSingle();
+        var cell = vm.Footer.Ids[0];
+        cell.LabelTag.Should().Be("ROW");
+        cell.Value.Should().Be("Title_5018");
+        cell.Copyable.Should().BeFalse("an EnvelopeKey-style storage-only id is inert per ratified E5");
+        FactFooter.ResolveCellClick(cell).Should().Be(FactFooterCellAction.Inert);
     }
 
     private sealed class FakeRefData : Mithril.Shared.Reference.IReferenceDataService
