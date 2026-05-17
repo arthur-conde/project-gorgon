@@ -1817,8 +1817,13 @@
          G3-amend-2: size = 0.78em (was the fixed AppFontSizeXSmall=9; only the
          SIZE changes). Same circular-Style-setter constraint as FactTitleStyle
          → 1em source is the NEAREST ANCESTOR's inherited (TextElement.FontSize)
-         via FindAncestor (skips Self → no cycle), ×0.78. The tracked-uppercase
-         WPF-limitation flag (below, unchanged) still stands — only SIZE moves. -->
+         via FindAncestor (skips Self → no cycle), ×0.78.
+         G4 (ratified): the tracked-UPPERCASE treatment (text-transform:uppercase
+         + letter-spacing ≈0.08em) is now applied — previously deferred because
+         WPF TextBlock has no native letter-spacing. c:StructureLabel.IsEnabled
+         rebuilds Inlines as upper-cased chars interleaved with a hair-space
+         spacer (em-relative → tracks the Appearance slider). Applied here so all
+         ~9 fan-out views inherit it with zero per-call-site work. -->
     <Style x:Key="StructureSectionLabelStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}"/>
         <Setter Property="FontSize"
@@ -1826,6 +1831,7 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
         <Setter Property="Margin"     Value="0,10,0,4"/>
+        <Setter Property="c:StructureLabel.IsEnabled" Value="True"/>
     </Style>
 
     <!-- Structure · inline field-label prefix (terminating ':' is the call
@@ -1839,9 +1845,16 @@
                 Value="{Binding Path=(TextElement.FontSize), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type FrameworkElement}}, Converter={StaticResource FontSizeTimes}, ConverterParameter=0.78}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}"/>
+        <!-- G4: same tracked-UPPERCASE behavior as the section label. The
+             terminating ':' (call-site text, e.g. "Field:") is preserved
+             literally (ToUpperInvariant is a no-op on punctuation) and tracks
+             with the letters so the prefix reads as one tracked label. -->
+        <Setter Property="c:StructureLabel.IsEnabled" Value="True"/>
     </Style>
 
-    <!-- Structure · group header: dimmer (fg-quaternary), else as section label. -->
+    <!-- Structure · group header: dimmer (fg-quaternary), else as section label.
+         G4: inherits the tracked-UPPERCASE c:StructureLabel.IsEnabled setter via
+         BasedOn StructureSectionLabelStyle (only the pigment is overridden). -->
     <Style x:Key="StructureGroupHeaderStyle" TargetType="TextBlock"
            BasedOn="{StaticResource StructureSectionLabelStyle}">
         <Setter Property="Foreground" Value="{StaticResource TextQuaternaryBrush}"/>
