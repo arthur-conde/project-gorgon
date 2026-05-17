@@ -227,54 +227,50 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   Silmarillion's charter alone. Field-level scope:
   [silmarillion-field-coverage.md](silmarillion-field-coverage.md); tab scope:
   [silmarillion-roadmap.md](silmarillion-roadmap.md).
-- **In scope — owner-endorsed (2026-05-16):** Silmarillion should be able to show a
-  recipe's **possible TSys (treasure-system) rolls** in a popup — the same
-  `AugmentPoolPreview` pool surface Celebrimbor uses, fed by the shared
-  `ResultEffectsParser`. Silmarillion is the **master** view (full pool for any
-  browsed recipe); **Celebrimbor is the planning-narrowed slice** of that *same* data
-  (the pool for recipes in your craft plan). **Mechanic — verified against `recipes.json`, `items.json` &
-  `ResultEffectsParser` 2026-05-16 (owner was right; a first, too-narrow check was
-  wrong — see History):** two reference-data pieces combine.
-  1. *Base pool:* the `*E` *"(enchanted)"* recipe's `TSysCraftedEquipment(template)`
-     ResultEffect → `TryBuildCraftedEquipmentPool` → the crafted-equipment template's
-     `TSysProfile` → `IReferenceDataService.Profiles`. This is the full power pool for
-     that equipment template.
-  2. *Crystal scoping:* each `Crystal`-keyword item carries the enchantment family on
-     **its own item record** — `Item.Description` `"Associated Primary Skill: <Skill>"`
-     (+ optional Secondary) and `Item.DynamicCraftingSummary`
-     `"…create items that have <Skill> enchantments."` (e.g. `Moonstone` →
-     *Lycanthropy*; `LapisLazuli` → *Priest*; `Tsavorite` → *Ice Magic*). The crystal
-     slotted into the recipe selects the enchantment family/skill.
-  **Settled (owner, 2026-05-16):** crystals **do** influence enchanted crafts, and the
-  crystal→enchantment-family *association* is in CDN data (the crystal item's
-  `Description`/`DynamicCraftingSummary`, plus the template's `TSysProfile` pool). But
-  the **treasure-system *specifics* — how a roll actually resolves (probabilities, the
-  precise rolled power) — are not in CDN data at all.** That second fact is a
-  **data-availability ceiling, not a charter line**: no module can show roll resolution
-  from reference data because it isn't there (same class as Samwise's gardening-XP
-  absence), distinct from "calculation Silmarillion is barred from."
-  **Consequence:** Silmarillion *can* surface what's in the data — browse an enchanted
-  recipe → its `Crystal` slot → candidate crystals, and on each crystal show its
-  enchantment-family **text**. ⚠️ That text is **prose/category, frequently NOT a
-  resolvable `skills.json` entity**, and the data is **heterogeneous**: the only
-  consistent signal is `Item.DynamicCraftingSummary` (*"…<family> enchantments"*); a
-  `Description` `"Associated Primary Skill: <X>"` line exists on *some* crystals
-  (Moonstone, LapisLazuli, Tsavorite) but **not others** (Rubywall Crystal has none),
-  and the family term is often not a skill at all — *"survival-related"* has no
-  `Survival` skill. So treat it as **display text, not a guaranteed navigable Skill
-  cross-link** — it degrades to plain text per Silmarillion's existing
-  chip-degradation rule; don't promise a skill-entity link. It cannot show roll
-  *resolution* — not because that would be calculation, but because the data simply
-  doesn't carry it. Relates to #214.
+- **In scope — owner-ratified (2026-05-17; supersedes the 2026-05-16 "popup"
+  framing):** Silmarillion owns a dedicated **Treasure System tab** (**#412**) — a
+  browse/query surface over `tsysclientinfo` (the **Power** entity: skill-tagged,
+  tiered) + `tsysprofiles` (40 named **Profile** pools). PG's own term is "treasure
+  system"; the tab uses it (a reference browser mirrors source vocabulary). Recipe
+  detail (**#214**, rescoped) **deep-links into** this tab — the tab is the *single
+  render site* for TSys; recipe detail does **not** re-render the pool inline (no
+  divergence surface). Silmarillion is the **master** view; **Celebrimbor is the
+  planning-narrowed slice** of the *same* `ResultEffectsParser`/pool data (the pool
+  for recipes in your craft plan).
+  - *Data shape — verified v470 (`tsysclientinfo`/`tsysprofiles`, 2026-05-17):* both
+    sources are a faceted entity table + named-set table — **card-shaped and
+    crystal-free**. The earlier roadmap Bucket-D "calculator-shaped, not a Silmarillion
+    tab" verdict reasoned from the raw-JSON label, not the contents; **overturned**
+    (recorded in [silmarillion-roadmap.md](silmarillion-roadmap.md) + History below).
+  - *Pool/recipe linkage — verified `recipes.json`/`items.json`/`ResultEffectsParser`
+    2026-05-16:* the `*E` *"(enchanted)"* recipe's `TSysCraftedEquipment(template)`
+    ResultEffect → `TryBuildCraftedEquipmentPool` → the crafted-equipment template's
+    `Item.TSysProfile` → `IReferenceDataService.Profiles`. #214's deep-link prefills
+    the tab's query to that profile.
+  - *Crystal scoping is a recipe-crafting-path concern — **not part of the tab
+    browse**.* Retained because it is settled and still true *for enchanted crafting*:
+    each `Crystal`-keyword item carries the enchantment family on its own item record
+    (`Item.DynamicCraftingSummary` *"…<family> enchantments"*; an `Item.Description`
+    `"Associated Primary Skill: <X>"` line on *some* crystals — Moonstone, LapisLazuli,
+    Tsavorite — but **not** others like Rubywall, and the family term is often prose,
+    not a `skills.json` entity — *"survival-related"* has no `Survival` skill). It
+    degrades to display text per the chip-degradation rule; **the Treasure System tab
+    itself never touches crystals** (`tsysclientinfo`/`tsysprofiles` contain none).
+  - *Data-availability ceiling (unchanged, owner 2026-05-16):* roll **resolution** —
+    probabilities, the precise rolled power — is **not in CDN data at all** (same class
+    as Samwise's gardening-XP absence). The tab shows what the system is *composed of*,
+    never how a roll resolves. A data ceiling, not a charter bar. Relates to #214/#412.
 - **Does NOT own:**
   - **✅ confirmed** — *Computation/simulation.* It is a browser, not a calculator.
-    Calculators are Elrond/Celebrimbor; per the roadmap, TSys/power calc is explicitly
-    Celebrimbor's territory, "not a Silmarillion tab."
-    **Carve-out (owner-clarified 2026-05-16):** *displaying* parsed treasure-effect
-    previews via the shared `ResultEffectsParser` is browsing, not calculation — it is
-    within Silmarillion's charter and is exactly the intent of #214. "Does not
-    calculate" ≠ "cannot render parser output." Silmarillion not showing effects today
-    is a gap, not a prohibition.
+    Calculators are Elrond/Celebrimbor; TSys/power **roll calculation** (resolution
+    math — probabilities, the rolled power) stays Celebrimbor's territory.
+    **Updated 2026-05-17:** the roadmap's *"not a Silmarillion **tab**"* clause is
+    **overturned** — the *browse* surface (#412) is Silmarillion's; only the
+    *calculation* is Celebrimbor's. **Carve-out (owner 2026-05-16, realised 2026-05-17):**
+    *displaying* parsed treasure data / pools via the shared `ResultEffectsParser` and
+    browsing `tsysclientinfo`/`tsysprofiles` is browsing, not calculation — the
+    original #214 carve-out, now a dedicated tab (#412). "Does not calculate" ≠
+    "cannot render parser output or browse TSys data."
 - **Reference data:** effectively all sources (it is the browser), per the bucketing
   rule in the roadmap.
 
@@ -379,6 +375,21 @@ libraries; the charter follows the code:
 
 ## History
 
+- **2026-05-17** — **Silmarillion TSys: popup → tab (owner-ratified).** The
+  2026-05-16 "show possible TSys rolls in a *popup*" framing is superseded by a
+  dedicated **Treasure System tab** (#412). Verified v470: `tsysclientinfo` (Power
+  entity, skill-tagged, tiered) + `tsysprofiles` (40 Profile pools) are card-shaped
+  and **crystal-free** — the roadmap's Bucket-D "calculator-shaped, not a Silmarillion
+  tab" verdict reasoned from the raw-JSON label, not the contents, and is **overturned**
+  (roadmap doc updated in the same PR). #214 rescoped from "re-render pool inline" to
+  "deep-link into the tab" (single render site; no divergence surface). Only roll
+  *resolution* calculation stays Celebrimbor's; the *browse* is Silmarillion's.
+  Disambiguated a naming collision: `Create{Region}TreasureMap{Quality}` is the
+  **`TreasureCartography`** skill (buried-treasure maps, verified `recipe_21201` →
+  `RewardSkill: "TreasureCartography"`), an unrelated system — explicitly out of scope
+  for the TSys tab. Updated Silmarillion's *In scope* (popup→tab, v470 verification,
+  crystal scoped to the recipe-craft path only) and the *Computation* does-not-own line
+  (the "not a tab" clause overturned; calculation boundary retained).
 - **2026-05-16** — Final three modules charactered by owner, closing the set (all 12
   `*.Module` projects now covered): **Palantir** (debug module — browser over
   Mithril.GameState + badge tester; not player-facing), **Smaug** (NPC stores, inv/
