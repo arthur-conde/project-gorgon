@@ -2,6 +2,11 @@
 
 **Tracked in:** #404
 
+> **Status: EXECUTED — G3 ratified 2026-05-17.** This dispatch is spent;
+> retained for provenance. Claude Design's ratified output is
+> [`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md).
+> Phase 4 (shared WPF primitives) is the next dispatch — do not re-run this one.
+
 > **For the designer (Claude Design).** This is the Phase 3 spec of the #404
 > visual-grammar program. Phases 0–2 and gates G1/G2 are **closed and
 > authoritative on the issue** — do not reopen them. Your job is to take the
