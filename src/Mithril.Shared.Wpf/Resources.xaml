@@ -1486,4 +1486,185 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== FactFooter · the Phase-4 shared footer-ID primitive (G3 grammar:
+         "G-a — Fact identifiers, copyable without becoming Control"). 0/1/2
+         FactFooterId cells; DataContext is a FactFooterVm. COEXISTS with
+         DetailExportHost's legacy footer (Phase 5 migrates hosts) — this is the
+         standalone G-a primitive only. Mirrors the FactTable templated-control
+         pattern above (DefaultStyleKeyProperty.OverrideMetadata in FactFooter.cs;
+         per-cell ButtonBase wired in OnApplyTemplate, not a single named PART).
+
+         Visual target STRICTLY per docs/silmarillion-visual-grammar.md
+         (every value is a committed token — none invented here):
+           · LOCATION, NOT CHASSIS: the strip sits BELOW a thin 1px
+             BorderFaintBrush TOP divider, beneath the read-flow. NO surface,
+             NO fill, NO border other than that one top divider. This is a Fact,
+             not a Control — it declares itself only on contact.
+           · Right-aligned (matches the detail-view footer convention), but the
+             divider spans the FULL content width (the Border is stretched; the
+             cells DockPanel inside is right-aligned).
+           · 0 ids → the whole control is Collapsed (HasIds=false → no divider
+             with nothing under it). 1 id → a single cell. 2 ids → the two cells
+             with an INERT middot `·` between them. The separator is NEVER part
+             of any copied value (the first cell suppresses its leading middot
+             via the VM IsFirst-style index; the copy payload is the cell Value
+             ONLY — mirrors FooterSegmentItem / FactTableVm.StripSeparator).
+           · Each cell: tiny UPPERCASE LabelTag in TextQuaternaryBrush at
+             AppFontSizeXSmall, then Value in TextTertiaryBrush +
+             AppMonoFontFamily at AppFontSizeSmall.
+           · COPYABLE cell (Copyable=true — a cross-entity reference KEY): on
+             HOVER reveal an 11px Copy PackIconLucide trailing the value;
+             Cursor=Hand; click copies EXACTLY that cell's Value (handled in
+             FactFooter.cs, try/catch like DetailExportHost) and flips that
+             cell's Copied for ~1.2s (per-cell ack — the OTHER cell is
+             unaffected, exactly like FooterSegmentItem.Copied). At REST the
+             copy glyph is NOT shown (G-a: "declares itself only on contact").
+           · INERT cell (Copyable=false — a storage-only ROW): Cursor=Default,
+             NO hover state, NO glyph EVER, click does nothing. The Copyable
+             bool is the sole discriminator — NOT the LabelTag string. ===== -->
+    <ItemsPanelTemplate x:Key="FactFooterCellsPanel">
+        <StackPanel Orientation="Horizontal"/>
+    </ItemsPanelTemplate>
+    <Style TargetType="{x:Type c:FactFooter}">
+        <!-- Right-aligned strip (detail-footer convention); the divider Border
+             below still stretches the full content width. -->
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type c:FactFooter}">
+                    <!-- The ONLY surface: a 1px TOP divider spanning the content
+                         width. No fill, no other border (Fact = no chassis). The
+                         whole control collapses at 0 ids (no divider with
+                         nothing under it). -->
+                    <Border x:Name="Root"
+                            BorderBrush="{StaticResource BorderFaintBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="0,4,0,0"
+                            Background="Transparent">
+                        <!-- Cells right-aligned within the full-width divider. -->
+                        <ItemsControl x:Name="PART_Cells"
+                                      HorizontalAlignment="Right"
+                                      AlternationCount="2"
+                                      ItemsSource="{Binding Ids}"
+                                      ItemsPanel="{StaticResource FactFooterCellsPanel}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- A ButtonBase per cell (FactFooter.cs walks
+                                         the realised tree and wires Click). No
+                                         chassis: transparent, borderless, no
+                                         padding — the button is a hit-target, not
+                                         a Control surface. -->
+                                    <Button Background="Transparent"
+                                            BorderThickness="0"
+                                            Padding="0"
+                                            HorizontalContentAlignment="Left">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <StackPanel x:Name="CellRoot"
+                                                            Orientation="Horizontal"
+                                                            Background="Transparent">
+                                                    <!-- Inert middot BETWEEN cells
+                                                         only; the first cell
+                                                         suppresses it. Never part
+                                                         of any copy payload. -->
+                                                    <TextBlock x:Name="Sep"
+                                                               Text="{x:Static c:FactFooterVm.CellSeparator}"
+                                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Tiny UPPERCASE tag. -->
+                                                    <TextBlock x:Name="Tag"
+                                                               Text="{Binding LabelTag}"
+                                                               Margin="0,0,4,0"
+                                                               Foreground="{StaticResource TextQuaternaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeXSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Mono value (tertiary). -->
+                                                    <TextBlock Text="{Binding Value}"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- Hover-revealed 11px Copy
+                                                         glyph (copyable only).
+                                                         Collapsed at rest (G-a:
+                                                         declares itself only on
+                                                         contact). -->
+                                                    <icon:PackIconLucide x:Name="CopyGlyph"
+                                                        Kind="Copy"
+                                                        Width="11" Height="11"
+                                                        Margin="4,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{StaticResource TextTertiaryBrush}"
+                                                        Visibility="Collapsed"/>
+                                                    <!-- Per-cell transient ack
+                                                         (FactFooterId.Copied,
+                                                         set in FactFooter.cs). -->
+                                                    <TextBlock x:Name="CopiedAck"
+                                                               Text="copied ✓"
+                                                               Margin="4,0,0,0"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               FontSize="{DynamicResource AppFontSizeSmall}"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="Collapsed"/>
+                                                </StackPanel>
+                                                <ControlTemplate.Triggers>
+                                                    <!-- First cell → no leading
+                                                         middot (separator is
+                                                         BETWEEN cells only). -->
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(ItemsControl.AlternationIndex)}" Value="0">
+                                                        <Setter TargetName="Sep" Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <!-- COPYABLE (KEY): hand
+                                                         cursor; hover reveals the
+                                                         Copy glyph. At rest the
+                                                         glyph stays Collapsed. -->
+                                                    <DataTrigger Binding="{Binding Copyable}" Value="True">
+                                                        <Setter Property="Cursor" Value="Hand"/>
+                                                    </DataTrigger>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding Copyable}" Value="True"/>
+                                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Visible"/>
+                                                    </MultiDataTrigger>
+                                                    <!-- Per-cell ack: swap the
+                                                         copy glyph for the ack
+                                                         text while Copied is set
+                                                         (this cell only). -->
+                                                    <DataTrigger Binding="{Binding Copied}" Value="True">
+                                                        <Setter TargetName="CopyGlyph" Property="Visibility" Value="Collapsed"/>
+                                                        <Setter TargetName="CopiedAck" Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                    <!-- INERT (ROW): Copyable
+                                                         false → NO hover/cursor/
+                                                         glyph setters at all. The
+                                                         default Cursor + Collapsed
+                                                         glyph IS the entire look.
+                                                         (Defensive: explicit
+                                                         default cursor.) -->
+                                                    <DataTrigger Binding="{Binding Copyable}" Value="False">
+                                                        <Setter Property="Cursor" Value="Arrow"/>
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 0 ids → the whole control renders nothing (no divider
+                             with nothing under it). G-a: "Strip hidden at 0". -->
+                        <DataTrigger Binding="{Binding HasIds}" Value="False">
+                            <Setter TargetName="Root" Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
