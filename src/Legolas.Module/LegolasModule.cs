@@ -98,13 +98,22 @@ public sealed class LegolasModule : IMithrilModule
         // gesture + position feeder + ChatLog distance into the solver.
         // Singleton (subscribes to the GameState trackers in its ctor);
         // constructed when the ingestion hosted services resolve it.
+        // #497: declared-position resolver (a character-named / "@me" pin).
+        // Singleton; depends only on already-rooted GameState/Shared
+        // singletons. Consumed by the Survey anchor + the Motherlode feeder.
+        services.AddSingleton<ICharacterPinAnchor>(sp => new CharacterPinAnchor(
+            sp.GetRequiredService<IPlayerPinTracker>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetService<IDiagnosticsSink>()));
+
         services.AddSingleton<MotherlodeMeasurementCoordinator>(sp =>
             new MotherlodeMeasurementCoordinator(
                 sp.GetRequiredService<IMultilaterationSolver>(),
                 sp.GetRequiredService<MotherlodeFlowController>(),
                 sp.GetRequiredService<IPlayerPositionTracker>(),
                 sp.GetRequiredService<IPlayerPinTracker>(),
-                sp.GetService<IDiagnosticsSink>()));
+                sp.GetService<IDiagnosticsSink>(),
+                sp.GetService<ICharacterPinAnchor>()));
 
         // End-of-run report (text + PNG + JSON + share link). Singleton so the
         // latest snapshot survives FSM resets and is available for the wizard's

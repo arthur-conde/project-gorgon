@@ -170,6 +170,42 @@ public class MotherlodeMeasurementCoordinatorTests
     }
 
     [Fact]
+    public void A_character_named_pin_is_an_accepted_preferred_feeder()
+    {
+        // #497: wire a real CharacterPinAnchor so the coordinator tags a
+        // self-labelled pin as the preferred feeder. Exercises the NamedMapPin
+        // branch end-to-end (IsSelfPin is a pure label rule — subscription
+        // order vs the coordinator is irrelevant).
+        var pos = new FakePlayerPositionTracker();
+        var pins = new FakePlayerPinTracker();
+        var chr = new FakeActiveCharacterService();
+        chr.SetName("Arthas");
+        var charPin = new CharacterPinAnchor(pins, chr);
+        var coord = new MotherlodeMeasurementCoordinator(
+            new MultilaterationSolver(), new MotherlodeFlowController(new SessionState()),
+            pos, pins, diag: null, characterPin: charPin);
+
+        (double X, double Z) target = (100, 100);
+        var now = DateTimeOffset.UtcNow;
+        void PinSpot(double x, double z, DateTimeOffset at)
+        {
+            pins.Add(x, z, "Arthas");               // the player's "I am here" pin
+            coord.OnUse(at);
+            coord.OnDistance((int)Math.Round(D(x, z, target.X, target.Z)), at.AddSeconds(2));
+        }
+
+        PinSpot(0, 0, now);
+        PinSpot(400, 0, now.AddSeconds(40));
+        PinSpot(0, 400, now.AddSeconds(80));
+
+        charPin.Current.Should().NotBeNull("the named pin is the declared position");
+        var snap = coord.Snapshot();
+        snap.LocationsWithFix.Should().Be(3);
+        snap.Surveys.Should().ContainSingle()
+            .Which.SolvedWorld.Should().NotBeNull();
+    }
+
+    [Fact]
     public void Reset_clears_all_state()
     {
         var (coord, pos, _) = Build();

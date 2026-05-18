@@ -124,6 +124,13 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty] private DateTimeOffset? _surveyPlayerMeasuredAt;
     [ObservableProperty] private Mithril.GameState.Movement.PlayerPositionSource? _surveyPlayerSource;
     [ObservableProperty] private bool _surveyPlayerIsManual;
+
+    // #497: the manual anchor is sourced from a character-named (or "@me")
+    // map pin's exact world coord rather than a pixel click. Implies
+    // SurveyPlayerIsManual=true. Distinguished so PlayerAnchorStatus can say
+    // "pinned" and so the pin-sourced manual ends with the pin (a genuine
+    // pixel-click manual — IsManual && !IsPinned — keeps its #476 stickiness).
+    [ObservableProperty] private bool _surveyPlayerIsPinned;
     [ObservableProperty] private string _lastLogEvent = "(waiting)";
     [ObservableProperty] private bool _showBearingWedges = true;
     [ObservableProperty] private bool _showRouteLines = true;
