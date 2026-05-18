@@ -1,6 +1,5 @@
 using System.Linq;
 using FluentAssertions;
-using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
 using Silmarillion.Navigation;
 using Silmarillion.ViewModels;
@@ -52,9 +51,6 @@ public sealed class TreasureTabViewModelTests
             Prefix: null, EnvelopeKey: "power_1002"));
         d.AddProfile("Sword", "SwordBoost", "BardMaxHealth");
         d.AddProfile("Chest", "BardMaxHealth");
-        d.AddItemsForProfile("Sword", "IronSword");
-        d.AddRecipesProducing("IronSword",
-            new Recipe { InternalName = "ForgeIronSword", Name = "Forge Iron Sword", Ingredients = [] });
         return d;
     }
 
@@ -95,12 +91,9 @@ public sealed class TreasureTabViewModelTests
         detail.PoolLinks.Should().OnlyContain(l => l.IsNavigable && l.Glyph == Mithril.Shared.Wpf.LinkGlyph.Pool);
         detail.PoolLinks.Should().OnlyContain(l => !l.IsUnconfirmed, "G-d does not apply to authoritative joins");
 
-        // Recipes that can roll it: SwordBoost ∈ Sword pool → IronSword (TSysProfile=Sword)
-        // → ForgeIronSword. One section ⇒ flat popup.
-        detail.HasRecipes.Should().BeTrue();
-        detail.RecipeChipCount.Should().Be(1);
-        detail.RecipesPopup!.IsFlat.Should().BeTrue();
-        detail.RecipesPopup.FlatChips.Single().Reference.Should().Be(EntityRef.Recipe("ForgeIronSword"));
+        // No recipes surface: the recipe↔power leg is deferred to #214 (the only
+        // in-scope chain was near-catalog-granular via the "All" pool). The VM
+        // exposes no recipes member at all — verified at compile time by this file.
 
         // Footer: copyable KEY (= title) + inert ROW (power_NNNN).
         detail.Footer.Ids.Should().HaveCount(2);

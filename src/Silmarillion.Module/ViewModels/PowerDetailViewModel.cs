@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
-using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
@@ -19,22 +18,25 @@ namespace Silmarillion.ViewModels;
 /// affix-derivation); the affix is illustrative Fact-body only (present parts only);
 /// Skill is a Confirmed Link (Degraded only if the Skills surface is unshipped); Slots
 /// are tag-form Set-references; the Tiers ladder is the CF#3 FactTable
-/// (<see cref="TreasureTierLadderVm"/>); Pools are Confirmed <c>layers</c> Links; Recipes
-/// are a Control disclosure → provenance popup of Confirmed Links; the footer is the
-/// G-a KEY (copyable, = title) + ROW (<c>power_NNNN</c>, inert).
+/// (<see cref="TreasureTierLadderVm"/>); Pools are Confirmed <c>layers</c> Links; the
+/// footer is the G-a KEY (copyable, = title) + ROW (<c>power_NNNN</c>, inert).
+/// </para>
+/// <para>
+/// <b>Recipes cross-link is deferred to #214 (verified out-of-scope here).</b> The
+/// #433 brief's Carry-forward #2 bound recipe-side rendering to #214. Verified against
+/// live v470: the only in-scope join (<c>power → ProfilesByPower → Item.TSysProfile →
+/// RecipesByProducedItem</c>) is real but near-catalog-granular — almost every power is
+/// in the catch-all <c>"All"</c> profile, so it resolves to the same enormous
+/// "every enchanted/max-enchanted crafted-gear recipe" set for nearly every power.
+/// Presenting that as power-specific implies a precision the in-scope data lacks
+/// (correctness-adjacent to the roll-resolution ban). The power-precise join lives in
+/// recipe <c>ResultEffects</c> (<c>AddItemTSysPower</c> / <c>ExtractTSysPower</c> /
+/// <c>TSysCraftedEquipment</c>) via <c>ResultEffectsParser</c> — the #214 surface.
+/// No recipes section is rendered until #214 supplies the precise index.
 /// </para>
 /// </summary>
 public sealed class PowerDetailViewModel
 {
-    /// <summary>
-    /// Host-supplied opener for the recipes provenance popup. Defaults to a real window;
-    /// tests swap a capturing delegate so the VM is fully assertable without a window.
-    /// Mirrors <see cref="EffectDetailViewModel.ProvenancePopupOpener"/> — opening this
-    /// way never calls the navigator, so it pushes no back/forward history.
-    /// </summary>
-    public static Action<ProvenancePopupViewModel, ICommand?> ProvenancePopupOpener { get; set; }
-        = ShowProvenancePopupWindow;
-
     public PowerDetailViewModel(
         PowerEntry power,
         IReferenceDataService refData,
@@ -63,21 +65,12 @@ public sealed class PowerDetailViewModel
 
         PoolLinks = BuildPoolLinks(power.InternalName, refData, nameResolver, navigator);
 
-        var (recipeChips, recipeTotal, recipePopup) =
-            BuildRecipesPopup(power.InternalName, refData, nameResolver, navigator);
-        RecipeChipCount = recipeChips;
-        RecipesTotal = recipeTotal;
-        RecipesPopup = recipePopup;
-
         OpenEntityCommand = openEntityCommand;
-        ShowRecipesPopupCommand = new RelayCommand(
-            () => ProvenancePopupOpener(RecipesPopup!, OpenEntityCommand),
-            () => RecipesPopup is not null);
 
-        // G-a footer. KEY = InternalName: a cross-entity reference key (recipes/profiles
-        // join by it) ⇒ copyable. ROW = power_NNNN: storage-only ⇒ inert. The KEY text
-        // duplicates the Fact-title text by design (Q1 consequence) — the strip stays
-        // because it carries the copy affordance the title does not.
+        // G-a footer. KEY = InternalName: a cross-entity reference key (profiles join by
+        // it) ⇒ copyable. ROW = power_NNNN: storage-only ⇒ inert. The KEY text duplicates
+        // the Fact-title text by design (Q1 consequence) — the strip stays because it
+        // carries the copy affordance the title does not.
         var ids = new List<FactFooterId>(2)
         {
             new("KEY", power.InternalName, copyable: true),
@@ -86,9 +79,6 @@ public sealed class PowerDetailViewModel
             ids.Add(new FactFooterId("ROW", power.EnvelopeKey, copyable: false));
         Footer = FactFooterVm.Of(ids.ToArray());
     }
-
-    private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
-        new ProvenancePopupWindow { DataContext = vm, ChipClickCommand = chipClick }.Show();
 
     public PowerEntry Power { get; }
 
@@ -123,19 +113,6 @@ public sealed class PowerDetailViewModel
     /// <c>tsysprofiles</c> join; G-d does not apply).</summary>
     public IReadOnlyList<LinkVm> PoolLinks { get; }
 
-    /// <summary>Distinct recipe count behind the disclosure (the "(~N)" affordance).</summary>
-    public int RecipeChipCount { get; }
-
-    /// <summary>Same as <see cref="RecipeChipCount"/> — kept for the popup headline parity.</summary>
-    public int RecipesTotal { get; }
-
-    /// <summary>The recipes provenance popup (Confirmed Links); null when none roll this power.</summary>
-    public ProvenancePopupViewModel? RecipesPopup { get; }
-
-    /// <summary>True when there is at least one recipe — drives the disclosure visibility.</summary>
-    public bool HasRecipes => RecipesPopup is not null;
-
-    public ICommand ShowRecipesPopupCommand { get; }
     public ICommand? OpenEntityCommand { get; }
 
     /// <summary>G-a footer: copyable KEY (InternalName) + inert ROW (power_NNNN).</summary>
@@ -206,57 +183,5 @@ public sealed class PowerDetailViewModel
                     IsNavigable: navigator.CanOpen(reference));
             })
             .ToList();
-    }
-
-    /// <summary>
-    /// Build the Power→Recipe provenance popup. Chain (every hop an authoritative
-    /// normalized lookup, so Confirmed — Q4): power → profiles containing it
-    /// (<see cref="IReferenceDataService.ProfilesByPower"/>) → items whose
-    /// <c>TSysProfile</c> is one of those (<see cref="IReferenceDataService.ItemsByTSysProfile"/>)
-    /// → recipes producing those items (<see cref="IReferenceDataService.RecipesByProducedItem"/>).
-    /// Single-reason ⇒ one section ⇒ the popup collapses to a flat list (#318 Discipline).
-    /// Materialized once here from the indices directly — no query re-derivation.
-    /// </summary>
-    private static (int Count, int Total, ProvenancePopupViewModel? Popup) BuildRecipesPopup(
-        string powerInternalName,
-        IReferenceDataService refData,
-        IEntityNameResolver resolver,
-        IReferenceNavigator navigator)
-    {
-        if (!refData.ProfilesByPower.TryGetValue(powerInternalName, out var profiles) || profiles.Count == 0)
-            return (0, 0, null);
-
-        var recipeNames = new HashSet<string>(StringComparer.Ordinal);
-        var chips = new List<EntityChipVm>();
-        foreach (var profileName in profiles)
-        {
-            if (!refData.ItemsByTSysProfile.TryGetValue(profileName, out var items)) continue;
-            foreach (var itemName in items)
-            {
-                if (!refData.RecipesByProducedItem.TryGetValue(itemName, out var recipes)) continue;
-                foreach (var recipe in recipes)
-                {
-                    if (string.IsNullOrEmpty(recipe.InternalName)) continue;
-                    if (!recipeNames.Add(recipe.InternalName!)) continue;
-                    var reference = EntityRef.Recipe(recipe.InternalName!);
-                    chips.Add(new EntityChipVm(
-                        DisplayName: resolver.Resolve(reference),
-                        IconId: 0,
-                        Reference: reference,
-                        IsNavigable: navigator.CanOpen(reference)));
-                }
-            }
-        }
-
-        if (chips.Count == 0) return (0, 0, null);
-
-        chips.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
-        var popup = new ProvenancePopupViewModel(
-            title: $"Recipes that can roll {powerInternalName}",
-            sections: new List<ProvenancePopupSection>
-            {
-                new("Recipes that can roll this power", chips),
-            });
-        return (chips.Count, popup.TotalCount, popup);
     }
 }

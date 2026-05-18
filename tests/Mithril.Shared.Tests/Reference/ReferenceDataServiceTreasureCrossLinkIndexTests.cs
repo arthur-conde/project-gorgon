@@ -9,10 +9,10 @@ namespace Mithril.Shared.Tests.Reference;
 /// <summary>
 /// #435: verifies the Treasure-System data layer — <see cref="PowerEntry.Prefix"/> /
 /// <see cref="PowerEntry.EnvelopeKey"/> capture and the
-/// <see cref="IReferenceDataService.ProfilesByPower"/> /
-/// <see cref="IReferenceDataService.ItemsByTSysProfile"/> reverse-view indices — built
-/// against real tsysclientinfo / tsysprofiles / items fixtures through the bundled-load
-/// plumbing (canonical pattern: <see cref="ReferenceDataServiceRecipeCrossLinkIndexTests"/>).
+/// <see cref="IReferenceDataService.ProfilesByPower"/> reverse-view index — built
+/// against real tsysclientinfo / tsysprofiles fixtures through the bundled-load plumbing
+/// (canonical pattern: <see cref="ReferenceDataServiceRecipeCrossLinkIndexTests"/>). The
+/// Item.TSysProfile / recipe legs were deferred to #214.
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
@@ -46,7 +46,7 @@ public sealed class ReferenceDataServiceTreasureCrossLinkIndexTests : IDisposabl
     }
 
     [Fact]
-    public void Power_CapturesPrefixAndEnvelopeKey_AndProfileReverseIndicesBuild()
+    public void Power_CapturesPrefixAndEnvelopeKey_AndProfilesByPowerBuilds()
     {
         Write("tsysclientinfo", """
         {
@@ -74,20 +74,6 @@ public sealed class ReferenceDataServiceTreasureCrossLinkIndexTests : IDisposabl
         Write("tsysprofiles", """
         { "Sword": ["SwordBoost", "BardMaxHealth"], "Chest": ["BardMaxHealth"] }
         """);
-        Write("items", """
-        {
-          "item_1": { "Name": "Iron Sword", "InternalName": "IronSword", "TSysProfile": "Sword" },
-          "item_2": { "Name": "Plain Boots", "InternalName": "PlainBoots" }
-        }
-        """);
-        Write("recipes", """
-        {
-          "recipe_1": {
-            "Name": "Forge Iron Sword", "InternalName": "ForgeIronSword", "Skill": "Blacksmithing",
-            "Ingredients": [], "ResultItems": [ { "ItemCode": 1, "StackSize": 1 } ]
-          }
-        }
-        """);
 
         var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), bundledDir: _bundledDir);
 
@@ -102,18 +88,11 @@ public sealed class ReferenceDataServiceTreasureCrossLinkIndexTests : IDisposabl
         svc.Powers["BardMaxHealth"].Prefix.Should().BeNull();
 
         // ProfilesByPower = inverse of tsysprofiles (authoritative join → Confirmed edge).
+        // This is the only Treasure cross-link index #435 ships; the Item.TSysProfile /
+        // recipe legs were deferred to #214 (the in-scope chain was near-catalog-granular
+        // via the "All" pool — see PowerDetailViewModel remarks).
         svc.ProfilesByPower["SwordBoost"].Should().BeEquivalentTo(new[] { "Sword" });
         svc.ProfilesByPower["BardMaxHealth"].Should().BeEquivalentTo(new[] { "Sword", "Chest" });
-
-        // ItemsByTSysProfile = items whose TSysProfile names the profile.
-        svc.ItemsByTSysProfile.Should().ContainKey("Sword");
-        svc.ItemsByTSysProfile["Sword"].Should().Contain("IronSword");
-        svc.ItemsByTSysProfile.Should().NotContainKey("Chest", "no item declares TSysProfile=Chest");
-
-        // Power → Recipe provenance chain end-to-end: SwordBoost ∈ Sword pool;
-        // IronSword.TSysProfile=Sword; ForgeIronSword produces IronSword.
-        svc.RecipesByProducedItem["IronSword"].Should().ContainSingle()
-            .Which.InternalName.Should().Be("ForgeIronSword");
     }
 
     private sealed class ThrowingHandler(string message) : HttpMessageHandler

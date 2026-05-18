@@ -385,21 +385,10 @@ public interface IReferenceDataService
     /// Treasure-tab Power-detail "Appears in pools" Confirmed Links (#435). The
     /// <c>tsysprofiles</c> join is authoritative/normalized, so this reverse-view is a
     /// <em>Confirmed</em> edge — G-d Unconfirmed does not apply (precedent on #404). Built
-    /// whenever <c>tsysprofiles.json</c> or <c>tsysclientinfo.json</c> reloads. Defaults to
-    /// empty so test fakes don't need to opt in.
+    /// whenever <c>tsysprofiles.json</c> reloads. Defaults to empty so test fakes don't
+    /// need to opt in.
     /// </summary>
     IReadOnlyDictionary<string, IReadOnlyList<string>> ProfilesByPower => EmptyStringListIndex;
-
-    /// <summary>
-    /// <c>tsysprofiles</c> profile name → the item <c>InternalName</c>s whose
-    /// <see cref="Item.TSysProfile"/> equals it. The forward half of the Power→Recipe
-    /// provenance chain (<c>power → profile → item.TSysProfile → produced-by recipe</c>),
-    /// consumed lazily by the Treasure Power-detail recipes popup against
-    /// <see cref="RecipesByProducedItem"/> (#435). Built whenever <c>items.json</c> /
-    /// <c>tsysprofiles.json</c> / <c>tsysclientinfo.json</c> reloads. Defaults to empty so
-    /// test fakes don't need to opt in.
-    /// </summary>
-    IReadOnlyDictionary<string, IReadOnlyList<string>> ItemsByTSysProfile => EmptyStringListIndex;
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptyStringListIndex
         = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);

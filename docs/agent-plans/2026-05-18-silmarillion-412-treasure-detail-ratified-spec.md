@@ -13,6 +13,37 @@ Claude Design's V1 passed the gate clean, owner-ratified 2026-05-17.
 > calls — cite [`silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md)
 > (G3 + G-d, binding) and this doc.
 
+## Implementation amendment — Recipes leg deferred to #214 (2026-05-18)
+
+The ratified design's `Power → Recipes` chain (`recipe → template.TSysProfile →
+profile → power`, rows marked **Recipes disclosure** / **Power → Recipes**
+below) was **verified data-invalid for the in-scope index** during the #435
+build and is **deferred to #214**:
+
+- `Item.TSysProfile` *is* populated and *does* match `tsysprofiles` keys
+  (`Sword`/`NewbSword`/`Dagger`/… verified v470) — the **Pools** links are
+  real and shipped.
+- But the recipe hop is not: `RecipesByProducedItem` only indexes recipes by
+  `ResultItems`/`ProtoResultItems`. TSysProfile-bearing items that *are*
+  recipe-produced are almost all `Crafted*` gear carrying the **catch-all
+  `"All"` profile** (which contains ≈ the entire power catalogue, `SwordBoost`
+  included). So the chain resolves to the *same* enormous
+  "every enchanted/max-enchanted crafted-gear recipe" set for nearly every
+  power — presenting it as power-specific implies precision the in-scope data
+  lacks (correctness-adjacent to the roll-resolution ban). Loot/Stock
+  TSysProfile items are not recipe-produced at all.
+- The power-precise join is recipe `ResultEffects`
+  (`AddItemTSysPower` / `ExtractTSysPower` / `TSysCraftedEquipment`) via
+  `ResultEffectsParser` — the **#214** surface (#433 Carry-forward #2 bound
+  recipe-side rendering to #214).
+
+**Net for #435:** no Recipes section is rendered; no `ItemsByTSysProfile`
+index ships; only `ProfilesByPower` (Pools) ships. The **Recipes disclosure**
+spec-card row and the **Power → Recipes** cross-link row below are retained as
+the *ratified intent* but are explicitly **NOT built here** — they are #214's.
+Q4/Q5 remain ratified as the design contract for when #214 supplies the
+precise index.
+
 ## Data shapes (verified live v470, 2026-05-18)
 
 - `tsysclientinfo` — 1946 entries, keyed `power_NNNN`. Fields are exactly

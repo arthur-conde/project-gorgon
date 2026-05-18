@@ -21,8 +21,6 @@ public sealed class TreasureFakeReferenceData : IReferenceDataService
     private readonly Dictionary<string, PowerEntry> _powers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<string>> _profiles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<string>> _profilesByPower = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IReadOnlyList<string>> _itemsByProfile = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IReadOnlyList<Recipe>> _recipesByItem = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
 
     public void AddPower(PowerEntry power) => _powers[power.InternalName] = power;
@@ -45,20 +43,13 @@ public sealed class TreasureFakeReferenceData : IReferenceDataService
         }
     }
 
-    public void AddItemsForProfile(string profile, params string[] itemInternalNames) =>
-        _itemsByProfile[profile] = itemInternalNames;
-
-    public void AddRecipesProducing(string itemInternalName, params Recipe[] recipes) =>
-        _recipesByItem[itemInternalName] = recipes;
-
     public void RaiseFileUpdated(string key) => FileUpdated?.Invoke(this, key);
 
-    // ── Treasure surface ──────────────────────────────────────────────────────
+    // ── Treasure surface (#435: Pools = ProfilesByPower; the recipe leg was
+    //     deferred to #214, so no ItemsByTSysProfile / RecipesByProducedItem here). ──
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> ProfilesByPower => _profilesByPower;
-    public IReadOnlyDictionary<string, IReadOnlyList<string>> ItemsByTSysProfile => _itemsByProfile;
-    public IReadOnlyDictionary<string, IReadOnlyList<Recipe>> RecipesByProducedItem => _recipesByItem;
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
 
     // ── Required interface members (minimal, mirrors AbilityKindTargetTests' fake) ──

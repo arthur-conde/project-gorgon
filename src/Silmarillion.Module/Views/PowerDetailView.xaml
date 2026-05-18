@@ -4,7 +4,6 @@
              xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
              xmlns:local="clr-namespace:Silmarillion.Views"
              xmlns:vm="clr-namespace:Silmarillion.ViewModels"
-             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -209,29 +208,14 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- 7. Recipes that can roll this power — Control disclosure → popup
-                     of Confirmed Links (Q5, per itemuses/#318). -->
-                <StackPanel Margin="0,0,0,12"
-                            Visibility="{Binding HasRecipes, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Recipes that can roll this power"
-                               Style="{StaticResource StructureSectionLabelStyle}"/>
-                    <Button Command="{Binding ShowRecipesPopupCommand}"
-                            HorizontalAlignment="Left" Margin="0,2,0,0"
-                            Background="#FF2A2A2A" BorderBrush="#33FFFFFF" BorderThickness="1"
-                            Foreground="#DDFFFFFF" Padding="10,5" Cursor="Hand">
-                        <StackPanel Orientation="Horizontal">
-                            <icon:PackIconLucide Kind="List" Width="13" Height="13"
-                                                 VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="See recipes" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding RecipeChipCount, StringFormat=' ({0})'}"
-                                       Foreground="#88FFFFFF" VerticalAlignment="Center"
-                                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                                       FontSize="{DynamicResource AppFontSizeSmall}"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                <!-- Recipes cross-link is deferred to #214 (verified out of scope):
+                     the only in-scope join is near-catalog-granular via the "All"
+                     pool, so it cannot honestly be presented as power-specific. The
+                     power-precise join is recipe ResultEffects (AddItemTSysPower /
+                     ExtractTSysPower / TSysCraftedEquipment) via ResultEffectsParser —
+                     the #214 surface. No recipes section is rendered until #214. -->
 
-                <!-- 8. G-a footer: copyable KEY (= title text, kept deliberately) +
+                <!-- G-a footer: copyable KEY (= title text, kept deliberately) +
                      inert ROW (power_NNNN). -->
                 <c:FactFooter DataContext="{Binding Footer}"/>
             </StackPanel>
