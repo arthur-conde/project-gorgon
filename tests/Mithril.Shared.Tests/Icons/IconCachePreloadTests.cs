@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Recipes;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Windows.Media.Imaging;
 using FluentAssertions;
 using Mithril.Shared.Icons;
 using Mithril.Shared.Reference;
@@ -108,6 +109,44 @@ public sealed class IconCachePreloadTests : IDisposable
         // First report is (0, 3), final is (3, 3); intermediate counts can arrive in any order
         seen.First().Should().Be((0, 3));
         seen.Last().Should().Be((3, 3));
+    }
+
+    [Fact]
+    public void GetOrLoadIconDeferred_does_not_block_the_caller_on_a_disk_decode()
+    {
+        // Icon present on disk. The synchronous GetOrLoadIcon would decode it
+        // inline; the deferred variant must hand back the placeholder instead
+        // and resolve off-thread.
+        File.WriteAllBytes(Path.Combine(_cacheDir, "icon_77.png"), MakePngBytes());
+        var svc = CreateService();
+
+        var placeholder = svc.GetOrLoadIconDeferred(0); // id <= 0 ⇒ shared placeholder
+        var first = svc.GetOrLoadIconDeferred(77);
+
+        first.Should().BeSameAs(placeholder,
+            "the deferred path must not synchronously decode an on-disk icon — it returns the placeholder and resolves off-thread");
+    }
+
+    [Fact]
+    public async Task GetOrLoadIconDeferred_resolves_an_on_disk_icon_into_the_memory_cache_off_thread()
+    {
+        File.WriteAllBytes(Path.Combine(_cacheDir, "icon_88.png"), MakePngBytes());
+        var svc = CreateService();
+
+        var placeholder = svc.GetOrLoadIconDeferred(0);
+        svc.GetOrLoadIconDeferred(88); // queues the background decode
+
+        BitmapImage? resolved = null;
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            var cur = svc.GetOrLoadIconDeferred(88);
+            if (!ReferenceEquals(cur, placeholder)) { resolved = cur; break; }
+            await Task.Delay(25);
+        }
+
+        resolved.Should().NotBeNull("the background task should have decoded the on-disk PNG into the memory cache");
+        resolved!.IsFrozen.Should().BeTrue("an image crossing back to the UI thread must be frozen");
     }
 
     private static HttpResponseMessage MakeOkPng() => new(HttpStatusCode.OK)

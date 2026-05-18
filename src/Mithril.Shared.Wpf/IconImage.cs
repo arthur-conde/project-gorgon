@@ -75,7 +75,11 @@ public sealed class IconImage : Image
             return;
         }
 
-        Source = _cache.GetOrLoadIcon(IconId);
+        // Deferred: never block the dispatcher on a per-icon disk decode. A
+        // detail view (e.g. an NPC that teaches 60 recipes + sells 37 items)
+        // realises ~100 of these at once; the synchronous path here was the
+        // visible render stall. IconReady re-pulls when each icon resolves.
+        Source = _cache.GetOrLoadIconDeferred(IconId);
         Visibility = Visibility.Visible;
     }
 }
