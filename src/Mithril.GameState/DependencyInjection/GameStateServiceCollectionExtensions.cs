@@ -5,6 +5,8 @@ using Mithril.GameState.Movement;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Sessions;
+using Mithril.GameState.Skills;
+using Mithril.GameState.Skills.Parsing;
 using Mithril.Shared.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -41,6 +43,15 @@ public static class GameStateServiceCollectionExtensions
         // one tracker, registered once here — consumers inject the tracker.
         services.AddSingleton<AreaTransitionParser>();
         services.AddSingleton<PlayerAreaTracker>();
+
+        // Shared live skill state from Player.log (ProcessLoadSkills /
+        // ProcessUpdateSkill) — no character re-export required. Single parser,
+        // single tracker; consumers inject IPlayerSkillState. See issue #462.
+        services.AddSingleton<SkillLogParser>();
+        services
+            .AddSingleton<PlayerSkillStateService>()
+            .AddSingleton<IPlayerSkillState>(sp => sp.GetRequiredService<PlayerSkillStateService>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerSkillStateService>());
 
         // Player position is shared live game-state (Palantir debug surface,
         // future overlay/positioning consumers). Self-feeding hosted service —

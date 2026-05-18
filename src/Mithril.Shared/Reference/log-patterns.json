@@ -315,6 +315,42 @@
         { "name": "name", "group": "name", "type": "string" }
       ]
     },
+    "shared.SkillLogParser.LoadSkillsRx": {
+      "pattern": "LocalPlayer: ProcessLoadSkills\\(",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "LoadSkillsRx" },
+      "eventType": "shared.SkillsSnapshot",
+      "kind": "marker",
+      "notes": "Guard for the full skill-table dump (login / zone-change). The per-skill rows are extracted by SkillTupleRx applied over the whole line; this entry only discriminates the line. Re-fires on zone transitions, which is what lets PlayerSkillStateService self-heal after a mid-session start. See issue #462.",
+      "fields": []
+    },
+    "shared.SkillLogParser.UpdateSkillRx": {
+      "pattern": "LocalPlayer: ProcessUpdateSkill\\(\\{",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "UpdateSkillRx" },
+      "eventType": "shared.SkillProgressUpdate",
+      "kind": "marker",
+      "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx; the trailing positionals (announce bool, xp delta, 0, 0) are intentionally not parsed (semantics verification-owed, see #462). Independent of samwise.GardenLogParser.GardeningXpRx — both may match a Gardening update; no ordering dependency.",
+      "fields": []
+    },
+    "shared.SkillLogParser.SkillTupleRx": {
+      "pattern": "\\{type=(?<type>\\w+),raw=(?<raw>\\d+),bonus=(?<bonus>\\d+),xp=(?<xp>\\d+),tnl=(?<tnl>\\d+),max=(?<max>\\d+)\\}",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "SkillTupleRx" },
+      "eventType": "shared.SkillProgressTuple",
+      "notes": "The shared {type=,raw=,bonus=,xp=,tnl=,max=} struct grammar emitted by both ProcessLoadSkills and ProcessUpdateSkill. Applied via Matches() over the whole line: one match for an update, the full table (~125) for a snapshot. raw=Level, bonus=BonusLevels, xp=XpTowardNextLevel, tnl=XpNeededForNextLevel, max=MaxLevel (0 = non-trainable pseudo-skill; raw>=max = capped, tnl stale).",
+      "fields": [
+        { "name": "type", "group": "type", "type": "string" },
+        { "name": "raw", "group": "raw", "type": "int" },
+        { "name": "bonus", "group": "bonus", "type": "int" },
+        { "name": "xp", "group": "xp", "type": "int" },
+        { "name": "tnl", "group": "tnl", "type": "int" },
+        { "name": "max", "group": "max", "type": "int" }
+      ]
+    },
     "shared.ActiveCharacterLogSynchronizer.AddPlayerRx": {
       "pattern": "LocalPlayer:\\s*ProcessAddPlayer\\([^,]+,\\s*[^,]+,\\s*\"[^\"]*\",\\s*\"([^\"]+)\"",
       "source": "player",
