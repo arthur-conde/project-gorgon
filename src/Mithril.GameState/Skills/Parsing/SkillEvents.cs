@@ -71,17 +71,21 @@ public sealed record SkillsSnapshotEvent(DateTime Timestamp, IReadOnlyList<Skill
 ///
 /// <para><b>Why we trust <see cref="XpGained"/>.</b> It was triangulated
 /// against the authoritative chat <c>[Status] You earned N XP in &lt;Skill&gt;</c>
-/// line for the same events across the Player.log(UTC)/ChatLogs(local) offset —
-/// e.g. Endurance 26, Psychology 577, Anatomy_Bears 48 all matched exactly. So
-/// it is authoritative <em>within a level</em>. The behaviour on the level-up /
-/// cap-reaching tick is still unobserved (every captured sample had trailing
-/// <c>0, 0</c> and no level-up): treat <see cref="XpGained"/> as best-effort
-/// across a level/cap boundary. This is low-impact — capped skills then go
-/// silent (PG emits no further <c>ProcessUpdateSkill</c> for them) and the next
-/// <c>ProcessLoadSkills</c> reasserts absolute state, so any cross-boundary
-/// drift self-heals. The remaining two positionals (announce bool, two zeros)
-/// are still not parsed; the bool's batch-vs-discrete meaning is informational
-/// only.</para>
+/// line across the Player.log(UTC)/ChatLogs(local) offset — Endurance 26,
+/// Psychology 577, Anatomy_Bears 48 all matched exactly. A live level-up
+/// capture then confirmed it holds <em>across the rollover</em>: Tailoring
+/// <c>raw=9,xp=199,tnl=210, …160</c> then <c>raw=10,xp=149,tnl=420, …160</c>,
+/// with chat "earned 160 XP and reached level 12 in Tailoring" — i.e.
+/// <see cref="XpGained"/> is the <b>gross</b> XP gained that tick (matching
+/// chat), the engine does <em>not</em> split it pre/post-level, so a consumer
+/// summing it stays correct through level-ups. The trailing
+/// <c>0, 0</c> positionals were observed to stay <c>0, 0</c> <em>through</em> a
+/// level-up — they are <b>not</b> a levels-gained / skill-up count; treat as
+/// reserved. The announce bool's batch-vs-discrete meaning is informational
+/// only and still not parsed. A level-up is conveyed solely by <c>raw</c>
+/// incrementing on the next event (PG emits no dedicated level-up line);
+/// the chat "reached level N" uses the <em>effective</em> level
+/// (<c>raw + bonus</c>), whereas <c>raw</c> here is the base.</para>
 /// </summary>
 /// <param name="Timestamp">The source log line's timestamp (UTC).</param>
 /// <param name="Skill">The single skill record from the line's struct.</param>

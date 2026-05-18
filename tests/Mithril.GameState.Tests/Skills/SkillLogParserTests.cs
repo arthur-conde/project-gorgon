@@ -86,6 +86,21 @@ public sealed class SkillLogParserTests
     }
 
     [Fact]
+    public void ProcessUpdateSkill_level_up_tick_parses_gross_arg3_and_post_rollover_struct()
+    {
+        // Real captured Tailoring level-up (raw 9→10). arg3 is the GROSS gain
+        // (160, = chat "earned 160 XP and reached level 12"), NOT split across
+        // the rollover; struct xp/tnl are the post-level-up values.
+        var line = "[12:39:02] LocalPlayer: ProcessUpdateSkill(" +
+                   "{type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)";
+        var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
+        upd.Skill.Level.Should().Be(10);
+        upd.Skill.XpTowardNextLevel.Should().Be(149); // overflow into the new level
+        upd.Skill.XpNeededForNextLevel.Should().Be(420); // new level's threshold
+        upd.XpGained.Should().Be(160); // gross, chat-matched, not pre/post split
+    }
+
+    [Fact]
     public void ProcessUpdateSkill_with_no_tail_defaults_XpGained_to_zero()
     {
         // Grammar drift / truncation: struct is still authoritative for state.

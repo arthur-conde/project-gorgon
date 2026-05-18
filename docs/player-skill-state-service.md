@@ -48,8 +48,36 @@ Three exact matches across the offset. `arg3` is keyed by **internal name**
 (`type=Anatomy_Bears`) whereas the chat line is display-named ("Bear and
 Bugbear Anatomy") — so `Player.log` is the *better* ingestion source (no
 fragile display→key reverse lookup); chat is the verification oracle. The
-`<bool>` (announce / batch-vs-discrete) and the trailing `0, 0` are still not
-parsed.
+`<bool>` (announce / batch-vs-discrete) and the trailing `0, 0` are not parsed.
+
+### Live level-up capture (verification resolved)
+
+A captured Tailoring level-up:
+
+```
+[12:38:57] {type=Tailoring,raw=9, bonus=2,xp=199,tnl=210,max=50}, True, 160, 0, 0
+           chat: "You earned 160 XP in Tailoring."
+[12:39:02] {type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0
+           chat: "You earned 160 XP and reached level 12 in Tailoring!"
+```
+
+Settles the open questions:
+
+- **`arg3` is the *gross* XP gained, even across the rollover.** Tick 2
+  crossed the boundary and `arg3 = 160` = the chat value; the engine does
+  **not** split it pre/post-level. Summing `XpGained` stays correct through
+  level-ups (arithmetic: 39 → +160 = 199 (<210) → +160 = 359, overflow
+  359−210 = 149 into the new level, new `tnl` 420, `raw` 9→10). So
+  `XpGained` is authoritative across a single-level rollover, not
+  "best-effort."
+- **`args 4,5` stay `0, 0` through a level-up** — not a levels-gained /
+  skill-up count. Reserved/unused; no longer "verification owed."
+- **No dedicated level-up line in `Player.log`.** The level-up is conveyed
+  *only* by `raw` incrementing on the next `ProcessUpdateSkill` — exactly what
+  `SkillChange.Previous.Level < Current.Level` detects.
+- **Chat "reached level 12" = `raw(10) + bonus(2)`** (effective level);
+  `Player.log` `raw` is the base. Reconfirms keeping `Level`/`BonusLevels`
+  separate.
 
 ### Field mapping (1:1, raw parse → projection)
 
@@ -163,15 +191,13 @@ lock — do non-trivial work off-thread.
 
 ## Verification owed
 
-- **`XpGained` (`arg3`) at a level-up / cap-reaching tick.** `arg3` itself is
-  chat-corroborated within a level (see the triangulation table above), so it
-  is *not* wholesale unverified. What remains unobserved is its value on the
-  exact tick a skill levels or caps (every captured sample had trailing
-  `0, 0`, no level-up): treat `XpGained` as authoritative within a level,
-  best-effort across a boundary. Low impact — capped skills then go silent and
-  the next `ProcessLoadSkills` reasserts absolute state, so any cross-boundary
-  `XpGained`-sum drift self-heals. The `<bool>` and trailing `0, 0` remain
-  unparsed (informational only).
+- **`XpGained` (`arg3`) / trailing positionals — RESOLVED** by the live
+  level-up capture above. `arg3` is the gross XP gained, chat-matched, correct
+  across a single-level rollover; `args 4,5` stay `0, 0` through a level-up
+  (not levels-gained). Remaining unknown is narrow and low-impact: a
+  multi-level single tick (raw jumping by >1) is unobserved — the model still
+  holds (`raw` is taken from the struct, `XpGained` is the gross total), only
+  the per-level decomposition (which no consumer needs) is unverified.
 - **`ProcessLoadSkills` trigger.** Confirmed at login + several mid-session
   (zone/relog) fires; whether it fires on *every* zone change is unconfirmed.
   The wholesale-replace design is robust either way (worst case: a slightly

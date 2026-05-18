@@ -255,6 +255,39 @@ public sealed class PlayerSkillStateServiceTests
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
+    [Fact]
+    public async Task Real_Tailoring_level_up_emits_level_up_SkillChange_with_gross_XpGained()
+    {
+        // The captured Tailoring level-up, fed through the service. Asserts the
+        // level-up is detectable purely from raw incrementing (no dedicated
+        // log line) and XpGained is the gross 160 (chat-matched), not split.
+        var stream = new ScriptedStream(new RawLogLine(Ts(12, 38, 57),
+            "[12:38:57] LocalPlayer: ProcessUpdateSkill({type=Tailoring,raw=9,bonus=2,xp=199,tnl=210,max=50}, True, 160, 0, 0)"));
+        var svc = NewService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await svc.StartAsync(cts.Token);
+        await stream.WaitForDrainAsync(cts.Token);
+
+        var changes = new List<SkillChange>();
+        using (svc.SubscribeChanges(changes.Add))
+        {
+            stream.Push("[12:39:02] LocalPlayer: ProcessUpdateSkill({type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)");
+            await stream.WaitForDrainAsync(cts.Token);
+        }
+
+        changes.Should().ContainSingle();
+        var c = changes[0];
+        c.Kind.Should().Be(SkillChangeKind.Delta);
+        c.SkillKey.Should().Be("Tailoring");
+        c.Previous!.Value.Level.Should().Be(9);
+        c.Current.Level.Should().Be(10);
+        (c.Previous!.Value.Level < c.Current.Level).Should().BeTrue(); // level-up signal
+        c.Current.XpTowardNextLevel.Should().Be(149);
+        c.XpGained.Should().Be(160); // gross gain across the rollover
+
+        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+    }
+
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
 
     private static async Task RunUntilDrainedAsync(PlayerSkillStateService svc, ScriptedStream stream)
