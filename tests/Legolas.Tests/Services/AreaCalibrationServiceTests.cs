@@ -127,10 +127,11 @@ public class AreaCalibrationServiceTests
             (new WorldCoord(0, 0, 100), new PixelPoint(0, -100)), // north → up
         };
 
-        var cal = svc.CalibrateCurrentArea(placements);
+        var cal = svc.CalibrateCurrentArea(placements, calibrationZoom: 0.39);
 
         cal.Should().NotBeNull();
         cal!.Scale.Should().BeApproximately(1.0, 1e-6);
+        cal.CalibrationZoom.Should().BeApproximately(0.39, 1e-9); // stamped + persisted
         settings.AreaCalibrations.Should().ContainKey("AreaEltibule");
         settings.AreaCalibrations["AreaEltibule"].Should().Be(cal);
         proj.LastApplied.Should().Be(cal);

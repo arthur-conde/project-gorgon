@@ -50,6 +50,22 @@
                             </ComboBox.ItemTemplate>
                         </ComboBox>
 
+                        <!-- In-game map zoom (read off the game UI — Mithril
+                             can't see it). Stamped onto the calibration at
+                             Solve; survey projections scale by
+                             currentZoom/calibrationZoom so a calibration stays
+                             correct across zoom changes. -->
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <TextBlock Text="Map zoom" Foreground="#FF8FA6BD"
+                                       FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" />
+                            <TextBox Width="70" HorizontalAlignment="Left"
+                                     Background="#FF12161B" Foreground="#FFE0E6EC"
+                                     BorderBrush="#FF2C3540"
+                                     ToolTip="The in-game map's zoom value. Set this to match the game before Solve and before/while verifying."
+                                     Text="{Binding MapZoom, Mode=TwoWay, StringFormat=0.###, UpdateSourceTrigger=LostFocus}" />
+                        </DockPanel>
+
                         <!-- Why the last click did nothing (amber). Empty when
                              the click placed a point. -->
                         <TextBlock DockPanel.Dock="Top" Text="{Binding ClickWarning}"

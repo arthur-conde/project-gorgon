@@ -118,7 +118,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         $"sel={SelectedReference?.Name ?? "-"}  pins={Placements.Count}  " +
         $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
         $"you={(PlayerPin is { } pp ? $"({pp.X:0},{pp.Y:0}){(pp.IsSelected ? "*" : "")}" : "-")}  " +
-        $"surveys={SurveyPins.Count}  ghosts={GhostPins.Count}";
+        $"surveys={SurveyPins.Count}  ghosts={GhostPins.Count}  " +
+        $"mapZoom={MapZoom:0.###}  calZoom={_service.CurrentCalibration?.CalibrationZoom.ToString("0.###") ?? "-"}";
 
     private void RaiseDebug()
     {
@@ -209,6 +210,18 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     [ObservableProperty] private string _instruction =
         "Pick an area, place ≥2 landmark/NPC references, Solve. Then Set player position and fire a survey to verify.";
     [ObservableProperty] private string? _resultText;
+
+    /// <summary>The in-game map zoom the user reads off the game UI (Mithril
+    /// can't see it). Stamped onto the calibration at Solve; survey projections
+    /// scale by currentMapZoom / calibration.CalibrationZoom so a calibration
+    /// stays correct when you change zoom. 1.0 default = no-op until set.</summary>
+    [ObservableProperty] private double _mapZoom = 1.0;
+
+    partial void OnMapZoomChanged(double value)
+    {
+        ReprojectSurveyPins(); // existing pins re-scale to the new zoom live
+        RaiseDebug();
+    }
 
     partial void OnSelectedAreaChanged(AreaEntry? value)
     {
@@ -521,7 +534,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             return;
         }
 
-        var projected = Project(c, pp.Pixel, obs.Offset);
+        var projected = ProjectSurvey(c, pp.Pixel, obs.Offset);
         var sp = new SurveyPin(obs.Name, obs.Offset, pp.Pixel, projected);
         ClampSurvey(sp);
         SurveyPins.Add(sp);
@@ -557,14 +570,31 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         s.DisplayY = Math.Clamp(px.Y, inset, _viewportH - inset);
     }
 
-    /// <summary>Same math as <c>CoordinateProjector.Project</c>.</summary>
+    /// <summary>Raw projection at the calibration's own zoom (used by ghosts —
+    /// they're absolute world→pixel via the cal-zoom origin, so only valid at
+    /// the calibration zoom anyway).</summary>
     private static PixelPoint Project(AreaCalibration c, PixelPoint origin, MetreOffset off)
+        => ProjectAtScale(c, origin, off, c.Scale);
+
+    /// <summary>Survey projection from the (current-zoom) player pixel: only
+    /// <see cref="AreaCalibration.Scale"/> needs the zoom factor because the
+    /// origin is the player pin the user placed at the CURRENT zoom (no stored
+    /// origin to also rescale) — so this is exact across zooms.</summary>
+    private PixelPoint ProjectSurvey(AreaCalibration c, PixelPoint origin, MetreOffset off)
+        => ProjectAtScale(c, origin, off, c.Scale * ZoomFactor(c));
+
+    /// <summary><c>currentZoom / calibrationZoom</c>, guarded. 1.0 when either
+    /// is unset (default) → behaviour unchanged until the field is used.</summary>
+    public double ZoomFactor(AreaCalibration c) =>
+        MapZoom > 1e-6 && c.CalibrationZoom > 1e-6 ? MapZoom / c.CalibrationZoom : 1.0;
+
+    private static PixelPoint ProjectAtScale(AreaCalibration c, PixelPoint origin, MetreOffset off, double scale)
     {
         var cos = Math.Cos(c.RotationRadians);
         var sin = Math.Sin(c.RotationRadians);
         var rotE = off.East * cos + off.North * sin;
         var rotN = -off.East * sin + off.North * cos;
-        return new PixelPoint(origin.X + c.Scale * rotE, origin.Y - c.Scale * rotN);
+        return new PixelPoint(origin.X + scale * rotE, origin.Y - scale * rotN);
     }
 
     /// <summary>Re-project every survey pin from the (moved) player pin. The
@@ -577,7 +607,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         foreach (var s in SurveyPins)
         {
             s.OriginPixel = pp.Pixel;
-            s.ProjectedPixel = Project(c, pp.Pixel, s.Offset);
+            s.ProjectedPixel = ProjectSurvey(c, pp.Pixel, s.Offset);
             if (!s.Corrected) s.OverlayPixel = s.ProjectedPixel;
             ClampSurvey(s);
         }
@@ -610,7 +640,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     private void Solve()
     {
         var pairs = Placements.Select(p => (p.Reference.World, p.Pixel)).ToList();
-        var calibration = _service.CalibrateCurrentArea(pairs);
+        var calibration = _service.CalibrateCurrentArea(pairs, MapZoom);
         if (calibration is null)
         {
             ResultText = "Couldn't solve — need ≥2 references at meaningfully different spots.";

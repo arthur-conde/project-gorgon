@@ -57,7 +57,9 @@ public interface IAreaCalibrationService
     /// calibration, or null if it couldn't be solved (no current area, &lt;2
     /// non-degenerate references).
     /// </summary>
-    AreaCalibration? CalibrateCurrentArea(IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements);
+    AreaCalibration? CalibrateCurrentArea(
+        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        double calibrationZoom = 1.0);
 
     /// <summary>Drop the current area's persisted calibration (forces a recalibrate).</summary>
     void ClearCurrentAreaCalibration();
@@ -153,7 +155,9 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public AreaCalibration? CalibrateCurrentArea(IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements)
+    public AreaCalibration? CalibrateCurrentArea(
+        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        double calibrationZoom = 1.0)
     {
         if (CurrentAreaKey is not { } key || placements is null || placements.Count < 2)
             return null;
@@ -162,8 +166,15 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel))
             .ToList();
 
-        var calibration = LandmarkCalibrationSolver.Solve(refs);
-        if (calibration is null) return null;
+        var solved = LandmarkCalibrationSolver.Solve(refs);
+        if (solved is null) return null;
+        // Stamp the zoom the user solved at (solver is zoom-agnostic — it just
+        // fits the clicked pixels). > 0 guard so a bad value can't poison the
+        // later currentZoom/CalibrationZoom division.
+        var calibration = solved with
+        {
+            CalibrationZoom = calibrationZoom > 1e-6 ? calibrationZoom : 1.0,
+        };
 
         _settings.AreaCalibrations[key] = calibration;
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.

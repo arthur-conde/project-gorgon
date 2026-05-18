@@ -33,6 +33,17 @@ public sealed record AreaCalibration(
     public bool MirrorNorth { get; init; }
 
     /// <summary>
+    /// The in-game map zoom the user was at when this was solved (read off the
+    /// game UI — Mithril can't see it). <see cref="Scale"/> is px-per-unit at
+    /// THIS zoom; pixels-per-metre scales linearly with zoom, so a projection
+    /// at a different current zoom must be scaled by
+    /// <c>currentZoom / CalibrationZoom</c>. Additive — old saves / unset
+    /// default to <c>1.0</c>, which (with a current-zoom of 1.0) is a no-op, so
+    /// existing behaviour is unchanged until the zoom field is actually used.
+    /// </summary>
+    public double CalibrationZoom { get; init; } = 1.0;
+
+    /// <summary>
     /// Schema version for this persisted record. Bump alongside any shape change
     /// and migrate in <see cref="LegolasSettings.Migrate"/>. Default 1 (current).
     /// </summary>

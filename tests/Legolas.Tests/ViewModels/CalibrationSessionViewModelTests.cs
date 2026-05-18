@@ -303,6 +303,53 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void Survey_projection_scales_by_current_over_calibration_zoom()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            // scale 1 px/unit, solved at zoom 2.
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1) { CalibrationZoom = 2.0 },
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.MapZoom = 4.0;                                 // currently 2× the cal zoom
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(0, 0));
+
+        svc.NoteSurvey("Vein", new MetreOffset(East: 100, North: 0));
+        var s = vm.SurveyPins[0];
+        s.ProjX.Should().BeApproximately(200, 1e-6);      // 100 × scale1 × (4/2)
+
+        vm.MapZoom = 2.0;                                 // now == cal zoom → factor 1
+        s.ProjX.Should().BeApproximately(100, 1e-6);      // live re-projected
+        s.OverlayX.Should().BeApproximately(100, 1e-6);   // uncorrected → follows
+    }
+
+    [Fact]
+    public void Solve_stamps_the_current_map_zoom_onto_the_calibration()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
+            SolveResult = new AreaCalibration(1.0, 0.0, 0, 0, 2, 0.2),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.MapZoom = 0.39;
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        vm.SelectedReference = vm.References[1];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
+
+        vm.SolveCommand.Execute(null);
+
+        svc.LastCalibrationZoom.Should().BeApproximately(0.39, 1e-9);
+        svc.CurrentCalibration!.CalibrationZoom.Should().BeApproximately(0.39, 1e-9);
+    }
+
+    [Fact]
     public void Duplicate_survey_vector_is_deduped()
     {
         var svc = new FakeService
@@ -634,11 +681,16 @@ public class CalibrationSessionViewModelTests
             Changed?.Invoke(this, EventArgs.Empty);
         }
 
-        public AreaCalibration? CalibrateCurrentArea(IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements)
+        public double LastCalibrationZoom { get; private set; } = 1.0;
+
+        public AreaCalibration? CalibrateCurrentArea(
+            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+            double calibrationZoom = 1.0)
         {
             LastSolvePairs = placements.Select(p => (p.World, p.Pixel)).ToList();
-            CurrentCalibration = SolveResult;
-            return SolveResult;
+            LastCalibrationZoom = calibrationZoom;
+            CurrentCalibration = SolveResult is { } r ? r with { CalibrationZoom = calibrationZoom } : null;
+            return CurrentCalibration;
         }
 
         public void ClearCurrentAreaCalibration()
