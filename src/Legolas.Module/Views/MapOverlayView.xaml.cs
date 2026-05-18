@@ -168,6 +168,7 @@ public partial class MapOverlayView : Window
             RoutePoints: vm.RoutePoints,
             ActiveSegmentPoints: vm.ActiveSegmentPoints,
             Wedges: wedges,
+            Ghosts: vm.CalibrationGhosts.ToList(),
             SurveyPins: pins,
             MotherlodePins: vm.MotherlodeMarkerPixels,
             ActivePinIndex: activeIndex,
