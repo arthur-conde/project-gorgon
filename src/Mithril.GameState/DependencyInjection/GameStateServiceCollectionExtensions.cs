@@ -1,5 +1,7 @@
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
+using Mithril.GameState.Celestial;
+using Mithril.GameState.Celestial.Parsing;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
@@ -89,6 +91,18 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerPinTracker>()
             .AddSingleton<IPlayerPinTracker>(sp => sp.GetRequiredService<PlayerPinTracker>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerPinTracker>());
+
+        // Shared live lunar phase from Player.log (ProcessSetCelestialInfo) —
+        // emitted on login + every phase roll-over. Backs the planner-punted
+        // MoonPhase / FullMoon recipe & quest gates (currently surfaced only
+        // statically by Silmarillion) and the moon-dependent recall cooldowns.
+        // Self-feeding; consumers inject IPlayerCelestialState. See the
+        // ProcessSetCelestialInfo investigation.
+        services.AddSingleton<CelestialLogParser>();
+        services
+            .AddSingleton<PlayerCelestialStateService>()
+            .AddSingleton<IPlayerCelestialState>(sp => sp.GetRequiredService<PlayerCelestialStateService>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerCelestialStateService>());
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();
