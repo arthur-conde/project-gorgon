@@ -38,7 +38,10 @@ internal sealed class FakeReferenceData : IReferenceDataService
     public ItemKeywordIndex KeywordIndex => new(new Dictionary<long, Item>());
     public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
     public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-    public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+    /// <summary>Mutable in tests that need skill-metadata resolution
+    /// (display name, XpTable/umbrella classification).</summary>
+    public Dictionary<string, SkillEntry> SkillsRaw { get; } = new(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, SkillEntry> Skills => SkillsRaw;
     public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
     public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
     /// <summary>Mutable in tests that need area-friendly-name resolution.</summary>
