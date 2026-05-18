@@ -160,24 +160,29 @@
                                FontSize="32" FontWeight="SemiBold"
                                HorizontalAlignment="Center" TextAlignment="Center"
                                Foreground="{StaticResource TextPrimaryBrush}" />
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
-                                Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Calibration is per-area and FSM-independent — always
+                             available, including before a mode is picked. -->
                         <Button Style="{StaticResource MithrilToolbarButtonStyle}"
                                 Command="{Binding ToggleCalibrationCommand}"
                                 ToolTip="Open the map-calibration overlay (click landmarks/NPCs to fix this area's projection)"
                                 Margin="0,0,4,0">
                             <icon:PackIconLucide Kind="Crosshair" Width="14" Height="14" />
                         </Button>
-                        <Button Style="{StaticResource MithrilToolbarButtonStyle}"
-                                Command="{Binding ToggleOverlaysCommand}"
-                                ToolTip="Show or hide both overlays (map and inventory)"
-                                Margin="0,0,4,0">
-                            <icon:PackIconLucide Kind="Eye" Width="14" Height="14" />
-                        </Button>
-                        <Button Style="{StaticResource MithrilToolbarButtonStyle}"
-                                Command="{Binding WizardResetCommand}" ToolTip="Reset this flow (overlays stay open)">
-                            <icon:PackIconLucide Kind="RotateCcw" Width="14" Height="14" />
-                        </Button>
+                        <!-- Overlay/reset are flow controls — only after a mode is picked. -->
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                            <Button Style="{StaticResource MithrilToolbarButtonStyle}"
+                                    Command="{Binding ToggleOverlaysCommand}"
+                                    ToolTip="Show or hide both overlays (map and inventory)"
+                                    Margin="0,0,4,0">
+                                <icon:PackIconLucide Kind="Eye" Width="14" Height="14" />
+                            </Button>
+                            <Button Style="{StaticResource MithrilToolbarButtonStyle}"
+                                    Command="{Binding WizardResetCommand}" ToolTip="Reset this flow (overlays stay open)">
+                                <icon:PackIconLucide Kind="RotateCcw" Width="14" Height="14" />
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 
