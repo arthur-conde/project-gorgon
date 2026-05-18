@@ -447,9 +447,40 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             return;
         }
 
-        TestPins.Add(new TestPin(obs.Name, obs.Offset, Project(c, o, obs.Offset)));
-        LastSurveyText = seen + " → green pin projected.";
+        var tp = new TestPin(obs.Name, obs.Offset, Project(c, o, obs.Offset));
+        ClampToViewport(tp);
+        TestPins.Add(tp);
+        LastSurveyText = seen + " → green pin projected." +
+            (tp.IsOffscreen ? " (off-screen — clamped to edge; nudge ‘you’ to bring it in)" : "");
         ClickWarning = null;
+    }
+
+    // The Viewport's pixel size, pushed from the view on load/resize. Lets a
+    // far projection clamp to the border instead of vanishing off-window.
+    private double _viewportW, _viewportH;
+
+    public void SetViewport(double width, double height)
+    {
+        _viewportW = width;
+        _viewportH = height;
+        foreach (var p in TestPins) ClampToViewport(p);
+    }
+
+    private void ClampToViewport(TestPin p)
+    {
+        const double inset = 14;
+        if (_viewportW <= 0 || _viewportH <= 0)
+        {
+            p.DisplayX = p.Pixel.X;
+            p.DisplayY = p.Pixel.Y;
+            p.IsOffscreen = false;
+            return;
+        }
+        p.IsOffscreen =
+            p.Pixel.X < 0 || p.Pixel.X > _viewportW ||
+            p.Pixel.Y < 0 || p.Pixel.Y > _viewportH;
+        p.DisplayX = Math.Clamp(p.Pixel.X, inset, _viewportW - inset);
+        p.DisplayY = Math.Clamp(p.Pixel.Y, inset, _viewportH - inset);
     }
 
     /// <summary>Same math as <c>CoordinateProjector.Project</c>: a metre offset
@@ -469,7 +500,10 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     {
         if (_service.CurrentCalibration is not { } c || TestOrigin is not { } o) return;
         foreach (var pin in TestPins)
+        {
             pin.Pixel = Project(c, o, pin.Offset);
+            ClampToViewport(pin); // keep edge-clamp current as "you" moves
+        }
     }
 
     [RelayCommand]
@@ -565,6 +599,17 @@ public sealed partial class TestPin : ObservableObject
     public MetreOffset Offset { get; }
 
     [ObservableProperty] private PixelPoint _pixel;
+
+    /// <summary>Where the marker actually renders — equals <see cref="Pixel"/>
+    /// when on-screen, else clamped to the Viewport edge so a far projection is
+    /// never silently lost. Set by the VM (it knows the Viewport size).</summary>
+    [ObservableProperty] private double _displayX;
+    [ObservableProperty] private double _displayY;
+
+    /// <summary>True when the true projected pixel is outside the Viewport, so
+    /// the marker is edge-clamped (shown as an orange dashed ring, not the true
+    /// position). Nudge "you" to bring it on-screen.</summary>
+    [ObservableProperty] private bool _isOffscreen;
 
     partial void OnPixelChanged(PixelPoint value)
     {

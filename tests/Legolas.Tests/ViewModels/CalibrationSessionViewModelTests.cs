@@ -272,6 +272,41 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void Offscreen_test_pin_is_flagged_and_clamped_to_the_viewport_edge()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.2),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetViewport(200, 200);
+        vm.ToggleTestModeCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(50, 50)); // "you"
+
+        // Far east → projects to x≈1050 (off the right edge).
+        svc.NoteSurvey("Far", new MetreOffset(East: 1000, North: 0));
+        var far = vm.TestPins[0];
+        far.IsOffscreen.Should().BeTrue();
+        far.Pixel.X.Should().BeApproximately(1050, 1e-6);  // true projection kept
+        far.DisplayX.Should().BeApproximately(186, 1e-6);  // clamped to 200-14
+        far.DisplayY.Should().BeApproximately(50, 1e-6);
+
+        // Near → on-screen, display == true pixel.
+        svc.NoteSurvey("Near", new MetreOffset(East: 20, North: 0));
+        var near = vm.TestPins[1];
+        near.IsOffscreen.Should().BeFalse();
+        near.DisplayX.Should().BeApproximately(70, 1e-6);
+        near.DisplayY.Should().BeApproximately(50, 1e-6);
+
+        // Resizing the viewport re-evaluates existing pins.
+        vm.SetViewport(2000, 2000);
+        far.IsOffscreen.Should().BeFalse();
+        far.DisplayX.Should().BeApproximately(1050, 1e-6); // now fits → true pos
+    }
+
+    [Fact]
     public void NudgeSelected_is_a_noop_with_nothing_selected()
     {
         var vm = new CalibrationSessionViewModel(new FakeService());

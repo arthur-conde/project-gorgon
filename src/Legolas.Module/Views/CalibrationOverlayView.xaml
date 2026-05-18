@@ -177,6 +177,7 @@
                      fill. ~1% alpha is visually imperceptible over the map. -->
                 <Grid x:Name="Viewport" Background="#03000000"
                       Focusable="True" FocusVisualStyle="{x:Null}"
+                      SizeChanged="Viewport_SizeChanged"
                       MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
                     <!-- Placed-reference markers. IsHitTestVisible=False so they
                          never swallow a calibration click. -->
@@ -204,16 +205,23 @@
                                      Margin -10,-10 puts geometry-(0,0) on the
                                      placement pixel. Active target = amber/thick
                                      via the IsSelected trigger; name on hover. -->
-                                <Path Margin="-10,-10,0,0" ToolTip="{Binding Name}"
-                                      Data="M-10,0 L-4,0 M4,0 L10,0 M0,-10 L0,-4 M0,4 L0,10 M3,0 A3,3 0 1 1 -3,0 A3,3 0 1 1 3,0">
+                                <Path Margin="-12,-12,0,0" ToolTip="{Binding Name}"
+                                      Data="M-12,0 L-5,0 M5,0 L12,0 M0,-12 L0,-5 M0,5 L0,12 M4,0 A4,4 0 1 1 -4,0 A4,4 0 1 1 4,0"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                    <Path.Effect>
+                                        <!-- black casing so the bright lines read
+                                             on any terrain (was invisible at 1px). -->
+                                        <DropShadowEffect Color="Black" ShadowDepth="0"
+                                                          BlurRadius="3" Opacity="0.95" />
+                                    </Path.Effect>
                                     <Path.Style>
                                         <Style TargetType="Path">
                                             <Setter Property="Stroke" Value="#FFFF3B30" />
-                                            <Setter Property="StrokeThickness" Value="1.4" />
+                                            <Setter Property="StrokeThickness" Value="2.2" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Stroke" Value="#FFFFC400" />
-                                                    <Setter Property="StrokeThickness" Value="2.4" />
+                                                    <Setter Property="Stroke" Value="#FFFFD400" />
+                                                    <Setter Property="StrokeThickness" Value="3" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -242,18 +250,38 @@
                                 <Canvas />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
+                        <!-- Render at the CLAMPED (Display) position so a far
+                             projection never vanishes off-window. -->
                         <ItemsControl.ItemContainerStyle>
                             <Style TargetType="ContentPresenter">
-                                <Setter Property="Canvas.Left" Value="{Binding X}" />
-                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                <Setter Property="Canvas.Left" Value="{Binding DisplayX}" />
+                                <Setter Property="Canvas.Top" Value="{Binding DisplayY}" />
                             </Style>
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Proven minimal idiom (matches the ghosts). -->
-                                <Ellipse Width="12" Height="12" Margin="-6,-6,0,0"
-                                         Fill="#CC34C759" Stroke="White" StrokeThickness="1.5"
-                                         ToolTip="{Binding Name}" />
+                                <!-- On-screen: solid green dot at the true pixel.
+                                     Off-screen: orange dashed hollow ring clamped
+                                     to the edge (NOT the true spot — nudge "you"
+                                     to bring it in; it follows live). -->
+                                <Ellipse Width="13" Height="13" Margin="-6.5,-6.5,0,0"
+                                         ToolTip="{Binding Name}">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#CC34C759" />
+                                            <Setter Property="Stroke" Value="White" />
+                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsOffscreen}" Value="True">
+                                                    <Setter Property="Fill" Value="Transparent" />
+                                                    <Setter Property="Stroke" Value="#FFFF9500" />
+                                                    <Setter Property="StrokeThickness" Value="2.5" />
+                                                    <Setter Property="StrokeDashArray" Value="2 2" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

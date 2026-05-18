@@ -31,6 +31,12 @@ public partial class CalibrationOverlayView : Window
         Activated += (_, _) => ClickThrough.ForceTopmost(this);
     }
 
+    private void Viewport_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DataContext is CalibrationSessionViewModel vm)
+            vm.SetViewport(Viewport.ActualWidth, Viewport.ActualHeight);
+    }
+
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton == MouseButton.Left)
