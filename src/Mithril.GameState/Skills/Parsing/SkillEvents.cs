@@ -38,14 +38,13 @@ namespace Mithril.GameState.Skills.Parsing;
 ///   (Augmentation / Performance / Phrenology, …). It never gains XP; its level
 ///   is derived from member sub-skills and carried in <see cref="BonusLevels"/>
 ///   (so it reports <c>raw=0,bonus=N,max=0</c>). <c>max==0</c> is a runtime
-///   <em>proxy</em> for skills.json's <c>IsUmbrellaSkill</c>/<c>XpTable:"None"</c>
-///   classification — verified exact (skills.json is keyed by this same
-///   <c>type=</c> token). It is a proxy only because
-///   <c>IReferenceDataService</c> does not yet surface a skill catalog (it
-///   parses skills.json but exposes only the derived <c>AbilitiesBySkill</c>);
-///   not because this assembly avoids reference data (it already consumes
-///   <c>IReferenceDataService</c> in Inventory/Quests). Authoritative
-///   enrichment is tracked in #470 (prereq #469).</item>
+///   <em>proxy</em> for the authoritative <c>SkillEntry.XpTable == "None"</c>,
+///   verified exact (skills.json is keyed by this same <c>type=</c> token). The
+///   tracker stays log-only by deliberate choice — the parser/service remain
+///   pure-string and unit-testable without a DI surface — even though
+///   <c>IReferenceDataService.Skills</c> is already available (this assembly
+///   already injects <c>IReferenceDataService</c> in Inventory/Quests).
+///   Optional authoritative enrichment is the independent follow-up #470.</item>
 /// </list>
 /// </summary>
 public readonly record struct SkillProgressRecord(

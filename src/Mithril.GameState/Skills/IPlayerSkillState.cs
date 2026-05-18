@@ -58,13 +58,13 @@ public readonly record struct SkillProgressSnapshot(
     /// Phrenology, …) whose level is derived from member sub-skills and carried
     /// in <see cref="BonusLevels"/> (<see cref="Level"/> stays 0). They never
     /// gain XP, so they have no per-level curve and report <c>max=0</c>; that is
-    /// a verified-exact runtime proxy for skills.json's
-    /// <c>IsUmbrellaSkill</c>/<c>XpTable:"None"</c> — a proxy only because
-    /// <c>IReferenceDataService</c> doesn't yet surface a skill catalog
-    /// (#469/#470), not an avoid-reference-data rule (this assembly already
-    /// uses <c>IReferenceDataService</c> elsewhere). Kept in the snapshot —
-    /// flagged, not dropped — so a consumer decides; the leveling constraint
-    /// set should exclude them.
+    /// a verified-exact runtime proxy for the authoritative
+    /// <c>IReferenceDataService.Skills[key].XpTable == "None"</c> (already
+    /// exposed and widely consumed). The tracker stays log-only by deliberate
+    /// choice — pure-string, unit-testable, no DI surface — with optional
+    /// reference-backed enrichment as the independent follow-up #470. Kept in
+    /// the snapshot — flagged, not dropped — so a consumer decides; the
+    /// leveling constraint set should exclude them.
     /// </summary>
     public bool IsTrainable => MaxLevel > 0;
 
