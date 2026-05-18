@@ -36,6 +36,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _hasPosition;
     [ObservableProperty] private string _positionText = "(no position observed yet)";
     [ObservableProperty] private string _measuredAtText = "—";
+    [ObservableProperty] private string _positionSourceText = "—";
 
     public WorldStateViewModel(
         IPlayerPositionTracker positionTracker,
@@ -70,6 +71,12 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         PositionText = string.Format(
             CultureInfo.InvariantCulture, "X {0:0.00}   Y {1:0.00}   Z {2:0.00}", p.X, p.Y, p.Z);
         MeasuredAtText = p.MeasuredAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+        PositionSourceText = p.Source switch
+        {
+            PlayerPositionSource.Spawn => "Spawn / zone-in (ProcessAddPlayer)",
+            PlayerPositionSource.Movement => "Movement / teleport (ProcessNewPosition)",
+            _ => p.Source.ToString(),
+        };
         // A new position implies a possible zone change — re-resolve the area.
         RefreshArea();
     });

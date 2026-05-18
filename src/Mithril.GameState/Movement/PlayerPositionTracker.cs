@@ -8,9 +8,13 @@ namespace Mithril.GameState.Movement;
 
 /// <summary>
 /// Hosted-service implementation of <see cref="IPlayerPositionTracker"/>.
-/// Tails <see cref="IPlayerLogStream"/>, parses <c>ProcessNewPosition</c> via
+/// Tails <see cref="IPlayerLogStream"/>, parses <c>ProcessNewPosition</c> and
+/// the local player's <c>ProcessAddPlayer</c> via
 /// <see cref="PlayerPositionParser"/>, and holds the latest
-/// <see cref="PlayerPosition"/> (coords + the line's UTC instant).
+/// <see cref="PlayerPosition"/> (coords + the line's UTC instant + source).
+/// The <c>ProcessAddPlayer</c> spawn line is the live-replay seed point, so
+/// position is populated at session start rather than null until the first
+/// teleport — last-writer-wins keeps it advancing as the player relogs/zones.
 ///
 /// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
 /// <see cref="Sessions.GameSessionService"/> / <c>QuestService</c>: the
@@ -98,7 +102,7 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
                 _areaTracker.Observe(raw);
 
                 if (_parser.TryParse(raw.Line, raw.Timestamp) is PlayerPositionEvent evt)
-                    Publish(new PlayerPosition(evt.X, evt.Y, evt.Z, ToOffset(evt.Timestamp)));
+                    Publish(new PlayerPosition(evt.X, evt.Y, evt.Z, ToOffset(evt.Timestamp), evt.Source));
             }
             catch (Exception ex)
             {

@@ -7,8 +7,13 @@ namespace Mithril.GameState.Movement;
 /// can lag wall-clock by minutes-to-hours while the player walks around.
 /// <see cref="MeasuredAt"/> is the log line's UTC instant (Player.log
 /// <c>[HH:MM:SS]</c> prefixes are UTC), exposed as a <see cref="DateTimeOffset"/>.
+/// <see cref="Source"/> distinguishes a login/zone-in <see cref="PlayerPositionSource.Spawn"/>
+/// anchor (observed at session start) from a sparse
+/// <see cref="PlayerPositionSource.Movement"/> teleport — relevant when judging
+/// how stale the value is.
 /// </summary>
-public sealed record PlayerPosition(double X, double Y, double Z, DateTimeOffset MeasuredAt);
+public sealed record PlayerPosition(
+    double X, double Y, double Z, DateTimeOffset MeasuredAt, PlayerPositionSource Source);
 
 /// <summary>
 /// Shared live game-state: the player's last-known position. Mirrors the

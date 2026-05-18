@@ -85,12 +85,19 @@
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
                                    Foreground="#FFFFFFFF"/>
                     </DockPanel>
-                    <DockPanel>
+                    <DockPanel Margin="0,0,0,6">
                         <TextBlock DockPanel.Dock="Left" Text="Measured (UTC)"
                                    Foreground="#88FFFFFF" VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
                                    Text="{Binding MeasuredAtText}"
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   Foreground="#88FFFFFF"/>
+                    </DockPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="Source"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding PositionSourceText}"
                                    Foreground="#88FFFFFF"/>
                     </DockPanel>
                 </StackPanel>

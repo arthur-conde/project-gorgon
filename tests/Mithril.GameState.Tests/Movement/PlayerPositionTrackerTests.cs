@@ -19,6 +19,9 @@ public sealed class PlayerPositionTrackerTests
     private const string PosLine2 =
         "[11:10:39] LocalPlayer: ProcessNewPosition((-790.06, 309.18, -3386.07), (0,0,0,1), Run, OnLand, Zone, Looping, 0, False, True, 1, 2)";
 
+    private const string SpawnLine =
+        "[10:00:00] LocalPlayer: ProcessAddPlayer(1, 2, \"@Base2-m(sex=m;Face=@eq(a=1))\", \"Emraell\", \"A player!\", System.String[], (1522.22, 112.27, 288.13), (0,0,0,1), Idle, Standing, 0, 0, True)";
+
     private static PlayerPositionTracker NewTracker(ScriptedStream stream, PlayerAreaTracker? area = null) =>
         new(stream, new PlayerPositionParser(), area ?? new PlayerAreaTracker(new AreaTransitionParser()),
             new GameConfig() /* empty GameRoot ⇒ no SeedFromLog file IO */);
@@ -39,6 +42,25 @@ public sealed class PlayerPositionTrackerTests
             svc.Current.Z.Should().Be(3480.81);
             svc.Current.MeasuredAt.Should().Be(new DateTimeOffset(Stamp));
             svc.Current.MeasuredAt.Offset.Should().Be(TimeSpan.Zero);
+            svc.Current.Source.Should().Be(PlayerPositionSource.Movement);
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Local_ProcessAddPlayer_spawn_line_populates_Current()
+    {
+        var stream = new ScriptedStream();
+        var svc = NewTracker(stream);
+        try
+        {
+            stream.Push(Stamp, SpawnLine);
+            await RunUntilDrainedAsync(svc, stream);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.X.Should().Be(1522.22);
+            svc.Current.Z.Should().Be(288.13);
+            svc.Current.Source.Should().Be(PlayerPositionSource.Spawn);
         }
         finally { await StopAsync(svc); }
     }

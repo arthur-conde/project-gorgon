@@ -74,11 +74,12 @@ public sealed class WorldStateViewModelTests
         using var vm = NewVm(out var pos, out var area, refData);
 
         area.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-        pos.Fire(new PlayerPosition(834.09, 290.24, 3480.81, T));
+        pos.Fire(new PlayerPosition(834.09, 290.24, 3480.81, T, PlayerPositionSource.Movement));
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 834.09   Y 290.24   Z 3480.81");
         vm.MeasuredAtText.Should().Be("2026-05-18 10:45:47Z");
+        vm.PositionSourceText.Should().Contain("ProcessNewPosition");
         // The position update also re-resolved the area (zone-change coincidence).
         vm.AreaFriendlyName.Should().Be("Serbule");
     }
@@ -87,12 +88,13 @@ public sealed class WorldStateViewModelTests
     public void Replay_on_subscribe_seeds_existing_position()
     {
         var pos = new FakePositionTracker();
-        pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T));
+        pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T, PlayerPositionSource.Spawn));
         using var vm = new WorldStateViewModel(
             pos, new PlayerAreaTracker(new AreaTransitionParser()), null, a => a());
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 1.00   Y 2.00   Z 3.00");
+        vm.PositionSourceText.Should().Contain("Spawn");
     }
 
     [Fact]
@@ -101,7 +103,7 @@ public sealed class WorldStateViewModelTests
         using var vm = NewVm(out var pos, out _);
         vm.Dispose();
 
-        pos.Fire(new PlayerPosition(9, 9, 9, T));
+        pos.Fire(new PlayerPosition(9, 9, 9, T, PlayerPositionSource.Movement));
 
         vm.HasPosition.Should().BeFalse("the disposed VM must unsubscribe");
     }
