@@ -1,4 +1,5 @@
 using Gandalf.Parsing;
+using Mithril.GameState.Areas;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;

@@ -1,16 +1,17 @@
 using System.IO;
 using System.Text;
-using Gandalf.Parsing;
+using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 
-namespace Gandalf.Services;
+namespace Mithril.GameState.Areas;
 
 /// <summary>
 /// Holds the player's current area code, parsed from
 /// <c>LOADING LEVEL Area&lt;Name&gt;</c> log lines via
-/// <see cref="AreaTransitionParser"/>. Consumed by <see cref="LootSource"/>
-/// at chest-commit time to stamp <c>LearnedChest.Area</c>.
+/// <see cref="AreaTransitionParser"/>. Shared live game-state: consumed by
+/// Gandalf (chest commits stamp <c>LearnedChest.Area</c>) and Legolas
+/// (per-area survey-projection calibration), among others.
 ///
 /// <para><b>Startup seeding.</b> <see cref="PlayerLogTailReader.SeedToSessionStart"/>
 /// rewinds the live replay window to the most recent <c>ProcessAddPlayer(</c>
@@ -67,7 +68,7 @@ public sealed class PlayerAreaTracker
                 if (_currentArea != evt.AreaKey)
                 {
                     _currentArea = evt.AreaKey;
-                    _diag?.Trace("Gandalf.Area",
+                    _diag?.Trace("GameState.Area",
                         $"Player area transition → {evt.AreaKey ?? "(none)"} at {timestamp:O}");
                 }
             }
@@ -134,7 +135,7 @@ public sealed class PlayerAreaTracker
         }
         catch (IOException ex)
         {
-            _diag?.Warn("Gandalf.Area", $"SeedFromLog failed: {ex.Message}");
+            _diag?.Warn("GameState.Area", $"SeedFromLog failed: {ex.Message}");
         }
     }
 

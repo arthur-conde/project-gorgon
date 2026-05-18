@@ -3,6 +3,8 @@ using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Parsing;
 using Gandalf.Services;
+using Mithril.GameState.Areas;
+using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;

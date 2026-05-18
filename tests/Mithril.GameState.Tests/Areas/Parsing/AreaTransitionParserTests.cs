@@ -1,8 +1,8 @@
 using FluentAssertions;
-using Gandalf.Parsing;
+using Mithril.GameState.Areas.Parsing;
 using Xunit;
 
-namespace Gandalf.Tests.Parsing;
+namespace Mithril.GameState.Tests.Areas.Parsing;
 
 public sealed class AreaTransitionParserTests
 {

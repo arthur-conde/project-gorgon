@@ -4,6 +4,7 @@ using Gandalf.Parsing;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
+using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 // Mithril.GameState now owns the quest parsers + IQuestService; Gandalf only
@@ -85,8 +86,8 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<InteractionEndParser>();
         services.AddSingleton<InteractionDelayLoopParser>();
         services.AddSingleton<InteractionWaitParser>();
-        services.AddSingleton<AreaTransitionParser>();
-        services.AddSingleton<PlayerAreaTracker>();
+        // AreaTransitionParser + PlayerAreaTracker now registered once in
+        // AddMithrilGameState() (shared live game-state) — injected here.
         services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();

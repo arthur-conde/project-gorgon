@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Mithril.Shared.Logging;
 
-namespace Gandalf.Parsing;
+namespace Mithril.GameState.Areas.Parsing;
 
 /// <summary>
 /// Parses Project Gorgon's <c>LOADING LEVEL Area&lt;Name&gt;</c> log line into
