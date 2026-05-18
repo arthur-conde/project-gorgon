@@ -46,12 +46,14 @@ public class EffectDescsRendererTests
     }
 
     [Fact]
-    public void AsBuffMod_InterpretsMultiplierAsSignedPercent()
+    public void AsBuffMod_RendersAdditiveDeltaAsSignedPercent_Issue438()
     {
+        // Real MOD_SKILL_ALL_KNIFE data is 0.03–0.14 (a +3%–+14% delta), never a 1.x
+        // multiplier. The value is the bonus fraction itself: 0.08 → +8%.
         var registry = Registry(
             new AttributeEntry("MOD_SKILL_ALL_KNIFE", "Knife Damage %", "AsBuffMod", "IfNotDefault", 1, [108]));
 
-        var lines = EffectDescsRenderer.Render(["{MOD_SKILL_ALL_KNIFE}{1.08}"], registry);
+        var lines = EffectDescsRenderer.Render(["{MOD_SKILL_ALL_KNIFE}{0.08}"], registry);
 
         lines.Should().ContainSingle().Which.Text.Should().Be("+8% Knife Damage %");
     }
@@ -93,16 +95,20 @@ public class EffectDescsRendererTests
     }
 
     [Fact]
-    public void AsBuffMod_WithDefaultOne_StillUsesMultiplierSemantics_Issue278()
+    public void AsBuffMod_WithDefaultOne_IsAdditiveNotMultiplier_Issue438()
     {
-        // Negative control: a true AsBuffMod entry (DefaultValue:1) must keep multiplier math
-        // so the data-anomaly heuristic doesn't misfire on legitimate AsBuffMod tokens.
+        // Regression for the WerewolfTraumaBoost (power_6005) inversion: MOD_TRAUMA is
+        // AsBuffMod/IfNotDefault/DefaultValue:1 and its tsysclientinfo tiers run 0.07 (L5)
+        // → 0.92 (L125). The old (value-1)*100 multiplier reading rendered tier 1 as
+        // "-93%" and *weakened* toward "-8%" as the real boost grew. Additive: +7% → +92%.
         var registry = Registry(
-            new AttributeEntry("MOD_SKILL_ALL_KNIFE", "Knife Damage %", "AsBuffMod", "IfNotDefault", 1, [108]));
+            new AttributeEntry("MOD_TRAUMA", "Trauma Damage (Direct & Per-Tick) %", "AsBuffMod", "IfNotDefault", 1, [107]));
 
-        var lines = EffectDescsRenderer.Render(["{MOD_SKILL_ALL_KNIFE}{1.08}"], registry);
+        var low = EffectDescsRenderer.Render(["{MOD_TRAUMA}{0.07}"], registry);
+        var high = EffectDescsRenderer.Render(["{MOD_TRAUMA}{0.92}"], registry);
 
-        lines.Should().ContainSingle().Which.Text.Should().Be("+8% Knife Damage %");
+        low.Should().ContainSingle().Which.Text.Should().Be("+7% Trauma Damage (Direct & Per-Tick) %");
+        high.Should().ContainSingle().Which.Text.Should().Be("+92% Trauma Damage (Direct & Per-Tick) %");
     }
 
     [Fact]

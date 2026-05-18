@@ -68,9 +68,10 @@ public static class EffectDescsRenderer
 
         if (!ShouldRender(attr, value)) return false;
 
-        // AsBuffMod expects DefaultValue=1; combined with DefaultValue=0 it's an upstream-data
-        // anomaly — 39 tokens in attributes.json (all "Chance to..." probability bonuses).
-        // Treat as additive AsPercent. See issue #278.
+        // The 39 DefaultValue=0 AsBuffMod tokens (all "Chance to..." probability bonuses,
+        // issue #278) stay routed to AsPercent purely for its unsigned "15%" form — reads
+        // better than the signed "+15%" AsBuffMod now produces (#438). The value math is
+        // identical (value * 100) post-#438; this remap is now sign-only.
         var effectiveDisplayType = attr.DisplayType == "AsBuffMod" && attr.DefaultValue is double dv && dv == 0
             ? "AsPercent"
             : attr.DisplayType;
@@ -96,8 +97,12 @@ public static class EffectDescsRenderer
     {
         "AsInt" => ((int)Math.Round(value, MidpointRounding.AwayFromZero)).ToString(CultureInfo.InvariantCulture),
         "AsBuffDelta" => value.ToString("+0;-0;0", CultureInfo.InvariantCulture),
-        // Multiplier semantics: 1.08 → +8%.
-        "AsBuffMod" => ((value - 1) * 100).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture) + "%",
+        // Additive-delta semantics (#438): bundled MOD_*/AsBuffMod data stores the bonus
+        // fraction directly (0.07 → +7%), never a 1.x multiplier — across 177 observed
+        // DefaultValue:1 tokens not one shows a multiplier distribution. The old
+        // (value - 1) * 100 reading inverted every damage augment (0.07 → -93%, climbing
+        // back toward 0 as the real bonus grew). Generalizes the #278 DV:0 remap.
+        "AsBuffMod" => (value * 100).ToString("+0.##;-0.##;0", CultureInfo.InvariantCulture) + "%",
         "AsPercent" => (value * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%",
         "AsDoubleTimes100" => (value * 100).ToString("0.##", CultureInfo.InvariantCulture) + "%",
         _ => value.ToString("0.##", CultureInfo.InvariantCulture),
