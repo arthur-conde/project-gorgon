@@ -65,6 +65,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private static double Confidence(MotherlodePositionSource src, PlayerPositionSource? pos) => src switch
     {
         MotherlodePositionSource.LogPosition => pos == PlayerPositionSource.Spawn ? 1.0 : 0.8,
+        MotherlodePositionSource.NamedMapPin => 0.85,
         MotherlodePositionSource.MapPin => 0.6,
         MotherlodePositionSource.Gazetteer => 0.3,
         MotherlodePositionSource.OverlayClick => 0.15,
@@ -73,6 +74,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
 
     private readonly IMultilaterationSolver _solver;
     private readonly MotherlodeFlowController _flow;
+    private readonly ICharacterPinAnchor? _characterPin;
     private readonly IDiagnosticsSink? _diag;
     private readonly IDisposable? _posSub;
     private readonly IDisposable? _pinSub;
@@ -101,10 +103,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         MotherlodeFlowController flow,
         IPlayerPositionTracker positionTracker,
         IPlayerPinTracker pinTracker,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        ICharacterPinAnchor? characterPin = null)
     {
         _solver = solver;
         _flow = flow;
+        _characterPin = characterPin;
         _diag = diag;
         // Replay-on-subscribe is fine: a fix only matters once a use references
         // it within MaxFeederGap, so a stale replayed fix self-expires.
@@ -126,9 +130,13 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         // Only a genuinely new pin is a feeder; Snapshot/AreaChanged replays
         // carry no single Pin and must not move the fix.
         if (c.Kind != PinSetChange.Added || c.Pin is not { } pin) return;
+        // #497: a pin the player named after their character / "@me" is an
+        // explicit "I am here" — prefer it over an arbitrary waypoint.
+        var src = _characterPin?.IsSelfPin(pin) == true
+            ? MotherlodePositionSource.NamedMapPin
+            : MotherlodePositionSource.MapPin;
         lock (_gate)
-            _latestFix = (new WorldCoord(pin.X, 0, pin.Z),
-                MotherlodePositionSource.MapPin, null, c.ObservedAt);
+            _latestFix = (new WorldCoord(pin.X, 0, pin.Z), src, null, c.ObservedAt);
     }
 
     // ---- Use / distance / collection (UI thread, via ingestion PostToUi) --

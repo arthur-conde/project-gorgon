@@ -23,11 +23,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly IPlayerPositionTracker? _positionTracker;
     private readonly IAreaCalibrationService? _areaCalibration;
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
+    private readonly ICharacterPinAnchor? _characterPin;
 
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null)
     {
         _session = session;
         _projector = projector;
@@ -39,6 +40,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _positionTracker = positionTracker;
         _areaCalibration = areaCalibration;
         _motherlode = motherlode;
+        _characterPin = characterPin;
         if (_pinCal is not null)
             _pinCal.PropertyChanged += (_, e) =>
             {
@@ -95,7 +97,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             }
             else if (e.PropertyName is nameof(SessionState.SurveyPlayerMeasuredAt)
                      or nameof(SessionState.SurveyPlayerSource)
-                     or nameof(SessionState.SurveyPlayerIsManual))
+                     or nameof(SessionState.SurveyPlayerIsManual)
+                     or nameof(SessionState.SurveyPlayerIsPinned))
             {
                 OnPropertyChanged(nameof(PlayerAnchorStatus));
                 OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
@@ -150,6 +153,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             RefreshSurveyPlayerAnchor(fromTrackerFix: false);
         }
 
+        // #497: a character-named / "@me" pin is a manual position declaration
+        // (freshest-wins, sticky vs a calibration re-apply, superseded only by
+        // a genuinely newer tracker fix). Not a tracker fix → fromTrackerFix:false.
+        if (_characterPin is not null)
+        {
+            _characterPin.Changed += () => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: false));
+            RefreshSurveyPlayerAnchor(fromTrackerFix: false);
+        }
+
         // #494: keep the validate-calibration gate + live ghosts in sync when
         // the area changes or its calibration is (re)solved/cleared. Guarded
         // only on the service (independent of the #476 position tracker).
@@ -181,28 +193,70 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// </summary>
     private void RefreshSurveyPlayerAnchor(bool fromTrackerFix)
     {
-        if (_session.SurveyPlayerIsManual && !fromTrackerFix)
-            return; // a deliberate correction outlives a calibration re-apply
+        var res = ResolveSurveyAnchor(
+            _positionTracker?.Current,
+            _characterPin?.Current,
+            _areaCalibration?.CurrentCalibration,
+            fromTrackerFix,
+            _session.SurveyPlayerIsManual,
+            _session.SurveyPlayerIsPinned);
+        if (res is not { } r) return;   // keep current (manual sticky / no change)
 
-        var fix = _positionTracker?.Current;
-        var cal = _areaCalibration?.CurrentCalibration;
-        if (fix is null || cal is null)
+        _session.SurveyPlayerPixel = r.Pixel;
+        _session.SurveyPlayerMeasuredAt = r.MeasuredAt;
+        _session.SurveyPlayerSource = r.Source;
+        _session.SurveyPlayerIsManual = r.IsManual;
+        _session.SurveyPlayerIsPinned = r.IsPinned;
+    }
+
+    /// <summary>
+    /// Pure precedence for the Survey "you are here" anchor (#476/#497),
+    /// extracted so freshest-wins is unit-testable without the VM. Rules:
+    /// <list type="number">
+    /// <item>A character-named / <c>@me</c> map pin (#497) is the preferred
+    /// <b>manual</b> anchor — its exact world coord projected through the
+    /// calibration. Sticky across a calibration re-apply; superseded only by a
+    /// genuinely newer tracker fix (<paramref name="fromTrackerFix"/> and
+    /// <c>tracker.MeasuredAt &gt; pin.ObservedAt</c>). Needs calibration to
+    /// project; uncalibrated ⇒ it can't win.</item>
+    /// <item>A pixel-click manual (#476, <c>IsManual &amp;&amp; !IsPinned</c>)
+    /// keeps its existing stickiness: a calibration-only refresh leaves it
+    /// untouched (return <c>null</c> = no change); a fresh tracker fix
+    /// supersedes it.</item>
+    /// <item>Otherwise the projected tracker fix, or a full clear when there
+    /// is none.</item>
+    /// </list>
+    /// Returns <c>null</c> to mean "leave the current anchor as-is".
+    /// </summary>
+    public static SurveyAnchorResolution? ResolveSurveyAnchor(
+        PlayerPosition? tracker,
+        CharacterPinFix? pin,
+        AreaCalibration? cal,
+        bool fromTrackerFix,
+        bool currentIsManual,
+        bool currentIsPinned)
+    {
+        if (pin is { } p && cal is { } pinCal)
         {
-            // Either no anchor possible (no fix / uncalibrated, not manual),
-            // or a fresh tracker fix that supersedes a manual override but
-            // can't be projected (uncalibrated area) — the player moved, so
-            // the stale manual pixel is wrong now regardless. Clear everything.
-            _session.SurveyPlayerPixel = null;
-            _session.SurveyPlayerMeasuredAt = null;
-            _session.SurveyPlayerSource = null;
-            _session.SurveyPlayerIsManual = false;
-            return;
+            var supersededByFresherAuto =
+                fromTrackerFix && tracker is { } ft && ft.MeasuredAt > p.ObservedAt;
+            if (!supersededByFresherAuto)
+                return new SurveyAnchorResolution(
+                    pinCal.ProjectWorld(p.World), p.ObservedAt,
+                    Source: null, IsManual: true, IsPinned: true);
+            // else: a genuinely newer zone-in/teleport wins over the pin.
         }
 
-        _session.SurveyPlayerPixel = cal.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z));
-        _session.SurveyPlayerMeasuredAt = fix.MeasuredAt;
-        _session.SurveyPlayerSource = fix.Source;
-        _session.SurveyPlayerIsManual = false;
+        // Pixel-click manual (#476): sticky against a calibration-only refresh.
+        if (currentIsManual && !currentIsPinned && !fromTrackerFix)
+            return null;
+
+        if (tracker is not { } fix || cal is not { } c)
+            return SurveyAnchorResolution.Cleared;
+
+        return new SurveyAnchorResolution(
+            c.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z)),
+            fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
     }
 
     /// <summary>
@@ -218,6 +272,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _session.SurveyPlayerMeasuredAt = DateTimeOffset.UtcNow;
         _session.SurveyPlayerSource = null;
         _session.SurveyPlayerIsManual = true;
+        _session.SurveyPlayerIsPinned = false;   // a click is the non-pinned manual
     }
 
     /// <summary>
@@ -416,8 +471,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         // this same shared layer. Mutate only SurveyPlayerPixel and keep the
         // manual flag (a fresh tracker fix still supersedes it per #476); never
         // touch the Motherlode PlayerPosition or the retired MoveAnchor model.
+        // #497: a pin-sourced anchor is data-sourced (re-drop the pin to move
+        // it) — excluded, like the auto fix, so a nudge can't be silently
+        // overwritten on the next pin refresh.
         if (_session.Mode == SessionMode.Survey
             && _session.SurveyPlayerIsManual
+            && !_session.SurveyPlayerIsPinned
             && _session.SurveyPlayerPixel is { } anchor)
         {
             _session.SurveyPlayerPixel =
@@ -575,6 +634,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         {
             if (_session.Mode != SessionMode.Survey || !_session.SurveyPlayerPixel.HasValue)
                 return string.Empty;
+            if (_session.SurveyPlayerIsPinned)
+                return _session.SurveyPlayerMeasuredAt is { } pat
+                    ? $"You — pinned, {AgoText(pat, DateTimeOffset.UtcNow)}"
+                    : "You — pinned";
             if (_session.SurveyPlayerIsManual)
                 return "You — set manually";
             return _session.SurveyPlayerMeasuredAt is { } at && _session.SurveyPlayerSource is { } src
@@ -596,14 +659,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     public static string FormatAnchorStatus(DateTimeOffset measuredAt, PlayerPositionSource source, DateTimeOffset now)
     {
         var kind = source == PlayerPositionSource.Spawn ? "zone-in" : "teleport";
+        return $"You — {kind}, {AgoText(measuredAt, now)}";
+    }
+
+    /// <summary>Shared "how stale" wording for the anchor labels (auto +
+    /// #497 pinned). Clamped at zero so a slightly-future stamp reads
+    /// "just now".</summary>
+    private static string AgoText(DateTimeOffset measuredAt, DateTimeOffset now)
+    {
         var age = now - measuredAt;
         if (age < TimeSpan.Zero) age = TimeSpan.Zero;
-        string ago = age.TotalSeconds < 60
+        return age.TotalSeconds < 60
             ? "just now"
             : age.TotalMinutes < 60
                 ? $"{(int)age.TotalMinutes}m ago"
                 : $"{(int)age.TotalHours}h ago";
-        return $"You — {kind}, {ago}";
     }
 
     public bool ShowBearingWedges
@@ -823,3 +893,20 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 }
 
 public sealed record CorrectionArgs(SurveyItemViewModel Survey, PixelPoint NewPixel);
+
+/// <summary>
+/// Outcome of <see cref="MapOverlayViewModel.ResolveSurveyAnchor"/> — the
+/// winning Survey anchor written onto the session. <see cref="Cleared"/> is
+/// the "no anchor" result (pixel null, all flags false). A <c>null</c>
+/// resolution (not this) means "leave the current anchor unchanged".
+/// </summary>
+public readonly record struct SurveyAnchorResolution(
+    PixelPoint? Pixel,
+    DateTimeOffset? MeasuredAt,
+    PlayerPositionSource? Source,
+    bool IsManual,
+    bool IsPinned)
+{
+    public static readonly SurveyAnchorResolution Cleared =
+        new(null, null, null, false, false);
+}

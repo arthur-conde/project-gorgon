@@ -18,6 +18,12 @@ public enum MotherlodePositionSource
     /// spot. Exact-ish (map-read), no standoff. High confidence.</summary>
     MapPin,
 
+    /// <summary>Feeder #2 (preferred, #497) — a pin the player labelled with
+    /// their character name or <c>@me</c>: an unambiguous "I am here"
+    /// declaration rather than an arbitrary nearby waypoint. Above
+    /// <see cref="MapPin"/>, below an engine <see cref="LogPosition"/>.</summary>
+    NamedMapPin,
+
     /// <summary>Feeder #3 — static landmark/NPC gazetteer point you are not
     /// standing on (~5–15 m systematic standoff bias). Tagged fallback,
     /// deferred.</summary>
