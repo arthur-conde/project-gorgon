@@ -30,6 +30,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         _service = service;
         _service.Changed += OnServiceChanged;
         _service.SurveyObserved += OnSurveyObserved;
+        _service.PinAdded += OnPinAdded;
         Refresh();
     }
 
@@ -54,6 +55,29 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
     // Next viewport click drops/moves the player pin (armed by the button).
     private bool _armPlayerClick;
+
+    // #454 freehand pin calibration. ProcessMapPinAdd world coords queue up
+    // ONLY while armed (the area-entry bulk replay arrives disarmed → dropped);
+    // each subsequent overlay click pairs the OLDEST unpaired world point —
+    // turn-order, never by the pin's label.
+    private readonly Queue<WorldCoord> _pendingPins = new();
+    private int _pinSeq;
+
+    [ObservableProperty] private bool _pinCalibrationArmed;
+
+    public int PendingPinCount => _pendingPins.Count;
+
+    public string PinCalibrationStatus => PinCalibrationArmed
+        ? $"Pin calibration ARMED — drop ≥3 well-spread map pins in-game, then " +
+          $"click each on the overlay in the same order. {PendingPinCount} pending."
+        : "Pin calibration off. Cold-start path: works on a fogged map (no " +
+          "landmarks needed).";
+
+    partial void OnPinCalibrationArmedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PinCalibrationStatus));
+        RaiseDebug();
+    }
 
     public bool HasPlayerPin => PlayerPin is not null;
     public double PlayerPinX => PlayerPin?.X ?? 0;
@@ -405,6 +429,27 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             RaiseDebug();
             return;
         }
+        if (PinCalibrationArmed && _pendingPins.Count > 0)
+        {
+            // Pair the OLDEST unpaired world point with this click (turn
+            // order). A synthetic CalibrationReference flows through the exact
+            // same Placements/Solve path as landmark calibration — the ONLY
+            // delta is the world-coord source. The "Map pin N" name is the
+            // turn index, display-only; the ProcessMapPinAdd label is never
+            // consulted.
+            var world = _pendingPins.Dequeue();
+            var placed = new PlacedReference(
+                new CalibrationReference($"Map pin {++_pinSeq}", "MapPin", world), pixel);
+            Placements.Add(placed);
+            SelectedPlacement = placed;
+            ClickWarning = null;
+            OnPropertyChanged(nameof(CanSolve));
+            OnPropertyChanged(nameof(PendingPinCount));
+            OnPropertyChanged(nameof(PinCalibrationStatus));
+            SolveCommand.NotifyCanExecuteChanged();
+            RaiseDebug();
+            return;
+        }
         PlaceSelectedAt(pixel);
     }
 
@@ -543,6 +588,47 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         RaiseDebug();
     }
 
+    /// <summary>Arm/disarm freehand pin calibration. Arming clears any stale
+    /// pending pins so the area-entry replay can't leak in; disarming clears
+    /// the queue too.</summary>
+    [RelayCommand]
+    private void TogglePinCalibration()
+    {
+        PinCalibrationArmed = !PinCalibrationArmed;
+        _pendingPins.Clear();
+        if (PinCalibrationArmed)
+        {
+            _pinSeq = 0;
+            Instruction =
+                "Pin calibration: drop ≥3 (ideally 4) well-spread map pins in-game " +
+                "(works on a fogged/blank map — no landmarks needed), then click each " +
+                "on the overlay in the SAME order. Solve when ≥3 are placed.";
+            ClickWarning = null;
+        }
+        OnPropertyChanged(nameof(PendingPinCount));
+        OnPropertyChanged(nameof(PinCalibrationStatus));
+        RaiseDebug();
+    }
+
+    private void OnPinAdded(object? sender, WorldCoord world)
+    {
+        var disp = Application.Current?.Dispatcher;
+        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => EnqueuePin(world));
+        else EnqueuePin(world);
+    }
+
+    private void EnqueuePin(WorldCoord world)
+    {
+        // Disarmed → ignore (this is how the bulk area-entry replay is
+        // discarded). The label is intentionally not part of MapPinAdded's
+        // contract here — pairing is the user's next overlay click, in order.
+        if (!PinCalibrationArmed) return;
+        _pendingPins.Enqueue(world);
+        OnPropertyChanged(nameof(PendingPinCount));
+        OnPropertyChanged(nameof(PinCalibrationStatus));
+        RaiseDebug();
+    }
+
     // Viewport size, pushed from the view, so a far overlay pin clamps to the
     // edge instead of vanishing.
     private double _viewportW, _viewportH;
@@ -624,7 +710,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     {
         Placements.Clear();
         SelectedPlacement = null;
+        // Pin calibration shares Placements — clear its queue + disarm so a
+        // half-done pin session can't bleed into the next (also covers
+        // Recalibrate, which routes through here).
+        _pendingPins.Clear();
+        PinCalibrationArmed = false;
         OnPropertyChanged(nameof(CanSolve));
+        OnPropertyChanged(nameof(PendingPinCount));
+        OnPropertyChanged(nameof(PinCalibrationStatus));
         SolveCommand.NotifyCanExecuteChanged();
         ResultText = null;
         RaiseDebug();

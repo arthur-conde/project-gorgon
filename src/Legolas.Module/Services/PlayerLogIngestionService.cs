@@ -94,8 +94,19 @@ public sealed class PlayerLogIngestionService : BackgroundService
                 _areaTracker.Observe(raw);
                 ApplyAreaIfChanged();
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is MapTargetDetected mt)
-                    PostToUi(() => HandleMapTarget(mt));
+                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                {
+                    case MapTargetDetected mt:
+                        PostToUi(() => HandleMapTarget(mt));
+                        break;
+                    case MapPinAdded mp:
+                        // The calibration VM ignores this unless the user has
+                        // armed pin calibration (drops the area-entry replay
+                        // backlog). Label is never read — pairing is by the
+                        // user's overlay click in turn order.
+                        PostToUi(() => _areaCalibration.NotePinAdded(mp.World));
+                        break;
+                }
             }
             catch (Exception ex)
             {
