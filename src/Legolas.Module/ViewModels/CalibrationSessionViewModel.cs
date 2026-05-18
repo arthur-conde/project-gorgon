@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Services;
+using Mithril.GameState.Pins;
 using Mithril.Shared.Reference;
 
 namespace Legolas.ViewModels;
@@ -24,13 +25,17 @@ namespace Legolas.ViewModels;
 public sealed partial class CalibrationSessionViewModel : ObservableObject
 {
     private readonly IAreaCalibrationService _service;
+    private readonly IDisposable? _pinSub;
 
-    public CalibrationSessionViewModel(IAreaCalibrationService service)
+    public CalibrationSessionViewModel(IAreaCalibrationService service, IPlayerPinTracker? pins = null)
     {
         _service = service;
         _service.Changed += OnServiceChanged;
         _service.SurveyObserved += OnSurveyObserved;
-        _service.PinAdded += OnPinAdded;
+        // Pin lifecycle moved to the GameState tracker (#468). Subscribe for
+        // the turn-order route; the area-entry replay is service-deduped and
+        // additionally gated by PinCalibrationArmed below.
+        _pinSub = pins?.Subscribe(OnPinSetChanged);
         Refresh();
     }
 
@@ -610,8 +615,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         RaiseDebug();
     }
 
-    private void OnPinAdded(object? sender, WorldCoord world)
+    private void OnPinSetChanged(PinSetChanged note)
     {
+        // Only genuinely-new drops feed the turn-order queue. The tracker
+        // suppresses login/area-entry replay re-adds, so no backlog leaks.
+        if (note is not { Kind: PinSetChange.Added, Pin: { } pin }) return;
+        var world = new WorldCoord(pin.X, 0, pin.Z);
         var disp = Application.Current?.Dispatcher;
         if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => EnqueuePin(world));
         else EnqueuePin(world);
@@ -619,9 +628,9 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
     private void EnqueuePin(WorldCoord world)
     {
-        // Disarmed → ignore (this is how the bulk area-entry replay is
-        // discarded). The label is intentionally not part of MapPinAdded's
-        // contract here — pairing is the user's next overlay click, in order.
+        // Disarmed → ignore (the bulk area-entry replay is already
+        // service-deduped; this gate scopes to the active calibration).
+        // Label is never read — pairing is the user's next overlay click.
         if (!PinCalibrationArmed) return;
         _pendingPins.Enqueue(world);
         OnPropertyChanged(nameof(PendingPinCount));

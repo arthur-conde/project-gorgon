@@ -126,6 +126,27 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 
 There is no longer a `NoteSurveyDetected`/`CanAcceptSurvey`/`DescribeWhyDropped` drop path: absolute pins are added straight to `SessionState.Surveys` and the controller reacts via `OnSurveysChanged`. The cold-start "uncalibrated area" case is handled in the wizard (a `Calibrating` gate step — see #460), not the FSM.
 
+## Pin calibration: two routes & the label-agnostic reconciliation
+
+> **Read this before "fixing" the calibration UI back to label-agnostic.** The two halves below look contradictory and are not.
+
+Cold-start calibration pairs *(world coordinate ↔ overlay pixel)* points and feeds them to `LandmarkCalibrationSolver` via `IAreaCalibrationService.CalibrateCurrentArea`. The world coordinates come from the player's map pins.
+
+**Pin source (#468).** The pin set is owned by the GameState-tier `IPlayerPinTracker` (`Mithril.GameState.Pins`), *not* Legolas. It parses `ProcessMapPin{Add,Remove}` (the only two verbs PG has — a rename/move is Remove+Add; there is no clear/edit verb), is **area-scoped** (keyed off the shared `PlayerAreaTracker`, swapped on area change), and **owns the login/area-entry replay**: PG bulk-re-emits every pin as an `Add` burst on each entry, which the tracker folds into an idempotent upsert keyed by rounded coordinate. Consumers therefore no longer hand-roll a replay-arming gate — `PinCalibrationCoordinator` and the standalone `CalibrationSessionViewModel` both just subscribe. Legolas's `PlayerLogParser` keeps only `ProcessMapFx` (survey targets are Legolas-owned, not shared pins).
+
+`PinCalibrationCoordinator` exposes **two routes**, both ending in the *same* `(world ↔ pixel)` solve:
+
+1. **Existing-pins route.** When the area already has ≥3 well-spread pins (`HasUsableExistingPins`), the wizard lists them by in-game identity — `MapPin.DisplayName` + `Appearance` (colour/shape decoded from the pin args, e.g. *"Fire Magic 25 (red dot)"*). The user selects one and clicks where it is on the overlay. No re-dropping.
+2. **Freshly-dropped turn-order route.** The true cold-start case (fogged brand-new area, no usable pins). Pins dropped *after* arming queue up; each click pairs the oldest unpaired one — by interaction order, label-agnostic.
+
+**Why this does not violate #454's "never pair by name" rule.** The rule's intent is *no automatic name→point pairing* (the freshly-dropped flow has no reliable name↔point map). It is preserved because:
+
+- The **solve is purely `(WorldCoord ↔ PixelPoint)`** in both routes. Name/colour/shape **never** reach `LandmarkCalibrationSolver` or `CalibrateCurrentArea`.
+- In the existing-pins route, identity is used **only to help the human** decide which service-supplied world point they are about to click. The pairing is still the user's *deliberate select-then-click* — the system never infers a pairing from a label.
+- The turn-order route is **retained**, not replaced; it is the only path that works when no usable pins exist.
+
+So: identity is UX-only disambiguation; the pairing remains a human click against a service-supplied coordinate. Keep both routes and keep colour/shape out of the solver.
+
 ## SessionState
 
 [`SessionState`](../src/Legolas.Module/ViewModels/SessionState.cs) is the shared observable model. The fields that matter for Survey:

@@ -20,10 +20,10 @@ namespace Legolas.Services;
 /// responsibility wired here is the area→calibration bridge: feed the shared
 /// <see cref="PlayerAreaTracker"/> and, whenever the player's area changes,
 /// apply that area's persisted <see cref="Domain.AreaCalibration"/> via
-/// <see cref="IAreaCalibrationService.SelectArea"/>. <c>ProcessMapFx</c>
-/// (absolute survey/treasure targets) and <c>ProcessMapPinAdd</c> (freehand
-/// pin calibration) parsing land in Phases 3 and 4 on this same subscription —
-/// one Player.log subscription, consistent with the other consumers.</para>
+/// <see cref="IAreaCalibrationService.SelectArea"/>, plus <c>ProcessMapFx</c>
+/// (absolute survey/treasure targets) placement. Map-pin lifecycle parsing was
+/// promoted out to the GameState-tier <c>PlayerPinTracker</c> (#468) — one
+/// Player.log subscription here, consistent with the other consumers.</para>
 ///
 /// <para>The shared tracker is reverse-scan-seeded at startup
 /// (<see cref="PlayerAreaTracker.SeedFromLog"/>) to close the gap where the
@@ -94,19 +94,11 @@ public sealed class PlayerLogIngestionService : BackgroundService
                 _areaTracker.Observe(raw);
                 ApplyAreaIfChanged();
 
-                switch (_parser.TryParse(raw.Line, raw.Timestamp))
-                {
-                    case MapTargetDetected mt:
-                        PostToUi(() => HandleMapTarget(mt));
-                        break;
-                    case MapPinAdded mp:
-                        // The calibration VM ignores this unless the user has
-                        // armed pin calibration (drops the area-entry replay
-                        // backlog). Label is never read — pairing is by the
-                        // user's overlay click in turn order.
-                        PostToUi(() => _areaCalibration.NotePinAdded(mp.World));
-                        break;
-                }
+                // Map pins (ProcessMapPin{Add,Remove}) are owned by the
+                // GameState-tier PlayerPinTracker (#468); this service only
+                // handles ProcessMapFx absolute targets now.
+                if (_parser.TryParse(raw.Line, raw.Timestamp) is MapTargetDetected mt)
+                    PostToUi(() => HandleMapTarget(mt));
             }
             catch (Exception ex)
             {

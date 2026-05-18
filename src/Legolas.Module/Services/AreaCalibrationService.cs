@@ -74,17 +74,10 @@ public interface IAreaCalibrationService
     /// <summary>Raised for each <see cref="NoteSurvey"/> — the test-mode hook.</summary>
     event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
 
-    /// <summary>
-    /// Fed every <c>ProcessMapPinAdd</c> world coord by the Player.log
-    /// pipeline (#454). Re-raised as <see cref="PinAdded"/> so the calibration
-    /// window — and only when the user has armed pin calibration — can pair it
-    /// with an overlay click. A no-op for everyone else; this decouples the
-    /// ingestion service from the VM exactly like <see cref="NoteSurvey"/>.
-    /// </summary>
-    void NotePinAdded(WorldCoord world);
-
-    /// <summary>Raised for each <see cref="NotePinAdded"/> — the pin-calibration hook.</summary>
-    event EventHandler<WorldCoord>? PinAdded;
+    // Pin ingestion is no longer Legolas-owned: the map-pin lifecycle is the
+    // GameState-tier IPlayerPinTracker (#468), which both calibration
+    // consumers subscribe to directly. The old NotePinAdded/PinAdded relay
+    // (#454) was removed with that promotion.
 }
 
 /// <summary>
@@ -199,11 +192,6 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
 
     public void NoteSurvey(string name, MetreOffset offset) =>
         SurveyObserved?.Invoke(this, new CalibrationSurveyObservation(name, offset));
-
-    public event EventHandler<WorldCoord>? PinAdded;
-
-    public void NotePinAdded(WorldCoord world) =>
-        PinAdded?.Invoke(this, world);
 
     public void ClearCurrentAreaCalibration()
     {
