@@ -89,6 +89,11 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     /// user why instead of silently doing nothing.</summary>
     [ObservableProperty] private string? _clickWarning;
 
+    /// <summary>Always set whenever a survey/treasure reaches the window — proves
+    /// the chat→pipeline→window path is alive, and says what's missing if it
+    /// didn't project. Never silently swallowed.</summary>
+    [ObservableProperty] private string? _lastSurveyText;
+
     [ObservableProperty] private string _statusText = "No area detected yet.";
     [ObservableProperty] private string _instruction =
         "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
@@ -257,15 +262,24 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
     private void ProjectTest(CalibrationSurveyObservation obs)
     {
-        if (!TestMode) return;
+        // ALWAYS record that the survey reached the window — before any gate —
+        // so "nothing happened" is never ambiguous. This is the signal that the
+        // chat→pipeline→window path is alive.
+        var seen = $"Last survey: {obs.Name} ({obs.Offset.East:0}E, {obs.Offset.North:0}N)";
+
+        if (!TestMode)
+        {
+            LastSurveyText = seen + " — turn on “Verify (set position)” to project it.";
+            return;
+        }
         if (_service.CurrentCalibration is not { } c)
         {
-            ClickWarning = "Solve a calibration before verifying.";
+            LastSurveyText = seen + " — solve a calibration first.";
             return;
         }
         if (TestOrigin is not { } o)
         {
-            ClickWarning = "Click where you are on the map first.";
+            LastSurveyText = seen + " — click where you are on the map first.";
             return;
         }
 
@@ -277,6 +291,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         var rotN = -obs.Offset.East * sin + obs.Offset.North * cos;
         var pixel = new PixelPoint(o.X + c.Scale * rotE, o.Y - c.Scale * rotN);
         TestPins.Add(new TestPin(obs.Name, pixel));
+        LastSurveyText = seen + " → green pin projected.";
         ClickWarning = null;
     }
 

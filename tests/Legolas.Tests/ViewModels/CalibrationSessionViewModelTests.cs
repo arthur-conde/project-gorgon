@@ -323,7 +323,7 @@ public class CalibrationSessionViewModelTests
         vm1.ToggleTestModeCommand.Execute(null);
         noCal.NoteSurvey("X", new MetreOffset(1, 1));
         vm1.TestPins.Should().BeEmpty();
-        vm1.ClickWarning.Should().Contain("Solve a calibration");
+        vm1.LastSurveyText.Should().Contain("solve a calibration");
 
         var hasCal = new FakeService
         {
@@ -335,11 +335,11 @@ public class CalibrationSessionViewModelTests
         vm2.ToggleTestModeCommand.Execute(null); // test mode, but no origin clicked yet
         hasCal.NoteSurvey("X", new MetreOffset(1, 1));
         vm2.TestPins.Should().BeEmpty();
-        vm2.ClickWarning.Should().Contain("Click where you are");
+        vm2.LastSurveyText.Should().Contain("click where you are");
     }
 
     [Fact]
-    public void Survey_observed_outside_test_mode_is_ignored()
+    public void Survey_outside_test_mode_still_records_that_it_was_seen()
     {
         var svc = new FakeService
         {
@@ -348,8 +348,13 @@ public class CalibrationSessionViewModelTests
             CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
         };
         var vm = new CalibrationSessionViewModel(svc); // test mode OFF
-        svc.NoteSurvey("X", new MetreOffset(10, 10));
+
+        svc.NoteSurvey("Iron Vein", new MetreOffset(10, -4));
+
         vm.TestPins.Should().BeEmpty();
+        // The survey is NEVER silently swallowed — proves the pipeline is alive.
+        vm.LastSurveyText.Should().Contain("Iron Vein");
+        vm.LastSurveyText.Should().Contain("Verify");
     }
 
     private sealed class FakeService : IAreaCalibrationService

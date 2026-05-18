@@ -63,6 +63,10 @@
                         <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
                             <!-- What an arrow-key nudge will move (amber, matches
                                  the on-map halo). Empty when nothing is armed. -->
+                            <!-- Proof the survey/treasure reached the window
+                                 (always set), and what's missing if no pin. -->
+                            <TextBlock Text="{Binding LastSurveyText}" Foreground="#FF59C7E0"
+                                       TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6" />
                             <TextBlock Text="{Binding NudgeTargetText}" Foreground="#FFFFC400"
                                        TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6" />
                             <TextBlock Text="{Binding ResultText}" Foreground="#FFCFE8C9"
