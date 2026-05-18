@@ -146,6 +146,54 @@ public class LegolasSettingsMigrationTests
     }
 
     [Fact]
+    public void V3_json_without_calibrationPinStyle_migrates_to_default_no_op()
+    {
+        // A v3 blob: schemaVersion 3, a customised pinStyle, no
+        // calibrationPinStyle key at all (it didn't exist before #478).
+        var v3 = """
+            {
+              "schemaVersion": 3,
+              "pinStyle": { "outer": { "strokeColor": "#FFAA0000" } },
+              "areaCalibrations": {}
+            }
+            """;
+        var loaded = JsonSerializer.Deserialize(v3, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+        loaded.SchemaVersion.Should().Be(3);
+
+        var migrated = LegolasSettings.Migrate(loaded);
+
+        // v3 → v4 is a no-op: the new sub-object defaults to the pre-#478
+        // hardcoded look and nothing else is touched (the always-run v1→v2
+        // colour block is itself a no-op on a v3 blob — legacy fields absent).
+        var defaults = LegolasPinStyle.CalibrationDefaults();
+        migrated.CalibrationPinStyle.Outer.StrokeColor.Should().Be(defaults.Outer.StrokeColor);
+        migrated.CalibrationPinStyle.Outer.Size.Should().Be(defaults.Outer.Size);
+        migrated.CalibrationPinStyle.Center.FillColor.Should().Be(defaults.Center.FillColor);
+        migrated.CalibrationPinStyle.Center.Size.Should().Be(defaults.Center.Size);
+        // User's prior customisation untouched.
+        migrated.PinStyle.Outer.StrokeColor.Should().Be("#FFAA0000");
+    }
+
+    [Fact]
+    public void CalibrationPinStyle_round_trips_through_json()
+    {
+        var settings = new LegolasSettings { SchemaVersion = LegolasSettings.CurrentVersion };
+        settings.CalibrationPinStyle.Outer.StrokeColor = "#FF112233";
+        settings.CalibrationPinStyle.Outer.Size = 30.0;
+        settings.CalibrationPinStyle.Center.FillColor = "#80445566";
+        settings.CalibrationPinStyle.Center.Shape = PinShape.Diamond;
+
+        var written = JsonSerializer.Serialize(settings, LegolasSettingsJsonContext.Default.LegolasSettings);
+        var reloaded = JsonSerializer.Deserialize(written, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+
+        reloaded.CalibrationPinStyle.Outer.StrokeColor.Should().Be("#FF112233");
+        reloaded.CalibrationPinStyle.Outer.Size.Should().Be(30.0);
+        reloaded.CalibrationPinStyle.Center.FillColor.Should().Be("#80445566");
+        reloaded.CalibrationPinStyle.Center.Shape.Should().Be(PinShape.Diamond);
+        written.Should().Contain($"\"schemaVersion\": {LegolasSettings.CurrentVersion}");
+    }
+
+    [Fact]
     public void AreaCalibrations_round_trip_through_json()
     {
         var settings = new LegolasSettings { SchemaVersion = LegolasSettings.CurrentVersion };

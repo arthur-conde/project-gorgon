@@ -666,6 +666,179 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Calibration Markers (issue #478) — the in-flow guided-calibration
+                 dots dropped during the cold-start Calibrating step on the survey
+                 map overlay. Same shape model as the survey/player pin: Outer is
+                 the selection ring (shown only while a marker is selected for
+                 drag/nudge), Centre the always-on dot. Defaults reproduce the
+                 pre-#478 hardcoded look. The standalone calibration window's
+                 markers are out of scope and unaffected. -->
+            <GroupBox Header="Calibration Markers" Padding="8" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="Appearance of the placed markers during the guided in-flow calibration step (right-click drop / left-click pair on the survey map overlay). Outer is the selection ring — drawn only while a marker is selected to drag or nudge; Centre is the always-visible dot. Both Sizes are real on-overlay pixels (no separate radius slider)."
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                    <!-- Live preview. Unlike the real overlay (where the ring is
+                         selection-gated), the preview shows ring + dot together
+                         so the user can configure both at once — same idiom as
+                         the active-pin preview's static "what it looks like". -->
+                    <Border BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                            Background="#FF101010" Padding="12" Margin="0,0,0,12"
+                            HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid Width="64" Height="64">
+                                <Path Fill="{Binding Brushes.CalibrationOuterFill}"
+                                      Stroke="{Binding Brushes.CalibrationOuterStroke}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      StrokeDashArray="{Binding CalibrationPinStyle.Outer.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="CalibrationPinStyle.Outer.StrokeStyle" />
+                                            <Binding Path="CalibrationPinStyle.Outer.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="CalibrationPinStyle.Outer.Shape" />
+                                            <Binding Path="CalibrationPinStyle.Outer.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Fill="{Binding Brushes.CalibrationCenterFill}"
+                                      Stroke="{Binding Brushes.CalibrationCenterStroke}"
+                                      StrokeDashArray="{Binding CalibrationPinStyle.Center.StrokeStyle, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="CalibrationPinStyle.Center.StrokeStyle" />
+                                            <Binding Path="CalibrationPinStyle.Center.StrokeThickness" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="CalibrationPinStyle.Center.Shape" />
+                                            <Binding Path="CalibrationPinStyle.Center.Size" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                            </Grid>
+                            <TextBlock Text="Preview (selected marker)" VerticalAlignment="Center" Margin="16,0,0,0"
+                                       Foreground="{StaticResource TextTertiaryBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Outer ring -->
+                    <TextBlock Text="Outer (selection ring)" FontWeight="SemiBold" Margin="0,4,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding CalibrationPinStyle.Outer}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CalibrationOuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CalibrationOuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Size (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="2" Maximum="40" Value="{Binding Size}" />
+                        <TextBox   Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Size, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <!-- Centre dot -->
+                    <TextBlock Text="Centre (dot)" FontWeight="SemiBold" Margin="0,12,0,4" />
+                    <Grid Margin="12,0,0,0" DataContext="{Binding CalibrationPinStyle.Center}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Shape" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinShapes, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding Shape}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CalibrationCenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
+                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
+                                   Background="{Binding DataContext.Brushes.CalibrationCenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                   ItemsSource="{Binding DataContext.PinStrokeStyles, RelativeSource={RelativeSource AncestorType=GroupBox}}"
+                                   SelectedItem="{Binding StrokeStyle}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stroke thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="0" Maximum="6" Value="{Binding StrokeThickness}" />
+                        <TextBox   Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding StrokeThickness, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Size (px)" VerticalAlignment="Center" Margin="0,4,8,4" />
+                        <Slider    Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
+                                   Minimum="1" Maximum="20" Value="{Binding Size}" />
+                        <TextBox   Grid.Row="5" Grid.Column="2" VerticalAlignment="Center" Margin="0,4,4,4"
+                                   Text="{Binding Size, StringFormat=0.#, UpdateSourceTrigger=LostFocus}" />
+                    </Grid>
+
+                    <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,12,0,0"
+                            Padding="10,4" Command="{Binding ResetCalibrationPinStyleToDefaultsCommand}" />
+                </StackPanel>
+            </GroupBox>
+
             <!-- Inventory grid settings -->
             <GroupBox Header="Inventory Grid Settings" Padding="8" Margin="0,0,0,12">
                 <StackPanel>
