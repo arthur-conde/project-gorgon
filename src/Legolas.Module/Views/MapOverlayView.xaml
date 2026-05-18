@@ -36,6 +36,13 @@
                     <TextBlock Text=" px/m, Rot: " Foreground="#FF888888" />
                     <TextBlock Text="{Binding RotationDegrees, StringFormat=0.0}" Foreground="#FFCCCCCC" />
                     <TextBlock Text="°" Foreground="#FF888888" />
+                    <!-- #476: Survey player-GPS staleness. Sparse signal
+                         (zone-in / teleport only) — surfaced honestly so the
+                         marker is never read as live. -->
+                    <TextBlock Text=" | " Foreground="#FF888888"
+                               Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                    <TextBlock Text="{Binding PlayerAnchorStatus}" Foreground="#FFCCCCCC"
+                               Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                 </StackPanel>
             </Border>
 

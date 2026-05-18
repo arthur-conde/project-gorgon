@@ -157,7 +157,7 @@ public partial class MapOverlayView : Window
             SurveyOuter: outerStyle,
             SurveyCenter: centerStyle,
             SurveyOuterDiameter: vm.PinDiameter,
-            PlayerPosition: vm.Session.HasPlayerPosition ? vm.PlayerPosition : null,
+            PlayerPosition: vm.PlayerMarkerPixel,
             PlayerOuter: playerOuterStyle,
             PlayerCenter: playerCenterStyle,
             RouteLineColor: vm.Brushes.RouteLine.Color,

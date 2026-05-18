@@ -11,12 +11,21 @@ namespace Legolas.Flow;
 /// so the old <c>AwaitingPosition</c>/<c>Ready</c> anchor-bootstrap states are
 /// gone. The map-click anchor + <see cref="SessionState.PlayerPosition"/>
 /// survive but are now <b>Motherlode-only</b> (Survey never reads them).
+///
+/// <para>#476 added <see cref="SettingPosition"/>: an <em>optional</em>
+/// manual-override sub-state for the Survey player-GPS. It is not a bootstrap
+/// — the auto tracker anchor remains the zero-click default; this is the
+/// "correct a stale anchor" escape hatch (Option&#160;C). It is entered on
+/// demand from <see cref="Listening"/> or <see cref="Gathering"/> and returns
+/// to whichever of those it came from, so the normal flow is unchanged for
+/// users who never invoke it.</para>
 /// </summary>
 public enum SurveyFlowState
 {
     Listening,
     Gathering,
     Done,
+    SettingPosition,
 }
 
 public sealed record SurveyTransition(
@@ -32,12 +41,27 @@ public sealed record SurveyTransition(
 /// surveys" constraint is retired with the relative model). Calibration is
 /// FSM-independent (per-area, persisted) — it is gated in the wizard
 /// step-machine, not here.
+///
+/// <para>#476 adds an optional <c>{Listening|Gathering} ⇄ SettingPosition</c>
+/// detour: <see cref="RequestSetPosition"/> parks the current state and
+/// switches to <see cref="SurveyFlowState.SettingPosition"/>;
+/// <see cref="ConfirmPosition"/> / <see cref="CancelSetPosition"/> return to
+/// it. The FSM only owns the <em>phase</em> — the actual manual pixel is
+/// recorded by <c>MapOverlayViewModel</c> before it calls
+/// <see cref="ConfirmPosition"/>. The auto tracker GPS is unaffected and
+/// remains the default; this detour is the stale-anchor override only.</para>
 /// </summary>
 public sealed partial class SurveyFlowController : ObservableObject
 {
     private readonly SessionState _session;
     private readonly LegolasSettings _settings;
     private readonly TimeProvider _clock;
+
+    /// <summary>The state <see cref="RequestSetPosition"/> parked, so
+    /// <see cref="ConfirmPosition"/>/<see cref="CancelSetPosition"/> can
+    /// restore it. Only meaningful while <see cref="CurrentState"/> is
+    /// <see cref="SurveyFlowState.SettingPosition"/>.</summary>
+    private SurveyFlowState _returnState = SurveyFlowState.Listening;
 
     public SurveyFlowController(SessionState session, LegolasSettings settings, TimeProvider? clock = null)
     {
@@ -73,6 +97,7 @@ public sealed partial class SurveyFlowController : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PhaseDescription))]
     [NotifyPropertyChangedFor(nameof(CanOptimize))]
+    [NotifyPropertyChangedFor(nameof(IsSettingPosition))]
     private SurveyFlowState _currentState = SurveyFlowState.Listening;
 
     /// <summary>Fires after every successful state change.</summary>
@@ -84,8 +109,18 @@ public sealed partial class SurveyFlowController : ObservableObject
         SurveyFlowState.Listening => "Listening for surveys",
         SurveyFlowState.Gathering => "Walk the route to each target",
         SurveyFlowState.Done => "All surveys collected",
+        SurveyFlowState.SettingPosition => "Click the map where you are",
         _ => "",
     };
+
+    /// <summary>The state a <see cref="SurveyFlowState.SettingPosition"/>
+    /// detour will return to. Lets the wizard keep its panel anchored to the
+    /// originating step (Listening vs Gathering) during the override.</summary>
+    public SurveyFlowState ReturnState => _returnState;
+
+    /// <summary>True while the optional manual position-override detour
+    /// (#476) is active.</summary>
+    public bool IsSettingPosition => CurrentState == SurveyFlowState.SettingPosition;
 
     /// <summary>
     /// True when <see cref="OptimizeRoute"/> would be accepted: Listening with
@@ -106,6 +141,45 @@ public sealed partial class SurveyFlowController : ObservableObject
             return;
         }
         TransitionTo(SurveyFlowState.Gathering, nameof(OptimizeRoute));
+    }
+
+    /// <summary>
+    /// Enter the optional manual position-override detour (#476). Parks the
+    /// current phase so <see cref="ConfirmPosition"/>/<see cref="CancelSetPosition"/>
+    /// can restore it. Valid only from <c>Listening</c> or <c>Gathering</c>
+    /// (the two phases where a "where am I?" correction is meaningful) — no-op
+    /// otherwise, and an idempotent no-op if already setting position. The
+    /// auto tracker GPS is untouched; this only overrides it on confirm.
+    /// </summary>
+    public void RequestSetPosition()
+    {
+        if (CurrentState is not (SurveyFlowState.Listening or SurveyFlowState.Gathering))
+        {
+            _session.LastLogEvent = $"Set position ignored — state is {CurrentState}";
+            return;
+        }
+        _returnState = CurrentState;
+        TransitionTo(SurveyFlowState.SettingPosition, nameof(RequestSetPosition));
+    }
+
+    /// <summary>
+    /// Commit the manual override and return to the parked phase. The pixel
+    /// itself is written to the session by <c>MapOverlayViewModel</c> before
+    /// this call — the FSM only owns the phase. No-op unless currently
+    /// <c>SettingPosition</c>.
+    /// </summary>
+    public void ConfirmPosition()
+    {
+        if (CurrentState != SurveyFlowState.SettingPosition) return;
+        TransitionTo(_returnState, nameof(ConfirmPosition));
+    }
+
+    /// <summary>Abandon the detour and return to the parked phase without
+    /// changing the anchor. No-op unless currently <c>SettingPosition</c>.</summary>
+    public void CancelSetPosition()
+    {
+        if (CurrentState != SurveyFlowState.SettingPosition) return;
+        TransitionTo(_returnState, nameof(CancelSetPosition));
     }
 
     /// <summary>

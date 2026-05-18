@@ -11,6 +11,8 @@ Companion docs:
 Project Gorgon's survey/treasure items (gated on **Geology**, **Mining**, or **Treasure Cartography** — "Surveying" is loose shorthand here) go in the player's inventory. Using one prints a chat line like `[Status] The Iron Vein is 50m east and 30m north`. The item is consumed (and grants XP) only when used while *standing on* the target spot.
 
 > **As-built — [#454](https://github.com/moumantai-gg/mithril/issues/454) landed.** Survey/treasure placement is now **absolute**: Legolas consumes `IPlayerLogStream` and keys off Player.log `LocalPlayer: ProcessMapFx((X,Y,Z), …)`, which carries the target's exact world coordinate. The relative-offset model, the anchor click, `CoordinateProjector.Refit`, the `AwaitingPosition`/`Ready` FSM states, and the `Gathering` survey-drop are **retired for Survey**. `SessionState.PlayerPosition` / `CoordinateProjector` survive but are **Motherlode-only** now (its triangulation records the player position from a map click). Sections below that still describe the relative/anchor model are flagged inline; the FSM and coordinate sections are updated. Cold-start calibration moved to a wizard `Calibrating` step driven by the map overlay — see [#460](https://github.com/moumantai-gg/mithril/issues/460).
+>
+> **As-built — [#476](https://github.com/moumantai-gg/mithril/issues/476) landed.** The anchor click was *also* (undesigned) the player-position reference for Survey: the "you are here" marker, the route start, and the initial "head here next" segment. #460 collateral-removed all three. #476 restores them from a **better source** — the GameState `IPlayerPositionTracker` world coordinate projected through the area calibration (`AreaCalibration.ProjectWorld`, the same transform `ProcessMapFx` pins use), **not** a manual click. Placement stays absolute; the relative/anchor model does not return. The signal is sparse (zone-in / teleport only — there is no per-tick movement feed in Player.log), so it is freshest at Optimize time and goes stale as the player walks; `MeasuredAt`/`Source` are surfaced (`MapOverlayViewModel.PlayerAnchorStatus`, shown in the overlay header) and it is never drawn as live. **Option C also landed**: a *manual override* — the optional `SurveyFlowState.SettingPosition` detour ("Set my position" in the wizard → click the map) corrects a stale anchor. The auto GPS is still the zero-click default; a manual pixel wins until the next *fresh* tracker fix (zone-in / teleport) supersedes it.
 
 Legolas tails the chat log, parses these offsets, and:
 
@@ -106,13 +108,14 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 
 ## SurveyFlowController FSM
 
-[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). **#454 collapsed this to three states** — `ProcessMapFx` targets are absolute, so there is no anchor click and no `AwaitingPosition`/`Ready` bootstrap. Initial state is `Listening`.
+[`SurveyFlowController`](../src/Legolas.Module/Flow/SurveyFlowController.cs). **#454 collapsed this to three states** — `ProcessMapFx` targets are absolute, so there is no anchor click and no `AwaitingPosition`/`Ready` bootstrap. **#476 added one optional state**, `SettingPosition`, for the manual position-override detour (Option C). Initial state is `Listening`.
 
 | State | Meaning |
 |---|---|
 | `Listening` | Default working state. Absolute pins auto-place as `ProcessMapFx` arrives. The first pin of a cycle stamps `SessionState.StartedAt`. |
 | `Gathering` | Route optimised; user is walking it. New targets are **accepted** (the old position-anchor "drop new surveys" constraint is retired with the relative model). |
 | `Done` | All surveys collected. If `AutoResetWhenAllCollected`, `Reset()` immediately follows. |
+| `SettingPosition` | **#476, optional.** The manual player-GPS override is active: the overlay awaits a "click where you are" and the wizard shows a Cancel affordance. Entered on demand from `Listening`/`Gathering`; returns to whichever it came from (`ReturnState`). The auto tracker GPS is the zero-click default — this state only exists to *correct a stale anchor*, so users who never invoke it never see it. |
 
 ### Transitions
 
@@ -121,10 +124,13 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 | `Listening` | `Surveys.Add` (first pin, count 0→1) | `Listening` | No transition — **stamps `SessionState.StartedAt`** (the canonical "session started" time). Re-stamps every cycle since `Reset` returns to `Listening`. |
 | `Listening` | `OptimizeRoute()` | `Gathering` | Caller has assigned `RouteOrder`s. `CanOptimize` = `Listening && Surveys.Count > 0` (the non-empty precondition is now explicit, not structural). |
 | `Listening` \| `Gathering` | `AllCollected` event (auto) | `Done` | Fires when the last uncollected survey is marked. |
+| `Listening` \| `Gathering` | `RequestSetPosition()` | `SettingPosition` | #476. Parks the current state in `ReturnState`. No-op from any other state. The auto anchor is untouched until the click confirms. |
+| `SettingPosition` | `ConfirmPosition()` (map click) | `ReturnState` | #476. `MapOverlayViewModel` writes the manual pixel to the session *before* this call (`SurveyPlayerIsManual = true`); the FSM only owns the phase. |
+| `SettingPosition` | `CancelSetPosition()` | `ReturnState` | #476. Returns with the anchor unchanged. |
 | `Done` | `Reset()` (auto, if `AutoResetWhenAllCollected`) | `Listening` | Clears `Surveys` + `StartedAt`. |
-| any | `Reset()` | `Listening` | Always — there is no anchor precondition. Clears `Surveys` + `StartedAt`. |
+| any | `Reset()` | `Listening` | Always — there is no anchor precondition. Clears `Surveys` + `StartedAt` (also exits `SettingPosition`). |
 
-There is no longer a `NoteSurveyDetected`/`CanAcceptSurvey`/`DescribeWhyDropped` drop path: absolute pins are added straight to `SessionState.Surveys` and the controller reacts via `OnSurveysChanged`. The cold-start "uncalibrated area" case is handled in the wizard (a `Calibrating` gate step — see #460), not the FSM.
+There is no longer a `NoteSurveyDetected`/`CanAcceptSurvey`/`DescribeWhyDropped` drop path: absolute pins are added straight to `SessionState.Surveys` and the controller reacts via `OnSurveysChanged`. The cold-start "uncalibrated area" case is handled in the wizard (a `Calibrating` gate step — see #460), not the FSM. The `SettingPosition` detour is *not* surfaced as its own `WizardStep` — `RecomputeStep` maps it back to its `ReturnState`'s step so the wizard panel stays put while the overlay collects the click.
 
 ## Pin calibration: two routes & the label-agnostic reconciliation
 
@@ -154,15 +160,19 @@ So: identity is UX-only disambiguation; the pairing remains a human click agains
 | Field | Lifetime | Notes |
 |---|---|---|
 | `Surveys : ObservableCollection<SurveyItemViewModel>` | Session | Cleared by `Reset()`. Fires `AllCollected` event when last uncollected is marked. |
-| `PlayerPosition : PixelPoint` | Session | The projector anchor in pixel space. Initially set by the user's click; updated to follow `_projector.Origin` after every Refit. Mutating this re-fires `RebuildRouteGeometry` + wedges. |
-| `HasPlayerPosition : bool` | Session | True once `SetPlayerPosition` runs. |
-| `IsAnchorEditable : bool` | Derived | `HasPlayerPosition && Surveys.Count == 0`. See below. |
+| `PlayerPosition : PixelPoint` | Session | **Motherlode-only** (#454). The manual map-click position its triangulation records. Mutating it re-fires `RebuildRouteGeometry` + wedges. Survey never reads it. |
+| `HasPlayerPosition : bool` | Session | True once `SetPlayerPosition` runs (Motherlode click). |
+| `SurveyPlayerPixel : PixelPoint?` | Session | **Survey-only** (#476). The `IPlayerPositionTracker` world fix projected through the current area's calibration. Null until a fix lands in a calibrated area. Route start + rendered marker + pre-first-collection segment. Set by `MapOverlayViewModel`; distinct from `PlayerPosition` so the two modes can't cross-contaminate. |
+| `SurveyPlayerMeasuredAt : DateTimeOffset?`, `SurveyPlayerSource : PlayerPositionSource?` | Session | Staleness of `SurveyPlayerPixel`. Surfaced via `MapOverlayViewModel.PlayerAnchorStatus` — never drawn as live. (`Source` is null for a manual override.) |
+| `SurveyPlayerIsManual : bool` | Session | **#476 Option C.** True when `SurveyPlayerPixel` came from the user's "set my position" click (the `SettingPosition` detour), not the tracker projection. A manual pixel is calibration-independent, survives a calibration re-apply, and is superseded by the next *fresh* tracker fix. `PlayerAnchorStatus` shows `"You — set manually"`. |
 | `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. Auto-set to the most-recently-placed survey by `LogIngestionService` so arrow-key adjustments target the new pin. |
 | `IsMapVisible`, `IsInventoryVisible : bool` | UI | Overlay visibility intent — `OverlayController` reacts. `IsInventoryVisible` is set true by `NoteSurveyDetected` so the user sees which slot to pick next. |
 | `MapOpacity`, `InventoryOpacity : double` | **Persisted** | Bidirectionally synced with `LegolasSettings` in [`LegolasModule.Register`](../src/Legolas.Module/LegolasModule.cs). |
 | `Mode : SessionMode` | Session | `Survey \| Motherlode`. |
 
 ### `IsAnchorEditable` (issue #120)
+
+> **Retired by [#454](https://github.com/moumantai-gg/mithril/issues/454).** There is no editable Survey anchor any more — `IsAnchorEditable` no longer exists and the player marker is non-interactive. [#476](https://github.com/moumantai-gg/mithril/issues/476) reinstated a *non-editable* Survey player marker sourced from `IPlayerPositionTracker` (see the `SurveyPlayerPixel` row above and the #476 banner near the top), not a click the user can drag. The paragraphs below describe the pre-#454 model and are kept only as history.
 
 The anchor is editable — i.e. draggable via the player thumb, nudgeable via hotkeys — **only** while:
 
@@ -300,6 +310,8 @@ The FSM's `Gathering` state is the explicit mitigation: once the route is optimi
 ~~This is not a heuristic; it's a hard constraint. Don't relax it without solving the position-tracking problem.~~
 
 > **Superseded — [#454](https://github.com/moumantai-gg/mithril/issues/454).** The position-tracking problem *is* solved by the game itself: every survey/treasure-map use emits Player.log `ProcessMapFx` with the target's absolute world coordinate (verified: `Check Survey` 4/4 in a live log; `Check Map`/Treasure Cartography shares the same item template). Once Legolas reads `ProcessMapFx`, targets are absolute, movement no longer invalidates anything, and the `Gathering` survey-drop mitigation is unnecessary for placement. This paragraph describes the current code only.
+>
+> **[#476](https://github.com/moumantai-gg/mithril/issues/476) caveat — this only solved *target* placement, not *player* tracking.** The Survey "you are here" marker / route-start (`SurveyPlayerPixel`) comes from `IPlayerPositionTracker`, whose fixes are *also* sparse (`ProcessAddPlayer`/`ProcessNewPosition` = zone-in / teleport only — there is genuinely no per-tick footstep feed in Player.log). The marker is therefore accurate at zone-in and goes stale as the player walks the route — by design, not a bug to "fix". Do not relax the staleness surfacing (`PlayerAnchorStatus` / `MeasuredAt` / `Source`); never present the marker as live. The user's recourse when it *is* stale is the Option C manual override (`SurveyFlowState.SettingPosition`) — that is the designed answer, not making the auto signal pretend to be denser than it is. Target *pins* are unaffected (they're absolute identities).
 
 ### Anchor is "manually editable" only before the first survey
 

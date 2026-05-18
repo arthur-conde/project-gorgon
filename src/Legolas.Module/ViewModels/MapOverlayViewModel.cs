@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Mithril.GameState.Movement;
 
 namespace Legolas.ViewModels;
 
@@ -18,11 +20,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly SurveyFlowController _surveyFlow;
     private readonly LegolasBrushes _brushes;
     private readonly PinCalibrationCoordinator? _pinCal;
+    private readonly IPlayerPositionTracker? _positionTracker;
+    private readonly IAreaCalibrationService? _areaCalibration;
 
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null)
     {
         _session = session;
         _projector = projector;
@@ -31,6 +35,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _brushes = brushes;
         _settings = settings;
         _pinCal = pinCalibration;
+        _positionTracker = positionTracker;
+        _areaCalibration = areaCalibration;
         if (_pinCal is not null)
             _pinCal.PropertyChanged += (_, e) =>
             {
@@ -55,8 +61,29 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             if (e.PropertyName is nameof(SessionState.PlayerPosition))
             {
                 OnPropertyChanged(nameof(PlayerPosition));
+                OnPropertyChanged(nameof(PlayerMarkerPixel));
                 RebuildRouteGeometry();
                 RebuildAllWedges();
+            }
+            else if (e.PropertyName is nameof(SessionState.HasPlayerPosition))
+            {
+                OnPropertyChanged(nameof(PlayerMarkerPixel));
+            }
+            else if (e.PropertyName is nameof(SessionState.SurveyPlayerPixel))
+            {
+                // #476: the Survey GPS moved (zone-in / teleport / calibration
+                // (re)applied). It is the route start + the rendered marker +
+                // the pre-first-collection guidance segment, so rebuild all
+                // three.
+                OnPropertyChanged(nameof(PlayerMarkerPixel));
+                RebuildRouteGeometry();
+            }
+            else if (e.PropertyName is nameof(SessionState.SurveyPlayerMeasuredAt)
+                     or nameof(SessionState.SurveyPlayerSource)
+                     or nameof(SessionState.SurveyPlayerIsManual))
+            {
+                OnPropertyChanged(nameof(PlayerAnchorStatus));
+                OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
             }
             else if (e.PropertyName is nameof(SessionState.ShowRouteLines))
             {
@@ -70,7 +97,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             else if (e.PropertyName is nameof(SessionState.Mode))
             {
                 // Switching between Survey and Motherlode flips wedge
-                // visibility wholesale — Survey hides them, Motherlode shows.
+                // visibility wholesale — Survey hides them, Motherlode shows —
+                // and swaps which player pixel the marker reads (#476).
+                OnPropertyChanged(nameof(PlayerMarkerPixel));
+                OnPropertyChanged(nameof(PlayerAnchorStatus));
+                OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
                 RebuildAllWedges();
             }
         };
@@ -83,14 +114,125 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             if (e.PropertyName == nameof(SurveyFlowController.CurrentState))
             {
                 OnPropertyChanged(nameof(IsListening));
+                OnPropertyChanged(nameof(IsSettingPosition));
                 OnPropertyChanged(nameof(OverlayHint));
                 OnPropertyChanged(nameof(IsOverlayHintVisible));
+                SetPositionCommand.NotifyCanExecuteChanged();
+                CancelSetPositionCommand.NotifyCanExecuteChanged();
             }
         };
+
+        // #476: Survey player-GPS. The tracker fix and the area calibration
+        // are two independent inputs to the same projection — either changing
+        // re-resolves the anchor. Subscribe replays Current synchronously, so
+        // a fix already seen at startup is picked up immediately; the
+        // calibration Changed event covers the (common) case where the area's
+        // calibration is applied after the overlay VM is constructed.
+        if (_positionTracker is not null && _areaCalibration is not null)
+        {
+            _positionTracker.Subscribe(_ => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: true)));
+            _areaCalibration.Changed += (_, _) => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: false));
+            RefreshSurveyPlayerAnchor(fromTrackerFix: false);
+        }
+    }
+
+    /// <summary>
+    /// Re-project the tracker's last world fix to a pixel through the current
+    /// area's calibration and publish it (plus its age/source) onto the
+    /// session. No tracker fix or no calibrated area ⇒ clear it (degrade
+    /// silently — same "no marker" behaviour as before #476). The projection
+    /// is <see cref="AreaCalibration.ProjectWorld"/> — the exact transform the
+    /// <c>ProcessMapFx</c> pins use, so the marker lands in the same frame as
+    /// the pins (subject to the ±10% non-affine map ceiling — it is "near you",
+    /// not pixel-exact, and that is expected).
+    ///
+    /// <para>#476 Option&#160;C — manual-override interaction:
+    /// <list type="bullet">
+    /// <item><paramref name="fromTrackerFix"/> = a genuinely new fix
+    /// (zone-in / teleport). Fresh data is authoritative again, so it
+    /// supersedes a manual override (the override only existed to fix a
+    /// <em>stale</em> anchor).</item>
+    /// <item><paramref name="fromTrackerFix"/> = false (calibration
+    /// re-applied). A manual override is a raw screen pixel that does not
+    /// depend on the calibration, so leave it untouched; otherwise
+    /// re-project auto.</item>
+    /// </list></para>
+    /// </summary>
+    private void RefreshSurveyPlayerAnchor(bool fromTrackerFix)
+    {
+        if (_session.SurveyPlayerIsManual && !fromTrackerFix)
+            return; // a deliberate correction outlives a calibration re-apply
+
+        var fix = _positionTracker?.Current;
+        var cal = _areaCalibration?.CurrentCalibration;
+        if (fix is null || cal is null)
+        {
+            // Either no anchor possible (no fix / uncalibrated, not manual),
+            // or a fresh tracker fix that supersedes a manual override but
+            // can't be projected (uncalibrated area) — the player moved, so
+            // the stale manual pixel is wrong now regardless. Clear everything.
+            _session.SurveyPlayerPixel = null;
+            _session.SurveyPlayerMeasuredAt = null;
+            _session.SurveyPlayerSource = null;
+            _session.SurveyPlayerIsManual = false;
+            return;
+        }
+
+        _session.SurveyPlayerPixel = cal.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z));
+        _session.SurveyPlayerMeasuredAt = fix.MeasuredAt;
+        _session.SurveyPlayerSource = fix.Source;
+        _session.SurveyPlayerIsManual = false;
+    }
+
+    /// <summary>
+    /// Record the user's "set my position" map click (#476 Option&#160;C,
+    /// the stale-anchor override). A raw screen pixel — independent of the
+    /// area calibration, no log <c>Source</c>, stamped with the click time —
+    /// that wins over the projected auto anchor until the next fresh tracker
+    /// fix (zone-in / teleport) takes over again.
+    /// </summary>
+    private void RecordManualPosition(PixelPoint where)
+    {
+        _session.SurveyPlayerPixel = where;
+        _session.SurveyPlayerMeasuredAt = DateTimeOffset.UtcNow;
+        _session.SurveyPlayerSource = null;
+        _session.SurveyPlayerIsManual = true;
+    }
+
+    /// <summary>
+    /// Marshal to the WPF dispatcher — the tracker fires from the Player.log
+    /// ingestion thread and we mutate observable session state bound to the
+    /// overlay. Falls back to a direct call in headless/test contexts. Mirrors
+    /// <c>PlayerLogIngestionService.PostToUi</c>.
+    /// </summary>
+    private static void PostToUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null) action();
+        else dispatcher.InvokeAsync(action);
     }
 
     /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>
     public bool IsListening => _surveyFlow.CurrentState == SurveyFlowState.Listening;
+
+    /// <summary>#476 Option&#160;C: true while the optional manual
+    /// position-override detour is active — the overlay routes the next
+    /// viewport click to <see cref="RecordManualPosition"/> and the wizard
+    /// shows the cancel affordance.</summary>
+    public bool IsSettingPosition => _surveyFlow.CurrentState == SurveyFlowState.SettingPosition;
+
+    /// <summary>Enter the manual position-override detour (#476). Enabled
+    /// only from Listening/Gathering — the FSM guards it too, but gating the
+    /// command keeps the button disabled rather than a silent no-op.</summary>
+    [RelayCommand(CanExecute = nameof(CanSetPosition))]
+    private void SetPosition() => _surveyFlow.RequestSetPosition();
+
+    private bool CanSetPosition() =>
+        _surveyFlow.CurrentState is SurveyFlowState.Listening or SurveyFlowState.Gathering;
+
+    /// <summary>Abandon the detour without changing the anchor (#476).</summary>
+    [RelayCommand(CanExecute = nameof(IsSettingPosition))]
+    private void CancelSetPosition() => _surveyFlow.CancelSetPosition();
 
     /// <summary>#460: true while the wizard <c>Calibrating</c> step has armed
     /// pin-capture on this overlay. The view routes viewport clicks to
@@ -197,9 +339,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// Hidden in Gathering/Done where the route geometry speaks for itself.
     /// </summary>
     // #454 retired the anchor-bootstrap states this hint coached through.
-    // Absolute placement needs no setup, so there's no stall to rescue — kept
-    // as an always-empty property so the view binding stays valid.
-    public string OverlayHint => string.Empty;
+    // Absolute placement needs no setup. #476 reuses the (still-empty by
+    // default) hint to coach the optional manual position-override click.
+    public string OverlayHint =>
+        IsSettingPosition
+            ? "Click the map where your character is standing now."
+            : string.Empty;
 
     public bool IsOverlayHintVisible => !string.IsNullOrEmpty(OverlayHint);
 
@@ -207,6 +352,63 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     {
         get => _session.PlayerPosition;
         set => _session.PlayerPosition = value;
+    }
+
+    /// <summary>
+    /// The "you are here" pixel the overlay renderer should draw, or null for
+    /// no marker. Mode-routed (#476): Motherlode keeps its manual-click anchor
+    /// (only when one has been recorded); Survey uses the projected tracker
+    /// GPS (null until a fix lands in a calibrated area — degrades silently,
+    /// same as pre-#476). Never presented as live: pair it with
+    /// <see cref="PlayerAnchorStatus"/> so the staleness is honest.
+    /// </summary>
+    public PixelPoint? PlayerMarkerPixel =>
+        _session.Mode == SessionMode.Motherlode
+            ? (_session.HasPlayerPosition ? _session.PlayerPosition : null)
+            : _session.SurveyPlayerPixel;
+
+    /// <summary>
+    /// Short staleness label for the Survey player-GPS, e.g.
+    /// <c>"You — zone-in, 4m ago"</c>, or <c>"You — set manually"</c> for the
+    /// #476 Option&#160;C override. Empty outside Survey mode or when no
+    /// anchor has resolved. The auto signal is sparse (zone-in / teleport
+    /// only); this exists so the UI never implies the marker is live.
+    /// </summary>
+    public string PlayerAnchorStatus
+    {
+        get
+        {
+            if (_session.Mode != SessionMode.Survey || !_session.SurveyPlayerPixel.HasValue)
+                return string.Empty;
+            if (_session.SurveyPlayerIsManual)
+                return "You — set manually";
+            return _session.SurveyPlayerMeasuredAt is { } at && _session.SurveyPlayerSource is { } src
+                ? FormatAnchorStatus(at, src, DateTimeOffset.UtcNow)
+                : string.Empty;
+        }
+    }
+
+    public bool IsPlayerAnchorStatusVisible => !string.IsNullOrEmpty(PlayerAnchorStatus);
+
+    /// <summary>
+    /// Pure staleness formatter (testable without a clock dependency). Source
+    /// names the freshness class — <c>Spawn</c> is the zone-in/login anchor
+    /// (freshest, the typical Optimize-time state), <c>Movement</c> a sparse
+    /// teleport. The age is "as of <paramref name="now"/>"; it grows between
+    /// the sparse fixes, which is the honest signal that the player has likely
+    /// walked away from it.
+    /// </summary>
+    public static string FormatAnchorStatus(DateTimeOffset measuredAt, PlayerPositionSource source, DateTimeOffset now)
+    {
+        var kind = source == PlayerPositionSource.Spawn ? "zone-in" : "teleport";
+        var age = now - measuredAt;
+        if (age < TimeSpan.Zero) age = TimeSpan.Zero;
+        string ago = age.TotalSeconds < 60
+            ? "just now"
+            : age.TotalMinutes < 60
+                ? $"{(int)age.TotalMinutes}m ago"
+                : $"{(int)age.TotalHours}h ago";
+        return $"You — {kind}, {ago}";
     }
 
     public bool ShowBearingWedges
@@ -220,11 +422,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     /// <summary>
     /// Two-point polyline drawn on top of the static route line: from the
-    /// most-recently-collected pin (or the player anchor if nothing's been
-    /// collected yet) to the current <see cref="SurveyItemViewModel.IsActiveTarget"/>
-    /// pin. We can't read the player's live position — we only know the anchor —
-    /// so the last-collected pin is the closest available proxy for "where the
-    /// player physically is right now". Empty when there's no active target.
+    /// most-recently-collected pin — or, before the first collection, the
+    /// player's projected GPS anchor (#476) — to the current
+    /// <see cref="SurveyItemViewModel.IsActiveTarget"/> pin. The GPS is sparse
+    /// (zone-in / teleport only), so once the player is walking the route the
+    /// last-collected pin is the better proxy for "where they are now"; the
+    /// anchor only seeds the very first segment. Empty when there's no active
+    /// target, or before the first collection in an uncalibrated area.
     /// </summary>
     [ObservableProperty]
     private IReadOnlyList<PixelPoint> _activeSegmentPoints = Array.Empty<PixelPoint>();
@@ -248,11 +452,22 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [RelayCommand]
     public void HandleMapClick(PixelPoint where)
     {
-        // Survey placement is automatic + absolute (ProcessMapFx) — map clicks
-        // do nothing in Survey mode. In Motherlode mode the click records the
-        // player position for triangulation.
+        // Motherlode: the click records the player position for triangulation.
         if (_session.Mode == SessionMode.Motherlode)
+        {
             SetPlayerPosition(where);
+            return;
+        }
+
+        // Survey: placement is automatic + absolute (ProcessMapFx), so a click
+        // normally does nothing. The one exception is the #476 Option C
+        // manual-override detour: while SettingPosition, the click is the
+        // stale-anchor correction. Record it and return to the parked phase.
+        if (IsSettingPosition)
+        {
+            RecordManualPosition(where);
+            _surveyFlow.ConfirmPosition();
+        }
     }
 
     public double Scale => _projector.Scale;
@@ -292,9 +507,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         }
         if (points.Count == 0) return;
 
-        // #454: no player anchor — the tour starts at the first uncollected
-        // pin (the optimiser still finds the best order through the rest).
-        var order = _optimizer.Optimize(points[0], points);
+        // #476: start the tour from the player's projected GPS when one has
+        // resolved (calibrated area + a tracker fix) — "nearest node to me
+        // first", parity with Motherlode. Falls back to the first uncollected
+        // pin when there's no anchor (uncalibrated area / no fix yet), which
+        // is the #454 behaviour. `start` is a separate origin, not a member of
+        // `points`, so `order`/`indices` are unaffected by the choice.
+        var start = _session.SurveyPlayerPixel ?? points[0];
+        var order = _optimizer.Optimize(start, points);
         for (var i = 0; i < Surveys.Count; i++)
         {
             Surveys[i].UpdateModel(Surveys[i].Model with { RouteOrder = null });
@@ -388,17 +608,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             return;
         }
 
-        // #454: no player anchor. The live segment runs from the
-        // most-recently-collected pin (best available "where the player is
-        // now" proxy) to the active target. Before the first collection
-        // there's no start point — just highlight the target, no segment.
+        // The live segment runs from the most-recently-collected pin (best
+        // available "where the player is now" proxy once they're walking the
+        // route) to the active target. #476: before the first collection,
+        // start from the player's projected GPS if one resolved — restores the
+        // "from you → first node" guidance segment at run start. With neither
+        // (uncalibrated area / no fix, nothing collected) there's no start
+        // point, so just highlight the target (the #454 fallback).
         var lastCollected = Surveys
             .Where(s => s.Collected && s.RouteOrder.HasValue && s.EffectivePixel.HasValue)
             .OrderByDescending(s => s.RouteOrder!.Value)
             .FirstOrDefault();
 
-        ActiveSegmentPoints = lastCollected?.EffectivePixel is { } start
-            ? new[] { start, active.EffectivePixel.Value }
+        PixelPoint? start = lastCollected?.EffectivePixel ?? _session.SurveyPlayerPixel;
+        ActiveSegmentPoints = start is { } s0
+            ? new[] { s0, active.EffectivePixel.Value }
             : Array.Empty<PixelPoint>();
     }
 }

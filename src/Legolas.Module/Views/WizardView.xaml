@@ -30,6 +30,31 @@
                 <Setter Property="Text" Value="›" />
                 <Setter Property="Margin" Value="10,0" />
             </Style>
+
+            <!-- #476 Option C: shared "set my position" affordance, hosted in
+                 both the Listening and Gathering panels (the two phases the
+                 SurveyFlow SettingPosition detour returns to). DataContext is
+                 the wizard VM, so MapOverlay.* binds through. -->
+            <DataTemplate x:Key="SetPositionAffordance">
+                <Grid>
+                    <Button Content="Set my position…"
+                            HorizontalAlignment="Center"
+                            Command="{Binding MapOverlay.SetPositionCommand}"
+                            Visibility="{Binding MapOverlay.IsSettingPosition, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}"
+                            ToolTip="Override the auto position marker — click the map where you're standing. Use this if the marker looks stale or wrong." />
+                    <Border Visibility="{Binding MapOverlay.IsSettingPosition, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                            Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8">
+                        <StackPanel>
+                            <TextBlock Text="Click the map where your character is standing now."
+                                       TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
+                                       Foreground="{StaticResource AccentSoftTextBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8" />
+                            <Button Content="Cancel" HorizontalAlignment="Center"
+                                    Command="{Binding MapOverlay.CancelSetPositionCommand}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -359,6 +384,12 @@
                             </ListBox>
                         </DockPanel>
                     </Border>
+                    <!-- #476 Option C: optional manual position override. The
+                         auto GPS marker is the zero-click default; this is the
+                         "marker looks wrong / area uncalibrated" escape hatch. -->
+                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
+                                    HorizontalAlignment="Center" Margin="0,0,0,12" />
+
                     <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
                             Command="{Binding MapOverlay.OptimizeRouteCommand}"
@@ -396,6 +427,10 @@
                     <Button Content="Mark current collected" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
                             Command="{Binding ControlPanel.MarkCurrentCollectedCommand}" />
+
+                    <!-- #476 Option C: correct a stale anchor mid-route. -->
+                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
+                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
                 </StackPanel>
 
                 <!-- Done -->
