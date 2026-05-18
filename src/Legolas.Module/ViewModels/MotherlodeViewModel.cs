@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
@@ -8,130 +9,113 @@ using Legolas.Services;
 namespace Legolas.ViewModels;
 
 /// <summary>
-/// Motherlode mode: trilateration-driven location of treasures from three
-/// distance measurements taken at three different player positions. Uses the
-/// existing <see cref="ITrilaterationSolver"/> and <see cref="IRouteOptimizer"/>.
+/// Motherlode mode (#488): a thin, read-only projection of
+/// <see cref="MotherlodeMeasurementCoordinator"/>. All input is log-driven —
+/// the ChatLog distance line, the Player.log use gesture, and position feeders
+/// — so this VM no longer takes manual distance/position entry. It rebuilds
+/// its slot list on each coordinator change and owns only route optimization
+/// (calibration-free world-space ordering) and reset.
 /// </summary>
-public sealed partial class MotherlodeViewModel : ObservableObject
+public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
 {
-    private readonly ITrilaterationSolver _trilateration;
+    private readonly MotherlodeMeasurementCoordinator _coordinator;
     private readonly IRouteOptimizer _optimizer;
-    private readonly SessionState _session;
     private readonly MotherlodeFlowController _flow;
-    private readonly MotherlodeSession _state = new();
 
-    public MotherlodeViewModel(ITrilaterationSolver trilateration, IRouteOptimizer optimizer, SessionState session, MotherlodeFlowController flow)
+    public MotherlodeViewModel(
+        MotherlodeMeasurementCoordinator coordinator,
+        IRouteOptimizer optimizer,
+        MotherlodeFlowController flow)
     {
-        _trilateration = trilateration;
+        _coordinator = coordinator;
         _optimizer = optimizer;
-        _session = session;
         _flow = flow;
+        _coordinator.Changed += OnCoordinatorChanged;
+        Rebuild();
     }
 
     public MotherlodeFlowController Flow => _flow;
 
     public ObservableCollection<MotherlodeSlotViewModel> Slots { get; } = new();
 
-    public int CurrentRound => _state.PlayerPositions.Count;
+    [ObservableProperty] private int _locationCount;
+    [ObservableProperty] private int _locationsWithFix;
+    [ObservableProperty] private string? _guidance;
 
-    public int RecordedPositions => _state.PlayerPositions.Count;
+    /// <summary>Treasures with a confident fix so far — the headline number.</summary>
+    public int SolvedCount => Slots.Count(s => s.HasFix);
 
-    [ObservableProperty] private int _distanceInput;
-
-    [RelayCommand]
-    private void RecordPlayerPosition()
+    private void OnCoordinatorChanged()
     {
-        _state.PlayerPositions.Add(_session.PlayerPosition);
-        OnPropertyChanged(nameof(CurrentRound));
-        OnPropertyChanged(nameof(RecordedPositions));
-        _flow.NoteMeasurement($"position{_state.PlayerPositions.Count}");
+        var d = Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) Rebuild();
+        else d.InvokeAsync(Rebuild);
     }
 
-    [RelayCommand]
-    private void RecordCurrentDistance() => RecordDistance(DistanceInput);
-
-    [RelayCommand]
-    private void RecordDistance(int distanceMetres)
+    private void Rebuild()
     {
-        // Append to current round; a new survey is added when no slots exist for this round
-        if (Slots.Count == 0)
-        {
-            var ms = MotherlodeSurvey.Create();
-            _state.Surveys.Add(ms);
-            Slots.Add(new MotherlodeSlotViewModel(ms));
-        }
-        var slot = Slots[Slots.Count - 1];
-        slot.AppendDistance(distanceMetres);
-
-        // After 3 rounds with positions recorded, trilaterate
-        if (_state.PlayerPositions.Count >= 3 && slot.Distances.Count >= 3)
-        {
-            var p1 = _state.PlayerPositions[0];
-            var p2 = _state.PlayerPositions[1];
-            var p3 = _state.PlayerPositions[2];
-            var estimate = _trilateration.Solve(
-                p1, slot.Distances[0],
-                p2, slot.Distances[1],
-                p3, slot.Distances[2]);
-            slot.EstimatedPosition = estimate;
-        }
-        _flow.NoteMeasurement($"distance{slot.Distances.Count}");
+        var snap = _coordinator.Snapshot();
+        Slots.Clear();
+        foreach (var s in snap.Surveys)
+            Slots.Add(new MotherlodeSlotViewModel(s));
+        LocationCount = snap.LocationCount;
+        LocationsWithFix = snap.LocationsWithFix;
+        Guidance = snap.Guidance;
+        OnPropertyChanged(nameof(SolvedCount));
     }
 
     [RelayCommand]
     private void OptimizeRoute()
     {
-        var indices = new List<int>();
-        var points = new List<PixelPoint>();
-        for (var i = 0; i < Slots.Count; i++)
+        var snap = _coordinator.Snapshot();
+        var ids = new List<Guid>();
+        var points = new List<PixelPoint>();   // world (X,Z); routing is similarity-invariant
+        foreach (var s in snap.Surveys)
         {
-            var s = Slots[i];
-            if (s.Collected || s.EstimatedPosition is null) continue;
-            indices.Add(i);
-            points.Add(s.EstimatedPosition.Value);
+            if (s.Collected || s.SolvedWorld is not { } w) continue;
+            ids.Add(s.Id);
+            points.Add(new PixelPoint(w.X, w.Z));
         }
         if (points.Count == 0) return;
 
-        var order = _optimizer.Optimize(_session.PlayerPosition, points);
-        foreach (var slot in Slots) slot.RouteOrder = null;
-        for (var i = 0; i < order.Count; i++)
-        {
-            Slots[indices[order[i]]].RouteOrder = i;
-        }
-        _flow.OptimizeRoute();
+        var start = snap.LastPlayerWorld is { } p
+            ? new PixelPoint(p.X, p.Z)
+            : points[0];
+        var order = _optimizer.Optimize(start, points);
+        _coordinator.ApplyRouteOrder(order.Select(i => ids[i]).ToList());
     }
 
     [RelayCommand]
-    private void Reset()
-    {
-        _state.PlayerPositions.Clear();
-        _state.Surveys.Clear();
-        _state.CurrentRound = 0;
-        Slots.Clear();
-        DistanceInput = 0;
-        OnPropertyChanged(nameof(CurrentRound));
-        OnPropertyChanged(nameof(RecordedPositions));
-        _flow.Reset();
-    }
+    private void Reset() => _coordinator.Reset();
+
+    public void Dispose() => _coordinator.Changed -= OnCoordinatorChanged;
 }
 
-public sealed partial class MotherlodeSlotViewModel : ObservableObject
+/// <summary>Read-only per-treasure row for the wizard panel.</summary>
+public sealed class MotherlodeSlotViewModel
 {
-    public MotherlodeSlotViewModel(MotherlodeSurvey model)
+    public MotherlodeSlotViewModel(MotherlodeSurvey m)
     {
-        Id = model.Id;
-        Distances = new ObservableCollection<int>(model.DistancesByRound);
-        EstimatedPosition = model.EstimatedPosition;
-        Collected = model.Collected;
-        RouteOrder = model.RouteOrder;
+        Id = m.Id;
+        Collected = m.Collected;
+        RouteOrder = m.RouteOrder;
+        DistanceCount = m.DistancesByLocation.Count(d => d > 0);
+        HasFix = m.SolvedWorld is not null;
+        SolvedText = m.SolvedWorld is { } w
+            ? $"({w.X:0}, {w.Z:0})"
+            : DistanceCount < 3
+                ? $"locating… ({DistanceCount}/3 readings)"
+                : "locating…";
+        GdopText = m.Gdop is { } g ? $"GDOP {g:0.0}" : null;
+        ResidualText = m.ResidualRms is { } r ? $"±{r:0.0} m fit" : null;
     }
 
     public Guid Id { get; }
-    public ObservableCollection<int> Distances { get; }
-
-    [ObservableProperty] private PixelPoint? _estimatedPosition;
-    [ObservableProperty] private bool _collected;
-    [ObservableProperty] private int? _routeOrder;
-
-    public void AppendDistance(int metres) => Distances.Add(metres);
+    public bool Collected { get; }
+    public int? RouteOrder { get; }
+    public int DistanceCount { get; }
+    public bool HasFix { get; }
+    public string SolvedText { get; }
+    public string? GdopText { get; }
+    public string? ResidualText { get; }
 }

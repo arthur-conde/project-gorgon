@@ -22,7 +22,9 @@ namespace Legolas.Services;
 /// <see cref="PlayerAreaTracker"/> and, whenever the player's area changes,
 /// apply that area's persisted <see cref="Domain.AreaCalibration"/> via
 /// <see cref="IAreaCalibrationService.SelectArea"/>, plus <c>ProcessMapFx</c>
-/// (absolute survey/treasure targets) placement. Map-pin lifecycle parsing was
+/// (absolute survey/treasure targets) placement and the #488
+/// <c>ProcessDoDelayLoop</c> Motherlode-map use gesture (forwarded to the
+/// <see cref="MotherlodeMeasurementCoordinator"/>). Map-pin lifecycle parsing was
 /// promoted out to the GameState-tier <c>PlayerPinTracker</c> (#468) — one
 /// Player.log subscription here, consistent with the other consumers.</para>
 ///
@@ -48,6 +50,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
+    private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly LegolasSettings _settings;
     private readonly ModuleGates _gates;
     private readonly GameConfig _config;
@@ -73,6 +76,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         IAreaCalibrationService areaCalibration,
         SurveyFlowController flow,
         SessionState session,
+        MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
         ModuleGates gates,
         GameConfig config,
@@ -85,6 +89,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _areaCalibration = areaCalibration;
         _flow = flow;
         _session = session;
+        _motherlode = motherlode;
         _settings = settings;
         _gates = gates;
         _config = config;
@@ -117,10 +122,27 @@ public sealed class PlayerLogIngestionService : BackgroundService
                 ApplyAreaIfChanged();
 
                 // Map pins (ProcessMapPin{Add,Remove}) are owned by the
-                // GameState-tier PlayerPinTracker (#468); this service only
-                // handles ProcessMapFx absolute targets now.
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is MapTargetDetected mt)
-                    PostToUi(() => HandleMapTarget(mt));
+                // GameState-tier PlayerPinTracker (#468); this service handles
+                // ProcessMapFx absolute targets (#454) and the ProcessDoDelayLoop
+                // Motherlode-map use gesture (#488).
+                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                {
+                    case MapTargetDetected mt:
+                        PostToUi(() => HandleMapTarget(mt));
+                        break;
+
+                    // The use gesture only matters in Motherlode mode and only
+                    // live: a pre-_liveSince use is the session-replay backlog
+                    // from a hunt the user already finished (same guard as
+                    // HandleMapTarget). Timestamps are UTC (shared sequencer).
+                    case MotherlodeUseDetected use
+                        when _session.Mode == SessionMode.Motherlode
+                             && use.Timestamp >= _liveSince:
+                        var at = new DateTimeOffset(
+                            DateTime.SpecifyKind(use.Timestamp, DateTimeKind.Utc));
+                        PostToUi(() => _motherlode.OnUse(at));
+                        break;
+                }
             }
             catch (Exception ex)
             {

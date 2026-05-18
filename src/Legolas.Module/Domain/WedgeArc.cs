@@ -1,11 +1,14 @@
 namespace Legolas.Domain;
 
 /// <summary>
-/// Bearing-uncertainty arc for a Motherlode-mode survey. Drawn as a wedge
-/// from the player anchor, sweeping a small arc around the projected
-/// bearing to communicate "the node is somewhere in this direction at
-/// roughly this distance" before the user has corrected enough pins for
-/// the projector to refit.
+/// Bearing-uncertainty arc rendered in Motherlode mode (gated by
+/// <c>ShowBearingWedges</c> + <c>SessionMode.Motherlode</c> in
+/// <c>MapOverlayViewModel.RebuildWedgeFor</c>). Drawn as a wedge from the
+/// player anchor, sweeping a small arc around the projected bearing to
+/// communicate "the node is somewhere in this direction at roughly this
+/// distance". Survey mode does not draw it (#454 made survey placement
+/// absolute — the retired projector-refit narrative this comment used to
+/// reference no longer applies).
 ///
 /// Stored on each <see cref="Legolas.ViewModels.SurveyItemViewModel"/>
 /// as the raw inputs the renderer needs, not as a pre-built WPF

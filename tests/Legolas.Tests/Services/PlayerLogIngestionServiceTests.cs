@@ -55,8 +55,11 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         // deterministic: pushes that use real UtcNow are "live"; a push with
         // an explicit older timestamp is "replay".
         var clock = new FrozenClock(DateTime.UtcNow);
+        var motherlode = new MotherlodeMeasurementCoordinator(
+            new MultilaterationSolver(), new MotherlodeFlowController(session),
+            new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
-            stream, new PlayerLogParser(), tracker, spy, flow, session, settings, gates,
+            stream, new PlayerLogParser(), tracker, spy, flow, session, motherlode, settings, gates,
             config ?? new GameConfig(), time: clock);
         return (svc, stream, spy, session, flow);
     }
