@@ -8,7 +8,9 @@ Companion docs:
 
 ## What Legolas does
 
-Project Gorgon's **Surveying** skill produces survey items that go in the player's inventory. Using one prints a chat line like `[Status] The Iron Vein is 50m east and 30m north`. The item is consumed (and grants XP) only when used while *standing on* the target spot.
+Project Gorgon's survey/treasure items (gated on **Geology**, **Mining**, or **Treasure Cartography** — "Surveying" is loose shorthand here) go in the player's inventory. Using one prints a chat line like `[Status] The Iron Vein is 50m east and 30m north`. The item is consumed (and grants XP) only when used while *standing on* the target spot.
+
+> **Premise correction — see [#454](https://github.com/moumantai-gg/mithril/issues/454).** The "relative offsets only / position is undetectable" model below describes the *current code*, but it is **not a data limitation**. Player.log `LocalPlayer: ProcessMapFx((X,Y,Z), …)` is emitted once per survey/treasure-map use and carries the target's **exact absolute world coordinate** (verified). The agreed design moves Legolas to consume `IPlayerLogStream` and key off `ProcessMapFx`, retiring the relative model, the anchor click, and the `Gathering` survey-drop constraint for placement. The sections below are retained as the as-built description until that work lands.
 
 Legolas tails the chat log, parses these offsets, and:
 
@@ -56,7 +58,7 @@ The user's only inputs to the loop are: clicking the map *once* in `AwaitingPosi
 
 ### The raw data
 
-`[Status]` lines are **relative offsets** from the player's *current* position at the moment the survey item was used. There is no absolute coordinate available anywhere in the chat log — Legolas can only know "the player thinks these N pins are at these offsets *from wherever they were standing each time*".
+`[Status]` lines are **relative offsets** from the player's *current* position at the moment the survey item was used. There is no absolute coordinate available anywhere *in the chat log* — Legolas can only know "the player thinks these N pins are at these offsets *from wherever they were standing each time*". (Superseded — Player.log `ProcessMapFx` does carry the absolute target coordinate per use; see the premise correction above and [#454](https://github.com/moumantai-gg/mithril/issues/454).)
 
 The parser is at [`ChatLogParser.cs`](../src/Legolas.Module/Services/ChatLogParser.cs#L9-L11):
 
@@ -283,7 +285,9 @@ The chat log emits no movement events. If the player walks (or falls / teleports
 
 The FSM's `Gathering` state is the explicit mitigation: once the route is optimised and the player is walking, **any new `SurveyDetected` is dropped**, with the diagnostic `"route in progress; reset to start a new session"` shown in `LastLogEvent`. The user must `Reset()` and re-anchor to start a fresh batch.
 
-This is not a heuristic; it's a hard constraint. Don't relax it without solving the position-tracking problem.
+~~This is not a heuristic; it's a hard constraint. Don't relax it without solving the position-tracking problem.~~
+
+> **Superseded — [#454](https://github.com/moumantai-gg/mithril/issues/454).** The position-tracking problem *is* solved by the game itself: every survey/treasure-map use emits Player.log `ProcessMapFx` with the target's absolute world coordinate (verified: `Check Survey` 4/4 in a live log; `Check Map`/Treasure Cartography shares the same item template). Once Legolas reads `ProcessMapFx`, targets are absolute, movement no longer invalidates anything, and the `Gathering` survey-drop mitigation is unnecessary for placement. This paragraph describes the current code only.
 
 ### Anchor is "manually editable" only before the first survey
 
