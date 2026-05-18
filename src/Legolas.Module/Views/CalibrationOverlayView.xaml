@@ -196,50 +196,50 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Crosshair, restored — but as a SINGLE Path
-                                     (one fixed-size element, like the ghosts that
-                                     render), NOT the zero-size nested Canvas that
-                                     never drew. Geometry is centred on (0,0):
-                                     four arms with a centre gap so the exact pixel
-                                     stays visible to aim at, plus a 3px ring.
-                                     Margin -10,-10 puts geometry-(0,0) on the
-                                     placement pixel. Active target = amber/thick
-                                     via the IsSelected trigger; name on hover. -->
-                                <Path Margin="-12,-12,0,0" ToolTip="{Binding Name}"
-                                      Data="M-12,0 L-5,0 M5,0 L12,0 M0,-12 L0,-5 M0,5 L0,12 M4,0 A4,4 0 1 1 -4,0 A4,4 0 1 1 4,0"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round">
-                                    <Path.Effect>
-                                        <!-- black casing so the bright lines read
-                                             on any terrain (was invisible at 1px). -->
-                                        <DropShadowEffect Color="Black" ShadowDepth="0"
-                                                          BlurRadius="3" Opacity="0.95" />
-                                    </Path.Effect>
-                                    <Path.Style>
-                                        <Style TargetType="Path">
-                                            <Setter Property="Stroke" Value="#FFFF3B30" />
-                                            <Setter Property="StrokeThickness" Value="2.2" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Stroke" Value="#FFFFD400" />
-                                                    <Setter Property="StrokeThickness" Value="3" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Path.Style>
-                                </Path>
+                                <!-- v1 marker, restored (user-confirmed it DID
+                                     render — the 1px lines were just hard to see
+                                     in screenshots; my Path "fix" introduced a
+                                     down-right shift). Zero-size Canvas: every
+                                     part at an EXACT negative offset so the
+                                     crosshair centre is pixel-accurately on the
+                                     placement point. Centre gap + ring keep the
+                                     exact pixel aim-able; label up-right. Active
+                                     (nudge) target = amber dashed halo. -->
+                                <Canvas>
+                                    <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                             Stroke="#FFFFC400" StrokeThickness="1.5"
+                                             StrokeDashArray="2 2"
+                                             Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             Stroke="White" StrokeThickness="1" />
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC000000" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" />
+                                    </Border>
+                                </Canvas>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Test-mode "you are here". Single Ellipse, proven idiom:
-                         positioned by Canvas.Left/Top and centred via negative
-                         Margin (no nested zero-size Canvas). -->
+                    <!-- v1 "you are here": zero-size Canvas at the origin pixel,
+                         parts at exact offsets. Amber halo (it's the nudge
+                         target), blue ring, label. -->
                     <Canvas IsHitTestVisible="False"
                             Visibility="{Binding HasTestOrigin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <Ellipse Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}"
-                                 Width="16" Height="16" Margin="-8,-8,0,0"
-                                 Fill="#5540C4FF" Stroke="#FF40C4FF" StrokeThickness="2"
-                                 ToolTip="you (test position) — arrow keys nudge" />
+                        <Canvas Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}">
+                            <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2" />
+                            <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
+                                     Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
+                            <Border Canvas.Left="14" Canvas.Top="-9" Background="#CC000000"
+                                    CornerRadius="2" Padding="3,1">
+                                <TextBlock Text="you" Foreground="#FF40C4FF" FontSize="11" />
+                            </Border>
+                        </Canvas>
                     </Canvas>
 
                     <!-- Projected test pins (green) — compare to the real ping. -->
@@ -260,28 +260,34 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- On-screen: solid green dot at the true pixel.
-                                     Off-screen: orange dashed hollow ring clamped
-                                     to the edge (NOT the true spot — nudge "you"
-                                     to bring it in; it follows live). -->
-                                <Ellipse Width="13" Height="13" Margin="-6.5,-6.5,0,0"
-                                         ToolTip="{Binding Name}">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="#CC34C759" />
-                                            <Setter Property="Stroke" Value="White" />
-                                            <Setter Property="StrokeThickness" Value="1.5" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsOffscreen}" Value="True">
-                                                    <Setter Property="Fill" Value="Transparent" />
-                                                    <Setter Property="Stroke" Value="#FFFF9500" />
-                                                    <Setter Property="StrokeThickness" Value="2.5" />
-                                                    <Setter Property="StrokeDashArray" Value="2 2" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
+                                <!-- v1 green crosshair+ring+label (renders at the
+                                     clamped Display position so a far projection
+                                     still shows at the window edge). The white
+                                     centre ring goes orange when edge-clamped so
+                                     you can tell it's NOT at the true spot. -->
+                                <Canvas>
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FF34C759" />
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             StrokeThickness="1">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Stroke" Value="White" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsOffscreen}" Value="True">
+                                                        <Setter Property="Stroke" Value="#FFFF9500" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC0A2A12" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="#FF8FF0AB" FontSize="11" />
+                                    </Border>
+                                </Canvas>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
