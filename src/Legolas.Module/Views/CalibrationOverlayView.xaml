@@ -140,7 +140,8 @@
                       MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
                     <!-- Placed-reference markers. IsHitTestVisible=False so they
                          never swallow a calibration click. -->
-                    <ItemsControl ItemsSource="{Binding Placements}" IsHitTestVisible="False">
+                    <ItemsControl ItemsSource="{Binding Placements}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <Canvas />
@@ -154,14 +155,30 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Offset so the dot centres on the click point. -->
-                                <Grid Margin="-7,-7,0,0">
-                                    <Ellipse Width="14" Height="14"
-                                             Fill="#CC3A9BDC" Stroke="White" StrokeThickness="2" />
-                                    <TextBlock Text="{Binding Name}" Foreground="White"
-                                               FontSize="11" Margin="18,-2,0,0"
-                                               Background="#99000000" Padding="3,1" />
-                                </Grid>
+                                <!-- Marker root is a zero-size Canvas: its (0,0)
+                                     is pinned exactly to the placement pixel by
+                                     the container's Canvas.Left/Top. Every part
+                                     is positioned with explicit negative offsets
+                                     so the crosshair centre is THE clicked pixel,
+                                     regardless of label width. The label sits
+                                     clearly up-and-right with a gap so it never
+                                     covers the point being calibrated. -->
+                                <Canvas>
+                                    <!-- crosshair arms (gap left at the centre so
+                                         the exact pixel stays visible) -->
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <!-- 1px hairline ring around the point -->
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             Stroke="White" StrokeThickness="1" />
+                                    <!-- label, offset away from the point -->
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC000000" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" />
+                                    </Border>
+                                </Canvas>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
