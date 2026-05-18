@@ -98,8 +98,17 @@
                     </DockPanel>
                 </Border>
 
-                <!-- Transparent click-capture surface over the in-game map -->
-                <Grid x:Name="Viewport" Background="Transparent"
+                <!-- Click-capture surface over the in-game map. Background is a
+                     near-zero-alpha fill (#03000000 ≈ 1%), NOT "Transparent":
+                     this is an AllowsTransparency layered window, so the OS only
+                     delivers clicks on pixels with non-zero composited alpha.
+                     A pure-Transparent (alpha 0) region lets the click fall
+                     through to the game underneath — which is why "clicking
+                     through the overlay" dropped no marker. The survey overlay
+                     gets this for free via its #80101010 backdrop; this window
+                     has no backdrop, so the Viewport must paint its own faint
+                     fill. ~1% alpha is visually imperceptible over the map. -->
+                <Grid x:Name="Viewport" Background="#03000000"
                       MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
                     <!-- Placed-reference markers. IsHitTestVisible=False so they
                          never swallow a calibration click. -->
