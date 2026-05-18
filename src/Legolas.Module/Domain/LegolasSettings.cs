@@ -5,7 +5,7 @@ namespace Legolas.Domain;
 
 public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<LegolasSettings>
 {
-    public const int Version = 3;
+    public const int Version = 4;
     public static int CurrentVersion => Version;
 
     /// <summary>
@@ -23,6 +23,15 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     /// calibration). The migration is a no-op: the new dictionary defaults to
     /// empty, which is exactly the "no calibration yet" state, so v2 JSON loads
     /// unchanged and simply starts uncalibrated per area.
+    ///
+    /// v3 → v4 adds <see cref="CalibrationPinStyle"/> (the in-flow #460/#477A
+    /// calibration marker appearance, #478). The migration is a no-op for the
+    /// same reason as v2 → v3: the new sub-object defaults via
+    /// <see cref="LegolasPinStyle.CalibrationDefaults"/> to the pre-#478
+    /// hardcoded look, so v3 JSON (which lacks the key) loads visually
+    /// unchanged. <see cref="Migrate"/> needs no v3 → v4 branch — the v1 → v2
+    /// colour-promotion block it always runs is itself a no-op on a v3 blob
+    /// (the legacy colour fields are already absent / null).
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
@@ -117,6 +126,19 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     public LegolasPinStyle PinStyle { get; set; } = new();
     public LegolasPinStyle PlayerPinStyle { get; set; } = LegolasPinStyle.PlayerDefaults();
     public LegolasActivePinStyle ActivePinStyle { get; set; } = new();
+
+    /// <summary>
+    /// Appearance of the in-flow (#460/#477A) guided-calibration markers — the
+    /// placed/paired dots rendered on the survey map overlay during
+    /// <c>WizardStep.Calibrating</c> (#478). Same two-shape model as the survey
+    /// pin: <c>Outer</c> is the selection ring (shown only while a marker is
+    /// selected for drag/nudge), <c>Center</c> the always-on dot. Defaults via
+    /// <see cref="LegolasPinStyle.CalibrationDefaults"/> reproduce the pre-#478
+    /// hardcoded look, so v3 JSON without this key loads visually unchanged
+    /// (see <see cref="SchemaVersion"/>). The standalone calibration window's
+    /// markers are deliberately out of scope and unaffected.
+    /// </summary>
+    public LegolasPinStyle CalibrationPinStyle { get; set; } = LegolasPinStyle.CalibrationDefaults();
 
     /// <summary>
     /// Per-area solved projector calibration, keyed by the internal area key

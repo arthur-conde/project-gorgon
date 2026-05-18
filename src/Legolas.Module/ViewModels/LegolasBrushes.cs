@@ -26,6 +26,8 @@ public sealed class LegolasBrushes : ObservableObject
         _settings.PlayerPinStyle.Outer.PropertyChanged += OnPlayerOuterChanged;
         _settings.PlayerPinStyle.Center.PropertyChanged += OnPlayerCenterChanged;
         _settings.ActivePinStyle.PropertyChanged += OnActiveChanged;
+        _settings.CalibrationPinStyle.Outer.PropertyChanged += OnCalibrationOuterChanged;
+        _settings.CalibrationPinStyle.Center.PropertyChanged += OnCalibrationCenterChanged;
     }
 
     public SolidColorBrush RouteLine => Build(_settings.Colors.RouteLine);
@@ -43,6 +45,11 @@ public sealed class LegolasBrushes : ObservableObject
     public SolidColorBrush PlayerCenterStroke => Build(_settings.PlayerPinStyle.Center.StrokeColor);
 
     public SolidColorBrush ActivePin => Build(_settings.ActivePinStyle.Color);
+
+    public SolidColorBrush CalibrationOuterFill => Build(_settings.CalibrationPinStyle.Outer.FillColor);
+    public SolidColorBrush CalibrationOuterStroke => Build(_settings.CalibrationPinStyle.Outer.StrokeColor);
+    public SolidColorBrush CalibrationCenterFill => Build(_settings.CalibrationPinStyle.Center.FillColor);
+    public SolidColorBrush CalibrationCenterStroke => Build(_settings.CalibrationPinStyle.Center.StrokeColor);
 
     private static SolidColorBrush Build(string hex)
     {
@@ -113,5 +120,23 @@ public sealed class LegolasBrushes : ObservableObject
     {
         if (e.PropertyName == nameof(LegolasActivePinStyle.Color))
             OnPropertyChanged(nameof(ActivePin));
+    }
+
+    private void OnCalibrationOuterChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(LegolasPinShapeStyle.FillColor): OnPropertyChanged(nameof(CalibrationOuterFill)); break;
+            case nameof(LegolasPinShapeStyle.StrokeColor): OnPropertyChanged(nameof(CalibrationOuterStroke)); break;
+        }
+    }
+
+    private void OnCalibrationCenterChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(LegolasPinShapeStyle.FillColor): OnPropertyChanged(nameof(CalibrationCenterFill)); break;
+            case nameof(LegolasPinShapeStyle.StrokeColor): OnPropertyChanged(nameof(CalibrationCenterStroke)); break;
+        }
     }
 }

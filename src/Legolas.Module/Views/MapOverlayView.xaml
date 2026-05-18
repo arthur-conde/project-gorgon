@@ -66,8 +66,12 @@
                      IsHitTestVisible=False so clicks reach the Viewport
                      handler. Zero-size Canvas + negative offsets so the dot
                      sits exactly on the click (WPF Grid would re-centre it).
-                     #478 will drive this marker's appearance from
-                     LegolasPinStyle; today it is a fixed dot + selection ring. -->
+                     #478: appearance is driven by
+                     LegolasSettings.CalibrationPinStyle — Outer = the selection
+                     ring (shown only while selected), Center = the always-on
+                     dot — via the same converter/brush infra the survey pins
+                     use, so live setting edits repaint without a restart.
+                     Defaults reproduce the pre-#478 hardcoded look. -->
                 <ItemsControl ItemsSource="{Binding CalibrationMarkers}" IsHitTestVisible="False"
                               Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
                     <ItemsControl.ItemsPanel>
@@ -83,18 +87,55 @@
                         <DataTemplate>
                             <!-- Zero-size Canvas so the dot's screen position
                                  is independent of the selection ring: a Grid
-                                 auto-resizes 12→22px when IsSelected flips,
-                                 which slid already-placed dots down/right as
-                                 selection moved to the next pin. Canvas pins
-                                 each ellipse at a fixed offset from (X,Y). -->
+                                 auto-resizes when IsSelected flips, which slid
+                                 already-placed dots down/right as selection
+                                 moved to the next pin. Canvas pins each Path at
+                                 -Size/2 from (X,Y) so the geometry box (built
+                                 0..Size by PinShapeToGeometryConverter) centres
+                                 exactly on the click. Style + brushes live on
+                                 the ItemsControl's DataContext (the overlay VM);
+                                 the item DataContext is the CalibrationMarker
+                                 (IsSelected). -->
                             <Canvas Width="0" Height="0">
-                                <Ellipse Canvas.Left="-11" Canvas.Top="-11"
-                                         Width="22" Height="22"
-                                         Stroke="#FFFFD23F" StrokeThickness="2"
-                                         Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                                <Ellipse Canvas.Left="-6" Canvas.Top="-6"
-                                         Width="12" Height="12"
-                                         Fill="#CC33C1FF" Stroke="White" StrokeThickness="1.5" />
+                                <!-- Outer = selection ring (only while selected). -->
+                                <Path Canvas.Left="{Binding DataContext.CalibrationPinStyle.Outer.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
+                                      Canvas.Top="{Binding DataContext.CalibrationPinStyle.Outer.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
+                                      Fill="{Binding DataContext.Brushes.CalibrationOuterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      Stroke="{Binding DataContext.Brushes.CalibrationOuterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      StrokeDashArray="{Binding DataContext.CalibrationPinStyle.Outer.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}"
+                                      Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.Size" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
+                                <!-- Center = the always-on dot. -->
+                                <Path Canvas.Left="{Binding DataContext.CalibrationPinStyle.Center.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
+                                      Canvas.Top="{Binding DataContext.CalibrationPinStyle.Center.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
+                                      Fill="{Binding DataContext.Brushes.CalibrationCenterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      Stroke="{Binding DataContext.Brushes.CalibrationCenterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      StrokeDashArray="{Binding DataContext.CalibrationPinStyle.Center.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
+                                    <Path.StrokeThickness>
+                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
+                                            <Binding Path="DataContext.CalibrationPinStyle.Center.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                            <Binding Path="DataContext.CalibrationPinStyle.Center.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        </MultiBinding>
+                                    </Path.StrokeThickness>
+                                    <Path.Data>
+                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
+                                            <Binding Path="DataContext.CalibrationPinStyle.Center.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                            <Binding Path="DataContext.CalibrationPinStyle.Center.Size" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                        </MultiBinding>
+                                    </Path.Data>
+                                </Path>
                             </Canvas>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

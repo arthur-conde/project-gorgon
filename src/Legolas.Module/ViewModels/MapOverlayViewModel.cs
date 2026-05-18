@@ -382,6 +382,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     private static readonly LegolasPinStyle _defaultPinStyle = new();
     private static readonly LegolasPinStyle _defaultPlayerPinStyle = LegolasPinStyle.PlayerDefaults();
+    private static readonly LegolasPinStyle _defaultCalibrationPinStyle = LegolasPinStyle.CalibrationDefaults();
     private static readonly LegolasActivePinStyle _defaultActivePinStyle = new();
 
     /// <summary>Survey pin shape configuration for the DataTemplate. Falls
@@ -397,6 +398,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// <summary>Active-pin highlight configuration. Falls back to defaults
     /// when the simpler test constructor is used (no settings).</summary>
     public LegolasActivePinStyle ActivePinStyle => _settings?.ActivePinStyle ?? _defaultActivePinStyle;
+
+    /// <summary>In-flow (#460/#477A) calibration marker appearance (#478).
+    /// <c>Outer</c> = the selection ring (drawn only while the marker is
+    /// selected); <c>Center</c> = the always-on dot. Drives the overlay's
+    /// calibration-marker DataTemplate; falls back to
+    /// <see cref="LegolasPinStyle.CalibrationDefaults"/> for the test ctor.</summary>
+    public LegolasPinStyle CalibrationPinStyle => _settings?.CalibrationPinStyle ?? _defaultCalibrationPinStyle;
 
     /// <summary>
     /// Context-aware on-overlay instruction. Empty during normal use; appears

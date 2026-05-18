@@ -80,6 +80,36 @@ public sealed class LegolasPinStyle : INotifyPropertyChanged
         return style;
     }
 
+    /// <summary>
+    /// Factory for the in-flow (#460/#477A) calibration marker style. Defaults
+    /// reproduce the pre-#478 hardcoded look exactly so the v3→v4 migration is
+    /// visually a no-op: <see cref="Outer"/> is the selection ring (22px circle,
+    /// gold <c>#FFFFD23F</c> 2px stroke, no fill — rendered only while the
+    /// marker is selected) and <see cref="Center"/> is the always-on dot (12px
+    /// circle, <c>#CC33C1FF</c> fill, white 1.5px stroke). Like the player pin,
+    /// the outer <see cref="LegolasPinShapeStyle.Size"/> is meaningful (it is the
+    /// selection-ring diameter), unlike the survey pin where it is driven by
+    /// <c>SurveyPinRadiusMetres</c>.
+    /// </summary>
+    public static LegolasPinStyle CalibrationDefaults()
+    {
+        var style = new LegolasPinStyle();
+        style.Outer.Shape = PinShape.Circle;
+        style.Outer.FillColor = "#00000000";
+        style.Outer.StrokeColor = "#FFFFD23F";
+        style.Outer.StrokeStyle = PinStrokeStyle.Solid;
+        style.Outer.StrokeThickness = 2.0;
+        style.Outer.Size = 22.0;
+
+        style.Center.Shape = PinShape.Circle;
+        style.Center.FillColor = "#CC33C1FF";
+        style.Center.StrokeColor = "#FFFFFFFF";
+        style.Center.StrokeStyle = PinStrokeStyle.Solid;
+        style.Center.StrokeThickness = 1.5;
+        style.Center.Size = 12.0;
+        return style;
+    }
+
     private void OnChildChanged(object? sender, PropertyChangedEventArgs e)
     {
         // Forward child-property names so brush/converter bindings against

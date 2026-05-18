@@ -68,6 +68,42 @@ public class LegolasBrushesTests
     }
 
     [Fact]
+    public void Calibration_outer_stroke_change_propagates_to_brush()
+    {
+        var brushes = Create(out var settings);
+        var changed = new List<string?>();
+        brushes.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        settings.CalibrationPinStyle.Outer.StrokeColor = "#FF123456";
+
+        changed.Should().Contain(nameof(LegolasBrushes.CalibrationOuterStroke));
+        brushes.CalibrationOuterStroke.Color.Should().Be(Color.FromArgb(0xFF, 0x12, 0x34, 0x56));
+    }
+
+    [Fact]
+    public void Calibration_center_fill_change_propagates_to_brush()
+    {
+        var brushes = Create(out var settings);
+        var changed = new List<string?>();
+        brushes.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        settings.CalibrationPinStyle.Center.FillColor = "#8000AA55";
+
+        changed.Should().Contain(nameof(LegolasBrushes.CalibrationCenterFill));
+        brushes.CalibrationCenterFill.Color.Should().Be(Color.FromArgb(0x80, 0x00, 0xAA, 0x55));
+    }
+
+    [Fact]
+    public void Default_calibration_brushes_match_calibration_defaults()
+    {
+        var brushes = Create(out _);
+
+        brushes.CalibrationOuterStroke.Color.Should().Be(Color.FromArgb(0xFF, 0xFF, 0xD2, 0x3F));
+        brushes.CalibrationCenterFill.Color.Should().Be(Color.FromArgb(0xCC, 0x33, 0xC1, 0xFF));
+        brushes.CalibrationCenterStroke.Color.Should().Be(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+    }
+
+    [Fact]
     public void Built_brush_is_frozen()
     {
         var brushes = Create(out _);

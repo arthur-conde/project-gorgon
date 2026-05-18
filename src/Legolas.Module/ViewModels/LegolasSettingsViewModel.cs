@@ -29,6 +29,7 @@ public sealed partial class LegolasSettingsViewModel : ObservableObject
         PinStyle = settings.PinStyle;
         PlayerPinStyle = settings.PlayerPinStyle;
         ActivePinStyle = settings.ActivePinStyle;
+        CalibrationPinStyle = settings.CalibrationPinStyle;
         Brushes = brushes;
 
         // Surface autosave activity in the footer so the user knows their
@@ -48,6 +49,7 @@ public sealed partial class LegolasSettingsViewModel : ObservableObject
     public LegolasPinStyle PinStyle { get; }
     public LegolasPinStyle PlayerPinStyle { get; }
     public LegolasActivePinStyle ActivePinStyle { get; }
+    public LegolasPinStyle CalibrationPinStyle { get; }
     public LegolasBrushes Brushes { get; }
 
     public IReadOnlyList<PinShape> PinShapes { get; } = Enum.GetValues<PinShape>();
@@ -91,6 +93,14 @@ public sealed partial class LegolasSettingsViewModel : ObservableObject
         var defaults = LegolasPinStyle.PlayerDefaults();
         CopyShape(defaults.Outer, PlayerPinStyle.Outer);
         CopyShape(defaults.Center, PlayerPinStyle.Center);
+    }
+
+    [RelayCommand]
+    private void ResetCalibrationPinStyleToDefaults()
+    {
+        var defaults = LegolasPinStyle.CalibrationDefaults();
+        CopyShape(defaults.Outer, CalibrationPinStyle.Outer);
+        CopyShape(defaults.Center, CalibrationPinStyle.Center);
     }
 
     [RelayCommand]
