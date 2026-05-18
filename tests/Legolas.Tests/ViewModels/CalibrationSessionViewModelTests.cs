@@ -303,6 +303,88 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void Duplicate_survey_vector_is_deduped()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+
+        svc.NoteSurvey("Vein", new MetreOffset(50, 20));
+        svc.NoteSurvey("Vein", new MetreOffset(51, 19));    // within 2m → dup
+        vm.SurveyPins.Should().ContainSingle();
+        vm.LastSurveyText.Should().Contain("duplicate");
+
+        svc.NoteSurvey("Vein", new MetreOffset(80, 20));     // far enough → new
+        vm.SurveyPins.Should().HaveCount(2);
+        svc.NoteSurvey("Other", new MetreOffset(50, 20));    // diff name → new
+        vm.SurveyPins.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void Click_hit_test_selects_a_pin_for_drag_else_falls_through()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(300, 300)); // player
+
+        // Within radius of the player pin → selects it.
+        vm.TrySelectPinAt(new PixelPoint(307, 304), 14).Should().BeTrue();
+        vm.IsPlayerSelected.Should().BeTrue();
+
+        // Empty space → no hit.
+        vm.TrySelectPinAt(new PixelPoint(10, 10), 14).Should().BeFalse();
+
+        // A placement gets hit-selected too.
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
+        vm.TrySelectPinAt(new PixelPoint(52, 58), 14).Should().BeTrue();
+        vm.SelectedPlacement.Should().NotBeNull();
+        vm.IsPlayerSelected.Should().BeFalse(); // mutually exclusive
+    }
+
+    [Fact]
+    public void DragSelectedTo_moves_the_pin_to_an_absolute_point()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+        svc.NoteSurvey("Vein", new MetreOffset(0, 50)); // proj (100,50)
+        var s = vm.SurveyPins[0];
+
+        vm.SelectedSurveyPin = s;
+        vm.DragSelectedTo(new PixelPoint(420, 360));
+        s.OverlayX.Should().Be(420);
+        s.OverlayY.Should().Be(360);
+        s.Corrected.Should().BeTrue();
+
+        // Drag the player pin (absolute) → survey re-projects from it.
+        vm.SetPlayerPositionCommand.Execute(null); // selects existing player
+        vm.DragSelectedTo(new PixelPoint(200, 100));
+        vm.PlayerPinX.Should().Be(200);
+        s.ProjX.Should().BeApproximately(200, 1e-6); // re-projected
+        s.OverlayX.Should().Be(420);                 // corrected → unaffected
+    }
+
+    [Fact]
     public void NudgeSelected_is_a_noop_with_nothing_selected()
     {
         var vm = new CalibrationSessionViewModel(new FakeService());

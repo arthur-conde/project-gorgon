@@ -205,7 +205,9 @@
                 <Grid x:Name="Viewport" Background="#03000000"
                       Focusable="True" FocusVisualStyle="{x:Null}"
                       SizeChanged="Viewport_SizeChanged"
-                      MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
+                      MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
+                      MouseMove="Viewport_MouseMove"
+                      MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
                     <!-- Placed-reference markers. IsHitTestVisible=False so they
                          never swallow a calibration click. -->
                     <ItemsControl ItemsSource="{Binding Placements}" IsHitTestVisible="False"

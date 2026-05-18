@@ -43,20 +43,44 @@ public partial class CalibrationOverlayView : Window
             DragMove();
     }
 
+    private bool _dragging;
+
     private void Viewport_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (DataContext is not CalibrationSessionViewModel vm) return;
-        // Only the transparent viewport background is a placement click — markers
-        // are IsHitTestVisible=False, and the control panel is a separate opaque
-        // dock that never routes here.
         if (e.OriginalSource is not FrameworkElement fe || !ReferenceEquals(fe, Viewport)) return;
 
-        var pos = Mouse.GetPosition(Viewport);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(pos.X, pos.Y));
-        // Pull keyboard focus onto the (focusable) Viewport so arrow-key nudge
-        // works immediately after placing — otherwise focus stays on the
-        // reference list and the list eats the arrows.
+        var p = Mouse.GetPosition(Viewport);
+        var pos = new PixelPoint(p.X, p.Y);
+
+        // Hit an existing pin → grab it and drag (mouse, not arrow keys —
+        // bypasses the listbox/hotkey fight). Miss → click-to-place / arm.
+        if (vm.TrySelectPinAt(pos, 14))
+        {
+            _dragging = true;
+            vm.DragSelectedTo(pos);
+            Viewport.CaptureMouse();
+        }
+        else
+        {
+            vm.ViewportClickedCommand.Execute(pos);
+        }
         Viewport.Focus();
+        e.Handled = true;
+    }
+
+    private void Viewport_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging || DataContext is not CalibrationSessionViewModel vm) return;
+        var p = Mouse.GetPosition(Viewport);
+        vm.DragSelectedTo(new PixelPoint(p.X, p.Y));
+    }
+
+    private void Viewport_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        Viewport.ReleaseMouseCapture();
         e.Handled = true;
     }
 

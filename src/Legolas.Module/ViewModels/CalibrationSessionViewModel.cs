@@ -242,6 +242,73 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             p.Pixel = new PixelPoint(p.Pixel.X + dx, p.Pixel.Y + dy);
     }
 
+    private static double Dist(double ax, double ay, double bx, double by)
+    {
+        var dx = ax - bx;
+        var dy = ay - by;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    /// <summary>Mouse-down hit-test: if a pin (player / survey overlay /
+    /// placement) is within <paramref name="radius"/> px of the click, select
+    /// it (mutually exclusive) and return true so the view starts a drag.
+    /// Otherwise false → the click falls through to place/arm. Priority:
+    /// player, then nearest on-screen survey overlay, then nearest placement.</summary>
+    public bool TrySelectPinAt(PixelPoint at, double radius)
+    {
+        if (PlayerPin is { } pp && Dist(at.X, at.Y, pp.X, pp.Y) <= radius)
+        {
+            SelectPlayerInternal();
+            return true;
+        }
+
+        SurveyPin? bestS = null;
+        var bestSd = radius;
+        foreach (var s in SurveyPins)
+        {
+            if (s.IsOffscreen) continue; // can't grab a clamped (not-true) pin
+            var d = Dist(at.X, at.Y, s.OverlayX, s.OverlayY);
+            if (d <= bestSd) { bestSd = d; bestS = s; }
+        }
+        if (bestS is not null) { SelectedSurveyPin = bestS; return true; }
+
+        PlacedReference? bestP = null;
+        var bestPd = radius;
+        foreach (var p in Placements)
+        {
+            var d = Dist(at.X, at.Y, p.X, p.Y);
+            if (d <= bestPd) { bestPd = d; bestP = p; }
+        }
+        if (bestP is not null) { SelectedPlacement = bestP; return true; }
+
+        return false;
+    }
+
+    /// <summary>Drag: move the selected pin to the absolute pixel (not a delta).
+    /// Same target rules as <see cref="NudgeSelected"/>.</summary>
+    public void DragSelectedTo(PixelPoint at)
+    {
+        if (PlayerPin is { IsSelected: true } pp)
+        {
+            pp.Pixel = at;
+            OnPropertyChanged(nameof(PlayerPinX));
+            OnPropertyChanged(nameof(PlayerPinY));
+            ReprojectSurveyPins();
+            RaiseDebug();
+            return;
+        }
+        if (SelectedSurveyPin is { } s)
+        {
+            s.OverlayPixel = at;
+            s.Corrected = true;
+            ClampSurvey(s);
+            RaiseDebug();
+            return;
+        }
+        if (SelectedPlacement is { } p)
+            p.Pixel = at;
+    }
+
     public bool CanSolve => Placements.Count >= 2;
 
     private void OnServiceChanged(object? sender, EventArgs e)
@@ -435,6 +502,21 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         if (PlayerPin is not { } pp)
         {
             LastSurveyText = seen + " — Set player position first.";
+            RaiseDebug();
+            return;
+        }
+
+        // Dedup: the same node surveyed again from the same spot (or a
+        // double-parsed line) repeats the exact vector. Treat same name +
+        // offset within ~2 m as the same pin and skip — don't pile duplicates
+        // (and don't clobber a correction already made on it).
+        const double dedupMetres = 2.0;
+        if (SurveyPins.Any(s =>
+                string.Equals(s.Name, obs.Name, StringComparison.OrdinalIgnoreCase) &&
+                Math.Abs(s.Offset.East - obs.Offset.East) <= dedupMetres &&
+                Math.Abs(s.Offset.North - obs.Offset.North) <= dedupMetres))
+        {
+            LastSurveyText = seen + " → duplicate vector, ignored (already in Surveys).";
             RaiseDebug();
             return;
         }
