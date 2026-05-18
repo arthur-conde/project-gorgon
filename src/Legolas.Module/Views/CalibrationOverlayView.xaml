@@ -195,60 +195,42 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Marker root is a zero-size Canvas: its (0,0)
-                                     is pinned exactly to the placement pixel by
-                                     the container's Canvas.Left/Top. Every part
-                                     is positioned with explicit negative offsets
-                                     so the crosshair centre is THE clicked pixel,
-                                     regardless of label width. The label sits
-                                     clearly up-and-right with a gap so it never
-                                     covers the point being calibrated. -->
-                                <Canvas>
-                                    <!-- Active-target halo: only the placement
-                                         the arrow keys will move. Amber dashed
-                                         ring well clear of the crosshair so the
-                                         exact pixel stays readable. -->
-                                    <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
-                                             Stroke="#FFFFC400" StrokeThickness="1.5"
-                                             StrokeDashArray="2 2"
-                                             Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                                    <!-- crosshair arms (gap left at the centre so
-                                         the exact pixel stays visible) -->
-                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
-                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
-                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FFFF3B30" />
-                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FFFF3B30" />
-                                    <!-- 1px hairline ring around the point -->
-                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
-                                             Stroke="White" StrokeThickness="1" />
-                                    <!-- label, offset away from the point -->
-                                    <Border Canvas.Left="9" Canvas.Top="-9"
-                                            Background="#CC000000" CornerRadius="2" Padding="3,1">
-                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" />
-                                    </Border>
-                                </Canvas>
+                                <!-- PROVEN minimal idiom (same as the ghosts that
+                                     render): a single Ellipse, centred on the
+                                     placement pixel via negative Margin. The
+                                     zero-size nested-Canvas crosshair did NOT
+                                     render in a ContentPresenter — do not bring
+                                     it back. Active (nudge) target = amber thick
+                                     ring via the IsSelected trigger. Name on hover. -->
+                                <Ellipse Width="13" Height="13" Margin="-6.5,-6.5,0,0"
+                                         ToolTip="{Binding Name}">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#CCFF3B30" />
+                                            <Setter Property="Stroke" Value="White" />
+                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter Property="Stroke" Value="#FFFFC400" />
+                                                    <Setter Property="StrokeThickness" Value="3" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Test-mode synthetic player origin ("you are here"). -->
+                    <!-- Test-mode "you are here". Single Ellipse, proven idiom:
+                         positioned by Canvas.Left/Top and centred via negative
+                         Margin (no nested zero-size Canvas). -->
                     <Canvas IsHitTestVisible="False"
                             Visibility="{Binding HasTestOrigin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <!-- Zero-size anchor at the test origin pixel; parts placed
-                             by explicit offsets (NOT a Grid — Grid would centre
-                             the ring in a label-sized cell, the offset bug). -->
-                        <Canvas Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}">
-                            <!-- Amber dashed halo: this is the active nudge
-                                 target in verify mode (arrow keys move it). -->
-                            <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
-                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2" />
-                            <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
-                                     Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
-                            <Border Canvas.Left="14" Canvas.Top="-9" Background="#CC000000"
-                                    CornerRadius="2" Padding="3,1">
-                                <TextBlock Text="you" Foreground="#FF40C4FF" FontSize="11" />
-                            </Border>
-                        </Canvas>
+                        <Ellipse Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}"
+                                 Width="16" Height="16" Margin="-8,-8,0,0"
+                                 Fill="#5540C4FF" Stroke="#FF40C4FF" StrokeThickness="2"
+                                 ToolTip="you (test position) — arrow keys nudge" />
                     </Canvas>
 
                     <!-- Projected test pins (green) — compare to the real ping. -->
@@ -267,18 +249,10 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Canvas>
-                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
-                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
-                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FF34C759" />
-                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FF34C759" />
-                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
-                                             Stroke="White" StrokeThickness="1" />
-                                    <Border Canvas.Left="9" Canvas.Top="-9"
-                                            Background="#CC0A2A12" CornerRadius="2" Padding="3,1">
-                                        <TextBlock Text="{Binding Name}" Foreground="#FF8FF0AB" FontSize="11" />
-                                    </Border>
-                                </Canvas>
+                                <!-- Proven minimal idiom (matches the ghosts). -->
+                                <Ellipse Width="12" Height="12" Margin="-6,-6,0,0"
+                                         Fill="#CC34C759" Stroke="White" StrokeThickness="1.5"
+                                         ToolTip="{Binding Name}" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
