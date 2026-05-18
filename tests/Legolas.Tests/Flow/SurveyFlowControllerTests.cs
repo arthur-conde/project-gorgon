@@ -5,14 +5,17 @@ using Legolas.ViewModels;
 
 namespace Legolas.Tests.Flow;
 
+/// <summary>
+/// #454 collapsed the Survey FSM to <c>Listening → OptimizeRoute → Gathering
+/// → Done → (auto)Reset → Listening</c>. No anchor/AwaitingPosition/Ready
+/// bootstrap (pins are absolute). Pins are added straight to
+/// <see cref="SessionState.Surveys"/>; the controller reacts to the
+/// collection change.
+/// </summary>
 public class SurveyFlowControllerTests
 {
     private static readonly DateTime FixedTime = new(2026, 5, 6, 12, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>
-    /// Frozen-clock TimeProvider so StartedAt assertions can pin specific instants.
-    /// Mirrors the FakeClock used in <c>LegolasReportServiceTests</c>.
-    /// </summary>
     private sealed class FakeClock : TimeProvider
     {
         private DateTimeOffset _now;
@@ -32,103 +35,40 @@ public class SurveyFlowControllerTests
         return (flow, session, settings, transitions, clock);
     }
 
-    private static SurveyDetected NewSurvey(string name = "Diamond", int east = 50, int north = 30) =>
-        new(FixedTime, name, new MetreOffset(east, north));
-
-    private static void Anchor(SurveyFlowController flow, SessionState session)
-    {
-        // Pretend the caller has set the projector + player position; controller only
-        // needs to know the player position is now valid. After this call the FSM is
-        // in Ready (waiting for the first survey to land).
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
-    }
+    private static SurveyItemViewModel Pin(string name = "Diamond", double px = 10, double py = 20) =>
+        new(Survey.CreateAbsolute(name, new WorldCoord(px, 0, py), new PixelPoint(px, py), 0));
 
     [Fact]
-    public void InitialState_is_AwaitingPosition()
+    public void InitialState_is_Listening()
     {
         var (flow, _, _, _, _) = BuildSut();
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
     }
 
     [Fact]
-    public void ConfirmPlayerPosition_AwaitingPosition_to_Ready()
-    {
-        var (flow, session, _, transitions, _) = BuildSut();
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready);
-        transitions.Should().ContainSingle()
-            .Which.Should().BeEquivalentTo(new SurveyTransition(
-                SurveyFlowState.AwaitingPosition, SurveyFlowState.Ready, "ConfirmPlayerPosition"));
-    }
-
-    [Fact]
-    public void ConfirmPlayerPosition_does_not_stamp_StartedAt()
-    {
-        // The stamp lives on the Ready→Listening edge (first survey arriving) so it
-        // re-fires every cycle. ConfirmPlayerPosition is now purely a state move.
-        var (flow, session, _, _, _) = BuildSut();
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
-        session.StartedAt.Should().BeNull();
-    }
-
-    [Fact]
-    public void FirstSurvey_in_Ready_transitions_to_Listening_and_stamps_StartedAt()
+    public void FirstPin_in_Listening_stamps_StartedAt_without_a_transition()
     {
         var (flow, session, _, transitions, clock) = BuildSut();
-        Anchor(flow, session);
-        transitions.Clear();
-        var stampMoment = new DateTimeOffset(FixedTime.AddMinutes(2), TimeSpan.Zero);
-        clock.Set(stampMoment);
+        var stamp = new DateTimeOffset(FixedTime.AddMinutes(3), TimeSpan.Zero);
+        clock.Set(stamp);
 
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0)));
+        session.Surveys.Add(Pin("Good Metal Slab"));
 
         flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        session.StartedAt.Should().Be(stampMoment);
-        transitions.Should().ContainSingle()
-            .Which.Should().BeEquivalentTo(new SurveyTransition(
-                SurveyFlowState.Ready, SurveyFlowState.Listening, "FirstSurvey"));
-    }
-
-    [Fact]
-    public void FirstAbsolutePin_in_AwaitingPosition_transitions_to_Listening_and_stamps()
-    {
-        // #454: ProcessMapFx targets are absolute and need no anchor click, so
-        // the first absolute pin advances AwaitingPosition→Listening directly.
-        // The relative chat path can't add a pin while AwaitingPosition
-        // (LogIngestionService gates on CanAcceptSurvey), so this edge only
-        // fires for the absolute flow.
-        var (flow, session, _, transitions, clock) = BuildSut();
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-        var stampMoment = new DateTimeOffset(FixedTime.AddMinutes(3), TimeSpan.Zero);
-        clock.Set(stampMoment);
-
-        session.Surveys.Add(new SurveyItemViewModel(
-            Survey.CreateAbsolute("Good Metal Slab", new WorldCoord(1236, 38, 2528),
-                new PixelPoint(10, 20), 0)));
-
-        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        session.StartedAt.Should().Be(stampMoment);
-        transitions.Should().ContainSingle()
-            .Which.Should().BeEquivalentTo(new SurveyTransition(
-                SurveyFlowState.AwaitingPosition, SurveyFlowState.Listening, "FirstSurvey"));
+        session.StartedAt.Should().Be(stamp);
+        transitions.Should().BeEmpty();
     }
 
     [Fact]
     public void SubsequentSurveys_do_not_re_stamp_StartedAt()
     {
-        // StartedAt is set once per Listening session. Adding more pins shouldn't
-        // overwrite it — ElapsedText would otherwise march backward toward zero.
-        var (flow, session, _, _, clock) = BuildSut();
-        Anchor(flow, session);
+        var (_, session, _, _, clock) = BuildSut();
         var first = new DateTimeOffset(FixedTime.AddMinutes(1), TimeSpan.Zero);
         clock.Set(first);
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0)));
+        session.Surveys.Add(Pin("Diamond"));
 
         clock.Set(new DateTimeOffset(FixedTime.AddMinutes(5), TimeSpan.Zero));
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 1)));
+        session.Surveys.Add(Pin("Coal", 30, 40));
 
         session.StartedAt.Should().Be(first);
     }
@@ -136,179 +76,110 @@ public class SurveyFlowControllerTests
     [Fact]
     public void SecondCycle_after_AutoReset_re_stamps_StartedAt()
     {
-        // Regression: previously StartedAt was tied to AwaitingPosition→Listening
-        // and never re-fired after auto-reset, so run #2 had StartedAt == CompletedAt
-        // (≈ 0s elapsed). The Ready-state redesign means every first-survey arrival
-        // stamps fresh, regardless of how many cycles came before.
+        // Regression (reframed for the collapsed FSM): a completed cycle
+        // auto-resets to Listening and the next first pin must re-stamp a
+        // fresh StartedAt — otherwise run #2 reports ≈0s elapsed.
         var (flow, session, settings, _, clock) = BuildSut();
         settings.AutoResetWhenAllCollected = true;
-        Anchor(flow, session);
 
-        // Cycle 1: surveys arrive, all collected, auto-reset returns to Ready.
-        var t1Start = new DateTimeOffset(FixedTime.AddMinutes(1), TimeSpan.Zero);
-        clock.Set(t1Start);
-        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        var t1 = new DateTimeOffset(FixedTime.AddMinutes(1), TimeSpan.Zero);
+        clock.Set(t1);
+        var s1 = Pin("Diamond");
         session.Surveys.Add(s1);
+        session.StartedAt.Should().Be(t1);
         s1.UpdateModel(s1.Model with { Collected = true });
 
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready, "auto-reset lands on Ready");
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
         session.StartedAt.Should().BeNull("ClearSurveys wiped the cycle-1 stamp");
 
-        // Cycle 2: a fresh survey arrives.
-        var t2Start = new DateTimeOffset(FixedTime.AddMinutes(10), TimeSpan.Zero);
-        clock.Set(t2Start);
-        var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 0));
-        session.Surveys.Add(s2);
+        var t2 = new DateTimeOffset(FixedTime.AddMinutes(10), TimeSpan.Zero);
+        clock.Set(t2);
+        session.Surveys.Add(Pin("Coal", 30, 40));
 
         flow.CurrentState.Should().Be(SurveyFlowState.Listening);
-        session.StartedAt.Should().Be(t2Start, "second cycle re-stamped on first survey");
-    }
-
-    [Fact]
-    public void NoteSurveyDetected_Ready_surfaces_inventory_without_transition()
-    {
-        // After the rework: surveys auto-place, so the controller only logs/diagnoses.
-        // Ready accepts notifications (the actual Ready→Listening edge is driven by
-        // Surveys.CollectionChanged) and surfaces the inventory overlay.
-        var (flow, session, _, transitions, _) = BuildSut();
-        Anchor(flow, session);
-        transitions.Clear();
-        session.IsInventoryVisible.Should().BeFalse();
-
-        flow.NoteSurveyDetected(NewSurvey());
-
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready,
-            "NoteSurveyDetected itself doesn't transition — that's CollectionChanged's job");
-        session.IsInventoryVisible.Should().BeTrue();
-        transitions.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void NoteSurveyDetected_AwaitingPosition_dropped_with_diagnostic()
-    {
-        var (flow, session, _, transitions, _) = BuildSut();
-        flow.NoteSurveyDetected(NewSurvey());
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-        session.LastLogEvent.Should().Contain("ignored").And.Contain("set player position first");
-        session.IsInventoryVisible.Should().BeFalse();
-        transitions.Should().BeEmpty();
+        session.StartedAt.Should().Be(t2, "second cycle re-stamped on its first pin");
     }
 
     [Fact]
     public void OptimizeRoute_Listening_to_Gathering_when_surveys_present()
     {
         var (flow, session, _, _, _) = BuildSut();
-        Anchor(flow, session);
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0)));
+        session.Surveys.Add(Pin());
+        flow.CanOptimize.Should().BeTrue();
+
         flow.OptimizeRoute();
+
         flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
     }
 
     [Fact]
-    public void OptimizeRoute_in_Ready_is_noop()
+    public void OptimizeRoute_with_no_pins_is_a_noop()
     {
-        // The "non-empty surveys" precondition that used to live in CanOptimize is
-        // now structural: Ready means surveys is empty, and OptimizeRoute requires
-        // Listening. So calling OptimizeRoute from Ready (anchored, no pins) is a
-        // no-op + diagnostic, the same shape as calling it from any other non-Listening
-        // state.
         var (flow, session, _, _, _) = BuildSut();
-        Anchor(flow, session);
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready);
-        flow.CanOptimize.Should().BeFalse();
+        flow.CanOptimize.Should().BeFalse("Listening no longer implies pins exist");
 
         flow.OptimizeRoute();
 
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready);
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
         session.LastLogEvent.Should().Contain("OptimizeRoute ignored");
     }
 
     [Fact]
-    public void NoteSurveyDetected_Gathering_dropped_per_position_anchor_constraint()
+    public void New_target_during_Gathering_is_accepted_no_drop()
     {
-        var (flow, session, _, transitions, _) = BuildSut();
-        Anchor(flow, session);
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0)));
+        var (flow, session, _, _, _) = BuildSut();
+        session.Surveys.Add(Pin("First"));
         flow.OptimizeRoute();
-        transitions.Clear();
-
-        flow.NoteSurveyDetected(NewSurvey());
-
         flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
-        session.LastLogEvent.Should().Contain("route in progress");
-        transitions.Should().BeEmpty();
+
+        session.Surveys.Add(Pin("Second", 50, 60));
+
+        session.Surveys.Should().HaveCount(2, "a new target mid-route is kept, not dropped");
+        flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
     }
 
     [Fact]
-    public void RequestSetPlayerPosition_from_Listening_preserves_surveys()
+    public void Reset_clears_surveys_and_returns_to_Listening()
     {
         var (flow, session, _, _, _) = BuildSut();
-        Anchor(flow, session);
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 0)));
-
-        flow.RequestSetPlayerPosition();
-
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-        session.Surveys.Should().HaveCount(1, "RequestSetPlayerPosition is a re-anchor, not a Reset");
-    }
-
-    [Fact]
-    public void Reset_clears_surveys_and_returns_to_Ready_when_position_known()
-    {
-        var (flow, session, _, _, _) = BuildSut();
-        Anchor(flow, session);
-        session.Surveys.Add(new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0)));
+        session.Surveys.Add(Pin());
         flow.OptimizeRoute();
+        flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
 
         flow.Reset();
 
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready, "HasPlayerPosition is true");
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
         session.Surveys.Should().BeEmpty();
-        session.StartedAt.Should().BeNull("Reset wipes the stamp; next first-survey re-stamps");
+        session.StartedAt.Should().BeNull("Reset wipes the stamp; next first pin re-stamps");
     }
 
     [Fact]
-    public void Reset_returns_to_AwaitingPosition_when_no_position()
-    {
-        var (flow, session, _, _, _) = BuildSut();
-        Anchor(flow, session);
-        session.HasPlayerPosition = false;
-
-        flow.Reset();
-
-        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
-    }
-
-    [Fact]
-    public void AllCollected_Gathering_to_Done_then_AutoReset_back_to_Ready()
+    public void AllCollected_Gathering_to_Done_then_AutoReset_back_to_Listening()
     {
         var (flow, session, settings, transitions, _) = BuildSut();
-        Anchor(flow, session);
-        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
-        var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 1));
+        var s1 = Pin("Diamond");
+        var s2 = Pin("Coal", 30, 40);
         session.Surveys.Add(s1);
         session.Surveys.Add(s2);
         flow.OptimizeRoute();
         transitions.Clear();
         settings.AutoResetWhenAllCollected = true;
 
-        // Marking the last one fires SessionState.AllCollected → controller reacts.
         s1.UpdateModel(s1.Model with { Collected = true });
         s2.UpdateModel(s2.Model with { Collected = true });
 
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready, "auto-reset returned us to Ready");
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening, "auto-reset returned to Listening");
         session.Surveys.Should().BeEmpty();
         transitions.Select(t => t.To).Should().ContainInOrder(
-            SurveyFlowState.Done, SurveyFlowState.Ready);
+            SurveyFlowState.Done, SurveyFlowState.Listening);
     }
 
     [Fact]
     public void AllCollected_Gathering_to_Done_no_AutoReset_stays_Done()
     {
         var (flow, session, settings, _, _) = BuildSut();
-        Anchor(flow, session);
         settings.AutoResetWhenAllCollected = false;
-        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        var s1 = Pin("Diamond");
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
 
@@ -321,29 +192,13 @@ public class SurveyFlowControllerTests
     [Fact]
     public void AllCollected_from_Listening_also_transitions_to_Done()
     {
-        // Mark-collected works in Listening too (via hotkey, before optimizing).
-        // Preserves pre-FSM behaviour: AllCollected fires a session reset regardless
-        // of whether the user optimized first.
-        var (flow, session, settings, transitions, _) = BuildSut();
-        Anchor(flow, session);
+        var (flow, session, settings, _, _) = BuildSut();
         settings.AutoResetWhenAllCollected = false;
-        var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
+        var s1 = Pin("Diamond");
         session.Surveys.Add(s1);
-        transitions.Clear();
 
         s1.UpdateModel(s1.Model with { Collected = true });
 
         flow.CurrentState.Should().Be(SurveyFlowState.Done);
-    }
-
-    [Fact]
-    public void ConfirmPlayerPosition_from_Ready_is_noop()
-    {
-        var (flow, session, _, transitions, _) = BuildSut();
-        Anchor(flow, session);
-        transitions.Clear();
-        flow.ConfirmPlayerPosition();
-        flow.CurrentState.Should().Be(SurveyFlowState.Ready);
-        transitions.Should().BeEmpty();
     }
 }

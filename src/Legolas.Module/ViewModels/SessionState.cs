@@ -26,9 +26,9 @@ public sealed partial class SessionState : ObservableObject
     public Dictionary<string, int> CollectedItems { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Wall-clock instant the current session started — set when the FSM transitions
-    /// AwaitingPosition → Listening (i.e. the user confirmed a player anchor and is
-    /// ready to listen for surveys). Null when no session has been started.
+    /// Wall-clock instant the current session started — stamped when the first
+    /// pin of a cycle lands while the FSM is <c>Listening</c> (#454: there is
+    /// no anchor bootstrap any more). Null when no session has been started.
     /// Cleared by <see cref="ClearSurveys"/>.
     /// </summary>
     public DateTimeOffset? StartedAt { get; set; }
@@ -47,7 +47,6 @@ public sealed partial class SessionState : ObservableObject
             foreach (SurveyItemViewModel s in e.OldItems)
                 s.PropertyChanged -= OnSurveyPropertyChanged;
         RecalculateActiveTarget();
-        OnPropertyChanged(nameof(IsAnchorEditable));
     }
 
     private void OnSurveyPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -98,19 +97,13 @@ public sealed partial class SessionState : ObservableObject
         ActiveTargetSummary = $"Next: #{oneBased} of {total} — {active.Name}";
     }
 
+    // #454: Survey placement is absolute (no anchor). PlayerPosition /
+    // HasPlayerPosition survive but are now Motherlode-only — its
+    // triangulation records the player position from a map click. Survey mode
+    // never reads them; IsAnchorEditable (the Survey "drag the anchor" gate)
+    // is retired.
     [ObservableProperty] private PixelPoint _playerPosition = new(400, 300);
     [ObservableProperty] private bool _hasPlayerPosition;
-
-    /// <summary>
-    /// True while the anchor click was made but no survey has produced a vector
-    /// from it yet. In this window the marker can be re-dragged or nudged
-    /// without consequence; once a survey lands, the anchor becomes load-bearing
-    /// (every <see cref="MetreOffset"/> projection is relative to it) and is sealed.
-    /// </summary>
-    public bool IsAnchorEditable => HasPlayerPosition && Surveys.Count == 0;
-
-    partial void OnHasPlayerPositionChanged(bool value)
-        => OnPropertyChanged(nameof(IsAnchorEditable));
     [ObservableProperty] private string _lastLogEvent = "(waiting)";
     [ObservableProperty] private bool _showBearingWedges = true;
     [ObservableProperty] private bool _showRouteLines = true;

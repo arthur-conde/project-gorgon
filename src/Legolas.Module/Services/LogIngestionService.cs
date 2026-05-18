@@ -19,32 +19,23 @@ public sealed class LogIngestionService : BackgroundService
     private readonly IChatLogStream _stream;
     private readonly IChatLogParser _parser;
     private readonly ModuleGates _gates;
-    private readonly LegolasSettings _settings;
     private readonly SessionState _session;
-    private readonly ICoordinateProjector _projector;
     private readonly MotherlodeViewModel _motherlode;
-    private readonly SurveyFlowController _surveyFlow;
     private readonly IAreaCalibrationService _areaCalibration;
 
     public LogIngestionService(
         IChatLogStream stream,
         IChatLogParser parser,
         ModuleGates gates,
-        LegolasSettings settings,
         SessionState session,
-        ICoordinateProjector projector,
         MotherlodeViewModel motherlode,
-        SurveyFlowController surveyFlow,
         IAreaCalibrationService areaCalibration)
     {
         _stream = stream;
         _parser = parser;
         _gates = gates;
-        _settings = settings;
         _session = session;
-        _projector = projector;
         _motherlode = motherlode;
-        _surveyFlow = surveyFlow;
         _areaCalibration = areaCalibration;
     }
 
@@ -118,74 +109,19 @@ public sealed class LogIngestionService : BackgroundService
 
     private void HandleSurveyDetected(SurveyDetected sd)
     {
-        // Feed calibration test mode unconditionally — it must see the raw
-        // reading even when survey mode is off or the FSM isn't accepting.
+        // Feed the calibration window's verify mode unconditionally — it must
+        // see the raw relative reading regardless of mode/state.
         _areaCalibration.NoteSurvey(sd.Name, sd.Offset);
 
-        if (_session.Mode != SessionMode.Survey)
-        {
-            _session.LastLogEvent = $"Survey: {sd.Name} → ignored (mode is Motherlode)";
-            return;
-        }
-
-        // #454 calibrated-area authority: when the current area has a
-        // calibration, the absolute ProcessMapFx path (PlayerLogIngestionService)
-        // owns placement. A survey use emits BOTH this chat [Status] line and a
-        // Player.log ProcessMapFx line — suppress the relative auto-place here
-        // so it doesn't double-place. NoteSurvey above still feeds the
-        // calibration window's test mode. Uncalibrated areas fall through to
-        // the legacy relative path (cold-start fallback until pin calibration).
-        if (_areaCalibration.IsCurrentAreaCalibrated)
-        {
-            _session.LastLogEvent =
-                $"Survey: {sd.Name} → absolute path owns placement (area calibrated)";
-            return;
-        }
-
-        if (!_surveyFlow.CanAcceptSurvey)
-        {
-            // Controller writes its own diagnostic to LastLogEvent.
-            _surveyFlow.NoteSurveyDetected(sd);
-            return;
-        }
-
-        var duplicate = FindDuplicate(sd.Name, sd.Offset, _settings.SurveyDedupRadiusMetres);
-        if (duplicate is not null)
-        {
-            duplicate.UpdateModel(duplicate.Model with { Offset = sd.Offset });
-            return;
-        }
-
-        // Auto-place every survey at the projected position. The user only ever
-        // interacts to *correct* a pin (drag/nudge), which sets ManualOverride and
-        // drives Refit. A click during AwaitingPin used to set ManualOverride from
-        // the click, but that conflated "place" with "correct" — every forced click
-        // (often a guess) became calibration data. After the rework, placement
-        // never sets ManualOverride; only explicit drags do.
-        var index = _session.Surveys.Count;
-        var newPixel = _projector.Project(sd.Offset);
-        var survey = Survey.Create(sd.Name, sd.Offset, gridIndex: index)
-            with { PixelPos = newPixel };
-        var newPinVm = new SurveyItemViewModel(survey);
-        _session.Surveys.Add(newPinVm);
-        // Make the new pin the keyboard-nudge target so arrow-key adjustments
-        // act on the just-arrived pin rather than the previously-selected one.
-        _session.SelectedSurvey = newPinVm;
-        _surveyFlow.NoteSurveyDetected(sd);
-    }
-
-    private SurveyItemViewModel? FindDuplicate(string name, MetreOffset newOffset, double radiusMetres)
-    {
-        var r2 = radiusMetres * radiusMetres;
-        foreach (var s in _session.Surveys)
-        {
-            if (s.Collected) continue;
-            if (!string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
-            var dE = s.Offset.East - newOffset.East;
-            var dN = s.Offset.North - newOffset.North;
-            if (dE * dE + dN * dN <= r2) return s;
-        }
-        return null;
+        // #454: the relative-offset placement model is retired. Survey/
+        // treasure placement is exclusively the absolute ProcessMapFx path
+        // (PlayerLogIngestionService); the chat [Status] line no longer places
+        // a pin. NoteSurvey above still drives the calibration verify view.
+        // An uncalibrated area places nothing until calibration runs — pin
+        // calibration is cold-start-capable, so that's always available.
+        _session.LastLogEvent = _session.Mode == SessionMode.Survey
+            ? $"Survey: {sd.Name} → placed via absolute ProcessMapFx (calibrate the area if no pin appears)"
+            : $"Survey: {sd.Name} → ignored (mode is Motherlode)";
     }
 
     private void HandleItemAddedToInventory(ItemAddedToInventory ia)

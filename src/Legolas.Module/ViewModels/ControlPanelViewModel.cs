@@ -219,9 +219,6 @@ public sealed partial class ControlPanelViewModel : ObservableObject
     private void StartSession() => SurveyFlow.Reset();
 
     [RelayCommand]
-    private void SetPlayerPosition() => SurveyFlow.RequestSetPlayerPosition();
-
-    [RelayCommand]
     private void MarkCurrentCollected()
     {
         var target = Session.Surveys.FirstOrDefault(s => s.IsActiveTarget)

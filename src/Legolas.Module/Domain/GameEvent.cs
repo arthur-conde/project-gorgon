@@ -72,9 +72,11 @@ public sealed record MotherlodeDistance(
 
 /// <summary>
 /// The chat-log area banner (<c>"******* Entering Area: Eltibule"</c>). Carries
-/// the area's <em>friendly</em> name (the only thing the log gives); the calibration
-/// service resolves it to the internal area key. This is the sole area signal
-/// available — Player.log has no area-change marker.
+/// the area's <em>friendly</em> name; the calibration service resolves it to the
+/// internal area key. A <b>complementary</b> signal: Player.log <i>does</i> have
+/// an area marker (<c>LOADING LEVEL Area&lt;Name&gt;</c>, parsed by the shared
+/// <c>PlayerAreaTracker</c> — #454/#456), which is the authoritative key source;
+/// this chat banner is the fallback when the Player.log seed missed.
 /// </summary>
 public sealed record AreaEntered(
     DateTime Timestamp,

@@ -177,7 +177,6 @@ public sealed class LegolasModule : IMithrilModule
         // Hotkey commands (shell auto-collects via IEnumerable<IHotkeyCommand>)
         services.AddSingleton<IHotkeyCommand, StartSessionCommand>();
         services.AddSingleton<IHotkeyCommand, MarkCurrentCollectedCommand>();
-        services.AddSingleton<IHotkeyCommand, SetPlayerPositionCommand>();
         services.AddSingleton<IHotkeyCommand, SetSurveyModeCommand>();
         services.AddSingleton<IHotkeyCommand, SetMotherlodeModeCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleMapOverlayCommand>();

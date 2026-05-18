@@ -144,6 +144,13 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   survey-run route optimization, and the map overlay. (See `legolas-overview` doc +
   `legolas_position_anchor_constraint` memory: surveying produces inventory items;
   movement invalidates the projector.)
+  - **Update — #454 (2026-05-18):** survey placement is now **absolute**
+    (`ProcessMapFx`); the relative-offset model, the position anchor, and
+    `CoordinateProjector.Refit` are retired *for Survey*. The
+    position-anchor/projector survives **Motherlode-only**. Cold-start
+    calibration becomes a wizard `Calibrating` step over the map overlay
+    (#460). The "movement invalidates the projector" caveat no longer
+    applies to Survey.
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *General geographic reference* (where
     places/landmarks are). Areas/landmarks browsing is Silmarillion.

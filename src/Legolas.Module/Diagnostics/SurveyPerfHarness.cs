@@ -26,7 +26,6 @@ public sealed class SurveyPerfHarness
     private readonly SessionState _session;
     private readonly SurveyFlowController _surveyFlow;
     private readonly MapOverlayViewModel _mapVm;
-    private readonly ICoordinateProjector _projector;
     private readonly LegolasSettings _settings;
     private readonly FrameTimeLogger _logger;
 
@@ -34,14 +33,12 @@ public sealed class SurveyPerfHarness
         SessionState session,
         SurveyFlowController surveyFlow,
         MapOverlayViewModel mapVm,
-        ICoordinateProjector projector,
         LegolasSettings settings,
         FrameTimeLogger logger)
     {
         _session = session;
         _surveyFlow = surveyFlow;
         _mapVm = mapVm;
-        _projector = projector;
         _settings = settings;
         _logger = logger;
     }
@@ -190,28 +187,23 @@ public sealed class SurveyPerfHarness
         // load, just need a valid origin.
         var w = _settings.MapOverlay.Width > 0 ? _settings.MapOverlay.Width : 800;
         var h = _settings.MapOverlay.Height > 0 ? _settings.MapOverlay.Height : 600;
-        var anchor = new PixelPoint(w / 2, h / 2);
+        var centre = new PixelPoint(w / 2, h / 2);
 
-        // SetPlayerPosition expects the FSM to be in AwaitingPosition. After
-        // the Reset above, that's only true if HasPlayerPosition was false.
-        // If a real session preceded this run, request re-anchor first.
-        if (_surveyFlow.CurrentState != SurveyFlowState.AwaitingPosition)
-            _surveyFlow.RequestSetPlayerPosition();
-
-        _mapVm.SetPlayerPositionCommand.Execute(anchor);
-
-        // Project pins around the anchor at 20–80m radii, deterministic seed
-        // so two runs are visually identical and any frame-time delta is
-        // attributable to config changes rather than layout differences.
+        // #454: pins are absolute now — inject them directly at pixel
+        // positions (no anchor, no projector). Deterministic seed so two runs
+        // are visually identical and any frame-time delta is attributable to
+        // config changes, not layout. ~60–240 px ring around the window
+        // centre (visually equivalent to the old 20–80 m × ~3 px/m).
         var rng = new Random(42);
         for (var i = 0; i < pinCount; i++)
         {
             var theta = rng.NextDouble() * 2 * Math.PI;
-            var r = 20 + rng.NextDouble() * 60;
-            var offset = new MetreOffset(r * Math.Cos(theta), r * Math.Sin(theta));
-            var pixel = _projector.Project(offset);
-            var model = Survey.Create($"PerfPin{i + 1:D2}", offset, gridIndex: i)
-                with { PixelPos = pixel };
+            var rPx = 60 + rng.NextDouble() * 180;
+            var pixel = new PixelPoint(
+                centre.X + rPx * Math.Cos(theta),
+                centre.Y + rPx * Math.Sin(theta));
+            var model = Survey.CreateAbsolute(
+                $"PerfPin{i + 1:D2}", new WorldCoord(rPx, 0, theta), pixel, gridIndex: i);
             _session.Surveys.Add(new SurveyItemViewModel(model));
         }
     }
