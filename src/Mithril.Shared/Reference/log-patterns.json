@@ -332,8 +332,19 @@
       "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "UpdateSkillRx" },
       "eventType": "shared.SkillProgressUpdate",
       "kind": "marker",
-      "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx; the trailing positionals (announce bool, xp delta, 0, 0) are intentionally not parsed (semantics verification-owed, see #462). Independent of samwise.GardenLogParser.GardeningXpRx — both may match a Gardening update; no ordering dependency.",
+      "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx, the XP gained by XpGainRx. Independent of samwise.GardenLogParser.GardeningXpRx — both may match a Gardening update; no ordering dependency.",
       "fields": []
+    },
+    "shared.SkillLogParser.XpGainRx": {
+      "pattern": "ProcessUpdateSkill\\(\\{[^}]*\\},\\s*\\w+,\\s*(?<gained>\\d+)",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "XpGainRx" },
+      "eventType": "shared.SkillXpGained",
+      "notes": "ProcessUpdateSkill's third positional = XP earned this tick. Triangulated against the authoritative chat '[Status] You earned N XP in <Skill>' line across the Player.log(UTC)/ChatLogs(local) offset (Endurance 26, Psychology 577, Anatomy_Bears 48 matched exactly) — authoritative within a level. Level-up / cap-reaching tick behaviour is unobserved (verification owed, #462); best-effort across a boundary and self-healing via the next ProcessLoadSkills. The announce bool and trailing 0,0 are still not parsed.",
+      "fields": [
+        { "name": "gained", "group": "gained", "type": "int" }
+      ]
     },
     "shared.SkillLogParser.SkillTupleRx": {
       "pattern": "\\{type=(?<type>\\w+),raw=(?<raw>\\d+),bonus=(?<bonus>\\d+),xp=(?<xp>\\d+),tnl=(?<tnl>\\d+),max=(?<max>\\d+)\\}",

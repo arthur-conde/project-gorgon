@@ -20,7 +20,36 @@ Two log lines, both built from the identical
 | Line | Meaning | Service action |
 |---|---|---|
 | `LocalPlayer: ProcessLoadSkills({…}, {…}, …)` | Full skill-table dump (~125 rows). Emitted at login **and on every zone / session transition.** | **Wholesale replace** of tracked state. |
-| `LocalPlayer: ProcessUpdateSkill({…}, <bool>, <delta>, 0, 0)` | One skill's progression delta. | **Per-skill upsert** (copy-on-write). |
+| `LocalPlayer: ProcessUpdateSkill({…}, <bool>, <gained>, 0, 0)` | One skill's progression delta + XP earned this tick. | **Per-skill upsert** (copy-on-write) + a `Delta` change event carrying `XpGained`. |
+
+### Capped skills go silent
+
+Once a skill reaches its cap (`raw == max`), PG emits **no further
+`ProcessUpdateSkill`** for it. This needs no special-casing: the change
+channel simply stops producing `Delta` events for that skill; its absolute
+state still arrives in every `ProcessLoadSkills` (where it shows `raw == max`
+→ `IsCapped`). The *capping tick itself* is the last `Delta` for the skill and
+is where `Previous.IsCapped == false && Current.IsCapped == true`.
+
+### `XpGained` (the third positional) — chat-triangulated
+
+`arg3` of `ProcessUpdateSkill` is the XP earned on that tick. It was validated
+against the authoritative chat `[Status] You earned N XP in <Skill>.` line for
+the same events, lining the `Player.log` (UTC) and `ChatLogs` (local, +1h)
+timelines up:
+
+| Event | Chat `[Status]` | `ProcessUpdateSkill` `arg3` |
+|---|---|---|
+| 11:36:42 UTC | "earned 26 XP in Endurance" | `{type=Endurance,…}, True, **26**, …` |
+| 11:36:42 UTC | "earned 577 XP in Psychology" | `{type=Psychology,…}, False, **577**, …` |
+| 11:36:52 UTC | "earned 48 XP in Bear and Bugbear Anatomy" | `{type=Anatomy_Bears,…}, True, **48**, …` |
+
+Three exact matches across the offset. `arg3` is keyed by **internal name**
+(`type=Anatomy_Bears`) whereas the chat line is display-named ("Bear and
+Bugbear Anatomy") — so `Player.log` is the *better* ingestion source (no
+fragile display→key reverse lookup); chat is the verification oracle. The
+`<bool>` (announce / batch-vs-discrete) and the trailing `0, 0` are still not
+parsed.
 
 ### Field mapping (1:1, raw parse → projection)
 
@@ -93,36 +122,56 @@ The service exposes a **GameState-native** `PlayerSkillSnapshot` /
 Consumer-side wiring (Elrond preferring live over export, freshness badges) is
 explicitly **out of scope** here — service work only.
 
+## Two subscription channels
+
+- **`Subscribe(Action<PlayerSkillSnapshot>)`** — whole-state. Replays the
+  current snapshot on attach, then pushes the full snapshot on every change.
+  For "what is the player's skill state now" consumers.
+- **`SubscribeChanges(Action<SkillChange>)`** — granular. **No replay** (a
+  change is an event, not state — read `Current` for state). One `Delta` per
+  `ProcessUpdateSkill` carrying `XpGained`; one `SnapshotReplace` per skill
+  whose projection *actually differs* on a `ProcessLoadSkills` (a no-op re-sync
+  emits nothing; `XpGained == 0` for snapshot changes). Derived signals fall
+  out of `Previous`/`Current`: level-up = `Previous?.Level < Current.Level`;
+  just-hit-cap = `Previous is { IsCapped: false } && Current.IsCapped` (then
+  the skill goes silent — see above).
+
 ## Threading
 
 `Current` is a reference read of an immutable object (lock-free). The snapshot
-reference is swapped under an internal lock; `Subscribe` replays the current
-snapshot and attaches the handler **atomically under the same lock the
-ingestion loop fires under**, which closes the late-subscribe race (mirrors
-`InventoryService`). Handlers run synchronously under that lock — do
-non-trivial work off-thread.
+reference is swapped under an internal lock; both `Subscribe` (replay + attach)
+and live dispatch happen **atomically under the same lock the ingestion loop
+fires under**, which closes the late-subscribe race (mirrors
+`InventoryService`). Snapshot handlers then change handlers fire under that
+lock — do non-trivial work off-thread.
 
 ## Components
 
 - `Skills/Parsing/SkillEvents.cs` — `SkillProgressRecord` (raw parse),
-  `SkillsSnapshotEvent`, `SkillProgressUpdateEvent`.
+  `SkillsSnapshotEvent`, `SkillProgressUpdateEvent` (incl. `XpGained`).
 - `Skills/Parsing/SkillLogParser.cs` — `ILogParser`; `LoadSkillsRx` /
-  `UpdateSkillRx` guards + the `SkillTupleRx` workhorse. Catalogued in
-  `log-patterns.json` as `shared.SkillLogParser.*` (the `shared` module prefix
-  follows the precedent of the other `Mithril.GameState` parsers in the
-  catalog; parity asserted by `LogPatternCatalogParityTests`).
+  `UpdateSkillRx` guards, the `SkillTupleRx` workhorse, and `XpGainRx` for
+  `arg3`. Catalogued in `log-patterns.json` as `shared.SkillLogParser.*` (the
+  `shared` module prefix follows the precedent of the other `Mithril.GameState`
+  parsers in the catalog; parity asserted by `LogPatternCatalogParityTests`).
 - `Skills/IPlayerSkillState.cs` — interface + `PlayerSkillSnapshot` /
   `SkillProgressSnapshot` / `SkillStateSource`.
+- `Skills/SkillChange.cs` — `SkillChange` / `SkillChangeKind` (the
+  `SubscribeChanges` channel payload).
 - `Skills/PlayerSkillStateService.cs` — `BackgroundService` + `IPlayerSkillState`,
   registered in `GameStateServiceCollectionExtensions.AddMithrilGameState`.
 
 ## Verification owed
 
-- **`ProcessUpdateSkill` trailing positionals** (announce bool, XP delta, two
-  zeros) are intentionally **not parsed** — semantics are only inferred from a
-  small sample. The leading struct is authoritative for state, so they are not
-  needed. Revisit if a consumer wants "last XP gain" telemetry; capture a
-  level-up sample first (all observed had the trailing `0, 0`).
+- **`XpGained` (`arg3`) at a level-up / cap-reaching tick.** `arg3` itself is
+  chat-corroborated within a level (see the triangulation table above), so it
+  is *not* wholesale unverified. What remains unobserved is its value on the
+  exact tick a skill levels or caps (every captured sample had trailing
+  `0, 0`, no level-up): treat `XpGained` as authoritative within a level,
+  best-effort across a boundary. Low impact — capped skills then go silent and
+  the next `ProcessLoadSkills` reasserts absolute state, so any cross-boundary
+  `XpGained`-sum drift self-heals. The `<bool>` and trailing `0, 0` remain
+  unparsed (informational only).
 - **`ProcessLoadSkills` trigger.** Confirmed at login + several mid-session
   (zone/relog) fires; whether it fires on *every* zone change is unconfirmed.
   The wholesale-replace design is robust either way (worst case: a slightly

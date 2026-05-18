@@ -51,6 +51,14 @@ public sealed partial class SkillLogParser : ILogParser
     [GeneratedRegex(@"LocalPlayer: ProcessUpdateSkill\(\{", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateSkillRx();
 
+    // ProcessUpdateSkill's third positional: XP earned this tick. Anchored on
+    // the verb + struct close so it can only match the genuine emitter. The
+    // value is chat-corroborated within a level (see SkillProgressUpdateEvent).
+    [GeneratedRegex(
+        @"ProcessUpdateSkill\(\{[^}]*\},\s*\w+,\s*(?<gained>\d+)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex XpGainRx();
+
     // Workhorse: one skill struct. Applied via Matches() over the whole line —
     // exactly one for an update, the entire table for a snapshot. Skill keys
     // carry underscores (Anatomy_Bears, Performance_Dance) so \w+ is correct;
@@ -87,7 +95,13 @@ public sealed partial class SkillLogParser : ILogParser
         if (UpdateSkillRx().IsMatch(line))
         {
             var m = SkillTupleRx().Match(line);
-            return m.Success ? new SkillProgressUpdateEvent(timestamp, ToRecord(m)) : null;
+            if (!m.Success) return null;
+
+            // arg3 = XP gained this tick. Defaults to 0 if the tail is absent
+            // (grammar drift) — the struct is still authoritative for state.
+            var g = XpGainRx().Match(line);
+            long gained = g.Success ? long.Parse(g.Groups["gained"].ValueSpan) : 0;
+            return new SkillProgressUpdateEvent(timestamp, ToRecord(m), gained);
         }
 
         return null;

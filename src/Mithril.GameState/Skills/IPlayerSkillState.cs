@@ -159,4 +159,26 @@ public interface IPlayerSkillState
     /// subscription to stop receiving events.</para>
     /// </summary>
     IDisposable Subscribe(Action<PlayerSkillSnapshot> handler);
+
+    /// <summary>
+    /// Attach a handler that receives a granular <see cref="SkillChange"/> per
+    /// skill that actually moved — the channel for consumers that care
+    /// <em>which</em> skill changed (level-ups, XP feeds) rather than the whole
+    /// snapshot.
+    ///
+    /// <para>Unlike <see cref="Subscribe"/> there is <b>no replay</b>: a
+    /// <see cref="SkillChange"/> is an event, not state. A late subscriber sees
+    /// changes from the moment it attaches; for current state it reads
+    /// <see cref="Current"/>. A <c>ProcessLoadSkills</c> emits one
+    /// <see cref="SkillChangeKind.SnapshotReplace"/> only for skills whose
+    /// projection differs from (or is new vs.) the prior state — a no-op
+    /// re-sync produces nothing. A <c>ProcessUpdateSkill</c> emits one
+    /// <see cref="SkillChangeKind.Delta"/> carrying
+    /// <see cref="SkillChange.XpGained"/>.</para>
+    ///
+    /// <para>Same threading contract as <see cref="Subscribe"/>: the handler
+    /// runs synchronously under the tracker's lock on the ingestion thread —
+    /// do non-trivial work off-thread. Dispose to stop receiving.</para>
+    /// </summary>
+    IDisposable SubscribeChanges(Action<SkillChange> handler);
 }

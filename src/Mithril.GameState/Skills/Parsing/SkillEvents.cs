@@ -65,14 +65,27 @@ public sealed record SkillsSnapshotEvent(DateTime Timestamp, IReadOnlyList<Skill
 
 /// <summary>
 /// A single skill's progression changed, parsed from a
-/// <c>ProcessUpdateSkill({…}, &lt;bool&gt;, &lt;delta&gt;, 0, 0)</c> line. Only
-/// the leading struct is consumed: it carries the new authoritative state, so
-/// the tracker upserts from it directly. The trailing positionals (announce
-/// bool, XP delta, two zeros) are intentionally <b>not</b> parsed — their
-/// semantics are only inferred from a small sample (verification owed, see the
-/// service docs / issue #462) and the struct alone is sufficient for state.
+/// <c>ProcessUpdateSkill({…}, &lt;bool&gt;, &lt;gained&gt;, 0, 0)</c> line. The
+/// leading struct carries the new authoritative absolute state; the third
+/// positional (<c>&lt;gained&gt;</c>) is the XP earned on this tick.
+///
+/// <para><b>Why we trust <see cref="XpGained"/>.</b> It was triangulated
+/// against the authoritative chat <c>[Status] You earned N XP in &lt;Skill&gt;</c>
+/// line for the same events across the Player.log(UTC)/ChatLogs(local) offset —
+/// e.g. Endurance 26, Psychology 577, Anatomy_Bears 48 all matched exactly. So
+/// it is authoritative <em>within a level</em>. The behaviour on the level-up /
+/// cap-reaching tick is still unobserved (every captured sample had trailing
+/// <c>0, 0</c> and no level-up): treat <see cref="XpGained"/> as best-effort
+/// across a level/cap boundary. This is low-impact — capped skills then go
+/// silent (PG emits no further <c>ProcessUpdateSkill</c> for them) and the next
+/// <c>ProcessLoadSkills</c> reasserts absolute state, so any cross-boundary
+/// drift self-heals. The remaining two positionals (announce bool, two zeros)
+/// are still not parsed; the bool's batch-vs-discrete meaning is informational
+/// only.</para>
 /// </summary>
 /// <param name="Timestamp">The source log line's timestamp (UTC).</param>
 /// <param name="Skill">The single skill record from the line's struct.</param>
-public sealed record SkillProgressUpdateEvent(DateTime Timestamp, SkillProgressRecord Skill)
+/// <param name="XpGained">The third positional — XP earned this tick,
+/// chat-corroborated within a level.</param>
+public sealed record SkillProgressUpdateEvent(DateTime Timestamp, SkillProgressRecord Skill, long XpGained)
     : LogEvent(Timestamp);

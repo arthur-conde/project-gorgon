@@ -67,6 +67,32 @@ public sealed class SkillLogParserTests
         upd.Skill.XpTowardNextLevel.Should().Be(315);
         upd.Skill.XpNeededForNextLevel.Should().Be(1350);
         upd.Skill.MaxLevel.Should().Be(50);
+        upd.XpGained.Should().Be(110); // arg3
+    }
+
+    // arg3 triangulated against the authoritative chat "[Status] You earned N
+    // XP in <Skill>." line for the same events across the Player.log (UTC) /
+    // ChatLogs (local, +1h) offset. These three matched exactly in the real
+    // logs; encoding them pins the semantic so a regression is visible.
+    [Theory]
+    [InlineData("{type=Endurance,raw=53,bonus=3,xp=11237,tnl=13140,max=60}", 26)]   // chat: "26 XP in Endurance"
+    [InlineData("{type=Psychology,raw=48,bonus=3,xp=38347,tnl=74953,max=50}", 577)] // chat: "577 XP in Psychology"
+    [InlineData("{type=Anatomy_Bears,raw=27,bonus=0,xp=1483,tnl=1500,max=50}", 48)] // chat: "48 XP in Bear and Bugbear Anatomy"
+    public void ProcessUpdateSkill_XpGained_matches_chat_Status_oracle(string structText, long gained)
+    {
+        var line = $"[11:36:42] LocalPlayer: ProcessUpdateSkill({structText}, False, {gained}, 0, 0)";
+        var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
+        upd.XpGained.Should().Be(gained);
+    }
+
+    [Fact]
+    public void ProcessUpdateSkill_with_no_tail_defaults_XpGained_to_zero()
+    {
+        // Grammar drift / truncation: struct is still authoritative for state.
+        var line = "LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50})";
+        var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
+        upd.Skill.Level.Should().Be(2);
+        upd.XpGained.Should().Be(0);
     }
 
     [Fact]

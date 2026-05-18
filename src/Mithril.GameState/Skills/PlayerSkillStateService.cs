@@ -36,6 +36,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
 
     private readonly object _lock = new();
     private readonly List<Action<PlayerSkillSnapshot>> _handlers = new();
+    private readonly List<Action<SkillChange>> _changeHandlers = new();
     private volatile PlayerSkillSnapshot _current = PlayerSkillSnapshot.Empty;
 
     public PlayerSkillStateService(
@@ -57,7 +58,19 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         {
             Invoke(handler, _current);
             _handlers.Add(handler);
-            return new Subscription(this, handler);
+            return new Unsub(this, _handlers, handler);
+        }
+    }
+
+    public IDisposable SubscribeChanges(Action<SkillChange> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (_lock)
+        {
+            // No replay — a SkillChange is an event, not state. Current state
+            // is read via Current.
+            _changeHandlers.Add(handler);
+            return new Unsub(this, _changeHandlers, handler);
         }
     }
 
@@ -78,7 +91,10 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         }
     }
 
-    /// <summary>Wholesale replace from a <c>ProcessLoadSkills</c> dump.</summary>
+    /// <summary>Wholesale replace from a <c>ProcessLoadSkills</c> dump. Emits a
+    /// <see cref="SkillChangeKind.SnapshotReplace"/> only for skills whose
+    /// projection actually differs from (or is new vs.) the prior state — a
+    /// no-op re-sync produces no change events.</summary>
     private void ReplaceAll(SkillsSnapshotEvent snap)
     {
         var map = new Dictionary<string, SkillProgressSnapshot>(snap.Skills.Count, StringComparer.Ordinal);
@@ -91,30 +107,54 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
 
         lock (_lock)
         {
+            var prev = _current.Skills;
+            List<SkillChange>? changes = _changeHandlers.Count == 0 ? null : new();
+            if (changes is not null)
+            {
+                foreach (var (key, cur) in map)
+                {
+                    bool had = prev.TryGetValue(key, out var before);
+                    if (had && before.Equals(cur)) continue; // unchanged — skip
+                    changes.Add(new SkillChange(
+                        key, had ? before : null, cur, XpGained: 0,
+                        SkillChangeKind.SnapshotReplace, snap.Timestamp));
+                }
+            }
+
             _current = new PlayerSkillSnapshot(map, snap.Timestamp, SkillStateSource.LiveLog);
             _diag?.Trace("GameState.Skills",
                 $"Skill snapshot replaced: {map.Count} skills @ {snap.Timestamp:O}");
             Fire(_current);
+            if (changes is not null)
+                foreach (var c in changes) FireChange(c);
         }
     }
 
     /// <summary>Single-skill upsert from a <c>ProcessUpdateSkill</c> delta.
     /// Accepted even before the first full snapshot — the resulting partial
-    /// state is intentional (see the type docs).</summary>
+    /// state is intentional (see the type docs). Emits one
+    /// <see cref="SkillChangeKind.Delta"/> carrying the tick's XP.</summary>
     private void Upsert(SkillProgressUpdateEvent upd)
     {
         lock (_lock)
         {
+            var key = upd.Skill.SkillKey;
+            SkillProgressSnapshot? before =
+                _current.Skills.TryGetValue(key, out var b) ? b : null;
+            var cur = Project(upd.Skill);
+
             // Copy-on-write so any consumer holding the prior snapshot keeps a
             // stable, immutable view.
             var map = new Dictionary<string, SkillProgressSnapshot>(_current.Skills, StringComparer.Ordinal)
             {
-                [upd.Skill.SkillKey] = Project(upd.Skill),
+                [key] = cur,
             };
             _current = new PlayerSkillSnapshot(map, upd.Timestamp, SkillStateSource.LiveLog);
             _diag?.Trace("GameState.Skills",
-                $"Skill upsert: {upd.Skill.SkillKey} raw={upd.Skill.Level} @ {upd.Timestamp:O}");
+                $"Skill upsert: {key} raw={upd.Skill.Level} +{upd.XpGained}xp @ {upd.Timestamp:O}");
             Fire(_current);
+            FireChange(new SkillChange(
+                key, before, cur, upd.XpGained, SkillChangeKind.Delta, upd.Timestamp));
         }
     }
 
@@ -131,20 +171,39 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         foreach (var h in _handlers) Invoke(h, snapshot);
     }
 
+    /// <summary>MUST be called with <see cref="_lock"/> held.</summary>
+    private void FireChange(SkillChange change)
+    {
+        foreach (var h in _changeHandlers) InvokeChange(h, change);
+    }
+
     private void Invoke(Action<PlayerSkillSnapshot> handler, PlayerSkillSnapshot snapshot)
     {
         try { handler(snapshot); }
         catch (Exception ex) { _diag?.Warn("GameState.Skills", $"Subscriber threw: {ex.Message}"); }
     }
 
-    private sealed class Subscription : IDisposable
+    private void InvokeChange(Action<SkillChange> handler, SkillChange change)
+    {
+        try { handler(change); }
+        catch (Exception ex) { _diag?.Warn("GameState.Skills", $"Change subscriber threw: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="handler"/> from the list it was added to, under
+    /// the owner's lock. One implementation serves both the snapshot and the
+    /// change channels.
+    /// </summary>
+    private sealed class Unsub : IDisposable
     {
         private PlayerSkillStateService? _owner;
-        private readonly Action<PlayerSkillSnapshot> _handler;
+        private readonly System.Collections.IList _list;
+        private readonly object _handler;
 
-        public Subscription(PlayerSkillStateService owner, Action<PlayerSkillSnapshot> handler)
+        public Unsub(PlayerSkillStateService owner, System.Collections.IList list, object handler)
         {
             _owner = owner;
+            _list = list;
             _handler = handler;
         }
 
@@ -152,7 +211,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         {
             var owner = Interlocked.Exchange(ref _owner, null);
             if (owner is null) return;
-            lock (owner._lock) { owner._handlers.Remove(_handler); }
+            lock (owner._lock) { _list.Remove(_handler); }
         }
     }
 }

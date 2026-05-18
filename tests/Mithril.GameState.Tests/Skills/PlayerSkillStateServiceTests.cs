@@ -144,6 +144,117 @@ public sealed class PlayerSkillStateServiceTests
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
+    [Fact]
+    public async Task SubscribeChanges_has_no_replay_then_delivers_Delta_with_XpGained()
+    {
+        var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
+        var svc = NewService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await svc.StartAsync(cts.Token);
+        await stream.WaitForDrainAsync(cts.Token);
+
+        var changes = new List<SkillChange>();
+        using (svc.SubscribeChanges(changes.Add))
+        {
+            changes.Should().BeEmpty(); // no replay — a change is an event, not state
+
+            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Toolcrafting,raw=16,bonus=0,xp=5,tnl=700,max=50}, True, 4, 0, 0)");
+            await stream.WaitForDrainAsync(cts.Token);
+        }
+
+        changes.Should().HaveCount(1);
+        var c = changes[0];
+        c.Kind.Should().Be(SkillChangeKind.Delta);
+        c.SkillKey.Should().Be("Toolcrafting");
+        c.Previous!.Value.Level.Should().Be(15); // from LoadLine
+        c.Current.Level.Should().Be(16);
+        c.XpGained.Should().Be(4);
+
+        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
+    public async Task Delta_for_never_seen_skill_has_null_Previous()
+    {
+        var stream = new ScriptedStream();
+        var svc = NewService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await svc.StartAsync(cts.Token);
+
+        var changes = new List<SkillChange>();
+        using (svc.SubscribeChanges(changes.Add))
+        {
+            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
+            await stream.WaitForDrainAsync(cts.Token);
+        }
+
+        changes.Should().ContainSingle();
+        changes[0].Previous.Should().BeNull();
+        changes[0].Current.Level.Should().Be(2);
+
+        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
+    public async Task SnapshotReplace_emits_only_skills_that_actually_changed()
+    {
+        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0),
+            "LocalPlayer: ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})"));
+        var svc = NewService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await svc.StartAsync(cts.Token);
+        await stream.WaitForDrainAsync(cts.Token);
+
+        var changes = new List<SkillChange>();
+        using (svc.SubscribeChanges(changes.Add))
+        {
+            // Re-sync: Sword identical (no-op), Cooking new.
+            stream.Push("LocalPlayer: ProcessLoadSkills(" +
+                        "{type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50}, " +
+                        "{type=Cooking,raw=20,bonus=0,xp=3,tnl=4,max=50})");
+            await stream.WaitForDrainAsync(cts.Token);
+        }
+
+        changes.Should().ContainSingle(); // Sword unchanged → suppressed
+        changes[0].Kind.Should().Be(SkillChangeKind.SnapshotReplace);
+        changes[0].SkillKey.Should().Be("Cooking");
+        changes[0].Previous.Should().BeNull();
+        changes[0].XpGained.Should().Be(0); // snapshot is not a gain event
+
+        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
+    public async Task Capped_tick_emits_IsCapped_transition_then_skill_goes_silent()
+    {
+        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0),
+            "LocalPlayer: ProcessLoadSkills({type=Sword,raw=49,bonus=0,xp=10,tnl=20,max=50})"));
+        var svc = NewService(stream);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await svc.StartAsync(cts.Token);
+        await stream.WaitForDrainAsync(cts.Token);
+
+        var changes = new List<SkillChange>();
+        using (svc.SubscribeChanges(changes.Add))
+        {
+            // The capping tick: raw reaches max. PG then emits no further
+            // ProcessUpdateSkill for Sword — modelled by a subsequent unrelated
+            // skill update producing no Sword change.
+            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=50,bonus=0,xp=0,tnl=20,max=50}, True, 5, 0, 0)");
+            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Cooking,raw=3,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
+            await stream.WaitForDrainAsync(cts.Token);
+        }
+
+        var swordChanges = changes.Where(c => c.SkillKey == "Sword").ToList();
+        swordChanges.Should().ContainSingle();
+        swordChanges[0].Previous!.Value.IsCapped.Should().BeFalse(); // 49 < 50
+        swordChanges[0].Current.IsCapped.Should().BeTrue();          // 50 == 50
+        // No further Sword event despite later activity — the "goes silent" contract.
+        changes.Count(c => c.SkillKey == "Sword").Should().Be(1);
+
+        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+    }
+
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
 
     private static async Task RunUntilDrainedAsync(PlayerSkillStateService svc, ScriptedStream stream)
