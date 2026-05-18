@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
-using Mithril.GameState.Pins;
 using Mithril.Shared.Reference;
 using Xunit;
 using PinShape = Mithril.GameState.Pins.PinShape;
@@ -10,167 +9,333 @@ using PinColor = Mithril.GameState.Pins.PinColor;
 namespace Legolas.Tests.Services;
 
 /// <summary>
-/// #468: the cold-start pin-calibration driver now consumes the GameState
-/// <see cref="IPlayerPinTracker"/>. Two routes, one solve — and the #454
-/// label-agnostic rule is preserved (the solve only ever sees world↔pixel).
+/// #477 Part A: the guided two-phase correctable walkthrough. One model, two
+/// phases; spread-suggested pairing with skip/override; non-persisting residual
+/// preview; correction (select/drag/nudge); terminal Confirm. The #454
+/// label-agnostic rule still holds — only (world↔pixel) reaches the solver.
 /// </summary>
 public class PinCalibrationCoordinatorTests
 {
-    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakePlayerPinTracker pins) Build()
+    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakePlayerPinTracker pins, LegolasSettings settings) Build()
     {
         var calib = new FakeCalib();
         var pins = new FakePlayerPinTracker();
-        return (new PinCalibrationCoordinator(calib, pins), calib, pins);
+        var settings = new LegolasSettings();
+        return (new PinCalibrationCoordinator(calib, pins, settings), calib, pins, settings);
     }
 
-    // ---- Turn-order (freshly-dropped) route ----
+    // A well-conditioned scale-only transform: pixel = (100 + 2X, 100 - 2Z),
+    // i.e. AreaCalibration{scale=2, origin=(100,100), no rotation, north=+Z}.
+    private static PixelPoint Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
 
-    [Fact]
-    public void Pre_arm_drops_are_ignored_so_replay_cannot_leak()
+    // Pair every remaining pin at its own perfect projection, in whatever
+    // spread order the coordinator suggests (the no-correction baseline).
+    private static void PairAllPerfectly(PinCalibrationCoordinator coord)
     {
-        var (coord, _, pins) = Build();
-        pins.Add(-521, 368);
-        pins.Add(367, 2798);
-
-        coord.PendingCount.Should().Be(0);
-        coord.PairClick(new PixelPoint(1, 1));
-        coord.PairedCount.Should().Be(0);
+        while (coord.SuggestedPin is { } s)
+            coord.PairClick(Project(s.X, s.Z));
     }
 
+    // ---- Phase model ----
+
     [Fact]
-    public void Armed_fresh_drops_queue_and_pair_in_turn_order()
+    public void Arm_starts_in_Drop_when_under_three_pins_else_Pair()
     {
-        var (coord, calib, pins) = Build();
+        var (coord, _, pins, _) = Build();
         coord.Arm();
+        coord.Phase.Should().Be(CalibrationPhase.Drop, "no pins yet");
 
-        var w0 = pins.Add(-521, 368);
-        var w1 = pins.Add(367, 2798);
-        var w2 = pins.Add(1145, 1323);
-        coord.PendingCount.Should().Be(3);
-        coord.CanSolve.Should().BeFalse();
-
-        coord.PairClick(new PixelPoint(10, 11));
-        coord.PairClick(new PixelPoint(20, 22));
-        coord.PairClick(new PixelPoint(30, 33));
-
-        coord.PairedCount.Should().Be(3);
-        coord.PendingCount.Should().Be(0);
-        coord.CanSolve.Should().BeTrue();
-        coord.PlacedMarkers.Should().HaveCount(3);
-
-        coord.Solve().Should().NotBeNull();
-        calib.LastPairs.Should().Equal(
-            (new WorldCoord(w0.X, 0, w0.Z), new PixelPoint(10, 11)),
-            (new WorldCoord(w1.X, 0, w1.Z), new PixelPoint(20, 22)),
-            (new WorldCoord(w2.X, 0, w2.Z), new PixelPoint(30, 33)));
-        coord.IsArmed.Should().BeFalse("a successful solve disarms");
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(1, 2), FakePlayerPinTracker.Pin(3, 4), FakePlayerPinTracker.Pin(5, 6));
+        coord.Arm();
+        coord.Phase.Should().Be(CalibrationPhase.Pair, "≥3 usable pins → skip Drop");
     }
 
-    // ---- Existing-pins route ----
+    [Fact]
+    public void Phase_toggle_flips_capture_intent_and_is_idempotent()
+    {
+        var (coord, _, _, _) = Build();
+        coord.Arm(); // Drop
+        coord.IsDropping.Should().BeTrue();
+        coord.IsPairing.Should().BeFalse();
+
+        coord.TogglePhase();
+        coord.Phase.Should().Be(CalibrationPhase.Pair);
+        coord.IsPairing.Should().BeTrue();
+        coord.IsDropping.Should().BeFalse();
+
+        coord.TogglePhase();
+        coord.Phase.Should().Be(CalibrationPhase.Drop, "toggle is a clean flip-back");
+    }
 
     [Fact]
-    public void Existing_pins_are_offered_and_pair_by_deliberate_selection()
+    public void Phase1_live_count_reflects_PinSetChanged_Added()
     {
-        var (coord, calib, pins) = Build();
-        var a = FakePlayerPinTracker.Pin(10, 20, "Fire Magic 25", PinShape.Dot, PinColor.Red);
-        var b = FakePlayerPinTracker.Pin(30, 40, "North", PinShape.Square, PinColor.White);
-        var c = FakePlayerPinTracker.Pin(50, 60, "");
+        var (coord, _, pins, _) = Build();
+        coord.Arm();
+        coord.PinsAvailable.Should().Be(0);
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        coord.PinsAvailable.Should().Be(2);
+        coord.HasUsablePins.Should().BeFalse();
+        pins.Add(5, 6);
+        coord.HasUsablePins.Should().BeTrue();
+    }
+
+    // ---- Spread suggestion + skip/override ----
+
+    [Fact]
+    public void Suggestion_is_the_farthest_unpaired_pin_from_already_paired()
+    {
+        var (coord, _, pins, _) = Build();
+        var near = FakePlayerPinTracker.Pin(11, 10);
+        var far = FakePlayerPinTracker.Pin(900, 900);
+        pins.SeedExisting(FakePlayerPinTracker.Pin(10, 10), near, far);
+        coord.Arm(); // Pair (3 pins)
+
+        // First suggestion (no pairs yet) is deterministic: list head.
+        coord.SuggestedPin!.X.Should().Be(10);
+        coord.PairClick(Project(10, 10));
+
+        // Now the farthest-from-(10,10) unpaired pin wins.
+        coord.SuggestedPin.Should().Be(far);
+    }
+
+    [Fact]
+    public void Skip_defers_the_pin_without_recording_a_pair()
+    {
+        var (coord, _, pins, _) = Build();
+        var a = FakePlayerPinTracker.Pin(10, 10);
+        var b = FakePlayerPinTracker.Pin(20, 20);
+        var c = FakePlayerPinTracker.Pin(30, 30);
         pins.SeedExisting(a, b, c);
-
         coord.Arm();
-        coord.HasUsableExistingPins.Should().BeTrue();
-        coord.ExistingPins.Should().HaveCount(3);
-        // UX identity is derivable (used only to help the human pick).
-        a.Appearance.Should().Be("red dot");
 
-        coord.SelectedExistingPin = b;
-        coord.PairClick(new PixelPoint(1, 1));
-        coord.SelectedExistingPin = a;
-        coord.PairClick(new PixelPoint(2, 2));
-        coord.SelectedExistingPin = c;
-        coord.PairClick(new PixelPoint(3, 3));
-
-        coord.PairedCount.Should().Be(3);
-        coord.Solve().Should().NotBeNull();
-        // Pairs follow the user's selection order — not list/turn order — and
-        // carry only world↔pixel (no label/colour reaches the solver).
-        calib.LastPairs.Should().Equal(
-            (new WorldCoord(30, 0, 40), new PixelPoint(1, 1)),
-            (new WorldCoord(10, 0, 20), new PixelPoint(2, 2)),
-            (new WorldCoord(50, 0, 60), new PixelPoint(3, 3)));
+        var first = coord.SuggestedPin;
+        coord.SkipSuggestion();
+        coord.PairedCount.Should().Be(0, "skip records nothing");
+        coord.SuggestedPin.Should().NotBe(first, "a different pin is offered");
     }
 
     [Fact]
-    public void Snapshot_seeds_existing_pins_before_arming()
+    public void Override_pin_takes_precedence_over_the_spread_suggestion()
     {
-        var calib = new FakeCalib();
-        var pins = new FakePlayerPinTracker();
-        pins.SeedExisting(FakePlayerPinTracker.Pin(1, 2), FakePlayerPinTracker.Pin(3, 4));
+        var (coord, _, pins, _) = Build();
+        var a = FakePlayerPinTracker.Pin(10, 10);
+        var b = FakePlayerPinTracker.Pin(20, 20);
+        var c = FakePlayerPinTracker.Pin(30, 30);
+        pins.SeedExisting(a, b, c);
+        coord.Arm();
 
-        var coord = new PinCalibrationCoordinator(calib, pins); // Subscribe → Snapshot
-        coord.ExistingPins.Should().HaveCount(2);
-        coord.HasUsableExistingPins.Should().BeFalse("only 2 < 3");
+        coord.OverridePin = c;
+        coord.SuggestedPin.Should().Be(c);
+        coord.PairClick(Project(30, 30));
+        // Solver only ever sees (world↔pixel) — verified on Confirm below.
+        coord.PairedCount.Should().Be(1);
+        coord.OverridePin.Should().BeNull("cleared once paired");
+    }
+
+    // ---- Pairing (implicit advance) + finalize floor ----
+
+    [Fact]
+    public void Pairing_is_implicit_advance_and_under_three_cannot_finalize()
+    {
+        var (coord, calib, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        coord.Arm();
+
+        coord.PairClick(Project(10, 10));
+        coord.PairClick(Project(50, 60));
+        coord.PairedCount.Should().Be(2);
+        coord.CanConfirm.Should().BeFalse();
+        coord.Confirm().Should().BeNull("≥3 pairs is a hard floor");
+        coord.ConfirmAnyway().Should().BeNull();
+        calib.LastPairs.Should().BeNull("nothing persisted below the floor");
+
+        coord.PairClick(Project(90, 20));
+        coord.CanConfirm.Should().BeTrue();
     }
 
     [Fact]
     public void Duplicate_world_point_is_rejected_to_keep_the_solve_conditioned()
     {
-        var (coord, _, _) = Build();
+        var (coord, _, pins, _) = Build();
         var p = FakePlayerPinTracker.Pin(10, 20, "A");
+        pins.SeedExisting(p);
         coord.Arm();
-        coord.SelectedExistingPin = p;
+        coord.TogglePhase(); // 1 pin → entered in Drop; move to Pair
+        coord.OverridePin = p;
         coord.PairClick(new PixelPoint(1, 1));
-        coord.SelectedExistingPin = p; // same pin again
+        coord.OverridePin = p; // same pin again
         coord.PairClick(new PixelPoint(9, 9));
         coord.PairedCount.Should().Be(1);
     }
 
-    // ---- Shared invariants ----
+    // ---- Correction (select / drag / nudge) ----
 
     [Fact]
-    public void Solve_below_three_pairs_is_null_and_does_not_call_service()
+    public void Hit_test_selects_nearest_marker_and_drag_moves_only_that_pixel()
     {
-        var (coord, calib, pins) = Build();
+        var (coord, calib, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
         coord.Arm();
-        pins.Add(1, 2);
-        coord.PairClick(new PixelPoint(5, 5));
+        PairAllPerfectly(coord); // marker[0] is the first-suggested pin = (10,10)
 
-        coord.CanSolve.Should().BeFalse();
-        coord.Solve().Should().BeNull();
-        calib.LastPairs.Should().BeNull();
+        var other = coord.PlacedMarkers[1];
+        var otherPixel = other.Pixel;
+
+        coord.TrySelectMarkerAt(new PixelPoint(121, 81), radius: 14).Should().BeTrue();
+        coord.SelectedMarker!.PairIndex.Should().Be(0);
+        coord.SelectedMarker.Pixel.Should().Be(Project(10, 10));
+
+        coord.DragSelectedTo(new PixelPoint(500, 500));
+        coord.PlacedMarkers[0].Pixel.Should().Be(new PixelPoint(500, 500));
+        other.Pixel.Should().Be(otherPixel, "other markers are untouched");
+
+        coord.NudgeSelected(3, -2);
+        coord.PlacedMarkers[0].Pixel.Should().Be(new PixelPoint(503, 498));
+
+        // The world half is never mutated — Confirm proves the pairs carry the
+        // dragged pixel against the ORIGINAL world coords.
+        coord.Confirm(); // residual high after the drag → gated; force anyway
+        coord.ConfirmAnyway();
+        calib.LastPairs!.Should().Contain(p =>
+            p.Item1 == new WorldCoord(10, 0, 10) && p.Item2 == new PixelPoint(503, 498));
+        calib.LastPairs!.Should().Contain(p =>
+            p.Item1 == new WorldCoord(50, 0, 60) && p.Item2 == Project(50, 60));
     }
 
     [Fact]
-    public void Arm_clears_stale_state_then_Disarm_flushes()
+    public void Miss_returns_false_so_the_click_pairs_instead()
     {
-        var (coord, _, pins) = Build();
+        var (coord, _, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
         coord.Arm();
-        pins.Add(1, 2);
-        coord.PairClick(new PixelPoint(5, 5));
+        coord.PairClick(Project(10, 10));
+        coord.TrySelectMarkerAt(new PixelPoint(9999, 9999), radius: 14).Should().BeFalse();
+    }
+
+    // ---- Non-persisting residual preview ----
+
+    [Fact]
+    public void Residual_preview_is_non_persisting_and_equals_a_direct_solve()
+    {
+        var (coord, calib, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        coord.Arm();
+
+        coord.PreviewResidual.Should().BeNull("under 3 pairs");
+        PairAllPerfectly(coord);
+
+        coord.PreviewResidual.Should().NotBeNull();
+        calib.LastPairs.Should().BeNull("preview must not persist");
+        calib.ChangedCount.Should().Be(0, "preview must not fire Changed");
+
+        // Equals a direct solve of the same (world↔pixel) pairs. Residual is
+        // order-independent, so the suggestion order doesn't matter.
+        var refs = new[]
+        {
+            new LandmarkCalibrationSolver.Reference(10, 10, Project(10, 10)),
+            new LandmarkCalibrationSolver.Reference(50, 60, Project(50, 60)),
+            new LandmarkCalibrationSolver.Reference(90, 20, Project(90, 20)),
+        };
+        var direct = LandmarkCalibrationSolver.Solve(refs)!.ResidualPixels;
+        coord.PreviewResidual!.Value.Should().BeApproximately(direct, 1e-6);
+    }
+
+    [Fact]
+    public void Confirm_gate_flips_at_the_configured_threshold_and_finish_anyway_persists()
+    {
+        var (coord, calib, pins, settings) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        coord.Arm();
+
+        coord.PairClick(Project(10, 10));
+        coord.PairClick(Project(50, 60));
+        // One badly misplaced click → a large residual.
+        coord.PairClick(new PixelPoint(Project(90, 20).X + 400, Project(90, 20).Y));
+
+        coord.IsResidualGood.Should().BeFalse();
+        coord.Confirm().Should().BeNull("gated on a good residual");
+        calib.LastPairs.Should().BeNull();
+
+        // Raise the threshold above the residual → the gate opens.
+        settings.CalibrationGoodResidualPx = coord.PreviewResidual!.Value + 10;
+        coord.IsResidualGood.Should().BeTrue();
+        coord.Confirm().Should().NotBeNull();
+        coord.IsArmed.Should().BeFalse("a successful confirm disarms");
+    }
+
+    [Fact]
+    public void No_correction_run_solves_equivalently_and_only_Confirm_persists()
+    {
+        var (coord, calib, pins, _) = Build();
+        var a = FakePlayerPinTracker.Pin(10, 10);
+        var b = FakePlayerPinTracker.Pin(50, 60);
+        var c = FakePlayerPinTracker.Pin(90, 20);
+        pins.SeedExisting(a, b, c);
+        coord.Arm();
+
+        // Click each named dot precisely (the regression baseline).
+        while (coord.SuggestedPin is { } s)
+            coord.PairClick(Project(s.X, s.Z));
+
+        calib.LastPairs.Should().BeNull("only Confirm persists");
+        coord.Confirm().Should().NotBeNull();
+        // Pure (world↔pixel); no label/colour/shape ever reaches the solver.
+        calib.LastPairs.Should().BeEquivalentTo(new[]
+        {
+            (new WorldCoord(10, 0, 10), Project(10, 10)),
+            (new WorldCoord(50, 0, 60), Project(50, 60)),
+            (new WorldCoord(90, 0, 20), Project(90, 20)),
+        });
+    }
+
+    [Fact]
+    public void Arm_clears_stale_state()
+    {
+        var (coord, _, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        coord.Arm();
+        coord.PairClick(Project(10, 10));
         coord.PairedCount.Should().Be(1);
 
         coord.Arm();
         coord.PairedCount.Should().Be(0);
-        coord.PendingCount.Should().Be(0);
         coord.PlacedMarkers.Should().BeEmpty();
-
-        pins.Add(3, 4);
-        coord.PendingCount.Should().Be(1);
-        coord.Disarm();
-        coord.IsArmed.Should().BeFalse();
-        coord.PendingCount.Should().Be(0);
-        pins.Add(7, 8);
-        coord.PendingCount.Should().Be(0);
+        coord.PreviewResidual.Should().BeNull();
+        coord.SelectedMarker.Should().BeNull();
     }
 
     private sealed class FakeCalib : IAreaCalibrationService
     {
         public List<(WorldCoord, PixelPoint)>? LastPairs { get; private set; }
+        public int ChangedCount { get; private set; }
 
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
         {
             LastPairs = placements.Select(p => (p.World, p.Pixel)).ToList();
+            ChangedCount++;
+            Changed?.Invoke(this, EventArgs.Empty);
             return new AreaCalibration(1, 0, 0, 0, placements.Count, 0);
         }
 
@@ -180,7 +345,7 @@ public class PinCalibrationCoordinatorTests
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
-        public event EventHandler? Changed { add { } remove { } }
+        public event EventHandler? Changed;
         public void OnAreaEntered(string areaFriendlyName) { }
         public void SelectArea(string areaKey) { }
         public void ClearCurrentAreaCalibration() { }

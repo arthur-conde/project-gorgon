@@ -60,12 +60,14 @@
                      on hover are not reproduced — see commit history. -->
                 <rendering:D2DOverlaySurface x:Name="MapSurface" IsHitTestVisible="False" />
 
-                <!-- #460: calibration capture. While the wizard Calibrating
-                     step has armed capture, viewport clicks pair with pending
-                     ProcessMapPinAdd coords; each paired click drops a marker
-                     here. IsHitTestVisible=False so clicks reach the Viewport
+                <!-- #460/#477A: guided calibration, Pair phase. Viewport clicks
+                     pair the wizard-named pin or grab a placed marker for
+                     drag/nudge correction (hit-test is VM-side). Markers are
+                     IsHitTestVisible=False so clicks reach the Viewport
                      handler. Zero-size Canvas + negative offsets so the dot
-                     sits exactly on the click (WPF Grid would re-centre it). -->
+                     sits exactly on the click (WPF Grid would re-centre it).
+                     #478 will drive this marker's appearance from
+                     LegolasPinStyle; today it is a fixed dot + selection ring. -->
                 <ItemsControl ItemsSource="{Binding CalibrationMarkers}" IsHitTestVisible="False"
                               Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
                     <ItemsControl.ItemsPanel>
@@ -79,8 +81,21 @@
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="-6,-6,0,0"
-                                     Fill="#CC33C1FF" Stroke="White" StrokeThickness="1.5" />
+                            <!-- Zero-size Canvas so the dot's screen position
+                                 is independent of the selection ring: a Grid
+                                 auto-resizes 12→22px when IsSelected flips,
+                                 which slid already-placed dots down/right as
+                                 selection moved to the next pin. Canvas pins
+                                 each ellipse at a fixed offset from (X,Y). -->
+                            <Canvas Width="0" Height="0">
+                                <Ellipse Canvas.Left="-11" Canvas.Top="-11"
+                                         Width="22" Height="22"
+                                         Stroke="#FFFFD23F" StrokeThickness="2"
+                                         Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                                <Ellipse Canvas.Left="-6" Canvas.Top="-6"
+                                         Width="12" Height="12"
+                                         Fill="#CC33C1FF" Stroke="White" StrokeThickness="1.5" />
+                            </Canvas>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -90,7 +105,7 @@
                         Background="#CC0A2A3A" BorderBrush="#FF33C1FF" BorderThickness="1"
                         CornerRadius="4" MaxWidth="520" IsHitTestVisible="False"
                         Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <TextBlock Text="Calibration: pick a pin in the wizard and click where it is here — or, if you dropped fresh pins, click them here in the order you dropped them."
+                    <TextBlock Text="{Binding CalibrationPrompt}"
                                Foreground="#FFE0F4FF" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
                 </Border>
 

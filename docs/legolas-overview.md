@@ -132,26 +132,34 @@ The map uses `atan2(East, North)` (not `atan2(N, E)`) for the offset bearing, pa
 
 There is no longer a `NoteSurveyDetected`/`CanAcceptSurvey`/`DescribeWhyDropped` drop path: absolute pins are added straight to `SessionState.Surveys` and the controller reacts via `OnSurveysChanged`. The cold-start "uncalibrated area" case is handled in the wizard (a `Calibrating` gate step — see #460), not the FSM. The `SettingPosition` detour is *not* surfaced as its own `WizardStep` — `RecomputeStep` maps it back to its `ReturnState`'s step so the wizard panel stays put while the overlay collects the click.
 
-## Pin calibration: two routes & the label-agnostic reconciliation
+## Pin calibration: the guided two-phase walkthrough & the label-agnostic reconciliation
 
-> **Read this before "fixing" the calibration UI back to label-agnostic.** The two halves below look contradictory and are not.
+> **Read this before "fixing" the calibration UI.** The label-agnostic rule and the named-pin prompt look contradictory and are not.
+
+> **As-built — [#477](https://github.com/moumantai-gg/mithril/issues/477) Part A landed.** The in-flow (#460) calibration is now a **guided, two-phase, correctable** walkthrough driven by `PinCalibrationCoordinator`. The earlier "existing-pins route vs. freshly-dropped turn-order route" branch and the per-pin turn-order queue are **retired** — there is one model with two explicit phases. The paragraphs below describe the current code; the standalone `CalibrationSessionViewModel` (landmark window) still uses its own turn-order queue and is unchanged.
 
 Cold-start calibration pairs *(world coordinate ↔ overlay pixel)* points and feeds them to `LandmarkCalibrationSolver` via `IAreaCalibrationService.CalibrateCurrentArea`. The world coordinates come from the player's map pins.
 
-**Pin source (#468).** The pin set is owned by the GameState-tier `IPlayerPinTracker` (`Mithril.GameState.Pins`), *not* Legolas. It parses `ProcessMapPin{Add,Remove}` (the only two verbs PG has — a rename/move is Remove+Add; there is no clear/edit verb), is **area-scoped** (keyed off the shared `PlayerAreaTracker`, swapped on area change), and **owns the login/area-entry replay**: PG bulk-re-emits every pin as an `Add` burst on each entry, which the tracker folds into an idempotent upsert keyed by rounded coordinate. Consumers therefore no longer hand-roll a replay-arming gate — `PinCalibrationCoordinator` and the standalone `CalibrationSessionViewModel` both just subscribe. Legolas's `PlayerLogParser` keeps only `ProcessMapFx` (survey targets are Legolas-owned, not shared pins).
+**Pin source (#468).** The pin set is owned by the GameState-tier `IPlayerPinTracker` (`Mithril.GameState.Pins`), *not* Legolas. It parses `ProcessMapPin{Add,Remove}` (the only two verbs PG has — a rename/move is Remove+Add; there is no clear/edit verb), is **area-scoped** (keyed off the shared `PlayerAreaTracker`, swapped on area change), and **owns the login/area-entry replay**: PG bulk-re-emits every pin as an `Add` burst on each entry, which the tracker folds into an idempotent upsert keyed by rounded coordinate. Consumers just subscribe. Legolas's `PlayerLogParser` keeps only `ProcessMapFx` (survey targets are Legolas-owned, not shared pins).
 
-`PinCalibrationCoordinator` exposes **two routes**, both ending in the *same* `(world ↔ pixel)` solve:
+### The two phases
 
-1. **Existing-pins route.** When the area already has ≥3 well-spread pins (`HasUsableExistingPins`), the wizard lists them by in-game identity — `MapPin.DisplayName` + `Appearance` (colour/shape decoded from the pin args, e.g. *"Fire Magic 25 (red dot)"*). The user selects one and clicks where it is on the overlay. No re-dropping.
-2. **Freshly-dropped turn-order route.** The true cold-start case (fogged brand-new area, no usable pins). Pins dropped *after* arming queue up; each click pairs the oldest unpaired one — by interaction order, label-agnostic.
+A transparent overlay's click-through is **all-or-nothing** — it either passes a right-click to the game *or* captures the user's left-click, never both. So calibration is two **explicit, user-toggled** phases (`CalibrationPhase`), never an automatic FSM edge. The phase trigger lives on the **wizard panel** (a normal, always-clickable window) plus an optional unbound `IHotkeyCommand` — *not* on the transparent overlay.
 
-**Why this does not violate #454's "never pair by name" rule.** The rule's intent is *no automatic name→point pairing* (the freshly-dropped flow has no reliable name↔point map). It is preserved because:
+- **Drop.** Overlay click-through ON. The user right-clicks the in-game map to place ≥3 well-spread pins (or relies on ones already there); Legolas only *observes* the live count (`PinsAvailable`). Entry starts here only when <3 usable pins exist.
+- **Pair.** Overlay captures clicks. The coordinator names **one pin at a time** (`SuggestedPin`) by its in-game identity (`MapPin.DisplayName` + `Appearance`, e.g. *"red dot — 'Fire Magic 25'"*), chosen for **spread** (farthest-point from already-paired). The user left-clicks that pin's game-rendered dot through the overlay. **Advance is implicit** — pairing the next named pin *is* the advance; there is no per-pin confirm key. A pin can be **skipped** (deferred) or **overridden** (`OverridePin` — pick any pin). Entry starts here when ≥3 usable pins already exist (the common case).
 
-- The **solve is purely `(WorldCoord ↔ PixelPoint)`** in both routes. Name/colour/shape **never** reach `LandmarkCalibrationSolver` or `CalibrateCurrentArea`.
-- In the existing-pins route, identity is used **only to help the human** decide which service-supplied world point they are about to click. The pairing is still the user's *deliberate select-then-click* — the system never infers a pairing from a label.
-- The turn-order route is **retained**, not replaced; it is the only path that works when no usable pins exist.
+**Correction.** Placed pairs are `CalibrationMarker` VMs (not bare points), so a marker can be selected (`TrySelectMarkerAt`), dragged (`DragSelectedTo`), or arrow-nudged (`NudgeSelected`) — the default nudge target is the just-placed marker. Correction edits **only the pixel half**; the world coord is tracker-supplied and never mutated. (`CalibrationMarker` is also the single marker model #478 reshapes for per-marker styling.)
 
-So: identity is UX-only disambiguation; the pairing remains a human click against a service-supplied coordinate. Keep both routes and keep colour/shape out of the solver.
+**Live, non-persisting residual.** Once ≥3 pairs exist, every add/nudge/drag re-runs the pure `LandmarkCalibrationSolver` *in-process* (`PreviewResidual`) — no persist, no `IAreaCalibrationService.Changed`. Only the terminal **Confirm** / **Finish anyway** calls the persisting `CalibrateCurrentArea`. Confirm is gated on `≥3 pairs && residual ≤ LegolasSettings.CalibrationGoodResidualPx` (12 px default); "Finish anyway" persists despite a high residual so the user is never trapped at the non-affine ±10% map ceiling.
+
+**Gesture/phase table.** Right-click = in-game pin drop (Drop; observed, never captured). Left-click on overlay = pair the named pin / grab a marker to drag (Pair; overlay captures). Arrow keys = nudge the selected/just-placed marker. Wizard-panel button (+ optional hotkey) = phase toggle / terminal Confirm. The view drives the overlay's click-through from the phase (`IsCalibrationDropping` ⇒ ON, `IsCalibrationCapturing` ⇒ OFF), overriding the user's `ClickThroughMap` preference for the duration.
+
+**Why this does not violate #454's "never pair by name" rule.** The rule's intent is *no automatic name→point pairing*. It holds because the **solve is purely `(WorldCoord ↔ PixelPoint)`** — name/colour/shape never reach `LandmarkCalibrationSolver`; identity is used **only to help the human** decide which service-supplied world point they are deliberately clicking. The pairing is always a human click against a named target, never an inferred name→point map.
+
+### In-flow recalibration (#477 Part B)
+
+`IAreaCalibrationService.ClearCurrentAreaCalibration()` removes + persists the deletion and fires `Changed`. The Listening step offers a **"Recalibrate this area"** affordance (only when `CanRecalibrate` — i.e. the area is already calibrated) behind a **confirm guard** (`IsConfirmingRecalibrate`) so a misclick can't wipe a good calibration. Confirming clears the calibration → `Changed` → `RecomputeStep` routes back into `WizardStep.Calibrating` via the *same pin route as cold start* (`OnCurrentStepChanged` re-arms `PinCalibration`), so Part A's guided correctable flow applies on the redo. No new top-level FSM state — the existing edges are reused. The standalone window's Recalibrate (landmark route) is left as the alternative.
 
 ## SessionState
 
@@ -217,15 +225,18 @@ Auto-save is wired through [`SettingsAutoSaver<LegolasSettings>`](../src/Mithril
 
 None ship with a default key binding. Arrow keys would collide with in-game movement, so the user opts into specific bindings via `Settings → Hotkeys`.
 
-### Pin-nudge fallback to anchor (issues #119, #120)
+### Pin-nudge target precedence (issues #119, #120; #477 A/C)
 
-`NudgePinCommandBase.ExecuteAsync` ([Commands.cs:206](../src/Legolas.Module/Hotkeys/Commands.cs)):
+`NudgePinCommandBase.ExecuteAsync` and the on-screen nudge pad both call the **single** `MapOverlayViewModel.Nudge(dx, dy, step)` so the keyboard and pad can't diverge. Precedence:
 
-1. If `SessionState.SelectedSurvey` is non-null and has a pixel position → nudge it via `MapOverlayViewModel.CorrectSurveyCommand`.
-2. Else if `SessionState.IsAnchorEditable` → nudge the anchor via `MapOverlayViewModel.MoveAnchor`.
-3. Else → no-op.
+1. A selected **calibration marker** (#477A — the guided walkthrough's just-placed/selected marker) → `PinCalibrationCoordinator.NudgeSelected`.
+2. The selected `SessionState.SelectedSurvey` pin → `CorrectSurveyCommand` (a survey always wins over the manual anchor).
+3. The **manual** Survey player anchor (#477C) — only when no survey is selected and `SurveyPlayerIsManual`: mutate `SurveyPlayerPixel` only, keep the manual flag (a fresh tracker fix still supersedes it per #476), never touch the Motherlode `PlayerPosition` or the retired `MoveAnchor`/`IsAnchorEditable` model.
+4. Else → no-op.
 
-This means the same arrow keys that nudge a selected pin will fall through to the anchor when no pin is selected and the anchor is still editable — the "fine-tune what I just clicked" workflow.
+The auto/tracker-projected anchor is intentionally **non-interactive** — nudging a data-sourced fix would mask staleness. `NudgePinCommandBase.IsRegistrable` and `NudgePadViewModel.IsAvailable` track all of (1)–(3) so the arrow keys aren't eaten system-wide when there's nothing to nudge (#139).
+
+> The pre-#454 `IsAnchorEditable`/`MoveAnchor` fall-through is gone. The #477C manual anchor is *not* that model — it is a raw screen pixel on the shared marker layer, superseded by the next fresh tracker fix.
 
 ### Click-through
 

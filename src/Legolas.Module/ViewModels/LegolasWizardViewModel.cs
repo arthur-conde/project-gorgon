@@ -83,9 +83,16 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _session.Surveys.CollectionChanged += OnSurveysChangedForOverlays;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
         _session.PropertyChanged += OnSessionChanged;
-        // #460: once the area becomes calibrated (Solve persisted it), leave
-        // the Calibrating gate.
-        _areaCalibration.Changed += (_, _) => RecomputeStep();
+        // #460: once the area becomes calibrated (Confirm persisted it), leave
+        // the Calibrating gate. #477B: a clear/(re)calibrate also flips
+        // CanRecalibrate and must reset the confirm guard so a stale "are you
+        // sure?" can't carry across areas.
+        _areaCalibration.Changed += (_, _) =>
+        {
+            IsConfirmingRecalibrate = false;
+            OnPropertyChanged(nameof(CanRecalibrate));
+            RecomputeStep();
+        };
         if (_reportService is not null)
             _reportService.ReportGenerated += OnReportGenerated;
         RecomputeStep();
@@ -242,20 +249,73 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _surveyFlow.Reset();
     }
 
-    /// <summary>#460 Calibrating step: solve + persist from the click-paired
-    /// pins. On success the area is calibrated, <c>Changed</c> fires, and the
-    /// wizard advances out of Calibrating (RecomputeStep).</summary>
+    /// <summary>#477A: flip the guided walkthrough between the Drop and Pair
+    /// phases. Lives on the wizard panel (a normal, always-clickable window) —
+    /// the transparent overlay can't host the trigger while click-through.</summary>
     [RelayCommand]
-    private void SolveCalibration()
+    private void ToggleCalibrationPhase() => PinCalibration.TogglePhase();
+
+    /// <summary>#477A: defer the currently-named pin and get the next
+    /// spread suggestion (no pair recorded).</summary>
+    [RelayCommand]
+    private void SkipCalibrationPin() => PinCalibration.SkipSuggestion();
+
+    /// <summary>#477A terminal Confirm: solve + persist, gated on ≥3 pairs and
+    /// a good residual. On success the area is calibrated, <c>Changed</c>
+    /// fires, and the wizard advances out of Calibrating (RecomputeStep).</summary>
+    [RelayCommand]
+    private void ConfirmCalibration()
     {
-        PinCalibration.Solve();
+        PinCalibration.Confirm();
         RecomputeStep();
     }
 
-    /// <summary>#460 Calibrating step: discard placed pairs and re-arm
-    /// capture for a fresh attempt.</summary>
+    /// <summary>#477A "finish anyway": persist despite a high residual (still
+    /// ≥3 pairs) — the non-affine ±10% ceiling means the user is never
+    /// trapped.</summary>
+    [RelayCommand]
+    private void ConfirmCalibrationAnyway()
+    {
+        PinCalibration.ConfirmAnyway();
+        RecomputeStep();
+    }
+
+    /// <summary>#477A: discard placed pairs and re-arm for a fresh attempt.</summary>
     [RelayCommand]
     private void ClearCalibrationPins() => PinCalibration.Arm();
+
+    /// <summary>#477B: true once the user has clicked "Recalibrate this area"
+    /// and we are waiting on the confirm guard (a misclick would wipe a good,
+    /// persisted calibration).</summary>
+    [ObservableProperty]
+    private bool _isConfirmingRecalibrate;
+
+    /// <summary>#477B: in-flow recalibration entry — only meaningful when the
+    /// current area is already calibrated. Arms the confirm guard rather than
+    /// destroying immediately.</summary>
+    [RelayCommand]
+    private void Recalibrate() => IsConfirmingRecalibrate = true;
+
+    /// <summary>#477B: confirmed recalibrate. Clears the current area's
+    /// persisted calibration; <see cref="IAreaCalibrationService.Changed"/>
+    /// makes <see cref="RecomputeStep"/> route back into
+    /// <see cref="WizardStep.Calibrating"/> via the same pin route as cold
+    /// start (<see cref="OnCurrentStepChanged"/> re-arms PinCalibration), so
+    /// Part A's guided correctable flow applies on the redo.</summary>
+    [RelayCommand]
+    private void ConfirmRecalibrate()
+    {
+        IsConfirmingRecalibrate = false;
+        _areaCalibration.ClearCurrentAreaCalibration();
+    }
+
+    /// <summary>#477B: back out of the recalibrate confirm guard.</summary>
+    [RelayCommand]
+    private void CancelRecalibrate() => IsConfirmingRecalibrate = false;
+
+    /// <summary>#477B: a "Recalibrate this area" affordance is offered only
+    /// when there is a persisted calibration to redo (Listening step).</summary>
+    public bool CanRecalibrate => _areaCalibration.IsCurrentAreaCalibrated;
 
     /// <summary>
     /// Step-wise back. From the first post-pick step, returns to mode pick

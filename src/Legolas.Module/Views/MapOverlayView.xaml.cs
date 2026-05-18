@@ -30,6 +30,10 @@ public partial class MapOverlayView : Window
     //  * Drag moves SessionState.SelectedSurvey (picked from the wizard
     //    panel's survey list) — a local pixel correction, no recalibration.
     private SurveyItemViewModel? _draggingPinFromViewport;
+    // #477A: a placed calibration marker grabbed for drag-correction.
+    private bool _draggingCalibrationMarker;
+    // Hit-radius (px) for grabbing a calibration marker before a click pairs.
+    private const double CalibrationMarkerGrabRadius = 14;
 
     private readonly D2DBrushCache _brushCache = new();
     private readonly MarchingAntsClock _antsClock = new();
@@ -54,7 +58,7 @@ public partial class MapOverlayView : Window
         // arrives, so Command/IsChecked bindings inside the pad always work.
         OverlayNudgePad.DataContext = nudgePad;
         WindowLayoutBinder.Bind(this, settings.MapOverlay, saver.Touch);
-        Loaded += (_, _) => ClickThrough.Apply(this, settings.ClickThroughMap);
+        Loaded += (_, _) => ApplyClickThrough();
         // Re-assert TOPMOST on every show + on a low-frequency timer while
         // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
         // OverlayController drives when the game holds the foreground.
@@ -62,7 +66,20 @@ public partial class MapOverlayView : Window
         settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
-                ClickThrough.Apply(this, settings.ClickThroughMap);
+                ApplyClickThrough();
+        };
+        // #477A: the calibration phase overrides the user's click-through
+        // preference — Drop must pass right-clicks to the game (click-through
+        // ON), Pair must capture left-clicks (OFF). The wizard-panel button
+        // toggles the phase; the overlay reacts here (it can't host the trigger
+        // — it's a transparent, possibly click-through window).
+        DataContextChanged += (_, e) =>
+        {
+            if (e.OldValue is MapOverlayViewModel oldVm)
+                oldVm.PropertyChanged -= OnOverlayVmPropertyChanged;
+            if (e.NewValue is MapOverlayViewModel newVm)
+                newVm.PropertyChanged += OnOverlayVmPropertyChanged;
+            ApplyClickThrough();
         };
         Closed += (_, _) =>
         {
@@ -168,6 +185,28 @@ public partial class MapOverlayView : Window
         PinSceneRenderer.Render(scene, e.RenderTarget, e.Factory, _brushCache);
     }
 
+    private void OnOverlayVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MapOverlayViewModel.IsCalibrationCapturing)
+                           or nameof(MapOverlayViewModel.IsCalibrationDropping))
+            ApplyClickThrough();
+    }
+
+    /// <summary>The calibration phase overrides the user's click-through
+    /// preference: Drop ⇒ click-through ON (right-clicks reach the game), Pair
+    /// ⇒ OFF (the overlay captures the pairing/correction left-clicks). Outside
+    /// calibration, honour <see cref="LegolasSettings.ClickThroughMap"/>.</summary>
+    private void ApplyClickThrough()
+    {
+        var clickThrough = Settings?.ClickThroughMap ?? false;
+        if (DataContext is MapOverlayViewModel vm)
+        {
+            if (vm.IsCalibrationDropping) clickThrough = true;
+            else if (vm.IsCalibrationCapturing) clickThrough = false;
+        }
+        ClickThrough.Apply(this, clickThrough);
+    }
+
     private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -185,6 +224,8 @@ public partial class MapOverlayView : Window
         // focus. Local handler now only clears the active selection on Escape.
         if (DataContext is MapOverlayViewModel vm && e.Key == Key.Escape)
         {
+            // Clear whichever selection is live so a stray arrow does nothing.
+            vm.ClearCalibrationSelection();
             vm.Session.SelectedSurvey = null;
             e.Handled = true;
             return;
@@ -207,12 +248,20 @@ public partial class MapOverlayView : Window
         var canvasPos = Mouse.GetPosition(Viewport);
         var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
 
-        // #460: while the wizard Calibrating step has armed capture, a
-        // viewport click pairs with the next pending ProcessMapPinAdd world
-        // coord (turn order). Consumes the click — no placement / mode logic.
+        // #460/#477A: in the guided walkthrough's Pair phase the overlay
+        // captures clicks. A click first tries to grab a placed marker for
+        // drag-correction; if none is near, it pairs the currently-named pin.
         if (vm.IsCalibrationCapturing)
         {
-            vm.PairCalibrationClick(clickPoint);
+            if (vm.TrySelectCalibrationMarkerAt(clickPoint, CalibrationMarkerGrabRadius))
+            {
+                _draggingCalibrationMarker = true;
+                Viewport.CaptureMouse();
+            }
+            else
+            {
+                vm.PairCalibrationClick(clickPoint);
+            }
             e.Handled = true;
             return;
         }
@@ -240,6 +289,12 @@ public partial class MapOverlayView : Window
         if (DataContext is not MapOverlayViewModel vm) return;
         var canvasPos = Mouse.GetPosition(Viewport);
 
+        if (_draggingCalibrationMarker)
+        {
+            vm.DragCalibrationMarkerTo(new PixelPoint(canvasPos.X, canvasPos.Y));
+            return;
+        }
+
         if (_draggingPinFromViewport is not null)
         {
             ApplyDraggedPinPosition(canvasPos);
@@ -250,6 +305,14 @@ public partial class MapOverlayView : Window
     {
         if (!Viewport.IsMouseCaptured) return;
         Viewport.ReleaseMouseCapture();
+
+        if (_draggingCalibrationMarker)
+        {
+            // The drag already committed live via DragCalibrationMarkerTo;
+            // just end the gesture (the marker stays selected for nudging).
+            _draggingCalibrationMarker = false;
+            return;
+        }
 
         if (_draggingPinFromViewport is not null && DataContext is MapOverlayViewModel vm)
         {

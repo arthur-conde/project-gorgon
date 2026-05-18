@@ -40,7 +40,12 @@ public class LegolasWizardViewModelTests
             Changed?.Invoke(this, EventArgs.Empty);
             return c;
         }
-        public void ClearCurrentAreaCalibration() { }
+        public void ClearCurrentAreaCalibration()
+        {
+            if (!Calibrated) return;
+            Calibrated = false;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
     }
@@ -59,7 +64,7 @@ public class LegolasWizardViewModelTests
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
         var areaCalib = calib ?? new FakeAreaCalib();
-        var pinCal = new PinCalibrationCoordinator(areaCalib, pins ?? new FakePlayerPinTracker());
+        var pinCal = new PinCalibrationCoordinator(areaCalib, pins ?? new FakePlayerPinTracker(), settings);
         var motherlode = new MotherlodeViewModel(trilat, optimizer, session, motherlodeFlow);
         var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, pinCal);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);
@@ -372,23 +377,25 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void SolveCalibration_persists_and_leaves_the_gate()
+    public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
         var calib = new FakeAreaCalib { Calibrated = false };
         var pins = new FakePlayerPinTracker();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
 
-        // Three fresh pin drops, then click-pair + Solve.
+        // Drop three pins in-game, switch to the Pair phase, click each named
+        // pin's spot, then Confirm. FakeAreaCalib returns residual 0 ⇒ good.
         pins.Add(1, 2);
         pins.Add(3, 4);
         pins.Add(5, 6);
+        wizard.ToggleCalibrationPhaseCommand.Execute(null); // Drop → Pair
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
-        wizard.PinCalibration.CanSolve.Should().BeTrue();
+        wizard.PinCalibration.CanConfirm.Should().BeTrue();
 
-        wizard.SolveCalibrationCommand.Execute(null);
+        wizard.ConfirmCalibrationCommand.Execute(null);
 
         calib.Calibrated.Should().BeTrue();
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
@@ -406,5 +413,52 @@ public class LegolasWizardViewModelTests
 
         wizard.CurrentStep.Should().Be(WizardStep.PickMode);
         wizard.PinCalibration.IsArmed.Should().BeFalse();
+    }
+
+    // ─── #477B in-flow recalibration re-entry ────────────────────────────
+
+    [Fact]
+    public void Recalibrate_is_offered_only_when_the_area_is_calibrated()
+    {
+        var calibrated = new FakeAreaCalib { Calibrated = true };
+        var (wizard, _, _, _, _) = BuildSut(calibrated);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CanRecalibrate.Should().BeTrue();
+
+        var uncal = new FakeAreaCalib { Calibrated = false };
+        var (w2, _, _, _, _) = BuildSut(uncal);
+        w2.PickSurveyModeCommand.Execute(null);
+        w2.CanRecalibrate.Should().BeFalse("nothing to redo on an uncalibrated area");
+    }
+
+    [Fact]
+    public void Recalibrate_is_guarded_then_clears_and_routes_back_into_Calibrating()
+    {
+        var calib = new FakeAreaCalib { Calibrated = true };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+
+        // First click only arms the confirm guard — no destruction.
+        wizard.RecalibrateCommand.Execute(null);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue();
+        calib.Calibrated.Should().BeTrue("a misclick must not wipe a good calibration");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+
+        // Cancel backs out cleanly.
+        wizard.CancelRecalibrateCommand.Execute(null);
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        calib.Calibrated.Should().BeTrue();
+
+        // Confirmed: clears the persisted calibration; Changed → RecomputeStep
+        // routes back into Calibrating via the same pin route as cold start,
+        // and OnCurrentStepChanged re-arms PinCalibration.
+        wizard.RecalibrateCommand.Execute(null);
+        wizard.ConfirmRecalibrateCommand.Execute(null);
+        calib.Calibrated.Should().BeFalse();
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.PinCalibration.IsArmed.Should().BeTrue("re-entry arms the guided flow");
     }
 }

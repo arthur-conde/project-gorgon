@@ -234,28 +234,47 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Calibrating (#460: cold-start gate — uncalibrated area.
-                     Capture happens on the map overlay, not a separate
-                     window; this panel is just guidance + status + Solve. -->
+                <!-- Calibrating (#460/#477A: guided two-phase correctable
+                     walkthrough. Capture happens on the map overlay, not a
+                     separate window; this always-clickable panel hosts the
+                     phase trigger, the named-pin prompt, the live residual,
+                     and the terminal Confirm. -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Calibrating}">
                     <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="This area isn't calibrated yet, so pins can't place. Calibrate it below:" />
+                        <Run Text="This area isn't calibrated yet, so pins can't place. Two steps: drop well-spread map pins in-game, then click each one through the overlay to pair it." />
                     </TextBlock>
 
-                    <!-- #468 Existing-pins route: shown when the player already
-                         has ≥3 pins here. Identify each by name + colour/shape
-                         (UX only — the solve still pairs world↔pixel). -->
-                    <StackPanel Visibility="{Binding PinCalibration.HasUsableExistingPins, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                    <!-- Live status (drop count / named-pin prompt). -->
+                    <TextBlock Text="{Binding PinCalibration.StatusText}"
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,12"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource AccentBrush}" />
+
+                    <!-- Phase trigger: "Done dropping — pair them" / "Drop more
+                         pins". Always clickable (this panel is not the
+                         transparent overlay). An optional hotkey mirrors it. -->
+                    <Button Content="{Binding PinCalibration.PhaseToggleLabel}"
+                            Style="{StaticResource WizardPrimaryButton}"
+                            HorizontalAlignment="Center" Margin="0,0,0,12"
+                            Command="{Binding ToggleCalibrationPhaseCommand}" />
+
+                    <!-- Pair-phase controls: skip the named pin, or override
+                         to any pin by identity (UX only — solve stays
+                         world↔pixel). -->
+                    <StackPanel Visibility="{Binding PinCalibration.IsPairing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
                                 Margin="0,0,0,12">
-                        <TextBlock Text="You already have pins here. Pick one, then click where it is on the map — repeat for ≥3 well-spread pins:"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                        <Button Content="Skip this pin" Style="{StaticResource WizardPrimaryButton}"
+                                HorizontalAlignment="Center" Margin="0,0,0,8"
+                                Command="{Binding SkipCalibrationPinCommand}" />
+                        <TextBlock Text="Or pick the pin you're clicking (optional):"
+                                   TextAlignment="Center"
+                                   FontSize="{DynamicResource AppFontSize}"
+                                   Foreground="{StaticResource TextTertiaryBrush}" Margin="0,0,0,4" />
                         <ListBox ItemsSource="{Binding PinCalibration.ExistingPins}"
-                                 SelectedItem="{Binding PinCalibration.SelectedExistingPin, Mode=TwoWay}"
-                                 MaxHeight="160" HorizontalAlignment="Center" MinWidth="240"
+                                 SelectedItem="{Binding PinCalibration.OverridePin, Mode=TwoWay}"
+                                 MaxHeight="140" HorizontalAlignment="Center" MinWidth="240"
                                  Background="Transparent" BorderThickness="0">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
@@ -270,29 +289,39 @@
                         </ListBox>
                     </StackPanel>
 
-                    <!-- Turn-order fallback: true cold-start (no usable pins /
-                         fogged brand-new area). Collapses once the existing-pins
-                         route is available. -->
-                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12"
-                                Visibility="{Binding PinCalibration.HasUsableExistingPins, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}">
-                        <TextBlock Text="1.  Drop ≥3 well-spread map pins in-game (works on a fogged/blank map)"
-                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-                        <TextBlock Text="2.  Click each pin's spot on the map overlay, in the same order"
-                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-                        <TextBlock Text="3.  Solve — the area calibrates and the wizard continues"
-                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding PinCalibration.StatusText}"
+                    <!-- Live, non-persisting fit quality (≥3 pairs). -->
+                    <TextBlock Text="{Binding PinCalibration.ResidualText}"
                                TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,12"
                                FontSize="{DynamicResource AppFontSizeBody}"
-                               Foreground="{StaticResource AccentBrush}" />
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="Solve" Style="{StaticResource WizardPrimaryButton}"
-                                Command="{Binding SolveCalibrationCommand}"
-                                IsEnabled="{Binding PinCalibration.CanSolve}" />
+                        <Button Content="Confirm" Style="{StaticResource WizardPrimaryButton}"
+                                Command="{Binding ConfirmCalibrationCommand}"
+                                ToolTip="Save this calibration and continue"
+                                IsEnabled="{Binding PinCalibration.IsResidualGood}" />
+                        <!-- finish anyway: only when ≥3 pairs but the residual
+                             is above target (never trap the user at the ±10%
+                             ceiling). -->
+                        <Button Content="Finish anyway"
+                                Command="{Binding ConfirmCalibrationAnywayCommand}"
+                                ToolTip="The fit is loose (the in-game map isn't perfectly affine) — save it regardless"
+                                IsEnabled="{Binding PinCalibration.CanConfirm}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource WizardPrimaryButton}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding PinCalibration.CanConfirm}" Value="True" />
+                                                <Condition Binding="{Binding PinCalibration.IsResidualGood}" Value="False" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                         <Button Content="Clear pins" Style="{StaticResource WizardPrimaryButton}" Margin="0"
                                 Command="{Binding ClearCalibrationPinsCommand}" />
                     </StackPanel>
@@ -319,11 +348,35 @@
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
-                        <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
-                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                   Foreground="{StaticResource TextTertiaryBrush}">
-                            <Run Text="No pins appearing? This area isn't calibrated yet — open Calibration (crosshair, top-right) and drop a few calib pins. (Guided cold-start calibration is coming.)" />
-                        </TextBlock>
+                        <!-- #477B: in-flow recalibration. Offered only when the
+                             area is already calibrated; the guided cold-start
+                             path (Part A) handles the uncalibrated case before
+                             this step is ever reached. A confirm guard protects
+                             the persisted calibration from a misclick. -->
+                        <StackPanel Margin="0,12,0,0"
+                                    Visibility="{Binding CanRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                            <Button Content="Recalibrate this area"
+                                    HorizontalAlignment="Center"
+                                    Command="{Binding RecalibrateCommand}"
+                                    Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}"
+                                    ToolTip="Pins landing wrong? Drop this area's saved calibration and redo it with the guided flow." />
+                            <Border Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                                    Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8"
+                                    HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock Text="This deletes the saved calibration for this area and restarts the guided flow. Continue?"
+                                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
+                                               Foreground="{StaticResource AccentSoftTextBrush}"
+                                               FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button Content="Recalibrate" Margin="0,0,8,0"
+                                                Command="{Binding ConfirmRecalibrateCommand}" />
+                                        <Button Content="Cancel"
+                                                Command="{Binding CancelRecalibrateCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextTertiaryBrush}">

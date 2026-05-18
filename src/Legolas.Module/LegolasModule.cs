@@ -204,6 +204,10 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, NudgePinRightCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinRightFastCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
+        // #477A: optional bindable mirrors of the guided-calibration panel
+        // controls (no default binding — Legolas convention).
+        services.AddSingleton<IHotkeyCommand, ToggleCalibrationPhaseCommand>();
+        services.AddSingleton<IHotkeyCommand, ConfirmCalibrationCommand>();
 
         // Chat-log ingestion (relative [Status] survey/collect lines).
         services.AddHostedService<LogIngestionService>();

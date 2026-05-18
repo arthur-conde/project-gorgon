@@ -1,5 +1,6 @@
 using System.Windows;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.ViewModels;
 using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
@@ -45,39 +46,60 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly PlayerLogParser _parser;
     private readonly PlayerAreaTracker _areaTracker;
     private readonly IAreaCalibrationService _areaCalibration;
+    private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
     private readonly LegolasSettings _settings;
     private readonly ModuleGates _gates;
     private readonly GameConfig _config;
+    private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
 
     private string? _lastAppliedArea;
+
+    /// <summary>
+    /// UTC instant this consumer went live. <c>ProcessMapFx</c> lines stamped
+    /// before it are the session-replay backlog (PG/the stream replays from
+    /// session start so the area→calibration bridge and the #468 pin tracker
+    /// can catch up) — they must NOT auto-populate stale survey pins from a run
+    /// the user already finished before opening Legolas. Set once when
+    /// ingestion starts.
+    /// </summary>
+    private DateTime _liveSince = DateTime.MinValue;
 
     public PlayerLogIngestionService(
         IPlayerLogStream stream,
         PlayerLogParser parser,
         PlayerAreaTracker areaTracker,
         IAreaCalibrationService areaCalibration,
+        SurveyFlowController flow,
         SessionState session,
         LegolasSettings settings,
         ModuleGates gates,
         GameConfig config,
+        TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
         _areaTracker = areaTracker;
         _areaCalibration = areaCalibration;
+        _flow = flow;
         _session = session;
         _settings = settings;
         _gates = gates;
         _config = config;
+        _time = time ?? TimeProvider.System;
         _diag = diag;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
+
+        // Everything already in Player.log at this point is replay/backlog —
+        // anchor the live cutoff before the stream yields the session-replay
+        // buffer, so a finished run's targets don't repopulate as fresh pins.
+        _liveSince = _time.GetUtcNow().UtcDateTime;
 
         // One-shot reverse-scan for the most recent LOADING LEVEL Area* line
         // before the live tail kicks in — best-effort, never blocks ingestion.
@@ -123,6 +145,31 @@ public sealed class PlayerLogIngestionService : BackgroundService
             _session.LastLogEvent = $"Map target: {Describe(mt)} → ignored (mode is Motherlode)";
             return;
         }
+
+        // Replay/backlog guard: the Player.log stream replays from session
+        // start (the area/calibration bridge and #468 pin tracker need it).
+        // A target stamped before this consumer went live is a pin from a run
+        // the user already finished — placing it would resurrect stale surveys
+        // on startup. Only genuinely-live uses (after Legolas opened) place.
+        if (mt.Timestamp < _liveSince)
+        {
+            _session.LastLogEvent =
+                $"Map target: {Describe(mt)} → ignored (log replay / pre-session backlog)";
+            return;
+        }
+
+        // FSM gate: a target only places while the survey flow is actually
+        // accepting one. Listening (resting/default) and Gathering (route in
+        // progress — new targets welcome, #454) accept; Done (run finished,
+        // awaiting reset) and SettingPosition (transient position-override
+        // detour) do not.
+        if (_flow.CurrentState is not (SurveyFlowState.Listening or SurveyFlowState.Gathering))
+        {
+            _session.LastLogEvent =
+                $"Map target: {Describe(mt)} → ignored (survey flow is {_flow.CurrentState})";
+            return;
+        }
+
         if (_areaCalibration.CurrentCalibration is not { } cal)
         {
             _session.LastLogEvent =
