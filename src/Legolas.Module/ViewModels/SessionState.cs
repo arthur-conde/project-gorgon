@@ -119,6 +119,7 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty] private double _inventoryOpacity = 1.0;
     [ObservableProperty] private bool _isMapVisible;
     [ObservableProperty] private bool _isInventoryVisible;
+    [ObservableProperty] private bool _isCalibrationVisible;
 
     [ObservableProperty]
     private SurveyItemViewModel? _selectedSurvey;

@@ -57,6 +57,7 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetRequiredService<NearestNeighbourTwoOptOptimizer>()));
         services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
+        services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
 
         // Session + flow controllers + VMs.
         // Session.MapOpacity / InventoryOpacity hydrate from persisted settings on
@@ -120,6 +121,7 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
+        services.AddSingleton<CalibrationSessionViewModel>();
 
         // Panel view (shell-hosted UserControl) — singleton so it keeps scroll/state across tab switches.
         // The panel directly hosts the wizard; settings live in the per-module settings tab.
@@ -150,6 +152,14 @@ public sealed class LegolasModule : IMithrilModule
             view.DataContext = sp.GetRequiredService<InventoryOverlayViewModel>();
             return view;
         });
+        services.AddTransient<CalibrationOverlayView>(sp =>
+        {
+            var view = new CalibrationOverlayView(
+                sp.GetRequiredService<LegolasSettings>(),
+                sp.GetRequiredService<SettingsAutoSaver<LegolasSettings>>());
+            view.DataContext = sp.GetRequiredService<CalibrationSessionViewModel>();
+            return view;
+        });
 
         // Foreground-focus tracking (issue #116). Singleton + hosted-service
         // so OverlayController can read its IsInApp state directly.
@@ -171,6 +181,7 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, SetMotherlodeModeCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleMapOverlayCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleInventoryOverlayCommand>();
+        services.AddSingleton<IHotkeyCommand, ToggleCalibrationOverlayCommand>();
         services.AddSingleton<IHotkeyCommand, OptimizeRouteCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleMapClickThroughCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleInventoryClickThroughCommand>();

@@ -75,6 +75,29 @@ public class LogParserTests
     }
 
     [Theory]
+    [InlineData("******************** Entering Area: Eltibule", "Eltibule")]
+    [InlineData("*** Entering Area: Serbule Hills", "Serbule Hills")]
+    [InlineData("Entering Area: Kur Mountains ", "Kur Mountains")]
+    public void Parses_area_entered(string line, string expectedArea)
+    {
+        var evt = _parser.TryParse(line, FixedTime);
+
+        evt.Should().BeOfType<AreaEntered>()
+            .Which.AreaFriendlyName.Should().Be(expectedArea);
+    }
+
+    [Fact]
+    public void Survey_line_still_parses_as_survey_not_area()
+    {
+        // Precedence guard: the survey grammar must win over the area banner
+        // for a normal survey line (no "Entering Area:" substring anyway, but
+        // pin the intent so a future regex tweak can't regress it).
+        var evt = _parser.TryParse("[Status] The Iron Vein is 50m east and 30m north.", FixedTime);
+
+        evt.Should().BeOfType<SurveyDetected>().Which.Name.Should().Be("Iron Vein");
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void Returns_null_for_blank(string line)

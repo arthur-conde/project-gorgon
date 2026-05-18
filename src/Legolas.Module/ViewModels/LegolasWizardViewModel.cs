@@ -131,6 +131,16 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _session.IsInventoryVisible = target;
     }
 
+    /// <summary>
+    /// Opens/closes the standalone map-calibration overlay (same flag the
+    /// unbound <c>ToggleCalibrationOverlayCommand</c> hotkey flips). This is the
+    /// discoverable entry point — the feature is otherwise reachable only via a
+    /// user-assigned hotkey.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleCalibration() =>
+        _session.IsCalibrationVisible = !_session.IsCalibrationVisible;
+
     /// <summary>True once the user has clicked Survey or Motherlode in step 0.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentStep))]

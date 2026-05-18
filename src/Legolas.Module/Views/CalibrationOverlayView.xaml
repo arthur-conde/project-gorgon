@@ -1,0 +1,396 @@
+<Window x:Class="Legolas.Views.CalibrationOverlayView"
+        x:Name="Self"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Legolas.ViewModels"
+        xmlns:controls="clr-namespace:Legolas.Controls"
+        Title="Calibrate Map"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Width="940" Height="660"
+        d:DataContext="{d:DesignInstance vm:CalibrationSessionViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d">
+    <Grid>
+        <Border BorderBrush="#FF3A6EA5" BorderThickness="1">
+            <DockPanel>
+                <!-- Draggable header -->
+                <Border DockPanel.Dock="Top" Background="#FF1E2A38" Padding="10,6"
+                        MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Map Calibration" Foreground="White" FontWeight="SemiBold" />
+                        <TextBlock Text="  —  " Foreground="#FF6E8AA5" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="#FFCDE3F5"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="640" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Right control panel (opaque; clicks here never reach the map viewport) -->
+                <Border DockPanel.Dock="Right" Width="320" Background="#F21A1F26"
+                        BorderBrush="#FF2C3540" BorderThickness="1,0,0,0">
+                    <DockPanel Margin="12">
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Instruction}"
+                                   Foreground="#FFB9C7D6" TextWrapping="Wrap"
+                                   FontSize="12" Margin="0,0,0,10" />
+
+                        <TextBlock DockPanel.Dock="Top" Text="Area" Foreground="#FF8FA6BD"
+                                   FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ComboBox DockPanel.Dock="Top" Margin="0,0,0,8"
+                                  IsSynchronizedWithCurrentItem="False"
+                                  ItemsSource="{Binding AvailableAreas}"
+                                  SelectedItem="{Binding SelectedArea, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding FriendlyName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <!-- In-game map zoom (read off the game UI — Mithril
+                             can't see it). Stamped onto the calibration at
+                             Solve; survey projections scale by
+                             currentZoom/calibrationZoom so a calibration stays
+                             correct across zoom changes. -->
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <TextBlock Text="Map zoom" Foreground="#FF8FA6BD"
+                                       FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" />
+                            <TextBox Width="70" HorizontalAlignment="Left"
+                                     Background="#FF12161B" Foreground="#FFE0E6EC"
+                                     BorderBrush="#FF2C3540"
+                                     ToolTip="The in-game map's zoom value. Set this to match the game before Solve and before/while verifying."
+                                     Text="{Binding MapZoom, Mode=TwoWay, StringFormat=0.###, UpdateSourceTrigger=LostFocus}" />
+                        </DockPanel>
+
+                        <!-- Why the last click did nothing (amber). Empty when
+                             the click placed a point. -->
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding ClickWarning}"
+                                   Foreground="#FFE0B060" TextWrapping="Wrap"
+                                   FontSize="12" Margin="0,0,0,8" />
+
+                        <TextBlock DockPanel.Dock="Top" Text="References in this area"
+                                   Foreground="#FF8FA6BD" FontWeight="SemiBold" Margin="0,0,0,4" />
+
+                        <!-- Blunt always-visible state readout — pins= proves a
+                             click made a placement even if the marker doesn't draw.
+                             The line clips in a short panel, so "Copy debug"
+                             puts the full multi-line snapshot on the clipboard. -->
+                        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                            <Button DockPanel.Dock="Right" Content="Copy debug"
+                                    Command="{Binding CopyDebugCommand}"
+                                    Padding="6,2" Margin="6,0,0,0" VerticalAlignment="Top" />
+                            <TextBlock Text="{Binding DebugState}"
+                                       Foreground="#FF7E97AE" FontFamily="Consolas" FontSize="11"
+                                       TextWrapping="Wrap" />
+                        </DockPanel>
+
+                        <!-- Action buttons pinned to the bottom -->
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                            <!-- What an arrow-key nudge will move (amber, matches
+                                 the on-map halo). Empty when nothing is armed. -->
+                            <!-- Proof the survey/treasure reached the window
+                                 (always set), and what's missing if no pin. -->
+                            <TextBlock Text="{Binding LastSurveyText}" Foreground="#FF59C7E0"
+                                       TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding NudgeTargetText}" Foreground="#FFFFC400"
+                                       TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding ResultText}" Foreground="#FFCFE8C9"
+                                       TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8" />
+                            <Button Content="Solve &amp; save calibration"
+                                    Command="{Binding SolveCommand}" Padding="8,6" />
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="Remove last" Command="{Binding RemoveLastPlacementCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear" Command="{Binding ClearPlacementsCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Done"
+                                        ToolTip="Stop nudging / deselect the active pin"
+                                        Command="{Binding DeselectCommand}" Padding="8,4" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="Set player position"
+                                        ToolTip="No pin yet: arms a map click to drop &quot;you&quot;. Already placed: selects it so arrow keys nudge it (survey pins re-project)."
+                                        Command="{Binding SetPlayerPositionCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear surveys"
+                                        Command="{Binding ClearSurveyPinsCommand}" Padding="8,4" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="Project landmarks (ghosts)"
+                                        ToolTip="Drop every unplaced landmark at its calibrated position — they should sit on the real landmarks"
+                                        Command="{Binding ProjectLandmarksCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear ghosts"
+                                        Command="{Binding ClearGhostsCommand}" Padding="8,4" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Placed references -->
+                        <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="150">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Foreground="#FF8FA6BD"
+                                           FontWeight="SemiBold" Margin="0,0,0,4">
+                                    <Run Text="Placed" />
+                                    <Run Text=" — select a row, arrow keys nudge (Shift = 5px)"
+                                         Foreground="#FF6E8AA5" FontWeight="Normal" FontSize="11" />
+                                </TextBlock>
+                                <ListBox ItemsSource="{Binding Placements}"
+                                         SelectedItem="{Binding SelectedPlacement, Mode=TwoWay}"
+                                         IsSynchronizedWithCurrentItem="False"
+                                         Background="#FF12161B" Foreground="#FFB9C7D6"
+                                         BorderBrush="#FF2C3540"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock FontSize="12">
+                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                                <Run Text=" @ (" Foreground="#FF6E8AA5" />
+                                                <Run Text="{Binding X, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                <Run Text=", " Foreground="#FF6E8AA5" />
+                                                <Run Text="{Binding Y, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                <Run Text=")" Foreground="#FF6E8AA5" />
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Surveys: each vector is a correctable pin. Select a
+                             row → arrow-nudge its overlay onto the real ping;
+                             the math line shows projected vs corrected. -->
+                        <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="170">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Foreground="#FF8FA6BD"
+                                           FontWeight="SemiBold" Margin="0,0,0,4">
+                                    <Run Text="Surveys" />
+                                    <Run Text=" — select, drag onto the real ping (arrows); proj vs corrected = scale"
+                                         Foreground="#FF6E8AA5" FontWeight="Normal" FontSize="11" />
+                                </TextBlock>
+                                <ListBox ItemsSource="{Binding SurveyPins}"
+                                         SelectedItem="{Binding SelectedSurveyPin, Mode=TwoWay}"
+                                         IsSynchronizedWithCurrentItem="False"
+                                         Background="#FF12161B" Foreground="#FFB9C7D6"
+                                         BorderBrush="#FF2C3540"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding MathText}" FontSize="11"
+                                                       TextWrapping="Wrap" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Reference picker -->
+                        <ListBox ItemsSource="{Binding References}"
+                                 SelectedItem="{Binding SelectedReference, Mode=TwoWay}"
+                                 IsSynchronizedWithCurrentItem="False"
+                                 Background="#FF12161B" Foreground="#FFE0E6EC"
+                                 BorderBrush="#FF2C3540">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" />
+                                        <TextBlock Text=" · " Foreground="#FF6E8AA5" />
+                                        <TextBlock Text="{Binding Kind}" Foreground="#FF7E97AE" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+                <!-- Click-capture surface over the in-game map. Background is a
+                     near-zero-alpha fill (#03000000 ≈ 1%), NOT "Transparent":
+                     this is an AllowsTransparency layered window, so the OS only
+                     delivers clicks on pixels with non-zero composited alpha.
+                     A pure-Transparent (alpha 0) region lets the click fall
+                     through to the game underneath — which is why "clicking
+                     through the overlay" dropped no marker. The survey overlay
+                     gets this for free via its #80101010 backdrop; this window
+                     has no backdrop, so the Viewport must paint its own faint
+                     fill. ~1% alpha is visually imperceptible over the map. -->
+                <Grid x:Name="Viewport" Background="#03000000"
+                      Focusable="True" FocusVisualStyle="{x:Null}"
+                      SizeChanged="Viewport_SizeChanged"
+                      MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
+                      MouseMove="Viewport_MouseMove"
+                      MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
+                    <!-- Placed-reference markers. IsHitTestVisible=False so they
+                         never swallow a calibration click. -->
+                    <ItemsControl ItemsSource="{Binding Placements}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- v1 marker, restored (user-confirmed it DID
+                                     render — the 1px lines were just hard to see
+                                     in screenshots; my Path "fix" introduced a
+                                     down-right shift). Zero-size Canvas: every
+                                     part at an EXACT negative offset so the
+                                     crosshair centre is pixel-accurately on the
+                                     placement point. Centre gap + ring keep the
+                                     exact pixel aim-able; label up-right. Active
+                                     (nudge) target = amber dashed halo. -->
+                                <Canvas>
+                                    <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                             Stroke="#FFFFC400" StrokeThickness="1.5"
+                                             StrokeDashArray="2 2"
+                                             Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FFFF3B30" />
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             Stroke="White" StrokeThickness="1" />
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC000000" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" />
+                                    </Border>
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- "You are here" pin (single PlayerPin). Amber halo when
+                         it's the selected nudge target; blue ring; label. -->
+                    <Canvas IsHitTestVisible="False"
+                            Visibility="{Binding HasPlayerPin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <Canvas Canvas.Left="{Binding PlayerPinX}" Canvas.Top="{Binding PlayerPinY}">
+                            <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2"
+                                     Visibility="{Binding IsPlayerSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                            <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
+                                     Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
+                            <Border Canvas.Left="14" Canvas.Top="-9" Background="#CC000000"
+                                    CornerRadius="2" Padding="3,1">
+                                <TextBlock Text="you" Foreground="#FF40C4FF" FontSize="11" />
+                            </Border>
+                        </Canvas>
+                    </Canvas>
+
+                    <!-- Survey pins: PROJECTED marker (faint dashed cyan) at the
+                         calibration's prediction — the reference you correct
+                         toward. Rendered at true ProjX/ProjY. -->
+                    <ItemsControl ItemsSource="{Binding SurveyPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding ProjX}" />
+                                <Setter Property="Canvas.Top" Value="{Binding ProjY}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Canvas>
+                                    <Rectangle Canvas.Left="-8" Canvas.Top="-0.5" Width="5" Height="1" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="5" Height="1" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-8" Width="1" Height="5" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="5" Fill="#9959C7E0" />
+                                    <Ellipse Canvas.Left="-3" Canvas.Top="-3" Width="6" Height="6"
+                                             Stroke="#9959C7E0" StrokeThickness="1" StrokeDashArray="1 1" />
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Survey pins: OVERLAY marker (solid green crosshair) — the
+                         one you select & drag onto the real ping. Clamped to the
+                         edge when off-window; amber when it's the nudge target;
+                         orange ring when edge-clamped (not the true spot). -->
+                    <ItemsControl ItemsSource="{Binding SurveyPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding DisplayX}" />
+                                <Setter Property="Canvas.Top" Value="{Binding DisplayY}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Canvas>
+                                    <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                             Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2"
+                                             Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FF34C759" />
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             StrokeThickness="1">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Stroke" Value="White" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsOffscreen}" Value="True">
+                                                        <Setter Property="Stroke" Value="#FFFF9500" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC0A2A12" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="#FF8FF0AB" FontSize="11" />
+                                    </Border>
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Ghost landmarks (magenta). DELIBERATELY a different,
+                         minimal render idiom from the crosshair: the template
+                         root is a single Ellipse (no nested Canvas/Grid) so if
+                         these draw and the crosshairs don't, the crosshair
+                         template is the bug. Centred via negative Margin. -->
+                    <ItemsControl ItemsSource="{Binding GhostPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Ellipse Width="11" Height="11" Margin="-5.5,-5.5,0,0"
+                                         Fill="#CCFF2BD6" Stroke="White" StrokeThickness="1"
+                                         ToolTip="{Binding Name}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </DockPanel>
+        </Border>
+        <controls:ResizeGrips />
+    </Grid>
+</Window>

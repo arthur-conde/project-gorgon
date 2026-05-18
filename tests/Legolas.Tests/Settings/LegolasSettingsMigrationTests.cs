@@ -121,6 +121,49 @@ public class LegolasSettingsMigrationTests
         written.Should().NotContain("pinPending");
         written.Should().NotContain("pinFinalized");
         written.Should().NotContain("playerMarker");
-        written.Should().Contain("\"schemaVersion\": 2");
+        written.Should().Contain($"\"schemaVersion\": {LegolasSettings.CurrentVersion}");
+    }
+
+    [Fact]
+    public void V2_json_without_areaCalibrations_migrates_to_empty_dictionary()
+    {
+        // A v2 blob: has schemaVersion 2, no areaCalibrations key at all.
+        var v2 = """
+            {
+              "schemaVersion": 2,
+              "pinStyle": { "outer": { "strokeColor": "#FFAA0000" } }
+            }
+            """;
+        var loaded = JsonSerializer.Deserialize(v2, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+        loaded.SchemaVersion.Should().Be(2);
+
+        var migrated = LegolasSettings.Migrate(loaded);
+
+        // v2 → v3 is a no-op: new dict defaults to empty (= "no area calibrated"),
+        // and the user's prior customisation is untouched.
+        migrated.AreaCalibrations.Should().BeEmpty();
+        migrated.PinStyle.Outer.StrokeColor.Should().Be("#FFAA0000");
+    }
+
+    [Fact]
+    public void AreaCalibrations_round_trip_through_json()
+    {
+        var settings = new LegolasSettings { SchemaVersion = LegolasSettings.CurrentVersion };
+        settings.AreaCalibrations["AreaEltibule"] =
+            new AreaCalibration(Scale: 2.5, RotationRadians: 0.3, OriginX: 120, OriginY: 340,
+                ReferenceCount: 3, ResidualPixels: 1.75);
+
+        var written = JsonSerializer.Serialize(settings, LegolasSettingsJsonContext.Default.LegolasSettings);
+        var reloaded = JsonSerializer.Deserialize(written, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+
+        reloaded.AreaCalibrations.Should().ContainKey("AreaEltibule");
+        var c = reloaded.AreaCalibrations["AreaEltibule"];
+        c.Scale.Should().BeApproximately(2.5, 1e-9);
+        c.RotationRadians.Should().BeApproximately(0.3, 1e-9);
+        c.OriginX.Should().BeApproximately(120, 1e-9);
+        c.OriginY.Should().BeApproximately(340, 1e-9);
+        c.ReferenceCount.Should().Be(3);
+        c.ResidualPixels.Should().BeApproximately(1.75, 1e-9);
+        c.SchemaVersion.Should().Be(1);
     }
 }

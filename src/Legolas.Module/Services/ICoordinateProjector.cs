@@ -34,4 +34,14 @@ public interface ICoordinateProjector
     /// no dependency, numerically stable.
     /// </summary>
     void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections);
+
+    /// <summary>
+    /// Adopts a persisted per-area calibration's <b>scale and rotation only</b>
+    /// (the area-stable parts). The origin is deliberately left untouched — it
+    /// is the player's per-session anchor (<see cref="SetOrigin"/> / the
+    /// position click), not the calibration's world-(0,0) pixel. Removes the
+    /// scale/rotation warmup on area entry without breaking the player-relative
+    /// projection model.
+    /// </summary>
+    void ApplyCalibration(AreaCalibration calibration);
 }

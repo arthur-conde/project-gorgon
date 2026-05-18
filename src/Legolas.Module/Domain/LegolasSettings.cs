@@ -5,7 +5,7 @@ namespace Legolas.Domain;
 
 public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<LegolasSettings>
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public static int CurrentVersion => Version;
 
     /// <summary>
@@ -18,6 +18,11 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     /// triggers <see cref="Migrate"/>. Fresh in-memory instances also start at
     /// <c>1</c> — no-op migration since their legacy fields are null — and the
     /// loader bumps to current after persisting.
+    ///
+    /// v2 → v3 adds <see cref="AreaCalibrations"/> (per-area projector
+    /// calibration). The migration is a no-op: the new dictionary defaults to
+    /// empty, which is exactly the "no calibration yet" state, so v2 JSON loads
+    /// unchanged and simply starts uncalibrated per area.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
@@ -91,8 +96,19 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     public LegolasPinStyle PinStyle { get; set; } = new();
     public LegolasPinStyle PlayerPinStyle { get; set; } = LegolasPinStyle.PlayerDefaults();
     public LegolasActivePinStyle ActivePinStyle { get; set; } = new();
+
+    /// <summary>
+    /// Per-area solved projector calibration, keyed by the internal area key
+    /// (e.g. <c>"AreaEltibule"</c>). Populated by the standalone calibration
+    /// window from landmark/NPC reference clicks; landmarks/NPCs don't move so a
+    /// calibration is reused on every later visit to that area, eliminating the
+    /// first-pins-land-off-frame warmup for surveys and treasure alike. Empty =
+    /// no area calibrated yet (the v2 default; see <see cref="SchemaVersion"/>).
+    /// </summary>
+    public Dictionary<string, AreaCalibration> AreaCalibrations { get; set; } = new(StringComparer.Ordinal);
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
+    public WindowLayout CalibrationOverlay { get; set; } = new() { Width = 940, Height = 660 };
 
     // WPF stops hit-testing fully-transparent elements regardless of IsHitTestVisible,
     // so a 0-opacity overlay silently becomes unclickable. Floor at 1% — visually

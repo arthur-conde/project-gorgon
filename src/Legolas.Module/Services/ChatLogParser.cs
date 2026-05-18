@@ -29,6 +29,13 @@ public sealed partial class ChatLogParser : IChatLogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MotherlodeRegex();
 
+    // Area banner: a run of asterisks then "Entering Area: <FriendlyName>".
+    // The name runs to end-of-line; trim trailing whitespace via the lazy group
+    // plus an explicit \s* tail so a trailing CR/space doesn't bleed into it.
+    [GeneratedRegex(@"Entering Area:\s*(?<area>.+?)\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex AreaEnteredRegex();
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -93,6 +100,14 @@ public sealed partial class ChatLogParser : IChatLogParser
             && int.TryParse(motherlodeMatch.Groups["dist"].ValueSpan, out var mlDist))
         {
             return new MotherlodeDistance(timestamp, mlDist);
+        }
+
+        var areaMatch = AreaEnteredRegex().Match(line);
+        if (areaMatch.Success)
+        {
+            var area = areaMatch.Groups["area"].Value.Trim();
+            if (!string.IsNullOrEmpty(area))
+                return new AreaEntered(timestamp, area);
         }
 
         return new UnknownLine(timestamp, line);
