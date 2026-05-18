@@ -3,6 +3,8 @@ using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
+using Mithril.GameState.Recipes;
+using Mithril.GameState.Recipes.Parsing;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Sessions;
@@ -53,6 +55,18 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerSkillStateService>()
             .AddSingleton<IPlayerSkillState>(sp => sp.GetRequiredService<PlayerSkillStateService>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerSkillStateService>());
+
+        // Shared live recipe state from Player.log (ProcessLoadRecipes /
+        // ProcessUpdateRecipe) — known recipes + per-recipe completion counts,
+        // no character re-export required. The recipe sibling of the skill
+        // tracker above; together they eliminate the planner's export
+        // dependency. Single parser, single tracker; consumers inject
+        // IPlayerRecipeState. See issue #473.
+        services.AddSingleton<RecipeLogParser>();
+        services
+            .AddSingleton<PlayerRecipeStateService>()
+            .AddSingleton<IPlayerRecipeState>(sp => sp.GetRequiredService<PlayerRecipeStateService>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerRecipeStateService>());
 
         // Player position is shared live game-state (Palantir debug surface,
         // future overlay/positioning consumers). Self-feeding hosted service —
