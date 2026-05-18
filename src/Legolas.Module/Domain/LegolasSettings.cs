@@ -76,6 +76,27 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
         }
     }
 
+    private double _mapTargetDedupRadiusMetres = 5.0;
+    /// <summary>
+    /// #454 absolute path: a new <c>ProcessMapFx</c> target whose world
+    /// <c>(X,Z)</c> is within this many metres of an existing uncollected
+    /// absolute pin updates that pin instead of adding a duplicate (the same
+    /// node re-surveyed re-emits an identical coord). Sibling of
+    /// <see cref="SurveyDedupRadiusMetres"/> (the relative-path equivalent);
+    /// additive — old settings JSON without it loads the 5 m default.
+    /// </summary>
+    public double MapTargetDedupRadiusMetres
+    {
+        get => _mapTargetDedupRadiusMetres;
+        set
+        {
+            var clamped = Math.Max(0, value);
+            if (Math.Abs(_mapTargetDedupRadiusMetres - clamped) < 1e-6) return;
+            _mapTargetDedupRadiusMetres = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MapTargetDedupRadiusMetres)));
+        }
+    }
+
     private double _surveyPinRadiusMetres = 8.0;
     public double SurveyPinRadiusMetres
     {

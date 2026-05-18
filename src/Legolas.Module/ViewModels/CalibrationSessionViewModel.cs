@@ -478,12 +478,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             RaiseDebug();
             return;
         }
-        var worldOrigin = new PixelPoint(c.OriginX, c.OriginY);
         foreach (var r in References)
         {
             if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
-            var north = c.MirrorNorth ? -r.World.Z : r.World.Z;
-            GhostPins.Add(new GhostPin(r.Name, Project(c, worldOrigin, new MetreOffset(r.World.X, north))));
+            // Canonical absolute world→pixel — shared with the #454
+            // ProcessMapFx placement path so the two can't drift.
+            GhostPins.Add(new GhostPin(r.Name, c.ProjectWorld(r.World)));
         }
         ClickWarning = null;
         RaiseDebug();
@@ -569,12 +569,6 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         s.DisplayX = Math.Clamp(px.X, inset, _viewportW - inset);
         s.DisplayY = Math.Clamp(px.Y, inset, _viewportH - inset);
     }
-
-    /// <summary>Raw projection at the calibration's own zoom (used by ghosts —
-    /// they're absolute world→pixel via the cal-zoom origin, so only valid at
-    /// the calibration zoom anyway).</summary>
-    private static PixelPoint Project(AreaCalibration c, PixelPoint origin, MetreOffset off)
-        => ProjectAtScale(c, origin, off, c.Scale);
 
     /// <summary>Survey projection from the (current-zoom) player pixel: only
     /// <see cref="AreaCalibration.Scale"/> needs the zoom factor because the

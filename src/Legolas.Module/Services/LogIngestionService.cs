@@ -127,6 +127,21 @@ public sealed class LogIngestionService : BackgroundService
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored (mode is Motherlode)";
             return;
         }
+
+        // #454 calibrated-area authority: when the current area has a
+        // calibration, the absolute ProcessMapFx path (PlayerLogIngestionService)
+        // owns placement. A survey use emits BOTH this chat [Status] line and a
+        // Player.log ProcessMapFx line — suppress the relative auto-place here
+        // so it doesn't double-place. NoteSurvey above still feeds the
+        // calibration window's test mode. Uncalibrated areas fall through to
+        // the legacy relative path (cold-start fallback until pin calibration).
+        if (_areaCalibration.IsCurrentAreaCalibrated)
+        {
+            _session.LastLogEvent =
+                $"Survey: {sd.Name} → absolute path owns placement (area calibrated)";
+            return;
+        }
+
         if (!_surveyFlow.CanAcceptSurvey)
         {
             // Controller writes its own diagnostic to LastLogEvent.

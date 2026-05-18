@@ -56,9 +56,16 @@ public sealed partial class SurveyFlowController : ObservableObject
     /// </summary>
     private void OnSurveysChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        // First pin → Listening + StartedAt stamp. Ready is the relative path
+        // (anchor click already happened). AwaitingPosition is the #454
+        // absolute path: ProcessMapFx targets need no anchor, so the first
+        // absolute pin advances straight to Listening. The relative chat path
+        // can't add a pin while AwaitingPosition (LogIngestionService gates on
+        // CanAcceptSurvey), so this edge only ever fires for the absolute
+        // flow. Phase 5 removes AwaitingPosition entirely.
         if (e.Action == NotifyCollectionChangedAction.Add
             && _session.Surveys.Count == 1
-            && CurrentState == SurveyFlowState.Ready)
+            && CurrentState is SurveyFlowState.Ready or SurveyFlowState.AwaitingPosition)
         {
             _session.StartedAt = _clock.GetUtcNow();
             TransitionTo(SurveyFlowState.Listening, "FirstSurvey");
