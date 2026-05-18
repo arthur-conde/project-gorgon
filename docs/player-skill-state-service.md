@@ -103,11 +103,16 @@ identically:
   `skills.json`; their level is derived from member sub-skills (Phrenology →
   Phrenology_Demons, …) and carried in `bonus` (`MaxBonusLevels` 125, `raw`
   stays 0). They never gain XP, so there is no per-level curve — hence
-  `max=0`, which is the runtime proxy for the reference classification (this
-  service takes no reference-data dependency by design; `skills.json` is keyed
-  by exactly the log `type=` token, so the proxy maps 1:1). Kept in the
-  snapshot — flagged, not dropped — so a consumer decides; the leveling
-  constraint set should exclude them.
+  `max=0`, a **verified-exact runtime proxy** for `skills.json`'s
+  `IsUmbrellaSkill` / `XpTable:"None"` (`skills.json` is keyed by exactly the
+  log `type=` token, so the proxy maps 1:1). It is a proxy *only* because
+  `IReferenceDataService` doesn't yet surface a skill catalog (it parses
+  `skills.json` but exposes only the derived `AbilitiesBySkill`) — **not** an
+  "avoid reference data" rule: `Mithril.GameState` already depends on
+  `IReferenceDataService` (Inventory, Quests). Catalog + authoritative
+  enrichment tracked in #469 / #470. Kept in the snapshot — flagged, not
+  dropped — so a consumer decides; the leveling constraint set should exclude
+  them.
 - **`bonus` is gear/buff/form-derived for trainable skills, not progression** —
   volatile (moves as the player swaps equipment / shifts form); `Level` (raw)
   is the progression truth, and the projection keeps them separate and **never
@@ -216,5 +221,8 @@ lock — do non-trivial work off-thread.
   (verified: Augmentation/Performance/Phrenology all carry both; trainable
   skills like Tailoring/Endurance/NatureAppreciation have a real `XpTable` and
   no umbrella flag). `skills.json` is keyed by the same `type=` token, so the
-  proxy is 1:1 — no name list, no fuzzy mapping. The runtime predicate stays
-  log-only by design (no reference-data dependency).
+  proxy is 1:1 — no name list, no fuzzy mapping. The runtime predicate is
+  log-only for v1 because `IReferenceDataService` doesn't yet surface a skill
+  catalog (#469) — *not* an architectural rule (`Mithril.GameState` already
+  consumes `IReferenceDataService` in Inventory/Quests). Swapping the proxy for
+  the authoritative flag is tracked in #470.

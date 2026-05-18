@@ -37,10 +37,15 @@ namespace Mithril.GameState.Skills.Parsing;
 ///   <c>IsUmbrellaSkill</c> with <c>XpTable:"None"</c> in <c>skills.json</c>
 ///   (Augmentation / Performance / Phrenology, …). It never gains XP; its level
 ///   is derived from member sub-skills and carried in <see cref="BonusLevels"/>
-///   (so it reports <c>raw=0,bonus=N,max=0</c>). <c>max==0</c> is the
-///   runtime proxy for that classification — <c>Mithril.GameState</c> has no
-///   reference-data dependency by design, and the proxy is exact (skills.json
-///   is keyed by this same <c>type=</c> token).</item>
+///   (so it reports <c>raw=0,bonus=N,max=0</c>). <c>max==0</c> is a runtime
+///   <em>proxy</em> for skills.json's <c>IsUmbrellaSkill</c>/<c>XpTable:"None"</c>
+///   classification — verified exact (skills.json is keyed by this same
+///   <c>type=</c> token). It is a proxy only because
+///   <c>IReferenceDataService</c> does not yet surface a skill catalog (it
+///   parses skills.json but exposes only the derived <c>AbilitiesBySkill</c>);
+///   not because this assembly avoids reference data (it already consumes
+///   <c>IReferenceDataService</c> in Inventory/Quests). Authoritative
+///   enrichment is tracked in #470 (prereq #469).</item>
 /// </list>
 /// </summary>
 public readonly record struct SkillProgressRecord(
