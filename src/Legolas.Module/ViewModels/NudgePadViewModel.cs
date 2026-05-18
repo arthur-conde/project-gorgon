@@ -33,12 +33,8 @@ public sealed partial class NudgePadViewModel : ObservableObject
 
     private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SessionState.SelectedSurvey)
-            or nameof(SessionState.IsAnchorEditable)
-            or nameof(SessionState.HasPlayerPosition))
-        {
+        if (e.PropertyName is nameof(SessionState.SelectedSurvey))
             RaiseAvailability();
-        }
     }
 
     private void RaiseAvailability()
@@ -47,24 +43,20 @@ public sealed partial class NudgePadViewModel : ObservableObject
         OnPropertyChanged(nameof(NudgeTargetLabel));
     }
 
-    /// <summary>True iff there is a pin or anchor available to nudge.</summary>
-    public bool IsAvailable
-        => _session.SelectedSurvey is not null
-            || _session.IsAnchorEditable;
+    /// <summary>True iff a survey pin is selected to nudge (#454: the
+    /// editable anchor is retired).</summary>
+    public bool IsAvailable => _session.SelectedSurvey is not null;
 
     /// <summary>
     /// Short human label of what the buttons will move. Used by the panel-side
-    /// pad so the user can tell at a glance whether they're nudging a pin or
-    /// the anchor.
+    /// pad so the user can tell at a glance which pin they're nudging.
     /// </summary>
     public string NudgeTargetLabel
     {
         get
         {
             var sel = _session.SelectedSurvey;
-            if (sel is not null) return $"Pin: {sel.Name}";
-            if (_session.IsAnchorEditable) return "Player anchor";
-            return "(no target — select a pin)";
+            return sel is not null ? $"Pin: {sel.Name}" : "(no target — select a pin)";
         }
     }
 

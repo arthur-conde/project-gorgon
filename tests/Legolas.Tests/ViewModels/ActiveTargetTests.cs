@@ -40,19 +40,16 @@ public class ActiveTargetTests
     }
 
     [Fact]
-    public void ActiveSegment_runs_from_anchor_to_active_when_nothing_collected()
+    public void ActiveSegment_is_empty_before_first_collection()
     {
+        // #454: no player anchor. Before anything is collected there is no
+        // "where the player is now" start point — just the highlighted target
+        // (IsActiveTarget / the static route), no live segment.
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(100, 100);
         SeedSurveyAt(session, "First", 200, 200, 0);
         SeedSurveyAt(session, "Second", 300, 300, 1);
 
-        // Active target is the first uncollected — the one at (200,200).
-        map.ActiveSegmentPoints.Count.Should().Be(2);
-        map.ActiveSegmentPoints[0].X.Should().Be(100);
-        map.ActiveSegmentPoints[0].Y.Should().Be(100);
-        map.ActiveSegmentPoints[1].X.Should().Be(200);
-        map.ActiveSegmentPoints[1].Y.Should().Be(200);
+        map.ActiveSegmentPoints.Count.Should().Be(0);
     }
 
     [Fact]
@@ -97,8 +94,11 @@ public class ActiveTargetTests
     public void ActiveSegment_clears_when_route_lines_disabled()
     {
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(0, 0);
-        SeedSurveyAt(session, "P0", 100, 100, 0);
+        // #454: a segment exists once one pin is collected (start = last
+        // collected) and another remains active.
+        var p0 = SeedSurveyAt(session, "P0", 100, 100, 0);
+        SeedSurveyAt(session, "P1", 200, 200, 1);
+        p0.UpdateModel(p0.Model with { Collected = true });
         map.ActiveSegmentPoints.Count.Should().Be(2, "sanity check");
 
         session.ShowRouteLines = false;

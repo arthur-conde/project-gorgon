@@ -48,8 +48,7 @@ public class LegolasReportServiceTests
         // first survey landing — that's the Ready→Listening edge that stamps
         // StartedAt now (the previous design stamped on AwaitingPosition→Listening,
         // but the Ready-state redesign moved it so every cycle re-stamps).
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         var s2 = new SurveyItemViewModel(Survey.Create("Coal", new MetreOffset(10, 0), 1));
         session.Surveys.Add(s1);
@@ -91,8 +90,7 @@ public class LegolasReportServiceTests
         var report = new LegolasReportService(flow, session, clock, activeChar: null, refData: refData);
         settings.AutoResetWhenAllCollected = false;
 
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
@@ -118,8 +116,7 @@ public class LegolasReportServiceTests
         var (report, flow, session, settings, clock) = BuildSut();
         settings.AutoResetWhenAllCollected = true;
 
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
@@ -149,8 +146,7 @@ public class LegolasReportServiceTests
         var (report, flow, session, settings, clock) = BuildSut();
         settings.AutoResetWhenAllCollected = true;
 
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
 
         // Cycle 1: surveys arrive at SessionStart, all collected at SessionEnd,
         // auto-reset fires.
@@ -186,8 +182,7 @@ public class LegolasReportServiceTests
         settings.AutoResetWhenAllCollected = false;
         session.Mode = SessionMode.Motherlode;
 
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();
@@ -206,8 +201,7 @@ public class LegolasReportServiceTests
         LegolasSharePayload? captured = null;
         report.ReportGenerated += p => captured = p;
 
-        session.HasPlayerPosition = true;
-        flow.ConfirmPlayerPosition();
+        // #454: FSM starts in Listening — the first survey add stamps StartedAt.
         var s1 = new SurveyItemViewModel(Survey.Create("Diamond", new MetreOffset(50, 30), 0));
         session.Surveys.Add(s1);
         flow.OptimizeRoute();

@@ -19,7 +19,6 @@ namespace Legolas.ViewModels;
 public enum WizardStep
 {
     PickMode,
-    AwaitingPosition,
     Listening,
     Gathering,
     Done,
@@ -74,6 +73,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
         _surveyFlow.PropertyChanged += OnSurveyFlowChanged;
         _surveyFlow.Transitioned += OnSurveyFlowTransitioned;
+        _session.Surveys.CollectionChanged += OnSurveysChangedForOverlays;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
         _session.PropertyChanged += OnSessionChanged;
         if (_reportService is not null)
@@ -82,28 +82,39 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     }
 
     /// <summary>
-    /// FSM-edge-driven overlay management. Two cases:
-    ///   * Done → Ready (session just ended via auto-reset or a manual reset
-    ///     from Done): hide both overlays so the game window is uncluttered
-    ///     between cycles.
-    ///   * Ready → Listening (next cycle starts — a fresh survey landed):
-    ///     re-show both. The user is engaged again; they're either going to
-    ///     keep popping or hit Go.
-    /// Both edges are gated on <see cref="LegolasSettings.HideOverlaysBetweenSessions"/>
-    /// so users who prefer always-visible overlays opt out wholesale.
-    /// Listening↔Ready edges from a manual mid-session reset don't qualify
-    /// — the test "Reset preserves overlay visibility" pins that behaviour.
+    /// FSM-edge-driven overlay management (#454 collapsed FSM). A completed
+    /// run is <c>… → Done</c>: hide both overlays so the game window is
+    /// uncluttered between cycles. Re-showing happens on the next cycle's
+    /// first pin (see <see cref="OnSurveysChangedForOverlays"/>) rather than
+    /// on a state edge — the old Ready→Listening "next survey" edge is gone,
+    /// and the auto-reset Done→Listening would otherwise re-show during the
+    /// empty post-reset window. Gated on
+    /// <see cref="LegolasSettings.HideOverlaysBetweenSessions"/>; a manual
+    /// mid-session reset (which doesn't enter Done) doesn't hide — the test
+    /// "Reset preserves overlay visibility" pins that.
     /// </summary>
     private void OnSurveyFlowTransitioned(SurveyTransition t)
     {
         if (!_settings.HideOverlaysBetweenSessions) return;
 
-        if (t.From == SurveyFlowState.Done && t.To == SurveyFlowState.Ready)
+        if (t.To == SurveyFlowState.Done)
         {
             _session.IsMapVisible = false;
             _session.IsInventoryVisible = false;
         }
-        else if (t.From == SurveyFlowState.Ready && t.To == SurveyFlowState.Listening)
+    }
+
+    /// <summary>
+    /// Re-show both overlays when the next cycle's first pin lands (count
+    /// 0→1) — the collapsed-FSM replacement for the old Ready→Listening
+    /// "next survey" re-show edge. Gated on the same opt-out so users who
+    /// keep overlays always-visible are unaffected.
+    /// </summary>
+    private void OnSurveysChangedForOverlays(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (!_settings.HideOverlaysBetweenSessions) return;
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
+            && _session.Surveys.Count == 1)
         {
             _session.IsMapVisible = true;
             _session.IsInventoryVisible = true;
@@ -152,24 +163,23 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
     partial void OnCurrentStepChanged(WizardStep value)
     {
-        // Entering AwaitingPosition auto-opens the map overlay so the user has
-        // something to click for setting player position.
-        if (value == WizardStep.AwaitingPosition)
-            _session.IsMapVisible = true;
-
-        // Entering Listening / Gathering auto-opens the inventory overlay.
-        // Listening: user is picking the leftmost survey to use — they need the
-        // bag visible to see which one. Gathering: the queue serves as a
-        // walk-the-route checklist.
+        // #454: no AwaitingPosition step. Entering Listening auto-opens the
+        // map (so absolute pins are visible by default — replaces the map
+        // auto-open the old anchor step provided) and the inventory (the user
+        // is picking which survey to use). Gathering keeps the inventory open
+        // as a walk-the-route checklist.
         if (value is WizardStep.Listening or WizardStep.Gathering)
+        {
             _session.IsInventoryVisible = true;
+            if (value == WizardStep.Listening)
+                _session.IsMapVisible = true;
+        }
     }
 
     /// <summary>Headline displayed inline with the wizard's per-step nav row.</summary>
     public string CurrentStepTitle => CurrentStep switch
     {
         WizardStep.PickMode => "What are you doing?",
-        WizardStep.AwaitingPosition => "Show me where you are",
         WizardStep.Listening => "Use a survey",
         WizardStep.Gathering => "Walk your route",
         WizardStep.Done => "All collected",
@@ -201,10 +211,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             Motherlode.ResetCommand.Execute(null);
             return;
         }
-        // Survey: nuke the anchor too so the FSM lands on AwaitingPosition,
-        // not Listening — gives a visible "back to step 1" effect even when
-        // there are no pins to clear.
-        _session.HasPlayerPosition = false;
+        // Survey (#454): no anchor — Reset clears surveys and lands on
+        // Listening (the FSM's only resting state).
         _surveyFlow.Reset();
     }
 
@@ -220,20 +228,15 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     {
         switch (CurrentStep)
         {
-            case WizardStep.AwaitingPosition:
-            case WizardStep.MotherlodeMeasuring:
-                ChangeModeCommand.Execute(null);
-                break;
             case WizardStep.Listening:
-                // Re-anchor: drop the player position so we land on AwaitingPosition,
-                // and clear surveys (they were anchored to the old position).
-                _session.HasPlayerPosition = false;
-                _surveyFlow.Reset();
+            case WizardStep.MotherlodeMeasuring:
+                // First post-pick step → back to mode pick.
+                ChangeModeCommand.Execute(null);
                 break;
             case WizardStep.Gathering:
             case WizardStep.Done:
-                // Route is in progress or done; the projector anchor is no longer safe
-                // for new surveys (see position-anchor constraint). Full reset.
+                // Route in progress or done → reset the flow (clears surveys,
+                // lands back on Listening).
                 WizardResetCommand.Execute(null);
                 break;
         }
@@ -365,24 +368,18 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             return;
         }
 
+        // #454 collapsed the Survey FSM (no AwaitingPosition/Ready — absolute
+        // placement needs no anchor). Listening is the resting/default step;
+        // its UI already adapts to an empty Surveys list. (The cold-start
+        // Calibrating gate is added in the follow-up PR — see #460.)
         CurrentStep = _session.Mode == SessionMode.Motherlode
             ? WizardStep.MotherlodeMeasuring
             : _surveyFlow.CurrentState switch
             {
-                SurveyFlowState.AwaitingPosition => WizardStep.AwaitingPosition,
-                // Ready and Listening project to the same wizard step. The
-                // existing Listening UI block already adapts cleanly to an
-                // empty Surveys list (instructions stay forward-looking, the
-                // pin list shows "0 placed", the Go! button gates on
-                // CanOptimize, and the IsAnchorEditable tip surfaces only
-                // while no pins have landed) — so promoting Ready to its own
-                // wizard step would just add noise without changing what the
-                // user sees.
-                SurveyFlowState.Ready => WizardStep.Listening,
                 SurveyFlowState.Listening => WizardStep.Listening,
                 SurveyFlowState.Gathering => WizardStep.Gathering,
                 SurveyFlowState.Done => WizardStep.Done,
-                _ => WizardStep.AwaitingPosition,
+                _ => WizardStep.Listening,
             };
     }
 }

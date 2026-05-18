@@ -41,21 +41,6 @@ public sealed class MarkCurrentCollectedCommand : IHotkeyCommand
     }
 }
 
-public sealed class SetPlayerPositionCommand : IHotkeyCommand
-{
-    private readonly SurveyFlowController _surveyFlow;
-    public SetPlayerPositionCommand(SurveyFlowController surveyFlow) => _surveyFlow = surveyFlow;
-    public string Id => "legolas.session.set_position";
-    public string DisplayName => "Set Player Position";
-    public string? Category => "Legolas · Session";
-    public HotkeyBinding? DefaultBinding => null;
-    public Task ExecuteAsync(CancellationToken cancellationToken)
-    {
-        _surveyFlow.RequestSetPlayerPosition();
-        return Task.CompletedTask;
-    }
-}
-
 public sealed class SetSurveyModeCommand : IHotkeyCommand
 {
     private readonly SessionState _session;
@@ -238,11 +223,8 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
         _session = session;
         _map = map;
         _settings = settings;
-        // Forward the two SessionState signals that change whether a pin is
-        // available to nudge. IsAnchorEditable is itself derived from
-        // HasPlayerPosition + Surveys.Count (both already raise PropertyChanged
-        // for IsAnchorEditable in SessionState), so subscribing to it covers
-        // anchor placement, anchor sealing on first survey, and session reset.
+        // #454 retired the editable anchor — Pin Nudge now only ever targets a
+        // selected survey pin, so registrability tracks SelectedSurvey alone.
         _session.PropertyChanged += OnSessionPropertyChanged;
     }
 
@@ -254,23 +236,17 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
     public HotkeyBinding? DefaultBinding => null;
 
     /// <summary>
-    /// Pin Nudge only matters when there's actually a target to nudge:
-    /// the anchor while it's still editable, or a selected survey pin.
-    /// Outside both windows, arrow keys are dead weight that would otherwise
-    /// be eaten system-wide (#139). The Execute body re-checks the same
-    /// conditions, so a registration that briefly outraces a state change
-    /// is harmless.
+    /// Pin Nudge only matters when a survey pin is selected. Outside that
+    /// window arrow keys are dead weight that would otherwise be eaten
+    /// system-wide (#139). The Execute body re-checks, so a registration that
+    /// briefly outraces a state change is harmless.
     /// </summary>
-    public bool IsRegistrable
-        => _session.IsAnchorEditable || _session.SelectedSurvey is not null;
+    public bool IsRegistrable => _session.SelectedSurvey is not null;
 
     private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SessionState.IsAnchorEditable)
-            or nameof(SessionState.SelectedSurvey))
-        {
+        if (e.PropertyName is nameof(SessionState.SelectedSurvey))
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
-        }
     }
 
     /// <summary>Unit vector for the direction this command moves a pin.</summary>
@@ -294,16 +270,6 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
             var p = selected.EffectivePixel.Value;
             _map.CorrectSurveyCommand.Execute(
                 new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
-            return Task.CompletedTask;
-        }
-
-        // No pin selected: fall through to the anchor while it's still editable
-        // (post-Set Position, pre-first-survey). Once a survey lands the anchor
-        // becomes load-bearing for projection and IsAnchorEditable flips false.
-        if (_session.IsAnchorEditable)
-        {
-            var p = _session.PlayerPosition;
-            _map.MoveAnchor(new PixelPoint(p.X + dx * step, p.Y + dy * step));
         }
         return Task.CompletedTask;
     }

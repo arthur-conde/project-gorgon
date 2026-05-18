@@ -63,19 +63,7 @@
                             Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Survey}">
                     <TextBlock Text="Mode" Style="{StaticResource WizardBreadcrumbStep}" />
                     <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
-                    <TextBlock Text="Position">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CurrentStep}" Value="AwaitingPosition">
-                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <!-- #454: no "Position" step — placement is absolute. -->
                     <TextBlock Text="Listen">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
@@ -207,15 +195,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- AwaitingPosition -->
-                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=AwaitingPosition}">
-                    <TextBlock Text="Click on the map where your character is right now. We've opened the map overlay for you."
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
-                </StackPanel>
-
-                <!-- Listening -->
+                <!-- Listening (#454: no AwaitingPosition step — placement is
+                     absolute via ProcessMapFx; no anchor click) -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Listening}">
                     <StackPanel HorizontalAlignment="Center" Margin="0,0,0,16">
                         <TextBlock Text="From your inventory, work through the surveys in order:"
@@ -227,22 +208,18 @@
                             <TextBlock Text="1.  Use the leftmost survey"
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
-                            <TextBlock TextWrapping="Wrap"
+                            <TextBlock Text="2.  Its exact spot is read from the game log — the pin places itself on the map automatically. No clicking needed."
+                                       TextWrapping="Wrap"
                                        FontSize="{DynamicResource AppFontSizeBody}"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2">
-                                <Run Text="2.  Click its position on the map. For the first couple of surveys, read the " />
-                                <Run Text="[Status]" FontWeight="SemiBold" />
-                                <Run Text=" line in chat for direction + distance. After that we have enough data to project, so upcoming pins will pre-position themselves — just click near the in-game ping." />
-                            </TextBlock>
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                             <TextBlock Text="3.  Repeat left-to-right, then start the next row from the left"
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
-                                   Visibility="{Binding Session.IsAnchorEditable, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextTertiaryBrush}">
-                            <Run Text="Tip: drag the white player marker on the map to fine-tune your starting point — anchor locks once the first survey lands." />
+                            <Run Text="No pins appearing? This area isn't calibrated yet — open Calibration (crosshair, top-right) and drop a few calib pins. (Guided cold-start calibration is coming.)" />
                         </TextBlock>
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                    FontSize="{DynamicResource AppFontSizeBody}"
@@ -313,7 +290,7 @@
 
                 <!-- Gathering -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Gathering}">
-                    <TextBlock Text="Walk to each target in order. We'll mark them collected automatically. New surveys are ignored until you reset (the projector is anchored to where you started)."
+                    <TextBlock Text="Walk to each target in order. We'll mark them collected automatically. New surveys you use along the way are added to the route too."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
@@ -345,7 +322,7 @@
 
                 <!-- Done -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Done}">
-                    <TextBlock Text="Nice. Hit reset to start a new session — set your player position again first."
+                    <TextBlock Text="Nice. Hit reset to start a new session."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />

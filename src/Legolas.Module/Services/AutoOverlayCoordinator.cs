@@ -122,5 +122,5 @@ public sealed class AutoOverlayCoordinator : IHostedService
     }
 
     private static bool IsActiveSession(SurveyFlowState state) =>
-        state != SurveyFlowState.AwaitingPosition;
+        state is SurveyFlowState.Listening or SurveyFlowState.Gathering;
 }

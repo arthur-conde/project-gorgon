@@ -6,14 +6,14 @@ using Legolas.ViewModels;
 namespace Legolas.Flow;
 
 /// <summary>
-/// Phase a Survey-mode session can be in. See docs/legolas-overview.md for the
-/// full flow + invariants (post-Optimize "no new surveys" rule, anchor-becomes-
-/// load-bearing-after-first-survey, etc.).
+/// Phase a Survey-mode session can be in. #454 retired the relative-offset
+/// model: <c>ProcessMapFx</c> targets are absolute and need no player anchor,
+/// so the old <c>AwaitingPosition</c>/<c>Ready</c> anchor-bootstrap states are
+/// gone. The map-click anchor + <see cref="SessionState.PlayerPosition"/>
+/// survive but are now <b>Motherlode-only</b> (Survey never reads them).
 /// </summary>
 public enum SurveyFlowState
 {
-    AwaitingPosition,
-    Ready,
     Listening,
     Gathering,
     Done,
@@ -25,10 +25,13 @@ public sealed record SurveyTransition(
     string Trigger);
 
 /// <summary>
-/// State machine for Survey mode. Methods are the public transition API; direct
-/// mutation of <see cref="SessionState.Surveys"/> outside this class is no longer
-/// supported (still possible at the language level, but considered a bug — call a
-/// controller method instead).
+/// State machine for Survey mode. Collapsed to
+/// <c>Listening → OptimizeRoute → Gathering → Done → (auto)Reset →
+/// Listening</c> by #454. Pins arrive absolute (no anchor); a new target
+/// during <c>Gathering</c> is accepted (the old position-anchor "drop new
+/// surveys" constraint is retired with the relative model). Calibration is
+/// FSM-independent (per-area, persisted) — it is gated in the wizard
+/// step-machine, not here.
 /// </summary>
 public sealed partial class SurveyFlowController : ObservableObject
 {
@@ -46,120 +49,58 @@ public sealed partial class SurveyFlowController : ObservableObject
     }
 
     /// <summary>
-    /// Bridges <see cref="SessionState.Surveys"/> mutations back to FSM concerns:
-    ///   * Ready → Listening on the first pin landing (which also stamps
-    ///     <see cref="SessionState.StartedAt"/> — every run gets a fresh start
-    ///     timestamp without depending on whether <c>ConfirmPlayerPosition</c> ran).
-    ///   * <see cref="CanOptimize"/> change-notify after every add/remove/reset
-    ///     (the dependency on <c>Surveys.Count</c> isn't visible to the
-    ///     <c>[NotifyPropertyChangedFor]</c> source generator).
+    /// Bridges <see cref="SessionState.Surveys"/> mutations to FSM concerns:
+    ///   * Stamps <see cref="SessionState.StartedAt"/> on the first pin of a
+    ///     cycle (count 0→1 while <c>Listening</c>). After an auto-reset the
+    ///     state returns to <c>Listening</c> and the next first pin re-stamps —
+    ///     this is the second-run regression fix (no AwaitingPosition→Listening
+    ///     edge to depend on any more).
+    ///   * <see cref="CanOptimize"/> change-notify (its <c>Surveys.Count</c>
+    ///     dependency isn't visible to the generator).
     /// </summary>
     private void OnSurveysChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // First pin → Listening + StartedAt stamp. Ready is the relative path
-        // (anchor click already happened). AwaitingPosition is the #454
-        // absolute path: ProcessMapFx targets need no anchor, so the first
-        // absolute pin advances straight to Listening. The relative chat path
-        // can't add a pin while AwaitingPosition (LogIngestionService gates on
-        // CanAcceptSurvey), so this edge only ever fires for the absolute
-        // flow. Phase 5 removes AwaitingPosition entirely.
         if (e.Action == NotifyCollectionChangedAction.Add
             && _session.Surveys.Count == 1
-            && CurrentState is SurveyFlowState.Ready or SurveyFlowState.AwaitingPosition)
+            && CurrentState == SurveyFlowState.Listening
+            && _session.StartedAt is null)
         {
             _session.StartedAt = _clock.GetUtcNow();
-            TransitionTo(SurveyFlowState.Listening, "FirstSurvey");
         }
         OnPropertyChanged(nameof(CanOptimize));
     }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PhaseDescription))]
-    [NotifyPropertyChangedFor(nameof(CanAcceptSurvey))]
     [NotifyPropertyChangedFor(nameof(CanOptimize))]
-    private SurveyFlowState _currentState = SurveyFlowState.AwaitingPosition;
+    private SurveyFlowState _currentState = SurveyFlowState.Listening;
 
     /// <summary>Fires after every successful state change.</summary>
     public event Action<SurveyTransition>? Transitioned;
 
-    /// <summary>
-    /// Human-readable description of the current state, suitable for the in-app
-    /// status strip. The wizard view (when it lands) will use richer per-state
-    /// templates; this is the dashboard-style fallback.
-    /// </summary>
+    /// <summary>Human-readable description for the in-app status strip.</summary>
     public string PhaseDescription => CurrentState switch
     {
-        SurveyFlowState.AwaitingPosition => "Click the map to set player position",
-        SurveyFlowState.Ready => "Ready — waiting for your first survey",
         SurveyFlowState.Listening => "Listening for surveys",
-        SurveyFlowState.Gathering => "Walk to each target — new surveys will be ignored until reset",
+        SurveyFlowState.Gathering => "Walk the route to each target",
         SurveyFlowState.Done => "All surveys collected",
         _ => "",
     };
 
-    /// <summary>True when <see cref="NoteSurveyDetected"/> would be accepted.</summary>
-    public bool CanAcceptSurvey => CurrentState is SurveyFlowState.Ready or SurveyFlowState.Listening;
-
     /// <summary>
-    /// True when <see cref="OptimizeRoute"/> would be accepted. Only Listening
-    /// qualifies — Ready means the surveys list is empty by construction (the
-    /// Ready→Listening transition fires the moment the first pin lands), so the
-    /// "non-empty surveys" precondition is encoded structurally in the state.
+    /// True when <see cref="OptimizeRoute"/> would be accepted: Listening with
+    /// at least one pin. (Listening no longer structurally implies a non-empty
+    /// list — there's no Ready→Listening-on-first-pin edge any more — so the
+    /// count is checked explicitly.)
     /// </summary>
-    public bool CanOptimize => CurrentState == SurveyFlowState.Listening;
+    public bool CanOptimize =>
+        CurrentState == SurveyFlowState.Listening && _session.Surveys.Count > 0;
 
-    /// <summary>
-    /// Confirms a player position has been set (caller has already updated the projector
-    /// and <see cref="SessionState.PlayerPosition"/>). Transitions <c>AwaitingPosition →
-    /// Ready</c>. No-op from other states.
-    /// </summary>
-    public void ConfirmPlayerPosition()
-    {
-        if (CurrentState != SurveyFlowState.AwaitingPosition)
-        {
-            _session.LastLogEvent = $"ConfirmPlayerPosition ignored — state is {CurrentState}";
-            return;
-        }
-        TransitionTo(SurveyFlowState.Ready, nameof(ConfirmPlayerPosition));
-    }
-
-    /// <summary>
-    /// Re-anchor request (e.g. user pressed "Set Player Position"). Goes back to
-    /// <c>AwaitingPosition</c> from any state. Preserves <see cref="SessionState.Surveys"/>
-    /// (their offsets remain valid; only the projector origin will change on the next
-    /// <see cref="ConfirmPlayerPosition"/>).
-    /// </summary>
-    public void RequestSetPlayerPosition()
-    {
-        if (CurrentState == SurveyFlowState.AwaitingPosition) return;
-        TransitionTo(SurveyFlowState.AwaitingPosition, nameof(RequestSetPlayerPosition));
-    }
-
-    /// <summary>
-    /// A new <see cref="SurveyDetected"/> arrived. Caller (LogIngestionService) has
-    /// already auto-placed the pin at the projected position. The controller's job
-    /// is purely to surface the inventory overlay and to log/diagnose drops when
-    /// the survey arrived in a state that doesn't accept new surveys (Gathering /
-    /// Done / AwaitingPosition — the position-anchor constraint). The Ready→Listening
-    /// transition + StartedAt stamp on first survey lives in
-    /// <see cref="OnSurveysChanged"/>, so this stays a pure diagnostic + UI hook.
-    /// </summary>
-    public void NoteSurveyDetected(SurveyDetected sd)
-    {
-        if (!CanAcceptSurvey)
-        {
-            _session.LastLogEvent = $"Survey: {sd.Name} → ignored ({DescribeWhyDropped()})";
-            return;
-        }
-        // Surface the inventory grid so the user can see which slot to pick next.
-        // AutoOverlayCoordinator reacts to visibility changes for click-through.
-        _session.IsInventoryVisible = true;
-    }
-
-    /// <summary>Listening → Gathering. Caller is responsible for actually computing the route.</summary>
+    /// <summary>Listening → Gathering. Caller computes the route. No-op unless
+    /// Listening with pins.</summary>
     public void OptimizeRoute()
     {
-        if (CurrentState != SurveyFlowState.Listening)
+        if (CurrentState != SurveyFlowState.Listening || _session.Surveys.Count == 0)
         {
             _session.LastLogEvent = $"OptimizeRoute ignored — state is {CurrentState}";
             return;
@@ -168,21 +109,16 @@ public sealed partial class SurveyFlowController : ObservableObject
     }
 
     /// <summary>
-    /// Reset the session: clears surveys, returns to either <c>Ready</c> (if a
-    /// player position is still set) or <c>AwaitingPosition</c>. Preserves the
-    /// projector anchor; caller is responsible for clearing the projector if they
-    /// want a hard reset. Landing on Ready (not Listening) is what closes the
-    /// previous "second-run StartedAt = null" trap — the next first-survey arrival
-    /// re-stamps a fresh start time via <see cref="OnSurveysChanged"/>.
+    /// Reset the session: clears surveys and returns to <c>Listening</c>
+    /// (always — there is no anchor precondition any more). The next
+    /// first-pin arrival re-stamps a fresh <see cref="SessionState.StartedAt"/>
+    /// via <see cref="OnSurveysChanged"/>.
     /// </summary>
     public void Reset()
     {
         _session.ClearSurveys();
-        var target = _session.HasPlayerPosition
-            ? SurveyFlowState.Ready
-            : SurveyFlowState.AwaitingPosition;
-        if (CurrentState != target)
-            TransitionTo(target, nameof(Reset));
+        if (CurrentState != SurveyFlowState.Listening)
+            TransitionTo(SurveyFlowState.Listening, nameof(Reset));
     }
 
     private void OnAllCollected()
@@ -201,14 +137,4 @@ public sealed partial class SurveyFlowController : ObservableObject
         CurrentState = next; // generated setter fires PropertyChanged for state + dependents
         Transitioned?.Invoke(new SurveyTransition(prev, next, trigger));
     }
-
-    private string DescribeWhyDropped() => CurrentState switch
-    {
-        SurveyFlowState.AwaitingPosition => "set player position first",
-        SurveyFlowState.Gathering => "route in progress; reset to start a new session",
-        SurveyFlowState.Done => "session done; reset to start a new session",
-        // Ready and Listening accept surveys, so this branch is only reached
-        // for unanticipated future states; keep a generic fallback.
-        _ => $"state is {CurrentState}",
-    };
 }

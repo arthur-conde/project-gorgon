@@ -23,15 +23,12 @@ public partial class MapOverlayView : Window
     /// pad's host border). Same instance as the one MapOverlayViewModel sees.</summary>
     public LegolasSettings? Settings { get; }
 
-    // State for the "drag anywhere on the viewport to move the active pin"
-    // gesture. Routes by FSM state + IsAnchorEditable:
-    //  * AwaitingPosition: first MouseDown sets anchor (existing HandleMapClick);
-    //    drag continues to refine the anchor.
-    //  * Listening + IsAnchorEditable (anchor set, no surveys yet): drag moves
-    //    the player anchor.
-    //  * Listening with surveys: drag moves SessionState.SelectedSurvey, which
-    //    is set from the wizard panel's survey list (no per-pin Thumb grab).
-    private bool _draggingAnchorFromViewport;
+    // #454: the editable player anchor is retired for Survey (absolute
+    // placement needs none). Viewport interaction now:
+    //  * Motherlode mode: a click records the player position (HandleMapClick
+    //    → SetPlayerPosition in the VM; Survey mode ignores the click).
+    //  * Drag moves SessionState.SelectedSurvey (picked from the wizard
+    //    panel's survey list) — a local pixel correction, no recalibration.
     private SurveyItemViewModel? _draggingPinFromViewport;
 
     private readonly D2DBrushCache _brushCache = new();
@@ -211,22 +208,9 @@ public partial class MapOverlayView : Window
         var canvasPos = Mouse.GetPosition(Viewport);
         var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
 
-        // AwaitingPosition: first click sets the anchor and transitions FSM to
-        // Listening. Fall through into the IsAnchorEditable path below so the
-        // user can keep dragging to refine the anchor without releasing.
-        if (vm.SurveyFlow.CurrentState == SurveyFlowState.AwaitingPosition)
-        {
-            vm.HandleMapClickCommand.Execute(clickPoint);
-        }
-
-        if (vm.Session.IsAnchorEditable)
-        {
-            _draggingAnchorFromViewport = true;
-            vm.MoveAnchor(clickPoint);
-            Viewport.CaptureMouse();
-            e.Handled = true;
-            return;
-        }
+        // Motherlode records the player position from the click; Survey
+        // ignores it (placement is automatic + absolute). The VM mode-gates.
+        vm.HandleMapClickCommand.Execute(clickPoint);
 
         var selected = vm.Session.SelectedSurvey;
         if (selected != null && !selected.Collected && !selected.Skipped)
@@ -247,11 +231,6 @@ public partial class MapOverlayView : Window
         if (DataContext is not MapOverlayViewModel vm) return;
         var canvasPos = Mouse.GetPosition(Viewport);
 
-        if (_draggingAnchorFromViewport)
-        {
-            vm.MoveAnchor(new PixelPoint(canvasPos.X, canvasPos.Y));
-            return;
-        }
         if (_draggingPinFromViewport is not null)
         {
             ApplyDraggedPinPosition(canvasPos);
@@ -263,17 +242,10 @@ public partial class MapOverlayView : Window
         if (!Viewport.IsMouseCaptured) return;
         Viewport.ReleaseMouseCapture();
 
-        if (_draggingAnchorFromViewport)
-        {
-            _draggingAnchorFromViewport = false;
-            return;
-        }
-
         if (_draggingPinFromViewport is not null && DataContext is MapOverlayViewModel vm)
         {
-            // Final commit through CorrectSurveyCommand — this triggers the
-            // projector refit and route rebuild that intermediate Move events
-            // intentionally skip.
+            // Final commit through CorrectSurveyCommand — a local pixel
+            // correction + route rebuild (no projector refit any more, #454).
             var canvasPos = Mouse.GetPosition(Viewport);
             var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));

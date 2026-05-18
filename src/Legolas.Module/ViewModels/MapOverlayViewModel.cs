@@ -59,13 +59,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             {
                 RebuildAllWedges();
             }
-            else if (e.PropertyName is nameof(SessionState.IsAnchorEditable)
-                  or nameof(SessionState.HasPlayerPosition))
-            {
-                // Anchor-editable state gates the "drag to refine" hint.
-                OnPropertyChanged(nameof(OverlayHint));
-                OnPropertyChanged(nameof(IsOverlayHintVisible));
-            }
             else if (e.PropertyName is nameof(SessionState.Mode))
             {
                 // Switching between Survey and Motherlode flips wedge
@@ -107,13 +100,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             var p = selected.EffectivePixel.Value;
             CorrectSurveyCommand.Execute(
                 new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
-            return;
-        }
-
-        if (_session.IsAnchorEditable)
-        {
-            var p = _session.PlayerPosition;
-            MoveAnchor(new PixelPoint(p.X + dx * step, p.Y + dy * step));
         }
     }
 
@@ -187,19 +173,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     ///    drag-anywhere gesture rescues it; the hint tells the user how.
     /// Hidden in Gathering/Done where the route geometry speaks for itself.
     /// </summary>
-    public string OverlayHint
-    {
-        get
-        {
-            return _surveyFlow.CurrentState switch
-            {
-                SurveyFlowState.AwaitingPosition => "Click anywhere on this map to mark your player position.",
-                SurveyFlowState.Ready
-                    => "Drag the map to fine-tune your position. Use the Surveying skill in-game — pins place automatically.",
-                _ => string.Empty,
-            };
-        }
-    }
+    // #454 retired the anchor-bootstrap states this hint coached through.
+    // Absolute placement needs no setup, so there's no stall to rescue — kept
+    // as an always-empty property so the view binding stays valid.
+    public string OverlayHint => string.Empty;
 
     public bool IsOverlayHintVisible => !string.IsNullOrEmpty(OverlayHint);
 
@@ -229,64 +206,30 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [ObservableProperty]
     private IReadOnlyList<PixelPoint> _activeSegmentPoints = Array.Empty<PixelPoint>();
 
+    /// <summary>
+    /// Record the player's position from a map click. #454 retired this for
+    /// Survey (absolute placement needs no anchor); it survives <b>for
+    /// Motherlode</b>, whose triangulation reads
+    /// <see cref="SessionState.PlayerPosition"/> via
+    /// <c>MotherlodeViewModel.RecordPlayerPosition</c>. No Survey FSM
+    /// involvement any more.
+    /// </summary>
     [RelayCommand]
     public void SetPlayerPosition(PixelPoint where)
     {
         _session.PlayerPosition = where;
         _session.HasPlayerPosition = true;
         _projector.SetOrigin(where);
-        ReprojectUncorrected();
-        _surveyFlow.ConfirmPlayerPosition();
-    }
-
-    /// <summary>
-    /// Reposition the anchor without crossing FSM states. Only valid while
-    /// <see cref="SessionState.IsAnchorEditable"/>; intended for drag/nudge
-    /// fine-tuning between <see cref="SetPlayerPosition"/> and the first survey.
-    /// No reproject is needed (no surveys exist yet); wedges and route geometry
-    /// rebuild via the existing <c>PlayerPosition</c> change handler in the ctor.
-    /// </summary>
-    public void MoveAnchor(PixelPoint where)
-    {
-        if (!_session.IsAnchorEditable) return;
-        _session.PlayerPosition = where;
-        _projector.SetOrigin(where);
     }
 
     [RelayCommand]
     public void HandleMapClick(PixelPoint where)
     {
-        // The only state where a map click means "do something" is AwaitingPosition,
-        // where the click sets the projector anchor. Surveys auto-place; user
-        // corrections are exclusively drag/nudge gestures on existing pins.
-        if (_surveyFlow.CurrentState == SurveyFlowState.AwaitingPosition)
+        // Survey placement is automatic + absolute (ProcessMapFx) — map clicks
+        // do nothing in Survey mode. In Motherlode mode the click records the
+        // player position for triangulation.
+        if (_session.Mode == SessionMode.Motherlode)
             SetPlayerPosition(where);
-    }
-
-    /// <summary>
-    /// Recomputes the projector from any pins with <see cref="Survey.ManualOverride"/>
-    /// set, propagates the refitted origin back to <see cref="SessionState.PlayerPosition"/>
-    /// so the on-screen anchor follows the projector's belief, and reprojects every
-    /// uncorrected pin. No-op below the 2-correction threshold.
-    /// </summary>
-    private void TryRefitFromCorrections()
-    {
-        var corrections = Surveys
-            .Where(s => s.Model.ManualOverride.HasValue)
-            .Select(s => (s.Offset, s.Model.ManualOverride!.Value))
-            .ToArray();
-        if (corrections.Length < 2) return;
-
-        _projector.Refit(corrections);
-        // Projector origin may have moved during the 4-DOF refit. Sync the visible
-        // anchor so the player marker keeps representing "where the projector
-        // thinks the player is", not the user's stale initial click.
-        _session.PlayerPosition = _projector.Origin;
-        ReprojectUncorrected();
-        OnPropertyChanged(nameof(Scale));
-        OnPropertyChanged(nameof(RotationDegrees));
-        OnPropertyChanged(nameof(PinRadius));
-        OnPropertyChanged(nameof(PinDiameter));
     }
 
     public double Scale => _projector.Scale;
@@ -298,14 +241,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     public double PinRadius => _settings?.SurveyPinRadiusMetres ?? 8.0;
     public double PinDiameter => PinRadius * 2;
 
+    /// <summary>
+    /// Drag/nudge a pin to a new pixel. #454: pins are absolute, so this is a
+    /// purely local correction of where this one marker draws — it no longer
+    /// drives a projector Refit (the relative-calibration model is retired).
+    /// </summary>
     [RelayCommand]
     public void CorrectSurvey(CorrectionArgs args)
     {
         var vm = args.Survey;
-        var updated = vm.Model with { ManualOverride = args.NewPixel };
-        vm.UpdateModel(updated);
-
-        TryRefitFromCorrections();
+        vm.UpdateModel(vm.Model with { ManualOverride = args.NewPixel });
         RebuildRouteGeometry();
     }
 
@@ -324,7 +269,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         }
         if (points.Count == 0) return;
 
-        var order = _optimizer.Optimize(PlayerPosition, points);
+        // #454: no player anchor — the tour starts at the first uncollected
+        // pin (the optimiser still finds the best order through the rest).
+        var order = _optimizer.Optimize(points[0], points);
         for (var i = 0; i < Surveys.Count; i++)
         {
             Surveys[i].UpdateModel(Surveys[i].Model with { RouteOrder = null });
@@ -336,16 +283,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         }
         RebuildRouteGeometry();
         _surveyFlow.OptimizeRoute();
-    }
-
-    private void ReprojectUncorrected()
-    {
-        foreach (var s in Surveys)
-        {
-            if (s.IsCorrected) continue;
-            var pixel = _projector.Project(s.Offset);
-            s.UpdateModel(s.Model with { PixelPos = pixel });
-        }
     }
 
     private const double WedgeHalfAngleRadians = Math.PI / 8; // 22.5 degrees
@@ -405,7 +342,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             .OrderBy(s => s.RouteOrder!.Value)
             .ToList();
 
-        var points = new List<PixelPoint>(ordered.Count + 1) { PlayerPosition };
+        // #454: no player anchor — the route is just the ordered pins.
+        var points = new List<PixelPoint>(ordered.Count);
         foreach (var s in ordered) points.Add(s.EffectivePixel!.Value);
         RoutePoints = points;
 
@@ -427,17 +365,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             return;
         }
 
-        // We can't read the live player position — only the anchor set via
-        // "Set Player Position". Use the most-recently-collected pin (highest
-        // RouteOrder among collected) as a proxy for where the player is now;
-        // fall back to the anchor before the first collection.
+        // #454: no player anchor. The live segment runs from the
+        // most-recently-collected pin (best available "where the player is
+        // now" proxy) to the active target. Before the first collection
+        // there's no start point — just highlight the target, no segment.
         var lastCollected = Surveys
             .Where(s => s.Collected && s.RouteOrder.HasValue && s.EffectivePixel.HasValue)
             .OrderByDescending(s => s.RouteOrder!.Value)
             .FirstOrDefault();
 
-        var start = lastCollected?.EffectivePixel ?? PlayerPosition;
-        ActiveSegmentPoints = new[] { start, active.EffectivePixel.Value };
+        ActiveSegmentPoints = lastCollected?.EffectivePixel is { } start
+            ? new[] { start, active.EffectivePixel.Value }
+            : Array.Empty<PixelPoint>();
     }
 }
 
