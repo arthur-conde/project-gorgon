@@ -17,11 +17,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly LegolasSettings? _settings;
     private readonly SurveyFlowController _surveyFlow;
     private readonly LegolasBrushes _brushes;
+    private readonly PinCalibrationCoordinator? _pinCal;
 
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null)
     {
         _session = session;
         _projector = projector;
@@ -29,6 +30,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _surveyFlow = surveyFlow;
         _brushes = brushes;
         _settings = settings;
+        _pinCal = pinCalibration;
+        if (_pinCal is not null)
+            _pinCal.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(PinCalibrationCoordinator.IsArmed))
+                    OnPropertyChanged(nameof(IsCalibrationCapturing));
+            };
         if (_settings is not null)
         {
             _settings.PropertyChanged += (_, e) =>
@@ -83,6 +91,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
     /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>
     public bool IsListening => _surveyFlow.CurrentState == SurveyFlowState.Listening;
+
+    /// <summary>#460: true while the wizard <c>Calibrating</c> step has armed
+    /// pin-capture on this overlay. The view routes viewport clicks to
+    /// <see cref="PairCalibrationClick"/> while this holds.</summary>
+    public bool IsCalibrationCapturing => _pinCal?.IsArmed == true;
+
+    /// <summary>Pair a calibration overlay-click with the next pending
+    /// <c>ProcessMapPinAdd</c> world coord (turn order). No-op when not
+    /// capturing.</summary>
+    public void PairCalibrationClick(PixelPoint pixel) => _pinCal?.PairClick(pixel);
+
+    /// <summary>Click-paired calibration markers to render on the overlay
+    /// (null when no coordinator — e.g. the test ctor).</summary>
+    public System.Collections.ObjectModel.ObservableCollection<PixelPoint>? CalibrationMarkers
+        => _pinCal?.PlacedMarkers;
 
     /// <summary>
     /// Move the currently-nudgeable target by <c>(dx, dy) * step</c>. Routes

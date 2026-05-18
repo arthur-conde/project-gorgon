@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
+using Legolas.Services;
 using Legolas.Sharing;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
@@ -19,6 +20,7 @@ namespace Legolas.ViewModels;
 public enum WizardStep
 {
     PickMode,
+    Calibrating,
     Listening,
     Gathering,
     Done,
@@ -35,6 +37,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     private readonly SessionState _session;
     private readonly SurveyFlowController _surveyFlow;
     private readonly MotherlodeFlowController _motherlodeFlow;
+    private readonly IAreaCalibrationService _areaCalibration;
     private readonly LegolasSettings _settings;
     private readonly LegolasReportService? _reportService;
     private readonly LegolasShareCardRenderer? _renderer;
@@ -50,6 +53,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         MotherlodeViewModel motherlode,
         MapOverlayViewModel mapOverlay,
         NudgePadViewModel nudgePad,
+        IAreaCalibrationService areaCalibration,
+        PinCalibrationCoordinator pinCalibration,
         LegolasSettings settings,
         LegolasReportService? reportService = null,
         LegolasShareCardRenderer? renderer = null,
@@ -66,6 +71,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _activeChar = activeChar;
         _refData = refData;
         _dialogs = dialogs;
+        _areaCalibration = areaCalibration;
+        PinCalibration = pinCalibration;
         ControlPanel = controlPanel;
         Motherlode = motherlode;
         MapOverlay = mapOverlay;
@@ -76,6 +83,9 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _session.Surveys.CollectionChanged += OnSurveysChangedForOverlays;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
         _session.PropertyChanged += OnSessionChanged;
+        // #460: once the area becomes calibrated (Solve persisted it), leave
+        // the Calibrating gate.
+        _areaCalibration.Changed += (_, _) => RecomputeStep();
         if (_reportService is not null)
             _reportService.ReportGenerated += OnReportGenerated;
         RecomputeStep();
@@ -163,11 +173,22 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
     partial void OnCurrentStepChanged(WizardStep value)
     {
+        // #460: the Calibrating gate arms pin-capture on the map overlay
+        // (which it opens); any other step disarms (flushes pending/pairs).
+        if (value == WizardStep.Calibrating)
+        {
+            PinCalibration.Arm();
+            _session.IsMapVisible = true;
+        }
+        else if (PinCalibration.IsArmed)
+        {
+            PinCalibration.Disarm();
+        }
+
         // #454: no AwaitingPosition step. Entering Listening auto-opens the
-        // map (so absolute pins are visible by default — replaces the map
-        // auto-open the old anchor step provided) and the inventory (the user
-        // is picking which survey to use). Gathering keeps the inventory open
-        // as a walk-the-route checklist.
+        // map (so absolute pins are visible by default) and the inventory
+        // (the user is picking which survey to use). Gathering keeps the
+        // inventory open as a walk-the-route checklist.
         if (value is WizardStep.Listening or WizardStep.Gathering)
         {
             _session.IsInventoryVisible = true;
@@ -180,6 +201,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     public string CurrentStepTitle => CurrentStep switch
     {
         WizardStep.PickMode => "What are you doing?",
+        WizardStep.Calibrating => "Calibrate this area",
         WizardStep.Listening => "Use a survey",
         WizardStep.Gathering => "Walk your route",
         WizardStep.Done => "All collected",
@@ -191,6 +213,10 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     public MotherlodeViewModel Motherlode { get; }
     public MapOverlayViewModel MapOverlay { get; }
     public NudgePadViewModel NudgePad { get; }
+
+    /// <summary>#460 cold-start pin-calibration driver — the Calibrating step
+    /// binds its status/Solve to this.</summary>
+    public PinCalibrationCoordinator PinCalibration { get; }
 
     public SessionState Session => _session;
     public SurveyFlowController SurveyFlow => _surveyFlow;
@@ -216,6 +242,21 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _surveyFlow.Reset();
     }
 
+    /// <summary>#460 Calibrating step: solve + persist from the click-paired
+    /// pins. On success the area is calibrated, <c>Changed</c> fires, and the
+    /// wizard advances out of Calibrating (RecomputeStep).</summary>
+    [RelayCommand]
+    private void SolveCalibration()
+    {
+        PinCalibration.Solve();
+        RecomputeStep();
+    }
+
+    /// <summary>#460 Calibrating step: discard placed pairs and re-arm
+    /// capture for a fresh attempt.</summary>
+    [RelayCommand]
+    private void ClearCalibrationPins() => PinCalibration.Arm();
+
     /// <summary>
     /// Step-wise back. From the first post-pick step, returns to mode pick
     /// (delegates to <see cref="ChangeMode"/>). From mid-flow steps, undoes
@@ -228,6 +269,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     {
         switch (CurrentStep)
         {
+            case WizardStep.Calibrating:
             case WizardStep.Listening:
             case WizardStep.MotherlodeMeasuring:
                 // First post-pick step → back to mode pick.
@@ -368,18 +410,30 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             return;
         }
 
-        // #454 collapsed the Survey FSM (no AwaitingPosition/Ready — absolute
-        // placement needs no anchor). Listening is the resting/default step;
-        // its UI already adapts to an empty Surveys list. (The cold-start
-        // Calibrating gate is added in the follow-up PR — see #460.)
-        CurrentStep = _session.Mode == SessionMode.Motherlode
-            ? WizardStep.MotherlodeMeasuring
-            : _surveyFlow.CurrentState switch
-            {
-                SurveyFlowState.Listening => WizardStep.Listening,
-                SurveyFlowState.Gathering => WizardStep.Gathering,
-                SurveyFlowState.Done => WizardStep.Done,
-                _ => WizardStep.Listening,
-            };
+        if (_session.Mode == SessionMode.Motherlode)
+        {
+            CurrentStep = WizardStep.MotherlodeMeasuring;
+            return;
+        }
+
+        // #460: cold-start gate. An uncalibrated area places nothing
+        // (placement is absolute) — route the user through Calibrating until
+        // the area has a calibration; IAreaCalibrationService.Changed
+        // re-runs this once Solve persists one. #454 collapsed the rest of
+        // the Survey FSM (no AwaitingPosition/Ready); Listening is the
+        // resting/default step and its UI adapts to an empty Surveys list.
+        if (!_areaCalibration.IsCurrentAreaCalibrated)
+        {
+            CurrentStep = WizardStep.Calibrating;
+            return;
+        }
+
+        CurrentStep = _surveyFlow.CurrentState switch
+        {
+            SurveyFlowState.Listening => WizardStep.Listening,
+            SurveyFlowState.Gathering => WizardStep.Gathering,
+            SurveyFlowState.Done => WizardStep.Done,
+            _ => WizardStep.Listening,
+        };
     }
 }
