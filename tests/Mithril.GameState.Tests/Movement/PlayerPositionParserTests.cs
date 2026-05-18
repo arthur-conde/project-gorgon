@@ -1,3 +1,4 @@
+using System.IO;
 using FluentAssertions;
 using Mithril.GameState.Movement;
 using Xunit;
@@ -9,42 +10,50 @@ public sealed class PlayerPositionParserTests
     private static readonly PlayerPositionParser Parser = new();
     private static readonly DateTime Ts = new(2026, 5, 18, 10, 45, 47, DateTimeKind.Utc);
 
-    // Real captured lines (live Player.log, 2026-05-18).
-    private const string TeleportLine =
-        "[10:45:47] LocalPlayer: ProcessNewPosition((834.09, 290.24, 3480.81), (0.00000, 0.99849, 0.00000, 0.05489), Walk, OnLand, UseTeleportationCircle, Looping, 0, False, True, 1779101147245, 23980462)";
+    private static readonly string FixturePath = Path.Combine(
+        AppContext.BaseDirectory, "Movement", "Fixtures", "real_player_log_position_lines.log");
 
-    private const string CombatBlinkLine =
-        "[11:10:39] LocalPlayer: ProcessNewPosition((790.06, 309.18, 3386.07), (0.00000, -0.99973, 0.00000, -0.02334), Run, OnLand, Attack_Vampire_Teleport, InCombat, 23989952, False, True, 1779102639025, 23980462)";
+    // Byte-exact lines pulled from a real Player.log (this machine, Apr–May
+    // 2026): 12 distinct ProcessAddPlayer + 3 ProcessNewPosition, each with
+    // the genuine ~1.5 KB appearance blob (nested ()/{}/[]/@/^/& and all).
+    private static string[] FixtureLines() =>
+        File.ReadAllLines(FixturePath)
+            .Where(l => l.Length > 0)
+            .ToArray();
 
-    // Faithfully shaped ProcessAddPlayer: nested parens inside the quoted
-    // appearance blob, position triple after the invariant System.String[] arg.
-    private const string LocalAddPlayerLine =
-        "[10:30:45] LocalPlayer: ProcessAddPlayer(1156406193, 23980462, \"@Base2-m(sex=m;Face=@eq-x(a=1);Hair=@eq(b=2))\", \"Emraell\", \"A player!\", System.String[], (787.86, 305.22, 3427.55), (0.00000, -0.99695, 0.00000, 0.07809), Idle, Standing, 0, 0, True)";
+    private static string LineAt(string tsPrefix) =>
+        FixtureLines().Single(l => l.StartsWith(tsPrefix, StringComparison.Ordinal));
 
     [Fact]
-    public void Parses_real_teleport_line_as_Movement()
+    public void Every_real_line_parses_with_the_right_source()
     {
-        var evt = Parser.TryParse(TeleportLine, Ts).Should().BeOfType<PlayerPositionEvent>().Subject;
-        evt.X.Should().Be(834.09);
-        evt.Y.Should().Be(290.24);
-        evt.Z.Should().Be(3480.81);
-        evt.Source.Should().Be(PlayerPositionSource.Movement);
-        evt.Timestamp.Should().Be(Ts);
+        var lines = FixtureLines();
+        // Sanity: the fixture is the real corpus we think it is.
+        lines.Count(l => l.Contains("ProcessAddPlayer", StringComparison.Ordinal)).Should().Be(12);
+        lines.Count(l => l.Contains("ProcessNewPosition", StringComparison.Ordinal)).Should().Be(3);
+
+        foreach (var line in lines)
+        {
+            var evt = Parser.TryParse(line, Ts).Should().BeOfType<PlayerPositionEvent>(
+                because: $"every real position line must parse: {line[..Math.Min(60, line.Length)]}…").Subject;
+
+            var expected = line.Contains("ProcessAddPlayer", StringComparison.Ordinal)
+                ? PlayerPositionSource.Spawn
+                : PlayerPositionSource.Movement;
+            evt.Source.Should().Be(expected);
+
+            // Coords are real game values — never all-zero, always finite.
+            (evt.X == 0 && evt.Y == 0 && evt.Z == 0).Should().BeFalse();
+            double.IsFinite(evt.X).Should().BeTrue();
+        }
     }
 
     [Fact]
-    public void Parses_real_combat_blink_line_as_Movement()
+    public void Real_ProcessAddPlayer_spot_check_positive_coords()
     {
-        var evt = Parser.TryParse(CombatBlinkLine, Ts).Should().BeOfType<PlayerPositionEvent>().Subject;
-        evt.X.Should().Be(790.06);
-        evt.Z.Should().Be(3386.07);
-        evt.Source.Should().Be(PlayerPositionSource.Movement);
-    }
-
-    [Fact]
-    public void Parses_local_ProcessAddPlayer_as_Spawn_anchoring_past_appearance_blob()
-    {
-        var evt = Parser.TryParse(LocalAddPlayerLine, Ts).Should().BeOfType<PlayerPositionEvent>().Subject;
+        // [10:30:45] … System.String[], (787.86, 305.22, 3427.55), …
+        var evt = Parser.TryParse(LineAt("[10:30:45]"), Ts)
+            .Should().BeOfType<PlayerPositionEvent>().Subject;
         evt.X.Should().Be(787.86);
         evt.Y.Should().Be(305.22);
         evt.Z.Should().Be(3427.55);
@@ -52,32 +61,57 @@ public sealed class PlayerPositionParserTests
     }
 
     [Fact]
-    public void Ignores_ProcessAddPlayer_for_other_players()
+    public void Real_ProcessAddPlayer_spot_check_signed_negative_coords()
     {
-        // Same shape, different actor — must NOT track strangers entering view.
+        // [08:22:20] … System.String[], (-504.29, -42.05, -648.84), … —
+        // proves signed handling against genuine game data, not a synthetic.
+        var evt = Parser.TryParse(LineAt("[08:22:20]"), Ts)
+            .Should().BeOfType<PlayerPositionEvent>().Subject;
+        evt.X.Should().Be(-504.29);
+        evt.Y.Should().Be(-42.05);
+        evt.Z.Should().Be(-648.84);
+        evt.Source.Should().Be(PlayerPositionSource.Spawn);
+    }
+
+    [Fact]
+    public void Real_ProcessNewPosition_spot_check()
+    {
+        // [10:45:47] LocalPlayer: ProcessNewPosition((834.09, 290.24, 3480.81), …
+        var evt = Parser.TryParse(LineAt("[10:45:47]"), Ts)
+            .Should().BeOfType<PlayerPositionEvent>().Subject;
+        evt.X.Should().Be(834.09);
+        evt.Y.Should().Be(290.24);
+        evt.Z.Should().Be(3480.81);
+        evt.Source.Should().Be(PlayerPositionSource.Movement);
+    }
+
+    // --- Other-player exclusion -------------------------------------------
+    // NOTE: SYNTHETIC. Across every available capture (3 Player.log files,
+    // Apr–May 2026, ~7700 Process* lines, 13 ProcessAddPlayer) EVERY line is
+    // `LocalPlayer:`-prefixed — Player.log appears to log only the local
+    // player's own client processing. We have NO real other-player
+    // ProcessAddPlayer line to test against. The `LocalPlayer:` gate is a
+    // defensive guard against a non-local format we have not observed; these
+    // cases encode the *assumed* shape. VERIFICATION OWED: capture a
+    // populated-area Player.log to confirm (or correct) the discriminator.
+
+    [Fact]
+    public void Synthetic_ignores_ProcessAddPlayer_for_other_players_assumed_format()
+    {
         const string stranger =
             "[10:30:45] Bob: ProcessAddPlayer(1, 2, \"@Base()\", \"Bob\", \"A player!\", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)";
         Parser.TryParse(stranger, Ts).Should().BeNull();
     }
 
     [Fact]
-    public void Ignores_ProcessAddPlayer_with_no_actor_prefix()
+    public void Synthetic_ignores_ProcessAddPlayer_with_no_actor_prefix()
     {
         const string noPrefix =
             "[10:30:45] ProcessAddPlayer(1, 2, \"@Base()\", \"X\", \"A player!\", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)";
         Parser.TryParse(noPrefix, Ts).Should().BeNull();
     }
 
-    [Fact]
-    public void Preserves_signed_negative_coordinates()
-    {
-        const string line =
-            "LocalPlayer: ProcessNewPosition((-512.50, -3.00, -1840.75), (0,0,0,1), Walk, OnLand, Zone, Looping, 0, False, True, 1, 2)";
-        var evt = Parser.TryParse(line, Ts).Should().BeOfType<PlayerPositionEvent>().Subject;
-        evt.X.Should().Be(-512.50);
-        evt.Y.Should().Be(-3.00);
-        evt.Z.Should().Be(-1840.75);
-    }
+    // --- Negative / unrelated ---------------------------------------------
 
     [Theory]
     [InlineData("")]

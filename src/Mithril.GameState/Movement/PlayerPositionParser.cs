@@ -17,10 +17,14 @@ namespace Mithril.GameState.Movement;
 ///   added to the scene at login / zone-in. This is the line the live replay
 ///   window is <em>seeded to</em>, so it is observed at session start — it
 ///   populates position immediately rather than leaving it null until the
-///   first teleport. <c>ProcessAddPlayer</c> also fires for <em>other</em>
-///   players entering view, so this branch is <b>gated on the
-///   <c>LocalPlayer:</c> prefix</b> — without that guard the tracker would
-///   follow strangers.</item>
+///   first teleport. This branch is <b>gated on the <c>LocalPlayer:</c>
+///   prefix</b> as defence-in-depth: across every available capture (3
+///   Player.log files, Apr–May 2026, ~7700 <c>Process*</c> lines) <em>every</em>
+///   line is <c>LocalPlayer:</c>-prefixed — Player.log appears to log only the
+///   local player's own client processing, so a remote player's
+///   <c>ProcessAddPlayer</c> (and its line shape) has <b>not been observed</b>.
+///   The gate costs nothing and prevents following a stranger <em>if</em> a
+///   populated-area capture ever proves otherwise. <b>Verification owed.</b></item>
 /// </list>
 ///
 /// <para>Real captured grammar (live Player.log, 2026-05-18):</para>
