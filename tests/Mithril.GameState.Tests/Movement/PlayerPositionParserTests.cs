@@ -86,29 +86,33 @@ public sealed class PlayerPositionParserTests
     }
 
     // --- Other-player exclusion -------------------------------------------
-    // NOTE: SYNTHETIC. Across every available capture (3 Player.log files,
-    // Apr–May 2026, ~7700 Process* lines, 13 ProcessAddPlayer) EVERY line is
+    // SYNTHETIC. Across every available capture (3 Player.log files, Apr–May
+    // 2026, ~7700 Process* lines, 13 ProcessAddPlayer) EVERY line is
     // `LocalPlayer:`-prefixed — Player.log appears to log only the local
     // player's own client processing. We have NO real other-player
-    // ProcessAddPlayer line to test against. The `LocalPlayer:` gate is a
-    // defensive guard against a non-local format we have not observed; these
-    // cases encode the *assumed* shape. VERIFICATION OWED: capture a
-    // populated-area Player.log to confirm (or correct) the discriminator.
+    // ProcessAddPlayer line. The `LocalPlayer:` gate is a defensive guard
+    // against a non-local format we have not observed; the fixture below
+    // enumerates several *assumed* shapes (each with a valid position triple,
+    // so the GATE — not a parse failure — must be what rejects them).
+    // VERIFICATION OWED: capture a populated-area Player.log.
 
-    [Fact]
-    public void Synthetic_ignores_ProcessAddPlayer_for_other_players_assumed_format()
-    {
-        const string stranger =
-            "[10:30:45] Bob: ProcessAddPlayer(1, 2, \"@Base()\", \"Bob\", \"A player!\", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)";
-        Parser.TryParse(stranger, Ts).Should().BeNull();
-    }
+    public static IEnumerable<object[]> AssumedNonLocalLines() =>
+        File.ReadAllLines(Path.Combine(
+                AppContext.BaseDirectory, "Movement", "Fixtures",
+                "synthetic_nonlocal_addplayer_assumed.log"))
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !l.StartsWith('#'))
+            .Select(l => new object[] { l });
 
-    [Fact]
-    public void Synthetic_ignores_ProcessAddPlayer_with_no_actor_prefix()
+    [Theory]
+    [MemberData(nameof(AssumedNonLocalLines))]
+    public void Synthetic_rejects_assumed_non_local_ProcessAddPlayer_shapes(string line)
     {
-        const string noPrefix =
-            "[10:30:45] ProcessAddPlayer(1, 2, \"@Base()\", \"X\", \"A player!\", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)";
-        Parser.TryParse(noPrefix, Ts).Should().BeNull();
+        // Sanity: the line WOULD parse if the gate weren't doing the work
+        // (it carries a real-shaped `System.String[], (x, y, z)` triple).
+        line.Should().Contain("System.String[], (");
+        Parser.TryParse(line, Ts).Should().BeNull(
+            because: $"only `LocalPlayer: ProcessAddPlayer` is ours: {line}");
     }
 
     // --- Negative / unrelated ---------------------------------------------

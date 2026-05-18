@@ -46,6 +46,14 @@ public sealed partial class PlayerPositionParser : ILogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex NewPositionRx();
 
+    // The actor token must be exactly `LocalPlayer` — the negative lookbehind
+    // for a letter rejects `NonLocalPlayer:`/`RemoteLocalPlayer:` etc. (a plain
+    // substring check is fooled, as the synthetic non-local fixture proves).
+    [GeneratedRegex(
+        """(?<![A-Za-z])LocalPlayer:\s*ProcessAddPlayer\b""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex LocalAddPlayerRx();
+
     [GeneratedRegex(
         """System\.String\[\]\s*,\s*\(\s*(?<x>-?\d+(?:\.\d+)?)\s*,\s*(?<y>-?\d+(?:\.\d+)?)\s*,\s*(?<z>-?\d+(?:\.\d+)?)\s*\)""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
@@ -64,10 +72,12 @@ public sealed partial class PlayerPositionParser : ILogParser
             return new PlayerPositionEvent(timestamp, x1, y1, z1, PlayerPositionSource.Movement);
         }
 
-        // ProcessAddPlayer fires for every player entering view — only the
-        // local player's own line is ours. Prefix-gate, then anchor on the
-        // System.String[] arg that precedes the position triple.
-        if (line.Contains("LocalPlayer: ProcessAddPlayer", StringComparison.Ordinal) &&
+        // ProcessAddPlayer: only the local player's own line is ours (the
+        // actor token must be exactly `LocalPlayer`, boundary-checked — not a
+        // naive substring). Then anchor on the System.String[] arg that
+        // precedes the position triple.
+        if (line.Contains("ProcessAddPlayer", StringComparison.Ordinal) &&
+            LocalAddPlayerRx().IsMatch(line) &&
             AddPlayerPosRx().Match(line) is { Success: true } m2 &&
             TryNum(m2.Groups["x"].ValueSpan, out var x2) &&
             TryNum(m2.Groups["y"].ValueSpan, out var y2) &&
