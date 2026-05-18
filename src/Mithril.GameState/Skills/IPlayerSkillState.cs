@@ -52,11 +52,16 @@ public readonly record struct SkillProgressSnapshot(
     int MaxLevel)
 {
     /// <summary>
-    /// True when the skill is a real trainable skill (<c>max &gt; 0</c>).
-    /// False for the pseudo-skills PG reports as <c>raw=0,bonus=N,max=0</c>
-    /// (Augmentation / Performance / Phrenology and similar). These are kept in
-    /// the snapshot — flagged rather than dropped — so a consumer can decide;
-    /// the leveling constraint set should filter them out.
+    /// True when the skill advances via an XP curve (<c>max &gt; 0</c>). False
+    /// for <b>umbrella skills</b> — real skills flagged <c>IsUmbrellaSkill</c>
+    /// /<c>XpTable:"None"</c> in <c>skills.json</c> (Augmentation / Performance /
+    /// Phrenology, …) whose level is derived from member sub-skills and carried
+    /// in <see cref="BonusLevels"/> (<see cref="Level"/> stays 0). They never
+    /// gain XP, so they have no per-level curve and report <c>max=0</c>; that is
+    /// the runtime proxy for the reference classification (this assembly takes
+    /// no reference-data dependency by design). Kept in the snapshot — flagged,
+    /// not dropped — so a consumer decides; the leveling constraint set should
+    /// exclude them.
     /// </summary>
     public bool IsTrainable => MaxLevel > 0;
 

@@ -33,8 +33,14 @@ namespace Mithril.GameState.Skills.Parsing;
 ///   ("to next level"): the threshold for the next level. Also stale at the
 ///   cap.</item>
 ///   <item><see cref="MaxLevel"/> — the struct's <c>max=</c>: the level cap.
-///   <c>0</c> marks a non-trainable pseudo-skill (Augmentation / Performance /
-///   Phrenology and similar, which report <c>raw=0,bonus=N,max=0</c>).</item>
+///   <c>0</c> marks an <b>umbrella skill</b> — a <em>real</em> skill flagged
+///   <c>IsUmbrellaSkill</c> with <c>XpTable:"None"</c> in <c>skills.json</c>
+///   (Augmentation / Performance / Phrenology, …). It never gains XP; its level
+///   is derived from member sub-skills and carried in <see cref="BonusLevels"/>
+///   (so it reports <c>raw=0,bonus=N,max=0</c>). <c>max==0</c> is the
+///   runtime proxy for that classification — <c>Mithril.GameState</c> has no
+///   reference-data dependency by design, and the proxy is exact (skills.json
+///   is keyed by this same <c>type=</c> token).</item>
 /// </list>
 /// </summary>
 public readonly record struct SkillProgressRecord(

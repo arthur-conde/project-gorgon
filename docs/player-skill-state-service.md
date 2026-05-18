@@ -97,14 +97,23 @@ identically:
 
 - **Capped skills** (`raw == max`, max > 0) → `IsCapped == true`. `tnl`/`xp`
   are stale at the cap; do not present "N xp to next level" for them.
-- **Pseudo-skills** (`max == 0`, e.g. Augmentation / Performance / Phrenology,
-  reported `raw=0,bonus=N,max=0`) → `IsTrainable == false`. Kept in the
-  snapshot (flagged, not dropped) so a consumer decides; the leveling
-  constraint set should filter them out.
-- **`bonus` is gear/buff/form-derived, not progression.** It is volatile (it
-  moves as the player swaps equipment or shifts form). `Level` (raw) is the
-  progression truth. The projection keeps them as separate fields and **never
-  sums them** — consumers must not either.
+- **Umbrella skills** (`max == 0`, e.g. Augmentation / Performance /
+  Phrenology, reported `raw=0,bonus=N,max=0`) → `IsTrainable == false`. These
+  are **real skills**, flagged `IsUmbrellaSkill` with `XpTable:"None"` in
+  `skills.json`; their level is derived from member sub-skills (Phrenology →
+  Phrenology_Demons, …) and carried in `bonus` (`MaxBonusLevels` 125, `raw`
+  stays 0). They never gain XP, so there is no per-level curve — hence
+  `max=0`, which is the runtime proxy for the reference classification (this
+  service takes no reference-data dependency by design; `skills.json` is keyed
+  by exactly the log `type=` token, so the proxy maps 1:1). Kept in the
+  snapshot — flagged, not dropped — so a consumer decides; the leveling
+  constraint set should exclude them.
+- **`bonus` is gear/buff/form-derived for trainable skills, not progression** —
+  volatile (moves as the player swaps equipment / shifts form); `Level` (raw)
+  is the progression truth, and the projection keeps them separate and **never
+  sums them** (consumers must not either). The exception is umbrella skills
+  (above), where `raw` is always 0 and `bonus` *is* the derived level — which
+  is exactly why `IsTrainable == false` excludes them from XP-leveling logic.
 - **Timestamps are UTC.** `Player.log`'s `[HH:MM:SS]` prefix is UTC;
   `PlayerSkillSnapshot.MeasuredAt` is therefore UTC. Surface it for freshness:
   a *live* snapshot can still be minutes old if the player has idled in one
@@ -202,7 +211,10 @@ lock — do non-trivial work off-thread.
   (zone/relog) fires; whether it fires on *every* zone change is unconfirmed.
   The wholesale-replace design is robust either way (worst case: a slightly
   older but still-complete table until the next fire).
-- **Pseudo-skill set.** Only Augmentation / Performance / Phrenology observed
-  with `max==0`. The code uses the `max==0` predicate (not a name list), so a
-  new one is handled automatically — but enumerate against the skills
-  reference before relying on the exact set anywhere.
+- **Umbrella-skill classification — RESOLVED.** `max==0` in the log is the
+  exact runtime proxy for `skills.json`'s `IsUmbrellaSkill` / `XpTable:"None"`
+  (verified: Augmentation/Performance/Phrenology all carry both; trainable
+  skills like Tailoring/Endurance/NatureAppreciation have a real `XpTable` and
+  no umbrella flag). `skills.json` is keyed by the same `type=` token, so the
+  proxy is 1:1 — no name list, no fuzzy mapping. The runtime predicate stays
+  log-only by design (no reference-data dependency).
