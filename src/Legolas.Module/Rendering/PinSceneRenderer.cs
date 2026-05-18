@@ -36,7 +36,19 @@ internal static class PinSceneRenderer
         DrawRoute(scene, rt, factory, brushes);
         DrawActiveSegment(scene, rt, factory, brushes);
         DrawSurveyPins(scene, rt, factory, brushes);
+        DrawMotherlodePins(scene, rt, factory, brushes);
         DrawPlayerAnchor(scene, rt, factory, brushes);
+    }
+
+    // #113 Layer 5: solved-treasure markers. Survey and Motherlode modes are
+    // mutually exclusive, so reusing the survey pin style keeps the marker
+    // theme-consistent without threading a second style through the cache.
+    // No active-pin treatment (no per-target identity to single out).
+    private static void DrawMotherlodePins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    {
+        for (var i = 0; i < scene.MotherlodePins.Count; i++)
+            DrawPin(rt, factory, brushes, scene.MotherlodePins[i],
+                scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
     }
 
     private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)

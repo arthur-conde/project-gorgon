@@ -22,11 +22,22 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    private IReadOnlyList<CalibrationReference> _references = Array.Empty<CalibrationReference>();
+
+    /// <summary>#113: seed the area gazetteer the Motherlode relative-location
+    /// transform anchors to. Additive — defaults to empty, so the #476 Survey
+    /// tests are unaffected.</summary>
+    public void SetReferences(params CalibrationReference[] references)
+    {
+        _references = references;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public AreaCalibration? CurrentCalibration => _calibration;
     public bool IsCurrentAreaCalibrated => _calibration is not null;
     public string? CurrentAreaKey => _calibration is null ? null : "AreaTest";
     public string? CurrentAreaFriendlyName => _calibration is null ? null : "Test Area";
-    public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
+    public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _references;
     public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
 
     public event EventHandler? Changed;

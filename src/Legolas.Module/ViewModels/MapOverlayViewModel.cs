@@ -22,11 +22,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly PinCalibrationCoordinator? _pinCal;
     private readonly IPlayerPositionTracker? _positionTracker;
     private readonly IAreaCalibrationService? _areaCalibration;
+    private readonly MotherlodeMeasurementCoordinator? _motherlode;
 
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null)
     {
         _session = session;
         _projector = projector;
@@ -37,6 +38,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _pinCal = pinCalibration;
         _positionTracker = positionTracker;
         _areaCalibration = areaCalibration;
+        _motherlode = motherlode;
         if (_pinCal is not null)
             _pinCal.PropertyChanged += (_, e) =>
             {
@@ -443,6 +445,35 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _session.Mode == SessionMode.Motherlode
             ? (_session.HasPlayerPosition ? _session.PlayerPosition : null)
             : _session.SurveyPlayerPixel;
+
+    /// <summary>
+    /// #113 Layer 5: solved Motherlode treasures projected to overlay pixels
+    /// via the persisted area calibration. Read fresh by the per-frame D2D
+    /// render handler (cheap — a handful of treasures, same cost class as the
+    /// existing survey-pin loop). Empty unless in Motherlode mode <b>and</b>
+    /// the area is calibrated — the projector is the only thing here that needs
+    /// it; the relative-text guidance is calibration-free, so an uncalibrated
+    /// area silently shows no dot rather than a wrong one. Collected treasures
+    /// drop out. The dot inherits the ±10% non-affine map warp (#488) — the
+    /// solved coord is exact, the marker is approximate; surfaced as such in
+    /// the wizard copy.
+    /// </summary>
+    public IReadOnlyList<PixelPoint> MotherlodeMarkerPixels
+    {
+        get
+        {
+            if (_session.Mode != SessionMode.Motherlode
+                || _motherlode is null
+                || _areaCalibration?.CurrentCalibration is not { } cal)
+                return Array.Empty<PixelPoint>();
+
+            List<PixelPoint>? list = null;
+            foreach (var s in _motherlode.Snapshot().Surveys)
+                if (!s.Collected && s.SolvedWorld is { } w)
+                    (list ??= new()).Add(cal.ProjectWorld(w));
+            return list ?? (IReadOnlyList<PixelPoint>)Array.Empty<PixelPoint>();
+        }
+    }
 
     /// <summary>
     /// Short staleness label for the Survey player-GPS, e.g.
