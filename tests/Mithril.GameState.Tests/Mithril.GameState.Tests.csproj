@@ -15,6 +15,16 @@
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Byte-exact captures from a real Player.log (Apr–May 2026, this
+         machine). Position parsing is tested against the genuine appearance
+         blobs, not synthetic toys. -->
+    <None Include="Movement\Fixtures\real_player_log_position_lines.log"
+          CopyToOutputDirectory="PreserveNewest" />
+    <!-- Synthetic assumed non-local shapes (no real capture exists). -->
+    <None Include="Movement\Fixtures\synthetic_nonlocal_addplayer_assumed.log"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Shared test helpers opted into per-project (see tests/Directory.Build.props
          for why these aren't broadcast to every test project). -->
     <Compile Include="..\TestSupport\FakeReferenceData.cs"
