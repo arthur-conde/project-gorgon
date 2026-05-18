@@ -57,6 +57,7 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetRequiredService<NearestNeighbourTwoOptOptimizer>()));
         services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
+        services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
 
         // Session + flow controllers + VMs.
         // Session.MapOpacity / InventoryOpacity hydrate from persisted settings on

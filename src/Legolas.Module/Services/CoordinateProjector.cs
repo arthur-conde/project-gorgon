@@ -25,6 +25,13 @@ public sealed class CoordinateProjector : ICoordinateProjector
 
     public void SetOrigin(PixelPoint origin) => _origin = origin;
 
+    public void ApplyCalibration(AreaCalibration calibration)
+    {
+        _scale = calibration.Scale;
+        _rotation = calibration.RotationRadians;
+        _origin = new PixelPoint(calibration.OriginX, calibration.OriginY);
+    }
+
     public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset)
     {
         _origin = playerPixel;

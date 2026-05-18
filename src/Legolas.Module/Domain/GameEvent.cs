@@ -32,6 +32,16 @@ public sealed record MotherlodeDistance(
     DateTime Timestamp,
     int DistanceMetres) : GameEvent(Timestamp);
 
+/// <summary>
+/// The chat-log area banner (<c>"******* Entering Area: Eltibule"</c>). Carries
+/// the area's <em>friendly</em> name (the only thing the log gives); the calibration
+/// service resolves it to the internal area key. This is the sole area signal
+/// available — Player.log has no area-change marker.
+/// </summary>
+public sealed record AreaEntered(
+    DateTime Timestamp,
+    string AreaFriendlyName) : GameEvent(Timestamp);
+
 public sealed record UnknownLine(
     DateTime Timestamp,
     string RawLine) : GameEvent(Timestamp);

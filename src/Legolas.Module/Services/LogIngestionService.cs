@@ -24,6 +24,7 @@ public sealed class LogIngestionService : BackgroundService
     private readonly ICoordinateProjector _projector;
     private readonly MotherlodeViewModel _motherlode;
     private readonly SurveyFlowController _surveyFlow;
+    private readonly IAreaCalibrationService _areaCalibration;
 
     public LogIngestionService(
         IChatLogStream stream,
@@ -33,7 +34,8 @@ public sealed class LogIngestionService : BackgroundService
         SessionState session,
         ICoordinateProjector projector,
         MotherlodeViewModel motherlode,
-        SurveyFlowController surveyFlow)
+        SurveyFlowController surveyFlow,
+        IAreaCalibrationService areaCalibration)
     {
         _stream = stream;
         _parser = parser;
@@ -43,6 +45,7 @@ public sealed class LogIngestionService : BackgroundService
         _projector = projector;
         _motherlode = motherlode;
         _surveyFlow = surveyFlow;
+        _areaCalibration = areaCalibration;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -87,6 +90,9 @@ public sealed class LogIngestionService : BackgroundService
                 case MotherlodeDistance md when _session.Mode == SessionMode.Motherlode:
                     _motherlode.RecordDistanceCommand.Execute(md.DistanceMetres);
                     break;
+                case AreaEntered ae:
+                    _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);
+                    break;
             }
         });
     }
@@ -98,6 +104,7 @@ public sealed class LogIngestionService : BackgroundService
         ItemCollected ic when ic.SpeedBonusItem is not null => $"Collected: {ic.Name} (+ {ic.SpeedBonusItem} speed bonus)",
         ItemCollected ic => $"Collected: {ic.Name}",
         MotherlodeDistance md => $"Motherlode: {md.DistanceMetres}m",
+        AreaEntered ae => $"Area: {ae.AreaFriendlyName}",
         UnknownLine ul => $"Unknown: {ul.RawLine}",
         _ => evt.GetType().Name,
     };

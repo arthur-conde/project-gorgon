@@ -34,4 +34,12 @@ public interface ICoordinateProjector
     /// no dependency, numerically stable.
     /// </summary>
     void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections);
+
+    /// <summary>
+    /// Applies a previously-solved per-area calibration (scale, rotation, origin)
+    /// wholesale — used when entering an area that already has a persisted
+    /// <see cref="AreaCalibration"/> so the very first survey/treasure projects
+    /// correctly with no in-session warmup.
+    /// </summary>
+    void ApplyCalibration(AreaCalibration calibration);
 }
