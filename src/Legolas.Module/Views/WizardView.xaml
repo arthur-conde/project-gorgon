@@ -707,11 +707,27 @@
                                Foreground="{StaticResource TextSecondaryBrush}" />
                     <ContentControl Content="{Binding Motherlode}" ContentTemplate="{StaticResource MotherlodeProgressBody}"
                                     HorizontalAlignment="Center" />
-                    <TextBlock Text="The on-map dot is approximate (the in-game map isn't perfectly to-scale); the relative directions above are exact. Calibrate this area to show the dot."
+                    <!-- #113 Layer 5: real status, not an always-on nag.
+                         Uncalibrated → offer the (optional) guided calibration
+                         that unlocks the dot; the relative text above already
+                         works without it. Calibrated → honest warp caveat. -->
+                    <StackPanel HorizontalAlignment="Center" Margin="0,8,0,12"
+                                Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}">
+                        <Button Content="Calibrate this area to show the map dot"
+                                HorizontalAlignment="Center"
+                                Command="{Binding CalibrateForMotherlodeCommand}"
+                                ToolTip="Optional. The relative directions above are exact and need no calibration — this only adds a dot on the map overlay." />
+                        <TextBlock Text="Optional — the relative directions above are exact without it."
+                                   TextAlignment="Center" Margin="0,4,0,0"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   Foreground="{StaticResource TextTertiaryBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="The on-map dot is approximate (the in-game map isn't perfectly to-scale); the relative directions above are exact."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="520"
                                Margin="0,4,0,12"
                                FontSize="{DynamicResource AppFontSizeSmall}"
-                               Foreground="{StaticResource TextTertiaryBrush}" />
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
                         <Button Content="Optimize Route" Style="{StaticResource WizardPrimaryButton}"
                                 Margin="0" Command="{Binding Motherlode.OptimizeRouteCommand}"

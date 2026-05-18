@@ -101,6 +101,12 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         {
             IsConfirmingRecalibrate = false;
             OnPropertyChanged(nameof(CanRecalibrate));
+            OnPropertyChanged(nameof(IsAreaCalibrated));
+            // #113: once this area is calibrated the Motherlode dot can place;
+            // drop the one-shot request so RecomputeStep returns to the
+            // log-driven Motherlode stage instead of re-entering Calibrating.
+            if (_areaCalibration.IsCurrentAreaCalibrated)
+                _motherlodeCalibrationRequested = false;
             RecomputeStep();
         };
         if (_reportService is not null)
@@ -335,6 +341,31 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// when there is a persisted calibration to redo (Listening step).</summary>
     public bool CanRecalibrate => _areaCalibration.IsCurrentAreaCalibrated;
 
+    /// <summary>#113 Layer 5: true once the current area has an applied
+    /// calibration — the only gate on the Motherlode on-map dot (the relative
+    /// text is calibration-free). Drives the Walk panel's calibrate affordance
+    /// vs. the honest "dot is approximate" caveat. Notified on
+    /// <see cref="IAreaCalibrationService.Changed"/>.</summary>
+    public bool IsAreaCalibrated => _areaCalibration.IsCurrentAreaCalibrated;
+
+    /// <summary>#113: one-shot request to detour into the guided
+    /// <see cref="WizardStep.Calibrating"/> walkthrough from Motherlode.
+    /// Optional and non-blocking — measuring/locating/walking by relative text
+    /// never needs it; it only unlocks the on-map dot. Cleared automatically
+    /// once the area calibrates (or on mode change).</summary>
+    private bool _motherlodeCalibrationRequested;
+
+    /// <summary>#113: enter the same guided Drop/Pair calibration Survey uses,
+    /// then fall back to the Motherlode stage once it persists. Reuses the
+    /// existing <see cref="WizardStep.Calibrating"/> machinery via
+    /// <see cref="RecomputeStep"/>.</summary>
+    [RelayCommand]
+    private void CalibrateForMotherlode()
+    {
+        _motherlodeCalibrationRequested = true;
+        RecomputeStep();
+    }
+
     /// <summary>
     /// Step-wise back. From the first post-pick step, returns to mode pick
     /// (delegates to <see cref="ChangeMode"/>). From mid-flow steps, undoes
@@ -391,6 +422,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             _surveyFlow.Reset();
         else
             _motherlodeFlow.Reset();
+        _motherlodeCalibrationRequested = false;
         _session.IsMapVisible = false;
         _session.IsInventoryVisible = false;
         HasPickedMode = false;
@@ -498,6 +530,18 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
         if (_session.Mode == SessionMode.Motherlode)
         {
+            // #113 Layer 5: optional, non-blocking calibration detour. The
+            // log-driven flow never needs calibration (relative text is
+            // frame-internal); this fires only when the user asked for the
+            // on-map dot in an uncalibrated area. Reuses the Survey guided
+            // walkthrough; areaCalibration.Changed clears the request and
+            // re-runs this, dropping back to the stage below.
+            if (_motherlodeCalibrationRequested && !_areaCalibration.IsCurrentAreaCalibrated)
+            {
+                CurrentStep = WizardStep.Calibrating;
+                return;
+            }
+
             // #113 Layer 4: derived sub-steps from the log-driven coordinator
             // snapshot (via MotherlodeViewModel.Stage). The FSM stays coarse.
             CurrentStep = Motherlode.Stage switch
