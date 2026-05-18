@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.Channels;
 using FluentAssertions;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.Services;
 using Legolas.ViewModels;
 using Mithril.GameState.Areas;
@@ -36,19 +37,34 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         "\"Good Metal Slab is here\", ImportantInfo, \"The Good Metal Slab is 67m west and 1181m south.\")";
 
     private static (PlayerLogIngestionService svc, ScriptedStream stream, SpyAreaCalibration spy,
-        SessionState session) Build(AreaCalibration? calibration = null, GameConfig? config = null)
+        SessionState session, SurveyFlowController flow) Build(
+        AreaCalibration? calibration = null, GameConfig? config = null)
     {
         var stream = new ScriptedStream();
         var tracker = new PlayerAreaTracker(new AreaTransitionParser());
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
         var settings = new LegolasSettings();
+        var flow = new SurveyFlowController(session, settings);
         var gates = new ModuleGates();
         gates.For("legolas").Open();
+        // Freeze the live-cutoff at construction time. The real
+        // ModuleGate.WaitAsync yields, so the after-gate _liveSince capture
+        // would otherwise race ahead of the test's pushes (every live line
+        // would look like replay). A frozen clock makes the cutoff
+        // deterministic: pushes that use real UtcNow are "live"; a push with
+        // an explicit older timestamp is "replay".
+        var clock = new FrozenClock(DateTime.UtcNow);
         var svc = new PlayerLogIngestionService(
-            stream, new PlayerLogParser(), tracker, spy, session, settings, gates,
-            config ?? new GameConfig());
-        return (svc, stream, spy, session);
+            stream, new PlayerLogParser(), tracker, spy, flow, session, settings, gates,
+            config ?? new GameConfig(), time: clock);
+        return (svc, stream, spy, session, flow);
+    }
+
+    private sealed class FrozenClock(DateTime utc) : TimeProvider
+    {
+        private readonly DateTimeOffset _now = new(utc, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 
     // ---- area→calibration bridge (Phase 2) -------------------------------
@@ -56,7 +72,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Area_load_line_applies_that_area_calibration_once()
     {
-        var (svc, stream, spy, _) = Build();
+        var (svc, stream, spy, _, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -72,7 +88,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Area_change_applies_each_distinct_area_in_order()
     {
-        var (svc, stream, spy, _) = Build();
+        var (svc, stream, spy, _, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -88,7 +104,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task ChooseCharacter_resets_latch_so_same_area_re_applies()
     {
-        var (svc, stream, spy, _) = Build();
+        var (svc, stream, spy, _, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -113,7 +129,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             "LocalPlayer: ProcessAddPlayer(...)\n",
             new UTF8Encoding(false));
 
-        var (svc, _, spy, _) = Build(config: new GameConfig { GameRoot = _tempDir });
+        var (svc, _, spy, _, _) = Build(config: new GameConfig { GameRoot = _tempDir });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -129,7 +145,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Calibrated_area_places_one_absolute_pin_at_projected_pixel()
     {
-        var (svc, stream, _, session) = Build(calibration: Identity());
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -156,7 +172,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Duplicate_world_coord_within_radius_does_not_stack()
     {
-        var (svc, stream, _, session) = Build(calibration: Identity());
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -176,7 +192,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Distinct_targets_place_separate_pins()
     {
-        var (svc, stream, _, session) = Build(calibration: Identity());
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -196,7 +212,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Uncalibrated_area_does_not_place_and_reports_diagnostic()
     {
-        var (svc, stream, _, session) = Build(calibration: null);
+        var (svc, stream, _, session, _) = Build(calibration: null);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -214,7 +230,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Motherlode_mode_ignores_absolute_targets()
     {
-        var (svc, stream, _, session) = Build(calibration: Identity());
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
         session.Mode = SessionMode.Motherlode;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
@@ -229,12 +245,92 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         finally { await Stop(svc, run, cts); }
     }
 
+    // ---- replay / FSM gating (#477 follow-up) ----------------------------
+
+    [Fact]
+    public async Task Replayed_pre_session_target_is_not_placed()
+    {
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            // Stamped well before this consumer went live → session-replay
+            // backlog from a run the user already finished.
+            stream.Push(MapFx, DateTime.UtcNow.AddMinutes(-5));
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.LastLogEvent?.Contains("log replay") == true, cts.Token);
+
+            session.Surveys.Should().BeEmpty("replayed backlog must not repopulate stale pins");
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Live_target_after_startup_is_still_placed()
+    {
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx); // default = DateTime.UtcNow → live
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.Surveys.Count == 1, cts.Token);
+
+            session.Surveys.Should().HaveCount(1);
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Non_accepting_flow_state_does_not_place()
+    {
+        var (svc, stream, _, session, flow) = Build(calibration: Identity());
+        flow.RequestSetPosition(); // Listening → SettingPosition (a non-accept state)
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx); // live, but the flow isn't accepting
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.LastLogEvent?.Contains("survey flow is") == true, cts.Token);
+
+            session.Surveys.Should().BeEmpty();
+            session.LastLogEvent.Should().Contain("SettingPosition");
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Gathering_still_accepts_new_targets()
+    {
+        var (svc, stream, _, session, flow) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            await WaitUntil(() => session.Surveys.Count == 1, cts.Token);
+            flow.OptimizeRoute(); // Listening + 1 pin → Gathering
+
+            stream.Push(
+                "[08:33:17] LocalPlayer: ProcessMapFx((1666.00, 36.95, 2620.00), 25, 1, " +
+                "\"Good Metal Slab is here\", ImportantInfo, \"The Good Metal Slab is 604m west and 1073m south.\")");
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.Surveys.Count == 2, cts.Token);
+
+            session.Surveys.Should().HaveCount(2, "#454: Gathering accepts new targets");
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
     [Fact]
     public async Task ProcessMapPin_lines_are_ignored_by_this_service()
     {
         // Map-pin lifecycle is GameState-owned now (#468); the Legolas
         // Player.log consumer only handles ProcessMapFx targets.
-        var (svc, stream, _, session) = Build(calibration: Identity());
+        var (svc, stream, _, session, _) = Build(calibration: Identity());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -305,11 +401,15 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         private long _pending;
         private TaskCompletionSource _drained = NewDrainTcs();
 
-        public void Push(string line)
+        public void Push(string line) => Push(line, DateTime.UtcNow);
+
+        /// <summary>Push a line with an explicit UTC timestamp — used to
+        /// simulate the session-replay backlog (pre-live timestamps).</summary>
+        public void Push(string line, DateTime timestampUtc)
         {
             Interlocked.Increment(ref _pending);
             Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
+            _channel.Writer.TryWrite(new RawLogLine(timestampUtc, line));
         }
 
         public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);

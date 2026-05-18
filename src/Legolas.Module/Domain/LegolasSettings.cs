@@ -301,6 +301,29 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
         }
     }
 
+    private double _calibrationGoodResidualPx = 12.0;
+    /// <summary>
+    /// RMS pixel-residual at or below which an in-flow (#460) pin calibration
+    /// is considered "good" and the guided walkthrough's terminal Confirm is
+    /// ungated. Above it the user must explicitly "finish anyway" (the
+    /// non-affine ±10% map ceiling means a high residual is sometimes
+    /// unavoidable — the user is never trapped). 12 px mirrors the long-standing
+    /// "good" notion the standalone calibration window's Solve already uses;
+    /// exposed here so it is one configurable value, not a hardcoded constant.
+    /// Additive — old settings JSON without it loads the 12 px default.
+    /// </summary>
+    public double CalibrationGoodResidualPx
+    {
+        get => _calibrationGoodResidualPx;
+        set
+        {
+            var clamped = value > 0 ? value : 12.0;
+            if (Math.Abs(_calibrationGoodResidualPx - clamped) < 1e-6) return;
+            _calibrationGoodResidualPx = clamped;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CalibrationGoodResidualPx)));
+        }
+    }
+
     private double _nudgeStepDefault = 1.0;
     public double NudgeStepDefault
     {

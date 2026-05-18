@@ -40,8 +40,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         if (_pinCal is not null)
             _pinCal.PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(PinCalibrationCoordinator.IsArmed))
+                if (e.PropertyName is nameof(PinCalibrationCoordinator.IsPairing)
+                                   or nameof(PinCalibrationCoordinator.IsDropping)
+                                   or nameof(PinCalibrationCoordinator.IsArmed))
+                {
                     OnPropertyChanged(nameof(IsCalibrationCapturing));
+                    OnPropertyChanged(nameof(IsCalibrationDropping));
+                }
+                else if (e.PropertyName is nameof(PinCalibrationCoordinator.PromptText))
+                {
+                    OnPropertyChanged(nameof(CalibrationPrompt));
+                }
+                else if (e.PropertyName is nameof(PinCalibrationCoordinator.SelectedMarker))
+                {
+                    OnPropertyChanged(nameof(HasSelectedCalibrationMarker));
+                }
             };
         if (_settings is not null)
         {
@@ -234,37 +247,93 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(IsSettingPosition))]
     private void CancelSetPosition() => _surveyFlow.CancelSetPosition();
 
-    /// <summary>#460: true while the wizard <c>Calibrating</c> step has armed
-    /// pin-capture on this overlay. The view routes viewport clicks to
-    /// <see cref="PairCalibrationClick"/> while this holds.</summary>
-    public bool IsCalibrationCapturing => _pinCal?.IsArmed == true;
+    /// <summary>#460/#477A: true while the guided calibration walkthrough is in
+    /// its <see cref="CalibrationPhase.Pair"/> phase — the overlay captures
+    /// left-clicks (pair the named pin / select+drag a marker), so it must NOT
+    /// be click-through. The view routes viewport clicks to
+    /// <see cref="PairCalibrationClick"/> / marker selection while this holds.</summary>
+    public bool IsCalibrationCapturing => _pinCal?.IsPairing == true;
 
-    /// <summary>Pair a calibration overlay-click with the next pending
-    /// <c>ProcessMapPinAdd</c> world coord (turn order). No-op when not
-    /// capturing.</summary>
+    /// <summary>#477A: true while the walkthrough is in
+    /// <see cref="CalibrationPhase.Drop"/> — the overlay must be click-through
+    /// so right-clicks reach the game to drop pins. Drives the view's
+    /// phase-aware click-through override (the panel button toggles the phase,
+    /// not the overlay directly — the separate-window assumption).</summary>
+    public bool IsCalibrationDropping => _pinCal?.IsDropping == true;
+
+    /// <summary>Pair a calibration overlay-click with the currently-named
+    /// (suggested/overridden) pin. No-op when not in the Pair phase.</summary>
     public void PairCalibrationClick(PixelPoint pixel) => _pinCal?.PairClick(pixel);
+
+    /// <summary>Mouse-down hit-test against placed calibration markers
+    /// (select-then-drag correction). False ⇒ the click should pair instead.</summary>
+    public bool TrySelectCalibrationMarkerAt(PixelPoint at, double radius) =>
+        _pinCal?.TrySelectMarkerAt(at, radius) == true;
+
+    /// <summary>Drag the selected calibration marker to an absolute pixel.</summary>
+    public void DragCalibrationMarkerTo(PixelPoint at) => _pinCal?.DragSelectedTo(at);
+
+    /// <summary>True iff a calibration marker is currently selected (so the
+    /// nudge keys/pad target it ahead of survey pins / the manual anchor).</summary>
+    public bool HasSelectedCalibrationMarker => _pinCal?.SelectedMarker is not null;
+
+    /// <summary>Deselect any calibration marker (Escape, or starting a fresh
+    /// pair). No-op without a coordinator.</summary>
+    public void ClearCalibrationSelection() => _pinCal?.ClearSelection();
+
+    /// <summary>The guided walkthrough's current on-overlay prompt (names the
+    /// pin to click next, etc.). Empty without a coordinator.</summary>
+    public string CalibrationPrompt => _pinCal?.PromptText ?? string.Empty;
 
     /// <summary>Click-paired calibration markers to render on the overlay
     /// (null when no coordinator — e.g. the test ctor).</summary>
-    public System.Collections.ObjectModel.ObservableCollection<PixelPoint>? CalibrationMarkers
+    public System.Collections.ObjectModel.ObservableCollection<CalibrationMarker>? CalibrationMarkers
         => _pinCal?.PlacedMarkers;
 
     /// <summary>
-    /// Move the currently-nudgeable target by <c>(dx, dy) * step</c>. Routes
-    /// to <see cref="SessionState.SelectedSurvey"/> when one is selected and
-    /// has a pixel position; falls back to the player anchor while it's still
-    /// editable. No-op otherwise. Shared between the keyboard hotkey commands
-    /// (NudgePinCommandBase) and the on-screen nudge pad — same semantics, same
-    /// commit path through CorrectSurveyCommand / MoveAnchor.
+    /// Move the currently-nudgeable target by <c>(dx, dy) * step</c>. Precedence:
+    /// <list type="number">
+    /// <item>a selected <b>calibration marker</b> (#477A — the guided
+    /// walkthrough's just-placed/selected marker, correcting the dominant
+    /// click-precision error);</item>
+    /// <item>the selected <see cref="SessionState.SelectedSurvey"/> pin
+    /// (a survey still wins over the manual anchor);</item>
+    /// <item>the <b>manual</b> Survey player anchor (#477C) — only when no
+    /// survey is selected and <see cref="SessionState.SurveyPlayerIsManual"/>;
+    /// the auto/tracker-projected anchor is intentionally non-interactive
+    /// (nudging a data-sourced fix would mask staleness).</item>
+    /// </list>
+    /// No-op otherwise. Shared by the keyboard hotkeys (NudgePinCommandBase)
+    /// and the on-screen nudge pad.
     /// </summary>
     public void Nudge(double dx, double dy, double step)
     {
+        if (_pinCal?.SelectedMarker is not null)
+        {
+            _pinCal.NudgeSelected(dx * step, dy * step);
+            return;
+        }
+
         var selected = _session.SelectedSurvey;
         if (selected is not null && selected.EffectivePixel.HasValue)
         {
             var p = selected.EffectivePixel.Value;
             CorrectSurveyCommand.Execute(
                 new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+            return;
+        }
+
+        // #477C: the manual "Set my position" anchor is selectable/nudgeable on
+        // this same shared layer. Mutate only SurveyPlayerPixel and keep the
+        // manual flag (a fresh tracker fix still supersedes it per #476); never
+        // touch the Motherlode PlayerPosition or the retired MoveAnchor model.
+        if (_session.Mode == SessionMode.Survey
+            && _session.SurveyPlayerIsManual
+            && _session.SurveyPlayerPixel is { } anchor)
+        {
+            _session.SurveyPlayerPixel =
+                new PixelPoint(anchor.X + dx * step, anchor.Y + dy * step);
+            _session.SurveyPlayerIsManual = true;
         }
     }
 

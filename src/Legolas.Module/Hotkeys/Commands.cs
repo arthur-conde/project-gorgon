@@ -3,6 +3,7 @@ using Mithril.Shared.Hotkeys;
 using Legolas.Diagnostics;
 using Legolas.Domain;
 using Legolas.Flow;
+using Legolas.Services;
 using Legolas.ViewModels;
 
 namespace Legolas.Hotkeys;
@@ -223,9 +224,11 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
         _session = session;
         _map = map;
         _settings = settings;
-        // #454 retired the editable anchor — Pin Nudge now only ever targets a
-        // selected survey pin, so registrability tracks SelectedSurvey alone.
+        // Pin Nudge targets, in precedence order (see MapOverlayViewModel.Nudge):
+        // a selected #477A calibration marker, the selected survey pin, or the
+        // #477C manual player anchor. Registrability tracks all three inputs.
         _session.PropertyChanged += OnSessionPropertyChanged;
+        _map.PropertyChanged += OnMapPropertyChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -236,16 +239,31 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
     public HotkeyBinding? DefaultBinding => null;
 
     /// <summary>
-    /// Pin Nudge only matters when a survey pin is selected. Outside that
-    /// window arrow keys are dead weight that would otherwise be eaten
-    /// system-wide (#139). The Execute body re-checks, so a registration that
-    /// briefly outraces a state change is harmless.
+    /// Pin Nudge matters when there's something to nudge: a selected survey
+    /// pin, a selected #477A calibration marker, or the #477C manual player
+    /// anchor. Outside those windows arrow keys are dead weight that would
+    /// otherwise be eaten system-wide (#139). The Execute body re-checks, so a
+    /// registration that briefly outraces a state change is harmless.
     /// </summary>
-    public bool IsRegistrable => _session.SelectedSurvey is not null;
+    public bool IsRegistrable =>
+        _session.SelectedSurvey is not null
+        || _map.HasSelectedCalibrationMarker
+        || (_session.Mode == SessionMode.Survey
+            && _session.SurveyPlayerIsManual
+            && _session.SurveyPlayerPixel is not null);
 
     private void OnSessionPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SessionState.SelectedSurvey))
+        if (e.PropertyName is nameof(SessionState.SelectedSurvey)
+                           or nameof(SessionState.SurveyPlayerIsManual)
+                           or nameof(SessionState.SurveyPlayerPixel)
+                           or nameof(SessionState.Mode))
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
+    }
+
+    private void OnMapPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MapOverlayViewModel.HasSelectedCalibrationMarker))
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
     }
 
@@ -262,15 +280,10 @@ public abstract class NudgePinCommandBase : IGatedHotkeyCommand
     public Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var (dx, dy) = Direction;
-        var step = Step;
-
-        var selected = _session.SelectedSurvey;
-        if (selected is not null && selected.EffectivePixel.HasValue)
-        {
-            var p = selected.EffectivePixel.Value;
-            _map.CorrectSurveyCommand.Execute(
-                new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
-        }
+        // Single path: MapOverlayViewModel.Nudge applies the #477A marker /
+        // survey / #477C manual-anchor precedence, so the keyboard hotkeys and
+        // the on-screen nudge pad can't diverge.
+        _map.Nudge(dx, dy, Step);
         return Task.CompletedTask;
     }
 }
@@ -522,5 +535,72 @@ public sealed class RunSurveyPerfHarnessTreatmentSweepCommand : IHotkeyCommand
         {
             _session.LastLogEvent = "Perf sweep cancelled.";
         }
+    }
+}
+
+// ─── Calibration (#477A) ─────────────────────────────────────────────────────
+// Optional bindable mirrors of the wizard-panel phase trigger / Confirm, for
+// users who don't want to look away from the game. No default binding (the
+// Legolas convention — game-movement collision avoidance). Gated so the keys
+// aren't eaten system-wide outside an armed walkthrough.
+
+/// <summary>Flip the guided calibration walkthrough between the Drop and Pair
+/// phases (mirror of the wizard-panel button).</summary>
+public sealed class ToggleCalibrationPhaseCommand : IGatedHotkeyCommand
+{
+    private readonly PinCalibrationCoordinator _cal;
+
+    public ToggleCalibrationPhaseCommand(PinCalibrationCoordinator cal)
+    {
+        _cal = cal;
+        _cal.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PinCalibrationCoordinator.IsArmed))
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
+        };
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public string Id => "legolas.calibration.phase.toggle";
+    public string DisplayName => "Calibration: Toggle Drop/Pair Phase";
+    public string? Category => "Legolas · Calibration";
+    public HotkeyBinding? DefaultBinding => null;
+    public bool IsRegistrable => _cal.IsArmed;
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        _cal.TogglePhase();
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>Terminal Confirm of the guided calibration (mirror of the
+/// wizard-panel Confirm; gated on ≥3 pairs and a good residual — "finish
+/// anyway" stays panel-only so a stray keypress can't persist a loose fit).</summary>
+public sealed class ConfirmCalibrationCommand : IGatedHotkeyCommand
+{
+    private readonly PinCalibrationCoordinator _cal;
+
+    public ConfirmCalibrationCommand(PinCalibrationCoordinator cal)
+    {
+        _cal = cal;
+        _cal.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PinCalibrationCoordinator.IsArmed)
+                               or nameof(PinCalibrationCoordinator.CanConfirm)
+                               or nameof(PinCalibrationCoordinator.IsResidualGood))
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRegistrable)));
+        };
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public string Id => "legolas.calibration.confirm";
+    public string DisplayName => "Calibration: Confirm";
+    public string? Category => "Legolas · Calibration";
+    public HotkeyBinding? DefaultBinding => null;
+    public bool IsRegistrable => _cal.IsArmed && _cal.CanConfirm && _cal.IsResidualGood;
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        _cal.Confirm();
+        return Task.CompletedTask;
     }
 }

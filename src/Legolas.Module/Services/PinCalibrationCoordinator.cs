@@ -8,182 +8,454 @@ using Mithril.GameState.Pins;
 
 namespace Legolas.Services;
 
+/// <summary>The two explicit phases of the guided in-flow (#460) calibration
+/// walkthrough. They are explicit because a transparent overlay's click-through
+/// is all-or-nothing: <see cref="Drop"/> passes right-clicks to the game (drop
+/// pins), <see cref="Pair"/> captures left-clicks (pair them) — never both at
+/// once. The phase is toggled by the user (wizard-panel button / hotkey), never
+/// an automatic FSM edge.</summary>
+public enum CalibrationPhase
+{
+    /// <summary>Overlay click-through ON. The user right-clicks the in-game map
+    /// to place well-spread pins (or relies on ones already there). Legolas
+    /// only observes the live count — it captures nothing.</summary>
+    Drop,
+
+    /// <summary>Overlay captures clicks. The wizard names one pin at a time;
+    /// the user left-clicks that pin's game-rendered dot through the
+    /// transparent overlay to pair it, and may select / drag / nudge a placed
+    /// marker to correct it.</summary>
+    Pair,
+}
+
 /// <summary>
-/// View-agnostic driver for cold-start pin calibration done <b>through the
-/// map overlay</b>. Consumes the GameState-tier
-/// <see cref="IPlayerPinTracker"/> (#468) — the authoritative, area-scoped,
-/// replay-deduped player pin set — and feeds click-paired
-/// <c>(WorldCoord ↔ PixelPoint)</c> placements to
+/// A placed calibration marker — the overlay-pixel half of one
+/// <c>(WorldCoord ↔ PixelPoint)</c> solve pair, promoted from a bare
+/// <c>PixelPoint</c> to an observable VM so it can be selected, dragged and
+/// nudged after placement (the dominant accuracy bottleneck is click
+/// precision — see #443/#449). The marker's <see cref="Pixel"/> and its
+/// <c>_pairs[<see cref="PairIndex"/>]</c> entry move in lockstep; the world
+/// coordinate is tracker-supplied and never mutated.
+///
+/// <para>Kept appearance-free on purpose: this is the single mutable marker
+/// model #478 reshapes to drive per-marker <c>LegolasPinStyle</c> styling, so
+/// the interaction state (pixel / selection / pair back-ref) lives here and
+/// styling drops in there without touching this contract.</para>
+/// </summary>
+public sealed partial class CalibrationMarker : ObservableObject
+{
+    public CalibrationMarker(PixelPoint pixel, int pairIndex)
+    {
+        _pixel = pixel;
+        PairIndex = pairIndex;
+    }
+
+    [ObservableProperty] private PixelPoint _pixel;
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>Index into the coordinator's pair list. Stable: pairs only ever
+    /// grow (until a full Clear/Arm), so no re-indexing is needed.</summary>
+    public int PairIndex { get; }
+
+    partial void OnPixelChanged(PixelPoint value)
+    {
+        OnPropertyChanged(nameof(X));
+        OnPropertyChanged(nameof(Y));
+    }
+
+    public double X => Pixel.X;
+    public double Y => Pixel.Y;
+}
+
+/// <summary>
+/// View-agnostic driver for the <b>guided two-phase correctable</b> cold-start
+/// pin calibration done through the survey map overlay (#460 → #477 Part A).
+/// Consumes the GameState-tier <see cref="IPlayerPinTracker"/> (#468) — the
+/// authoritative, area-scoped, replay-deduped player pin set — and feeds
+/// click-paired <c>(WorldCoord ↔ PixelPoint)</c> placements to
 /// <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.
 ///
-/// <para><b>Two routes (both end in the same solve).</b></para>
-/// <list type="number">
-///   <item><b>Existing-pins route.</b> When the player already has ≥3
-///   well-spread pins in this area, they're listed by their in-game identity
-///   (<see cref="MapPin.Label"/> + <see cref="MapPin.Appearance"/>, e.g.
-///   "Fire Magic 25 (red dot)"). The user selects one and clicks where it is
-///   on the overlay — no re-dropping. The pairing is the user's
-///   <em>deliberate</em> select-then-click; name/colour/shape are
-///   <b>UX-only</b> and never reach the solver.</item>
-///   <item><b>Freshly-dropped turn-order route.</b> The true cold-start case
-///   (fogged brand-new area, no usable pins). Pins dropped <em>after</em>
-///   arming queue up; each overlay click pairs the oldest unpaired one —
-///   label-agnostic, by interaction order (hard rule #454).</item>
-/// </list>
+/// <para><b>The flow.</b> One model, two phases (see
+/// <see cref="CalibrationPhase"/>). Entry starts in <see cref="CalibrationPhase.Pair"/>
+/// when the area already has ≥3 usable pins (the common case — PG players
+/// accumulate them), else <see cref="CalibrationPhase.Drop"/>. In Pair the
+/// coordinator names <em>one pin at a time</em> by its in-game identity
+/// (<see cref="SuggestedPin"/>, chosen for spread via a farthest-point
+/// heuristic), the user clicks that pin's game-rendered dot, and advance is
+/// <em>implicit</em> — pairing the next named pin is the advance. A pin can be
+/// skipped (deferred) or overridden (pick any pin).</para>
 ///
-/// <para><b>Reconciliation of the #454 label-agnostic rule.</b> The solve is
-/// purely <c>(WorldCoord ↔ PixelPoint)</c> in both routes — labels/colours
-/// never feed <c>LandmarkCalibrationSolver</c>. The existing-pins route only
-/// uses identity to help the <em>human</em> pick which service-supplied world
-/// point they are clicking; the pairing is still a deliberate user click, so
-/// the rule's intent (no auto-pairing by name) is preserved. See
-/// docs/legolas-overview.md.</para>
+/// <para><b>#454 label-agnostic preserved.</b> Identity (label/colour/shape) is
+/// UX-only — it only helps the human decide which service-supplied world coord
+/// they are clicking. The solve is purely <c>(WorldCoord ↔ PixelPoint)</c>;
+/// colour/shape/label never reach <c>LandmarkCalibrationSolver</c>. Correction
+/// edits only the <em>pixel</em> half.</para>
 ///
-/// <para><b>Replay is the service's job now.</b> <see cref="IPlayerPinTracker"/>
-/// owns the login/area-entry bulk-replay (idempotent upsert keyed by
-/// coordinate), so a backlog never reaches the turn-order queue: only genuine
-/// post-arm <see cref="PinSetChange.Added"/> notifications enqueue. The
-/// <see cref="IsArmed"/> gate additionally scopes the queue to "since the user
-/// started calibrating".</para>
+/// <para><b>Non-persisting residual.</b> Once ≥3 pairs exist, each add / nudge
+/// / drag re-runs the pure <c>LandmarkCalibrationSolver</c> in-process (no
+/// persist, no <see cref="IAreaCalibrationService.Changed"/>) to surface a live
+/// <see cref="PreviewResidual"/>. Only <see cref="Confirm"/> /
+/// <see cref="ConfirmAnyway"/> call the persisting
+/// <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.</para>
 /// </summary>
 public sealed partial class PinCalibrationCoordinator : ObservableObject
 {
     private readonly IAreaCalibrationService _service;
     private readonly IPlayerPinTracker _pins;
+    private readonly LegolasSettings _settings;
     private readonly IDisposable _sub;
 
-    // Turn-order route: pins dropped after arming, not yet click-paired.
-    private readonly Queue<WorldCoord> _pending = new();
-    // Accumulated solve pairs (both routes feed this).
-    private readonly List<(WorldCoord World, PixelPoint Pixel)> _pairs = new();
+    // The accumulated solve pairs. Keyed by the MapPin (for spread + identity);
+    // only (WorldCoord, Pixel) ever reaches the solver.
+    private readonly List<(MapPin Pin, PixelPoint Pixel)> _pairs = new();
+    // Pins the user deferred ("skip") — excluded from the next suggestion until
+    // everything else is paired (then recycled, so the user is never stuck).
+    private readonly List<MapPin> _skipped = new();
 
-    public PinCalibrationCoordinator(IAreaCalibrationService service, IPlayerPinTracker pins)
+    public PinCalibrationCoordinator(
+        IAreaCalibrationService service, IPlayerPinTracker pins, LegolasSettings settings)
     {
         _service = service;
         _pins = pins;
+        _settings = settings;
         // Subscribe replays a Snapshot synchronously (seeds ExistingPins);
         // live notifications arrive on the tracker's ingestion thread.
         _sub = _pins.Subscribe(OnPinSetChanged);
+        _settings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LegolasSettings.CalibrationGoodResidualPx))
+                OnPropertyChanged(nameof(IsResidualGood));
+        };
     }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     private bool _isArmed;
 
-    /// <summary>The pin the user has selected to click next (existing-pins
-    /// route). Null falls back to the turn-order route.</summary>
     [ObservableProperty]
-    private MapPin? _selectedExistingPin;
+    [NotifyPropertyChangedFor(nameof(IsPairing))]
+    [NotifyPropertyChangedFor(nameof(IsDropping))]
+    [NotifyPropertyChangedFor(nameof(PhaseToggleLabel))]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    private CalibrationPhase _phase;
 
-    /// <summary>Current-area pins available to calibrate against, by their
-    /// in-game identity. Kept in sync with the GameState set.</summary>
+    /// <summary>Overlay capture is desired (Pair phase + armed). The view
+    /// routes left-clicks to <see cref="PairClick"/> / marker selection only
+    /// while this holds; Drop phase wants click-through so right-clicks reach
+    /// the game.</summary>
+    public bool IsPairing => IsArmed && Phase == CalibrationPhase.Pair;
+
+    /// <summary>Drop phase + armed — click-through ON, no pixel capture.</summary>
+    public bool IsDropping => IsArmed && Phase == CalibrationPhase.Drop;
+
+    partial void OnIsArmedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPairing));
+        OnPropertyChanged(nameof(IsDropping));
+    }
+
+    /// <summary>The pin the user explicitly chose to pair next (override the
+    /// spread suggestion). Cleared once paired or skipped.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SuggestedPin))]
+    [NotifyPropertyChangedFor(nameof(PromptText))]
+    private MapPin? _overridePin;
+
+    /// <summary>Current-area pins by in-game identity — the override picker's
+    /// source. Kept in sync with the GameState set.</summary>
     public ObservableCollection<MapPin> ExistingPins { get; } = new();
 
-    /// <summary>≥3 well-spread existing pins ⇒ offer the friendlier route.</summary>
-    public bool HasUsableExistingPins => ExistingPins.Count >= 3;
+    /// <summary>Markers the overlay renders, one per accumulated pair (parallel
+    /// to <c>_pairs</c> by <see cref="CalibrationMarker.PairIndex"/>).</summary>
+    public ObservableCollection<CalibrationMarker> PlacedMarkers { get; } = new();
 
-    /// <summary>Pins dropped post-arm and not yet paired (turn-order route).</summary>
-    public int PendingCount => _pending.Count;
+    /// <summary>The currently-selected marker (for drag / nudge correction), or
+    /// null. Defaults to the just-placed marker after a pair.</summary>
+    [ObservableProperty] private CalibrationMarker? _selectedMarker;
 
-    /// <summary>Click-paired (world ↔ pixel) points accumulated so far.</summary>
+    /// <summary>Live count of current-area pins available to pair against.</summary>
+    public int PinsAvailable => _pins.CurrentAreaPins.Count;
+
+    /// <summary>≥3 pins exist ⇒ Pair phase is workable without dropping more.</summary>
+    public bool HasUsablePins => PinsAvailable >= 3;
+
+    /// <summary>Click-paired points accumulated so far.</summary>
     public int PairedCount => _pairs.Count;
 
-    /// <summary>≥3 well-spread pairs are needed for a stable solve.</summary>
-    public bool CanSolve => _pairs.Count >= 3;
+    /// <summary>Hard floor: ≥3 pairs before any finalize.</summary>
+    public bool CanConfirm => _pairs.Count >= 3;
 
-    /// <summary>Markers the map overlay renders at each paired click pixel.</summary>
-    public ObservableCollection<PixelPoint> PlacedMarkers { get; } = new();
+    /// <summary>Non-persisting RMS residual of the current pairs (≥3), or null.
+    /// Recomputed on every pair add / nudge / drag.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResidualText))]
+    [NotifyPropertyChangedFor(nameof(IsResidualGood))]
+    private double? _previewResidual;
+
+    /// <summary>Confirm is ungated once the preview residual is at or below the
+    /// configured "good" threshold; otherwise the user must "finish anyway".</summary>
+    public bool IsResidualGood =>
+        PreviewResidual is { } r && r <= _settings.CalibrationGoodResidualPx;
+
+    public string ResidualText => PreviewResidual is { } r
+        ? $"Fit residual: {r:0.0} px (target ≤ {_settings.CalibrationGoodResidualPx:0} px)."
+        : "Pair ≥3 pins to see the fit quality.";
+
+    /// <summary>The next pin the user should pair: the explicit override if
+    /// set, else the spread suggestion (farthest-point from already-paired,
+    /// excluding skipped). Null when nothing is left to pair.</summary>
+    public MapPin? SuggestedPin
+    {
+        get
+        {
+            if (OverridePin is { } o && !IsPaired(o)) return o;
+            return ComputeSuggestion();
+        }
+    }
+
+    /// <summary>Label for the phase-toggle button.</summary>
+    public string PhaseToggleLabel =>
+        Phase == CalibrationPhase.Drop ? "Done dropping — pair them" : "Drop more pins";
 
     public string StatusText
     {
         get
         {
             if (!IsArmed) return "Pin calibration is off.";
-            var tail = $"Paired: {PairedCount}.";
-            return HasUsableExistingPins
-                ? $"Pick a pin below, then click where it is on the map. " +
-                  $"You have {ExistingPins.Count} pins here. {tail}"
-                : $"Drop ≥3 well-spread map pins in-game, then click each on " +
-                  $"the map in the same order. Awaiting click: {PendingCount}. {tail}";
+            if (Phase == CalibrationPhase.Drop)
+                return $"Right-click the in-game map to place ≥3 well-spread pins. " +
+                       $"You have {PinsAvailable}. " +
+                       (HasUsablePins ? "Enough — pair them when ready." : "Drop a few more.");
+            return $"Paired {PairedCount}. " + PromptText;
         }
     }
 
-    /// <summary>Arm capture and clear any stale state. Seeds
-    /// <see cref="ExistingPins"/> from the current GameState set so the
-    /// existing-pins route is immediately usable.</summary>
+    /// <summary>Per-phase guidance. In Pair, names the suggested pin by its
+    /// in-game identity (UX-only — never reaches the solver).</summary>
+    public string PromptText
+    {
+        get
+        {
+            if (Phase == CalibrationPhase.Drop)
+                return "Drop ≥3 well-spread map pins in-game (works on a fogged/blank map).";
+            if (SuggestedPin is { } p)
+                return $"Click where this pin is: {p.Appearance} — “{p.DisplayName}”.";
+            return PairedCount >= 3
+                ? "All pins paired. Check the fit, then Confirm."
+                : "No more pins to pair — drop more, or Confirm if you have ≥3.";
+        }
+    }
+
+    /// <summary>Arm capture and clear stale state. Seeds
+    /// <see cref="ExistingPins"/> and picks the entry phase: straight to
+    /// <see cref="CalibrationPhase.Pair"/> when ≥3 usable pins already exist
+    /// (the common case), else <see cref="CalibrationPhase.Drop"/>.</summary>
     public void Arm()
     {
-        _pending.Clear();
         _pairs.Clear();
+        _skipped.Clear();
         PlacedMarkers.Clear();
-        SelectedExistingPin = null;
+        SelectedMarker = null;
+        OverridePin = null;
+        PreviewResidual = null;
         SyncExistingPins(_pins.CurrentAreaPins);
+        Phase = HasUsablePins ? CalibrationPhase.Pair : CalibrationPhase.Drop;
         IsArmed = true;
-        RaiseCounts();
+        RaiseAll();
     }
 
     /// <summary>Disarm and flush — leaving the calibration step, or after a
-    /// solve/clear.</summary>
+    /// confirm.</summary>
     public void Disarm()
     {
-        _pending.Clear();
         _pairs.Clear();
+        _skipped.Clear();
         PlacedMarkers.Clear();
-        SelectedExistingPin = null;
+        SelectedMarker = null;
+        OverridePin = null;
+        PreviewResidual = null;
         IsArmed = false;
-        RaiseCounts();
+        RaiseAll();
+    }
+
+    /// <summary>Flip Drop ⇄ Pair. The wizard-panel button (and optional
+    /// hotkey) drives this — an explicit, user-driven toggle, never an
+    /// automatic transition. Idempotent intent: re-reading <see cref="Phase"/>
+    /// is the source of truth for the overlay's capture mode.</summary>
+    public void TogglePhase()
+    {
+        if (!IsArmed) return;
+        Phase = Phase == CalibrationPhase.Drop ? CalibrationPhase.Pair : CalibrationPhase.Drop;
+        RaiseAll();
     }
 
     /// <summary>
-    /// Pair an overlay click. Existing-pins route when a pin is selected
-    /// (pairs that pin's service-supplied world coord); otherwise the
-    /// turn-order route (oldest unpaired post-arm pin). No-op when disarmed,
-    /// nothing is selected, and nothing is pending. Degenerate duplicate
-    /// world points are rejected so the solve stays well-conditioned.
+    /// Pair an overlay click with the currently-named pin (override or spread
+    /// suggestion) — the implicit advance: the next call pairs the next named
+    /// pin. No-op when disarmed, not pairing, or nothing is left to pair.
+    /// Degenerate duplicate world points are rejected so the solve stays
+    /// well-conditioned. The just-placed marker becomes the selection so an
+    /// immediate nudge corrects it.
     /// </summary>
     public void PairClick(PixelPoint pixel)
     {
-        if (!IsArmed) return;
+        if (!IsArmed || Phase != CalibrationPhase.Pair) return;
+        if (SuggestedPin is not { } pin) return;
 
-        WorldCoord world;
-        if (SelectedExistingPin is { } sel)
-        {
-            world = new WorldCoord(sel.X, 0, sel.Z);
-            SelectedExistingPin = null;
-        }
-        else if (_pending.Count > 0)
-        {
-            world = _pending.Dequeue();
-        }
-        else
-        {
-            return;
-        }
+        // Reject a second click on the same world point — duplicates degrade
+        // the least-squares solve.
+        if (_pairs.Any(p => SameWorld(p.Pin, pin))) { OverridePin = null; RaiseAll(); return; }
 
-        // Reject a second click on the same world point (both routes share
-        // _pairs) — duplicates degrade the least-squares solve.
-        if (_pairs.Any(p => Same(p.World, world))) { RaiseCounts(); return; }
-
-        _pairs.Add((world, pixel));
-        PlacedMarkers.Add(pixel);
-        RaiseCounts();
+        var index = _pairs.Count;
+        _pairs.Add((pin, pixel));
+        var marker = new CalibrationMarker(pixel, index);
+        PlacedMarkers.Add(marker);
+        SelectMarker(marker);
+        OverridePin = null;
+        // The pin is paired now; drop it from the skip list if it was deferred.
+        _skipped.RemoveAll(s => SameWorld(s, pin));
+        RecomputeResidual();
+        RaiseAll();
     }
 
-    /// <summary>
-    /// Solve + persist + apply the area calibration from the accumulated
-    /// pairs (reuses the shipped solver verbatim). Returns the calibration,
-    /// or null if &lt;3 pairs / the solve failed. On success the area becomes
-    /// calibrated (<see cref="IAreaCalibrationService.Changed"/> fires) and
-    /// the coordinator disarms.
-    /// </summary>
-    public AreaCalibration? Solve()
+    /// <summary>Defer the suggested pin: it is excluded from the next
+    /// suggestion (a different, still-spread pin is offered) until everything
+    /// else is paired. No pair is recorded.</summary>
+    public void SkipSuggestion()
     {
-        if (!CanSolve) return null;
-        // Zoom OCR/CV is deferred (#460) — calibrate at the default zoom
-        // stamp, consistent with the standalone window's unset-zoom path.
-        var result = _service.CalibrateCurrentArea(_pairs.ToList(), calibrationZoom: 1.0);
+        if (!IsArmed || Phase != CalibrationPhase.Pair) return;
+        if (SuggestedPin is not { } pin) return;
+        OverridePin = null;
+        if (!_skipped.Any(s => SameWorld(s, pin))) _skipped.Add(pin);
+        RaiseAll();
+    }
+
+    /// <summary>Mouse-down hit-test: select the nearest marker within
+    /// <paramref name="radius"/> px (so the view starts a drag) and return
+    /// true; else false → the click falls through to <see cref="PairClick"/>.</summary>
+    public bool TrySelectMarkerAt(PixelPoint at, double radius)
+    {
+        CalibrationMarker? best = null;
+        var bestD = radius;
+        foreach (var m in PlacedMarkers)
+        {
+            var d = m.Pixel.DistanceTo(at);
+            if (d <= bestD) { bestD = d; best = m; }
+        }
+        if (best is null) return false;
+        SelectMarker(best);
+        return true;
+    }
+
+    /// <summary>Drag the selected marker to an absolute pixel. Mutates only the
+    /// pixel half of its pair; the world coord is untouched.</summary>
+    public void DragSelectedTo(PixelPoint at)
+    {
+        if (SelectedMarker is not { } m) return;
+        m.Pixel = at;
+        _pairs[m.PairIndex] = (_pairs[m.PairIndex].Pin, at);
+        RecomputeResidual();
+    }
+
+    /// <summary>Arrow-key nudge of the selected (default: just-placed) marker
+    /// by a pixel delta. Magnitude is resolved by the caller from
+    /// <c>LegolasSettings.NudgeStep*</c>.</summary>
+    public void NudgeSelected(double dx, double dy)
+    {
+        if (SelectedMarker is not { } m) return;
+        var moved = new PixelPoint(m.Pixel.X + dx, m.Pixel.Y + dy);
+        m.Pixel = moved;
+        _pairs[m.PairIndex] = (_pairs[m.PairIndex].Pin, moved);
+        RecomputeResidual();
+    }
+
+    public void ClearSelection() => SelectMarker(null);
+
+    /// <summary>Terminal confirm — solve + persist + apply, gated on ≥3 pairs
+    /// AND a good residual. Returns the calibration or null if the gate fails /
+    /// the solve failed. On success the area becomes calibrated
+    /// (<see cref="IAreaCalibrationService.Changed"/> fires) and the
+    /// coordinator disarms.</summary>
+    public AreaCalibration? Confirm()
+    {
+        if (!CanConfirm || !IsResidualGood) return null;
+        return Persist();
+    }
+
+    /// <summary>"Finish anyway" — persist with a high residual (still ≥3
+    /// pairs). The non-affine ±10% map ceiling means a high residual is
+    /// sometimes unavoidable; the user is never trapped.</summary>
+    public AreaCalibration? ConfirmAnyway()
+    {
+        if (!CanConfirm) return null;
+        return Persist();
+    }
+
+    private AreaCalibration? Persist()
+    {
+        var pairs = _pairs
+            .Select(p => (new WorldCoord(p.Pin.X, 0, p.Pin.Z), p.Pixel))
+            .ToList();
+        // Zoom OCR/CV is deferred (#460) — calibrate at the default zoom stamp,
+        // consistent with the standalone window's unset-zoom path.
+        var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: 1.0);
         if (result is not null) Disarm();
         return result;
+    }
+
+    private void SelectMarker(CalibrationMarker? m)
+    {
+        if (ReferenceEquals(SelectedMarker, m)) return;
+        if (SelectedMarker is { } prev) prev.IsSelected = false;
+        SelectedMarker = m;
+        if (m is not null) m.IsSelected = true;
+    }
+
+    private MapPin? ComputeSuggestion()
+    {
+        var candidates = _pins.CurrentAreaPins
+            .Where(p => !IsPaired(p) && !_skipped.Any(s => SameWorld(s, p)))
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            // Everything left is skipped — recycle so the user is never stuck.
+            candidates = _pins.CurrentAreaPins.Where(p => !IsPaired(p)).ToList();
+        }
+        if (candidates.Count == 0) return null;
+        if (_pairs.Count == 0) return candidates[0];
+
+        // Farthest-point: maximise the minimum world-distance to already-paired
+        // pins, so each new pair widens the geometric spread (a well-spread set
+        // conditions the similarity solve far better than a clustered one).
+        MapPin? best = null;
+        var bestMin = double.NegativeInfinity;
+        foreach (var c in candidates)
+        {
+            var min = _pairs.Min(p => WorldDist(p.Pin, c));
+            if (min > bestMin) { bestMin = min; best = c; }
+        }
+        return best;
+    }
+
+    private bool IsPaired(MapPin p) => _pairs.Any(q => SameWorld(q.Pin, p));
+
+    private static bool SameWorld(MapPin a, MapPin b) =>
+        Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Z - b.Z) < 0.01;
+
+    private static double WorldDist(MapPin a, MapPin b)
+    {
+        var dx = a.X - b.X;
+        var dz = a.Z - b.Z;
+        return Math.Sqrt(dx * dx + dz * dz);
+    }
+
+    private void RecomputeResidual()
+    {
+        if (_pairs.Count < 3) { PreviewResidual = null; return; }
+        var refs = _pairs
+            .Select(p => new LandmarkCalibrationSolver.Reference(p.Pin.X, p.Pin.Z, p.Pixel))
+            .ToList();
+        PreviewResidual = LandmarkCalibrationSolver.Solve(refs)?.ResidualPixels;
     }
 
     private void OnPinSetChanged(PinSetChanged note)
@@ -195,43 +467,36 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
             Apply(note);
     }
 
-    private void Apply(PinSetChanged note)
-    {
-        // Keep the existing-pins picker mirroring the live set in all cases.
-        SyncExistingPins(note.Pins);
-
-        // Turn-order route: only genuinely-new pins dropped while armed
-        // enqueue. The service already suppresses replay re-adds, so no
-        // backlog can leak; the IsArmed gate scopes to the active session.
-        if (note is { Kind: PinSetChange.Added, Pin: { } pin } && IsArmed)
-        {
-            _pending.Enqueue(new WorldCoord(pin.X, 0, pin.Z));
-            RaiseCounts();
-        }
-    }
+    private void Apply(PinSetChanged note) => SyncExistingPins(note.Pins);
 
     /// <summary>Rebuild <see cref="ExistingPins"/> from a snapshot, preserving
-    /// the current selection by value when the same pin survives.</summary>
+    /// the override selection by value when the same pin survives.</summary>
     private void SyncExistingPins(IReadOnlyList<MapPin> pins)
     {
-        var prev = SelectedExistingPin;
+        var prevOverride = OverridePin;
         ExistingPins.Clear();
         foreach (var p in pins) ExistingPins.Add(p);
-        SelectedExistingPin = prev is null
+        OverridePin = prevOverride is null
             ? null
-            : ExistingPins.FirstOrDefault(p => p == prev);
-        OnPropertyChanged(nameof(HasUsableExistingPins));
+            : ExistingPins.FirstOrDefault(p => p == prevOverride);
+        OnPropertyChanged(nameof(PinsAvailable));
+        OnPropertyChanged(nameof(HasUsablePins));
+        OnPropertyChanged(nameof(SuggestedPin));
+        OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(StatusText));
     }
 
-    private static bool Same(WorldCoord a, WorldCoord b) =>
-        Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Z - b.Z) < 0.01;
-
-    private void RaiseCounts()
+    private void RaiseAll()
     {
-        OnPropertyChanged(nameof(PendingCount));
+        OnPropertyChanged(nameof(PinsAvailable));
+        OnPropertyChanged(nameof(HasUsablePins));
         OnPropertyChanged(nameof(PairedCount));
-        OnPropertyChanged(nameof(CanSolve));
+        OnPropertyChanged(nameof(CanConfirm));
+        OnPropertyChanged(nameof(SuggestedPin));
+        OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(ResidualText));
+        OnPropertyChanged(nameof(IsResidualGood));
+        OnPropertyChanged(nameof(PhaseToggleLabel));
     }
 }

@@ -24,16 +24,28 @@ public sealed partial class NudgePadViewModel : ObservableObject
         _map = map;
         _settings = settings;
 
-        // The pad is "available" iff there's something to nudge: a selected
-        // survey, OR the player anchor while it's still editable. Recompute
-        // when either input changes so buttons enable/disable live.
+        // The pad is "available" iff there's something to nudge — the same
+        // precedence MapOverlayViewModel.Nudge applies: a selected #477A
+        // calibration marker, the selected survey, or the #477C manual player
+        // anchor. Recompute when any of those inputs change so the d-pad
+        // enables/disables live (its root binds IsEnabled to IsAvailable).
         _session.PropertyChanged += OnSessionChanged;
         _session.Surveys.CollectionChanged += (_, _) => RaiseAvailability();
+        _map.PropertyChanged += OnMapChanged;
     }
 
     private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(SessionState.SelectedSurvey))
+        if (e.PropertyName is nameof(SessionState.SelectedSurvey)
+                           or nameof(SessionState.SurveyPlayerIsManual)
+                           or nameof(SessionState.SurveyPlayerPixel)
+                           or nameof(SessionState.Mode))
+            RaiseAvailability();
+    }
+
+    private void OnMapChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MapOverlayViewModel.HasSelectedCalibrationMarker))
             RaiseAvailability();
     }
 
@@ -43,20 +55,31 @@ public sealed partial class NudgePadViewModel : ObservableObject
         OnPropertyChanged(nameof(NudgeTargetLabel));
     }
 
-    /// <summary>True iff a survey pin is selected to nudge (#454: the
-    /// editable anchor is retired).</summary>
-    public bool IsAvailable => _session.SelectedSurvey is not null;
+    private bool IsManualAnchorNudgeable =>
+        _session.Mode == SessionMode.Survey
+        && _session.SurveyPlayerIsManual
+        && _session.SurveyPlayerPixel is not null;
+
+    /// <summary>True iff there is a nudge target: a selected calibration
+    /// marker (#477A), a selected survey pin, or the manual player anchor
+    /// (#477C).</summary>
+    public bool IsAvailable =>
+        _map.HasSelectedCalibrationMarker
+        || _session.SelectedSurvey is not null
+        || IsManualAnchorNudgeable;
 
     /// <summary>
-    /// Short human label of what the buttons will move. Used by the panel-side
-    /// pad so the user can tell at a glance which pin they're nudging.
+    /// Short human label of what the buttons will move. Mirrors the
+    /// <see cref="MapOverlayViewModel.Nudge"/> precedence.
     /// </summary>
     public string NudgeTargetLabel
     {
         get
         {
-            var sel = _session.SelectedSurvey;
-            return sel is not null ? $"Pin: {sel.Name}" : "(no target — select a pin)";
+            if (_map.HasSelectedCalibrationMarker) return "Calibration pin";
+            if (_session.SelectedSurvey is { } sel) return $"Pin: {sel.Name}";
+            if (IsManualAnchorNudgeable) return "Your position";
+            return "(no target — select a pin)";
         }
     }
 
