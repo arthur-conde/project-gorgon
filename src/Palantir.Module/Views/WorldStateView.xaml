@@ -41,7 +41,10 @@
                 replays the whole set on every login / zone change. The lunar
                 phase comes from Player.log ProcessSetCelestialInfo (login +
                 every phase roll-over) and backs the moon-gated recipes /
-                quests.
+                quests. Weather is per-map (ProcessSetWeather) — it is dropped
+                on a map change and reads "unknown" until the new map reports,
+                so a foggy/sunny value never bleeds across a zone (the
+                Vampirism-relevant case).
             </TextBlock>
 
             <!-- Map / area -->
@@ -201,6 +204,43 @@
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
                                    Foreground="#88FFFFFF"/>
                     </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Weather -->
+            <TextBlock Text="WEATHER" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}"
+                       FontWeight="SemiBold" Margin="0,16,0,4"/>
+            <Border Background="#FF252525" CornerRadius="4" Padding="14,10">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Text="Condition (this map)"
+                                   Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding WeatherConditionText}"
+                                   Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Text="Flag (raw, unverified)"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding WeatherFlagText}"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   Foreground="#88FFFFFF"/>
+                    </DockPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="Last change (UTC)"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding WeatherObservedAtText}"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   Foreground="#88FFFFFF"/>
+                    </DockPanel>
+
+                    <TextBlock Text="(weather unknown — left the map, or not yet reported)"
+                               Foreground="#66FFFFFF" FontStyle="Italic"
+                               Margin="0,4,0,0"
+                               Visibility="{Binding HasWeather, Converter={StaticResource InverseBoolToVis}}"/>
                 </StackPanel>
             </Border>
 

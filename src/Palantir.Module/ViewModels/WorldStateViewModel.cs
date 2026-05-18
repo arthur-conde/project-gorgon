@@ -6,6 +6,7 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
+using Mithril.GameState.Weather;
 using Mithril.Shared.Reference;
 
 namespace Palantir.ViewModels;
@@ -17,7 +18,8 @@ namespace Palantir.ViewModels;
 /// friendly names, the player's last-known <see cref="PlayerPosition"/>
 /// (coords + the UTC instant it was measured) from
 /// <see cref="IPlayerPositionTracker"/>, and the area-scoped player map-pin
-/// set from <see cref="IPlayerPinTracker"/>.
+/// set from <see cref="IPlayerPinTracker"/>, and the per-map ambient weather
+/// from <see cref="IPlayerWeatherTracker"/>.
 ///
 /// <para>Position is event-driven (sparse — teleport / zone-in only). The
 /// area tracker exposes no change event, so it is re-read on every position
@@ -41,11 +43,13 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     private readonly PlayerAreaTracker _areaTracker;
     private readonly IPlayerPinTracker _pinTracker;
     private readonly IPlayerCelestialState _celestial;
+    private readonly IPlayerWeatherTracker _weatherTracker;
     private readonly IReferenceDataService? _refData;
     private readonly Action<Action> _dispatch;
     private IDisposable? _subscription;
     private IDisposable? _pinSubscription;
     private IDisposable? _celestialSubscription;
+    private IDisposable? _weatherSubscription;
 
     [ObservableProperty] private string _areaKey = "(unknown)";
     [ObservableProperty] private string _areaFriendlyName = "(area not yet known)";
@@ -66,6 +70,11 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _moonPhaseRawText = "—";
     [ObservableProperty] private string _moonMeasuredAtText = "—";
 
+    [ObservableProperty] private bool _hasWeather;
+    [ObservableProperty] private string _weatherConditionText = "(weather unknown for this map)";
+    [ObservableProperty] private string _weatherFlagText = "—";
+    [ObservableProperty] private string _weatherObservedAtText = "—";
+
     /// <summary>The current area's pins as presentation rows. Mutated only
     /// on the dispatched (UI) thread — see <see cref="OnPins"/>.</summary>
     public ObservableCollection<MapPinRow> Pins { get; } = [];
@@ -75,8 +84,9 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         PlayerAreaTracker areaTracker,
         IPlayerPinTracker pinTracker,
         IPlayerCelestialState celestial,
+        IPlayerWeatherTracker weatherTracker,
         IReferenceDataService? refData = null)
-        : this(positionTracker, areaTracker, pinTracker, celestial, refData, dispatch: null)
+        : this(positionTracker, areaTracker, pinTracker, celestial, weatherTracker, refData, dispatch: null)
     { }
 
     /// <summary>
@@ -88,6 +98,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         PlayerAreaTracker areaTracker,
         IPlayerPinTracker pinTracker,
         IPlayerCelestialState celestial,
+        IPlayerWeatherTracker weatherTracker,
         IReferenceDataService? refData,
         Action<Action>? dispatch)
     {
@@ -95,15 +106,17 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         _areaTracker = areaTracker;
         _pinTracker = pinTracker;
         _celestial = celestial;
+        _weatherTracker = weatherTracker;
         _refData = refData;
         _dispatch = dispatch ?? DefaultDispatch;
 
         RefreshArea();
-        // Replay-on-subscribe seeds position / the pin set / the phase if
-        // already known.
+        // Replay-on-subscribe seeds position / the pin set / the phase /
+        // weather if already known.
         _subscription = _positionTracker.Subscribe(OnPosition);
         _pinSubscription = _pinTracker.Subscribe(OnPins);
         _celestialSubscription = _celestial.Subscribe(OnCelestial);
+        _weatherSubscription = _weatherTracker.Subscribe(OnWeather);
     }
 
     private void OnPosition(PlayerPosition p) => _dispatch(() =>
@@ -166,6 +179,32 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         MoonMeasuredAtText = c.MeasuredAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
     });
 
+    /// <summary>
+    /// Project the current map's weather. <see cref="WeatherChanged.State"/>
+    /// is <c>null</c> for an <see cref="WeatherChangeKind.AreaChanged"/> reset
+    /// (or a pre-known Snapshot) — surfaced as "weather unknown for this map",
+    /// deliberately distinct from a known clear sky (the Vampirism-relevant
+    /// distinction). Stamping mirrors <see cref="OnPins"/>: a Snapshot replay
+    /// reflects existing state, not a fresh observation, so the "—" placeholder
+    /// is kept until a real change lands; a map change resets it.
+    /// </summary>
+    private void OnWeather(WeatherChanged change)
+    {
+        var state = change.State;
+        var stamp = state is null || change.Kind == WeatherChangeKind.Snapshot
+            ? null
+            : change.ObservedAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+
+        _dispatch(() =>
+        {
+            HasWeather = state is not null;
+            WeatherConditionText = state?.Condition ?? "(weather unknown for this map)";
+            WeatherFlagText = state is null ? "—" : (state.Flag ? "True" : "False");
+            if (stamp is not null) WeatherObservedAtText = stamp;
+            else if (change.Kind == WeatherChangeKind.AreaChanged) WeatherObservedAtText = "—";
+        });
+    }
+
     [RelayCommand]
     private void Refresh() => _dispatch(RefreshArea);
 
@@ -207,6 +246,8 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         _pinSubscription = null;
         _celestialSubscription?.Dispose();
         _celestialSubscription = null;
+        _weatherSubscription?.Dispose();
+        _weatherSubscription = null;
     }
 
     private static void DefaultDispatch(Action action)
