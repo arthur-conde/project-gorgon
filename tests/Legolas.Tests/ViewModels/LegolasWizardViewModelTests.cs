@@ -59,13 +59,16 @@ public class LegolasWizardViewModelTests
         var surveyFlow = new SurveyFlowController(session, settings);
         var motherlodeFlow = new MotherlodeFlowController(session);
         var controlPanel = new ControlPanelViewModel(settings, session, surveyFlow);
-        var trilat = new TrilaterationSolver();
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
         var areaCalib = calib ?? new FakeAreaCalib();
-        var pinCal = new PinCalibrationCoordinator(areaCalib, pins ?? new FakePlayerPinTracker(), settings);
-        var motherlode = new MotherlodeViewModel(trilat, optimizer, session, motherlodeFlow);
+        var pinTracker = pins ?? new FakePlayerPinTracker();
+        var pinCal = new PinCalibrationCoordinator(areaCalib, pinTracker, settings);
+        var coordinator = new MotherlodeMeasurementCoordinator(
+            new MultilaterationSolver(), motherlodeFlow,
+            new FakePlayerPositionTracker(), pinTracker);
+        var motherlode = new MotherlodeViewModel(coordinator, optimizer, motherlodeFlow);
         var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, pinCal);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);
         var wizard = new LegolasWizardViewModel(session, surveyFlow, motherlodeFlow,

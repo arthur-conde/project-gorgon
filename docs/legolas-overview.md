@@ -18,7 +18,7 @@ Legolas tails both logs and:
 
 The overlay is a HUD layered over the in-game map — strictly 1:1 with it, no internal zoom/pan ([#126](https://github.com/moumantai-gg/mithril/pull/127)).
 
-> **The relative-offset / manual-anchor model is gone for Survey.** There is no anchor click, no per-ping click-to-confirm, no `CoordinateProjector.Refit`, no `IsAnchorEditable`. Targets are absolute world identities keyed off the calibrated area; player movement no longer invalidates anything. `CoordinateProjector` / `SessionState.PlayerPosition` survive but are **Motherlode-only** now. If you are about to "fix" projection drift or re-add an anchor click for Survey, stop and read [History](#history) first.
+> **The relative-offset / manual-anchor model is gone for Survey.** There is no anchor click, no per-ping click-to-confirm, no `CoordinateProjector.Refit`, no `IsAnchorEditable`. Targets are absolute world identities keyed off the calibrated area; player movement no longer invalidates anything. `CoordinateProjector` / `SessionState.PlayerPosition` survive but are **vestigial** (Survey never used them; post-[#488](https://github.com/moumantai-gg/mithril/issues/488) Motherlode doesn't either). If you are about to "fix" projection drift or re-add an anchor click for Survey, stop and read [History](#history) first.
 
 ## End-to-end Survey flow
 
@@ -57,7 +57,7 @@ The wizard ([`LegolasWizardViewModel`](../src/Legolas.Module/ViewModels/LegolasW
 
 `Player.log` `ProcessMapFx((X,Y,Z), …)` carries the survey/treasure target's **absolute world coordinate** in the area's engine-unit frame (verified: `Check Survey` 4/4 in a live log; Treasure Cartography shares the item template). This is the placement source of truth. The chat-log `[Status] The <name> is <a>m <dir> and <b>m <dir>` line is still parsed by [`ChatLogParser`](../src/Legolas.Module/Services/ChatLogParser.cs) — but only to *name* the target, not to position it.
 
-`MetreOffset(East, North)` and `CoordinateProjector` still exist for **Motherlode**, whose trilateration records the player position from a deliberate map click. Survey does not touch them.
+`MetreOffset(East, North)` and `CoordinateProjector` still exist but are **vestigial** — Survey doesn't touch them, and after [#488](https://github.com/moumantai-gg/mithril/issues/488) Motherlode solves in world space and no longer uses them either (see [History](#history)).
 
 ### Area calibration: world → pixel
 
@@ -143,7 +143,7 @@ A transparent overlay's click-through is **all-or-nothing** — it passes a righ
 | `SurveyPlayerPixel : PixelPoint?` | Session | **Survey "you are here".** The `IPlayerPositionTracker` world fix projected through the current area's calibration. Null until a fix lands in a calibrated area. Route start + rendered marker + pre-first-collection segment. Set by `MapOverlayViewModel`. |
 | `SurveyPlayerMeasuredAt : DateTimeOffset?`, `SurveyPlayerSource : PlayerPositionSource?` | Session | Staleness of `SurveyPlayerPixel`. Surfaced via `MapOverlayViewModel.PlayerAnchorStatus` — never drawn as live. (`Source` is null for a manual override.) |
 | `SurveyPlayerIsManual : bool` | Session | True when `SurveyPlayerPixel` came from the user's "Set my position" click (the `SettingPosition` detour). Calibration-independent, survives a calibration re-apply, superseded by the next *fresh* tracker fix. `PlayerAnchorStatus` shows `"You — set manually"`. |
-| `PlayerPosition : PixelPoint` / `HasPlayerPosition : bool` | Session | **Motherlode-only.** The manual map-click position its triangulation records. Survey never reads it; kept distinct so the modes can't cross-contaminate. |
+| `PlayerPosition : PixelPoint` / `HasPlayerPosition : bool` | Session | **Vestigial post-[#488](https://github.com/moumantai-gg/mithril/issues/488).** Was the manual map-click anchor the old Motherlode triangulation recorded; the rebuilt mechanic is log-driven world-space multilateration and never reads it. Survey never read it. Retained only because the `SetPlayerPosition` hotkey + overlay click still mutate it. |
 | `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. Auto-set to the most-recently-placed survey by `LogIngestionService`. |
 | `IsMapVisible`, `IsInventoryVisible`, `IsCalibrationVisible : bool` | UI | Overlay visibility intent — `OverlayController` reacts. |
 | `MapOpacity`, `InventoryOpacity : double` | **Persisted** | Bidirectionally synced with `LegolasSettings` in `LegolasModule.Register`. |
@@ -195,7 +195,7 @@ All `IHotkeyCommand` implementations live in [`Hotkeys/Commands.cs`](../src/Lego
 
 1. A selected **calibration marker** (the guided walkthrough's just-placed/selected marker) → `PinCalibrationCoordinator.NudgeSelected`.
 2. The selected `SessionState.SelectedSurvey` pin → `CorrectSurveyCommand` (a survey always wins over the manual anchor).
-3. The **manual** Survey player anchor — only when no survey is selected and `SurveyPlayerIsManual`: mutate `SurveyPlayerPixel` only, keep the manual flag (a fresh tracker fix still supersedes per #476), never touch the Motherlode `PlayerPosition`.
+3. The **manual** Survey player anchor — only when no survey is selected and `SurveyPlayerIsManual`: mutate `SurveyPlayerPixel` only, keep the manual flag (a fresh tracker fix still supersedes per #476), never touch the legacy `PlayerPosition`.
 4. Else → no-op.
 
 The auto/tracker-projected anchor is intentionally **non-interactive** — nudging a data-sourced fix would mask staleness. `NudgePinCommandBase.IsRegistrable` and `NudgePadViewModel.IsAvailable` track all of (1)–(3) so arrow keys aren't eaten system-wide when there's nothing to nudge ([#139](https://github.com/moumantai-gg/mithril/issues/139)).
@@ -242,7 +242,7 @@ Pre-rewrite WPF baseline was 67–84 fps / p99 27–30 ms / 2–4 stutters for t
 | [`Services/PinCalibrationCoordinator.cs`](../src/Legolas.Module/Services/PinCalibrationCoordinator.cs) | The guided two-phase calibration walkthrough (Drop/Pair, correction, residual, Confirm). |
 | [`Services/LandmarkCalibrationSolver.cs`](../src/Legolas.Module/Services/LandmarkCalibrationSolver.cs) | Pure 2D similarity LSQ solver. |
 | [`Domain/AreaCalibration.cs`](../src/Legolas.Module/Domain/AreaCalibration.cs) | The world→pixel transform (`ProjectWorld`). |
-| [`Services/CoordinateProjector.cs`](../src/Legolas.Module/Services/CoordinateProjector.cs) | Metre→pixel projection. **Motherlode-only** now. |
+| [`Services/CoordinateProjector.cs`](../src/Legolas.Module/Services/CoordinateProjector.cs) | Metre→pixel projection. **Vestigial** post-[#488](https://github.com/moumantai-gg/mithril/issues/488) (neither Survey nor the rebuilt Motherlode uses it). |
 | [`ViewModels/SessionState.cs`](../src/Legolas.Module/ViewModels/SessionState.cs) | Shared observable state. |
 | [`ViewModels/MapOverlayViewModel.cs`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) | Click handling, pin placement, route + wedge geometry, nudge dispatch. |
 | [`Views/MapOverlayView.xaml{,.cs}`](../src/Legolas.Module/Views/MapOverlayView.xaml) | Overlay UI: WPF chrome + a single D2D surface. Hosts drag/click handlers + the calibration marker DataTemplate. |
@@ -263,7 +263,7 @@ Target *pins* are absolute and exact. The Survey **player marker** (`SurveyPlaye
 
 ### Don't re-introduce the relative/anchor model for Survey
 
-`IsAnchorEditable`, the editable player marker, `CoordinateProjector.Refit`, the anchor click, and the per-ping click-to-confirm loop were **deliberately removed** (placement is absolute). `PlayerPosition`/`CoordinateProjector` are Motherlode-only. The #476 manual anchor is *not* the old model — it is a raw screen pixel on the shared marker layer, superseded by the next fresh tracker fix. If a "projection drift" bug tempts you toward an anchor click, the real lever is **area calibration quality**, not a per-session anchor.
+`IsAnchorEditable`, the editable player marker, `CoordinateProjector.Refit`, the anchor click, and the per-ping click-to-confirm loop were **deliberately removed** (placement is absolute). `PlayerPosition`/`CoordinateProjector` are vestigial — Survey never used them and post-[#488](https://github.com/moumantai-gg/mithril/issues/488) Motherlode doesn't either. The #476 manual anchor is *not* the old model — it is a raw screen pixel on the shared marker layer, superseded by the next fresh tracker fix. If a "projection drift" bug tempts you toward an anchor click, the real lever is **area calibration quality**, not a per-session anchor.
 
 ### Calibration solves on `(WorldCoord ↔ PixelPoint)` only — never by name
 
@@ -293,6 +293,7 @@ The pin/route/wedge/marker layer is drawn immediate-mode by `PinSceneRenderer` o
 
 Why the model looks the way it does. Newest first. The pre-rewrite model (relative offsets, a manually-clicked player anchor, `CoordinateProjector.Refit`, per-ping click-to-confirm) is preserved in git history; this section records the *why* of each step away from it.
 
+- **#488** — Motherlode rebuilt as **range-only weighted-NLS multilateration** over a source-agnostic world-coord position contract. The shipped path never ran (manual distance, overlay-pixel position, a 3-circle solver mixing pixel centres with metre radii, capped at 3 samples). Now: distance from the ChatLog `The treasure is N meters from here` line (no DIR token = the discriminator), the use gesture from Player.log `ProcessDoDelayLoop("Using … Motherlode Map")`, position from a feeder — opportunistic `ProcessAddPlayer`/`ProcessNewPosition` (#1, zero standoff) or a `ProcessMapPinAdd` pin (#2). `MotherlodeMeasurementCoordinator` pairs them by **timestamp** (label-agnostic, `_liveSince`-replay-safe); `MultilaterationSolver` solves each treasure in world space (linear init → weighted Gauss–Newton/LM → RANSAC → GDOP gate); `MotherlodeFlowController` unchanged. **Consequence: `SessionState.PlayerPosition` / `CoordinateProjector` / `MetreOffset` are no longer used by Motherlode — now vestigial, not "Motherlode-only".** Max-accuracy field procedure (a player choice, not special-cased): log out and back in at each spot to force a feeder-#1 fix exactly where you stand. The bearing-wedge affordance the old triangulation needed is orphaned by this — removal tracked in [#492](https://github.com/moumantai-gg/mithril/issues/492).
 - **#478** — In-flow calibration markers made user-configurable, per-family, reusing the survey-pin converter/brush infra. `LegolasSettings` v3→v4 (visual no-op via `CalibrationDefaults()`).
 - **#477** — Calibration became a **guided, two-phase, correctable** walkthrough (`PinCalibrationCoordinator`): explicit Drop/Pair phases (the all-or-nothing click-through forces an explicit toggle, not an FSM edge), per-pin drag/nudge correction, live non-persisting residual. Part B added in-flow **recalibration** behind a confirm guard. Replaced the earlier "existing-pins route vs. freshly-dropped turn-order route" branch.
 - **#481–#483** — Overlay rendering corrected at display scaling ≠ 100% (`Stretch.Fill`); overlay-topmost regression fixed.

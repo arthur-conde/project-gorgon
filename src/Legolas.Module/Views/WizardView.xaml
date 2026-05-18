@@ -498,35 +498,73 @@
                             ToolTip="Re-open the end-of-run summary (text + PNG card)" />
                 </StackPanel>
 
-                <!-- MotherlodeMeasuring -->
+                <!-- MotherlodeMeasuring (#488: fully log-driven, read-only) -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeMeasuring}">
-                    <TextBlock Text="Record three positions and the distance reading at each. We'll trilaterate the treasure locations."
+                    <TextBlock Text="Click your metal-slab maps at three or more well-separated spots — readings are picked up automatically. For best accuracy, log out and back in at each spot before using the maps."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
-                    <StackPanel DataContext="{Binding Motherlode}" HorizontalAlignment="Center">
+                    <StackPanel DataContext="{Binding Motherlode}" HorizontalAlignment="Center" MinWidth="320">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6" HorizontalAlignment="Center">
+                            <TextBlock Text="Locations measured: " Foreground="{StaticResource TextTertiaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding LocationCount}" Margin="4,0,0,0" FontWeight="SemiBold"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                            <TextBlock Margin="6,0,0,0" Foreground="{StaticResource TextTertiaryBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center"
+                                       Text="{Binding LocationsWithFix, StringFormat=({0} with a position fix)}" />
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
-                            <TextBlock Text="Positions recorded: " Foreground="{StaticResource TextTertiaryBrush}"
+                            <TextBlock Text="Treasures located: " Foreground="{StaticResource TextTertiaryBrush}"
                                        FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding RecordedPositions}" Margin="6,0,0,0" FontWeight="SemiBold"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                            <TextBlock Text=" / 3" Foreground="{StaticResource TextTertiaryBrush}"
+                            <TextBlock Text="{Binding SolvedCount}" Margin="4,0,0,0" FontWeight="SemiBold"
                                        FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
                         </StackPanel>
-                        <Button Content="Record Player Position" Padding="14,6" Margin="0,0,0,12" HorizontalAlignment="Center"
-                                Command="{Binding RecordPlayerPositionCommand}" />
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
-                            <TextBlock Text="Distance (m):" VerticalAlignment="Center" Margin="0,0,8,0"
-                                       FontSize="{DynamicResource AppFontSizeBody}" />
-                            <TextBox Width="80" Padding="6,4" Text="{Binding DistanceInput, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalAlignment="Center" />
-                            <Button Content="Record Distance" Padding="14,6" Margin="12,0,0,0"
-                                    Command="{Binding RecordCurrentDistanceCommand}" />
+
+                        <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
+                                Background="{StaticResource AccentSoftBrush}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Guidance}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap"
+                                       FontSize="{DynamicResource AppFontSizeBody}"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding Slots}" Margin="0,0,0,12">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <TextBlock Text="{Binding SolvedText}" MinWidth="160"
+                                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding GdopText}" Margin="10,0,0,0"
+                                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding ResidualText}" Margin="10,0,0,0"
+                                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                            <Button Content="Optimize Route" Style="{StaticResource WizardPrimaryButton}"
+                                    Margin="0" Command="{Binding OptimizeRouteCommand}"
+                                    ToolTip="Compute the shortest path between located treasures" />
+                            <Button Content="Reset" Padding="14,6" Margin="12,0,0,0"
+                                    Command="{Binding ResetCommand}" />
                         </StackPanel>
-                        <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
-                                HorizontalAlignment="Center" Margin="0,4,0,0"
-                                Command="{Binding OptimizeRouteCommand}"
-                                ToolTip="Trilaterate and compute the shortest path between treasures" />
                     </StackPanel>
                 </StackPanel>
             </StackPanel>

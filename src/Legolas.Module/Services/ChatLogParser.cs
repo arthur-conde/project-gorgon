@@ -25,7 +25,11 @@ public sealed partial class ChatLogParser : IChatLogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex InventoryAddRegex();
 
-    [GeneratedRegex(@"The treasure is (?<dist>\d+) metres from here",
+    // Motherlode discriminator: "The treasure is <N> meters from here" with NO
+    // direction token (regular survey emits "[Status] The X is Ym DIR …", which
+    // SurveyRegex requires the DIR for — the two cannot collide). PG's live line
+    // uses US "meters"; accept the "metres" spelling too for robustness (#488).
+    [GeneratedRegex(@"The treasure is (?<dist>\d+) met(?:er|re)s from here",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MotherlodeRegex();
 

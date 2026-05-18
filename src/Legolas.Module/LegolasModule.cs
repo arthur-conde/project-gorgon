@@ -4,6 +4,8 @@ using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
+using Mithril.GameState.Movement;
+using Mithril.GameState.Pins;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -56,7 +58,8 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IRouteOptimizer>(sp => new AdaptiveRouteOptimizer(
             sp.GetRequiredService<HeldKarpOptimizer>(),
             sp.GetRequiredService<NearestNeighbourTwoOptOptimizer>()));
-        services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
+        services.AddSingleton<IMultilaterationSolver>(sp =>
+            new MultilaterationSolver(sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
         // #460: cold-start pin calibration driven through the map overlay
@@ -90,6 +93,18 @@ public sealed class LegolasModule : IMithrilModule
         });
         services.AddSingleton<SurveyFlowController>();
         services.AddSingleton<MotherlodeFlowController>();
+
+        // #488: Motherlode measurement coordinator — correlates the use
+        // gesture + position feeder + ChatLog distance into the solver.
+        // Singleton (subscribes to the GameState trackers in its ctor);
+        // constructed when the ingestion hosted services resolve it.
+        services.AddSingleton<MotherlodeMeasurementCoordinator>(sp =>
+            new MotherlodeMeasurementCoordinator(
+                sp.GetRequiredService<IMultilaterationSolver>(),
+                sp.GetRequiredService<MotherlodeFlowController>(),
+                sp.GetRequiredService<IPlayerPositionTracker>(),
+                sp.GetRequiredService<IPlayerPinTracker>(),
+                sp.GetService<IDiagnosticsSink>()));
 
         // End-of-run report (text + PNG + JSON + share link). Singleton so the
         // latest snapshot survives FSM resets and is available for the wizard's

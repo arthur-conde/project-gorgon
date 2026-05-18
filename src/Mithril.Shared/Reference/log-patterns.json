@@ -279,7 +279,7 @@
       ]
     },
     "legolas.ChatLogParser.MotherlodeRegex": {
-      "pattern": "The treasure is (?<dist>\\d+) metres from here",
+      "pattern": "The treasure is (?<dist>\\d+) met(?:er|re)s from here",
       "source": "chat",
       "module": "legolas",
       "csharp": {

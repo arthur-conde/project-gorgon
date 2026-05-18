@@ -59,6 +59,17 @@ public sealed record MotherlodeDistance(
     int DistanceMetres) : GameEvent(Timestamp);
 
 /// <summary>
+/// Player.log <c>LocalPlayer: ProcessDoDelayLoop(&lt;sec&gt;, &lt;verb&gt;,
+/// "Using … Motherlode Map", …)</c> — the player clicked a carried metal-slab
+/// (Motherlode) map. The <b>use gesture</b> the measurement coordinator
+/// temporally correlates a position feeder fix and the following ChatLog
+/// <see cref="MotherlodeDistance"/> line(s) against (#488, label-agnostic
+/// pairing — the map's name is never used to bind, only the timestamp).
+/// </summary>
+public sealed record MotherlodeUseDetected(
+    DateTime Timestamp) : GameEvent(Timestamp);
+
+/// <summary>
 /// The chat-log area banner (<c>"******* Entering Area: Eltibule"</c>). Carries
 /// the area's <em>friendly</em> name; the calibration service resolves it to the
 /// internal area key. A <b>complementary</b> signal: Player.log <i>does</i> have

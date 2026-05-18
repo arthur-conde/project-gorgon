@@ -53,16 +53,28 @@ public class PlayerLogParserTests
     }
 
     [Theory]
-    // Motherlode is distance-only ProcessScreenText / ProcessDoDelayLoop —
-    // never ProcessMapFx, so it's excluded with no special-casing.
+    // The motherlode distance itself is ProcessScreenText (mirrored to ChatLog,
+    // where ChatLogParser picks it up) — never ProcessMapFx; the Player.log
+    // parser ignores it. A non-motherlode survey delay-loop is also ignored.
     [InlineData("[09:03:31] LocalPlayer: ProcessScreenText(ImportantInfo, \"The treasure is 1285 meters from here.\")")]
-    [InlineData("[09:03:30] LocalPlayer: ProcessDoDelayLoop(1, Unset, \"Using Kur Mountains Simple Metal Motherlode Map\", 5305, AbortIfAttacked)")]
     [InlineData("[08:25:38] LocalPlayer: ProcessDoDelayLoop(0.5, Unset, \"Using Eltibule Good Mining Survey\", 5305, AbortIfAttacked)")]
     [InlineData("LOADING LEVEL AreaEltibule")]
     [InlineData("")]
     public void Returns_null_for_unrecognised_lines(string line)
     {
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
+    }
+
+    [Fact]
+    // #488: the real captured Motherlode-map use gesture. Previously ignored
+    // (the parser was MapFx-only); now recognized as the pairing anchor.
+    public void Recognizes_the_motherlode_map_use_gesture()
+    {
+        var evt = _parser.TryParse(
+            "[09:03:30] LocalPlayer: ProcessDoDelayLoop(1, Unset, \"Using Kur Mountains Simple Metal Motherlode Map\", 5305, AbortIfAttacked)",
+            DateTime.UtcNow);
+
+        evt.Should().BeOfType<MotherlodeUseDetected>();
     }
 
     // Map-pin lifecycle parsing was promoted to the GameState-tier

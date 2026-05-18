@@ -2,7 +2,6 @@ using System.Windows;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Legolas.Domain;
-using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 
@@ -12,7 +11,8 @@ namespace Legolas.Services;
 /// Background service that consumes chat-log lines from <see cref="IChatLogStream"/>,
 /// parses them via <see cref="IChatLogParser"/>, and pumps resulting events into the
 /// session: SurveyDetected adds slots, ItemCollected marks the matching slot
-/// collected, MotherlodeDistance forwards to the ML VM.
+/// collected, MotherlodeDistance + Metal-Slab collection forward to the
+/// <see cref="MotherlodeMeasurementCoordinator"/> (#488).
 /// </summary>
 public sealed class LogIngestionService : BackgroundService
 {
@@ -20,7 +20,7 @@ public sealed class LogIngestionService : BackgroundService
     private readonly IChatLogParser _parser;
     private readonly ModuleGates _gates;
     private readonly SessionState _session;
-    private readonly MotherlodeViewModel _motherlode;
+    private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly IAreaCalibrationService _areaCalibration;
 
     public LogIngestionService(
@@ -28,7 +28,7 @@ public sealed class LogIngestionService : BackgroundService
         IChatLogParser parser,
         ModuleGates gates,
         SessionState session,
-        MotherlodeViewModel motherlode,
+        MotherlodeMeasurementCoordinator motherlode,
         IAreaCalibrationService areaCalibration)
     {
         _stream = stream;
@@ -38,6 +38,14 @@ public sealed class LogIngestionService : BackgroundService
         _motherlode = motherlode;
         _areaCalibration = areaCalibration;
     }
+
+    // Both tail readers normalize their <c>[HH:MM:SS]</c> prefix to UTC via the
+    // shared LogLineTimestampSequencer, so Player.log (use) and ChatLog
+    // (distance) instants are directly comparable. Specify-kind before lifting
+    // to DateTimeOffset (the #183-class timezone trap is already handled
+    // upstream; this only re-tags the Kind).
+    private static DateTimeOffset Utc(DateTime ts) =>
+        new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -73,13 +81,16 @@ public sealed class LogIngestionService : BackgroundService
                     HandleSurveyDetected(sd);
                     break;
                 case ItemAddedToInventory ia:
-                    HandleItemAddedToInventory(ia);
+                    if (_session.Mode == SessionMode.Motherlode)
+                        _motherlode.OnItemCollected(ia.Name);   // "… Metal Slab" gates progression
+                    else
+                        HandleItemAddedToInventory(ia);
                     break;
                 case ItemCollected ic:
                     HandleItemCollected(ic);
                     break;
                 case MotherlodeDistance md when _session.Mode == SessionMode.Motherlode:
-                    _motherlode.RecordDistanceCommand.Execute(md.DistanceMetres);
+                    _motherlode.OnDistance(md.DistanceMetres, Utc(md.Timestamp));
                     break;
                 case AreaEntered ae:
                     _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);

@@ -9,10 +9,10 @@ public sealed partial class SurveyItemViewModel : ObservableObject
     private Survey _model;
 
     /// <summary>
-    /// Bearing-uncertainty wedge for Motherlode mode. Raw inputs the D2D
-    /// renderer constructs the arc from each frame; null when no wedge
-    /// should render (Survey mode, corrected pin, collected, etc.).
-    /// Replaces the WPF <c>Geometry?</c> the legacy ItemsControl bound to.
+    /// Bearing-uncertainty wedge, rendered in Motherlode mode only. Raw inputs
+    /// the D2D renderer constructs the arc from each frame; null when no wedge
+    /// should render (Survey mode, collected, etc.). Replaces the WPF
+    /// <c>Geometry?</c> the legacy ItemsControl bound to.
     /// </summary>
     [ObservableProperty]
     private WedgeArc? _wedgeArc;

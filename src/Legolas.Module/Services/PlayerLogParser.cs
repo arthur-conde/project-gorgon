@@ -7,10 +7,11 @@ namespace Legolas.Services;
 
 /// <summary>
 /// Player.log analog of <see cref="ChatLogParser"/> — pure line→event. #454:
-/// <c>ProcessMapFx</c> (absolute survey/treasure-map targets). Map-pin
-/// lifecycle parsing moved to the GameState-tier <c>MapPinParser</c> /
+/// <c>ProcessMapFx</c> (absolute survey/treasure-map targets); #488:
+/// <c>ProcessDoDelayLoop</c> Motherlode-map use gesture. Map-pin lifecycle
+/// parsing moved to the GameState-tier <c>MapPinParser</c> /
 /// <c>PlayerPinTracker</c> (#468) — same promotion pattern as
-/// <c>AreaTransitionParser</c> (#456); this parser is now MapFx-only.
+/// <c>AreaTransitionParser</c> (#456).
 ///
 /// <para>Real captured grammar (live Player.log, 2026-05-18):</para>
 /// <code>
@@ -30,9 +31,25 @@ public sealed partial class PlayerLogParser : ILogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MapFxRx();
 
+    // Motherlode-map use gesture: ProcessDoDelayLoop whose quoted action text
+    // mentions a Motherlode map. Label-agnostic — only the fact + timestamp are
+    // used for pairing (#488); the map's full name is intentionally not
+    // captured. Grammar mirrors Gandalf's InteractionDelayLoopParser (no
+    // cross-module dependency taken).
+    [GeneratedRegex(
+        """LocalPlayer:\s*ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*\w+\s*,\s*"[^"]*Motherlode Map[^"]*"\s*,""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex MotherlodeUseRx();
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrEmpty(line)) return null;
+
+        if (line.Contains("ProcessDoDelayLoop(", StringComparison.Ordinal)
+            && MotherlodeUseRx().IsMatch(line))
+        {
+            return new MotherlodeUseDetected(timestamp);
+        }
 
         if (line.Contains("ProcessMapFx", StringComparison.Ordinal)
             && MapFxRx().Match(line) is { Success: true } m
