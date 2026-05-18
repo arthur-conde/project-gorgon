@@ -82,65 +82,6 @@ public sealed class IconCacheService : IIconCacheService
         return GetPlaceholder();
     }
 
-    public BitmapImage GetOrLoadIconDeferred(int iconId)
-    {
-        if (iconId <= 0 || !_settings.Enabled)
-            return GetPlaceholder();
-
-        if (_memCache.TryGetValue(iconId, out var cached))
-            return cached;
-
-        bool isFailed;
-        lock (_failed) { isFailed = _failed.Contains(iconId); }
-        if (isFailed)
-            return GetPlaceholder();
-
-        // Not yet in memory. Resolve off the calling thread: decode the on-disk
-        // PNG (or download it), publish to the memory cache, then raise
-        // IconReady so the bound IconImage re-pulls. This keeps a detail view
-        // that realises ~100 chips at once from doing ~100 synchronous PNG
-        // decodes on the dispatcher thread (the visible NPC-detail render
-        // stall). Deduped per id via _inflight — shared with GetOrLoadIcon's
-        // download queue, so at most one task runs per icon.
-        _inflight.GetOrAdd(iconId, id => Task.Run(() => ResolveAsync(id)));
-        return GetPlaceholder();
-    }
-
-    /// <summary>
-    /// Background resolution for <see cref="GetOrLoadIconDeferred"/>: decode the
-    /// on-disk file if present (frozen, so it crosses back to the UI thread
-    /// safely), else fall through to the existing download path. Either way the
-    /// memory cache is populated and <see cref="IconReady"/> is raised on the
-    /// dispatcher.
-    /// </summary>
-    private async Task ResolveAsync(int iconId)
-    {
-        try
-        {
-            var path = GetDiskPath(iconId);
-            if (File.Exists(path))
-            {
-                var img = LoadFromDisk(path);
-                if (img is not null)
-                {
-                    _memCache[iconId] = img;
-                    _ = _dispatcher.BeginInvoke(() => IconReady?.Invoke(this, iconId));
-                    return;
-                }
-                // Corrupt/partial file — fall through and re-fetch.
-            }
-
-            await DownloadAsync(iconId).ConfigureAwait(false);
-        }
-        finally
-        {
-            // DownloadAsync's finally also removes the entry; TryRemove is
-            // idempotent so the disk-hit path (which never enters DownloadAsync)
-            // is the one that needs this.
-            _inflight.TryRemove(iconId, out _);
-        }
-    }
-
     public async Task ClearCacheAsync()
     {
         _memCache.Clear();
