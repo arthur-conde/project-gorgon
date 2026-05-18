@@ -197,15 +197,15 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             TestOrigin = pixel;
             TestPins.Clear();
             ClickWarning = _service.CurrentCalibration is null
-                ? "Solve a calibration first — nothing to test yet."
+                ? "Solve a calibration first, then click where you are to verify."
                 : null;
             return;
         }
         PlaceSelectedAt(pixel);
     }
 
-    /// <summary>Enter/leave test mode (calibrate → fire a survey → see the
-    /// projected pin vs the real ping, without a full survey run).</summary>
+    /// <summary>Enter/leave the position+verify step (also auto-entered after a
+    /// successful Solve — prompting for position is part of calibrating).</summary>
     [RelayCommand]
     private void ToggleTestMode()
     {
@@ -220,8 +220,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             TestPins.Clear();
             TestOrigin = null;
             Instruction = _service.CurrentCalibration is null
-                ? "Test mode: no calibration yet — Solve one first, then click your position and fire a survey/treasure."
-                : "Test mode: click where you ARE on the map, then use a survey/treasure. The projected pin should land on the real ping.";
+                ? "Place ≥2 references and Solve first — then click where you are and fire a survey/treasure to verify."
+                : "Verify: click where you ARE on the map now, then use a survey/treasure — the projected pin should land on the real ping. (Surveying still asks for your position separately; this only checks the calibration.)";
         }
         else
         {
@@ -248,12 +248,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         if (!TestMode) return;
         if (_service.CurrentCalibration is not { } c)
         {
-            ClickWarning = "Solve a calibration before testing.";
+            ClickWarning = "Solve a calibration before verifying.";
             return;
         }
         if (TestOrigin is not { } o)
         {
-            ClickWarning = "Click the map to set your test position first.";
+            ClickWarning = "Click where you are on the map first.";
             return;
         }
 
@@ -299,9 +299,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
         ResultText = calibration.ResidualPixels <= 12
             ? $"Calibrated: {calibration.ResidualPixels:0.0} px residual, scale {calibration.Scale:0.000} px/m. " +
-              "Surveys & treasure now project correctly here."
+              "Now verify: click where you are, then use a survey/treasure."
             : $"Solved but residual is high ({calibration.ResidualPixels:0.0} px) — references were likely " +
               "placed imprecisely or the map was at a different zoom. Clear and redo for a tighter fit.";
+
+        // Calibration isn't "done" until it's verified. Auto-continue into the
+        // position+verify step so the user doesn't have to discover a separate
+        // toggle — prompting for position is part of calibrating.
+        TestMode = true;
         Refresh();
     }
 

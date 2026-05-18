@@ -297,7 +297,7 @@ public class CalibrationSessionViewModelTests
         vm2.ToggleTestModeCommand.Execute(null); // test mode, but no origin clicked yet
         hasCal.NoteSurvey("X", new MetreOffset(1, 1));
         vm2.TestPins.Should().BeEmpty();
-        vm2.ClickWarning.Should().Contain("test position");
+        vm2.ClickWarning.Should().Contain("Click where you are");
     }
 
     [Fact]

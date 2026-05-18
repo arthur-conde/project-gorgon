@@ -74,11 +74,11 @@
                                         Padding="8,4" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                <ToggleButton Content="Test calibration"
+                                <ToggleButton Content="Verify (set position)"
                                               IsChecked="{Binding TestMode, Mode=OneWay}"
                                               Command="{Binding ToggleTestModeCommand}"
                                               Padding="8,4" Margin="0,0,6,0" />
-                                <Button Content="Clear test"
+                                <Button Content="Clear verify"
                                         Command="{Binding ClearTestPinsCommand}" Padding="8,4" />
                             </StackPanel>
                         </StackPanel>
@@ -202,7 +202,7 @@
                                      Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
                             <Border Canvas.Left="11" Canvas.Top="-9" Background="#CC000000"
                                     CornerRadius="2" Padding="3,1">
-                                <TextBlock Text="you (test)" Foreground="#FF40C4FF" FontSize="11" />
+                                <TextBlock Text="you" Foreground="#FF40C4FF" FontSize="11" />
                             </Border>
                         </Canvas>
                     </Canvas>
