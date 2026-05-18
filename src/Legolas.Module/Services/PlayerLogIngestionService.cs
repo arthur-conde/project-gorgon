@@ -1,4 +1,6 @@
 using System.Windows;
+using Legolas.Domain;
+using Legolas.ViewModels;
 using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
@@ -40,8 +42,11 @@ namespace Legolas.Services;
 public sealed class PlayerLogIngestionService : BackgroundService
 {
     private readonly IPlayerLogStream _stream;
+    private readonly PlayerLogParser _parser;
     private readonly PlayerAreaTracker _areaTracker;
     private readonly IAreaCalibrationService _areaCalibration;
+    private readonly SessionState _session;
+    private readonly LegolasSettings _settings;
     private readonly ModuleGates _gates;
     private readonly GameConfig _config;
     private readonly IDiagnosticsSink? _diag;
@@ -50,15 +55,21 @@ public sealed class PlayerLogIngestionService : BackgroundService
 
     public PlayerLogIngestionService(
         IPlayerLogStream stream,
+        PlayerLogParser parser,
         PlayerAreaTracker areaTracker,
         IAreaCalibrationService areaCalibration,
+        SessionState session,
+        LegolasSettings settings,
         ModuleGates gates,
         GameConfig config,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
+        _parser = parser;
         _areaTracker = areaTracker;
         _areaCalibration = areaCalibration;
+        _session = session;
+        _settings = settings;
         _gates = gates;
         _config = config;
         _diag = diag;
@@ -78,11 +89,13 @@ public sealed class PlayerLogIngestionService : BackgroundService
         {
             try
             {
-                // Update the shared tracker, then mirror any area change into
-                // the calibration service. Survey/pin parsing arrives here in
-                // Phases 3/4 on this same loop.
+                // Area first — a target line in the same batch must read the
+                // correct current-area calibration.
                 _areaTracker.Observe(raw);
                 ApplyAreaIfChanged();
+
+                if (_parser.TryParse(raw.Line, raw.Timestamp) is MapTargetDetected mt)
+                    PostToUi(() => HandleMapTarget(mt));
             }
             catch (Exception ex)
             {
@@ -90,6 +103,84 @@ public sealed class PlayerLogIngestionService : BackgroundService
             }
         }
     }
+
+    /// <summary>
+    /// Place an absolute <c>ProcessMapFx</c> target. Authoritative only for a
+    /// <b>calibrated</b> area (#454 "calibrated-area authority"): uncalibrated
+    /// areas keep the legacy relative chat path (the cold-start fallback until
+    /// pin calibration exists, Phase 4). The relative chat auto-place is
+    /// suppressed for calibrated areas in <see cref="LogIngestionService"/> so
+    /// a survey use — which emits both a chat <c>[Status]</c> line and this
+    /// Player.log line — produces exactly one pin.
+    /// </summary>
+    private void HandleMapTarget(MapTargetDetected mt)
+    {
+        if (_session.Mode != SessionMode.Survey)
+        {
+            _session.LastLogEvent = $"Map target: {Describe(mt)} → ignored (mode is Motherlode)";
+            return;
+        }
+        if (_areaCalibration.CurrentCalibration is not { } cal)
+        {
+            _session.LastLogEvent =
+                $"Map target: {Describe(mt)} → area not calibrated; run pin calibration";
+            return;
+        }
+
+        var name = CleanName(mt.Short);
+        var pixel = cal.ProjectWorld(mt.World);
+
+        if (FindDuplicateAbsolute(mt.World, _settings.MapTargetDedupRadiusMetres) is { } dup)
+        {
+            // Same node re-surveyed re-emits an identical (X,Z); refresh its
+            // projected pixel (a mid-session recalibration may have moved it)
+            // rather than stacking a duplicate.
+            dup.UpdateModel(dup.Model with { PixelPos = pixel, World = mt.World });
+            _session.LastLogEvent = $"Map target: {name} → duplicate (X,Z), updated";
+            return;
+        }
+
+        var index = _session.Surveys.Count;
+        var pinVm = new SurveyItemViewModel(
+            Survey.CreateAbsolute(name, mt.World, pixel, index));
+        _session.Surveys.Add(pinVm);
+        // New pin becomes the keyboard-nudge target (parity with the chat
+        // path); surface the inventory grid so the next slot is visible.
+        _session.SelectedSurvey = pinVm;
+        _session.IsInventoryVisible = true;
+        _session.LastLogEvent = $"Map target: {name} → placed (absolute)";
+    }
+
+    private SurveyItemViewModel? FindDuplicateAbsolute(WorldCoord world, double radiusMetres)
+    {
+        var r2 = radiusMetres * radiusMetres;
+        foreach (var s in _session.Surveys)
+        {
+            if (s.Collected) continue;
+            if (s.Model.World is not { } w) continue;
+            var dx = w.X - world.X;
+            var dz = w.Z - world.Z;
+            if (dx * dx + dz * dz <= r2) return s;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The <c>short</c> field is consistently <c>"&lt;NodeName&gt; is here"</c>;
+    /// strip the suffix for a clean pin label. Display-only — placement uses
+    /// <see cref="MapTargetDetected.World"/> exclusively.
+    /// </summary>
+    private static string CleanName(string shortText)
+    {
+        const string suffix = " is here";
+        var t = shortText.Trim();
+        return t.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            ? t[..^suffix.Length].Trim()
+            : t;
+    }
+
+    private static string Describe(MapTargetDetected mt) =>
+        $"{CleanName(mt.Short)} @ ({mt.World.X:0},{mt.World.Z:0})";
 
     /// <summary>
     /// Apply the current area's persisted calibration when (and only when) the

@@ -50,6 +50,7 @@ public sealed class LegolasModule : IMithrilModule
 
         // Core services
         services.AddSingleton<IChatLogParser, ChatLogParser>();
+        services.AddSingleton<PlayerLogParser>();
         services.AddSingleton<HeldKarpOptimizer>();
         services.AddSingleton<NearestNeighbourTwoOptOptimizer>();
         services.AddSingleton<IRouteOptimizer>(sp => new AdaptiveRouteOptimizer(

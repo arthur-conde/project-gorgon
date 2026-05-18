@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
+using Legolas.ViewModels;
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Game;
@@ -26,39 +27,36 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         try { Directory.Delete(_tempDir, recursive: true); } catch { /* best-effort */ }
     }
 
-    private static (PlayerLogIngestionService svc, ScriptedStream stream, SpyAreaCalibration spy)
-        Build(GameConfig? config = null)
+    // Identity calibration: ProjectWorld(x,y,z) = (x, z) → trivial assertions.
+    private static AreaCalibration Identity() =>
+        new(1.0, 0.0, 0.0, 0.0, 2, 0.0);
+
+    private const string MapFx =
+        "[08:25:39] LocalPlayer: ProcessMapFx((1236.00, 38.17, 2528.00), 25, 1, " +
+        "\"Good Metal Slab is here\", ImportantInfo, \"The Good Metal Slab is 67m west and 1181m south.\")";
+
+    private static (PlayerLogIngestionService svc, ScriptedStream stream, SpyAreaCalibration spy,
+        SessionState session) Build(AreaCalibration? calibration = null, GameConfig? config = null)
     {
         var stream = new ScriptedStream();
         var tracker = new PlayerAreaTracker(new AreaTransitionParser());
-        var spy = new SpyAreaCalibration();
+        var spy = new SpyAreaCalibration(calibration);
+        var session = new SessionState();
+        var settings = new LegolasSettings();
         var gates = new ModuleGates();
         gates.For("legolas").Open();
         var svc = new PlayerLogIngestionService(
-            stream, tracker, spy, gates, config ?? new GameConfig());
-        return (svc, stream, spy);
+            stream, new PlayerLogParser(), tracker, spy, session, settings, gates,
+            config ?? new GameConfig());
+        return (svc, stream, spy, session);
     }
+
+    // ---- area→calibration bridge (Phase 2) -------------------------------
 
     [Fact]
     public async Task Area_load_line_applies_that_area_calibration_once()
     {
-        var (svc, stream, spy) = Build();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = svc.StartAsync(cts.Token);
-        try
-        {
-            stream.Push("[08:25:13] LOADING LEVEL AreaEltibule");
-            await stream.WaitForDrainAsync(cts.Token);
-
-            spy.SelectedAreas.Should().Equal("AreaEltibule");
-        }
-        finally { await Stop(svc, run, cts); }
-    }
-
-    [Fact]
-    public async Task Duplicate_area_line_does_not_re_apply()
-    {
-        var (svc, stream, spy) = Build();
+        var (svc, stream, spy, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -66,7 +64,6 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             stream.Push("[08:25:13] LOADING LEVEL AreaEltibule");
             stream.Push("[08:30:00] LOADING LEVEL AreaEltibule");
             await stream.WaitForDrainAsync(cts.Token);
-
             spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(svc, run, cts); }
@@ -75,7 +72,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task Area_change_applies_each_distinct_area_in_order()
     {
-        var (svc, stream, spy) = Build();
+        var (svc, stream, spy, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -83,24 +80,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             stream.Push("[08:25:13] LOADING LEVEL AreaEltibule");
             stream.Push("[08:57:37] LOADING LEVEL AreaSerbule");
             await stream.WaitForDrainAsync(cts.Token);
-
             spy.SelectedAreas.Should().Equal("AreaEltibule", "AreaSerbule");
-        }
-        finally { await Stop(svc, run, cts); }
-    }
-
-    [Fact]
-    public async Task Unrelated_line_is_a_noop()
-    {
-        var (svc, stream, spy) = Build();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = svc.StartAsync(cts.Token);
-        try
-        {
-            stream.Push("[08:25:39] LocalPlayer: ProcessMapFx((1236.00, 38.17, 2528.00), 25, 1, \"x\", ImportantInfo, \"y\")");
-            await stream.WaitForDrainAsync(cts.Token);
-
-            spy.SelectedAreas.Should().BeEmpty();
         }
         finally { await Stop(svc, run, cts); }
     }
@@ -108,7 +88,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     [Fact]
     public async Task ChooseCharacter_resets_latch_so_same_area_re_applies()
     {
-        var (svc, stream, spy) = Build();
+        var (svc, stream, spy, _) = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
@@ -117,9 +97,6 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             stream.Push("[08:57:00] LOADING LEVEL ChooseCharacter");
             stream.Push("[09:00:39] LOADING LEVEL AreaEltibule");
             await stream.WaitForDrainAsync(cts.Token);
-
-            // Re-entry after character-select re-applies — defensive against an
-            // intervening projector reset.
             spy.SelectedAreas.Should().Equal("AreaEltibule", "AreaEltibule");
         }
         finally { await Stop(svc, run, cts); }
@@ -129,27 +106,130 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     public async Task Startup_seed_applies_current_area_before_live_lines()
     {
         var logPath = Path.Combine(_tempDir, "Player.log");
-        // BOM-less UTF-8 — real Player.log carries no BOM (mirrors the
-        // PlayerAreaTracker seed-test convention).
         File.WriteAllText(
             logPath,
             "LocalPlayer: ProcessAddItem(Apple(1), -1, True)\n" +
             "LOADING LEVEL AreaEltibule\n" +
             "LocalPlayer: ProcessAddPlayer(...)\n",
             new UTF8Encoding(false));
-        var config = new GameConfig { GameRoot = _tempDir };
 
-        var (svc, stream, spy) = Build(config);
+        var (svc, _, spy, _) = Build(config: new GameConfig { GameRoot = _tempDir });
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
         {
-            // No live line pushed — the seed alone must have applied the area.
             await WaitUntil(() => spy.SelectedAreas.Count > 0, cts.Token);
             spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(svc, run, cts); }
     }
+
+    // ---- absolute ProcessMapFx placement (Phase 3) -----------------------
+
+    [Fact]
+    public async Task Calibrated_area_places_one_absolute_pin_at_projected_pixel()
+    {
+        var (svc, stream, _, session) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            await stream.WaitForDrainAsync(cts.Token);
+            // Wait on the terminal signal HandleMapTarget sets last, so the
+            // SelectedSurvey/IsInventoryVisible writes aren't raced.
+            await WaitUntil(() => session.LastLogEvent?.Contains("placed (absolute)") == true, cts.Token);
+
+            session.Surveys.Should().HaveCount(1);
+            var pin = session.Surveys[0];
+            pin.Name.Should().Be("Good Metal Slab");        // " is here" stripped
+            pin.Model.World.Should().Be(new WorldCoord(1236.00, 38.17, 2528.00));
+            // Identity calibration (s=1, θ=0, origin=0): px=X, py=-Z — screen-Y
+            // grows down while world-north (Z) grows up, so Z is negated.
+            pin.Model.PixelPos.Should().Be(new PixelPoint(1236.00, -2528.00));
+            session.SelectedSurvey.Should().BeSameAs(pin);
+            session.IsInventoryVisible.Should().BeTrue();
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Duplicate_world_coord_within_radius_does_not_stack()
+    {
+        var (svc, stream, _, session) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            // Same node re-surveyed re-emits the identical (X,Z); only the
+            // relative msg text drifts (67m → 66m).
+            stream.Push(MapFx.Replace("67m west and 1181m", "66m west and 1180m"));
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.Surveys.Count >= 1, cts.Token);
+
+            session.Surveys.Should().HaveCount(1);
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Distinct_targets_place_separate_pins()
+    {
+        var (svc, stream, _, session) = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            stream.Push(
+                "[08:33:17] LocalPlayer: ProcessMapFx((1666.00, 36.95, 2620.00), 25, 1, " +
+                "\"Good Metal Slab is here\", ImportantInfo, \"The Good Metal Slab is 604m west and 1073m south.\")");
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.Surveys.Count == 2, cts.Token);
+
+            session.Surveys.Should().HaveCount(2);
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Uncalibrated_area_does_not_place_and_reports_diagnostic()
+    {
+        var (svc, stream, _, session) = Build(calibration: null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.LastLogEvent?.Contains("not calibrated") == true, cts.Token);
+
+            session.Surveys.Should().BeEmpty();
+            session.LastLogEvent.Should().Contain("not calibrated");
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    [Fact]
+    public async Task Motherlode_mode_ignores_absolute_targets()
+    {
+        var (svc, stream, _, session) = Build(calibration: Identity());
+        session.Mode = SessionMode.Motherlode;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = svc.StartAsync(cts.Token);
+        try
+        {
+            stream.Push(MapFx);
+            await stream.WaitForDrainAsync(cts.Token);
+            await WaitUntil(() => session.LastLogEvent?.Contains("Motherlode") == true, cts.Token);
+
+            session.Surveys.Should().BeEmpty();
+        }
+        finally { await Stop(svc, run, cts); }
+    }
+
+    // ---- helpers ----------------------------------------------------------
 
     private static async Task WaitUntil(Func<bool> predicate, CancellationToken ct)
     {
@@ -170,20 +250,23 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Captures <see cref="IAreaCalibrationService.SelectArea"/> invocations
-    /// in order. Every other member is an inert stub — Phase 2 only exercises
-    /// the area→calibration bridge.
+    /// Captures <see cref="IAreaCalibrationService.SelectArea"/> calls and
+    /// reports a fixed <see cref="AreaCalibration"/> (or none) as the current
+    /// area's calibration.
     /// </summary>
     private sealed class SpyAreaCalibration : IAreaCalibrationService
     {
-        public List<string> SelectedAreas { get; } = new();
+        private readonly AreaCalibration? _cal;
+        public SpyAreaCalibration(AreaCalibration? cal) => _cal = cal;
 
+        public List<string> SelectedAreas { get; } = new();
         public void SelectArea(string areaKey) => SelectedAreas.Add(areaKey);
+
+        public AreaCalibration? CurrentCalibration => _cal;
+        public bool IsCurrentAreaCalibrated => _cal is not null;
 
         public string? CurrentAreaKey => null;
         public string? CurrentAreaFriendlyName => null;
-        public bool IsCurrentAreaCalibrated => false;
-        public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences =>
             Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();

@@ -48,4 +48,30 @@ public sealed record AreaCalibration(
     /// and migrate in <see cref="LegolasSettings.Migrate"/>. Default 1 (current).
     /// </summary>
     public int SchemaVersion { get; init; } = 1;
+
+    /// <summary>
+    /// Canonical <b>absolute</b> world→overlay-pixel projection (#454): maps a
+    /// raw area-local world coordinate straight to the 1:1 map overlay using
+    /// the full solved transform (origin + scale + rotation + the
+    /// <see cref="MirrorNorth"/> handedness — a reflection a similarity fit
+    /// can't absorb). This is the single source of the absolute transform; the
+    /// calibration window's landmark "ghost" projection delegates here so the
+    /// two can't drift.
+    ///
+    /// <para>Uses <see cref="Scale"/> verbatim, so it is only exact at
+    /// <see cref="CalibrationZoom"/> — the long-standing zoom limitation
+    /// (the in-game zoom isn't machine-readable; OCR/CV deferred). Survey
+    /// targets are absolute identities regardless; only where the marker
+    /// <em>draws</em> carries the ±10% non-affine ceiling.</para>
+    /// </summary>
+    public PixelPoint ProjectWorld(WorldCoord world)
+    {
+        var east = world.X;
+        var north = MirrorNorth ? -world.Z : world.Z;
+        var cos = Math.Cos(RotationRadians);
+        var sin = Math.Sin(RotationRadians);
+        var rotE = east * cos + north * sin;
+        var rotN = -east * sin + north * cos;
+        return new PixelPoint(OriginX + Scale * rotE, OriginY - Scale * rotN);
+    }
 }

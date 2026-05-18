@@ -93,6 +93,30 @@ public class SurveyFlowControllerTests
     }
 
     [Fact]
+    public void FirstAbsolutePin_in_AwaitingPosition_transitions_to_Listening_and_stamps()
+    {
+        // #454: ProcessMapFx targets are absolute and need no anchor click, so
+        // the first absolute pin advances AwaitingPosition→Listening directly.
+        // The relative chat path can't add a pin while AwaitingPosition
+        // (LogIngestionService gates on CanAcceptSurvey), so this edge only
+        // fires for the absolute flow.
+        var (flow, session, _, transitions, clock) = BuildSut();
+        flow.CurrentState.Should().Be(SurveyFlowState.AwaitingPosition);
+        var stampMoment = new DateTimeOffset(FixedTime.AddMinutes(3), TimeSpan.Zero);
+        clock.Set(stampMoment);
+
+        session.Surveys.Add(new SurveyItemViewModel(
+            Survey.CreateAbsolute("Good Metal Slab", new WorldCoord(1236, 38, 2528),
+                new PixelPoint(10, 20), 0)));
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        session.StartedAt.Should().Be(stampMoment);
+        transitions.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new SurveyTransition(
+                SurveyFlowState.AwaitingPosition, SurveyFlowState.Listening, "FirstSurvey"));
+    }
+
+    [Fact]
     public void SubsequentSurveys_do_not_re_stamp_StartedAt()
     {
         // StartedAt is set once per Listening session. Adding more pins shouldn't
