@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Mithril.GameState.Skills.Parsing;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
+using Mithril.Shared.Reference;
 
 namespace Mithril.GameState.Skills;
 
@@ -32,6 +33,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
 {
     private readonly IPlayerLogStream _stream;
     private readonly SkillLogParser _parser;
+    private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -39,13 +41,21 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
     private readonly List<Action<SkillChange>> _changeHandlers = new();
     private volatile PlayerSkillSnapshot _current = PlayerSkillSnapshot.Empty;
 
+    /// <param name="refData">Optional (#470). When present, each projected
+    /// <see cref="SkillProgressSnapshot"/> is enriched with authoritative
+    /// <see cref="SkillReference"/> metadata (display name, XpTable/umbrella).
+    /// Absent (tests, or reference data not yet loaded) → the snapshot keeps
+    /// the verified log-only proxies. Mirrors <c>InventoryService</c>'s
+    /// optional <c>IReferenceDataService?</c> dependency.</param>
     public PlayerSkillStateService(
         IPlayerLogStream stream,
         SkillLogParser parser,
+        IReferenceDataService? refData = null,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
+        _refData = refData;
         _diag = diag;
     }
 
@@ -158,12 +168,21 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         }
     }
 
-    private static SkillProgressSnapshot Project(SkillProgressRecord r) => new(
+    private SkillProgressSnapshot Project(SkillProgressRecord r) => new(
         Level: r.Level,
         BonusLevels: r.BonusLevels,
         XpTowardNextLevel: r.XpTowardNextLevel,
         XpNeededForNextLevel: r.XpNeededForNextLevel,
-        MaxLevel: r.MaxLevel);
+        MaxLevel: r.MaxLevel,
+        Reference: ResolveReference(r.SkillKey));
+
+    /// <summary>Authoritative metadata from reference data, or <c>null</c> when
+    /// reference data is absent or the skill isn't in the catalog (then the
+    /// snapshot falls back to the verified log-only proxies).</summary>
+    private SkillReference? ResolveReference(string skillKey)
+        => _refData is not null && _refData.Skills.TryGetValue(skillKey, out var e)
+            ? new SkillReference(e.DisplayName, e.XpTable, e.MaxBonusLevels)
+            : null;
 
     /// <summary>MUST be called with <see cref="_lock"/> held.</summary>
     private void Fire(PlayerSkillSnapshot snapshot)

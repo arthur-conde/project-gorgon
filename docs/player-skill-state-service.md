@@ -103,16 +103,14 @@ identically:
   `skills.json`; their level is derived from member sub-skills (Phrenology →
   Phrenology_Demons, …) and carried in `bonus` (`MaxBonusLevels` 125, `raw`
   stays 0). They never gain XP, so there is no per-level curve — hence
-  `max=0`, a **verified-exact runtime proxy** for the authoritative
-  `IReferenceDataService.Skills[key].XpTable == "None"` (`skills.json` is keyed
-  by exactly the log `type=` token, so it maps 1:1). That accessor **already
-  exists and is widely consumed** (Elrond, Celebrimbor, Silmarillion's own
-  Abilities tab, …) — the tracker uses the log proxy by **deliberate choice**
-  (keep the parser/service pure-string and unit-testable, no DI surface), not
-  because the data is unavailable. Optional reference-backed enrichment is the
-  independent follow-up #470 (no dependency on the Silmarillion-tab work
-  #469). Kept in the snapshot — flagged, not dropped — so a consumer decides;
-  the leveling constraint set should exclude them.
+  `max=0`, a **verified-exact log proxy** for the authoritative
+  `SkillEntry.XpTable == "None"`. **#470 (shipped):** when
+  `IReferenceDataService` is available the snapshot carries a `SkillReference`
+  (`DisplayName`, `XpTable`, `MaxBonusLevels`) and `IsTrainable` uses the
+  authoritative `XpTable != "None"`; when absent it degrades to the `max>0`
+  proxy (the two agree 1:1 on all observed data — the reference just removes
+  the inference). Kept in the snapshot — flagged, not dropped — so a consumer
+  decides; the leveling constraint set should exclude them.
 - **`bonus` is gear/buff/form-derived for trainable skills, not progression** —
   volatile (moves as the player swaps equipment / shifts form); `Level` (raw)
   is the progression truth, and the projection keeps them separate and **never
@@ -197,11 +195,29 @@ lock — do non-trivial work off-thread.
   `shared` module prefix follows the precedent of the other `Mithril.GameState`
   parsers in the catalog; parity asserted by `LogPatternCatalogParityTests`).
 - `Skills/IPlayerSkillState.cs` — interface + `PlayerSkillSnapshot` /
-  `SkillProgressSnapshot` / `SkillStateSource`.
+  `SkillProgressSnapshot` / `SkillStateSource` / `SkillReference` (#470).
 - `Skills/SkillChange.cs` — `SkillChange` / `SkillChangeKind` (the
   `SubscribeChanges` channel payload).
 - `Skills/PlayerSkillStateService.cs` — `BackgroundService` + `IPlayerSkillState`,
   registered in `GameStateServiceCollectionExtensions.AddMithrilGameState`.
+  Takes an **optional** `IReferenceDataService?` (#470, mirrors
+  `InventoryService`) — DI auto-injects the registered singleton (already
+  required by `QuestService` in the same extension, so no new boot risk);
+  absent in unit tests → proxy fallback.
+
+## Reference enrichment (#470)
+
+When `IReferenceDataService` is present, `Project` resolves
+`Skills[skillKey]` and attaches a `SkillReference(DisplayName, XpTable,
+MaxBonusLevels)` to every `SkillProgressSnapshot`. Effects:
+
+- `IsTrainable` becomes **authoritative** (`XpTable != "None"`) instead of the
+  `max>0` log proxy; `DisplayName` is resolved at source (key →
+  human-readable). Both flow through `SkillChange.Previous`/`Current` for free.
+- When reference data is absent (tests, or not yet loaded) `Reference` is
+  `null` and the snapshot keeps the verified proxies — behaviour identical to
+  pre-#470. Optional by construction; no hard dependency, no parser change
+  (the log layer stays pure-string and unit-testable).
 
 ## Verification owed
 
@@ -221,8 +237,7 @@ lock — do non-trivial work off-thread.
   (verified: Augmentation/Performance/Phrenology all carry both; trainable
   skills like Tailoring/Endurance/NatureAppreciation have a real `XpTable` and
   no umbrella flag). `skills.json` is keyed by the same `type=` token, so the
-  proxy is 1:1 — no name list, no fuzzy mapping. `IReferenceDataService.Skills`
-  (with `XpTable`) already exists and is consumed elsewhere; the tracker uses
-  the log proxy by deliberate choice (pure-string, unit-testable), and swapping
-  in the authoritative value is the independent follow-up #470 (does **not**
-  depend on the Silmarillion-tab work #469).
+  proxy is 1:1 — no name list, no fuzzy mapping. **#470 shipped:** the snapshot
+  now also carries the authoritative `SkillEntry` value when reference data is
+  present (`IsTrainable` uses `XpTable != "None"`), with the proxy as the
+  no-reference-data fallback. See *Reference enrichment* above.

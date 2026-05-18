@@ -25,10 +25,29 @@ public enum SkillStateSource
 }
 
 /// <summary>
+/// Authoritative skill metadata projected from
+/// <c>IReferenceDataService.Skills</c> (<c>SkillEntry</c>) and attached to a
+/// <see cref="SkillProgressSnapshot"/> when reference data is available. Lets a
+/// consumer use the real classification / display name instead of the log-only
+/// proxies. #470.
+/// </summary>
+/// <param name="DisplayName">In-game display name (<c>SkillEntry.DisplayName</c>),
+/// e.g. <c>"Bear and Bugbear Anatomy"</c>.</param>
+/// <param name="XpTable">The skill's XP-curve id (<c>SkillEntry.XpTable</c>);
+/// the literal <c>"None"</c> marks an umbrella skill — this is the
+/// authoritative source the <c>max==0</c> log heuristic only proxied.</param>
+/// <param name="MaxBonusLevels">Reference cap on derived/bonus levels
+/// (<c>SkillEntry.MaxBonusLevels</c>) — for umbrella skills this is the real
+/// ceiling of the <see cref="SkillProgressSnapshot.BonusLevels"/> the level
+/// lives in.</param>
+public sealed record SkillReference(string DisplayName, string XpTable, int MaxBonusLevels);
+
+/// <summary>
 /// Consumer-facing projection of one skill's progression — the raw
 /// <see cref="SkillProgressRecord"/> with the data caveats from issue #462
 /// interpreted into intent-revealing predicates so every consumer applies them
-/// the same way.
+/// the same way. When reference data is available it also carries authoritative
+/// <see cref="Reference"/> metadata (#470).
 /// </summary>
 /// <param name="Level">Unbuffed base level (the log's <c>raw</c>). This is the
 /// progression-truth value the leveling constraint set keys off — never add
@@ -42,31 +61,45 @@ public enum SkillStateSource
 /// <param name="XpNeededForNextLevel">XP threshold for the next level (the
 /// log's <c>tnl</c>). PG leaves a stale value here at the cap — only meaningful
 /// when <see cref="IsCapped"/> is false.</param>
-/// <param name="MaxLevel">Level cap (the log's <c>max</c>). <c>0</c> for a
-/// non-trainable pseudo-skill.</param>
+/// <param name="MaxLevel">Level cap (the log's <c>max</c>). <c>0</c> for an
+/// umbrella skill (see <see cref="IsTrainable"/>).</param>
+/// <param name="Reference">Authoritative skill metadata resolved from
+/// <c>IReferenceDataService.Skills</c> when reference data is available, else
+/// <c>null</c> (the tracker degrades to the log-only proxies). #470.</param>
 public readonly record struct SkillProgressSnapshot(
     int Level,
     int BonusLevels,
     long XpTowardNextLevel,
     long XpNeededForNextLevel,
-    int MaxLevel)
+    int MaxLevel,
+    SkillReference? Reference = null)
 {
     /// <summary>
-    /// True when the skill advances via an XP curve (<c>max &gt; 0</c>). False
-    /// for <b>umbrella skills</b> — real skills flagged <c>IsUmbrellaSkill</c>
-    /// /<c>XpTable:"None"</c> in <c>skills.json</c> (Augmentation / Performance /
-    /// Phrenology, …) whose level is derived from member sub-skills and carried
-    /// in <see cref="BonusLevels"/> (<see cref="Level"/> stays 0). They never
-    /// gain XP, so they have no per-level curve and report <c>max=0</c>; that is
-    /// a verified-exact runtime proxy for the authoritative
-    /// <c>IReferenceDataService.Skills[key].XpTable == "None"</c> (already
-    /// exposed and widely consumed). The tracker stays log-only by deliberate
-    /// choice — pure-string, unit-testable, no DI surface — with optional
-    /// reference-backed enrichment as the independent follow-up #470. Kept in
-    /// the snapshot — flagged, not dropped — so a consumer decides; the
-    /// leveling constraint set should exclude them.
+    /// True when the skill advances via an XP curve. <b>Authoritative when
+    /// <see cref="Reference"/> is present</b> (<c>XpTable != "None"</c>);
+    /// otherwise the verified-exact log proxy <c>max &gt; 0</c>.
+    ///
+    /// <para>False for <b>umbrella skills</b> — real skills flagged
+    /// <c>IsUmbrellaSkill</c>/<c>XpTable:"None"</c> in <c>skills.json</c>
+    /// (Augmentation / Performance / Phrenology, …) whose level is derived from
+    /// member sub-skills and carried in <see cref="BonusLevels"/>
+    /// (<see cref="Level"/> stays 0). Kept in the snapshot — flagged, not
+    /// dropped — so a consumer decides; the leveling constraint set should
+    /// exclude them. The proxy and the authoritative value agree 1:1 on all
+    /// observed data; <see cref="Reference"/> just removes the inference.</para>
     /// </summary>
-    public bool IsTrainable => MaxLevel > 0;
+    public bool IsTrainable => Reference is { } r
+        ? !string.Equals(r.XpTable, "None", StringComparison.Ordinal)
+        : MaxLevel > 0;
+
+    /// <summary>
+    /// Human-readable skill name from reference data (e.g.
+    /// <c>"Bear and Bugbear Anatomy"</c> for key <c>Anatomy_Bears</c>), or
+    /// <c>null</c> when reference data was unavailable — in which case the
+    /// consumer falls back to resolving the key itself (the model always keeps
+    /// the internal-name key regardless).
+    /// </summary>
+    public string? DisplayName => Reference?.DisplayName;
 
     /// <summary>
     /// True when the skill has reached its cap (<c>raw &gt;= max</c>, max &gt; 0).
