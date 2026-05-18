@@ -195,29 +195,30 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- PROVEN minimal idiom (same as the ghosts that
-                                     render): a single Ellipse, centred on the
-                                     placement pixel via negative Margin. The
-                                     zero-size nested-Canvas crosshair did NOT
-                                     render in a ContentPresenter — do not bring
-                                     it back. Active (nudge) target = amber thick
-                                     ring via the IsSelected trigger. Name on hover. -->
-                                <Ellipse Width="13" Height="13" Margin="-6.5,-6.5,0,0"
-                                         ToolTip="{Binding Name}">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="#CCFF3B30" />
-                                            <Setter Property="Stroke" Value="White" />
-                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                <!-- Crosshair, restored — but as a SINGLE Path
+                                     (one fixed-size element, like the ghosts that
+                                     render), NOT the zero-size nested Canvas that
+                                     never drew. Geometry is centred on (0,0):
+                                     four arms with a centre gap so the exact pixel
+                                     stays visible to aim at, plus a 3px ring.
+                                     Margin -10,-10 puts geometry-(0,0) on the
+                                     placement pixel. Active target = amber/thick
+                                     via the IsSelected trigger; name on hover. -->
+                                <Path Margin="-10,-10,0,0" ToolTip="{Binding Name}"
+                                      Data="M-10,0 L-4,0 M4,0 L10,0 M0,-10 L0,-4 M0,4 L0,10 M3,0 A3,3 0 1 1 -3,0 A3,3 0 1 1 3,0">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Stroke" Value="#FFFF3B30" />
+                                            <Setter Property="StrokeThickness" Value="1.4" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                     <Setter Property="Stroke" Value="#FFFFC400" />
-                                                    <Setter Property="StrokeThickness" Value="3" />
+                                                    <Setter Property="StrokeThickness" Value="2.4" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
+                                    </Path.Style>
+                                </Path>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
