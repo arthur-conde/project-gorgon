@@ -42,20 +42,27 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
         vm.CanSolve.Should().BeFalse();
-        // Selection is spent after a placement — a stray next click does NOT
-        // move the pin (it warns instead of silently re-placing).
-        vm.SelectedReference.Should().BeNull();
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(11, 11));
-        vm.Placements.Should().HaveCount(1);            // unchanged
-        vm.Placements[0].X.Should().Be(10);            // not moved
-        vm.ClickWarning.Should().NotBeNull();
+        // The dropped reference stays the active target — visible & nudgeable.
+        vm.SelectedReference.Should().Be(vm.References[0]);
+        vm.SelectedPlacement.Should().NotBeNull();
+        vm.CanNudge.Should().BeTrue();
 
-        // Each point is a deliberate pick.
+        // Picking another reference swaps target; the first pin stays put.
         vm.SelectedReference = vm.References[1];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
         vm.Placements.Should().HaveCount(2);
+        vm.Placements[0].X.Should().Be(10);   // untouched by the swap
         vm.CanSolve.Should().BeTrue();
         vm.SolveCommand.CanExecute(null).Should().BeTrue();
+
+        // Done deselects: a stray click then warns instead of moving anything.
+        vm.DeselectCommand.Execute(null);
+        vm.SelectedReference.Should().BeNull();
+        vm.SelectedPlacement.Should().BeNull();
+        vm.CanNudge.Should().BeFalse();
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5));
+        vm.Placements.Should().HaveCount(2);  // nothing placed/moved
+        vm.ClickWarning.Should().NotBeNull();
     }
 
     [Fact]
@@ -71,8 +78,8 @@ public class CalibrationSessionViewModelTests
 
         vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
-        // Correction is explicit: re-select the same reference, then click.
-        vm.SelectedReference = vm.References[0];
+        // Selection persists, so clicking again repositions the same pin
+        // (it's the clearly-indicated active target).
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
 
         vm.Placements.Should().HaveCount(1);   // replaced, not appended

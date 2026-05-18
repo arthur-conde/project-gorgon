@@ -94,8 +94,29 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     {
         if (oldValue is not null) oldValue.IsSelected = false;
         if (newValue is not null) newValue.IsSelected = true;
+        // Selecting a pin in the Placed list also selects its reference (so the
+        // References list agrees — "pick from either list"). Only sync upward
+        // when a pin is chosen; clearing the pin because an *unplaced*
+        // reference was picked must NOT wipe that reference selection.
+        if (newValue is not null && !ReferenceEquals(SelectedReference, newValue.Reference))
+            SelectedReference = newValue.Reference;
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
+    }
+
+    /// <summary>
+    /// Selecting a reference (either list) makes it the active target and links
+    /// to its dropped pin if one exists — so nudging only works once a pin has
+    /// been placed for it. Switching references leaves the previous pin where
+    /// it was (it's already stored in <see cref="Placements"/>).
+    /// </summary>
+    partial void OnSelectedReferenceChanged(CalibrationReference? value)
+    {
+        var pin = value is null
+            ? null
+            : Placements.FirstOrDefault(p => ReferenceEquals(p.Reference, value));
+        if (!ReferenceEquals(SelectedPlacement, pin))
+            SelectedPlacement = pin; // null until this reference is dropped
     }
 
     /// <summary>Non-null when the last map click could not be placed — tells the
@@ -208,17 +229,19 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
         var placed = new PlacedReference(reference, pixel);
         Placements.Add(placed);
-        SelectedPlacement = placed; // immediately arrow-key nudgeable
+        SelectedPlacement = placed;     // dropped → now nudgeable
+        SelectedReference = reference;  // stays the active target (both lists agree)
         ClickWarning = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
 
-        // Clear the selection so the click is "spent". Otherwise the reference
-        // stays selected and the *next* click re-places (visibly moves) the
-        // same pin — every stray click drags it. To correct a point: nudge it
-        // with the arrow keys, or deliberately re-select that reference and
-        // click again. A click never silently moves an existing pin.
-        SelectedReference = null;
+        // Selection deliberately persists: the just-dropped pin is the clearly
+        // indicated active target (halo + "Nudging …" text). Arrow keys nudge
+        // it; clicking again repositions it; picking another reference swaps
+        // (the prior pin stays put — already stored); "Done" deselects so a
+        // stray click/nudge does nothing. (Earlier the persistence was a *bug*
+        // only because it was invisible and unstoppable — now it's an explicit,
+        // visible state with an exit.)
     }
 
     /// <summary>
@@ -266,6 +289,17 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
+    }
+
+    /// <summary>Commit &amp; stop: deselect the active reference/pin so a stray
+    /// click or arrow key does nothing until something is picked again. The
+    /// pin's final nudged position is already stored in <see cref="Placements"/>.</summary>
+    [RelayCommand]
+    private void Deselect()
+    {
+        SelectedReference = null; // OnSelectedReferenceChanged clears the pin too
+        SelectedPlacement = null;
+        ClickWarning = null;
     }
 
     [RelayCommand]

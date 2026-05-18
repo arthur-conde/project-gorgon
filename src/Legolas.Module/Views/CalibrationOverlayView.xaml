@@ -79,7 +79,10 @@
                                 <Button Content="Clear" Command="{Binding ClearPlacementsCommand}"
                                         Padding="8,4" Margin="0,0,6,0" />
                                 <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"
-                                        Padding="8,4" />
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Done"
+                                        ToolTip="Stop nudging / deselect the active pin"
+                                        Command="{Binding DeselectCommand}" Padding="8,4" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <ToggleButton Content="Verify (set position)"
