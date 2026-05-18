@@ -1,6 +1,7 @@
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Movement;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Sessions;
@@ -40,6 +41,16 @@ public static class GameStateServiceCollectionExtensions
         // one tracker, registered once here — consumers inject the tracker.
         services.AddSingleton<AreaTransitionParser>();
         services.AddSingleton<PlayerAreaTracker>();
+
+        // Player position is shared live game-state (Palantir debug surface,
+        // future overlay/positioning consumers). Self-feeding hosted service —
+        // also warms PlayerAreaTracker so the area is known without Legolas /
+        // Gandalf being active (idempotent when they are).
+        services.AddSingleton<PlayerPositionParser>();
+        services
+            .AddSingleton<PlayerPositionTracker>()
+            .AddSingleton<IPlayerPositionTracker>(sp => sp.GetRequiredService<PlayerPositionTracker>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerPositionTracker>());
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();

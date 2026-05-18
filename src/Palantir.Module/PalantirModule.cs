@@ -22,6 +22,7 @@ public sealed class PalantirModule : IMithrilModule
     public void Register(IServiceCollection services)
     {
         services.AddSingleton<LiveInventoryViewModel>();
+        services.AddSingleton<WorldStateViewModel>();
 
         services.AddSingleton<PalantirAttentionSource>();
         services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<PalantirAttentionSource>());

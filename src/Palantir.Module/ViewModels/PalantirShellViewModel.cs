@@ -11,11 +11,15 @@ public sealed class PalantirShellViewModel
 {
     public IReadOnlyList<ModuleTab> Tabs { get; }
 
-    public PalantirShellViewModel(LiveInventoryViewModel liveInventory, NotificationTesterViewModel notificationTester)
+    public PalantirShellViewModel(
+        LiveInventoryViewModel liveInventory,
+        WorldStateViewModel worldState,
+        NotificationTesterViewModel notificationTester)
     {
         Tabs = new[]
         {
             new ModuleTab("Live Inventory", liveInventory),
+            new ModuleTab("World State", worldState),
             new ModuleTab("Notification Tester", notificationTester),
         };
     }
