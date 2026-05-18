@@ -73,6 +73,18 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     /// recently placed; also click-selectable in the Placed list).</summary>
     [ObservableProperty] private PlacedReference? _selectedPlacement;
 
+    /// <summary>Panel text naming what a nudge will move (null = nothing armed).</summary>
+    public string? NudgeTargetText => SelectedPlacement is { } p
+        ? $"Nudging “{p.Name}” — arrow keys move it (Shift = 5px)"
+        : null;
+
+    partial void OnSelectedPlacementChanged(PlacedReference? oldValue, PlacedReference? newValue)
+    {
+        if (oldValue is not null) oldValue.IsSelected = false;
+        if (newValue is not null) newValue.IsSelected = true;
+        OnPropertyChanged(nameof(NudgeTargetText));
+    }
+
     /// <summary>Non-null when the last map click could not be placed — tells the
     /// user why instead of silently doing nothing.</summary>
     [ObservableProperty] private string? _clickWarning;
@@ -272,7 +284,9 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     private void RemoveLastPlacement()
     {
         if (Placements.Count == 0) return;
+        var removed = Placements[^1];
         Placements.RemoveAt(Placements.Count - 1);
+        if (ReferenceEquals(SelectedPlacement, removed)) SelectedPlacement = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
     }
@@ -281,6 +295,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     private void ClearPlacements()
     {
         Placements.Clear();
+        SelectedPlacement = null; // don't leave the nudge target dangling
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
         ResultText = null;
@@ -350,6 +365,11 @@ public sealed partial class PlacedReference : ObservableObject
     public CalibrationReference Reference { get; }
 
     [ObservableProperty] private PixelPoint _pixel;
+
+    /// <summary>True for the one placement the arrow-key nudge currently acts
+    /// on — drives the on-map "active target" highlight so it's obvious what
+    /// you're moving.</summary>
+    [ObservableProperty] private bool _isSelected;
 
     partial void OnPixelChanged(PixelPoint value)
     {

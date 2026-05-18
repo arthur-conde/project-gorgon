@@ -226,6 +226,44 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void Active_nudge_target_is_singular_visible_and_named()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
+        });
+
+        vm.NudgeTargetText.Should().BeNull(); // nothing armed yet
+
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        var a = vm.Placements[0];
+        a.IsSelected.Should().BeTrue();
+        vm.NudgeTargetText.Should().Contain("A");
+
+        vm.SelectedReference = vm.References[1];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
+        var b = vm.Placements[1];
+        // Exactly one is highlighted — the new one.
+        b.IsSelected.Should().BeTrue();
+        a.IsSelected.Should().BeFalse();
+        vm.NudgeTargetText.Should().Contain("B");
+
+        // Click-selecting the first row in the Placed list moves the highlight.
+        vm.SelectedPlacement = a;
+        a.IsSelected.Should().BeTrue();
+        b.IsSelected.Should().BeFalse();
+
+        // Clearing drops the target entirely.
+        vm.ClearPlacementsCommand.Execute(null);
+        vm.SelectedPlacement.Should().BeNull();
+        vm.NudgeTargetText.Should().BeNull();
+        a.IsSelected.Should().BeFalse();
+    }
+
+    [Fact]
     public void ViewportClicked_in_test_mode_sets_the_test_origin_not_a_placement()
     {
         var svc = new FakeService
