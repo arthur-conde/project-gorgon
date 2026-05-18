@@ -152,8 +152,11 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
 
-        SelectedReference = References.FirstOrDefault(r =>
-            Placements.All(p => !ReferenceEquals(p.Reference, r)));
+        // No auto-advance: the click only ever affects the reference the user
+        // explicitly selected. Keeping the selection means a second click on
+        // the same reference is a *correction* (replaces its point above), and
+        // moving to the next reference is a deliberate pick — not something
+        // every stray click silently consumes.
     }
 
     [RelayCommand]

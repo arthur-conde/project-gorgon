@@ -1,7 +1,5 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.Domain;
@@ -49,21 +47,25 @@ public partial class CalibrationOverlayView : Window
 
         var pos = Mouse.GetPosition(Viewport);
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(pos.X, pos.Y));
+        // Pull keyboard focus onto the (focusable) Viewport so arrow-key nudge
+        // works immediately after placing — otherwise focus stays on the
+        // reference list and the list eats the arrows.
+        Viewport.Focus();
         e.Handled = true;
     }
 
     /// <summary>
-    /// Arrow keys fine-tune the selected placement (Shift = 5px). Skipped when
-    /// focus is inside the area combo or a list — those need arrows for their
-    /// own navigation; after a map click focus is on the window, which is the
-    /// normal nudge case.
+    /// Arrow keys fine-tune the selected placement (Shift = 5px). Handled at
+    /// the window's PreviewKeyDown (tunnels before any child), and marked
+    /// Handled, so the reference/area lists never also arrow-navigate — pick
+    /// those by mouse. Only requires the calibration window to be the active
+    /// window (true right after a placement click).
     /// </summary>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         if (DataContext is CalibrationSessionViewModel vm
             && vm.SelectedPlacement is not null
-            && TryArrowDelta(e.Key, out var ux, out var uy)
-            && !FocusIsInListOrCombo())
+            && TryArrowDelta(e.Key, out var ux, out var uy))
         {
             var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 5.0 : 1.0;
             vm.NudgeSelected(ux * step, uy * step);
@@ -84,14 +86,5 @@ public partial class CalibrationOverlayView : Window
             _ => (0.0, 0.0),
         };
         return dx != 0 || dy != 0;
-    }
-
-    private static bool FocusIsInListOrCombo()
-    {
-        if (Keyboard.FocusedElement is not DependencyObject d) return false;
-        for (var n = d; n is not null; n = VisualTreeHelper.GetParent(n))
-            if (n is ListBox or ComboBox or ComboBoxItem)
-                return true;
-        return false;
     }
 }

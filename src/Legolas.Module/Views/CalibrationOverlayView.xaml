@@ -40,6 +40,7 @@
                         <TextBlock DockPanel.Dock="Top" Text="Area" Foreground="#FF8FA6BD"
                                    FontWeight="SemiBold" Margin="0,0,0,4" />
                         <ComboBox DockPanel.Dock="Top" Margin="0,0,0,8"
+                                  IsSynchronizedWithCurrentItem="False"
                                   ItemsSource="{Binding AvailableAreas}"
                                   SelectedItem="{Binding SelectedArea, Mode=TwoWay}">
                             <ComboBox.ItemTemplate>
@@ -85,6 +86,7 @@
                                 </TextBlock>
                                 <ListBox ItemsSource="{Binding Placements}"
                                          SelectedItem="{Binding SelectedPlacement, Mode=TwoWay}"
+                                         IsSynchronizedWithCurrentItem="False"
                                          Background="#FF12161B" Foreground="#FFB9C7D6"
                                          BorderBrush="#FF2C3540"
                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
@@ -107,6 +109,7 @@
                         <!-- Reference picker -->
                         <ListBox ItemsSource="{Binding References}"
                                  SelectedItem="{Binding SelectedReference, Mode=TwoWay}"
+                                 IsSynchronizedWithCurrentItem="False"
                                  Background="#FF12161B" Foreground="#FFE0E6EC"
                                  BorderBrush="#FF2C3540">
                             <ListBox.ItemTemplate>
@@ -133,6 +136,7 @@
                      has no backdrop, so the Viewport must paint its own faint
                      fill. ~1% alpha is visually imperceptible over the map. -->
                 <Grid x:Name="Viewport" Background="#03000000"
+                      Focusable="True" FocusVisualStyle="{x:Null}"
                       MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
                     <!-- Placed-reference markers. IsHitTestVisible=False so they
                          never swallow a calibration click. -->

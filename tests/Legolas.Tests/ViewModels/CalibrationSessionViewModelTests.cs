@@ -42,9 +42,14 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
         vm.CanSolve.Should().BeFalse();
-        // Auto-advanced to the only remaining unplaced reference.
-        vm.SelectedReference.Should().Be(vm.References[1]);
+        // No auto-advance: the selection stays where the user put it. A second
+        // click with the same reference would *correct* it, not add a point.
+        vm.SelectedReference.Should().Be(vm.References[0]);
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(11, 11));
+        vm.Placements.Should().HaveCount(1); // still one — that was a correction
 
+        // Advancing to the next point is a deliberate pick.
+        vm.SelectedReference = vm.References[1];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
         vm.Placements.Should().HaveCount(2);
         vm.CanSolve.Should().BeTrue();
@@ -64,7 +69,8 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference = vm.References[0];
 
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
-        vm.SelectedReference = vm.References[0]; // re-select (auto-advance cleared it)
+        // Selection stays on References[0] (no auto-advance); a second click is
+        // a correction of the same point.
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
 
         vm.Placements.Should().HaveCount(1);
