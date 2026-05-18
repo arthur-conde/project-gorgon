@@ -24,21 +24,18 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <Border Background="#FF1A1A1A" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="6"
+    <Border Style="{StaticResource MithrilChromeWindowFrameStyle}"
             MinWidth="420" MaxWidth="680" MaxHeight="760">
         <DockPanel>
-            <Border DockPanel.Dock="Top" Background="#FF202020" CornerRadius="6,6,0,0"
-                    Padding="14,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Border DockPanel.Dock="Top" Style="{StaticResource MithrilChromeWindowTitleBarStyle}"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <DockPanel>
-                    <Button DockPanel.Dock="Right" Width="24" Height="24" Padding="0"
-                            Background="Transparent" BorderThickness="0" Cursor="Hand"
-                            ToolTip="Close" Click="CloseButton_Click">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource MithrilChromeWindowCloseButtonStyle}"
+                            Click="CloseButton_Click">
                         <icon:PackIconLucide Kind="X" Width="14" Height="14" Foreground="#88FFFFFF"/>
                     </Button>
                     <TextBlock Text="{Binding DisplayName}"
-                               FontFamily="{DynamicResource AppHeaderFontFamily}"
-                               FontSize="{DynamicResource AppFontSizeXLarge}"
-                               Foreground="#FFD4A847" VerticalAlignment="Center"/>
+                               Style="{StaticResource MithrilChromeWindowTitleTextStyle}"/>
                 </DockPanel>
             </Border>
 

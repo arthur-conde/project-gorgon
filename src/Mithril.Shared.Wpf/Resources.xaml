@@ -1822,6 +1822,62 @@
          Phase 5 call site (pass already-upper text; tracking would need a
          custom behavior). Surfaced in the Phase 4 reconciliation flags. -->
 
+    <!-- ════════════════════════════════════════════════════════════════════
+         Detail / popup WINDOW CHROME — pre-grammar frame, centralised (DRY).
+
+         This is the hand-rolled dark chrome shared verbatim by all 11 detail /
+         popup windows (ProvenancePopupWindow + the 10 *DetailWindow). It is
+         NOT #404 grammar: the visual-grammar doc explicitly scopes itself to
+         CONTENT tiers ("Structure is a frame, not a finding"; § "What this doc
+         does NOT do"), so the window FRAME was never in any #404 phase. These
+         styles only DE-DUPLICATE the pre-existing identical pigment so the open
+         "should the frame conform to the grammar?" decision (incl. the
+         double-gold-title G-b tension when a detail opens in a window) becomes a
+         single-file edit. Look is preserved byte-for-byte. See
+         docs/silmarillion-window-chrome.md for the open conformance question.
+
+         Window-level behavioural attrs (WindowStyle/AllowsTransparency/sizing)
+         are intentionally LEFT INLINE: they are not pigment, not the grammar's
+         concern, and a Window-self Style via the window's own merged dict hits
+         the classic StaticResource-parses-before-Resources ordering pitfall.
+         Per-window MinWidth/MaxWidth/MaxHeight also stay inline (4 size bins).
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Style x:Key="MithrilChromeWindowFrameStyle" TargetType="Border">
+        <Setter Property="Background" Value="#FF1A1A1A"/>
+        <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+
+    <Style x:Key="MithrilChromeWindowTitleBarStyle" TargetType="Border">
+        <Setter Property="Background" Value="#FF202020"/>
+        <Setter Property="CornerRadius" Value="6,6,0,0"/>
+        <Setter Property="Padding" Value="14,10"/>
+    </Style>
+
+    <Style x:Key="MithrilChromeWindowCloseButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="ToolTip" Value="Close"/>
+    </Style>
+
+    <!-- The window title-bar gold text. Today this is the OLD bespoke gold
+         (AppHeaderFontFamily / XLarge / #FFD4A847) — deliberately NOT
+         FactTitleStyle. Resolving that (and the resulting double-gold-title
+         when a detail opens in a window) is the open (B) decision; this key is
+         the single swap point for it. -->
+    <Style x:Key="MithrilChromeWindowTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppHeaderFontFamily}"/>
+        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeXLarge}"/>
+        <Setter Property="Foreground" Value="#FFD4A847"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <!-- Fact · title-loud: Cambria / 600 / accent, one per pane. G3-amend-2:
          size is 1.5em (was the fixed AppFontSizeHeader=18, which equalled 1.5×
          the AppFontSize=12 default — now it TRACKS the Appearance slider).
