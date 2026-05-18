@@ -102,6 +102,11 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             IsConfirmingRecalibrate = false;
             OnPropertyChanged(nameof(CanRecalibrate));
             OnPropertyChanged(nameof(IsAreaCalibrated));
+            // #113 header chip: area and/or calibration state just changed.
+            OnPropertyChanged(nameof(CurrentAreaName));
+            OnPropertyChanged(nameof(IsAreaKnown));
+            OnPropertyChanged(nameof(CalibrationChipText));
+            OnPropertyChanged(nameof(CanCalibrateThisArea));
             // #113: once this area is calibrated the Motherlode dot can place;
             // drop the one-shot request so RecomputeStep returns to the
             // log-driven Motherlode stage instead of re-entering Calibrating.
@@ -188,6 +193,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// <summary>True once the user has clicked Survey or Motherlode in step 0.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentStep))]
+    [NotifyPropertyChangedFor(nameof(CanCalibrateThisArea))]
     private bool _hasPickedMode;
 
     [ObservableProperty]
@@ -347,6 +353,41 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// vs. the honest "dot is approximate" caveat. Notified on
     /// <see cref="IAreaCalibrationService.Changed"/>.</summary>
     public bool IsAreaCalibrated => _areaCalibration.IsCurrentAreaCalibrated;
+
+    /// <summary>#113: friendly name of the area Legolas thinks you're in, or
+    /// null if none was detected (Mithril started mid-session with no
+    /// "Entering Area" banner).</summary>
+    public string? CurrentAreaName => _areaCalibration.CurrentAreaFriendlyName;
+
+    /// <summary>True when the area is identified in reference data (so a
+    /// calibration is even possible). False ⇒ the chip shows "area not
+    /// detected" rather than a calibrate prompt.</summary>
+    public bool IsAreaKnown => _areaCalibration.CurrentAreaKey is not null;
+
+    /// <summary>#113: the always-visible header chip text — area + calibration
+    /// state at a glance, so the user never has to open the (experimental)
+    /// calibration overlay to find out.</summary>
+    public string CalibrationChipText =>
+        !IsAreaKnown ? "Area not detected"
+        : IsAreaCalibrated ? $"{CurrentAreaName} · calibrated"
+        : $"{CurrentAreaName} · not calibrated";
+
+    /// <summary>The chip is an actionable "calibrate now" affordance only when
+    /// a mode is picked, the area is known, and it isn't already calibrated;
+    /// otherwise it's a passive status label.</summary>
+    public bool CanCalibrateThisArea => HasPickedMode && IsAreaKnown && !IsAreaCalibrated;
+
+    /// <summary>#113: start the guided Drop/Pair calibration from the header
+    /// chip (never the experimental overlay). Survey already gates an
+    /// uncalibrated area into <see cref="WizardStep.Calibrating"/>; Motherlode
+    /// needs the explicit opt-in (it's calibration-free by default).</summary>
+    [RelayCommand]
+    private void CalibrateThisArea()
+    {
+        if (_session.Mode == SessionMode.Motherlode)
+            _motherlodeCalibrationRequested = true;
+        RecomputeStep();
+    }
 
     /// <summary>#113: one-shot request to detour into the guided
     /// <see cref="WizardStep.Calibrating"/> walkthrough from Motherlode.

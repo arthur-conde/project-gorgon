@@ -196,14 +196,68 @@
     <DockPanel LastChildFill="True">
 
         <!-- Module header (Mithril convention: every module's view starts with
-             icon + accented title at the top). -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,16,20,0">
-            <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
-                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBlock Text="Legolas · Survey"
-                       FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
-                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-        </StackPanel>
+             icon + accented title at the top). #113: a persistent area +
+             calibration-state chip on the right — the user-facing way to see
+             calibration state (the calibration overlay is experimental). When
+             the area is known but uncalibrated the chip is clickable and
+             starts the guided Drop/Pair calibration. -->
+        <DockPanel DockPanel.Dock="Top" Margin="20,16,20,0">
+            <Border DockPanel.Dock="Right" VerticalAlignment="Center"
+                    Background="{StaticResource BgSurfaceBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="10,4"
+                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate (guided) when uncalibrated.">
+                <Border.InputBindings>
+                    <MouseBinding Gesture="LeftClick" Command="{Binding CalibrateThisAreaCommand}" />
+                </Border.InputBindings>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CanCalibrateThisArea}" Value="True">
+                                <Setter Property="Cursor" Value="Hand" />
+                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,7,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <!-- area unknown → grey -->
+                                <Setter Property="Fill" Value="{StaticResource TextTertiaryBrush}" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsAreaKnown}" Value="True" />
+                                            <Condition Binding="{Binding IsAreaCalibrated}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Fill" Value="{StaticResource MlQualityStrongBrush}" />
+                                    </MultiDataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsAreaKnown}" Value="True" />
+                                            <Condition Binding="{Binding IsAreaCalibrated}" Value="False" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Fill" Value="{StaticResource MlQualityUsableBrush}" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding CalibrationChipText}" VerticalAlignment="Center"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Legolas · Survey"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </DockPanel>
 
         <!-- Footer (always visible): status strip -->
         <Border DockPanel.Dock="Bottom" Background="{StaticResource BgSurfaceBrush}"

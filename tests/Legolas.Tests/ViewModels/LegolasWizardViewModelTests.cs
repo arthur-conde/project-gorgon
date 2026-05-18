@@ -415,6 +415,27 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
+    public void Calibration_chip_reflects_area_and_state()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickMotherlodeModeCommand.Execute(null);
+
+        wizard.CalibrationChipText.Should().Be("Test · not calibrated");
+        wizard.CanCalibrateThisArea.Should().BeTrue();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        calib.Calibrated = true;
+        calib.RaiseChanged();
+
+        wizard.CalibrationChipText.Should().Be("Test · calibrated");
+        wizard.CanCalibrateThisArea.Should().BeFalse("already calibrated");
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+    }
+
+    [Fact]
     public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
         var calib = new FakeAreaCalib { Calibrated = false };
