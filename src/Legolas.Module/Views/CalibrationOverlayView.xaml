@@ -1,0 +1,136 @@
+<Window x:Class="Legolas.Views.CalibrationOverlayView"
+        x:Name="Self"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Legolas.ViewModels"
+        xmlns:controls="clr-namespace:Legolas.Controls"
+        Title="Calibrate Map"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Width="940" Height="660"
+        d:DataContext="{d:DesignInstance vm:CalibrationSessionViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d">
+    <Grid>
+        <Border BorderBrush="#FF3A6EA5" BorderThickness="1">
+            <DockPanel>
+                <!-- Draggable header -->
+                <Border DockPanel.Dock="Top" Background="#FF1E2A38" Padding="10,6"
+                        MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Map Calibration" Foreground="White" FontWeight="SemiBold" />
+                        <TextBlock Text="  —  " Foreground="#FF6E8AA5" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="#FFCDE3F5"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="640" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Right control panel (opaque; clicks here never reach the map viewport) -->
+                <Border DockPanel.Dock="Right" Width="320" Background="#F21A1F26"
+                        BorderBrush="#FF2C3540" BorderThickness="1,0,0,0">
+                    <DockPanel Margin="12">
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Instruction}"
+                                   Foreground="#FFB9C7D6" TextWrapping="Wrap"
+                                   FontSize="12" Margin="0,0,0,10" />
+
+                        <TextBlock DockPanel.Dock="Top" Text="References in this area"
+                                   Foreground="#FF8FA6BD" FontWeight="SemiBold" Margin="0,0,0,4" />
+
+                        <!-- Action buttons pinned to the bottom -->
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                            <TextBlock Text="{Binding ResultText}" Foreground="#FFCFE8C9"
+                                       TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8" />
+                            <Button Content="Solve &amp; save calibration"
+                                    Command="{Binding SolveCommand}" Padding="8,6" />
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="Remove last" Command="{Binding RemoveLastPlacementCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear" Command="{Binding ClearPlacementsCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"
+                                        Padding="8,4" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Placed references -->
+                        <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="150">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Placed" Foreground="#FF8FA6BD"
+                                           FontWeight="SemiBold" Margin="0,0,0,4" />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding Placements}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Foreground="#FFB9C7D6" FontSize="12">
+                                                    <Run Text="{Binding Name, Mode=OneWay}" />
+                                                    <Run Text=" @ (" Foreground="#FF6E8AA5" />
+                                                    <Run Text="{Binding X, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                    <Run Text=", " Foreground="#FF6E8AA5" />
+                                                    <Run Text="{Binding Y, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                    <Run Text=")" Foreground="#FF6E8AA5" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Reference picker -->
+                        <ListBox ItemsSource="{Binding References}"
+                                 SelectedItem="{Binding SelectedReference, Mode=TwoWay}"
+                                 Background="#FF12161B" Foreground="#FFE0E6EC"
+                                 BorderBrush="#FF2C3540">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Name}" />
+                                        <TextBlock Text=" · " Foreground="#FF6E8AA5" />
+                                        <TextBlock Text="{Binding Kind}" Foreground="#FF7E97AE" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+                <!-- Transparent click-capture surface over the in-game map -->
+                <Grid x:Name="Viewport" Background="Transparent"
+                      MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
+                    <!-- Placed-reference markers. IsHitTestVisible=False so they
+                         never swallow a calibration click. -->
+                    <ItemsControl ItemsSource="{Binding Placements}" IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- Offset so the dot centres on the click point. -->
+                                <Grid Margin="-7,-7,0,0">
+                                    <Ellipse Width="14" Height="14"
+                                             Fill="#CC3A9BDC" Stroke="White" StrokeThickness="2" />
+                                    <TextBlock Text="{Binding Name}" Foreground="White"
+                                               FontSize="11" Margin="18,-2,0,0"
+                                               Background="#99000000" Padding="3,1" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </DockPanel>
+        </Border>
+        <controls:ResizeGrips />
+    </Grid>
+</Window>

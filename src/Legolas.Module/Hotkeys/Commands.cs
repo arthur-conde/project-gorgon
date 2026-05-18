@@ -120,6 +120,24 @@ public sealed class ToggleInventoryOverlayCommand : IHotkeyCommand
     }
 }
 
+public sealed class ToggleCalibrationOverlayCommand : IHotkeyCommand
+{
+    private readonly SessionState _session;
+    public ToggleCalibrationOverlayCommand(SessionState session) => _session = session;
+    public string Id => "legolas.overlay.calibration.toggle";
+    public string DisplayName => "Toggle Map Calibration";
+    public string? Category => "Legolas · Overlay";
+    public HotkeyBinding? DefaultBinding => null;
+    // Calibration is done with the in-game map open, so it must stay registered
+    // while the game (not Mithril) has focus — same as the other overlays.
+    public bool RespectsFocusGate => false;
+    public Task ExecuteAsync(CancellationToken cancellationToken)
+    {
+        _session.IsCalibrationVisible = !_session.IsCalibrationVisible;
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class OptimizeRouteCommand : IHotkeyCommand
 {
     private readonly MapOverlayViewModel _map;

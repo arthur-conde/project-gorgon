@@ -108,6 +108,7 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     public Dictionary<string, AreaCalibration> AreaCalibrations { get; set; } = new(StringComparer.Ordinal);
     public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
+    public WindowLayout CalibrationOverlay { get; set; } = new() { Width = 940, Height = 660 };
 
     // WPF stops hit-testing fully-transparent elements regardless of IsHitTestVisible,
     // so a 0-opacity overlay silently becomes unclickable. Floor at 1% — visually

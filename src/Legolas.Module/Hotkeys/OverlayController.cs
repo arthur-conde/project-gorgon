@@ -33,6 +33,7 @@ public sealed class OverlayController : IHostedService
     private bool _subscribed;
     private MapOverlayView? _map;
     private InventoryOverlayView? _inventory;
+    private CalibrationOverlayView? _calibration;
 
     public OverlayController(
         IServiceProvider services,
@@ -65,6 +66,7 @@ public sealed class OverlayController : IHostedService
                     _subscribed = true;
                     SyncMap();
                     SyncInventory();
+                    SyncCalibration();
                 });
             }
             catch (OperationCanceledException) { }
@@ -87,8 +89,10 @@ public sealed class OverlayController : IHostedService
             }
             _map?.Close();
             _inventory?.Close();
+            _calibration?.Close();
             _map = null;
             _inventory = null;
+            _calibration = null;
         });
     }
 
@@ -96,6 +100,7 @@ public sealed class OverlayController : IHostedService
     {
         if (e.PropertyName == nameof(SessionState.IsMapVisible)) SyncMap();
         else if (e.PropertyName == nameof(SessionState.IsInventoryVisible)) SyncInventory();
+        else if (e.PropertyName == nameof(SessionState.IsCalibrationVisible)) SyncCalibration();
     }
 
     private void OnFocusGatePropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -103,6 +108,7 @@ public sealed class OverlayController : IHostedService
         if (e.PropertyName != nameof(ForegroundFocusGate.IsInApp)) return;
         SyncMap();
         SyncInventory();
+        SyncCalibration();
     }
 
     private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -114,6 +120,7 @@ public sealed class OverlayController : IHostedService
         if (e.PropertyName != nameof(LegolasSettings.AutoHideOverlaysOnGameUnfocused)) return;
         SyncMap();
         SyncInventory();
+        SyncCalibration();
     }
 
     private bool ShouldRender(bool sessionFlag) =>
@@ -129,6 +136,12 @@ public sealed class OverlayController : IHostedService
     {
         if (ShouldRender(_session.IsInventoryVisible)) EnsureInventory().Show();
         else _inventory?.Hide();
+    }
+
+    private void SyncCalibration()
+    {
+        if (ShouldRender(_session.IsCalibrationVisible)) EnsureCalibration().Show();
+        else _calibration?.Hide();
     }
 
     private MapOverlayView EnsureMap()
@@ -153,5 +166,17 @@ public sealed class OverlayController : IHostedService
             _session.IsInventoryVisible = false;
         };
         return _inventory;
+    }
+
+    private CalibrationOverlayView EnsureCalibration()
+    {
+        if (_calibration is not null) return _calibration;
+        _calibration = _services.GetRequiredService<CalibrationOverlayView>();
+        _calibration.Closed += (_, _) =>
+        {
+            _calibration = null;
+            _session.IsCalibrationVisible = false;
+        };
+        return _calibration;
     }
 }
