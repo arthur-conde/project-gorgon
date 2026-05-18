@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Services;
+using Mithril.Shared.Reference;
 
 namespace Legolas.ViewModels;
 
@@ -33,14 +34,45 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     public ObservableCollection<CalibrationReference> References { get; } = new();
     public ObservableCollection<PlacedReference> Placements { get; } = new();
 
+    /// <summary>Every known area, for the manual picker (no live banner needed).</summary>
+    public IReadOnlyList<AreaEntry> AvailableAreas => _service.AllAreas;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SolveCommand))]
     private CalibrationReference? _selectedReference;
 
+    /// <summary>Manually-chosen area. Switching it drives the service the same
+    /// way a live <c>Entering Area:</c> banner would.</summary>
+    [ObservableProperty] private AreaEntry? _selectedArea;
+
+    /// <summary>The placement the keyboard nudge acts on (set to the most
+    /// recently placed; also click-selectable in the Placed list).</summary>
+    [ObservableProperty] private PlacedReference? _selectedPlacement;
+
+    /// <summary>Non-null when the last map click could not be placed — tells the
+    /// user why instead of silently doing nothing.</summary>
+    [ObservableProperty] private string? _clickWarning;
+
     [ObservableProperty] private string _statusText = "No area detected yet.";
     [ObservableProperty] private string _instruction =
-        "Walk into an area, pick a landmark or NPC below, then click exactly where it sits on the in-game map.";
+        "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
     [ObservableProperty] private string? _resultText;
+
+    partial void OnSelectedAreaChanged(AreaEntry? value)
+    {
+        // Guard the Refresh→set→change loop: Refresh sets SelectedArea to the
+        // already-current area, which must NOT re-drive the service.
+        if (value is null || value.Key == _service.CurrentAreaKey) return;
+        _service.SelectArea(value.Key);
+    }
+
+    /// <summary>Move the selected placement by (dx, dy) screen pixels — the
+    /// arrow-key fine-tune. No-op if nothing is selected.</summary>
+    public void NudgeSelected(double dx, double dy)
+    {
+        if (SelectedPlacement is not { } p) return;
+        p.Pixel = new PixelPoint(p.Pixel.X + dx, p.Pixel.Y + dy);
+    }
 
     public bool CanSolve => Placements.Count >= 2;
 
@@ -60,9 +92,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         References.Clear();
         foreach (var r in _service.CurrentAreaReferences) References.Add(r);
 
+        // Keep the area picker reflecting the live area without re-driving the
+        // service (OnSelectedAreaChanged guards on key equality).
+        if (_service.CurrentAreaKey is { } curKey)
+            SelectedArea = AvailableAreas.FirstOrDefault(a => a.Key == curKey);
+
         if (_service.CurrentAreaFriendlyName is not { } area)
         {
-            StatusText = "No area detected yet — walk into an area in-game.";
+            StatusText = "No area detected — pick one from the dropdown, or walk into one in-game.";
             return;
         }
 
@@ -92,7 +129,15 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     [RelayCommand]
     private void PlaceSelectedAt(PixelPoint pixel)
     {
-        if (SelectedReference is not { } reference) return;
+        if (SelectedReference is not { } reference)
+        {
+            // Don't fail silently — the click WAS captured, it just had no
+            // target. Tell the user which precondition is missing.
+            ClickWarning = References.Count == 0
+                ? "No area selected — choose an area above first."
+                : "Pick a landmark/NPC from the list, then click where it is on the map.";
+            return;
+        }
 
         // Replace any prior placement of the same reference (a re-click is a
         // correction, not a second point).
@@ -100,7 +145,10 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             if (ReferenceEquals(Placements[i].Reference, reference))
                 Placements.RemoveAt(i);
 
-        Placements.Add(new PlacedReference(reference, pixel));
+        var placed = new PlacedReference(reference, pixel);
+        Placements.Add(placed);
+        SelectedPlacement = placed; // immediately arrow-key nudgeable
+        ClickWarning = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
 
@@ -155,18 +203,27 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     }
 }
 
-/// <summary>A reference the user has pinned on the map; <see cref="X"/>/<see cref="Y"/>
-/// expose the click pixel for Canvas marker placement.</summary>
-public sealed class PlacedReference
+/// <summary>A reference the user has pinned on the map. Observable so an
+/// arrow-key nudge to <see cref="Pixel"/> moves the on-map marker and updates
+/// the Placed list live; <see cref="X"/>/<see cref="Y"/> drive Canvas placement.</summary>
+public sealed partial class PlacedReference : ObservableObject
 {
     public PlacedReference(CalibrationReference reference, PixelPoint pixel)
     {
         Reference = reference;
-        Pixel = pixel;
+        _pixel = pixel;
     }
 
     public CalibrationReference Reference { get; }
-    public PixelPoint Pixel { get; }
+
+    [ObservableProperty] private PixelPoint _pixel;
+
+    partial void OnPixelChanged(PixelPoint value)
+    {
+        OnPropertyChanged(nameof(X));
+        OnPropertyChanged(nameof(Y));
+    }
+
     public string Name => Reference.Name;
     public string Kind => Reference.Kind;
     public double X => Pixel.X;

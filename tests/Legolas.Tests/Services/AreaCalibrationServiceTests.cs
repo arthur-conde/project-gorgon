@@ -163,6 +163,44 @@ public class AreaCalibrationServiceTests
     }
 
     [Fact]
+    public void SelectArea_sets_current_area_builds_refs_and_applies_persisted()
+    {
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+            NpcsByKey = { ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = "AreaEltibule", Pos = "x:1 y:0 z:2" } },
+        };
+        var (svc, proj, settings) = Build(refData);
+        var persisted = new AreaCalibration(2, 0.1, 5, 6, 3, 0.5);
+        settings.AreaCalibrations["AreaEltibule"] = persisted;
+
+        svc.SelectArea("AreaEltibule");
+
+        svc.CurrentAreaKey.Should().Be("AreaEltibule");
+        svc.CurrentAreaFriendlyName.Should().Be("Eltibule");
+        svc.CurrentAreaReferences.Should().ContainSingle(r => r.Name == "Marn");
+        proj.LastApplied.Should().Be(persisted);
+    }
+
+    [Fact]
+    public void AllAreas_lists_every_area_sorted_by_friendly_name()
+    {
+        var refData = new FakeRefData
+        {
+            AreasByKey =
+            {
+                ["AreaServbule"] = new AreaEntry("AreaServbule", "Serbule", ""),
+                ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", ""),
+                ["AreaAnagoge"] = new AreaEntry("AreaAnagoge", "Anagoge Island", ""),
+            },
+        };
+        var (svc, _, _) = Build(refData);
+
+        svc.AllAreas.Select(a => a.FriendlyName)
+            .Should().ContainInOrder("Anagoge Island", "Eltibule", "Serbule");
+    }
+
+    [Fact]
     public void ClearCurrentAreaCalibration_removes_and_raises_changed()
     {
         var refData = new FakeRefData

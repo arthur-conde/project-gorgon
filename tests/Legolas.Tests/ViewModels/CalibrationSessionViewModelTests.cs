@@ -2,6 +2,7 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
 using Legolas.ViewModels;
+using Mithril.Shared.Reference;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -134,6 +135,88 @@ public class CalibrationSessionViewModelTests
         vm.CanSolve.Should().BeFalse();
     }
 
+    [Fact]
+    public void Choosing_an_area_in_the_picker_drives_the_service()
+    {
+        var svc = new FakeService
+        {
+            Areas = { new AreaEntry("AreaEltibule", "Eltibule", ""), new AreaEntry("AreaSerbule", "Serbule", "") },
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+
+        vm.SelectedArea = vm.AvailableAreas.First(a => a.Key == "AreaSerbule");
+
+        svc.SelectedAreaKey.Should().Be("AreaSerbule");
+    }
+
+    [Fact]
+    public void Dead_click_sets_an_explanatory_warning_instead_of_silently_failing()
+    {
+        var noArea = new CalibrationSessionViewModel(new FakeService());
+        noArea.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5));
+        noArea.ClickWarning.Should().Contain("No area");
+
+        var withRefs = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+        });
+        withRefs.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // nothing selected
+        withRefs.ClickWarning.Should().Contain("Pick a landmark");
+    }
+
+    [Fact]
+    public void Successful_placement_clears_warning_and_arms_nudge_target()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+        });
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // sets a warning
+        vm.ClickWarning.Should().NotBeNull();
+
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(40, 60));
+
+        vm.ClickWarning.Should().BeNull();
+        vm.SelectedPlacement.Should().NotBeNull();
+        vm.SelectedPlacement!.X.Should().Be(40);
+    }
+
+    [Fact]
+    public void NudgeSelected_moves_the_selected_placement_and_notifies()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+        });
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 100));
+        var placed = vm.SelectedPlacement!;
+
+        var xRaised = false;
+        placed.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(PlacedReference.X)) xRaised = true; };
+
+        vm.NudgeSelected(-3, 5);
+
+        placed.Pixel.X.Should().Be(97);
+        placed.Pixel.Y.Should().Be(105);
+        placed.X.Should().Be(97);
+        xRaised.Should().BeTrue();
+    }
+
+    [Fact]
+    public void NudgeSelected_is_a_noop_with_nothing_selected()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService());
+        vm.Invoking(v => v.NudgeSelected(1, 1)).Should().NotThrow();
+    }
+
     private sealed class FakeService : IAreaCalibrationService
     {
         public List<CalibrationReference> Refs { get; } = new();
@@ -141,14 +224,26 @@ public class CalibrationSessionViewModelTests
         public List<(WorldCoord, PixelPoint)>? LastSolvePairs { get; private set; }
         public bool ClearCalled { get; private set; }
 
+        public List<AreaEntry> Areas { get; } = new();
+        public string? SelectedAreaKey { get; private set; }
+
         public string? CurrentAreaKey { get; set; }
         public string? CurrentAreaFriendlyName { get; set; }
         public bool IsCurrentAreaCalibrated => CurrentCalibration is not null;
         public AreaCalibration? CurrentCalibration { get; set; }
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Refs;
+        public IReadOnlyList<AreaEntry> AllAreas => Areas;
         public event EventHandler? Changed;
 
         public void OnAreaEntered(string areaFriendlyName) => Changed?.Invoke(this, EventArgs.Empty);
+
+        public void SelectArea(string areaKey)
+        {
+            SelectedAreaKey = areaKey;
+            CurrentAreaKey = areaKey;
+            CurrentAreaFriendlyName = Areas.FirstOrDefault(a => a.Key == areaKey)?.FriendlyName ?? areaKey;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
 
         public AreaCalibration? CalibrateCurrentArea(IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements)
         {

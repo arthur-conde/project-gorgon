@@ -37,6 +37,24 @@
                                    Foreground="#FFB9C7D6" TextWrapping="Wrap"
                                    FontSize="12" Margin="0,0,0,10" />
 
+                        <TextBlock DockPanel.Dock="Top" Text="Area" Foreground="#FF8FA6BD"
+                                   FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ComboBox DockPanel.Dock="Top" Margin="0,0,0,8"
+                                  ItemsSource="{Binding AvailableAreas}"
+                                  SelectedItem="{Binding SelectedArea, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding FriendlyName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <!-- Why the last click did nothing (amber). Empty when
+                             the click placed a point. -->
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding ClickWarning}"
+                                   Foreground="#FFE0B060" TextWrapping="Wrap"
+                                   FontSize="12" Margin="0,0,0,8" />
+
                         <TextBlock DockPanel.Dock="Top" Text="References in this area"
                                    Foreground="#FF8FA6BD" FontWeight="SemiBold" Margin="0,0,0,4" />
 
@@ -59,24 +77,30 @@
                         <!-- Placed references -->
                         <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="150">
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Top" Text="Placed" Foreground="#FF8FA6BD"
-                                           FontWeight="SemiBold" Margin="0,0,0,4" />
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding Placements}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Foreground="#FFB9C7D6" FontSize="12">
-                                                    <Run Text="{Binding Name, Mode=OneWay}" />
-                                                    <Run Text=" @ (" Foreground="#FF6E8AA5" />
-                                                    <Run Text="{Binding X, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
-                                                    <Run Text=", " Foreground="#FF6E8AA5" />
-                                                    <Run Text="{Binding Y, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
-                                                    <Run Text=")" Foreground="#FF6E8AA5" />
-                                                </TextBlock>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
+                                <TextBlock DockPanel.Dock="Top" Foreground="#FF8FA6BD"
+                                           FontWeight="SemiBold" Margin="0,0,0,4">
+                                    <Run Text="Placed" />
+                                    <Run Text=" — select a row, arrow keys nudge (Shift = 5px)"
+                                         Foreground="#FF6E8AA5" FontWeight="Normal" FontSize="11" />
+                                </TextBlock>
+                                <ListBox ItemsSource="{Binding Placements}"
+                                         SelectedItem="{Binding SelectedPlacement, Mode=TwoWay}"
+                                         Background="#FF12161B" Foreground="#FFB9C7D6"
+                                         BorderBrush="#FF2C3540"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock FontSize="12">
+                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                                <Run Text=" @ (" Foreground="#FF6E8AA5" />
+                                                <Run Text="{Binding X, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                <Run Text=", " Foreground="#FF6E8AA5" />
+                                                <Run Text="{Binding Y, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
+                                                <Run Text=")" Foreground="#FF6E8AA5" />
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </DockPanel>
                         </Border>
 

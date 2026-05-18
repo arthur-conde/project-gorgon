@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.Domain;
@@ -48,5 +50,48 @@ public partial class CalibrationOverlayView : Window
         var pos = Mouse.GetPosition(Viewport);
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(pos.X, pos.Y));
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Arrow keys fine-tune the selected placement (Shift = 5px). Skipped when
+    /// focus is inside the area combo or a list — those need arrows for their
+    /// own navigation; after a map click focus is on the window, which is the
+    /// normal nudge case.
+    /// </summary>
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (DataContext is CalibrationSessionViewModel vm
+            && vm.SelectedPlacement is not null
+            && TryArrowDelta(e.Key, out var ux, out var uy)
+            && !FocusIsInListOrCombo())
+        {
+            var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 5.0 : 1.0;
+            vm.NudgeSelected(ux * step, uy * step);
+            e.Handled = true;
+            return;
+        }
+        base.OnPreviewKeyDown(e);
+    }
+
+    private static bool TryArrowDelta(Key key, out double dx, out double dy)
+    {
+        (dx, dy) = key switch
+        {
+            Key.Left => (-1.0, 0.0),
+            Key.Right => (1.0, 0.0),
+            Key.Up => (0.0, -1.0),
+            Key.Down => (0.0, 1.0),
+            _ => (0.0, 0.0),
+        };
+        return dx != 0 || dy != 0;
+    }
+
+    private static bool FocusIsInListOrCombo()
+    {
+        if (Keyboard.FocusedElement is not DependencyObject d) return false;
+        for (var n = d; n is not null; n = VisualTreeHelper.GetParent(n))
+            if (n is ListBox or ComboBox or ComboBoxItem)
+                return true;
+        return false;
     }
 }

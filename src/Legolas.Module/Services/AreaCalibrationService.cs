@@ -25,6 +25,14 @@ public interface IAreaCalibrationService
     /// </summary>
     IReadOnlyList<CalibrationReference> CurrentAreaReferences { get; }
 
+    /// <summary>
+    /// Every known area (from reference data), sorted by friendly name — the
+    /// source for the manual area picker. Lets the user calibrate without
+    /// waiting for a live <c>Entering Area:</c> banner (e.g. Mithril was started
+    /// after they were already in the area).
+    /// </summary>
+    IReadOnlyList<AreaEntry> AllAreas { get; }
+
     /// <summary>Raised (CurrentAreaKey changed or calibration (re)applied) so UI can refresh.</summary>
     event EventHandler? Changed;
 
@@ -34,6 +42,13 @@ public interface IAreaCalibrationService
     /// projector immediately so the first survey/treasure projects correctly.
     /// </summary>
     void OnAreaEntered(string areaFriendlyName);
+
+    /// <summary>
+    /// Manually set the current area by internal key (the area-picker path).
+    /// Same effect as <see cref="OnAreaEntered"/> but bypasses friendly-name
+    /// resolution — used when the chat banner was missed.
+    /// </summary>
+    void SelectArea(string areaKey);
 
     /// <summary>
     /// Solve a calibration from user-placed reference clicks (a world point
@@ -88,16 +103,34 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
 
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _currentRefs;
 
+    private IReadOnlyList<AreaEntry>? _allAreas;
+    public IReadOnlyList<AreaEntry> AllAreas =>
+        _allAreas ??= _refData.Areas.Values
+            .OrderBy(a => a.FriendlyName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     public event EventHandler? Changed;
 
     public void OnAreaEntered(string areaFriendlyName)
     {
         if (string.IsNullOrWhiteSpace(areaFriendlyName)) return;
+        // Even if the key can't be resolved (unknown / missing reference data),
+        // record the raw friendly name so the UI can show it.
+        SetArea(ResolveAreaKey(areaFriendlyName), areaFriendlyName.Trim());
+    }
 
-        var key = ResolveAreaKey(areaFriendlyName);
-        // Even if we can't resolve the key (reference data missing / unknown
-        // friendly name), record what we saw so the UI can show the raw name.
-        CurrentAreaFriendlyName = areaFriendlyName.Trim();
+    public void SelectArea(string areaKey)
+    {
+        if (string.IsNullOrWhiteSpace(areaKey)) return;
+        if (_refData.Areas.TryGetValue(areaKey, out var entry))
+            SetArea(entry.Key, entry.FriendlyName);
+        else
+            SetArea(areaKey, areaKey); // unknown key: still switch, no refs
+    }
+
+    private void SetArea(string? key, string friendlyName)
+    {
+        CurrentAreaFriendlyName = friendlyName;
         CurrentAreaKey = key;
         _currentRefs = key is null ? Array.Empty<CalibrationReference>() : BuildReferences(key);
 
