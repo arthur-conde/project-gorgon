@@ -121,8 +121,13 @@ public sealed class StorageVaultDetailViewModel
         //     chassis, IsActionable=false (the filter is not wired; these are
         //     keyword tags, not navigable entities).
         // Cross-links: Area / operator-NPC / quest-completed are 1:1 entity
-        // refs ⇒ Link. EnvelopeKey was an inert mono footer (matrix T14) ⇒
-        // storage-only inert ROW (PlayerTitle's path).
+        // refs ⇒ Link. EnvelopeKey footer is polymorphic under E5's OWN
+        // discriminator ("copyable iff a cross-entity reference key"): an
+        // operator-NPC vault's EnvelopeKey IS that NPC's InternalName (the same
+        // reference key the NPCs tab exposes as a copyable KEY — see
+        // BuildNpcChip), so it is a copyable KEY here too; an account-wide
+        // transfer chest's "*"-prefixed key is genuinely storage-only ⇒ the
+        // inert ROW (PlayerTitle's path).
 
         AreaLink = AreaChip is null ? null : LinkVm.From(AreaChip);
         OperatorNpcLink = OperatorNpcChip is null ? null : LinkVm.From(OperatorNpcChip);
@@ -156,9 +161,18 @@ public sealed class StorageVaultDetailViewModel
             .Select(t => new SetRefVm(t, MatchCount: null, IsActionable: false))
             .ToList();
 
+        // E5 (G-a) — copyable iff a cross-entity reference key. When the vault
+        // has an operator NPC, EnvelopeKey IS that NPC's InternalName (see
+        // BuildNpcChip: it is fed verbatim into EntityRef.Npc + the
+        // NpcsByInternalName lookup) — the SAME identity the NPCs tab surfaces
+        // as a copyable KEY, so it is a copyable KEY here too (E5 applied, not
+        // reversed). An account-wide transfer chest ("*"-prefixed, no operator)
+        // has a genuinely storage-only key ⇒ the inert ROW.
         Footer = string.IsNullOrEmpty(EnvelopeKey)
             ? FactFooterVm.None()
-            : FactFooterVm.Of(new FactFooterId("ROW", EnvelopeKey, copyable: false));
+            : HasOperatorNpc
+                ? FactFooterVm.Key(EnvelopeKey)
+                : FactFooterVm.Of(new FactFooterId("ROW", EnvelopeKey, copyable: false));
     }
 
     public StorageVaultListRow Row { get; }
@@ -173,9 +187,10 @@ public sealed class StorageVaultDetailViewModel
     public ICommand? OpenEntityCommand { get; }
 
     /// <summary>
-    /// Envelope key (operator NPC internal name, or a <c>"*"</c>-prefixed account-wide
-    /// form) — rendered as the bottom-right monospace footer per the detail-view
-    /// internal-name footer convention.
+    /// Envelope key — the operator NPC internal name (a cross-entity reference key,
+    /// rendered as a copyable <c>KEY</c> footer), or a <c>"*"</c>-prefixed account-wide
+    /// form (storage-only, rendered as the inert <c>ROW</c> footer). Bottom-right
+    /// monospace per the detail-view internal-name footer convention.
     /// </summary>
     public string EnvelopeKey { get; }
 
@@ -213,6 +228,15 @@ public sealed class StorageVaultDetailViewModel
     /// <summary>Rare event-gated slot overrides (≈1 entry in the corpus); labeled distinctly.</summary>
     public IReadOnlyList<StorageVaultCapacityRow> EventLevelRows { get; }
     public bool HasEventLevels { get; }
+
+    /// <summary>
+    /// True when ANY capacity form is present (favor-tier table, flat slots,
+    /// script-atomic range, or event-gated overrides). The whole Capacity
+    /// section — including its "Capacity" label — self-hides when false, so a
+    /// vault with no capacity data never shows a bare header over empty space.
+    /// </summary>
+    public bool HasAnyCapacity =>
+        HasCapacityTable || HasFlatSlots || HasScriptAtomicRange || HasEventLevels;
 
     // ── Access requirements ──
     public string? RequirementDescription { get; }
@@ -275,10 +299,14 @@ public sealed class StorageVaultDetailViewModel
     public IReadOnlyList<SetRefVm> ItemKeywordSetRefs { get; }
 
     /// <summary>
-    /// Footer identifier strip (matrix #14 / G-a · ratified E5). The EnvelopeKey
-    /// was already an inert-mono footer (matrix T14) — a display/storage-only
-    /// key ⇒ the inert <c>ROW</c> cell (PlayerTitle's path), not a copyable
-    /// <c>KEY</c>. <see cref="FactFooterVm.None"/> if keyless.
+    /// Footer identifier strip (matrix #14 / G-a · ratified E5). Polymorphic
+    /// under E5's own discriminator ("copyable iff a cross-entity reference
+    /// key"): an operator-NPC vault's EnvelopeKey IS that NPC's InternalName —
+    /// the cross-entity reference key the NPCs tab itself exposes as a copyable
+    /// <c>KEY</c> — so it is a copyable <c>KEY</c> here too. An account-wide
+    /// transfer chest's <c>"*"</c>-prefixed key is genuinely storage-only ⇒ the
+    /// inert <c>ROW</c> cell (PlayerTitle's path). <see cref="FactFooterVm.None"/>
+    /// if keyless.
     /// </summary>
     public FactFooterVm Footer { get; }
 

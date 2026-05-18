@@ -42,9 +42,12 @@
              MUST correct, not preserve → tag-form Set-ref on the blue chassis,
              IsActionable=false (the filter is not wired).
 
-         Footer (matrix #14 / G-a · ratified E5): the inert DockPanel.Bottom
-         mono TextBlock (matrix T14 — already non-copyable) becomes
-         <c:FactFooter/> at the foot; storage-only ⇒ inert ROW. Host retained. -->
+         Footer (matrix #14 / G-a · ratified E5): the DockPanel.Bottom mono
+         TextBlock becomes <c:FactFooter/> at the foot. Polymorphic under E5's
+         OWN discriminator — an operator-NPC vault's EnvelopeKey IS that NPC's
+         InternalName (a cross-entity reference key) ⇒ copyable KEY; an
+         account-wide chest's "*"-key is storage-only ⇒ inert ROW. Host
+         retained. -->
     <c:DetailExportHost>
 
     <Border Padding="14,12">
@@ -84,8 +87,11 @@
                 <!-- Capacity — carry-forward #3: ONE polymorphic FactTable
                      (Grid favor table / Scalar flat-or-range; self-hides empty).
                      Event-gated overrides = more Grid rows under their own
-                     Structure group label. -->
-                <StackPanel Margin="0,0,0,10">
+                     Structure group label. The whole section (incl. the
+                     "Capacity" label) self-hides when the vault carries no
+                     capacity data at all — no bare header over empty space. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding HasAnyCapacity, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="Capacity" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <c:FactTable DataContext="{Binding CapacityFact}"
                                  HorizontalAlignment="Left"/>

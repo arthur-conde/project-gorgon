@@ -360,6 +360,71 @@ public sealed class StorageVaultDetailViewModelTests
         FactFooter.ResolveCellClick(vm.Footer.Ids[0]).Should().Be(FactFooterCellAction.Inert);
     }
 
+    [Fact]
+    public void Footer_OperatorNpcVault_EnvelopeKeyIsCopyableCrossReferenceKey()
+    {
+        // E5's discriminator is "copyable iff a cross-entity reference key".
+        // For an operator-NPC vault the EnvelopeKey IS that NPC's InternalName
+        // (BuildNpcChip feeds it verbatim into EntityRef.Npc + the
+        // NpcsByInternalName lookup) — the SAME identity the NPCs tab exposes
+        // as a copyable KEY. So it must be a copyable KEY here too, not an
+        // inert ROW (this is E5 applied to the data, not E5 reversed).
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "NPC_CharlesThompson", new StorageVaultPoco
+        {
+            NpcFriendlyName = "Charles Thompson",
+            HasAssociatedNpc = true,
+            NumSlots = 24,
+        });
+
+        vm.Footer.Ids.Should().ContainSingle();
+        vm.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        vm.Footer.Ids[0].Value.Should().Be("NPC_CharlesThompson");
+        vm.Footer.Ids[0].Copyable.Should().BeTrue(
+            "the operator-NPC EnvelopeKey is the NPC's InternalName — a cross-entity reference key (E5)");
+        FactFooter.ResolveCellClick(vm.Footer.Ids[0]).Should().Be(FactFooterCellAction.Copy);
+    }
+
+    [Fact]
+    public void Footer_AccountWideChest_NoOperator_IsInertStorageRow()
+    {
+        // The "*"-prefixed account-wide transfer chest has no operator NPC; its
+        // envelope key is genuinely storage-only ⇒ E5 keeps it the inert ROW.
+        var refData = new FakeReferenceData();
+        var vm = Build(refData, "*GuildVault", new StorageVaultPoco
+        {
+            NpcFriendlyName = "Guild Vault",
+            HasAssociatedNpc = false,
+        });
+
+        vm.IsAccountWide.Should().BeTrue();
+        vm.Footer.Ids.Should().ContainSingle();
+        vm.Footer.Ids[0].LabelTag.Should().Be("ROW");
+        vm.Footer.Ids[0].Value.Should().Be("*GuildVault");
+        vm.Footer.Ids[0].Copyable.Should().BeFalse(
+            "an account-wide chest's envelope key is storage-only, not a cross-entity reference (E5)");
+        FactFooter.ResolveCellClick(vm.Footer.Ids[0]).Should().Be(FactFooterCellAction.Inert);
+    }
+
+    [Fact]
+    public void Capacity_SectionSelfHides_WhenVaultCarriesNoCapacityData()
+    {
+        var refData = new FakeReferenceData();
+
+        // Nothing: no Levels, no NumSlots, no script-atomic range, no EventLevels.
+        var bare = Build(refData, "*EmptyChest", new StorageVaultPoco { NpcFriendlyName = "Empty" });
+        bare.HasAnyCapacity.Should().BeFalse(
+            "a vault with no capacity data must not render a bare 'Capacity' header over empty space");
+
+        // Any single capacity form flips it back on (here: a flat slot count).
+        var sized = Build(refData, "*SizedChest", new StorageVaultPoco
+        {
+            NpcFriendlyName = "Sized",
+            NumSlots = 12,
+        });
+        sized.HasAnyCapacity.Should().BeTrue();
+    }
+
     private static StorageVaultDetailViewModel Build(
         FakeReferenceData refData, string envelopeKey, StorageVaultPoco vault)
     {
