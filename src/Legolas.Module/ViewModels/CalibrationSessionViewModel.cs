@@ -108,7 +108,44 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         $"you={(TestOrigin is { } o ? $"({o.X:0},{o.Y:0})" : "-")}  " +
         $"test={TestMode}  pinsShown={TestPins.Count}  ghosts={GhostPins.Count}";
 
-    private void RaiseDebug() => OnPropertyChanged(nameof(DebugState));
+    private void RaiseDebug()
+    {
+        OnPropertyChanged(nameof(DebugState));
+        OnPropertyChanged(nameof(DiagnosticSnapshot));
+    }
+
+    /// <summary>Full multi-line diagnostic for the clipboard — the panel line
+    /// gets clipped, so "Copy debug" dumps everything I'd need to see.</summary>
+    public string DiagnosticSnapshot
+    {
+        get
+        {
+            var c = _service.CurrentCalibration;
+            var cal = c is null
+                ? "calibration: none"
+                : $"calibration: scale={c.Scale:0.0000} rotDeg={c.RotationRadians * 180.0 / Math.PI:0.00} " +
+                  $"origin=({c.OriginX:0.0},{c.OriginY:0.0}) mirrorNorth={c.MirrorNorth} " +
+                  $"refs={c.ReferenceCount} residual={c.ResidualPixels:0.0}px";
+            return string.Join('\n', new[]
+            {
+                "Legolas calibration diagnostic",
+                DebugState,
+                cal,
+                $"status: {StatusText}",
+                $"lastSurvey: {LastSurveyText ?? "-"}",
+                $"result: {ResultText ?? "-"}",
+                $"nudgeTarget: {NudgeTargetText ?? "-"}",
+                $"clickWarning: {ClickWarning ?? "-"}",
+            });
+        }
+    }
+
+    [RelayCommand]
+    private void CopyDebug()
+    {
+        try { System.Windows.Clipboard.SetText(DiagnosticSnapshot); }
+        catch { /* clipboard can be transiently locked — best-effort */ }
+    }
 
     partial void OnSelectedPlacementChanged(PlacedReference? oldValue, PlacedReference? newValue)
     {
