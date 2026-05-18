@@ -56,6 +56,9 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTestOrigin));
         OnPropertyChanged(nameof(TestOriginX));
         OnPropertyChanged(nameof(TestOriginY));
+        OnPropertyChanged(nameof(NudgeTargetText));
+        OnPropertyChanged(nameof(CanNudge));
+        ReprojectTestPins(); // green pins follow your position as you nudge it
     }
 
     /// <summary>Every known area, for the manual picker (no live banner needed).</summary>
@@ -73,16 +76,26 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     /// recently placed; also click-selectable in the Placed list).</summary>
     [ObservableProperty] private PlacedReference? _selectedPlacement;
 
-    /// <summary>Panel text naming what a nudge will move (null = nothing armed).</summary>
-    public string? NudgeTargetText => SelectedPlacement is { } p
-        ? $"Nudging “{p.Name}” — arrow keys move it (Shift = 5px)"
-        : null;
+    /// <summary>Panel text naming what a nudge will move (null = nothing armed).
+    /// In verify mode with a position set, the arrows move <em>your position</em>
+    /// (and the green pins follow); otherwise the selected reference.</summary>
+    public string? NudgeTargetText =>
+        TestMode && TestOrigin is not null
+            ? "Nudging your position — arrow keys move it, green pins follow (Shift = 5px)"
+            : SelectedPlacement is { } p
+                ? $"Nudging “{p.Name}” — arrow keys move it (Shift = 5px)"
+                : null;
+
+    /// <summary>True when arrow keys have something to move (a placement, or the
+    /// test position in verify mode). Drives the code-behind key handler.</summary>
+    public bool CanNudge => (TestMode && TestOrigin is not null) || SelectedPlacement is not null;
 
     partial void OnSelectedPlacementChanged(PlacedReference? oldValue, PlacedReference? newValue)
     {
         if (oldValue is not null) oldValue.IsSelected = false;
         if (newValue is not null) newValue.IsSelected = true;
         OnPropertyChanged(nameof(NudgeTargetText));
+        OnPropertyChanged(nameof(CanNudge));
     }
 
     /// <summary>Non-null when the last map click could not be placed — tells the
@@ -107,12 +120,19 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         _service.SelectArea(value.Key);
     }
 
-    /// <summary>Move the selected placement by (dx, dy) screen pixels — the
-    /// arrow-key fine-tune. No-op if nothing is selected.</summary>
+    /// <summary>Arrow-key fine-tune. In verify mode with a position set it moves
+    /// <em>your position</em> (and re-projects the green pins); otherwise it
+    /// moves the selected reference placement. No-op if neither applies.</summary>
     public void NudgeSelected(double dx, double dy)
     {
-        if (SelectedPlacement is not { } p) return;
-        p.Pixel = new PixelPoint(p.Pixel.X + dx, p.Pixel.Y + dy);
+        if (TestMode && TestOrigin is { } o)
+        {
+            // Moves your position; OnTestOriginChanged re-projects the pins.
+            TestOrigin = new PixelPoint(o.X + dx, o.Y + dy);
+            return;
+        }
+        if (SelectedPlacement is { } p)
+            p.Pixel = new PixelPoint(p.Pixel.X + dx, p.Pixel.Y + dy);
     }
 
     public bool CanSolve => Placements.Count >= 2;
@@ -244,6 +264,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         {
             Instruction = "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
         }
+        OnPropertyChanged(nameof(NudgeTargetText));
+        OnPropertyChanged(nameof(CanNudge));
     }
 
     [RelayCommand]
@@ -283,16 +305,29 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             return;
         }
 
-        // Same math as CoordinateProjector.Project, with origin = the test
-        // position and scale/rotation from the live calibration.
-        var cos = Math.Cos(c.RotationRadians);
-        var sin = Math.Sin(c.RotationRadians);
-        var rotE = obs.Offset.East * cos + obs.Offset.North * sin;
-        var rotN = -obs.Offset.East * sin + obs.Offset.North * cos;
-        var pixel = new PixelPoint(o.X + c.Scale * rotE, o.Y - c.Scale * rotN);
-        TestPins.Add(new TestPin(obs.Name, pixel));
+        TestPins.Add(new TestPin(obs.Name, obs.Offset, Project(c, o, obs.Offset)));
         LastSurveyText = seen + " → green pin projected.";
         ClickWarning = null;
+    }
+
+    /// <summary>Same math as <c>CoordinateProjector.Project</c>: a metre offset
+    /// from <paramref name="origin"/> through the calibration's scale/rotation.</summary>
+    private static PixelPoint Project(AreaCalibration c, PixelPoint origin, MetreOffset off)
+    {
+        var cos = Math.Cos(c.RotationRadians);
+        var sin = Math.Sin(c.RotationRadians);
+        var rotE = off.East * cos + off.North * sin;
+        var rotN = -off.East * sin + off.North * cos;
+        return new PixelPoint(origin.X + c.Scale * rotE, origin.Y - c.Scale * rotN);
+    }
+
+    /// <summary>Re-place every projected pin from the (moved) test origin so the
+    /// green pins track your position live while you align them.</summary>
+    private void ReprojectTestPins()
+    {
+        if (_service.CurrentCalibration is not { } c || TestOrigin is not { } o) return;
+        foreach (var pin in TestPins)
+            pin.Pixel = Project(c, o, pin.Offset);
     }
 
     [RelayCommand]
@@ -353,18 +388,29 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 /// <summary>A reference the user has pinned on the map. Observable so an
 /// arrow-key nudge to <see cref="Pixel"/> moves the on-map marker and updates
 /// the Placed list live; <see cref="X"/>/<see cref="Y"/> drive Canvas placement.</summary>
-/// <summary>A projected test reading dropped while test mode is active.
-/// Static once placed (unlike <see cref="PlacedReference"/> it isn't nudged).</summary>
-public sealed class TestPin
+/// <summary>A projected test reading. Keeps its source <see cref="Offset"/> so
+/// it can be re-projected when the test origin (your position) is nudged —
+/// the green pins track your position live while you align them.</summary>
+public sealed partial class TestPin : ObservableObject
 {
-    public TestPin(string name, PixelPoint pixel)
+    public TestPin(string name, MetreOffset offset, PixelPoint pixel)
     {
         Name = name;
-        Pixel = pixel;
+        Offset = offset;
+        _pixel = pixel;
     }
 
     public string Name { get; }
-    public PixelPoint Pixel { get; }
+    public MetreOffset Offset { get; }
+
+    [ObservableProperty] private PixelPoint _pixel;
+
+    partial void OnPixelChanged(PixelPoint value)
+    {
+        OnPropertyChanged(nameof(X));
+        OnPropertyChanged(nameof(Y));
+    }
+
     public double X => Pixel.X;
     public double Y => Pixel.Y;
 }

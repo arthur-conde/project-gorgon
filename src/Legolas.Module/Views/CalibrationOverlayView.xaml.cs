@@ -64,7 +64,7 @@ public partial class CalibrationOverlayView : Window
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         if (DataContext is CalibrationSessionViewModel vm
-            && vm.SelectedPlacement is not null
+            && vm.CanNudge
             && TryArrowDelta(e.Key, out var ux, out var uy))
         {
             var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 5.0 : 1.0;

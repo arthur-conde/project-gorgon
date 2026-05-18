@@ -214,9 +214,13 @@
                              by explicit offsets (NOT a Grid — Grid would centre
                              the ring in a label-sized cell, the offset bug). -->
                         <Canvas Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}">
+                            <!-- Amber dashed halo: this is the active nudge
+                                 target in verify mode (arrow keys move it). -->
+                            <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2" />
                             <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
                                      Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
-                            <Border Canvas.Left="11" Canvas.Top="-9" Background="#CC000000"
+                            <Border Canvas.Left="14" Canvas.Top="-9" Background="#CC000000"
                                     CornerRadius="2" Padding="3,1">
                                 <TextBlock Text="you" Foreground="#FF40C4FF" FontSize="11" />
                             </Border>

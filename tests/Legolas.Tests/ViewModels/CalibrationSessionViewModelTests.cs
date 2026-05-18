@@ -226,6 +226,53 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void In_verify_mode_nudge_moves_your_position_and_reprojects_the_pins()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.ToggleTestModeCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200)); // your position
+        svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50));  // pin at (200,150)
+
+        vm.TestPins.Should().ContainSingle();
+        vm.TestPins[0].Y.Should().BeApproximately(150, 1e-6);
+
+        vm.CanNudge.Should().BeTrue();                       // armed via test origin, no placement
+        vm.NudgeTargetText.Should().Contain("your position");
+
+        vm.NudgeSelected(10, 5); // move "you" right+down
+
+        vm.TestOrigin.Should().Be(new PixelPoint(210, 205));
+        // The green pin tracked the moved origin (same offset, new base).
+        vm.TestPins[0].X.Should().BeApproximately(210, 1e-6);
+        vm.TestPins[0].Y.Should().BeApproximately(155, 1e-6);
+    }
+
+    [Fact]
+    public void Placement_nudge_still_works_when_not_in_verify_mode()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+        });
+        vm.SelectedReference = vm.References[0];
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 100));
+
+        vm.CanNudge.Should().BeTrue();
+        vm.NudgeSelected(-3, 4);
+
+        vm.Placements[0].X.Should().Be(97);
+        vm.Placements[0].Y.Should().Be(104);
+    }
+
+    [Fact]
     public void Active_nudge_target_is_singular_visible_and_named()
     {
         var vm = new CalibrationSessionViewModel(new FakeService
