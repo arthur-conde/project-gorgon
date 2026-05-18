@@ -59,6 +59,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
         ReprojectTestPins(); // green pins follow your position as you nudge it
+        RaiseDebug();
     }
 
     /// <summary>Every known area, for the manual picker (no live banner needed).</summary>
@@ -90,6 +91,19 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     /// test position in verify mode). Drives the code-behind key handler.</summary>
     public bool CanNudge => (TestMode && TestOrigin is not null) || SelectedPlacement is not null;
 
+    /// <summary>Blunt always-visible state readout — so "no pin" is never a
+    /// mystery: it shows whether the area/refs loaded, what's selected, how many
+    /// pins exist + the last one's pixel, and the test origin. If a click made a
+    /// pin, <c>pins=</c> increments here even if the on-map marker doesn't draw.</summary>
+    public string DebugState =>
+        $"area={_service.CurrentAreaKey ?? "-"}  refs={References.Count}  " +
+        $"sel={SelectedReference?.Name ?? "-"}  pins={Placements.Count}  " +
+        $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
+        $"you={(TestOrigin is { } o ? $"({o.X:0},{o.Y:0})" : "-")}  " +
+        $"test={TestMode}  pinsShown={TestPins.Count}";
+
+    private void RaiseDebug() => OnPropertyChanged(nameof(DebugState));
+
     partial void OnSelectedPlacementChanged(PlacedReference? oldValue, PlacedReference? newValue)
     {
         if (oldValue is not null) oldValue.IsSelected = false;
@@ -102,6 +116,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             SelectedReference = newValue.Reference;
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
+        RaiseDebug();
     }
 
     /// <summary>
@@ -117,6 +132,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             : Placements.FirstOrDefault(p => ReferenceEquals(p.Reference, value));
         if (!ReferenceEquals(SelectedPlacement, pin))
             SelectedPlacement = pin; // null until this reference is dropped
+        RaiseDebug();
     }
 
     /// <summary>Non-null when the last map click could not be placed — tells the
@@ -171,6 +187,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
     private void Refresh()
     {
+        RefreshCore();
+        RaiseDebug();
+    }
+
+    private void RefreshCore()
+    {
         References.Clear();
         foreach (var r in _service.CurrentAreaReferences) References.Add(r);
 
@@ -218,6 +240,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             ClickWarning = References.Count == 0
                 ? "No area selected — choose an area above first."
                 : "Pick a landmark/NPC from the list, then click where it is on the map.";
+            RaiseDebug();
             return;
         }
 
@@ -242,6 +265,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         // stray click/nudge does nothing. (Earlier the persistence was a *bug*
         // only because it was invisible and unstoppable — now it's an explicit,
         // visible state with an exit.)
+        RaiseDebug();
     }
 
     /// <summary>
@@ -289,6 +313,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
+        RaiseDebug();
     }
 
     /// <summary>Commit &amp; stop: deselect the active reference/pin so a stray
@@ -300,6 +325,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         SelectedReference = null; // OnSelectedReferenceChanged clears the pin too
         SelectedPlacement = null;
         ClickWarning = null;
+        RaiseDebug();
     }
 
     [RelayCommand]
@@ -307,13 +333,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     {
         TestPins.Clear();
         TestOrigin = null;
+        RaiseDebug();
     }
 
     private void OnSurveyObserved(object? sender, CalibrationSurveyObservation obs)
     {
         var disp = Application.Current?.Dispatcher;
-        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => ProjectTest(obs));
-        else ProjectTest(obs);
+        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => { ProjectTest(obs); RaiseDebug(); });
+        else { ProjectTest(obs); RaiseDebug(); }
     }
 
     private void ProjectTest(CalibrationSurveyObservation obs)
@@ -373,6 +400,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         if (ReferenceEquals(SelectedPlacement, removed)) SelectedPlacement = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
+        RaiseDebug();
     }
 
     [RelayCommand]
@@ -383,6 +411,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
         ResultText = null;
+        RaiseDebug();
     }
 
     [RelayCommand(CanExecute = nameof(CanSolve))]

@@ -59,6 +59,12 @@
                         <TextBlock DockPanel.Dock="Top" Text="References in this area"
                                    Foreground="#FF8FA6BD" FontWeight="SemiBold" Margin="0,0,0,4" />
 
+                        <!-- Blunt always-visible state readout — pins= proves a
+                             click made a placement even if the marker doesn't draw. -->
+                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding DebugState}"
+                                   Foreground="#FF7E97AE" FontFamily="Consolas" FontSize="11"
+                                   TextWrapping="Wrap" Margin="0,8,0,0" />
+
                         <!-- Action buttons pinned to the bottom -->
                         <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
                             <!-- What an arrow-key nudge will move (amber, matches
