@@ -201,8 +201,12 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, NudgePinRightFastCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
 
-        // Chat-log ingestion
+        // Chat-log ingestion (relative [Status] survey/collect lines).
         services.AddHostedService<LogIngestionService>();
+        // Player-log ingestion (#454). Phase 2: area→calibration bridge via
+        // the shared PlayerAreaTracker. ProcessMapFx / ProcessMapPinAdd
+        // parsing layers onto this same subscription in Phases 3/4.
+        services.AddHostedService<PlayerLogIngestionService>();
 
         // Diagnostics — frame-time logger + synthetic-load harness. The logger
         // writes CSV + summary to %LocalAppData%/Mithril/Legolas/perf/. Both
