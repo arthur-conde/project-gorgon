@@ -200,7 +200,11 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, SetMotherlodeModeCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleMapOverlayCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleInventoryOverlayCommand>();
-        services.AddSingleton<IHotkeyCommand, ToggleCalibrationOverlayCommand>();
+        // #113: ToggleCalibrationOverlayCommand intentionally NOT registered —
+        // the standalone calibration overlay is experimental and now
+        // unreachable from the product surface (no button, no bindable
+        // hotkey). The command class is retained, not deleted; full retirement
+        // is tracked in the #113 follow-up cleanup issue.
         services.AddSingleton<IHotkeyCommand, OptimizeRouteCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleMapClickThroughCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleInventoryClickThroughCommand>();

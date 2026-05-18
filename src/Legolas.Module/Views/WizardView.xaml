@@ -417,18 +417,14 @@
                                Foreground="{StaticResource TextPrimaryBrush}" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <!-- #113: the standalone calibration overlay is
-                             experimental, not for general use — calibration is
-                             reached via the guided flow (the header chip /
-                             Survey cold-start / Motherlode opt-in). Kept here
-                             but collapsed rather than deleted so the binding +
-                             hotkey path stay intact for experimental use. -->
-                        <Button Style="{StaticResource MithrilToolbarButtonStyle}"
-                                Command="{Binding ToggleCalibrationCommand}"
-                                ToolTip="Open the map-calibration overlay (click landmarks/NPCs to fix this area's projection)"
-                                Margin="0,0,4,0"
-                                Visibility="Collapsed">
-                            <icon:PackIconLucide Kind="Crosshair" Width="14" Height="14" />
-                        </Button>
+                             experimental, not for general use. Its UI entry
+                             points (this Crosshair button + the Toggle Map
+                             Calibration hotkey) are removed so it is
+                             unreachable from the product surface; the
+                             implementation is retained, tracked for retirement
+                             in the #113 follow-up cleanup issue. Calibration is
+                             reached only via the guided flow (header chip /
+                             Survey cold-start / Motherlode opt-in). -->
                         <!-- Overlay/reset are flow controls — only after a mode is picked. -->
                         <StackPanel Orientation="Horizontal"
                                     Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
