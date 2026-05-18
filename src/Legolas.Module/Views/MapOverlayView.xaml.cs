@@ -169,6 +169,7 @@ public partial class MapOverlayView : Window
             ActiveSegmentPoints: vm.ActiveSegmentPoints,
             Wedges: wedges,
             SurveyPins: pins,
+            MotherlodePins: vm.MotherlodeMarkerPixels,
             ActivePinIndex: activeIndex,
             ActiveTreatment: activeSpec,
             SurveyOuter: outerStyle,

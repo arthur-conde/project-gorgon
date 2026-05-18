@@ -11,13 +11,17 @@ namespace Legolas.Rendering;
 ///
 /// Step C: routes + wedges. Step D: survey pins (no active treatment).
 /// Active treatments + player anchor land in steps E and F and add fields
-/// here.
+/// here. <see cref="MotherlodePins"/> (#113 Layer 5) is the
+/// calibration-projected solved-treasure markers — a separate list from
+/// <see cref="SurveyPins"/> because the two modes are mutually exclusive and
+/// the Motherlode marker takes none of the Survey active-pin treatment.
 /// </summary>
 public sealed record PinScene(
     IReadOnlyList<PixelPoint> RoutePoints,
     IReadOnlyList<PixelPoint> ActiveSegmentPoints,
     IReadOnlyList<WedgeArc> Wedges,
     IReadOnlyList<PixelPoint> SurveyPins,
+    IReadOnlyList<PixelPoint> MotherlodePins,
     int? ActivePinIndex,
     ActivePinTreatmentSpec? ActiveTreatment,
     PinLayerStyle SurveyOuter,

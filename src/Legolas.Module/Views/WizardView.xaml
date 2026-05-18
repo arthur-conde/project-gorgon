@@ -55,20 +55,209 @@
                     </Border>
                 </Grid>
             </DataTemplate>
+
+            <!-- #113 Layer 2: plain-language fix-confidence palette. Muted to
+                 sit in the Mithril theme; semantics carried by the text too,
+                 not colour alone. -->
+            <SolidColorBrush x:Key="MlQualityStrongBrush" Color="#3E8E5A" />
+            <SolidColorBrush x:Key="MlQualityUsableBrush" Color="#C99A2E" />
+            <SolidColorBrush x:Key="MlQualityRoughBrush"  Color="#C2702F" />
+
+            <!-- #113 Layers 1–3: one located/locating treasure row — route
+                 badge, relative-location headline (raw coord/GDOP/residual
+                 demoted to the tooltip), confidence pill, collected state. -->
+            <DataTemplate x:Key="MotherlodeSlotRow" DataType="{x:Type vm:MotherlodeSlotViewModel}">
+                <Border CornerRadius="4" Padding="8,5" Margin="0,2" Background="Transparent">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNextUp}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="{Binding RouteText}" TextAlignment="Right"
+                                   Margin="0,0,10,0" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSize}" />
+
+                        <TextBlock Grid.Column="1" Text="{Binding HeadlineText}" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" ToolTip="{Binding DetailText}"
+                                   FontSize="{DynamicResource AppFontSizeBody}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasFix}" Value="False">
+                                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Collected}" Value="True">
+                                            <Setter Property="TextDecorations" Value="Strikethrough" />
+                                            <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Confidence pill (#113 Layer 2). Hidden until solved. -->
+                        <Border Grid.Column="2" CornerRadius="9" Padding="8,2" Margin="10,0,0,0"
+                                VerticalAlignment="Center">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding QualityText}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Quality}" Value="Strong">
+                                            <Setter Property="Background" Value="{StaticResource MlQualityStrongBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Quality}" Value="Usable">
+                                            <Setter Property="Background" Value="{StaticResource MlQualityUsableBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Quality}" Value="Rough">
+                                            <Setter Property="Background" Value="{StaticResource MlQualityRoughBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Collected}" Value="True">
+                                            <Setter Property="Opacity" Value="0.4" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding QualityText}" Foreground="White"
+                                       FontSize="{DynamicResource AppFontSizeSmall}" FontWeight="SemiBold" />
+                        </Border>
+
+                        <icon:PackIconLucide Grid.Column="3" Kind="Check" Width="14" Height="14"
+                                             Margin="10,0,0,0" VerticalAlignment="Center"
+                                             Foreground="{StaticResource AccentBrush}"
+                                             Visibility="{Binding Collected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                    </Grid>
+                </Border>
+            </DataTemplate>
+
+            <!-- Shared Locating/Walk body (DataContext = MotherlodeViewModel):
+                 counters, guidance callout, the located/locating list. The
+                 step-specific prompt + buttons live in each panel. -->
+            <DataTemplate x:Key="MotherlodeProgressBody">
+                <StackPanel HorizontalAlignment="Center" MinWidth="360">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6" HorizontalAlignment="Center">
+                        <TextBlock Text="Locations measured: " Foreground="{StaticResource TextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding LocationCount}" Margin="4,0,0,0" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                        <TextBlock Margin="6,0,0,0" Foreground="{StaticResource TextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center"
+                                   Text="{Binding LocationsWithFix, StringFormat=({0} with a position fix)}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
+                        <TextBlock Text="Treasures located: " Foreground="{StaticResource TextTertiaryBrush}"
+                                   FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding SolvedCount}" Margin="4,0,0,0" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
+                            Background="{StaticResource AccentSoftBrush}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Guidance}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Slots}"
+                                  ItemTemplate="{StaticResource MotherlodeSlotRow}"
+                                  Margin="0,0,0,12" />
+                </StackPanel>
+            </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <DockPanel LastChildFill="True">
 
         <!-- Module header (Mithril convention: every module's view starts with
-             icon + accented title at the top). -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,16,20,0">
-            <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
-                   Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBlock Text="Legolas · Survey"
-                       FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
-                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-        </StackPanel>
+             icon + accented title at the top). #113: a persistent area +
+             calibration-state chip on the right — the user-facing way to see
+             calibration state (the calibration overlay is experimental). When
+             the area is known but uncalibrated the chip is clickable and
+             starts the guided Drop/Pair calibration. -->
+        <DockPanel DockPanel.Dock="Top" Margin="20,16,20,0">
+            <Border DockPanel.Dock="Right" VerticalAlignment="Center"
+                    Background="{StaticResource BgSurfaceBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="10,4"
+                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate (guided) when uncalibrated.">
+                <Border.InputBindings>
+                    <MouseBinding Gesture="LeftClick" Command="{Binding CalibrateThisAreaCommand}" />
+                </Border.InputBindings>
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CanCalibrateThisArea}" Value="True">
+                                <Setter Property="Cursor" Value="Hand" />
+                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,7,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <!-- area unknown → grey -->
+                                <Setter Property="Fill" Value="{StaticResource TextTertiaryBrush}" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsAreaKnown}" Value="True" />
+                                            <Condition Binding="{Binding IsAreaCalibrated}" Value="True" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Fill" Value="{StaticResource MlQualityStrongBrush}" />
+                                    </MultiDataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsAreaKnown}" Value="True" />
+                                            <Condition Binding="{Binding IsAreaCalibrated}" Value="False" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Fill" Value="{StaticResource MlQualityUsableBrush}" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding CalibrationChipText}" VerticalAlignment="Center"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal">
+                <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
+                       Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="Legolas · Survey"
+                           FontFamily="{DynamicResource AppHeaderFontFamily}" FontSize="{DynamicResource AppFontSizeHero}" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+            </StackPanel>
+        </DockPanel>
 
         <!-- Footer (always visible): status strip -->
         <Border DockPanel.Dock="Bottom" Background="{StaticResource BgSurfaceBrush}"
@@ -142,7 +331,7 @@
                         </TextBlock.Style>
                     </TextBlock>
                 </StackPanel>
-                <!-- Motherlode breadcrumb (PR1: just one step post-pick) -->
+                <!-- Motherlode breadcrumb (#113 Layer 4: derived sub-steps) -->
                 <StackPanel Orientation="Horizontal"
                             Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Motherlode}">
                     <TextBlock Text="Mode" Style="{StaticResource WizardBreadcrumbStep}" />
@@ -152,6 +341,45 @@
                             <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding CurrentStep}" Value="MotherlodeMeasuring">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Locate">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="MotherlodeLocating">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Walk">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="MotherlodeWalk">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
+                    <TextBlock Text="Done">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="MotherlodeDone">
                                         <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </DataTrigger>
@@ -188,12 +416,17 @@
                                HorizontalAlignment="Center" TextAlignment="Center"
                                Foreground="{StaticResource TextPrimaryBrush}" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Calibration is per-area and FSM-independent — always
-                             available, including before a mode is picked. -->
+                        <!-- #113: the standalone calibration overlay is
+                             experimental, not for general use — calibration is
+                             reached via the guided flow (the header chip /
+                             Survey cold-start / Motherlode opt-in). Kept here
+                             but collapsed rather than deleted so the binding +
+                             hotkey path stay intact for experimental use. -->
                         <Button Style="{StaticResource MithrilToolbarButtonStyle}"
                                 Command="{Binding ToggleCalibrationCommand}"
                                 ToolTip="Open the map-calibration overlay (click landmarks/NPCs to fix this area's projection)"
-                                Margin="0,0,4,0">
+                                Margin="0,0,4,0"
+                                Visibility="Collapsed">
                             <icon:PackIconLucide Kind="Crosshair" Width="14" Height="14" />
                         </Button>
                         <!-- Overlay/reset are flow controls — only after a mode is picked. -->
@@ -498,74 +731,82 @@
                             ToolTip="Re-open the end-of-run summary (text + PNG card)" />
                 </StackPanel>
 
-                <!-- MotherlodeMeasuring (#488: fully log-driven, read-only) -->
+                <!-- #113 Layer 4: derived Motherlode sub-steps. All input is
+                     log-driven; these panels are read-only projections of the
+                     coordinator snapshot. -->
+
+                <!-- MotherlodeMeasuring — no readings yet. -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeMeasuring}">
                     <TextBlock Text="Click your metal-slab maps at three or more well-separated spots — readings are picked up automatically. For best accuracy, log out and back in at each spot before using the maps."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
-                    <StackPanel DataContext="{Binding Motherlode}" HorizontalAlignment="Center" MinWidth="320">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6" HorizontalAlignment="Center">
-                            <TextBlock Text="Locations measured: " Foreground="{StaticResource TextTertiaryBrush}"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding LocationCount}" Margin="4,0,0,0" FontWeight="SemiBold"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                            <TextBlock Margin="6,0,0,0" Foreground="{StaticResource TextTertiaryBrush}"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center"
-                                       Text="{Binding LocationsWithFix, StringFormat=({0} with a position fix)}" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" HorizontalAlignment="Center">
-                            <TextBlock Text="Treasures located: " Foreground="{StaticResource TextTertiaryBrush}"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding SolvedCount}" Margin="4,0,0,0" FontWeight="SemiBold"
-                                       FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
-                        </StackPanel>
+                    <Button Content="Reset" Padding="14,6" HorizontalAlignment="Center"
+                            Command="{Binding Motherlode.ResetCommand}" />
+                </StackPanel>
 
-                        <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
-                                Background="{StaticResource AccentSoftBrush}">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Guidance}" Value="{x:Null}">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <TextBlock Text="{Binding Guidance}" TextWrapping="Wrap"
-                                       FontSize="{DynamicResource AppFontSizeBody}"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                        </Border>
+                <!-- MotherlodeLocating — readings in, nothing solved yet. -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeLocating}">
+                    <TextBlock Text="Keep clicking your maps at new, well-separated spots — each treasure needs at least three readings from different places. Relog at each spot for the best fix."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <ContentControl Content="{Binding Motherlode}" ContentTemplate="{StaticResource MotherlodeProgressBody}"
+                                    HorizontalAlignment="Center" />
+                    <Button Content="Reset" Padding="14,6" HorizontalAlignment="Center" Margin="0,4,0,0"
+                            Command="{Binding Motherlode.ResetCommand}" />
+                </StackPanel>
 
-                        <ItemsControl ItemsSource="{Binding Slots}" Margin="0,0,0,12">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <TextBlock Text="{Binding SolvedText}" MinWidth="160"
-                                                   FontSize="{DynamicResource AppFontSizeBody}"
-                                                   VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding GdopText}" Margin="10,0,0,0"
-                                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSizeSmall}"
-                                                   VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding ResidualText}" Margin="10,0,0,0"
-                                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                                   FontSize="{DynamicResource AppFontSizeSmall}"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
-                            <Button Content="Optimize Route" Style="{StaticResource WizardPrimaryButton}"
-                                    Margin="0" Command="{Binding OptimizeRouteCommand}"
-                                    ToolTip="Compute the shortest path between located treasures" />
-                            <Button Content="Reset" Padding="14,6" Margin="12,0,0,0"
-                                    Command="{Binding ResetCommand}" />
-                        </StackPanel>
+                <!-- MotherlodeWalk — ≥1 treasure located: relative guidance +
+                     the calibration-gated on-map marker (#113 Layers 1/3/5). -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeWalk}">
+                    <TextBlock Text="Walk to each treasure. Locations are given relative to nearby landmarks, your map pins, and the spots you measured from — Project Gorgon has no coordinate readout. Maps are marked collected automatically as you dig them up."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <ContentControl Content="{Binding Motherlode}" ContentTemplate="{StaticResource MotherlodeProgressBody}"
+                                    HorizontalAlignment="Center" />
+                    <!-- #113 Layer 5: real status, not an always-on nag.
+                         Uncalibrated → offer the (optional) guided calibration
+                         that unlocks the dot; the relative text above already
+                         works without it. Calibrated → honest warp caveat. -->
+                    <StackPanel HorizontalAlignment="Center" Margin="0,8,0,12"
+                                Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}">
+                        <Button Content="Calibrate this area to show the map dot"
+                                HorizontalAlignment="Center"
+                                Command="{Binding CalibrateForMotherlodeCommand}"
+                                ToolTip="Optional. The relative directions above are exact and need no calibration — this only adds a dot on the map overlay." />
+                        <TextBlock Text="Optional — the relative directions above are exact without it."
+                                   TextAlignment="Center" Margin="0,4,0,0"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   Foreground="{StaticResource TextTertiaryBrush}" />
                     </StackPanel>
+                    <TextBlock Text="The on-map dot is approximate (the in-game map isn't perfectly to-scale); the relative directions above are exact."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="520"
+                               Margin="0,4,0,12"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Foreground="{StaticResource TextTertiaryBrush}"
+                               Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <Button Content="Optimize Route" Style="{StaticResource WizardPrimaryButton}"
+                                Margin="0" Command="{Binding Motherlode.OptimizeRouteCommand}"
+                                ToolTip="Compute the shortest path between located treasures" />
+                        <Button Content="Reset" Padding="14,6" Margin="12,0,0,0"
+                                Command="{Binding Motherlode.ResetCommand}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- MotherlodeDone — every located treasure collected. -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeDone}">
+                    <TextBlock Text="All located treasures collected. Reset to start a new run."
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,16"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <ContentControl Content="{Binding Motherlode}" ContentTemplate="{StaticResource MotherlodeProgressBody}"
+                                    HorizontalAlignment="Center" />
+                    <Button Content="Reset" Style="{StaticResource WizardPrimaryButton}" Margin="0"
+                            HorizontalAlignment="Center"
+                            Command="{Binding Motherlode.ResetCommand}" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

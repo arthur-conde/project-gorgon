@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Mithril.GameState.Pins;
 
 namespace Legolas.ViewModels;
 
@@ -15,21 +16,39 @@ namespace Legolas.ViewModels;
 /// — so this VM no longer takes manual distance/position entry. It rebuilds
 /// its slot list on each coordinator change and owns only route optimization
 /// (calibration-free world-space ordering) and reset.
+///
+/// <para>#113 Layer 1: each solved slot is phrased relative to the nearest
+/// recognizable reference — the player's own measured spots
+/// (<see cref="MotherlodeStatus.Locations"/>), their current-area map pins
+/// (<see cref="IPlayerPinTracker"/>), and the area landmark/NPC gazetteer
+/// (<see cref="IAreaCalibrationService.CurrentAreaReferences"/>) — because raw
+/// engine-unit coordinates are unactionable in a game with no coordinate
+/// readout. Both reference feeders are optional: absent (or area-mismatched)
+/// they simply drop out of the ranking and the phrase degrades gracefully.</para>
 /// </summary>
 public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
 {
     private readonly MotherlodeMeasurementCoordinator _coordinator;
     private readonly IRouteOptimizer _optimizer;
     private readonly MotherlodeFlowController _flow;
+    private readonly IPlayerPinTracker? _pinTracker;
+    private readonly IAreaCalibrationService? _areaCalibration;
+
+    private static readonly IReadOnlyList<MapPin> NoPins = Array.Empty<MapPin>();
+    private static readonly IReadOnlyList<CalibrationReference> NoReferences = Array.Empty<CalibrationReference>();
 
     public MotherlodeViewModel(
         MotherlodeMeasurementCoordinator coordinator,
         IRouteOptimizer optimizer,
-        MotherlodeFlowController flow)
+        MotherlodeFlowController flow,
+        IPlayerPinTracker? pinTracker = null,
+        IAreaCalibrationService? areaCalibration = null)
     {
         _coordinator = coordinator;
         _optimizer = optimizer;
         _flow = flow;
+        _pinTracker = pinTracker;
+        _areaCalibration = areaCalibration;
         _coordinator.Changed += OnCoordinatorChanged;
         Rebuild();
     }
@@ -41,6 +60,11 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _locationCount;
     [ObservableProperty] private int _locationsWithFix;
     [ObservableProperty] private string? _guidance;
+
+    /// <summary>#113 Layer 4: the derived progress stage the wizard projects
+    /// onto its Motherlode sub-steps. Recomputed every <see cref="Rebuild"/>;
+    /// the FSM stays coarse — this is purely a snapshot projection.</summary>
+    [ObservableProperty] private MotherlodeStage _stage;
 
     /// <summary>Treasures with a confident fix so far — the headline number.</summary>
     public int SolvedCount => Slots.Count(s => s.HasFix);
@@ -55,13 +79,36 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private void Rebuild()
     {
         var snap = _coordinator.Snapshot();
+        var pins = _pinTracker?.CurrentAreaPins ?? NoPins;
+        var gazetteer = _areaCalibration?.CurrentAreaReferences ?? NoReferences;
+
+        // "Next up" = the lowest route-ordered uncollected slot (fallback: list
+        // order). Surfacing it lets the panel highlight where to walk next.
+        var nextUpId = snap.Surveys
+            .Where(s => !s.Collected && s.SolvedWorld is not null)
+            .OrderBy(s => s.RouteOrder ?? int.MaxValue)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefault();
+
         Slots.Clear();
         foreach (var s in snap.Surveys)
-            Slots.Add(new MotherlodeSlotViewModel(s));
+        {
+            var bearing = s.SolvedWorld is { } w
+                ? MotherlodeReferenceLocator.Nearest(w, snap.Locations, pins, gazetteer)
+                : null;
+            Slots.Add(new MotherlodeSlotViewModel(s, bearing, isNextUp: s.Id == nextUpId));
+        }
+
         LocationCount = snap.LocationCount;
         LocationsWithFix = snap.LocationsWithFix;
         Guidance = snap.Guidance;
         OnPropertyChanged(nameof(SolvedCount));
+
+        Stage =
+            Slots.Count > 0 && Slots.All(s => s.Collected) ? MotherlodeStage.Done
+            : Slots.Any(s => s.HasFix) ? MotherlodeStage.Walk
+            : LocationCount > 0 || Slots.Count > 0 ? MotherlodeStage.Locating
+            : MotherlodeStage.Measuring;
     }
 
     [RelayCommand]
@@ -91,31 +138,70 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     public void Dispose() => _coordinator.Changed -= OnCoordinatorChanged;
 }
 
+/// <summary>Derived Motherlode progress stage (#113 Layer 4). Projected onto
+/// the wizard's Motherlode sub-steps; not an FSM state.</summary>
+public enum MotherlodeStage { Measuring, Locating, Walk, Done }
+
+/// <summary>Plain-language confidence tier for a solved slot (#113 Layer 2).
+/// Mapped 1:1 from the solver's own <see cref="MultilaterationQuality"/> so it
+/// can never drift from the GDOP gate; drives both the badge text and the
+/// XAML colour trigger.</summary>
+public enum MotherlodeFixQuality { None, Strong, Usable, Rough }
+
 /// <summary>Read-only per-treasure row for the wizard panel.</summary>
 public sealed class MotherlodeSlotViewModel
 {
-    public MotherlodeSlotViewModel(MotherlodeSurvey m)
+    public MotherlodeSlotViewModel(MotherlodeSurvey m, MotherlodeBearing? bearing, bool isNextUp)
     {
         Id = m.Id;
         Collected = m.Collected;
+        IsNextUp = isNextUp && !m.Collected;
         RouteOrder = m.RouteOrder;
+        RouteText = m.RouteOrder is { } r ? $"{r + 1}." : "•";
         DistanceCount = m.DistancesByLocation.Count(d => d > 0);
         HasFix = m.SolvedWorld is not null;
-        SolvedText = m.SolvedWorld is { } w
-            ? $"({w.X:0}, {w.Z:0})"
+
+        // Headline: the actionable relative phrase when solved; otherwise the
+        // progress toward the 3-reading minimum.
+        HeadlineText = HasFix
+            ? bearing?.ToDisplayString() ?? "located — no nearby reference"
             : DistanceCount < 3
                 ? $"locating… ({DistanceCount}/3 readings)"
                 : "locating…";
-        GdopText = m.Gdop is { } g ? $"GDOP {g:0.0}" : null;
-        ResidualText = m.ResidualRms is { } r ? $"±{r:0.0} m fit" : null;
+
+        Quality = m.Quality switch
+        {
+            MultilaterationQuality.Solved => MotherlodeFixQuality.Strong,
+            MultilaterationQuality.LowConfidenceGeometry => MotherlodeFixQuality.Usable,
+            MultilaterationQuality.Insufficient or MultilaterationQuality.NoSolution
+                => HasFix ? MotherlodeFixQuality.Rough : MotherlodeFixQuality.None,
+            _ => MotherlodeFixQuality.None,
+        };
+        QualityText = Quality switch
+        {
+            MotherlodeFixQuality.Strong => "Strong fix",
+            MotherlodeFixQuality.Usable => "Usable — spread out more",
+            MotherlodeFixQuality.Rough => "Rough — add a reading",
+            _ => null,
+        };
+
+        // Raw numbers demoted to a tooltip (kept for power users / debugging).
+        DetailText = m.SolvedWorld is { } w
+            ? $"({w.X:0}, {w.Z:0})"
+                + (m.Gdop is { } g ? $"  ·  GDOP {g:0.0}" : "")
+                + (m.ResidualRms is { } rr ? $"  ·  ±{rr:0.0} m fit" : "")
+            : null;
     }
 
     public Guid Id { get; }
     public bool Collected { get; }
+    public bool IsNextUp { get; }
     public int? RouteOrder { get; }
+    public string RouteText { get; }
     public int DistanceCount { get; }
     public bool HasFix { get; }
-    public string SolvedText { get; }
-    public string? GdopText { get; }
-    public string? ResidualText { get; }
+    public string HeadlineText { get; }
+    public MotherlodeFixQuality Quality { get; }
+    public string? QualityText { get; }
+    public string? DetailText { get; }
 }

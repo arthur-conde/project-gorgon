@@ -35,6 +35,30 @@ public static class CardinalDirectionExtensions
             North: Math.Cos(rad) * distanceMetres);
     }
 
+    /// <summary>
+    /// 8-point compass direction of a world-space delta, the inverse of
+    /// <see cref="ToBearingRadians"/> (#113 Layer 1). Uses the established map
+    /// convention — bearing is <c>atan2(East, North)</c> measured clockwise
+    /// from map-north — so a target due +North reads <see cref="CardinalDirection.N"/>
+    /// and due +East reads <see cref="CardinalDirection.E"/>. World axes:
+    /// East = ΔX, North = ΔZ (the same ground-plane frame
+    /// <see cref="AreaCalibration.ProjectWorld"/> consumes; the
+    /// <c>MirrorNorth</c> handedness is a rendering-only concern and is
+    /// deliberately not applied here — relative phrasing is frame-internal and
+    /// reflection-invariant for the player reading it on their own screen).
+    /// A zero vector resolves to <see cref="CardinalDirection.N"/> (callers pick
+    /// the nearest non-coincident reference, so this is unreached in practice).
+    /// </summary>
+    public static CardinalDirection FromBearing(double east, double north)
+    {
+        // atan2(E, N): 0 = due north, +clockwise — matches ToBearingRadians.
+        var angle = Math.Atan2(east, north);
+        if (angle < 0) angle += 2 * Math.PI;
+        // Round to the nearest 45° sector; the %8 wraps NW(7)→N(0).
+        var sector = (int)Math.Round(angle / (Math.PI / 4), MidpointRounding.AwayFromZero) % 8;
+        return (CardinalDirection)sector;
+    }
+
     public static bool TryParse(ReadOnlySpan<char> s, out CardinalDirection direction)
     {
         if (s.Equals("N", StringComparison.OrdinalIgnoreCase)) { direction = CardinalDirection.N; return true; }

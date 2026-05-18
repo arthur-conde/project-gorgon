@@ -13,9 +13,11 @@ namespace Legolas.ViewModels;
 
 /// <summary>
 /// Step the wizard is currently rendering. Combines a synthetic <see cref="PickMode"/>
-/// gate (step 0) with the active <see cref="SurveyFlowState"/>, and a single
-/// <see cref="MotherlodeMeasuring"/> placeholder for the Motherlode flow (PR1
-/// keeps it coarse — see Decision 4 in docs/agent-plans/legolas-wizard.md).
+/// gate (step 0) with the active <see cref="SurveyFlowState"/>, and four
+/// derived Motherlode sub-steps (#113 Layer 4). The Motherlode steps are not
+/// FSM states — <see cref="Flow.MotherlodeFlowController"/> stays coarse; they
+/// are projected from <see cref="MotherlodeViewModel.Stage"/>, itself derived
+/// from the log-driven coordinator snapshot.
 /// </summary>
 public enum WizardStep
 {
@@ -24,7 +26,14 @@ public enum WizardStep
     Listening,
     Gathering,
     Done,
+    /// <summary>Motherlode: no readings yet — prompt to click maps at ≥3 spots.</summary>
     MotherlodeMeasuring,
+    /// <summary>Motherlode: readings in, nothing solved yet — keep going / spread out.</summary>
+    MotherlodeLocating,
+    /// <summary>Motherlode: ≥1 treasure located — the relative-guidance route card.</summary>
+    MotherlodeWalk,
+    /// <summary>Motherlode: every located treasure collected.</summary>
+    MotherlodeDone,
 }
 
 /// <summary>
@@ -82,6 +91,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _surveyFlow.Transitioned += OnSurveyFlowTransitioned;
         _session.Surveys.CollectionChanged += OnSurveysChangedForOverlays;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
+        Motherlode.PropertyChanged += OnMotherlodeViewModelChanged;
         _session.PropertyChanged += OnSessionChanged;
         // #460: once the area becomes calibrated (Confirm persisted it), leave
         // the Calibrating gate. #477B: a clear/(re)calibrate also flips
@@ -91,6 +101,17 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         {
             IsConfirmingRecalibrate = false;
             OnPropertyChanged(nameof(CanRecalibrate));
+            OnPropertyChanged(nameof(IsAreaCalibrated));
+            // #113 header chip: area and/or calibration state just changed.
+            OnPropertyChanged(nameof(CurrentAreaName));
+            OnPropertyChanged(nameof(IsAreaKnown));
+            OnPropertyChanged(nameof(CalibrationChipText));
+            OnPropertyChanged(nameof(CanCalibrateThisArea));
+            // #113: once this area is calibrated the Motherlode dot can place;
+            // drop the one-shot request so RecomputeStep returns to the
+            // log-driven Motherlode stage instead of re-entering Calibrating.
+            if (_areaCalibration.IsCurrentAreaCalibrated)
+                _motherlodeCalibrationRequested = false;
             RecomputeStep();
         };
         if (_reportService is not null)
@@ -172,6 +193,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// <summary>True once the user has clicked Survey or Motherlode in step 0.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentStep))]
+    [NotifyPropertyChangedFor(nameof(CanCalibrateThisArea))]
     private bool _hasPickedMode;
 
     [ObservableProperty]
@@ -202,6 +224,11 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             if (value == WizardStep.Listening)
                 _session.IsMapVisible = true;
         }
+
+        // #113 Layer 5: once a treasure is located, the map overlay carries
+        // the calibration-gated marker — open it so the dot is visible.
+        if (value == WizardStep.MotherlodeWalk)
+            _session.IsMapVisible = true;
     }
 
     /// <summary>Headline displayed inline with the wizard's per-step nav row.</summary>
@@ -212,7 +239,10 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         WizardStep.Listening => "Use a survey",
         WizardStep.Gathering => "Walk your route",
         WizardStep.Done => "All collected",
-        WizardStep.MotherlodeMeasuring => "Motherlode",
+        WizardStep.MotherlodeMeasuring => "Measure the treasure",
+        WizardStep.MotherlodeLocating => "Locating…",
+        WizardStep.MotherlodeWalk => "Walk to the treasure",
+        WizardStep.MotherlodeDone => "All collected",
         _ => "",
     };
 
@@ -317,6 +347,66 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// when there is a persisted calibration to redo (Listening step).</summary>
     public bool CanRecalibrate => _areaCalibration.IsCurrentAreaCalibrated;
 
+    /// <summary>#113 Layer 5: true once the current area has an applied
+    /// calibration — the only gate on the Motherlode on-map dot (the relative
+    /// text is calibration-free). Drives the Walk panel's calibrate affordance
+    /// vs. the honest "dot is approximate" caveat. Notified on
+    /// <see cref="IAreaCalibrationService.Changed"/>.</summary>
+    public bool IsAreaCalibrated => _areaCalibration.IsCurrentAreaCalibrated;
+
+    /// <summary>#113: friendly name of the area Legolas thinks you're in, or
+    /// null if none was detected (Mithril started mid-session with no
+    /// "Entering Area" banner).</summary>
+    public string? CurrentAreaName => _areaCalibration.CurrentAreaFriendlyName;
+
+    /// <summary>True when the area is identified in reference data (so a
+    /// calibration is even possible). False ⇒ the chip shows "area not
+    /// detected" rather than a calibrate prompt.</summary>
+    public bool IsAreaKnown => _areaCalibration.CurrentAreaKey is not null;
+
+    /// <summary>#113: the always-visible header chip text — area + calibration
+    /// state at a glance, so the user never has to open the (experimental)
+    /// calibration overlay to find out.</summary>
+    public string CalibrationChipText =>
+        !IsAreaKnown ? "Area not detected"
+        : IsAreaCalibrated ? $"{CurrentAreaName} · calibrated"
+        : $"{CurrentAreaName} · not calibrated";
+
+    /// <summary>The chip is an actionable "calibrate now" affordance only when
+    /// a mode is picked, the area is known, and it isn't already calibrated;
+    /// otherwise it's a passive status label.</summary>
+    public bool CanCalibrateThisArea => HasPickedMode && IsAreaKnown && !IsAreaCalibrated;
+
+    /// <summary>#113: start the guided Drop/Pair calibration from the header
+    /// chip (never the experimental overlay). Survey already gates an
+    /// uncalibrated area into <see cref="WizardStep.Calibrating"/>; Motherlode
+    /// needs the explicit opt-in (it's calibration-free by default).</summary>
+    [RelayCommand]
+    private void CalibrateThisArea()
+    {
+        if (_session.Mode == SessionMode.Motherlode)
+            _motherlodeCalibrationRequested = true;
+        RecomputeStep();
+    }
+
+    /// <summary>#113: one-shot request to detour into the guided
+    /// <see cref="WizardStep.Calibrating"/> walkthrough from Motherlode.
+    /// Optional and non-blocking — measuring/locating/walking by relative text
+    /// never needs it; it only unlocks the on-map dot. Cleared automatically
+    /// once the area calibrates (or on mode change).</summary>
+    private bool _motherlodeCalibrationRequested;
+
+    /// <summary>#113: enter the same guided Drop/Pair calibration Survey uses,
+    /// then fall back to the Motherlode stage once it persists. Reuses the
+    /// existing <see cref="WizardStep.Calibrating"/> machinery via
+    /// <see cref="RecomputeStep"/>.</summary>
+    [RelayCommand]
+    private void CalibrateForMotherlode()
+    {
+        _motherlodeCalibrationRequested = true;
+        RecomputeStep();
+    }
+
     /// <summary>
     /// Step-wise back. From the first post-pick step, returns to mode pick
     /// (delegates to <see cref="ChangeMode"/>). From mid-flow steps, undoes
@@ -373,6 +463,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             _surveyFlow.Reset();
         else
             _motherlodeFlow.Reset();
+        _motherlodeCalibrationRequested = false;
         _session.IsMapVisible = false;
         _session.IsInventoryVisible = false;
         HasPickedMode = false;
@@ -388,6 +479,14 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     private void OnMotherlodeFlowChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MotherlodeFlowController.CurrentState))
+            RecomputeStep();
+    }
+
+    // #113 Layer 4: the derived Motherlode stage moved (a reading landed, a
+    // treasure solved, the last one was collected) — re-evaluate the step.
+    private void OnMotherlodeViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MotherlodeViewModel.Stage))
             RecomputeStep();
     }
 
@@ -472,7 +571,27 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
         if (_session.Mode == SessionMode.Motherlode)
         {
-            CurrentStep = WizardStep.MotherlodeMeasuring;
+            // #113 Layer 5: optional, non-blocking calibration detour. The
+            // log-driven flow never needs calibration (relative text is
+            // frame-internal); this fires only when the user asked for the
+            // on-map dot in an uncalibrated area. Reuses the Survey guided
+            // walkthrough; areaCalibration.Changed clears the request and
+            // re-runs this, dropping back to the stage below.
+            if (_motherlodeCalibrationRequested && !_areaCalibration.IsCurrentAreaCalibrated)
+            {
+                CurrentStep = WizardStep.Calibrating;
+                return;
+            }
+
+            // #113 Layer 4: derived sub-steps from the log-driven coordinator
+            // snapshot (via MotherlodeViewModel.Stage). The FSM stays coarse.
+            CurrentStep = Motherlode.Stage switch
+            {
+                MotherlodeStage.Locating => WizardStep.MotherlodeLocating,
+                MotherlodeStage.Walk => WizardStep.MotherlodeWalk,
+                MotherlodeStage.Done => WizardStep.MotherlodeDone,
+                _ => WizardStep.MotherlodeMeasuring,
+            };
             return;
         }
 

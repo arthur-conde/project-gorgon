@@ -379,6 +379,62 @@ public class LegolasWizardViewModelTests
         wizard.PinCalibration.IsArmed.Should().BeFalse("leaving Calibrating disarms capture");
     }
 
+    // ─── #113 Motherlode optional, non-blocking calibration ──────────────
+
+    [Fact]
+    public void PickMotherlode_on_uncalibrated_area_is_NOT_gated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+
+        wizard.PickMotherlodeModeCommand.Execute(null);
+
+        // Calibration-free measuring is the #113 tenet — no Calibrating gate.
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+        wizard.IsAreaCalibrated.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CalibrateForMotherlode_detours_to_Calibrating_then_returns()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickMotherlodeModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+
+        wizard.CalibrateForMotherlodeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+
+        calib.Calibrated = true;
+        calib.RaiseChanged(); // IAreaCalibrationService.Changed → RecomputeStep
+
+        // Request cleared, area calibrated → back to the log-driven stage.
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+        wizard.IsAreaCalibrated.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Calibration_chip_reflects_area_and_state()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickMotherlodeModeCommand.Execute(null);
+
+        wizard.CalibrationChipText.Should().Be("Test · not calibrated");
+        wizard.CanCalibrateThisArea.Should().BeTrue();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        calib.Calibrated = true;
+        calib.RaiseChanged();
+
+        wizard.CalibrationChipText.Should().Be("Test · calibrated");
+        wizard.CanCalibrateThisArea.Should().BeFalse("already calibrated");
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+    }
+
     [Fact]
     public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
