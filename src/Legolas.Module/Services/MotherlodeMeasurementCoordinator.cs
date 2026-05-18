@@ -8,15 +8,21 @@ namespace Legolas.Services;
 
 /// <summary>
 /// Immutable view of the in-flight Motherlode solve for the VM. <see cref="Surveys"/>
-/// are record snapshots (safe to bind); <see cref="Guidance"/> is the single
-/// most relevant actionable hint (GDOP / missing-fix), or null when nothing
-/// needs saying.
+/// and <see cref="Locations"/> are snapshots (safe to bind/iterate off-thread);
+/// <see cref="Guidance"/> is the single most relevant actionable hint (GDOP /
+/// missing-fix), or null when nothing needs saying.
 /// </summary>
+/// <param name="Locations">The shared ordered Pᵢ set — one entry per spot the
+/// player measured at, in click order. Surfaced (not just counted) so the UI
+/// can phrase a solved treasure relative to "your spot #N" (#113 Layer 1, the
+/// zero-standoff reference tier). Includes fix-less rows (Confidence 0) so a
+/// row index lines up with <see cref="MotherlodeSurvey.DistancesByLocation"/>.</param>
 public sealed record MotherlodeStatus(
     int LocationCount,
     int LocationsWithFix,
     WorldCoord? LastPlayerWorld,
     IReadOnlyList<MotherlodeSurvey> Surveys,
+    IReadOnlyList<MotherlodePositionSample> Locations,
     string? Guidance);
 
 /// <summary>
@@ -242,6 +248,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 withFix,
                 last,
                 _session.Surveys.ToArray(),
+                _session.LocationSamples.ToArray(),
                 _guidance);
         }
     }
