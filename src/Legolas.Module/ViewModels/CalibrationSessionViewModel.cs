@@ -126,8 +126,9 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(DiagnosticSnapshot));
     }
 
-    /// <summary>Full multi-line diagnostic for the clipboard, incl. the selected
-    /// survey pin's projected-vs-overlay math.</summary>
+    /// <summary>Full multi-line diagnostic for the clipboard — dumps EVERY
+    /// survey pin's projected-vs-corrected math + raw coords so the scale factor
+    /// is readable without selecting/eyeballing each one.</summary>
     public string DiagnosticSnapshot
     {
         get
@@ -138,18 +139,31 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
                 : $"calibration: scale={c.Scale:0.0000} rotDeg={c.RotationRadians * 180.0 / Math.PI:0.00} " +
                   $"origin=({c.OriginX:0.0},{c.OriginY:0.0}) mirrorNorth={c.MirrorNorth} " +
                   $"refs={c.ReferenceCount} residual={c.ResidualPixels:0.0}px";
-            return string.Join('\n', new[]
+
+            var lines = new List<string>
             {
                 "Legolas calibration diagnostic",
                 DebugState,
                 cal,
+                $"player: {(PlayerPin is { } pp ? $"({pp.X:0.0},{pp.Y:0.0})" : "-")}",
                 $"status: {StatusText}",
                 $"lastSurvey: {LastSurveyText ?? "-"}",
                 $"result: {ResultText ?? "-"}",
                 $"nudgeTarget: {NudgeTargetText ?? "-"}",
-                $"selectedSurvey: {(SelectedSurveyPin?.MathText ?? "-")}",
                 $"clickWarning: {ClickWarning ?? "-"}",
-            });
+                $"surveyPins ({SurveyPins.Count}):",
+            };
+            if (SurveyPins.Count == 0)
+                lines.Add("  (none)");
+            else
+                foreach (var s in SurveyPins)
+                    lines.Add(
+                        $"  {(ReferenceEquals(s, SelectedSurveyPin) ? "*" : " ")} " +
+                        $"off=({s.Offset.East:0},{s.Offset.North:0})m  " +
+                        $"origin=({s.OriginPixel.X:0.0},{s.OriginPixel.Y:0.0})  " +
+                        $"proj=({s.ProjX:0.0},{s.ProjY:0.0})  " +
+                        $"overlay=({s.OverlayX:0.0},{s.OverlayY:0.0}){(s.Corrected ? "" : " uncorrected")}  | {s.MathText}");
+            return string.Join('\n', lines);
         }
     }
 
