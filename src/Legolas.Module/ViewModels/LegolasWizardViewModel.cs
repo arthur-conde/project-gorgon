@@ -13,9 +13,11 @@ namespace Legolas.ViewModels;
 
 /// <summary>
 /// Step the wizard is currently rendering. Combines a synthetic <see cref="PickMode"/>
-/// gate (step 0) with the active <see cref="SurveyFlowState"/>, and a single
-/// <see cref="MotherlodeMeasuring"/> placeholder for the Motherlode flow (PR1
-/// keeps it coarse — see Decision 4 in docs/agent-plans/legolas-wizard.md).
+/// gate (step 0) with the active <see cref="SurveyFlowState"/>, and four
+/// derived Motherlode sub-steps (#113 Layer 4). The Motherlode steps are not
+/// FSM states — <see cref="Flow.MotherlodeFlowController"/> stays coarse; they
+/// are projected from <see cref="MotherlodeViewModel.Stage"/>, itself derived
+/// from the log-driven coordinator snapshot.
 /// </summary>
 public enum WizardStep
 {
@@ -24,7 +26,14 @@ public enum WizardStep
     Listening,
     Gathering,
     Done,
+    /// <summary>Motherlode: no readings yet — prompt to click maps at ≥3 spots.</summary>
     MotherlodeMeasuring,
+    /// <summary>Motherlode: readings in, nothing solved yet — keep going / spread out.</summary>
+    MotherlodeLocating,
+    /// <summary>Motherlode: ≥1 treasure located — the relative-guidance route card.</summary>
+    MotherlodeWalk,
+    /// <summary>Motherlode: every located treasure collected.</summary>
+    MotherlodeDone,
 }
 
 /// <summary>
@@ -82,6 +91,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         _surveyFlow.Transitioned += OnSurveyFlowTransitioned;
         _session.Surveys.CollectionChanged += OnSurveysChangedForOverlays;
         _motherlodeFlow.PropertyChanged += OnMotherlodeFlowChanged;
+        Motherlode.PropertyChanged += OnMotherlodeViewModelChanged;
         _session.PropertyChanged += OnSessionChanged;
         // #460: once the area becomes calibrated (Confirm persisted it), leave
         // the Calibrating gate. #477B: a clear/(re)calibrate also flips
@@ -202,6 +212,11 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             if (value == WizardStep.Listening)
                 _session.IsMapVisible = true;
         }
+
+        // #113 Layer 5: once a treasure is located, the map overlay carries
+        // the calibration-gated marker — open it so the dot is visible.
+        if (value == WizardStep.MotherlodeWalk)
+            _session.IsMapVisible = true;
     }
 
     /// <summary>Headline displayed inline with the wizard's per-step nav row.</summary>
@@ -212,7 +227,10 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         WizardStep.Listening => "Use a survey",
         WizardStep.Gathering => "Walk your route",
         WizardStep.Done => "All collected",
-        WizardStep.MotherlodeMeasuring => "Motherlode",
+        WizardStep.MotherlodeMeasuring => "Measure the treasure",
+        WizardStep.MotherlodeLocating => "Locating…",
+        WizardStep.MotherlodeWalk => "Walk to the treasure",
+        WizardStep.MotherlodeDone => "All collected",
         _ => "",
     };
 
@@ -391,6 +409,14 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             RecomputeStep();
     }
 
+    // #113 Layer 4: the derived Motherlode stage moved (a reading landed, a
+    // treasure solved, the last one was collected) — re-evaluate the step.
+    private void OnMotherlodeViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MotherlodeViewModel.Stage))
+            RecomputeStep();
+    }
+
     private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
     {
         // Hotkey-driven mode flip should re-project the wizard's step.
@@ -472,7 +498,15 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
         if (_session.Mode == SessionMode.Motherlode)
         {
-            CurrentStep = WizardStep.MotherlodeMeasuring;
+            // #113 Layer 4: derived sub-steps from the log-driven coordinator
+            // snapshot (via MotherlodeViewModel.Stage). The FSM stays coarse.
+            CurrentStep = Motherlode.Stage switch
+            {
+                MotherlodeStage.Locating => WizardStep.MotherlodeLocating,
+                MotherlodeStage.Walk => WizardStep.MotherlodeWalk,
+                MotherlodeStage.Done => WizardStep.MotherlodeDone,
+                _ => WizardStep.MotherlodeMeasuring,
+            };
             return;
         }
 

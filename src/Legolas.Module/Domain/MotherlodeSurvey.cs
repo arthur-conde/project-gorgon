@@ -67,6 +67,15 @@ public sealed record MotherlodeSurvey(
     bool Collected,
     int? RouteOrder)
 {
+    /// <summary>
+    /// The solver's own verdict for this slot's last solve (#113 Layer 2). Kept
+    /// verbatim from <see cref="Services.MultilaterationResult.Quality"/> rather
+    /// than re-derived from <see cref="Gdop"/> in the UI, so the plain-language
+    /// confidence badge can never drift from the solver's GDOP gate. Null until
+    /// the slot has been solved at least once.
+    /// </summary>
+    public Services.MultilaterationQuality? Quality { get; init; }
+
     public static MotherlodeSurvey Create() =>
         new(Guid.NewGuid(), Array.Empty<int>(), null, null, null, false, null);
 }

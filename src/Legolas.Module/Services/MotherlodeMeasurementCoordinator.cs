@@ -323,7 +323,11 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
 
         if (samples.Count < 3)
         {
-            _session.Surveys[slot] = s with { SolvedWorld = null, Gdop = null, ResidualRms = null };
+            _session.Surveys[slot] = s with
+            {
+                SolvedWorld = null, Gdop = null, ResidualRms = null,
+                Quality = MultilaterationQuality.Insufficient,
+            };
             return;
         }
 
@@ -333,6 +337,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             SolvedWorld = r.Point,
             Gdop = double.IsFinite(r.Gdop) ? r.Gdop : null,
             ResidualRms = double.IsFinite(r.ResidualRms) ? r.ResidualRms : null,
+            Quality = r.Quality,
         };
         if (r.Guidance is { } g) _guidance = g;
         else if (r.Quality == MultilaterationQuality.Solved) _guidance = null;
