@@ -362,6 +362,50 @@
         { "name": "max", "group": "max", "type": "int" }
       ]
     },
+    "shared.RecipeLogParser.LoadRecipesRx": {
+      "pattern": "LocalPlayer: ProcessLoadRecipes\\(",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "LoadRecipesRx" },
+      "eventType": "shared.RecipesSnapshot",
+      "kind": "marker",
+      "notes": "Guard for the full known-recipe dump (login / zone-change). The two parallel [ids],[counts] arrays are extracted by LoadRecipesPayloadRx; this entry only discriminates the line. Re-fires on zone transitions, which is what lets PlayerRecipeStateService self-heal after a mid-session start and makes the export's recipe half fully eliminable. See issue #473.",
+      "fields": []
+    },
+    "shared.RecipeLogParser.UpdateRecipeRx": {
+      "pattern": "LocalPlayer: ProcessUpdateRecipe\\(",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "UpdateRecipeRx" },
+      "eventType": "shared.RecipeUpdate",
+      "kind": "marker",
+      "notes": "Guard for a single-recipe delta. The (id, count) payload is extracted by UpdateRecipePayloadRx. count==0 for a previously-unknown recipe is a learn (the discrete signal with no skill analogue; PG emits no separate learn/first-time verb); count>=1 is the new absolute craft-completion total (verified live: not a delta).",
+      "fields": []
+    },
+    "shared.RecipeLogParser.LoadRecipesPayloadRx": {
+      "pattern": "ProcessLoadRecipes\\(\\[(?<ids>[\\d,]*)\\]\\s*,\\s*\\[(?<counts>[\\d,]*)\\]\\)",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "LoadRecipesPayloadRx" },
+      "eventType": "shared.RecipesSnapshotPayload",
+      "notes": "The two parallel, equal-length integer arrays of ProcessLoadRecipes: ids (recipe_<id> in recipes.json) zipped with lifetime completion counts (0 = known but never crafted). Lists carry a trailing comma; split with empty-entry removal. A length mismatch or empty payload is treated as degenerate and yields no event (don't wipe live state).",
+      "fields": [
+        { "name": "ids", "group": "ids", "type": "string" },
+        { "name": "counts", "group": "counts", "type": "string" }
+      ]
+    },
+    "shared.RecipeLogParser.UpdateRecipePayloadRx": {
+      "pattern": "ProcessUpdateRecipe\\((?<id>\\d+)\\s*,\\s*(?<count>\\d+)\\)",
+      "source": "player",
+      "module": "shared",
+      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "UpdateRecipePayloadRx" },
+      "eventType": "shared.RecipeUpdatePayload",
+      "notes": "ProcessUpdateRecipe(id, count): id = recipe_<id>; count = the new ABSOLUTE lifetime completion count for this character (verified live — snapshot 255 → ProcessUpdateRecipe(7026,256) → next snapshot 256, not a delta). 0 = just-learned.",
+      "fields": [
+        { "name": "id", "group": "id", "type": "int" },
+        { "name": "count", "group": "count", "type": "int" }
+      ]
+    },
     "shared.ActiveCharacterLogSynchronizer.AddPlayerRx": {
       "pattern": "LocalPlayer:\\s*ProcessAddPlayer\\([^,]+,\\s*[^,]+,\\s*\"[^\"]*\",\\s*\"([^\"]+)\"",
       "source": "player",
