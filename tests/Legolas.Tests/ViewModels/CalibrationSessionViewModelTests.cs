@@ -42,13 +42,15 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
         vm.CanSolve.Should().BeFalse();
-        // No auto-advance: the selection stays where the user put it. A second
-        // click with the same reference would *correct* it, not add a point.
-        vm.SelectedReference.Should().Be(vm.References[0]);
+        // Selection is spent after a placement — a stray next click does NOT
+        // move the pin (it warns instead of silently re-placing).
+        vm.SelectedReference.Should().BeNull();
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(11, 11));
-        vm.Placements.Should().HaveCount(1); // still one — that was a correction
+        vm.Placements.Should().HaveCount(1);            // unchanged
+        vm.Placements[0].X.Should().Be(10);            // not moved
+        vm.ClickWarning.Should().NotBeNull();
 
-        // Advancing to the next point is a deliberate pick.
+        // Each point is a deliberate pick.
         vm.SelectedReference = vm.References[1];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
         vm.Placements.Should().HaveCount(2);
@@ -66,14 +68,14 @@ public class CalibrationSessionViewModelTests
             Refs = { Ref("A", 0, 0) },
         };
         var vm = new CalibrationSessionViewModel(svc);
-        vm.SelectedReference = vm.References[0];
 
+        vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
-        // Selection stays on References[0] (no auto-advance); a second click is
-        // a correction of the same point.
+        // Correction is explicit: re-select the same reference, then click.
+        vm.SelectedReference = vm.References[0];
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
 
-        vm.Placements.Should().HaveCount(1);
+        vm.Placements.Should().HaveCount(1);   // replaced, not appended
         vm.Placements[0].X.Should().Be(50);
         vm.Placements[0].Y.Should().Be(60);
     }

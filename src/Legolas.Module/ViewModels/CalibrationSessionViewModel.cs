@@ -176,11 +176,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
 
-        // No auto-advance: the click only ever affects the reference the user
-        // explicitly selected. Keeping the selection means a second click on
-        // the same reference is a *correction* (replaces its point above), and
-        // moving to the next reference is a deliberate pick — not something
-        // every stray click silently consumes.
+        // Clear the selection so the click is "spent". Otherwise the reference
+        // stays selected and the *next* click re-places (visibly moves) the
+        // same pin — every stray click drags it. To correct a point: nudge it
+        // with the arrow keys, or deliberately re-select that reference and
+        // click again. A click never silently moves an existing pin.
+        SelectedReference = null;
     }
 
     /// <summary>
