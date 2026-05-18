@@ -1,11 +1,11 @@
 using System.IO;
 using System.Text;
 using FluentAssertions;
-using Gandalf.Parsing;
-using Gandalf.Services;
+using Mithril.GameState.Areas;
+using Mithril.GameState.Areas.Parsing;
 using Xunit;
 
-namespace Gandalf.Tests;
+namespace Mithril.GameState.Tests.Areas;
 
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]

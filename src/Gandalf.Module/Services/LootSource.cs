@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
+using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;

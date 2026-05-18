@@ -1,3 +1,5 @@
+using Mithril.GameState.Areas;
+using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
@@ -32,6 +34,12 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<InventoryService>()
             .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())
             .AddHostedService(sp => sp.GetRequiredService<InventoryService>());
+
+        // Area tracking is shared live game-state (Gandalf chest-area
+        // stamping, Legolas per-area survey calibration, …). One parser,
+        // one tracker, registered once here — consumers inject the tracker.
+        services.AddSingleton<AreaTransitionParser>();
+        services.AddSingleton<PlayerAreaTracker>();
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();
