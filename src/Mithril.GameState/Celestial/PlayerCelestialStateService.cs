@@ -34,6 +34,7 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
 
     private readonly object _lock = new();
     private readonly List<Action<CelestialInfo>> _handlers = [];
+    private readonly HashSet<string> _reportedUnknownTokens = new(StringComparer.Ordinal);
     private CelestialInfo? _current;
 
     public PlayerCelestialStateService(
@@ -74,6 +75,9 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
             {
                 if (_parser.TryParse(raw.Line, raw.Timestamp) is CelestialInfoEvent evt)
                 {
+                    if (evt.Phase == MoonPhase.Unknown)
+                        ReportUnknownToken(evt.RawPhase);
+
                     Publish(new CelestialInfo(evt.Phase, evt.RawPhase, ToOffset(evt.Timestamp)));
                     _diag?.Trace("GameState.Celestial",
                         $"Moon phase: {evt.RawPhase} ({evt.Phase}) @ {evt.Timestamp:O}");
@@ -84,6 +88,28 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
                 _diag?.Warn("GameState.Celestial", $"Ingestion error: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// PG emitted a celestial token that maps to no <see cref="MoonPhase"/>
+    /// member — the canonical enum / token map is missing a case (a game
+    /// patch added a phase, or a quarter token's spelling differs from the
+    /// assumed astronomical name). Logged at <see cref="DiagnosticLevel.Error"/>
+    /// because it is a code-level gap we want surfaced loudly, not a transient
+    /// runtime hiccup. Deduped per distinct raw token: PG re-emits
+    /// <c>ProcessSetCelestialInfo</c> on every login + phase roll-over, so an
+    /// unmapped token would otherwise flood the Error log indefinitely.
+    /// </summary>
+    private void ReportUnknownToken(string rawToken)
+    {
+        bool firstSighting;
+        lock (_lock) { firstSighting = _reportedUnknownTokens.Add(rawToken); }
+        if (!firstSighting) return;
+
+        _diag?.Error("GameState.Celestial",
+            $"Unmapped celestial token '{rawToken}' — no MoonPhase enum member. " +
+            "Add it to MoonPhase + MoonPhaseExtensions.ByToken / DisplayName " +
+            "(value preserved as raw passthrough until then).");
     }
 
     private void Publish(CelestialInfo info)

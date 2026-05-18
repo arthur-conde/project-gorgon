@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Xunit;
 
@@ -16,8 +17,9 @@ public sealed class PlayerCelestialStateServiceTests
     private const string FullLine =
         "[20:30:00] LocalPlayer: ProcessSetCelestialInfo(FullMoon)";
 
-    private static PlayerCelestialStateService NewService(ScriptedStream stream) =>
-        new(stream, new CelestialLogParser());
+    private static PlayerCelestialStateService NewService(
+        ScriptedStream stream, IDiagnosticsSink? diag = null) =>
+        new(stream, new CelestialLogParser(), diag);
 
     [Fact]
     public async Task Cold_start_Current_is_null()
@@ -147,6 +149,56 @@ public sealed class PlayerCelestialStateServiceTests
             _ = runTask;
             svc.Dispose();
         }
+    }
+
+    [Fact]
+    public async Task Unmapped_token_writes_an_Error_diagnostic_once_per_distinct_token()
+    {
+        var stream = new ScriptedStream();
+        var diag = new DiagnosticsSink();
+        var svc = NewService(stream, diag);
+        try
+        {
+            // Same unmapped token replayed 3× (login + roll-overs); a second,
+            // different unmapped token once.
+            stream.Push(Stamp, "[19:50:42] LocalPlayer: ProcessSetCelestialInfo(BloodMoonEclipse)");
+            stream.Push(Stamp.AddMinutes(40), "[20:30:00] LocalPlayer: ProcessSetCelestialInfo(BloodMoonEclipse)");
+            stream.Push(Stamp.AddHours(1), "[20:50:00] LocalPlayer: ProcessSetCelestialInfo(BloodMoonEclipse)");
+            stream.Push(Stamp.AddHours(2), "[21:50:00] LocalPlayer: ProcessSetCelestialInfo(VoidMoon)");
+            await RunUntilDrainedAsync(svc, stream);
+
+            var errors = diag.Snapshot()
+                .Where(e => e.Level == DiagnosticLevel.Error
+                            && e.Category == "GameState.Celestial")
+                .ToArray();
+
+            errors.Should().HaveCount(2, "one Error per distinct unmapped token, deduped on replay");
+            errors.Should().ContainSingle(e => e.Message.Contains("'BloodMoonEclipse'"));
+            errors.Should().ContainSingle(e => e.Message.Contains("'VoidMoon'"));
+            errors[0].Message.Should().Contain("no MoonPhase enum member");
+
+            // The value is still tracked despite being unmapped.
+            svc.Current!.Phase.Should().Be(MoonPhase.Unknown);
+            svc.Current.RawPhase.Should().Be("VoidMoon");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Recognised_tokens_emit_no_Error_diagnostic()
+    {
+        var stream = new ScriptedStream();
+        var diag = new DiagnosticsSink();
+        var svc = NewService(stream, diag);
+        try
+        {
+            stream.Push(Stamp, CrescentLine);
+            stream.Push(Stamp.AddMinutes(40), FullLine);
+            await RunUntilDrainedAsync(svc, stream);
+
+            diag.Snapshot().Should().NotContain(e => e.Level == DiagnosticLevel.Error);
+        }
+        finally { await StopAsync(svc); }
     }
 
     private static async Task RunUntilDrainedAsync(PlayerCelestialStateService svc, ScriptedStream stream)
