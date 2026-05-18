@@ -53,6 +53,26 @@
                 Abilities tab pre-filtered to abilities requiring this effect keyword. Default
                 12. Set to 0 to always collapse; raise to 100 to show everything.
             </TextBlock>
+
+            <!-- NPC detail chip cap -->
+            <TextBlock Text="NPC detail · chip lists" Foreground="#88FFFFFF" Margin="0,0,0,6" FontWeight="SemiBold"/>
+            <DockPanel Margin="0,0,0,4">
+                <TextBlock DockPanel.Dock="Left" Text="Show at most" VerticalAlignment="Center" Foreground="#FFE8E8E8" Width="110"/>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="#88FFFFFF" Width="60"
+                           Text="{Binding NpcChipCap, StringFormat={}{0} chips}"/>
+                <Slider Minimum="0" Maximum="100" TickFrequency="4" IsSnapToTickEnabled="True"
+                        Value="{Binding NpcChipCap, Mode=TwoWay}"
+                        VerticalAlignment="Center" Margin="0,0,8,0"/>
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource AppFontSizeHint}" Foreground="#88FFFFFF" Margin="0,0,0,24">
+                A major trainer (e.g. Amutasa) teaches 60+ recipes and sells 30+ items; every
+                chip carries an icon that decodes on the UI thread, so an uncapped NPC stalls
+                the detail pane on selection. This cap applies to each of the &quot;Teaches
+                recipes&quot;, &quot;Teaches abilities&quot;, &quot;Sells items&quot; and
+                &quot;Quests&quot; lists; above it the rest are reachable via the
+                &quot;View all N →&quot; popup. Default 12. Set to 0 to always collapse;
+                raise to 100 to show everything.
+            </TextBlock>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

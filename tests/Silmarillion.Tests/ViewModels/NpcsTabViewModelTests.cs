@@ -313,6 +313,145 @@ public sealed class NpcsTabViewModelTests
         chip.IsNavigable.Should().BeTrue();
     }
 
+    // ── NPC-detail cap + provenance-popup drawer (mirrors the item/area #318 idiom) ──
+    // A dense NPC (Amutasa: ~60 recipes + ~37 items) realised ~100 icon-bearing chips at
+    // once, stalling the detail pane. Each of the four enumerations is now capped at
+    // SilmarillionSettings.NpcChipCap with the full set behind a "View all N →" Set-ref.
+
+    private static Recipe[] MakeRecipes(int count) =>
+        Enumerable.Range(1, count)
+            .Select(i => new Recipe
+            {
+                Key = $"recipe_{i}",
+                InternalName = $"Recipe{i:D3}",
+                Name = $"Recipe {i:D3}",
+                IconId = i,
+            })
+            .ToArray();
+
+    [Fact]
+    public void DetailViewModel_TaughtRecipes_belowCap_emitsAllChips_andBuildsPopupAndSetRef()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
+            RecipesTaughtByNpcMap = { ["NPC_Joeh"] = MakeRecipes(5) },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe),
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings { NpcChipCap = 12 });
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.TaughtRecipes.Should().HaveCount(5, because: "5 is within the cap");
+        detail.TaughtRecipeLinks.Should().HaveCount(5);
+        detail.TaughtRecipesPopup.Should().NotBeNull(
+            because: "the View-all drawer is always built, even within the cap (mirrors item/area)");
+        detail.TaughtRecipesPopup!.TotalCount.Should().Be(5);
+        detail.TaughtRecipesPopup.IsFlat.Should().BeTrue(because: "single-reason ⇒ flat list");
+        detail.TaughtRecipesTotal.Should().Be(5);
+        detail.TaughtRecipesSetRef.Should().NotBeNull();
+        detail.TaughtRecipesSetRef!.MatchCount.Should().Be(5);
+        detail.ShowTaughtRecipesPopupCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    [Fact]
+    public void DetailViewModel_TaughtRecipes_aboveCap_capsChips_butSetRefAndPopupCarryFullTotal()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Amutasa"] = new Npc { Name = "Amutasa" } },
+            RecipesTaughtByNpcMap = { ["NPC_Amutasa"] = MakeRecipes(60) },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe),
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings { NpcChipCap = 12 });
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.TaughtRecipes.Should().HaveCount(12, because: "the cap bounds the rendered chips");
+        detail.TaughtRecipeLinks.Should().HaveCount(12);
+        detail.TaughtRecipesTotal.Should().Be(60);
+        detail.TaughtRecipesPopup!.TotalCount.Should().Be(60,
+            because: "the popup carries the full set so the count cannot diverge");
+        detail.TaughtRecipesPopup.FlatChips.Should().HaveCount(60);
+        detail.TaughtRecipesSetRef!.MatchCount.Should().Be(60);
+    }
+
+    [Fact]
+    public void DetailViewModel_NpcChipCap_zero_collapsesEverythingIntoThePopup()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Amutasa"] = new Npc { Name = "Amutasa" } },
+            RecipesTaughtByNpcMap = { ["NPC_Amutasa"] = MakeRecipes(8) },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe),
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings { NpcChipCap = 0 });
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.TaughtRecipes.Should().BeEmpty(because: "cap 0 collapses every chip into the drawer");
+        detail.TaughtRecipesSetRef.Should().NotBeNull(because: "the drawer still carries the full set");
+        detail.TaughtRecipesSetRef!.MatchCount.Should().Be(8);
+        detail.TaughtRecipesPopup!.TotalCount.Should().Be(8);
+    }
+
+    [Fact]
+    public void DetailViewModel_TaughtRecipes_noRelationship_noPopupNoSetRef_commandDisabled()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Joeh"] = new Npc { Name = "Joeh" } },
+        };
+        var vm = new NpcsTabViewModel(refData, NavFactory.WithKinds(EntityKind.Recipe),
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings());
+
+        vm.SelectedRow = vm.AllNpcs.Single();
+        var detail = vm.DetailViewModel!;
+
+        detail.TaughtRecipes.Should().BeEmpty();
+        detail.TaughtRecipesPopup.Should().BeNull();
+        detail.TaughtRecipesSetRef.Should().BeNull(because: "no popup ⇒ the SetRef row hides");
+        detail.ShowTaughtRecipesPopupCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [Fact]
+    public void DetailViewModel_openingTaughtRecipesPopup_invokesOpener_pushesNoNavigatorHistory()
+    {
+        var refData = new StubReferenceData
+        {
+            NpcsByKey = { ["NPC_Amutasa"] = new Npc { Name = "Amutasa" } },
+            RecipesTaughtByNpcMap = { ["NPC_Amutasa"] = MakeRecipes(30) },
+        };
+        var nav = new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>());
+        var vm = new NpcsTabViewModel(refData, nav,
+            new ReferenceDataEntityNameResolver(refData), new SilmarillionSettings { NpcChipCap = 12 });
+
+        var prior = NpcDetailViewModel.ProvenancePopupOpener;
+        ProvenancePopupViewModel? captured = null;
+        NpcDetailViewModel.ProvenancePopupOpener = (popupVm, _) => captured = popupVm;
+        try
+        {
+            vm.SelectedRow = vm.AllNpcs.Single();
+            var detail = vm.DetailViewModel!;
+
+            nav.Current.Should().BeNull();
+
+            detail.ShowTaughtRecipesPopupCommand.Execute(null);
+
+            captured.Should().NotBeNull(because: "the command invoked the opener with the built popup VM");
+            captured!.TotalCount.Should().Be(30);
+            nav.Current.Should().BeNull(because: "opening the popup must not push navigator history (#229)");
+            nav.CanGoBack.Should().BeFalse();
+        }
+        finally
+        {
+            NpcDetailViewModel.ProvenancePopupOpener = prior;
+        }
+    }
+
     [Fact]
     public void DetailViewModel_EmptyNpc_ProducesEmptyCrossLinkSections_HeaderAndFooterOnly()
     {

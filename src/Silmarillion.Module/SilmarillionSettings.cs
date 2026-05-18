@@ -25,9 +25,18 @@ public sealed class SilmarillionSettings : INotifyPropertyChanged
     /// <summary>Default cap for the Effects-tab "Required by abilities" chip cluster.</summary>
     public const int DefaultRequiredByAbilitiesChipCap = 12;
 
+    /// <summary>
+    /// Default cap for the NPC-detail chip enumerations ("Teaches recipes", "Teaches
+    /// abilities", "Sells items", "Quests"). An NPC like a major crafting trainer teaches
+    /// 60+ recipes and sells 30+ items — every chip carries an icon that decodes on the UI
+    /// thread, so an uncapped detail stalls the pane on selection.
+    /// </summary>
+    public const int DefaultNpcChipCap = 12;
+
     private int _schemaVersion = 1;
     private int _usedInChipCap = DefaultUsedInChipCap;
     private int _requiredByAbilitiesChipCap = DefaultRequiredByAbilitiesChipCap;
+    private int _npcChipCap = DefaultNpcChipCap;
 
     /// <summary>
     /// Persisted schema version. Always written so a future <c>IVersionedState</c> migration
@@ -62,6 +71,20 @@ public sealed class SilmarillionSettings : INotifyPropertyChanged
     {
         get => _requiredByAbilitiesChipCap;
         set => Set(ref _requiredByAbilitiesChipCap, Math.Clamp(value, MinUsedInChipCap, MaxUsedInChipCap));
+    }
+
+    /// <summary>
+    /// Maximum number of chips rendered in each NPC-detail enumeration ("Teaches recipes",
+    /// "Teaches abilities", "Sells items", "Quests") before the remainder is reachable via
+    /// the always-visible "View all N →" affordance that opens the shared provenance popup.
+    /// A separate knob from <see cref="UsedInChipCap"/> so NPC density tunes independently of
+    /// the item-detail "Used in" cluster. Clamped to
+    /// <see cref="MinUsedInChipCap"/>..<see cref="MaxUsedInChipCap"/>.
+    /// </summary>
+    public int NpcChipCap
+    {
+        get => _npcChipCap;
+        set => Set(ref _npcChipCap, Math.Clamp(value, MinUsedInChipCap, MaxUsedInChipCap));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

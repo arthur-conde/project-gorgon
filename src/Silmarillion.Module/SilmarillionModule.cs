@@ -51,7 +51,11 @@ public sealed class SilmarillionModule : IMithrilModule
             sp.GetRequiredService<IEntityNameResolver>(),
             sp.GetRequiredService<SilmarillionSettings>()));
         services.AddSingleton<RecipesTabViewModel>();
-        services.AddSingleton<NpcsTabViewModel>();
+        services.AddSingleton<NpcsTabViewModel>(sp => new NpcsTabViewModel(
+            sp.GetRequiredService<IReferenceDataService>(),
+            sp.GetRequiredService<IReferenceNavigator>(),
+            sp.GetRequiredService<IEntityNameResolver>(),
+            sp.GetRequiredService<SilmarillionSettings>()));
         services.AddSingleton<QuestsTabViewModel>();
         services.AddSingleton<AbilitiesTabViewModel>();
         services.AddSingleton<EffectsTabViewModel>(sp => new EffectsTabViewModel(
