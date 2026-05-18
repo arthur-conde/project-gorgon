@@ -12,6 +12,7 @@ using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Sessions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
+using Mithril.GameState.Weather;
 using Mithril.Shared.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -103,6 +104,22 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerCelestialStateService>()
             .AddSingleton<IPlayerCelestialState>(sp => sp.GetRequiredService<PlayerCelestialStateService>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerCelestialStateService>());
+
+        // Shared live weather state from Player.log (ProcessSetWeather). PG's
+        // Vampirism skill makes the player take sun damage, so the ambient
+        // condition is a real game-mechanic input for a future sun-damage
+        // consumer; Palantir is the immediate debug surface. Weather is
+        // per-map (owner-confirmed), so the tracker is area-scoped exactly
+        // like PlayerPinTracker — self-feeding, drops on map change,
+        // idempotent on zone-entry replay. Single parser, single tracker;
+        // consumers inject IPlayerWeatherTracker. The log grammar is not yet
+        // corpus-verified, so it is deliberately kept out of log-patterns.json
+        // until characterised (see WeatherLogParser).
+        services.AddSingleton<WeatherLogParser>();
+        services
+            .AddSingleton<PlayerWeatherTracker>()
+            .AddSingleton<IPlayerWeatherTracker>(sp => sp.GetRequiredService<PlayerWeatherTracker>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerWeatherTracker>());
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();

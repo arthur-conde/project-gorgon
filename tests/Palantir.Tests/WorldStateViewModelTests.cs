@@ -4,6 +4,7 @@ using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
+using Mithril.GameState.Weather;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
@@ -93,7 +94,7 @@ public sealed class WorldStateViewModelTests
         pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T, PlayerPositionSource.Spawn));
         using var vm = new WorldStateViewModel(
             pos, new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), new FakeCelestialState(), null, a => a());
+            new FakePinTracker(), new FakeCelestialState(), new FakeWeatherTracker(), null, a => a());
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 1.00   Y 2.00   Z 3.00");
@@ -123,7 +124,7 @@ public sealed class WorldStateViewModelTests
             Pin(10, -20, "Vendor"), Pin(-5.5, 99.25, ""));
         using var vm = new WorldStateViewModel(
             new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            pins, new FakeCelestialState(), null, a => a());
+            pins, new FakeCelestialState(), new FakeWeatherTracker(), null, a => a());
 
         vm.HasPins.Should().BeTrue();
         vm.PinCount.Should().Be(2);
@@ -248,7 +249,7 @@ public sealed class WorldStateViewModelTests
         celestial.PreloadAsCurrent(new CelestialInfo(MoonPhase.FullMoon, "FullMoon", T));
         using var vm = new WorldStateViewModel(
             new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), celestial, null, a => a());
+            new FakePinTracker(), celestial, new FakeWeatherTracker(), null, a => a());
 
         vm.HasMoonPhase.Should().BeTrue();
         vm.MoonPhaseText.Should().Be("Full Moon");
@@ -265,26 +266,98 @@ public sealed class WorldStateViewModelTests
         vm.HasMoonPhase.Should().BeFalse("the disposed VM must unsubscribe from celestial");
     }
 
+    // --- Weather ----------------------------------------------------------
+
+    [Fact]
+    public void Replay_on_subscribe_seeds_existing_weather()
+    {
+        var weather = new FakeWeatherTracker();
+        weather.Preload("AreaSerbule", new WeatherState("Foggy", true, T));
+        using var vm = new WorldStateViewModel(
+            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
+            new FakePinTracker(), new FakeCelestialState(), weather, null, a => a());
+
+        vm.HasWeather.Should().BeTrue();
+        vm.WeatherConditionText.Should().Be("Foggy");
+        vm.WeatherFlagText.Should().Be("True");
+        // Snapshot replay reflects existing state, not a fresh observation.
+        vm.WeatherObservedAtText.Should().Be("—");
+    }
+
+    [Fact]
+    public void Changed_weather_populates_condition_flag_and_observed_at()
+    {
+        using var vm = NewVm(out _, out _, out _, out _, out var weather);
+
+        weather.Fire(new WeatherChanged(
+            WeatherChangeKind.Changed, "AreaSerbule",
+            new WeatherState("Rainy", false, T), T));
+
+        vm.HasWeather.Should().BeTrue();
+        vm.WeatherConditionText.Should().Be("Rainy");
+        vm.WeatherFlagText.Should().Be("False");
+        vm.WeatherObservedAtText.Should().Be("2026-05-18 10:45:47Z");
+    }
+
+    [Fact]
+    public void Map_change_resets_weather_to_unknown_not_stale()
+    {
+        using var vm = NewVm(out _, out _, out _, out _, out var weather);
+        weather.Fire(new WeatherChanged(
+            WeatherChangeKind.Changed, "AreaA", new WeatherState("Foggy", true, T), T));
+
+        weather.Fire(new WeatherChanged(
+            WeatherChangeKind.AreaChanged, "AreaB", null, T));
+
+        vm.HasWeather.Should().BeFalse();
+        vm.WeatherConditionText.Should().Be("(weather unknown for this map)");
+        vm.WeatherFlagText.Should().Be("—");
+        vm.WeatherObservedAtText.Should().Be("—");
+    }
+
+    [Fact]
+    public void Dispose_stops_observing_weather()
+    {
+        using var vm = NewVm(out _, out _, out _, out _, out var weather);
+        vm.Dispose();
+
+        weather.Fire(new WeatherChanged(
+            WeatherChangeKind.Changed, "X", new WeatherState("Foggy", true, T), T));
+
+        vm.HasWeather.Should().BeFalse("the disposed VM must unsubscribe from weather");
+    }
+
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area, IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out _, out _, refData);
+        => NewVm(out pos, out area, out _, out _, out _, refData);
 
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area,
         out FakePinTracker pins, IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out pins, out _, refData);
+        => NewVm(out pos, out area, out pins, out _, out _, refData);
+
+    // 4-out (celestial) — kept so the moon-phase tests' call sites stay
+    // unchanged after the weather param was stacked on; delegates to the
+    // 5-out base discarding weather.
+    private static WorldStateViewModel NewVm(
+        out FakePositionTracker pos, out PlayerAreaTracker area,
+        out FakePinTracker pins, out FakeCelestialState celestial,
+        IReferenceDataService? refData = null)
+        => NewVm(out pos, out area, out pins, out celestial, out _, refData);
 
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area,
         out FakePinTracker pins, out FakeCelestialState celestial,
+        out FakeWeatherTracker weather,
         IReferenceDataService? refData = null)
     {
         pos = new FakePositionTracker();
         area = new PlayerAreaTracker(new AreaTransitionParser());
         pins = new FakePinTracker();
         celestial = new FakeCelestialState();
+        weather = new FakeWeatherTracker();
         // Synchronous dispatcher: test thread is the WPF thread.
-        return new WorldStateViewModel(pos, area, pins, celestial, refData, a => a());
+        return new WorldStateViewModel(pos, area, pins, celestial, weather, refData, a => a());
     }
 
     private sealed class FakePositionTracker : IPlayerPositionTracker
@@ -376,6 +449,44 @@ public sealed class WorldStateViewModelTests
         }
 
         private sealed class Sub(FakeCelestialState owner) : IDisposable
+        {
+            public void Dispose() => owner._handler = null;
+        }
+    }
+
+    private sealed class FakeWeatherTracker : IPlayerWeatherTracker
+    {
+        private string? _area;
+        private WeatherState? _current;
+        private Action<WeatherChanged>? _handler;
+
+        public string? CurrentArea => _area;
+        public WeatherState? Current => _current;
+
+        /// <summary>Seed so the Subscribe replay (Snapshot) carries it.</summary>
+        public void Preload(string area, WeatherState? state)
+        {
+            _area = area;
+            _current = state;
+        }
+
+        public void Fire(WeatherChanged change)
+        {
+            _area = change.Area;
+            _current = change.State;
+            _handler?.Invoke(change);
+        }
+
+        public IDisposable Subscribe(Action<WeatherChanged> handler)
+        {
+            // Mirror PlayerWeatherTracker: synchronous Snapshot replay first.
+            handler(new WeatherChanged(
+                WeatherChangeKind.Snapshot, _area, _current, DateTimeOffset.UnixEpoch));
+            _handler = handler;
+            return new Sub(this);
+        }
+
+        private sealed class Sub(FakeWeatherTracker owner) : IDisposable
         {
             public void Dispose() => owner._handler = null;
         }
