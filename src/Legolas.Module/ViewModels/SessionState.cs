@@ -104,6 +104,26 @@ public sealed partial class SessionState : ObservableObject
     // is retired.
     [ObservableProperty] private PixelPoint _playerPosition = new(400, 300);
     [ObservableProperty] private bool _hasPlayerPosition;
+
+    // #476: Survey's player-position GPS. Distinct from the Motherlode-only
+    // PlayerPosition above so the two modes can't cross-contaminate (Motherlode
+    // writes a manual click; Survey writes a projected world coord). This is
+    // the IPlayerPositionTracker world coordinate projected through the current
+    // area's calibration — set by MapOverlayViewModel, null when no tracker fix
+    // or no calibrated area. Sparse by nature (zone-in / teleport only): goes
+    // stale as the player walks the route, which is why MeasuredAt/Source ride
+    // alongside it and are surfaced honestly rather than drawn as if live.
+    //
+    // SurveyPlayerIsManual (#476 Option C): true when the pixel came from the
+    // user's "set my position" map click (the stale-anchor override), not the
+    // tracker projection. A manual pixel is a raw screen coordinate (no
+    // Source; MeasuredAt = when the user clicked), survives calibration
+    // re-applies, and is superseded by the next *fresh* tracker fix
+    // (zone-in / teleport) — a new fix is authoritative again.
+    [ObservableProperty] private PixelPoint? _surveyPlayerPixel;
+    [ObservableProperty] private DateTimeOffset? _surveyPlayerMeasuredAt;
+    [ObservableProperty] private Mithril.GameState.Movement.PlayerPositionSource? _surveyPlayerSource;
+    [ObservableProperty] private bool _surveyPlayerIsManual;
     [ObservableProperty] private string _lastLogEvent = "(waiting)";
     [ObservableProperty] private bool _showBearingWedges = true;
     [ObservableProperty] private bool _showRouteLines = true;

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace Legolas.Controls;
 
@@ -49,5 +50,50 @@ internal static class ClickThrough
         var hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == IntPtr.Zero) return;
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
+    /// <summary>
+    /// Keeps an overlay reliably TOPMOST for its whole visible lifetime.
+    /// <para><see cref="ForceTopmost"/> alone is wired only to
+    /// <c>Loaded</c> (fires once) and <c>Activated</c> (fires only when the OS
+    /// actually activates the window). The overlays are cached and driven by
+    /// <c>Hide()</c>/<c>Show()</c>, and a <c>Show()</c> issued while the game
+    /// owns the foreground does <b>not</b> activate the window — so the
+    /// re-assert was being skipped and the window came back at ordinary
+    /// z-order (behind the game). This re-asserts on every show
+    /// (<see cref="UIElement.IsVisibleChanged"/> → visible) and, because a
+    /// fullscreen-borderless game can reclaim z-order with no event at all,
+    /// also on a low-frequency timer while the window is visible.</para>
+    /// </summary>
+    public static void KeepTopmost(Window window)
+    {
+        // Background priority + a coarse interval: one SetWindowPos every
+        // couple seconds is negligible and 2 s is a fine worst-case recovery
+        // window for the (rare) silent z-order steal.
+        var timer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(2),
+        };
+        timer.Tick += (_, _) => ForceTopmost(window);
+
+        window.IsVisibleChanged += (_, _) =>
+        {
+            if (window.IsVisible)
+            {
+                ForceTopmost(window);
+                timer.Start();
+            }
+            else
+            {
+                timer.Stop();
+            }
+        };
+        window.Closed += (_, _) => timer.Stop();
+
+        if (window.IsVisible)
+        {
+            ForceTopmost(window);
+            timer.Start();
+        }
     }
 }

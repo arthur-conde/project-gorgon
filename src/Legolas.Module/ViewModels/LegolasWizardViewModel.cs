@@ -433,6 +433,15 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             SurveyFlowState.Listening => WizardStep.Listening,
             SurveyFlowState.Gathering => WizardStep.Gathering,
             SurveyFlowState.Done => WizardStep.Done,
+            // #476: the manual-override detour is transient — keep the panel
+            // anchored to the step it was launched from (Listening vs
+            // Gathering) rather than flashing a different step. The Set/Cancel
+            // affordance toggles on MapOverlay.IsSettingPosition within those
+            // same panels.
+            SurveyFlowState.SettingPosition =>
+                _surveyFlow.ReturnState == SurveyFlowState.Gathering
+                    ? WizardStep.Gathering
+                    : WizardStep.Listening,
             _ => WizardStep.Listening,
         };
     }

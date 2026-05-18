@@ -26,9 +26,11 @@ public partial class InventoryOverlayView : Window
         {
             partial = PartialClickThrough.Attach(this, resizeBorderThickness: 6, HeaderRegion);
             partial.SetActive(settings.ClickThroughInventory);
-            ClickThrough.ForceTopmost(this);
         };
-        Activated += (_, _) => ClickThrough.ForceTopmost(this);
+        // Re-assert TOPMOST on every show + on a low-frequency timer while
+        // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
+        // OverlayController drives when the game holds the foreground.
+        ClickThrough.KeepTopmost(this);
         settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LegolasSettings.ClickThroughInventory))

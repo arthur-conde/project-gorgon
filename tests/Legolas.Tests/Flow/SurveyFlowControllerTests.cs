@@ -201,4 +201,88 @@ public class SurveyFlowControllerTests
 
         flow.CurrentState.Should().Be(SurveyFlowState.Done);
     }
+
+    // ─── #476 SettingPosition detour (Option C) ──────────────────────────
+
+    [Fact]
+    public void RequestSetPosition_from_Listening_parks_and_returns_on_confirm()
+    {
+        var (flow, _, _, transitions, _) = BuildSut();
+
+        flow.RequestSetPosition();
+        flow.CurrentState.Should().Be(SurveyFlowState.SettingPosition);
+        flow.IsSettingPosition.Should().BeTrue();
+        flow.ReturnState.Should().Be(SurveyFlowState.Listening);
+
+        flow.ConfirmPosition();
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        transitions.Select(t => (t.From, t.To)).Should().Equal(
+            (SurveyFlowState.Listening, SurveyFlowState.SettingPosition),
+            (SurveyFlowState.SettingPosition, SurveyFlowState.Listening));
+    }
+
+    [Fact]
+    public void RequestSetPosition_from_Gathering_returns_to_Gathering()
+    {
+        var (flow, session, _, _, _) = BuildSut();
+        session.Surveys.Add(Pin());
+        flow.OptimizeRoute();
+        flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
+
+        flow.RequestSetPosition();
+        flow.ReturnState.Should().Be(SurveyFlowState.Gathering);
+
+        flow.ConfirmPosition();
+        flow.CurrentState.Should().Be(SurveyFlowState.Gathering, "the detour returns to where it was launched");
+    }
+
+    [Fact]
+    public void CancelSetPosition_returns_to_parked_state()
+    {
+        var (flow, _, _, _, _) = BuildSut();
+        flow.RequestSetPosition();
+
+        flow.CancelSetPosition();
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+    }
+
+    [Fact]
+    public void RequestSetPosition_is_ignored_from_Done()
+    {
+        var (flow, session, settings, _, _) = BuildSut();
+        settings.AutoResetWhenAllCollected = false;
+        var s1 = Pin("Diamond");
+        session.Surveys.Add(s1);
+        s1.UpdateModel(s1.Model with { Collected = true });
+        flow.CurrentState.Should().Be(SurveyFlowState.Done);
+
+        flow.RequestSetPosition();
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Done, "no-op from a state with no anchor to correct");
+    }
+
+    [Fact]
+    public void Confirm_and_Cancel_are_noops_outside_SettingPosition()
+    {
+        var (flow, _, _, transitions, _) = BuildSut();
+
+        flow.ConfirmPosition();
+        flow.CancelSetPosition();
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        transitions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Reset_exits_SettingPosition()
+    {
+        var (flow, _, _, _, _) = BuildSut();
+        flow.RequestSetPosition();
+
+        flow.Reset();
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        flow.IsSettingPosition.Should().BeFalse();
+    }
 }
