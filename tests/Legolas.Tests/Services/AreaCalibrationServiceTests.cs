@@ -201,6 +201,20 @@ public class AreaCalibrationServiceTests
     }
 
     [Fact]
+    public void NoteSurvey_reraises_as_SurveyObserved()
+    {
+        var (svc, _, _) = Build(new FakeRefData());
+        CalibrationSurveyObservation? seen = null;
+        svc.SurveyObserved += (_, o) => seen = o;
+
+        svc.NoteSurvey("Iron Vein", new MetreOffset(12, -7));
+
+        seen.Should().NotBeNull();
+        seen!.Name.Should().Be("Iron Vein");
+        seen.Offset.Should().Be(new MetreOffset(12, -7));
+    }
+
+    [Fact]
     public void ClearCurrentAreaCalibration_removes_and_raises_changed()
     {
         var refData = new FakeRefData

@@ -73,6 +73,14 @@
                                 <Button Content="Recalibrate" Command="{Binding RecalibrateCommand}"
                                         Padding="8,4" />
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <ToggleButton Content="Test calibration"
+                                              IsChecked="{Binding TestMode, Mode=OneWay}"
+                                              Command="{Binding ToggleTestModeCommand}"
+                                              Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear test"
+                                        Command="{Binding ClearTestPinsCommand}" Padding="8,4" />
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- Placed references -->
@@ -177,6 +185,54 @@
                                     <Border Canvas.Left="9" Canvas.Top="-9"
                                             Background="#CC000000" CornerRadius="2" Padding="3,1">
                                         <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11" />
+                                    </Border>
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Test-mode synthetic player origin ("you are here"). -->
+                    <Canvas IsHitTestVisible="False"
+                            Visibility="{Binding HasTestOrigin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <!-- Zero-size anchor at the test origin pixel; parts placed
+                             by explicit offsets (NOT a Grid — Grid would centre
+                             the ring in a label-sized cell, the offset bug). -->
+                        <Canvas Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}">
+                            <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
+                                     Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
+                            <Border Canvas.Left="11" Canvas.Top="-9" Background="#CC000000"
+                                    CornerRadius="2" Padding="3,1">
+                                <TextBlock Text="you (test)" Foreground="#FF40C4FF" FontSize="11" />
+                            </Border>
+                        </Canvas>
+                    </Canvas>
+
+                    <!-- Projected test pins (green) — compare to the real ping. -->
+                    <ItemsControl ItemsSource="{Binding TestPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Canvas>
+                                    <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FF34C759" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="6" Fill="#FF34C759" />
+                                    <Ellipse Canvas.Left="-4" Canvas.Top="-4" Width="8" Height="8"
+                                             Stroke="White" StrokeThickness="1" />
+                                    <Border Canvas.Left="9" Canvas.Top="-9"
+                                            Background="#CC0A2A12" CornerRadius="2" Padding="3,1">
+                                        <TextBlock Text="{Binding Name}" Foreground="#FF8FF0AB" FontSize="11" />
                                     </Border>
                                 </Canvas>
                             </DataTemplate>

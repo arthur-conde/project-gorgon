@@ -27,9 +27,16 @@ public sealed class CoordinateProjector : ICoordinateProjector
 
     public void ApplyCalibration(AreaCalibration calibration)
     {
+        // Adopt ONLY scale + rotation. The landmark solve's origin is the pixel
+        // where absolute world-(0,0) lands — meaningless for the survey
+        // pipeline, which projects offsets *relative to the player's anchor*.
+        // Overwriting _origin with the world-origin pixel made every survey
+        // project relative to world-0 instead of the player (the wrong-place /
+        // wrong-direction symptom). Scale + rotation are the area-stable parts
+        // worth persisting; the origin remains whatever SetOrigin / the
+        // player-position click established this session.
         _scale = calibration.Scale;
         _rotation = calibration.RotationRadians;
-        _origin = new PixelPoint(calibration.OriginX, calibration.OriginY);
     }
 
     public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset)

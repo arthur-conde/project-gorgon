@@ -61,6 +61,16 @@ public interface IAreaCalibrationService
 
     /// <summary>Drop the current area's persisted calibration (forces a recalibrate).</summary>
     void ClearCurrentAreaCalibration();
+
+    /// <summary>
+    /// Fed every survey/treasure reading by the log pipeline. Re-raised as
+    /// <see cref="SurveyObserved"/> so the calibration window's test mode can
+    /// project it and show projected-vs-actual. A no-op for everyone else.
+    /// </summary>
+    void NoteSurvey(string name, MetreOffset offset);
+
+    /// <summary>Raised for each <see cref="NoteSurvey"/> — the test-mode hook.</summary>
+    event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
 }
 
 /// <summary>
@@ -161,6 +171,11 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         Changed?.Invoke(this, EventArgs.Empty);
         return calibration;
     }
+
+    public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
+
+    public void NoteSurvey(string name, MetreOffset offset) =>
+        SurveyObserved?.Invoke(this, new CalibrationSurveyObservation(name, offset));
 
     public void ClearCurrentAreaCalibration()
     {

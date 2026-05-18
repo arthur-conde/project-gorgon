@@ -118,6 +118,10 @@ public sealed class LogIngestionService : BackgroundService
 
     private void HandleSurveyDetected(SurveyDetected sd)
     {
+        // Feed calibration test mode unconditionally — it must see the raw
+        // reading even when survey mode is off or the FSM isn't accepting.
+        _areaCalibration.NoteSurvey(sd.Name, sd.Offset);
+
         if (_session.Mode != SessionMode.Survey)
         {
             _session.LastLogEvent = $"Survey: {sd.Name} → ignored (mode is Motherlode)";

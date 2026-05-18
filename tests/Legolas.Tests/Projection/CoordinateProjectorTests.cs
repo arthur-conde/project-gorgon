@@ -26,6 +26,31 @@ public class CoordinateProjectorTests
     }
 
     [Fact]
+    public void ApplyCalibration_adopts_scale_and_rotation_but_keeps_the_player_anchor_origin()
+    {
+        var projector = new CoordinateProjector();
+        projector.SetOrigin(new PixelPoint(640, 360)); // the player's anchor click
+
+        projector.ApplyCalibration(new AreaCalibration(
+            Scale: 2.5, RotationRadians: 0.7,
+            OriginX: 99999, OriginY: -99999, // world-(0,0) pixel — must be ignored
+            ReferenceCount: 3, ResidualPixels: 0.5));
+
+        projector.Scale.Should().BeApproximately(2.5, 1e-9);
+        projector.RotationRadians.Should().BeApproximately(0.7, 1e-9);
+        // Origin stays the anchor, NOT the calibration's world-origin pixel.
+        projector.Origin.X.Should().Be(640);
+        projector.Origin.Y.Should().Be(360);
+
+        // A pure-north offset still projects straight "up" from the anchor
+        // (origin-relative), not from some absolute world-0 pixel.
+        var p = projector.Project(new MetreOffset(0, 10));
+        var cos = Math.Cos(0.7);
+        p.X.Should().BeApproximately(640 + 2.5 * (10 * Math.Sin(0.7)), 1e-6);
+        p.Y.Should().BeApproximately(360 - 2.5 * (10 * cos), 1e-6);
+    }
+
+    [Fact]
     public void Refit_recovers_known_scale_and_rotation()
     {
         // Ground truth: scale=3 px/m, rotation=30 deg (clockwise)

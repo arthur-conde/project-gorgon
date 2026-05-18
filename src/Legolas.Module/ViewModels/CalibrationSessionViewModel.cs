@@ -28,11 +28,35 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     {
         _service = service;
         _service.Changed += OnServiceChanged;
+        _service.SurveyObserved += OnSurveyObserved;
         Refresh();
     }
 
     public ObservableCollection<CalibrationReference> References { get; } = new();
     public ObservableCollection<PlacedReference> Placements { get; } = new();
+
+    /// <summary>Projected test pins (a survey/treasure fired while test mode is
+    /// on, projected from <see cref="TestOrigin"/> via the live calibration).</summary>
+    public ObservableCollection<TestPin> TestPins { get; } = new();
+
+    /// <summary>Test mode: a click sets a synthetic "you are here" origin, and
+    /// each subsequent survey/treasure drops a projected pin to eyeball against
+    /// the real in-game ping — verifies the calibration without a survey run.</summary>
+    [ObservableProperty] private bool _testMode;
+
+    /// <summary>The synthetic player position test projections emanate from.</summary>
+    [ObservableProperty] private PixelPoint? _testOrigin;
+
+    public bool HasTestOrigin => TestOrigin is not null;
+    public double TestOriginX => TestOrigin?.X ?? 0;
+    public double TestOriginY => TestOrigin?.Y ?? 0;
+
+    partial void OnTestOriginChanged(PixelPoint? value)
+    {
+        OnPropertyChanged(nameof(HasTestOrigin));
+        OnPropertyChanged(nameof(TestOriginX));
+        OnPropertyChanged(nameof(TestOriginY));
+    }
 
     /// <summary>Every known area, for the manual picker (no live banner needed).</summary>
     public IReadOnlyList<AreaEntry> AvailableAreas => _service.AllAreas;
@@ -159,6 +183,90 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         // every stray click silently consumes.
     }
 
+    /// <summary>
+    /// Single entry point for a click on the map surface. In test mode a click
+    /// sets the synthetic player origin; otherwise it places the selected
+    /// reference. Keeps the code-behind dumb (it doesn't know the mode).
+    /// </summary>
+    [RelayCommand]
+    private void ViewportClicked(PixelPoint pixel)
+    {
+        if (TestMode)
+        {
+            TestOrigin = pixel;
+            TestPins.Clear();
+            ClickWarning = _service.CurrentCalibration is null
+                ? "Solve a calibration first — nothing to test yet."
+                : null;
+            return;
+        }
+        PlaceSelectedAt(pixel);
+    }
+
+    /// <summary>Enter/leave test mode (calibrate → fire a survey → see the
+    /// projected pin vs the real ping, without a full survey run).</summary>
+    [RelayCommand]
+    private void ToggleTestMode()
+    {
+        TestMode = !TestMode;
+        ClickWarning = null;
+    }
+
+    partial void OnTestModeChanged(bool value)
+    {
+        if (value)
+        {
+            TestPins.Clear();
+            TestOrigin = null;
+            Instruction = _service.CurrentCalibration is null
+                ? "Test mode: no calibration yet — Solve one first, then click your position and fire a survey/treasure."
+                : "Test mode: click where you ARE on the map, then use a survey/treasure. The projected pin should land on the real ping.";
+        }
+        else
+        {
+            Instruction = "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
+        }
+    }
+
+    [RelayCommand]
+    private void ClearTestPins()
+    {
+        TestPins.Clear();
+        TestOrigin = null;
+    }
+
+    private void OnSurveyObserved(object? sender, CalibrationSurveyObservation obs)
+    {
+        var disp = Application.Current?.Dispatcher;
+        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => ProjectTest(obs));
+        else ProjectTest(obs);
+    }
+
+    private void ProjectTest(CalibrationSurveyObservation obs)
+    {
+        if (!TestMode) return;
+        if (_service.CurrentCalibration is not { } c)
+        {
+            ClickWarning = "Solve a calibration before testing.";
+            return;
+        }
+        if (TestOrigin is not { } o)
+        {
+            ClickWarning = "Click the map to set your test position first.";
+            return;
+        }
+
+        // Same math as CoordinateProjector.Project, with origin = the test
+        // position and scale/rotation from the live calibration.
+        var cos = Math.Cos(c.RotationRadians);
+        var sin = Math.Sin(c.RotationRadians);
+        var rotE = obs.Offset.East * cos + obs.Offset.North * sin;
+        var rotN = -obs.Offset.East * sin + obs.Offset.North * cos;
+        var pixel = new PixelPoint(o.X + c.Scale * rotE, o.Y - c.Scale * rotN);
+        TestPins.Add(new TestPin(obs.Name, pixel));
+        ClickWarning = null;
+    }
+
     [RelayCommand]
     private void RemoveLastPlacement()
     {
@@ -209,6 +317,22 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 /// <summary>A reference the user has pinned on the map. Observable so an
 /// arrow-key nudge to <see cref="Pixel"/> moves the on-map marker and updates
 /// the Placed list live; <see cref="X"/>/<see cref="Y"/> drive Canvas placement.</summary>
+/// <summary>A projected test reading dropped while test mode is active.
+/// Static once placed (unlike <see cref="PlacedReference"/> it isn't nudged).</summary>
+public sealed class TestPin
+{
+    public TestPin(string name, PixelPoint pixel)
+    {
+        Name = name;
+        Pixel = pixel;
+    }
+
+    public string Name { get; }
+    public PixelPoint Pixel { get; }
+    public double X => Pixel.X;
+    public double Y => Pixel.Y;
+}
+
 public sealed partial class PlacedReference : ObservableObject
 {
     public PlacedReference(CalibrationReference reference, PixelPoint pixel)

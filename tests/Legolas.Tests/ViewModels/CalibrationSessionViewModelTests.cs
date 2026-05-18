@@ -223,6 +223,95 @@ public class CalibrationSessionViewModelTests
         vm.Invoking(v => v.NudgeSelected(1, 1)).Should().NotThrow();
     }
 
+    [Fact]
+    public void ViewportClicked_in_test_mode_sets_the_test_origin_not_a_placement()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 0, 0) },
+            CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SelectedReference = vm.References[0];
+
+        vm.ToggleTestModeCommand.Execute(null);
+        vm.TestMode.Should().BeTrue();
+
+        vm.ViewportClickedCommand.Execute(new PixelPoint(120, 80));
+
+        vm.TestOrigin.Should().Be(new PixelPoint(120, 80));
+        vm.HasTestOrigin.Should().BeTrue();
+        vm.Placements.Should().BeEmpty(); // it was a test-origin click, not a placement
+    }
+
+    [Fact]
+    public void Test_mode_projects_a_survey_from_the_test_origin_in_the_correct_direction()
+    {
+        // Identity calibration: scale 1, rotation 0. A purely-north 50m offset
+        // must project straight UP (screen-y decreases) from the test origin.
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.2),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.ToggleTestModeCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200)); // test origin
+
+        svc.NoteSurvey("Iron Vein", new MetreOffset(East: 0, North: 50));
+
+        vm.TestPins.Should().ContainSingle();
+        var pin = vm.TestPins[0];
+        pin.Name.Should().Be("Iron Vein");
+        pin.X.Should().BeApproximately(200, 1e-6);
+        pin.Y.Should().BeApproximately(150, 1e-6); // north → up (smaller y)
+
+        // And east projects to the right.
+        svc.NoteSurvey("Slab", new MetreOffset(East: 30, North: 0));
+        vm.TestPins[1].X.Should().BeApproximately(230, 1e-6);
+        vm.TestPins[1].Y.Should().BeApproximately(200, 1e-6);
+    }
+
+    [Fact]
+    public void Test_survey_without_origin_or_calibration_warns_instead_of_projecting()
+    {
+        var noCal = new FakeService { CurrentAreaKey = "AreaEltibule", CurrentAreaFriendlyName = "Eltibule" };
+        var vm1 = new CalibrationSessionViewModel(noCal);
+        vm1.ToggleTestModeCommand.Execute(null);
+        noCal.NoteSurvey("X", new MetreOffset(1, 1));
+        vm1.TestPins.Should().BeEmpty();
+        vm1.ClickWarning.Should().Contain("Solve a calibration");
+
+        var hasCal = new FakeService
+        {
+            CurrentAreaKey = "AreaEltibule",
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
+        };
+        var vm2 = new CalibrationSessionViewModel(hasCal);
+        vm2.ToggleTestModeCommand.Execute(null); // test mode, but no origin clicked yet
+        hasCal.NoteSurvey("X", new MetreOffset(1, 1));
+        vm2.TestPins.Should().BeEmpty();
+        vm2.ClickWarning.Should().Contain("test position");
+    }
+
+    [Fact]
+    public void Survey_observed_outside_test_mode_is_ignored()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaKey = "AreaEltibule",
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
+        };
+        var vm = new CalibrationSessionViewModel(svc); // test mode OFF
+        svc.NoteSurvey("X", new MetreOffset(10, 10));
+        vm.TestPins.Should().BeEmpty();
+    }
+
     private sealed class FakeService : IAreaCalibrationService
     {
         public List<CalibrationReference> Refs { get; } = new();
@@ -264,5 +353,10 @@ public class CalibrationSessionViewModelTests
             CurrentCalibration = null;
             Changed?.Invoke(this, EventArgs.Empty);
         }
+
+        public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
+
+        public void NoteSurvey(string name, MetreOffset offset) =>
+            SurveyObserved?.Invoke(this, new CalibrationSurveyObservation(name, offset));
     }
 }

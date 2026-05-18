@@ -46,7 +46,7 @@ public partial class CalibrationOverlayView : Window
         if (e.OriginalSource is not FrameworkElement fe || !ReferenceEquals(fe, Viewport)) return;
 
         var pos = Mouse.GetPosition(Viewport);
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(pos.X, pos.Y));
+        vm.ViewportClickedCommand.Execute(new PixelPoint(pos.X, pos.Y));
         // Pull keyboard focus onto the (focusable) Viewport so arrow-key nudge
         // works immediately after placing — otherwise focus stays on the
         // reference list and the list eats the arrows.
