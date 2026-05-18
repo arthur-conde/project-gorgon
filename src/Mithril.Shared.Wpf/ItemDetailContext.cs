@@ -41,6 +41,13 @@ public sealed record ItemDetailContext(
     // Item.BestowLoreBook (int? → numeric Book id) via LorebooksById. Null when the item
     // doesn't bestow a book, or the id doesn't resolve. A single navigable EntityChip.
     EntityChipVm? BestowsLorebook = null,
+    // Outbound 1:1 cross-link (#435): the Treasure-System pool this item's gear rolls
+    // from, resolved from Item.TSysProfile (a single profile name, e.g. "Sword") via
+    // EntityRef.Profile. Null when the item carries no TSysProfile. A single navigable
+    // EntityChip to the Treasure tab's Profile detail — the "audit existing surfaces
+    // when shipping a new EntityKind" wiring for EntityKind.Profile (cookbook). 1:1
+    // direct reference ⇒ EntityChip, not a popup (the #318 chip-vs-popup rule).
+    EntityChipVm? TreasureProfile = null,
     IReadOnlyList<ItemSourceChipVm>? Sources = null,
     // #318 slice 4, surface 1 — Items "Used in". The reverse-lookup ("recipes that
     // consume this item") is now a provenance popup fed the source index
