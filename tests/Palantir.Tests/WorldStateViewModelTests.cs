@@ -2,6 +2,7 @@ using FluentAssertions;
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Movement;
+using Mithril.GameState.Pins;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
@@ -90,7 +91,8 @@ public sealed class WorldStateViewModelTests
         var pos = new FakePositionTracker();
         pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T, PlayerPositionSource.Spawn));
         using var vm = new WorldStateViewModel(
-            pos, new PlayerAreaTracker(new AreaTransitionParser()), null, a => a());
+            pos, new PlayerAreaTracker(new AreaTransitionParser()),
+            new FakePinTracker(), null, a => a());
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 1.00   Y 2.00   Z 3.00");
@@ -108,13 +110,112 @@ public sealed class WorldStateViewModelTests
         vm.HasPosition.Should().BeFalse("the disposed VM must unsubscribe");
     }
 
+    private static MapPin Pin(double x, double z, string label,
+        PinShape shape = PinShape.Dot, PinColor color = PinColor.Red)
+        => new(x, z, label, shape, color, RawList: 1);
+
+    [Fact]
+    public void Replay_on_subscribe_seeds_existing_pin_set()
+    {
+        var pins = new FakePinTracker();
+        pins.Preload("AreaSerbule",
+            Pin(10, -20, "Vendor"), Pin(-5.5, 99.25, ""));
+        using var vm = new WorldStateViewModel(
+            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
+            pins, null, a => a());
+
+        vm.HasPins.Should().BeTrue();
+        vm.PinCount.Should().Be(2);
+        vm.Pins.Should().HaveCount(2);
+        // Snapshot replay reflects an existing set, not a fresh observation.
+        vm.PinsObservedAtText.Should().Be("—");
+    }
+
+    [Fact]
+    public void Added_pin_appends_row_and_stamps_observed_at()
+    {
+        using var vm = NewVm(out _, out _, out var pins);
+        var pin = Pin(123.4, -567.8, "Camp", PinShape.Square, PinColor.Green);
+
+        pins.Fire(new PinSetChanged(
+            PinSetChange.Added, "AreaSerbule", pin, [pin], T));
+
+        vm.HasPins.Should().BeTrue();
+        vm.PinCount.Should().Be(1);
+        var row = vm.Pins.Single();
+        row.Label.Should().Be("Camp");
+        row.Appearance.Should().Be("green square");
+        row.Coords.Should().Be("X 123.40   Z -567.80");
+        row.Detail.Should().Be("Green · Square");
+        vm.PinsObservedAtText.Should().Be("2026-05-18 10:45:47Z");
+    }
+
+    [Fact]
+    public void Removed_pin_drops_the_row()
+    {
+        using var vm = NewVm(out _, out _, out var pins);
+        var a = Pin(1, 1, "A");
+        var b = Pin(2, 2, "B");
+        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", b, [a, b], T));
+
+        pins.Fire(new PinSetChanged(PinSetChange.Removed, "X", a, [b], T));
+
+        vm.Pins.Select(r => r.Label).Should().ContainSingle().Which.Should().Be("B");
+    }
+
+    [Fact]
+    public void Area_change_clears_the_pin_set()
+    {
+        using var vm = NewVm(out _, out _, out var pins);
+        var p = Pin(1, 1, "Gone");
+        pins.Fire(new PinSetChanged(PinSetChange.Added, "AreaA", p, [p], T));
+
+        pins.Fire(new PinSetChanged(PinSetChange.AreaChanged, "AreaB", null, [], T));
+
+        vm.HasPins.Should().BeFalse();
+        vm.PinCount.Should().Be(0);
+        vm.Pins.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Unlabeled_pin_falls_back_to_placeholder_name()
+    {
+        using var vm = NewVm(out _, out _, out var pins);
+        var p = Pin(-3.14, 0, "  ", PinShape.Unknown, PinColor.Unknown);
+
+        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", p, [p], T));
+
+        var row = vm.Pins.Single();
+        row.Label.Should().Be("Unnamed pin");
+        row.Appearance.Should().Be("pin"); // unknown colour omitted, unknown shape → "pin"
+        row.Coords.Should().Be("X -3.14   Z 0.00");
+    }
+
+    [Fact]
+    public void Dispose_stops_observing_pins()
+    {
+        using var vm = NewVm(out _, out _, out var pins);
+        vm.Dispose();
+
+        var p = Pin(9, 9, "Late");
+        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", p, [p], T));
+
+        vm.HasPins.Should().BeFalse("the disposed VM must unsubscribe from pins");
+    }
+
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area, IReferenceDataService? refData = null)
+        => NewVm(out pos, out area, out _, refData);
+
+    private static WorldStateViewModel NewVm(
+        out FakePositionTracker pos, out PlayerAreaTracker area,
+        out FakePinTracker pins, IReferenceDataService? refData = null)
     {
         pos = new FakePositionTracker();
         area = new PlayerAreaTracker(new AreaTransitionParser());
+        pins = new FakePinTracker();
         // Synchronous dispatcher: test thread is the WPF thread.
-        return new WorldStateViewModel(pos, area, refData, a => a());
+        return new WorldStateViewModel(pos, area, pins, refData, a => a());
     }
 
     private sealed class FakePositionTracker : IPlayerPositionTracker
@@ -140,6 +241,44 @@ public sealed class WorldStateViewModelTests
         }
 
         private sealed class Sub(FakePositionTracker owner) : IDisposable
+        {
+            public void Dispose() => owner._handler = null;
+        }
+    }
+
+    private sealed class FakePinTracker : IPlayerPinTracker
+    {
+        private string? _area;
+        private IReadOnlyList<MapPin> _pins = [];
+        private Action<PinSetChanged>? _handler;
+
+        public string? CurrentArea => _area;
+        public IReadOnlyList<MapPin> CurrentAreaPins => _pins;
+
+        /// <summary>Seed the set so the Subscribe replay (Snapshot) carries it.</summary>
+        public void Preload(string area, params MapPin[] pins)
+        {
+            _area = area;
+            _pins = pins;
+        }
+
+        public void Fire(PinSetChanged change)
+        {
+            _area = change.Area;
+            _pins = change.Pins;
+            _handler?.Invoke(change);
+        }
+
+        public IDisposable Subscribe(Action<PinSetChanged> handler)
+        {
+            // Mirror PlayerPinTracker: synchronous Snapshot replay first.
+            handler(new PinSetChanged(
+                PinSetChange.Snapshot, _area, null, _pins, DateTimeOffset.UnixEpoch));
+            _handler = handler;
+            return new Sub(this);
+        }
+
+        private sealed class Sub(FakePinTracker owner) : IDisposable
         {
             public void Dispose() => owner._handler = null;
         }
