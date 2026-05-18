@@ -98,12 +98,12 @@
                                         Command="{Binding DeselectCommand}" Padding="8,4" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                <ToggleButton Content="Verify (set position)"
-                                              IsChecked="{Binding TestMode, Mode=OneWay}"
-                                              Command="{Binding ToggleTestModeCommand}"
-                                              Padding="8,4" Margin="0,0,6,0" />
-                                <Button Content="Clear verify"
-                                        Command="{Binding ClearTestPinsCommand}" Padding="8,4" />
+                                <Button Content="Set player position"
+                                        ToolTip="No pin yet: arms a map click to drop &quot;you&quot;. Already placed: selects it so arrow keys nudge it (survey pins re-project)."
+                                        Command="{Binding SetPlayerPositionCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear surveys"
+                                        Command="{Binding ClearSurveyPinsCommand}" Padding="8,4" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <Button Content="Project landmarks (ghosts)"
@@ -140,6 +140,33 @@
                                                 <Run Text="{Binding Y, Mode=OneWay, StringFormat=0}" Foreground="#FF6E8AA5" />
                                                 <Run Text=")" Foreground="#FF6E8AA5" />
                                             </TextBlock>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Surveys: each vector is a correctable pin. Select a
+                             row → arrow-nudge its overlay onto the real ping;
+                             the math line shows projected vs corrected. -->
+                        <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" MaxHeight="170">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Foreground="#FF8FA6BD"
+                                           FontWeight="SemiBold" Margin="0,0,0,4">
+                                    <Run Text="Surveys" />
+                                    <Run Text=" — select, drag onto the real ping (arrows); proj vs corrected = scale"
+                                         Foreground="#FF6E8AA5" FontWeight="Normal" FontSize="11" />
+                                </TextBlock>
+                                <ListBox ItemsSource="{Binding SurveyPins}"
+                                         SelectedItem="{Binding SelectedSurveyPin, Mode=TwoWay}"
+                                         IsSynchronizedWithCurrentItem="False"
+                                         Background="#FF12161B" Foreground="#FFB9C7D6"
+                                         BorderBrush="#FF2C3540"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding MathText}" FontSize="11"
+                                                       TextWrapping="Wrap" />
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
@@ -225,14 +252,14 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- v1 "you are here": zero-size Canvas at the origin pixel,
-                         parts at exact offsets. Amber halo (it's the nudge
-                         target), blue ring, label. -->
+                    <!-- "You are here" pin (single PlayerPin). Amber halo when
+                         it's the selected nudge target; blue ring; label. -->
                     <Canvas IsHitTestVisible="False"
-                            Visibility="{Binding HasTestOrigin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <Canvas Canvas.Left="{Binding TestOriginX}" Canvas.Top="{Binding TestOriginY}">
+                            Visibility="{Binding HasPlayerPin, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <Canvas Canvas.Left="{Binding PlayerPinX}" Canvas.Top="{Binding PlayerPinY}">
                             <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
-                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2" />
+                                     Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2"
+                                     Visibility="{Binding IsPlayerSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                             <Ellipse Canvas.Left="-7" Canvas.Top="-7" Width="14" Height="14"
                                      Stroke="#FF40C4FF" StrokeThickness="2" Fill="#5540C4FF" />
                             <Border Canvas.Left="14" Canvas.Top="-9" Background="#CC000000"
@@ -242,16 +269,43 @@
                         </Canvas>
                     </Canvas>
 
-                    <!-- Projected test pins (green) — compare to the real ping. -->
-                    <ItemsControl ItemsSource="{Binding TestPins}" IsHitTestVisible="False"
+                    <!-- Survey pins: PROJECTED marker (faint dashed cyan) at the
+                         calibration's prediction — the reference you correct
+                         toward. Rendered at true ProjX/ProjY. -->
+                    <ItemsControl ItemsSource="{Binding SurveyPins}" IsHitTestVisible="False"
                                   Padding="0" BorderThickness="0" Margin="0">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <Canvas />
-                            </ItemsPanelTemplate>
+                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
-                        <!-- Render at the CLAMPED (Display) position so a far
-                             projection never vanishes off-window. -->
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding ProjX}" />
+                                <Setter Property="Canvas.Top" Value="{Binding ProjY}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Canvas>
+                                    <Rectangle Canvas.Left="-8" Canvas.Top="-0.5" Width="5" Height="1" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="5" Height="1" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="-8" Width="1" Height="5" Fill="#9959C7E0" />
+                                    <Rectangle Canvas.Left="-0.5" Canvas.Top="3"  Width="1" Height="5" Fill="#9959C7E0" />
+                                    <Ellipse Canvas.Left="-3" Canvas.Top="-3" Width="6" Height="6"
+                                             Stroke="#9959C7E0" StrokeThickness="1" StrokeDashArray="1 1" />
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Survey pins: OVERLAY marker (solid green crosshair) — the
+                         one you select & drag onto the real ping. Clamped to the
+                         edge when off-window; amber when it's the nudge target;
+                         orange ring when edge-clamped (not the true spot). -->
+                    <ItemsControl ItemsSource="{Binding SurveyPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemContainerStyle>
                             <Style TargetType="ContentPresenter">
                                 <Setter Property="Canvas.Left" Value="{Binding DisplayX}" />
@@ -260,12 +314,10 @@
                         </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- v1 green crosshair+ring+label (renders at the
-                                     clamped Display position so a far projection
-                                     still shows at the window edge). The white
-                                     centre ring goes orange when edge-clamped so
-                                     you can tell it's NOT at the true spot. -->
                                 <Canvas>
+                                    <Ellipse Canvas.Left="-13" Canvas.Top="-13" Width="26" Height="26"
+                                             Stroke="#FFFFC400" StrokeThickness="1.5" StrokeDashArray="2 2"
+                                             Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                                     <Rectangle Canvas.Left="-9" Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
                                     <Rectangle Canvas.Left="3"  Canvas.Top="-0.5" Width="6" Height="1" Fill="#FF34C759" />
                                     <Rectangle Canvas.Left="-0.5" Canvas.Top="-9" Width="1" Height="6" Fill="#FF34C759" />

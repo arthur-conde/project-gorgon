@@ -9,16 +9,17 @@ using Mithril.Shared.Reference;
 namespace Legolas.ViewModels;
 
 /// <summary>
-/// Drives the standalone calibration overlay: lists the current area's
-/// landmark/NPC references, accumulates the user's reference clicks (a known
-/// world point paired with where they clicked it on the in-game map, captured
-/// through the transparent overlay), and solves+persists the per-area projector
-/// calibration via <see cref="IAreaCalibrationService"/>.
-///
-/// Calibration is decoupled from the survey FSM entirely — placing references
-/// here never touches <see cref="SessionState"/> or the survey pipeline; it only
-/// feeds the solver. Once solved, every later survey/treasure in that area
-/// projects correctly with no warmup.
+/// Drives the standalone calibration overlay. Two pin families share one
+/// select → nudge → Done state machine:
+/// <list type="bullet">
+/// <item><b>Reference placements</b> — landmark/NPC clicks that feed the solve.</item>
+/// <item><b>Verify</b> — a single <see cref="PlayerPin"/> ("you") plus
+/// <see cref="SurveyPins"/>: each survey/treasure vector becomes a pin that
+/// stores BOTH its calibration-<see cref="SurveyPin.ProjectedPixel"/> and the
+/// user-corrected <see cref="SurveyPin.OverlayPixel"/> (dragged onto the real
+/// ping), so the projected-vs-actual delta is fully recoverable for the math.</item>
+/// </list>
+/// All decoupled from the survey FSM — nothing here touches SessionState.
 /// </summary>
 public sealed partial class CalibrationSessionViewModel : ObservableObject
 {
@@ -36,35 +37,53 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     public ObservableCollection<PlacedReference> Placements { get; } = new();
 
     /// <summary>Projected positions of the *unplaced* landmarks per the solved
-    /// calibration — a pure world→pixel sanity check (they never feed the solve,
-    /// which would be circular). If the math is right they sit on the real
-    /// landmarks on the in-game map.</summary>
+    /// calibration — a pure world→pixel sanity check (never feeds the solve).</summary>
     public ObservableCollection<GhostPin> GhostPins { get; } = new();
 
-    /// <summary>Projected test pins (a survey/treasure fired while test mode is
-    /// on, projected from <see cref="TestOrigin"/> via the live calibration).</summary>
-    public ObservableCollection<TestPin> TestPins { get; } = new();
+    /// <summary>Survey/treasure vectors as correctable pins (own list, behaves
+    /// like a landmark pin). Each keeps projected + overlay coords + the player
+    /// pixel it was projected from, for the math.</summary>
+    public ObservableCollection<SurveyPin> SurveyPins { get; } = new();
 
-    /// <summary>Test mode: a click sets a synthetic "you are here" origin, and
-    /// each subsequent survey/treasure drops a projected pin to eyeball against
-    /// the real in-game ping — verifies the calibration without a survey run.</summary>
-    [ObservableProperty] private bool _testMode;
+    /// <summary>"You are here" — a first-class selectable/nudgeable pin (not a
+    /// click-mode). Set via the panel button; moving it re-projects every
+    /// survey pin's <see cref="SurveyPin.ProjectedPixel"/>.</summary>
+    [ObservableProperty] private PlayerPin? _playerPin;
 
-    /// <summary>The synthetic player position test projections emanate from.</summary>
-    [ObservableProperty] private PixelPoint? _testOrigin;
+    [ObservableProperty] private SurveyPin? _selectedSurveyPin;
 
-    public bool HasTestOrigin => TestOrigin is not null;
-    public double TestOriginX => TestOrigin?.X ?? 0;
-    public double TestOriginY => TestOrigin?.Y ?? 0;
+    // Next viewport click drops/moves the player pin (armed by the button).
+    private bool _armPlayerClick;
 
-    partial void OnTestOriginChanged(PixelPoint? value)
+    public bool HasPlayerPin => PlayerPin is not null;
+    public double PlayerPinX => PlayerPin?.X ?? 0;
+    public double PlayerPinY => PlayerPin?.Y ?? 0;
+    public bool IsPlayerSelected => PlayerPin?.IsSelected == true;
+
+    partial void OnPlayerPinChanged(PlayerPin? oldValue, PlayerPin? newValue)
     {
-        OnPropertyChanged(nameof(HasTestOrigin));
-        OnPropertyChanged(nameof(TestOriginX));
-        OnPropertyChanged(nameof(TestOriginY));
+        OnPropertyChanged(nameof(HasPlayerPin));
+        OnPropertyChanged(nameof(PlayerPinX));
+        OnPropertyChanged(nameof(PlayerPinY));
+        OnPropertyChanged(nameof(IsPlayerSelected));
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
-        ReprojectTestPins(); // green pins follow your position as you nudge it
+        RaiseDebug();
+    }
+
+    partial void OnSelectedSurveyPinChanged(SurveyPin? oldValue, SurveyPin? newValue)
+    {
+        if (oldValue is not null) oldValue.IsSelected = false;
+        if (newValue is not null)
+        {
+            newValue.IsSelected = true;
+            // Mutually exclusive across the families.
+            SelectedPlacement = null;
+            SelectedReference = null;
+            ClearPlayerSelection();
+        }
+        OnPropertyChanged(nameof(NudgeTargetText));
+        OnPropertyChanged(nameof(CanNudge));
         RaiseDebug();
     }
 
@@ -75,38 +94,31 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SolveCommand))]
     private CalibrationReference? _selectedReference;
 
-    /// <summary>Manually-chosen area. Switching it drives the service the same
-    /// way a live <c>Entering Area:</c> banner would.</summary>
+    /// <summary>Manually-chosen area. Switching it drives the service.</summary>
     [ObservableProperty] private AreaEntry? _selectedArea;
 
-    /// <summary>The placement the keyboard nudge acts on (set to the most
-    /// recently placed; also click-selectable in the Placed list).</summary>
+    /// <summary>The reference placement the nudge acts on.</summary>
     [ObservableProperty] private PlacedReference? _selectedPlacement;
 
-    /// <summary>Panel text naming what a nudge will move (null = nothing armed).
-    /// In verify mode with a position set, the arrows move <em>your position</em>
-    /// (and the green pins follow); otherwise the selected reference.</summary>
     public string? NudgeTargetText =>
-        TestMode && TestOrigin is not null
-            ? "Nudging your position — arrow keys move it, green pins follow (Shift = 5px)"
-            : SelectedPlacement is { } p
-                ? $"Nudging “{p.Name}” — arrow keys move it (Shift = 5px)"
-                : null;
+        IsPlayerSelected
+            ? "Nudging your position — arrow keys move it; survey pins re-project (Shift = 5px)"
+            : SelectedSurveyPin is { } s
+                ? $"Nudging survey “{s.Name}” onto the real ping — arrow keys (Shift = 5px)"
+                : SelectedPlacement is { } p
+                    ? $"Nudging “{p.Name}” — arrow keys move it (Shift = 5px)"
+                    : null;
 
-    /// <summary>True when arrow keys have something to move (a placement, or the
-    /// test position in verify mode). Drives the code-behind key handler.</summary>
-    public bool CanNudge => (TestMode && TestOrigin is not null) || SelectedPlacement is not null;
+    public bool CanNudge =>
+        IsPlayerSelected || SelectedSurveyPin is not null || SelectedPlacement is not null;
 
-    /// <summary>Blunt always-visible state readout — so "no pin" is never a
-    /// mystery: it shows whether the area/refs loaded, what's selected, how many
-    /// pins exist + the last one's pixel, and the test origin. If a click made a
-    /// pin, <c>pins=</c> increments here even if the on-map marker doesn't draw.</summary>
+    /// <summary>Blunt always-visible state readout.</summary>
     public string DebugState =>
         $"area={_service.CurrentAreaKey ?? "-"}  refs={References.Count}  " +
         $"sel={SelectedReference?.Name ?? "-"}  pins={Placements.Count}  " +
         $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
-        $"you={(TestOrigin is { } o ? $"({o.X:0},{o.Y:0})" : "-")}  " +
-        $"test={TestMode}  pinsShown={TestPins.Count}  ghosts={GhostPins.Count}";
+        $"you={(PlayerPin is { } pp ? $"({pp.X:0},{pp.Y:0}){(pp.IsSelected ? "*" : "")}" : "-")}  " +
+        $"surveys={SurveyPins.Count}  ghosts={GhostPins.Count}";
 
     private void RaiseDebug()
     {
@@ -114,8 +126,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(DiagnosticSnapshot));
     }
 
-    /// <summary>Full multi-line diagnostic for the clipboard — the panel line
-    /// gets clipped, so "Copy debug" dumps everything I'd need to see.</summary>
+    /// <summary>Full multi-line diagnostic for the clipboard, incl. the selected
+    /// survey pin's projected-vs-overlay math.</summary>
     public string DiagnosticSnapshot
     {
         get
@@ -135,6 +147,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
                 $"lastSurvey: {LastSurveyText ?? "-"}",
                 $"result: {ResultText ?? "-"}",
                 $"nudgeTarget: {NudgeTargetText ?? "-"}",
+                $"selectedSurvey: {(SelectedSurveyPin?.MathText ?? "-")}",
                 $"clickWarning: {ClickWarning ?? "-"}",
             });
         }
@@ -150,65 +163,65 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     partial void OnSelectedPlacementChanged(PlacedReference? oldValue, PlacedReference? newValue)
     {
         if (oldValue is not null) oldValue.IsSelected = false;
-        if (newValue is not null) newValue.IsSelected = true;
-        // Selecting a pin in the Placed list also selects its reference (so the
-        // References list agrees — "pick from either list"). Only sync upward
-        // when a pin is chosen; clearing the pin because an *unplaced*
-        // reference was picked must NOT wipe that reference selection.
-        if (newValue is not null && !ReferenceEquals(SelectedReference, newValue.Reference))
-            SelectedReference = newValue.Reference;
+        if (newValue is not null)
+        {
+            newValue.IsSelected = true;
+            if (!ReferenceEquals(SelectedReference, newValue.Reference))
+                SelectedReference = newValue.Reference;
+            SelectedSurveyPin = null;
+            ClearPlayerSelection();
+        }
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
         RaiseDebug();
     }
 
-    /// <summary>
-    /// Selecting a reference (either list) makes it the active target and links
-    /// to its dropped pin if one exists — so nudging only works once a pin has
-    /// been placed for it. Switching references leaves the previous pin where
-    /// it was (it's already stored in <see cref="Placements"/>).
-    /// </summary>
     partial void OnSelectedReferenceChanged(CalibrationReference? value)
     {
         var pin = value is null
             ? null
             : Placements.FirstOrDefault(p => ReferenceEquals(p.Reference, value));
         if (!ReferenceEquals(SelectedPlacement, pin))
-            SelectedPlacement = pin; // null until this reference is dropped
+            SelectedPlacement = pin;
         RaiseDebug();
     }
 
-    /// <summary>Non-null when the last map click could not be placed — tells the
-    /// user why instead of silently doing nothing.</summary>
     [ObservableProperty] private string? _clickWarning;
 
-    /// <summary>Always set whenever a survey/treasure reaches the window — proves
-    /// the chat→pipeline→window path is alive, and says what's missing if it
-    /// didn't project. Never silently swallowed.</summary>
+    /// <summary>Always set whenever a survey/treasure reaches the window.</summary>
     [ObservableProperty] private string? _lastSurveyText;
 
     [ObservableProperty] private string _statusText = "No area detected yet.";
     [ObservableProperty] private string _instruction =
-        "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
+        "Pick an area, place ≥2 landmark/NPC references, Solve. Then Set player position and fire a survey to verify.";
     [ObservableProperty] private string? _resultText;
 
     partial void OnSelectedAreaChanged(AreaEntry? value)
     {
-        // Guard the Refresh→set→change loop: Refresh sets SelectedArea to the
-        // already-current area, which must NOT re-drive the service.
         if (value is null || value.Key == _service.CurrentAreaKey) return;
         _service.SelectArea(value.Key);
     }
 
-    /// <summary>Arrow-key fine-tune. In verify mode with a position set it moves
-    /// <em>your position</em> (and re-projects the green pins); otherwise it
-    /// moves the selected reference placement. No-op if neither applies.</summary>
+    /// <summary>Arrow-key fine-tune of whatever is selected: the player pin
+    /// (re-projects surveys), a survey pin's overlay (drag onto the real ping),
+    /// or a reference placement.</summary>
     public void NudgeSelected(double dx, double dy)
     {
-        if (TestMode && TestOrigin is { } o)
+        if (PlayerPin is { IsSelected: true } pp)
         {
-            // Moves your position; OnTestOriginChanged re-projects the pins.
-            TestOrigin = new PixelPoint(o.X + dx, o.Y + dy);
+            pp.Pixel = new PixelPoint(pp.Pixel.X + dx, pp.Pixel.Y + dy);
+            OnPropertyChanged(nameof(PlayerPinX));
+            OnPropertyChanged(nameof(PlayerPinY));
+            ReprojectSurveyPins();
+            RaiseDebug();
+            return;
+        }
+        if (SelectedSurveyPin is { } s)
+        {
+            s.OverlayPixel = new PixelPoint(s.OverlayPixel.X + dx, s.OverlayPixel.Y + dy);
+            s.Corrected = true; // it's now the real-ping position, not the projection
+            ClampSurvey(s);
+            RaiseDebug();
             return;
         }
         if (SelectedPlacement is { } p)
@@ -219,10 +232,6 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
     private void OnServiceChanged(object? sender, EventArgs e)
     {
-        // Service.Changed already fires on the UI dispatcher in the live path
-        // (LogIngestionService posts area events to the dispatcher), but guard
-        // anyway — bound-collection mutation off the UI thread is a documented
-        // Mithril footgun.
         var disp = Application.Current?.Dispatcher;
         if (disp is not null && !disp.CheckAccess()) disp.Invoke(Refresh);
         else Refresh();
@@ -239,8 +248,6 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         References.Clear();
         foreach (var r in _service.CurrentAreaReferences) References.Add(r);
 
-        // Keep the area picker reflecting the live area without re-driving the
-        // service (OnSelectedAreaChanged guards on key equality).
         if (_service.CurrentAreaKey is { } curKey)
             SelectedArea = AvailableAreas.FirstOrDefault(a => a.Key == curKey);
 
@@ -249,37 +256,22 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             StatusText = "No area detected — pick one from the dropdown, or walk into one in-game.";
             return;
         }
-
         if (_service.CurrentAreaKey is null)
         {
             StatusText = $"{area} — unrecognised area (no reference data); calibration unavailable.";
             return;
         }
-
-        if (_service.CurrentCalibration is { } c)
-        {
-            StatusText = $"{area} — calibrated " +
-                $"({c.ReferenceCount} refs, residual {c.ResidualPixels:0.0} px). " +
-                "Recalibrate if pins still land wrong.";
-        }
-        else
-        {
-            StatusText = $"{area} — not calibrated. Place ≥2 references and Solve.";
-        }
+        StatusText = _service.CurrentCalibration is { } c
+            ? $"{area} — calibrated ({c.ReferenceCount} refs, residual {c.ResidualPixels:0.0} px). " +
+              "Set player position + fire a survey to verify; Recalibrate if off."
+            : $"{area} — not calibrated. Place ≥2 references and Solve.";
     }
 
-    /// <summary>
-    /// Record where the user clicked the currently-selected reference on the
-    /// map overlay. Auto-advances the selection to the next not-yet-placed
-    /// reference so a calibration run is a steady pick-less click cadence.
-    /// </summary>
     [RelayCommand]
     private void PlaceSelectedAt(PixelPoint pixel)
     {
         if (SelectedReference is not { } reference)
         {
-            // Don't fail silently — the click WAS captured, it just had no
-            // target. Tell the user which precondition is missing.
             ClickWarning = References.Count == 0
                 ? "No area selected — choose an area above first."
                 : "Pick a landmark/NPC from the list, then click where it is on the map.";
@@ -287,105 +279,101 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             return;
         }
 
-        // Replace any prior placement of the same reference (a re-click is a
-        // correction, not a second point).
         for (var i = Placements.Count - 1; i >= 0; i--)
             if (ReferenceEquals(Placements[i].Reference, reference))
                 Placements.RemoveAt(i);
 
         var placed = new PlacedReference(reference, pixel);
         Placements.Add(placed);
-        SelectedPlacement = placed;     // dropped → now nudgeable
-        SelectedReference = reference;  // stays the active target (both lists agree)
+        SelectedPlacement = placed;
+        SelectedReference = reference;
         ClickWarning = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
-
-        // Selection deliberately persists: the just-dropped pin is the clearly
-        // indicated active target (halo + "Nudging …" text). Arrow keys nudge
-        // it; clicking again repositions it; picking another reference swaps
-        // (the prior pin stays put — already stored); "Done" deselects so a
-        // stray click/nudge does nothing. (Earlier the persistence was a *bug*
-        // only because it was invisible and unstoppable — now it's an explicit,
-        // visible state with an exit.)
         RaiseDebug();
     }
 
-    /// <summary>
-    /// Single entry point for a click on the map surface. In test mode a click
-    /// sets the synthetic player origin; otherwise it places the selected
-    /// reference. Keeps the code-behind dumb (it doesn't know the mode).
-    /// </summary>
+    /// <summary>Single map-click entry point. If the player-pin click is armed,
+    /// the click drops/moves "you"; otherwise it places the selected reference.</summary>
     [RelayCommand]
     private void ViewportClicked(PixelPoint pixel)
     {
-        if (TestMode)
+        if (_armPlayerClick)
         {
-            TestOrigin = pixel;
-            TestPins.Clear();
+            _armPlayerClick = false;
+            if (PlayerPin is { } pp) pp.Pixel = pixel;
+            else PlayerPin = new PlayerPin(pixel);
+            SelectPlayerInternal();
+            ReprojectSurveyPins();
             ClickWarning = _service.CurrentCalibration is null
-                ? "Solve a calibration first, then click where you are to verify."
+                ? "Player set. Solve a calibration, then fire a survey to verify."
                 : null;
+            RaiseDebug();
             return;
         }
         PlaceSelectedAt(pixel);
     }
 
-    /// <summary>Enter/leave the position+verify step (also auto-entered after a
-    /// successful Solve — prompting for position is part of calibrating).</summary>
+    /// <summary>Panel button: if no player pin yet, arm the next click to drop
+    /// it; if it exists, select it as the nudge target (same as picking a
+    /// landmark pin from a list).</summary>
     [RelayCommand]
-    private void ToggleTestMode()
+    private void SetPlayerPosition()
     {
-        TestMode = !TestMode;
-        ClickWarning = null;
-    }
-
-    partial void OnTestModeChanged(bool value)
-    {
-        if (value)
+        if (PlayerPin is null)
         {
-            TestPins.Clear();
-            TestOrigin = null;
-            Instruction = _service.CurrentCalibration is null
-                ? "Place ≥2 references and Solve first — then click where you are and fire a survey/treasure to verify."
-                : "Verify: click where you ARE on the map now, then use a survey/treasure — the projected pin should land on the real ping. (Surveying still asks for your position separately; this only checks the calibration.)";
+            _armPlayerClick = true;
+            ClickWarning = "Click on the map where you are.";
         }
         else
         {
-            Instruction = "Pick an area (or walk into one), choose a landmark/NPC, then click exactly where it sits on the in-game map. Arrow keys nudge the last point.";
+            SelectPlayerInternal();
         }
+        RaiseDebug();
+    }
+
+    private void SelectPlayerInternal()
+    {
+        SelectedPlacement = null;
+        SelectedReference = null;
+        SelectedSurveyPin = null;
+        if (PlayerPin is { } pp) pp.IsSelected = true;
+        OnPropertyChanged(nameof(IsPlayerSelected));
+        OnPropertyChanged(nameof(NudgeTargetText));
+        OnPropertyChanged(nameof(CanNudge));
+    }
+
+    private void ClearPlayerSelection()
+    {
+        if (PlayerPin is { IsSelected: true } pp) pp.IsSelected = false;
+        OnPropertyChanged(nameof(IsPlayerSelected));
+    }
+
+    /// <summary>Commit &amp; stop: deselect everything so a stray click/arrow
+    /// does nothing until something is picked again.</summary>
+    [RelayCommand]
+    private void Deselect()
+    {
+        SelectedReference = null;
+        SelectedPlacement = null;
+        SelectedSurveyPin = null;
+        ClearPlayerSelection();
+        ClickWarning = null;
         OnPropertyChanged(nameof(NudgeTargetText));
         OnPropertyChanged(nameof(CanNudge));
         RaiseDebug();
     }
 
-    /// <summary>Commit &amp; stop: deselect the active reference/pin so a stray
-    /// click or arrow key does nothing until something is picked again. The
-    /// pin's final nudged position is already stored in <see cref="Placements"/>.</summary>
     [RelayCommand]
-    private void Deselect()
+    private void ClearSurveyPins()
     {
-        SelectedReference = null; // OnSelectedReferenceChanged clears the pin too
-        SelectedPlacement = null;
-        ClickWarning = null;
+        SurveyPins.Clear();
+        SelectedSurveyPin = null;
         RaiseDebug();
     }
 
-    [RelayCommand]
-    private void ClearTestPins()
-    {
-        TestPins.Clear();
-        TestOrigin = null;
-        RaiseDebug();
-    }
-
-    /// <summary>
-    /// Drop a magenta "ghost" at every *unplaced* landmark/NPC's projected
-    /// position per the solved calibration. Pure world→pixel — these never feed
-    /// the solve (that'd be circular). If the math is right each ghost sits on
-    /// the real landmark on the in-game map; rotated/mirrored ghosts expose a
-    /// convention error directly, with no survey or position involved.
-    /// </summary>
+    /// <summary>Ghost every *unplaced* landmark at its calibrated position
+    /// (pure world→pixel; never feeds the solve).</summary>
     [RelayCommand]
     private void ProjectLandmarks()
     {
@@ -396,15 +384,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
             RaiseDebug();
             return;
         }
-
         var worldOrigin = new PixelPoint(c.OriginX, c.OriginY);
         foreach (var r in References)
         {
-            // Skip the ones used to solve — only the *remaining* landmarks test it.
             if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
             var north = c.MirrorNorth ? -r.World.Z : r.World.Z;
-            var px = Project(c, worldOrigin, new MetreOffset(r.World.X, north));
-            GhostPins.Add(new GhostPin(r.Name, px));
+            GhostPins.Add(new GhostPin(r.Name, Project(c, worldOrigin, new MetreOffset(r.World.X, north))));
         }
         ClickWarning = null;
         RaiseDebug();
@@ -420,71 +405,63 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     private void OnSurveyObserved(object? sender, CalibrationSurveyObservation obs)
     {
         var disp = Application.Current?.Dispatcher;
-        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => { ProjectTest(obs); RaiseDebug(); });
-        else { ProjectTest(obs); RaiseDebug(); }
+        if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => AddSurvey(obs));
+        else AddSurvey(obs);
     }
 
-    private void ProjectTest(CalibrationSurveyObservation obs)
+    private void AddSurvey(CalibrationSurveyObservation obs)
     {
-        // ALWAYS record that the survey reached the window — before any gate —
-        // so "nothing happened" is never ambiguous. This is the signal that the
-        // chat→pipeline→window path is alive.
         var seen = $"Last survey: {obs.Name} ({obs.Offset.East:0}E, {obs.Offset.North:0}N)";
-
-        if (!TestMode)
-        {
-            LastSurveyText = seen + " — turn on “Verify (set position)” to project it.";
-            return;
-        }
         if (_service.CurrentCalibration is not { } c)
         {
             LastSurveyText = seen + " — solve a calibration first.";
+            RaiseDebug();
             return;
         }
-        if (TestOrigin is not { } o)
+        if (PlayerPin is not { } pp)
         {
-            LastSurveyText = seen + " — click where you are on the map first.";
+            LastSurveyText = seen + " — Set player position first.";
+            RaiseDebug();
             return;
         }
 
-        var tp = new TestPin(obs.Name, obs.Offset, Project(c, o, obs.Offset));
-        ClampToViewport(tp);
-        TestPins.Add(tp);
-        LastSurveyText = seen + " → green pin projected." +
-            (tp.IsOffscreen ? " (off-screen — clamped to edge; nudge ‘you’ to bring it in)" : "");
+        var projected = Project(c, pp.Pixel, obs.Offset);
+        var sp = new SurveyPin(obs.Name, obs.Offset, pp.Pixel, projected);
+        ClampSurvey(sp);
+        SurveyPins.Add(sp);
+        LastSurveyText = seen + " → added to Surveys; select it and drag it onto the real ping.";
         ClickWarning = null;
+        RaiseDebug();
     }
 
-    // The Viewport's pixel size, pushed from the view on load/resize. Lets a
-    // far projection clamp to the border instead of vanishing off-window.
+    // Viewport size, pushed from the view, so a far overlay pin clamps to the
+    // edge instead of vanishing.
     private double _viewportW, _viewportH;
 
     public void SetViewport(double width, double height)
     {
         _viewportW = width;
         _viewportH = height;
-        foreach (var p in TestPins) ClampToViewport(p);
+        foreach (var s in SurveyPins) ClampSurvey(s);
     }
 
-    private void ClampToViewport(TestPin p)
+    private void ClampSurvey(SurveyPin s)
     {
         const double inset = 14;
+        var px = s.OverlayPixel;
         if (_viewportW <= 0 || _viewportH <= 0)
         {
-            p.DisplayX = p.Pixel.X;
-            p.DisplayY = p.Pixel.Y;
-            p.IsOffscreen = false;
+            s.DisplayX = px.X;
+            s.DisplayY = px.Y;
+            s.IsOffscreen = false;
             return;
         }
-        p.IsOffscreen =
-            p.Pixel.X < 0 || p.Pixel.X > _viewportW ||
-            p.Pixel.Y < 0 || p.Pixel.Y > _viewportH;
-        p.DisplayX = Math.Clamp(p.Pixel.X, inset, _viewportW - inset);
-        p.DisplayY = Math.Clamp(p.Pixel.Y, inset, _viewportH - inset);
+        s.IsOffscreen = px.X < 0 || px.X > _viewportW || px.Y < 0 || px.Y > _viewportH;
+        s.DisplayX = Math.Clamp(px.X, inset, _viewportW - inset);
+        s.DisplayY = Math.Clamp(px.Y, inset, _viewportH - inset);
     }
 
-    /// <summary>Same math as <c>CoordinateProjector.Project</c>: a metre offset
-    /// from <paramref name="origin"/> through the calibration's scale/rotation.</summary>
+    /// <summary>Same math as <c>CoordinateProjector.Project</c>.</summary>
     private static PixelPoint Project(AreaCalibration c, PixelPoint origin, MetreOffset off)
     {
         var cos = Math.Cos(c.RotationRadians);
@@ -494,15 +471,19 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         return new PixelPoint(origin.X + c.Scale * rotE, origin.Y - c.Scale * rotN);
     }
 
-    /// <summary>Re-place every projected pin from the (moved) test origin so the
-    /// green pins track your position live while you align them.</summary>
-    private void ReprojectTestPins()
+    /// <summary>Re-project every survey pin from the (moved) player pin. The
+    /// overlay follows the projection until the user corrects it; once dragged
+    /// (<see cref="SurveyPin.Corrected"/>) the overlay sticks — it's the real
+    /// ping, fixed on the map regardless of where the player marker is.</summary>
+    private void ReprojectSurveyPins()
     {
-        if (_service.CurrentCalibration is not { } c || TestOrigin is not { } o) return;
-        foreach (var pin in TestPins)
+        if (_service.CurrentCalibration is not { } c || PlayerPin is not { } pp) return;
+        foreach (var s in SurveyPins)
         {
-            pin.Pixel = Project(c, o, pin.Offset);
-            ClampToViewport(pin); // keep edge-clamp current as "you" moves
+            s.OriginPixel = pp.Pixel;
+            s.ProjectedPixel = Project(c, pp.Pixel, s.Offset);
+            if (!s.Corrected) s.OverlayPixel = s.ProjectedPixel;
+            ClampSurvey(s);
         }
     }
 
@@ -522,7 +503,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     private void ClearPlacements()
     {
         Placements.Clear();
-        SelectedPlacement = null; // don't leave the nudge target dangling
+        SelectedPlacement = null;
         OnPropertyChanged(nameof(CanSolve));
         SolveCommand.NotifyCanExecuteChanged();
         ResultText = null;
@@ -542,18 +523,15 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 
         ResultText = calibration.ResidualPixels <= 12
             ? $"Calibrated: {calibration.ResidualPixels:0.0} px residual, scale {calibration.Scale:0.000} px/m. " +
-              "Now verify: click where you are, then use a survey/treasure."
+              "Now Set player position and fire a survey to verify."
             : $"Solved but residual is high ({calibration.ResidualPixels:0.0} px) — references were likely " +
               "placed imprecisely or the map was at a different zoom. Clear and redo for a tighter fit.";
-
-        // Calibration isn't "done" until it's verified. Auto-continue into the
-        // position+verify step so the user doesn't have to discover a separate
-        // toggle — prompting for position is part of calibrating.
-        TestMode = true;
+        Instruction = "Set player position (button), then fire a survey/treasure — it joins the Surveys " +
+            "list; select it and drag it onto the real ping. Projected vs corrected = the scale check.";
+        ReprojectSurveyPins();
         Refresh();
     }
 
-    /// <summary>Drop the persisted calibration for this area and start over.</summary>
     [RelayCommand]
     private void Recalibrate()
     {
@@ -563,12 +541,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     }
 }
 
-/// <summary>A reference the user has pinned on the map. Observable so an
-/// arrow-key nudge to <see cref="Pixel"/> moves the on-map marker and updates
-/// the Placed list live; <see cref="X"/>/<see cref="Y"/> drive Canvas placement.</summary>
 /// <summary>A projected unplaced-landmark "ghost" — pure world→pixel sanity
-/// marker. Static; deliberately minimal so its render path differs from the
-/// crosshair template (doubles as a render probe).</summary>
+/// marker (minimal, static).</summary>
 public sealed class GhostPin
 {
     public GhostPin(string name, PixelPoint pixel)
@@ -583,33 +557,13 @@ public sealed class GhostPin
     public double Y => Pixel.Y;
 }
 
-/// <summary>A projected test reading. Keeps its source <see cref="Offset"/> so
-/// it can be re-projected when the test origin (your position) is nudged —
-/// the green pins track your position live while you align them.</summary>
-public sealed partial class TestPin : ObservableObject
+/// <summary>The "you are here" pin — selectable/nudgeable like a placement.</summary>
+public sealed partial class PlayerPin : ObservableObject
 {
-    public TestPin(string name, MetreOffset offset, PixelPoint pixel)
-    {
-        Name = name;
-        Offset = offset;
-        _pixel = pixel;
-    }
-
-    public string Name { get; }
-    public MetreOffset Offset { get; }
+    public PlayerPin(PixelPoint pixel) => _pixel = pixel;
 
     [ObservableProperty] private PixelPoint _pixel;
-
-    /// <summary>Where the marker actually renders — equals <see cref="Pixel"/>
-    /// when on-screen, else clamped to the Viewport edge so a far projection is
-    /// never silently lost. Set by the VM (it knows the Viewport size).</summary>
-    [ObservableProperty] private double _displayX;
-    [ObservableProperty] private double _displayY;
-
-    /// <summary>True when the true projected pixel is outside the Viewport, so
-    /// the marker is edge-clamped (shown as an orange dashed ring, not the true
-    /// position). Nudge "you" to bring it on-screen.</summary>
-    [ObservableProperty] private bool _isOffscreen;
+    [ObservableProperty] private bool _isSelected;
 
     partial void OnPixelChanged(PixelPoint value)
     {
@@ -619,6 +573,85 @@ public sealed partial class TestPin : ObservableObject
 
     public double X => Pixel.X;
     public double Y => Pixel.Y;
+}
+
+/// <summary>A survey/treasure vector as a correctable pin. Stores the player
+/// pixel it was projected from (<see cref="OriginPixel"/>), the calibration's
+/// <see cref="ProjectedPixel"/>, and the user-corrected <see cref="OverlayPixel"/>
+/// (dragged onto the real ping). The projected↔overlay delta vs. the metre
+/// offset is the empirical scale check.</summary>
+public sealed partial class SurveyPin : ObservableObject
+{
+    public SurveyPin(string name, MetreOffset offset, PixelPoint origin, PixelPoint projected)
+    {
+        Name = name;
+        Offset = offset;
+        _originPixel = origin;
+        _projectedPixel = projected;
+        _overlayPixel = projected; // starts on the projection; user drags to truth
+    }
+
+    public string Name { get; }
+    public MetreOffset Offset { get; }
+
+    [ObservableProperty] private PixelPoint _originPixel;
+    [ObservableProperty] private PixelPoint _projectedPixel;
+    [ObservableProperty] private PixelPoint _overlayPixel;
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>True once the user has dragged the overlay — it then sticks
+    /// (the real ping is fixed on the map) instead of following re-projection.</summary>
+    [ObservableProperty] private bool _corrected;
+
+    // Clamped render position for the overlay marker (edge-visible).
+    [ObservableProperty] private double _displayX;
+    [ObservableProperty] private double _displayY;
+    [ObservableProperty] private bool _isOffscreen;
+
+    partial void OnProjectedPixelChanged(PixelPoint value)
+    {
+        OnPropertyChanged(nameof(ProjX));
+        OnPropertyChanged(nameof(ProjY));
+        OnPropertyChanged(nameof(MathText));
+    }
+
+    partial void OnOverlayPixelChanged(PixelPoint value)
+    {
+        OnPropertyChanged(nameof(OverlayX));
+        OnPropertyChanged(nameof(OverlayY));
+        OnPropertyChanged(nameof(MathText));
+    }
+
+    public double ProjX => ProjectedPixel.X;
+    public double ProjY => ProjectedPixel.Y;
+    public double OverlayX => OverlayPixel.X;
+    public double OverlayY => OverlayPixel.Y;
+
+    /// <summary>The math: metre distance, projected px distance, corrected px
+    /// distance (all from the player pixel), and the implied scale factor —
+    /// i.e. what px/m the corrected position actually needs vs. what the
+    /// calibration used.</summary>
+    public string MathText
+    {
+        get
+        {
+            var metres = Math.Sqrt(Offset.East * Offset.East + Offset.North * Offset.North);
+            var projDist = Dist(OriginPixel, ProjectedPixel);
+            var overDist = Dist(OriginPixel, OverlayPixel);
+            var impliedScale = metres > 1e-6 ? overDist / metres : 0;
+            var ratio = projDist > 1e-6 ? overDist / projDist : 0;
+            return $"{Name}: {metres:0}m  proj={projDist:0}px  corrected={overDist:0}px  " +
+                   $"ratio={ratio:0.000}  impliedScale={impliedScale:0.0000}px/m" +
+                   (Corrected ? "" : "  (not yet corrected)");
+        }
+    }
+
+    private static double Dist(PixelPoint a, PixelPoint b)
+    {
+        var dx = a.X - b.X;
+        var dy = a.Y - b.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
 }
 
 public sealed partial class PlacedReference : ObservableObject
@@ -632,10 +665,6 @@ public sealed partial class PlacedReference : ObservableObject
     public CalibrationReference Reference { get; }
 
     [ObservableProperty] private PixelPoint _pixel;
-
-    /// <summary>True for the one placement the arrow-key nudge currently acts
-    /// on — drives the on-map "active target" highlight so it's obvious what
-    /// you're moving.</summary>
     [ObservableProperty] private bool _isSelected;
 
     partial void OnPixelChanged(PixelPoint value)

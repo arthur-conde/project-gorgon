@@ -272,7 +272,7 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
-    public void Offscreen_test_pin_is_flagged_and_clamped_to_the_viewport_edge()
+    public void Offscreen_survey_pin_clamps_to_the_viewport_edge_and_re_evals_on_resize()
     {
         var svc = new FakeService
         {
@@ -282,28 +282,24 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetViewport(200, 200);
-        vm.ToggleTestModeCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(50, 50)); // "you"
+        vm.SetPlayerPositionCommand.Execute(null);            // arm
+        vm.ViewportClickedCommand.Execute(new PixelPoint(50, 50)); // drop "you"
 
-        // Far east → projects to x≈1050 (off the right edge).
         svc.NoteSurvey("Far", new MetreOffset(East: 1000, North: 0));
-        var far = vm.TestPins[0];
+        var far = vm.SurveyPins[0];
+        far.OverlayPixel.X.Should().BeApproximately(1050, 1e-6); // true projection kept
         far.IsOffscreen.Should().BeTrue();
-        far.Pixel.X.Should().BeApproximately(1050, 1e-6);  // true projection kept
-        far.DisplayX.Should().BeApproximately(186, 1e-6);  // clamped to 200-14
+        far.DisplayX.Should().BeApproximately(186, 1e-6);        // clamped to 200-14
         far.DisplayY.Should().BeApproximately(50, 1e-6);
 
-        // Near → on-screen, display == true pixel.
         svc.NoteSurvey("Near", new MetreOffset(East: 20, North: 0));
-        var near = vm.TestPins[1];
+        var near = vm.SurveyPins[1];
         near.IsOffscreen.Should().BeFalse();
         near.DisplayX.Should().BeApproximately(70, 1e-6);
-        near.DisplayY.Should().BeApproximately(50, 1e-6);
 
-        // Resizing the viewport re-evaluates existing pins.
         vm.SetViewport(2000, 2000);
         far.IsOffscreen.Should().BeFalse();
-        far.DisplayX.Should().BeApproximately(1050, 1e-6); // now fits → true pos
+        far.DisplayX.Should().BeApproximately(1050, 1e-6);
     }
 
     [Fact]
@@ -314,7 +310,7 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
-    public void In_verify_mode_nudge_moves_your_position_and_reprojects_the_pins()
+    public void Nudging_player_pin_reprojects_uncorrected_survey_pins()
     {
         var svc = new FakeService
         {
@@ -323,26 +319,58 @@ public class CalibrationSessionViewModelTests
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
-        vm.ToggleTestModeCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200)); // your position
-        svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50));  // pin at (200,150)
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
+        svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50)); // proj (200,150)
 
-        vm.TestPins.Should().ContainSingle();
-        vm.TestPins[0].Y.Should().BeApproximately(150, 1e-6);
-
-        vm.CanNudge.Should().BeTrue();                       // armed via test origin, no placement
+        var s = vm.SurveyPins.Should().ContainSingle().Subject;
+        s.ProjY.Should().BeApproximately(150, 1e-6);
+        vm.IsPlayerSelected.Should().BeTrue(); // dropped → selected
+        vm.CanNudge.Should().BeTrue();
         vm.NudgeTargetText.Should().Contain("your position");
 
-        vm.NudgeSelected(10, 5); // move "you" right+down
+        vm.NudgeSelected(10, 5); // move "you"
 
-        vm.TestOrigin.Should().Be(new PixelPoint(210, 205));
-        // The green pin tracked the moved origin (same offset, new base).
-        vm.TestPins[0].X.Should().BeApproximately(210, 1e-6);
-        vm.TestPins[0].Y.Should().BeApproximately(155, 1e-6);
+        vm.PlayerPinX.Should().Be(210);
+        vm.PlayerPinY.Should().Be(205);
+        s.ProjX.Should().BeApproximately(210, 1e-6);   // re-projected
+        s.ProjY.Should().BeApproximately(155, 1e-6);
+        s.OverlayX.Should().BeApproximately(210, 1e-6); // uncorrected → follows
+        s.OverlayY.Should().BeApproximately(155, 1e-6);
     }
 
     [Fact]
-    public void Placement_nudge_still_works_when_not_in_verify_mode()
+    public void Correcting_a_survey_pin_makes_its_overlay_stick_through_player_moves()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
+        svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50));
+        var s = vm.SurveyPins[0];
+
+        vm.SelectedSurveyPin = s;            // select the survey pin
+        vm.NudgeSelected(7, -3);             // drag its overlay onto the real ping
+        s.Corrected.Should().BeTrue();
+        s.OverlayX.Should().BeApproximately(207, 1e-6);
+        s.OverlayY.Should().BeApproximately(147, 1e-6);
+
+        // Re-select & move the player; corrected overlay must NOT follow.
+        vm.SetPlayerPositionCommand.Execute(null); // player exists → selects it
+        vm.IsPlayerSelected.Should().BeTrue();
+        vm.NudgeSelected(50, 50);
+        s.OverlayX.Should().BeApproximately(207, 1e-6); // stuck (real ping is fixed)
+        s.OverlayY.Should().BeApproximately(147, 1e-6);
+        s.ProjX.Should().BeApproximately(250, 1e-6);    // projection still moves
+    }
+
+    [Fact]
+    public void Placement_nudge_still_works()
     {
         var vm = new CalibrationSessionViewModel(new FakeService
         {
@@ -399,7 +427,7 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
-    public void ViewportClicked_in_test_mode_sets_the_test_origin_not_a_placement()
+    public void Armed_player_click_sets_the_player_pin_not_a_placement()
     {
         var svc = new FakeService
         {
@@ -411,21 +439,20 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(svc);
         vm.SelectedReference = vm.References[0];
 
-        vm.ToggleTestModeCommand.Execute(null);
-        vm.TestMode.Should().BeTrue();
-
+        vm.SetPlayerPositionCommand.Execute(null);            // arm
         vm.ViewportClickedCommand.Execute(new PixelPoint(120, 80));
 
-        vm.TestOrigin.Should().Be(new PixelPoint(120, 80));
-        vm.HasTestOrigin.Should().BeTrue();
-        vm.Placements.Should().BeEmpty(); // it was a test-origin click, not a placement
+        vm.HasPlayerPin.Should().BeTrue();
+        vm.PlayerPinX.Should().Be(120);
+        vm.PlayerPinY.Should().Be(80);
+        vm.IsPlayerSelected.Should().BeTrue();
+        vm.Placements.Should().BeEmpty(); // it was a player click, not a placement
     }
 
     [Fact]
-    public void Test_mode_projects_a_survey_from_the_test_origin_in_the_correct_direction()
+    public void Survey_projects_from_player_in_the_correct_direction()
     {
-        // Identity calibration: scale 1, rotation 0. A purely-north 50m offset
-        // must project straight UP (screen-y decreases) from the test origin.
+        // Identity calibration: north → up, east → right, from the player pin.
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
@@ -433,31 +460,30 @@ public class CalibrationSessionViewModelTests
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.2),
         };
         var vm = new CalibrationSessionViewModel(svc);
-        vm.ToggleTestModeCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200)); // test origin
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
 
         svc.NoteSurvey("Iron Vein", new MetreOffset(East: 0, North: 50));
-
-        vm.TestPins.Should().ContainSingle();
-        var pin = vm.TestPins[0];
+        var pin = vm.SurveyPins.Should().ContainSingle().Subject;
         pin.Name.Should().Be("Iron Vein");
-        pin.X.Should().BeApproximately(200, 1e-6);
-        pin.Y.Should().BeApproximately(150, 1e-6); // north → up (smaller y)
+        pin.ProjX.Should().BeApproximately(200, 1e-6);
+        pin.ProjY.Should().BeApproximately(150, 1e-6);   // north → up
+        pin.OverlayX.Should().BeApproximately(200, 1e-6); // overlay starts on projection
+        pin.OverlayY.Should().BeApproximately(150, 1e-6);
 
-        // And east projects to the right.
         svc.NoteSurvey("Slab", new MetreOffset(East: 30, North: 0));
-        vm.TestPins[1].X.Should().BeApproximately(230, 1e-6);
-        vm.TestPins[1].Y.Should().BeApproximately(200, 1e-6);
+        vm.SurveyPins[1].ProjX.Should().BeApproximately(230, 1e-6); // east → right
+        vm.SurveyPins[1].ProjY.Should().BeApproximately(200, 1e-6);
     }
 
     [Fact]
-    public void Test_survey_without_origin_or_calibration_warns_instead_of_projecting()
+    public void Survey_without_calibration_or_player_records_why_no_pin()
     {
         var noCal = new FakeService { CurrentAreaKey = "AreaEltibule", CurrentAreaFriendlyName = "Eltibule" };
         var vm1 = new CalibrationSessionViewModel(noCal);
-        vm1.ToggleTestModeCommand.Execute(null);
         noCal.NoteSurvey("X", new MetreOffset(1, 1));
-        vm1.TestPins.Should().BeEmpty();
+        vm1.SurveyPins.Should().BeEmpty();
+        vm1.LastSurveyText.Should().Contain("X");
         vm1.LastSurveyText.Should().Contain("solve a calibration");
 
         var hasCal = new FakeService
@@ -467,29 +493,35 @@ public class CalibrationSessionViewModelTests
             CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
         };
         var vm2 = new CalibrationSessionViewModel(hasCal);
-        vm2.ToggleTestModeCommand.Execute(null); // test mode, but no origin clicked yet
-        hasCal.NoteSurvey("X", new MetreOffset(1, 1));
-        vm2.TestPins.Should().BeEmpty();
-        vm2.LastSurveyText.Should().Contain("click where you are");
+        hasCal.NoteSurvey("X", new MetreOffset(1, 1)); // calibrated but no player pin
+        vm2.SurveyPins.Should().BeEmpty();
+        vm2.LastSurveyText.Should().Contain("Set player position");
     }
 
     [Fact]
-    public void Survey_outside_test_mode_still_records_that_it_was_seen()
+    public void Survey_pin_math_text_reports_projected_vs_corrected_ratio()
     {
         var svc = new FakeService
         {
-            CurrentAreaKey = "AreaEltibule",
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
+            CurrentAreaKey = "AreaEltibule",
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
-        var vm = new CalibrationSessionViewModel(svc); // test mode OFF
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.SetPlayerPositionCommand.Execute(null);
+        vm.ViewportClickedCommand.Execute(new PixelPoint(0, 0));
+        svc.NoteSurvey("Vein", new MetreOffset(East: 100, North: 0)); // 100m → proj 100px
+        var s = vm.SurveyPins[0];
 
-        svc.NoteSurvey("Iron Vein", new MetreOffset(10, -4));
+        s.MathText.Should().Contain("100m");
+        s.MathText.Should().Contain("proj=100px");
+        s.MathText.Should().Contain("not yet corrected");
 
-        vm.TestPins.Should().BeEmpty();
-        // The survey is NEVER silently swallowed — proves the pipeline is alive.
-        vm.LastSurveyText.Should().Contain("Iron Vein");
-        vm.LastSurveyText.Should().Contain("Verify");
+        vm.SelectedSurveyPin = s;
+        vm.NudgeSelected(-50, 0); // drag corrected to 50px from player
+        s.MathText.Should().Contain("corrected=50px");
+        s.MathText.Should().Contain("ratio=0.500");      // half → implied scale halved
+        s.MathText.Should().Contain("impliedScale=0.5000px/m");
     }
 
     private sealed class FakeService : IAreaCalibrationService
