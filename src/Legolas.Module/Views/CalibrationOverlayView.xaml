@@ -121,6 +121,41 @@
                                 <Button Content="Clear surveys"
                                         Command="{Binding ClearSurveyPinsCommand}" Padding="8,4" />
                             </StackPanel>
+                            <!-- #454 freehand pin calibration — the cold-start
+                                 path (works on a fogged map; landmark calibration
+                                 can't, nothing visible to click). -->
+                            <Border Margin="0,8,0,0" Padding="6" CornerRadius="3"
+                                    Background="#FF12161B" BorderBrush="#FF2C3540" BorderThickness="1">
+                                <StackPanel>
+                                    <Button Command="{Binding TogglePinCalibrationCommand}"
+                                            Padding="8,4" HorizontalAlignment="Stretch">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Content" Value="Begin pin calibration (cold-start)" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PinCalibrationArmed}" Value="True">
+                                                        <Setter Property="Content" Value="Stop pin calibration" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <TextBlock Text="{Binding PinCalibrationStatus}"
+                                               TextWrapping="Wrap" FontSize="11" Margin="0,5,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#FF7E97AE" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PinCalibrationArmed}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FFFFC400" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <Button Content="Project landmarks (ghosts)"
                                         ToolTip="Drop every unplaced landmark at its calibrated position — they should sit on the real landmarks"

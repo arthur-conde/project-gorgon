@@ -653,6 +653,86 @@ public class CalibrationSessionViewModelTests
         s.MathText.Should().Contain("impliedScale=0.5000px/m");
     }
 
+    // ---- #454 freehand pin calibration ----------------------------------
+
+    private static CalibrationSessionViewModel ArmedPinVm(out FakeService svc)
+    {
+        svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            SolveResult = new AreaCalibration(0.4, 0.1, 5, 6, 3, 0.0),
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+        vm.TogglePinCalibrationCommand.Execute(null);
+        vm.PinCalibrationArmed.Should().BeTrue();
+        return vm;
+    }
+
+    [Fact]
+    public void Disarmed_pins_are_dropped_so_area_entry_replay_cannot_leak()
+    {
+        var svc = new FakeService { CurrentAreaKey = "AreaEltibule" };
+        var vm = new CalibrationSessionViewModel(svc);
+
+        // Bulk area-entry replay arrives BEFORE the user arms — must be ignored.
+        svc.NotePinAdded(new WorldCoord(-521.96, 0, 368.39));
+        svc.NotePinAdded(new WorldCoord(367.28, 0, 2798.03));
+        vm.PendingPinCount.Should().Be(0);
+
+        // A click while disarmed/empty doesn't fabricate a placement.
+        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+        vm.Placements.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Pins_pair_with_overlay_clicks_in_turn_order_never_by_label()
+    {
+        var vm = ArmedPinVm(out var svc);
+
+        // The PinAdded contract is a bare WorldCoord — there is structurally
+        // no label the VM could key off. Drop three distinct world points…
+        var w0 = new WorldCoord(-521.96, 0, 368.39);
+        var w1 = new WorldCoord(367.28, 0, 2798.03);
+        var w2 = new WorldCoord(1145.39, 0, 1323.40);
+        svc.NotePinAdded(w0);
+        svc.NotePinAdded(w1);
+        svc.NotePinAdded(w2);
+        vm.PendingPinCount.Should().Be(3);
+
+        // …then click three overlay spots. Pairing is OLDEST-first (turn
+        // order): click#i ↔ pin#i, irrespective of anything else.
+        vm.ViewportClickedCommand.Execute(new PixelPoint(10, 11));
+        vm.ViewportClickedCommand.Execute(new PixelPoint(20, 22));
+        vm.ViewportClickedCommand.Execute(new PixelPoint(30, 33));
+
+        vm.Placements.Should().HaveCount(3);
+        vm.PendingPinCount.Should().Be(0);
+        vm.CanSolve.Should().BeTrue();
+
+        vm.SolveCommand.Execute(null);
+        svc.LastSolvePairs.Should().Equal(
+            (w0, new PixelPoint(10, 11)),
+            (w1, new PixelPoint(20, 22)),
+            (w2, new PixelPoint(30, 33)));
+    }
+
+    [Fact]
+    public void ClearPlacements_disarms_and_drops_pending_pins()
+    {
+        var vm = ArmedPinVm(out var svc);
+        svc.NotePinAdded(new WorldCoord(1, 0, 2));
+        vm.PendingPinCount.Should().Be(1);
+
+        vm.ClearPlacementsCommand.Execute(null);
+
+        vm.PinCalibrationArmed.Should().BeFalse();
+        vm.PendingPinCount.Should().Be(0);
+        // A pin arriving now is ignored again (disarmed).
+        svc.NotePinAdded(new WorldCoord(3, 0, 4));
+        vm.PendingPinCount.Should().Be(0);
+    }
+
     private sealed class FakeService : IAreaCalibrationService
     {
         public List<CalibrationReference> Refs { get; } = new();
@@ -704,5 +784,10 @@ public class CalibrationSessionViewModelTests
 
         public void NoteSurvey(string name, MetreOffset offset) =>
             SurveyObserved?.Invoke(this, new CalibrationSurveyObservation(name, offset));
+
+        public event EventHandler<WorldCoord>? PinAdded;
+
+        public void NotePinAdded(WorldCoord world) =>
+            PinAdded?.Invoke(this, world);
     }
 }

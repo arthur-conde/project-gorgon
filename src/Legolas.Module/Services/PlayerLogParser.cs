@@ -6,10 +6,10 @@ using Legolas.Domain;
 namespace Legolas.Services;
 
 /// <summary>
-/// Player.log analog of <see cref="ChatLogParser"/> — pure line→event. #454
-/// Phase 3 parses <c>ProcessMapFx</c> (absolute survey/treasure-map targets);
-/// Phase 4 adds <c>ProcessMapPinAdd</c> on this same parser. One parser, many
-/// patterns, mirroring the ChatLog parser's shape.
+/// Player.log analog of <see cref="ChatLogParser"/> — pure line→event. #454:
+/// <c>ProcessMapFx</c> (absolute survey/treasure-map targets) and
+/// <c>ProcessMapPinAdd</c> (freehand pin-calibration world coords). One
+/// parser, many patterns, mirroring the ChatLog parser's shape.
 ///
 /// <para>Real captured grammar (live Player.log, 2026-05-18):</para>
 /// <code>
@@ -29,24 +29,45 @@ public sealed partial class PlayerLogParser : ILogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MapFxRx();
 
+    // ProcessMapPinAdd(1, 0, 0, (-521.96, 0.00, 368.39), "Calib 1")
+    // Leading three ints + the (x, y, z) triple + quoted label. The label is
+    // captured for diagnostics ONLY — pairing is turn-order, never by name.
+    [GeneratedRegex(
+        """ProcessMapPinAdd\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\(\s*(?<x>-?\d+(?:\.\d+)?)\s*,\s*(?<y>-?\d+(?:\.\d+)?)\s*,\s*(?<z>-?\d+(?:\.\d+)?)\s*\)\s*,\s*"(?<label>[^"]*)"\s*\)""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex MapPinAddRx();
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrEmpty(line)) return null;
-        if (!line.Contains("ProcessMapFx", StringComparison.Ordinal)) return null;
 
-        var m = MapFxRx().Match(line);
-        if (!m.Success) return null;
-        if (!TryNum(m.Groups["x"].ValueSpan, out var x) ||
-            !TryNum(m.Groups["y"].ValueSpan, out var y) ||
-            !TryNum(m.Groups["z"].ValueSpan, out var z))
-            return null;
+        if (line.Contains("ProcessMapFx", StringComparison.Ordinal)
+            && MapFxRx().Match(line) is { Success: true } m
+            && TryNum(m.Groups["x"].ValueSpan, out var x)
+            && TryNum(m.Groups["y"].ValueSpan, out var y)
+            && TryNum(m.Groups["z"].ValueSpan, out var z))
+        {
+            return new MapTargetDetected(
+                timestamp,
+                new WorldCoord(x, y, z),
+                m.Groups["short"].Value,
+                m.Groups["cat"].Value,
+                m.Groups["msg"].Value);
+        }
 
-        return new MapTargetDetected(
-            timestamp,
-            new WorldCoord(x, y, z),
-            m.Groups["short"].Value,
-            m.Groups["cat"].Value,
-            m.Groups["msg"].Value);
+        if (line.Contains("ProcessMapPinAdd", StringComparison.Ordinal)
+            && MapPinAddRx().Match(line) is { Success: true } p
+            && TryNum(p.Groups["x"].ValueSpan, out var px)
+            && TryNum(p.Groups["y"].ValueSpan, out var py)
+            && TryNum(p.Groups["z"].ValueSpan, out var pz))
+        {
+            return new MapPinAdded(
+                timestamp,
+                new WorldCoord(px, py, pz),
+                p.Groups["label"].Value);
+        }
+
+        return null;
     }
 
     private static bool TryNum(ReadOnlySpan<char> s, out double v) =>

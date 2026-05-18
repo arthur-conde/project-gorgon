@@ -58,11 +58,33 @@ public class PlayerLogParserTests
     [InlineData("[09:03:31] LocalPlayer: ProcessScreenText(ImportantInfo, \"The treasure is 1285 meters from here.\")")]
     [InlineData("[09:03:30] LocalPlayer: ProcessDoDelayLoop(1, Unset, \"Using Kur Mountains Simple Metal Motherlode Map\", 5305, AbortIfAttacked)")]
     [InlineData("[08:25:38] LocalPlayer: ProcessDoDelayLoop(0.5, Unset, \"Using Eltibule Good Mining Survey\", 5305, AbortIfAttacked)")]
-    [InlineData("[08:22:22] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-521.96, 0.00, 368.39), \"Calib 1\")")]
     [InlineData("LOADING LEVEL AreaEltibule")]
     [InlineData("")]
-    public void Returns_null_for_non_ProcessMapFx_lines(string line)
+    public void Returns_null_for_unrecognised_lines(string line)
     {
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
+    }
+
+    // Real captured ProcessMapPinAdd lines (live Player.log, 2026-05-18).
+    [Theory]
+    [InlineData(
+        "[08:22:22] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-521.96, 0.00, 368.39), \"\")",
+        -521.96, 368.39, "")]
+    [InlineData(
+        "[08:32:20] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (1145.39, 0.00, 1323.40), \"Calib 1\")",
+        1145.39, 1323.40, "Calib 1")]
+    // A label that looks like an area/verb must STILL just be a label —
+    // pairing is turn-order, never by name (hard rule #454).
+    [InlineData(
+        "[08:32:38] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-355.16, 0.00, -392.82), \"AreaEltibule Check Survey\")",
+        -355.16, -392.82, "AreaEltibule Check Survey")]
+    public void Parses_ProcessMapPinAdd_world_coord_and_label(
+        string line, double x, double z, string label)
+    {
+        var evt = (MapPinAdded?)_parser.TryParse(line, DateTime.UtcNow);
+        evt.Should().NotBeNull();
+        evt!.World.X.Should().Be(x);
+        evt.World.Z.Should().Be(z);
+        evt.Label.Should().Be(label); // captured for diagnostics only
     }
 }
