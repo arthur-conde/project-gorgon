@@ -86,15 +86,14 @@ public sealed class PlayerPositionParserTests
     }
 
     // --- Other-player exclusion -------------------------------------------
-    // SYNTHETIC. Across every available capture (3 Player.log files, Apr–May
-    // 2026, ~7700 Process* lines, 13 ProcessAddPlayer) EVERY line is
-    // `LocalPlayer:`-prefixed — Player.log appears to log only the local
-    // player's own client processing. We have NO real other-player
-    // ProcessAddPlayer line. The `LocalPlayer:` gate is a defensive guard
-    // against a non-local format we have not observed; the fixture below
-    // enumerates several *assumed* shapes (each with a valid position triple,
-    // so the GATE — not a parse failure — must be what rejects them).
-    // VERIFICATION OWED: capture a populated-area Player.log.
+    // SYNTHETIC. VERIFIED 2026-05-18 (live busy-town capture, 10 MB, 4191
+    // Process* lines): Player.log logs ONLY the local player — other players
+    // in view emit no ProcessAddPlayer at all, so no real non-local line can
+    // exist to capture. The `LocalPlayer:` gate is therefore harmless on real
+    // data; these assumed shapes still guard the boundary check (a bare
+    // substring is fooled by `NonLocalPlayer:` — see the regression below).
+    // Each line carries a valid position triple so the GATE — not a parse
+    // failure — must be what rejects it.
 
     public static IEnumerable<object[]> AssumedNonLocalLines() =>
         File.ReadAllLines(Path.Combine(

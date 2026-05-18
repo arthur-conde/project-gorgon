@@ -18,13 +18,13 @@ namespace Mithril.GameState.Movement;
 ///   window is <em>seeded to</em>, so it is observed at session start — it
 ///   populates position immediately rather than leaving it null until the
 ///   first teleport. This branch is <b>gated on the <c>LocalPlayer:</c>
-///   prefix</b> as defence-in-depth: across every available capture (3
-///   Player.log files, Apr–May 2026, ~7700 <c>Process*</c> lines) <em>every</em>
-///   line is <c>LocalPlayer:</c>-prefixed — Player.log appears to log only the
-///   local player's own client processing, so a remote player's
-///   <c>ProcessAddPlayer</c> (and its line shape) has <b>not been observed</b>.
-///   The gate costs nothing and prevents following a stranger <em>if</em> a
-///   populated-area capture ever proves otherwise. <b>Verification owed.</b></item>
+///   prefix</b> (boundary-checked, see <see cref="LocalAddPlayerRx"/>).
+///   <b>Verified 2026-05-18</b> via a live busy-town capture (10&#160;MB,
+///   4191 <c>Process*</c> lines, 25+ verbs): Player.log logs <em>only</em> the
+///   local player's own processing — other players in view emit no
+///   <c>ProcessAddPlayer</c> at all. The gate is thus effectively always-true
+///   on real data (harmless, not load-bearing); kept as cheap defence in case
+///   PG ever changes.</item>
 /// </list>
 ///
 /// <para>Real captured grammar (live Player.log, 2026-05-18):</para>

@@ -1,15 +1,12 @@
-# SYNTHETIC — NOT real captures. Player.log is 100% LocalPlayer:-prefixed
-# across every available capture (3 files, Apr–May 2026, ~7700 Process*
-# lines), so a remote player's ProcessAddPlayer has never been observed.
-# These are *assumed* non-local shapes the LocalPlayer: gate must reject.
-# Each carries a valid position triple after System.String[] so the test
-# proves the GATE (not a parse failure) is what rejects them.
+# SYNTHETIC — NOT real captures. VERIFIED 2026-05-18 (live busy-town
+# capture, 10 MB, 4191 Process* lines): Player.log logs ONLY the local
+# player — other players in view emit no ProcessAddPlayer at all, so no
+# real non-local line exists. These *assumed* shapes still earn their keep
+# as a boundary-gate regression: a bare substring check is fooled by
+# `NonLocalPlayer:` (it contains "LocalPlayer: ProcessAddPlayer"). Each
+# line carries a valid position triple after System.String[] so the test
+# proves the GATE (not a parse failure) is what rejects it.
 # Lines starting with '#' or blank are ignored by the test.
-#
-# Residual risk NOT covered (cannot fabricate what we've never seen): if PG
-# actually tags every line "LocalPlayer:" and distinguishes self vs. others
-# by the leading numeric entity-id instead, this gate would wrongly accept a
-# stranger. Verification owed — capture a busy-town Player.log.
 [10:30:45] Bob: ProcessAddPlayer(1, 2, "@Base()", "Bob", "A player!", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)
 [10:30:45] ProcessAddPlayer(1, 2, "@Base()", "X", "A player!", System.String[], (1.0, 2.0, 3.0), (0,0,0,1), Idle, Standing, 0, 0, True)
 [10:30:45] Player: ProcessAddPlayer(1, 2, "@Base()", "Stranger", "A player!", System.String[], (4.0, 5.0, 6.0), (0,0,0,1), Idle, Standing, 0, 0, True)
