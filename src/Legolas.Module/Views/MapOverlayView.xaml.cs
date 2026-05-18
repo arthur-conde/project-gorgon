@@ -208,6 +208,16 @@ public partial class MapOverlayView : Window
         var canvasPos = Mouse.GetPosition(Viewport);
         var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
 
+        // #460: while the wizard Calibrating step has armed capture, a
+        // viewport click pairs with the next pending ProcessMapPinAdd world
+        // coord (turn order). Consumes the click — no placement / mode logic.
+        if (vm.IsCalibrationCapturing)
+        {
+            vm.PairCalibrationClick(clickPoint);
+            e.Handled = true;
+            return;
+        }
+
         // Motherlode records the player position from the click; Survey
         // ignores it (placement is automatic + absolute). The VM mode-gates.
         vm.HandleMapClickCommand.Execute(clickPoint);

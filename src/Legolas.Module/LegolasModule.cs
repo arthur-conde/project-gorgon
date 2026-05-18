@@ -59,6 +59,10 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<ITrilaterationSolver, TrilaterationSolver>();
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
+        // #460: cold-start pin calibration driven through the map overlay
+        // (not the standalone window). View-agnostic; shared by the wizard
+        // Calibrating step and the map-overlay capture branch.
+        services.AddSingleton<PinCalibrationCoordinator>();
 
         // Session + flow controllers + VMs.
         // Session.MapOpacity / InventoryOpacity hydrate from persisted settings on

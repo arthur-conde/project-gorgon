@@ -53,6 +53,40 @@
                      on hover are not reproduced — see commit history. -->
                 <rendering:D2DOverlaySurface x:Name="MapSurface" IsHitTestVisible="False" />
 
+                <!-- #460: calibration capture. While the wizard Calibrating
+                     step has armed capture, viewport clicks pair with pending
+                     ProcessMapPinAdd coords; each paired click drops a marker
+                     here. IsHitTestVisible=False so clicks reach the Viewport
+                     handler. Zero-size Canvas + negative offsets so the dot
+                     sits exactly on the click (WPF Grid would re-centre it). -->
+                <ItemsControl ItemsSource="{Binding CalibrationMarkers}" IsHitTestVisible="False"
+                              Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding X}" />
+                            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="-6,-6,0,0"
+                                     Fill="#CC33C1FF" Stroke="White" StrokeThickness="1.5" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,12,0,0" Padding="14,8"
+                        Background="#CC0A2A3A" BorderBrush="#FF33C1FF" BorderThickness="1"
+                        CornerRadius="4" MaxWidth="520" IsHitTestVisible="False"
+                        Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <TextBlock Text="Calibration: click each dropped map pin here, in the order you dropped them."
+                               Foreground="#FFE0F4FF" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
+                </Border>
+
                 <!-- Optional on-overlay nudge pad (toggle in settings). Same VM as
                      the wizard panel's pad, so step-size selection stays in sync. -->
                 <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"

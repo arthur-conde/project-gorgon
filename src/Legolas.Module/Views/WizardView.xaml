@@ -63,7 +63,21 @@
                             Visibility="{Binding Session.Mode, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Survey}">
                     <TextBlock Text="Mode" Style="{StaticResource WizardBreadcrumbStep}" />
                     <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
-                    <!-- #454: no "Position" step — placement is absolute. -->
+                    <!-- #460: cold-start calibration gate (skipped when the
+                         area is already calibrated). -->
+                    <TextBlock Text="Calibrate">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CurrentStep}" Value="Calibrating">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource WizardBreadcrumbSeparator}" />
                     <TextBlock Text="Listen">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource WizardBreadcrumbStep}">
@@ -192,6 +206,39 @@
                                 Command="{Binding PickSurveyModeCommand}" />
                         <Button Content="Motherlode" Style="{StaticResource WizardPrimaryButton}" Margin="0"
                                 Command="{Binding PickMotherlodeModeCommand}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Calibrating (#460: cold-start gate — uncalibrated area.
+                     Capture happens on the map overlay, not a separate
+                     window; this panel is just guidance + status + Solve. -->
+                <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Calibrating}">
+                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="This area isn't calibrated yet, so pins can't place. Calibrate by dropping map pins:" />
+                    </TextBlock>
+                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock Text="1.  Drop ≥3 well-spread map pins in-game (works on a fogged/blank map)"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                        <TextBlock Text="2.  Click each pin's spot on the map overlay, in the same order"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                        <TextBlock Text="3.  Solve — the area calibrates and the wizard continues"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding PinCalibration.StatusText}"
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,12"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource AccentBrush}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Solve" Style="{StaticResource WizardPrimaryButton}"
+                                Command="{Binding SolveCalibrationCommand}"
+                                IsEnabled="{Binding PinCalibration.CanSolve}" />
+                        <Button Content="Clear pins" Style="{StaticResource WizardPrimaryButton}" Margin="0"
+                                Command="{Binding ClearCalibrationPinsCommand}" />
                     </StackPanel>
                 </StackPanel>
 

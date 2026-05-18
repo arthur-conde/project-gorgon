@@ -14,8 +14,40 @@ namespace Legolas.Tests.ViewModels;
 /// </summary>
 public class LegolasWizardViewModelTests
 {
+    // #460: a minimal IAreaCalibrationService. Defaults to *calibrated* so
+    // the existing flow tests bypass the Calibrating gate; gate tests pass
+    // one with Calibrated=false and flip it + RaiseChanged().
+    private sealed class FakeAreaCalib : IAreaCalibrationService
+    {
+        public bool Calibrated { get; set; } = true;
+        public bool IsCurrentAreaCalibrated => Calibrated;
+        public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+
+        public string? CurrentAreaKey => "AreaTest";
+        public string? CurrentAreaFriendlyName => "Test";
+        public AreaCalibration? CurrentCalibration => null;
+        public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
+        public IReadOnlyList<Mithril.Shared.Reference.AreaEntry> AllAreas => Array.Empty<Mithril.Shared.Reference.AreaEntry>();
+        public event EventHandler? Changed;
+        public void OnAreaEntered(string areaFriendlyName) { }
+        public void SelectArea(string areaKey) { }
+        public AreaCalibration? CalibrateCurrentArea(
+            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
+        {
+            Calibrated = true;
+            var c = new AreaCalibration(1, 0, 0, 0, placements.Count, 0);
+            Changed?.Invoke(this, EventArgs.Empty);
+            return c;
+        }
+        public void ClearCurrentAreaCalibration() { }
+        public void NoteSurvey(string name, MetreOffset offset) { }
+        public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
+        public void NotePinAdded(WorldCoord world) => PinAdded?.Invoke(this, world);
+        public event EventHandler<WorldCoord>? PinAdded;
+    }
+
     private static (LegolasWizardViewModel wizard, SessionState session, SurveyFlowController surveyFlow,
-        MotherlodeFlowController motherlodeFlow, LegolasSettings settings) BuildSut()
+        MotherlodeFlowController motherlodeFlow, LegolasSettings settings) BuildSut(FakeAreaCalib? calib = null)
     {
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -26,11 +58,13 @@ public class LegolasWizardViewModelTests
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
+        var areaCalib = calib ?? new FakeAreaCalib();
+        var pinCal = new PinCalibrationCoordinator(areaCalib);
         var motherlode = new MotherlodeViewModel(trilat, optimizer, session, motherlodeFlow);
-        var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings);
+        var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, pinCal);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);
         var wizard = new LegolasWizardViewModel(session, surveyFlow, motherlodeFlow,
-            controlPanel, motherlode, mapOverlay, nudgePad, settings);
+            controlPanel, motherlode, mapOverlay, nudgePad, areaCalib, pinCal, settings);
         return (wizard, session, surveyFlow, motherlodeFlow, settings);
     }
 
@@ -306,5 +340,70 @@ public class LegolasWizardViewModelTests
         session.IsInventoryVisible = true;
 
         notifications.Should().BeGreaterOrEqualTo(2);
+    }
+
+    // ─── #460 cold-start Calibrating gate ────────────────────────────────
+
+    [Fact]
+    public void PickSurveyMode_on_uncalibrated_area_goes_to_Calibrating()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+
+        wizard.PickSurveyModeCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.PinCalibration.IsArmed.Should().BeTrue("entering Calibrating arms map-overlay capture");
+    }
+
+    [Fact]
+    public void Calibrating_advances_to_Listening_when_area_becomes_calibrated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        calib.Calibrated = true;
+        calib.RaiseChanged(); // IAreaCalibrationService.Changed → RecomputeStep
+
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.PinCalibration.IsArmed.Should().BeFalse("leaving Calibrating disarms capture");
+    }
+
+    [Fact]
+    public void SolveCalibration_persists_and_leaves_the_gate()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+
+        // Three click-paired pins, then Solve.
+        calib.NotePinAdded(new WorldCoord(1, 0, 2));
+        calib.NotePinAdded(new WorldCoord(3, 0, 4));
+        calib.NotePinAdded(new WorldCoord(5, 0, 6));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.PinCalibration.CanSolve.Should().BeTrue();
+
+        wizard.SolveCalibrationCommand.Execute(null);
+
+        calib.Calibrated.Should().BeTrue();
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+    }
+
+    [Fact]
+    public void Back_from_Calibrating_returns_to_PickMode()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        wizard.BackCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.PinCalibration.IsArmed.Should().BeFalse();
     }
 }
