@@ -14,8 +14,8 @@ namespace Legolas.Views;
 /// <see cref="CalibrationSessionViewModel"/> (no survey-FSM coupling).
 ///
 /// Deliberately NOT click-through (unlike the survey overlay's optional mode):
-/// the whole point is to capture clicks. <see cref="ClickThrough.ForceTopmost"/>
-/// only keeps it above the game while it's open.
+/// the whole point is to capture clicks. <see cref="ClickThrough.KeepTopmost"/>
+/// keeps it above the game for its whole visible lifetime.
 /// </summary>
 public partial class CalibrationOverlayView : Window
 {
@@ -27,8 +27,10 @@ public partial class CalibrationOverlayView : Window
     public CalibrationOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver) : this()
     {
         WindowLayoutBinder.Bind(this, settings.CalibrationOverlay, saver.Touch);
-        Loaded += (_, _) => ClickThrough.ForceTopmost(this);
-        Activated += (_, _) => ClickThrough.ForceTopmost(this);
+        // Re-assert TOPMOST on every show + on a low-frequency timer while
+        // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
+        // OverlayController drives when the game holds the foreground.
+        ClickThrough.KeepTopmost(this);
     }
 
     private void Viewport_SizeChanged(object sender, SizeChangedEventArgs e)

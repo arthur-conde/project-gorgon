@@ -54,12 +54,11 @@ public partial class MapOverlayView : Window
         // arrives, so Command/IsChecked bindings inside the pad always work.
         OverlayNudgePad.DataContext = nudgePad;
         WindowLayoutBinder.Bind(this, settings.MapOverlay, saver.Touch);
-        Loaded += (_, _) =>
-        {
-            ClickThrough.Apply(this, settings.ClickThroughMap);
-            ClickThrough.ForceTopmost(this);
-        };
-        Activated += (_, _) => ClickThrough.ForceTopmost(this);
+        Loaded += (_, _) => ClickThrough.Apply(this, settings.ClickThroughMap);
+        // Re-assert TOPMOST on every show + on a low-frequency timer while
+        // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
+        // OverlayController drives when the game holds the foreground.
+        ClickThrough.KeepTopmost(this);
         settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
