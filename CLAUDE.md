@@ -106,10 +106,11 @@ Project knowledge is split across four tiers. Route new content by what it is:
 | Roadmap / prioritisation state | The **Mithril Roadmap** Project (`Status`, `Priority`, `Effort`, `Target Version`, `Module` custom fields). Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
 | Stable reference, process, how-to, user guide | The [wiki](https://github.com/moumantai-gg/mithril/wiki). Stable content; doesn't co-evolve with code. |
 | Design rationale that co-evolves with code | `docs/` in this repo. Roadmap *narrative* (why we deferred X, what would unblock Y), design notebooks, architecture decisions. |
-| Implementation spec for a follow-up agent | `docs/agent-plans/`. **Open with `**Tracked in:** #NN`** (or `_no issue yet_` if pre-issue) so spinning up an agent on the plan gives them the issue context for free. |
+| Implementation spec / finalized plan for a follow-up agent | The **GitHub Issue body itself**. Fold the full spec — struct dumps, caveats, "verification owed", test plan — into the issue so a cold/spawned session is self-contained from the issue alone. **GitHub is the only home for finalized plans.** |
 
 **Workflow rules:**
 
 1. **Backlog item → Issue first.** Don't add a checkbox to a roadmap doc. Issues are queryable, have state, and surface on the Project board.
 2. **Issue references doc, doc doesn't list issues.** Each issue body links to the relevant `docs/` or wiki page for context. Roadmap docs link to the *Project* (which lists the issues), not to individual issues, so docs don't rot when issues close.
 3. **Anything load-bearing-but-unverified gets a "Verification owed" marker** in the design notebook. Filing an issue for the spot-check is the *task side*; the doc entry stays for context.
+4. **Finalized plans live in GitHub only; local plan files are scratch.** Implementation specs go in the issue body, not a checked-in plan doc. `docs/agent-plans/`, `.claude/plans/`, and temp files are *thinking scratch only* — never the canonical artifact, never required reading for a spawned session, and **deleted once the implementation lands** (plain delete; if it was never committed, just `rm`). Do not commit a plan doc solely so a cold session can read it — fold it into the issue instead.
