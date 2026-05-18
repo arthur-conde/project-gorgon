@@ -149,6 +149,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             _areaCalibration.Changed += (_, _) => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: false));
             RefreshSurveyPlayerAnchor(fromTrackerFix: false);
         }
+
+        // #494: keep the validate-calibration gate + live ghosts in sync when
+        // the area changes or its calibration is (re)solved/cleared. Guarded
+        // only on the service (independent of the #476 position tracker).
+        if (_areaCalibration is not null)
+            _areaCalibration.Changed += (_, _) => PostToUi(OnCalibrationChanged);
     }
 
     /// <summary>
@@ -248,6 +254,87 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// <summary>Abandon the detour without changing the anchor (#476).</summary>
     [RelayCommand(CanExecute = nameof(IsSettingPosition))]
     private void CancelSetPosition() => _surveyFlow.CancelSetPosition();
+
+    // ---- #494 Validate calibration (visual ghost re-check) ---------------
+
+    /// <summary>Projected known landmarks/NPCs for the validation overlay.
+    /// Empty unless <see cref="ShowCalibrationGhosts"/>; rebuilt on toggle and
+    /// whenever the area's calibration changes. Read per-frame by the D2D
+    /// surface (snapshotted there).</summary>
+    public ObservableCollection<GhostMarker> CalibrationGhosts { get; } = new();
+
+    /// <summary>True when the current area has a persisted calibration — gates
+    /// the wizard's "Validate calibration" affordance. Always false in the
+    /// settings-less test ctor (no service).</summary>
+    public bool IsCurrentAreaCalibrated => _areaCalibration?.IsCurrentAreaCalibrated == true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CalibrationValidationStatus))]
+    private bool _showCalibrationGhosts;
+
+    /// <summary>Honest status: the ghosts are an independent visual check; the
+    /// fit residual is pin-click consistency, NOT accuracy.</summary>
+    public string CalibrationValidationStatus
+    {
+        get
+        {
+            if (!ShowCalibrationGhosts) return string.Empty;
+            var n = CalibrationGhosts.Count;
+            var resid = _areaCalibration?.CurrentCalibration?.ResidualPixels;
+            var residText = resid is { } r
+                ? $" Last fit's pin-click consistency: {r:0} px — fit tightness, not accuracy."
+                : string.Empty;
+            return $"{n} known landmark/NPC marker{(n == 1 ? "" : "s")} shown. Each should sit " +
+                   $"on its real map feature; a consistent offset means recalibrate " +
+                   $"(usually an in-game map-zoom change).{residText}";
+        }
+    }
+
+    /// <summary>Toggle the calibration-validation ghost overlay. Disabled when
+    /// the area isn't calibrated (nothing to validate).</summary>
+    [RelayCommand(CanExecute = nameof(IsCurrentAreaCalibrated))]
+    private void ToggleCalibrationValidation()
+    {
+        ShowCalibrationGhosts = !ShowCalibrationGhosts;
+        if (ShowCalibrationGhosts)
+        {
+            // Ensure the map overlay is up so the ghosts are actually visible.
+            _session.IsMapVisible = true;
+            RebuildCalibrationGhosts();
+        }
+        else
+        {
+            CalibrationGhosts.Clear();
+        }
+        OnPropertyChanged(nameof(CalibrationValidationStatus));
+    }
+
+    private void RebuildCalibrationGhosts()
+    {
+        CalibrationGhosts.Clear();
+        if (_areaCalibration?.CurrentCalibration is not { } cal) return;
+        foreach (var r in _areaCalibration.CurrentAreaReferences)
+            CalibrationGhosts.Add(new GhostMarker(r.Name, cal.ProjectWorld(r.World)));
+        OnPropertyChanged(nameof(CalibrationValidationStatus));
+    }
+
+    /// <summary>Area switched or its calibration (re)solved/cleared. Refresh
+    /// the gate and live ghosts. Marshalled to the UI thread by the caller.</summary>
+    private void OnCalibrationChanged()
+    {
+        OnPropertyChanged(nameof(IsCurrentAreaCalibrated));
+        ToggleCalibrationValidationCommand.NotifyCanExecuteChanged();
+        if (!IsCurrentAreaCalibrated && ShowCalibrationGhosts)
+        {
+            ShowCalibrationGhosts = false;   // calibration gone — drop the overlay
+            CalibrationGhosts.Clear();
+        }
+        else if (ShowCalibrationGhosts)
+        {
+            RebuildCalibrationGhosts();
+        }
+        OnPropertyChanged(nameof(CalibrationValidationStatus));
+    }
 
     /// <summary>#460/#477A: true while the guided calibration walkthrough is in
     /// its <see cref="CalibrationPhase.Pair"/> phase — the overlay captures
