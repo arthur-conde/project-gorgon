@@ -230,20 +230,19 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessMapPinAdd_is_forwarded_to_NotePinAdded()
+    public async Task ProcessMapPin_lines_are_ignored_by_this_service()
     {
-        var (svc, stream, spy, session) = Build(calibration: Identity());
+        // Map-pin lifecycle is GameState-owned now (#468); the Legolas
+        // Player.log consumer only handles ProcessMapFx targets.
+        var (svc, stream, _, session) = Build(calibration: Identity());
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = svc.StartAsync(cts.Token);
         try
         {
             stream.Push("[08:32:20] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (1145.39, 0.00, 1323.40), \"Calib 1\")");
+            stream.Push("[08:32:21] LocalPlayer: ProcessMapPinRemove(1, 0, 0, (1145.39, 0.00, 1323.40), \"Calib 1\")");
             await stream.WaitForDrainAsync(cts.Token);
-            await WaitUntil(() => spy.NotedPins.Count > 0, cts.Token);
 
-            spy.NotedPins.Should().ContainSingle()
-                .Which.Should().Be(new WorldCoord(1145.39, 0.00, 1323.40));
-            // It's a pin, not a target — no survey pin placed by ingestion.
             session.Surveys.Should().BeEmpty();
         }
         finally { await Stop(svc, run, cts); }
@@ -281,10 +280,6 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
 
         public List<string> SelectedAreas { get; } = new();
         public void SelectArea(string areaKey) => SelectedAreas.Add(areaKey);
-
-        public List<WorldCoord> NotedPins { get; } = new();
-        public void NotePinAdded(WorldCoord world) => NotedPins.Add(world);
-        public event EventHandler<WorldCoord>? PinAdded { add { } remove { } }
 
         public AreaCalibration? CurrentCalibration => _cal;
         public bool IsCurrentAreaCalibrated => _cal is not null;

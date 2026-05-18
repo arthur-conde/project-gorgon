@@ -65,26 +65,12 @@ public class PlayerLogParserTests
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
     }
 
-    // Real captured ProcessMapPinAdd lines (live Player.log, 2026-05-18).
+    // Map-pin lifecycle parsing was promoted to the GameState-tier
+    // MapPinParser (#468); this parser is MapFx-only now and must ignore
+    // ProcessMapPin{Add,Remove}.
     [Theory]
-    [InlineData(
-        "[08:22:22] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-521.96, 0.00, 368.39), \"\")",
-        -521.96, 368.39, "")]
-    [InlineData(
-        "[08:32:20] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (1145.39, 0.00, 1323.40), \"Calib 1\")",
-        1145.39, 1323.40, "Calib 1")]
-    // A label that looks like an area/verb must STILL just be a label —
-    // pairing is turn-order, never by name (hard rule #454).
-    [InlineData(
-        "[08:32:38] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-355.16, 0.00, -392.82), \"AreaEltibule Check Survey\")",
-        -355.16, -392.82, "AreaEltibule Check Survey")]
-    public void Parses_ProcessMapPinAdd_world_coord_and_label(
-        string line, double x, double z, string label)
-    {
-        var evt = (MapPinAdded?)_parser.TryParse(line, DateTime.UtcNow);
-        evt.Should().NotBeNull();
-        evt!.World.X.Should().Be(x);
-        evt.World.Z.Should().Be(z);
-        evt.Label.Should().Be(label); // captured for diagnostics only
-    }
+    [InlineData("[08:22:22] LocalPlayer: ProcessMapPinAdd(1, 0, 0, (-521.96, 0.00, 368.39), \"\")")]
+    [InlineData("[10:30:15] LocalPlayer: ProcessMapPinRemove(1, 0, 0, (784.74, 0.00, 3429.94), \"\")")]
+    public void Ignores_map_pin_lines(string line)
+        => _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
 }

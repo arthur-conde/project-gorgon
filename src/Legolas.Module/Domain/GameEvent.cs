@@ -30,22 +30,10 @@ public sealed record MapTargetDetected(
     string Category,
     string Message) : GameEvent(Timestamp);
 
-/// <summary>
-/// Player.log <c>LocalPlayer: ProcessMapPinAdd(1, 0, 0, (X, 0.00, Z),
-/// "&lt;label&gt;")</c> — a user-dropped map pin's <b>exact world
-/// coordinate</b> (#454). Emitted live on placement <em>and bulk-replayed on
-/// area entry</em>, so consumers must gate on an explicit "begin calibration"
-/// arm to avoid ingesting the replay backlog.
-///
-/// <para><b>Label is diagnostic-only — never keyed off.</b> The
-/// (world↔overlay-pixel) pairing is established by the user's overlay click in
-/// turn order during the calibration flow, identified by interaction order,
-/// never by name (hard rule, #454).</para>
-/// </summary>
-public sealed record MapPinAdded(
-    DateTime Timestamp,
-    WorldCoord World,
-    string Label) : GameEvent(Timestamp);
+// Map-pin lifecycle (ProcessMapPin{Add,Remove}) is no longer a Legolas
+// GameEvent: it was promoted to the GameState-tier MapPinParser /
+// PlayerPinTracker (#468). Calibration consumers read the area-scoped pin
+// set from IPlayerPinTracker, not a Legolas log event.
 
 public sealed record ItemCollected(
     DateTime Timestamp,

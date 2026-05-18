@@ -83,7 +83,7 @@
                         Background="#CC0A2A3A" BorderBrush="#FF33C1FF" BorderThickness="1"
                         CornerRadius="4" MaxWidth="520" IsHitTestVisible="False"
                         Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <TextBlock Text="Calibration: click each dropped map pin here, in the order you dropped them."
+                    <TextBlock Text="Calibration: pick a pin in the wizard and click where it is here — or, if you dropped fresh pins, click them here in the order you dropped them."
                                Foreground="#FFE0F4FF" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
                 </Border>
 

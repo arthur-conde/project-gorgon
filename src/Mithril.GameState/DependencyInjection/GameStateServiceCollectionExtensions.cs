@@ -2,6 +2,7 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
+using Mithril.GameState.Pins;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Sessions;
@@ -62,6 +63,18 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerPositionTracker>()
             .AddSingleton<IPlayerPositionTracker>(sp => sp.GetRequiredService<PlayerPositionTracker>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerPositionTracker>());
+
+        // Player map pins are shared live game-state (#468). PG bulk-replays
+        // ProcessMapPinAdd on every login / area entry and has no clear/edit
+        // verb, so the service owns the full lifecycle (replay = idempotent
+        // upsert, area change = swap) — Legolas's calibration consumes the
+        // area-scoped set instead of hand-rolling a replay-arming gate.
+        // Self-feeding; also warms PlayerAreaTracker (idempotent).
+        services.AddSingleton<MapPinParser>();
+        services
+            .AddSingleton<PlayerPinTracker>()
+            .AddSingleton<IPlayerPinTracker>(sp => sp.GetRequiredService<PlayerPinTracker>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerPinTracker>());
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();

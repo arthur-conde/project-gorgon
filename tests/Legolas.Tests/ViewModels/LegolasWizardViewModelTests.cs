@@ -2,6 +2,7 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests;
 using Legolas.ViewModels;
 
 namespace Legolas.Tests.ViewModels;
@@ -42,12 +43,11 @@ public class LegolasWizardViewModelTests
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
-        public void NotePinAdded(WorldCoord world) => PinAdded?.Invoke(this, world);
-        public event EventHandler<WorldCoord>? PinAdded;
     }
 
     private static (LegolasWizardViewModel wizard, SessionState session, SurveyFlowController surveyFlow,
-        MotherlodeFlowController motherlodeFlow, LegolasSettings settings) BuildSut(FakeAreaCalib? calib = null)
+        MotherlodeFlowController motherlodeFlow, LegolasSettings settings) BuildSut(
+        FakeAreaCalib? calib = null, FakePlayerPinTracker? pins = null)
     {
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -59,7 +59,7 @@ public class LegolasWizardViewModelTests
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
         var areaCalib = calib ?? new FakeAreaCalib();
-        var pinCal = new PinCalibrationCoordinator(areaCalib);
+        var pinCal = new PinCalibrationCoordinator(areaCalib, pins ?? new FakePlayerPinTracker());
         var motherlode = new MotherlodeViewModel(trilat, optimizer, session, motherlodeFlow);
         var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, pinCal);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);
@@ -375,13 +375,14 @@ public class LegolasWizardViewModelTests
     public void SolveCalibration_persists_and_leaves_the_gate()
     {
         var calib = new FakeAreaCalib { Calibrated = false };
-        var (wizard, _, _, _, _) = BuildSut(calib);
+        var pins = new FakePlayerPinTracker();
+        var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
 
-        // Three click-paired pins, then Solve.
-        calib.NotePinAdded(new WorldCoord(1, 0, 2));
-        calib.NotePinAdded(new WorldCoord(3, 0, 4));
-        calib.NotePinAdded(new WorldCoord(5, 0, 6));
+        // Three fresh pin drops, then click-pair + Solve.
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        pins.Add(5, 6);
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
         wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));

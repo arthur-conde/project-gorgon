@@ -216,9 +216,40 @@
                     <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="This area isn't calibrated yet, so pins can't place. Calibrate by dropping map pins:" />
+                        <Run Text="This area isn't calibrated yet, so pins can't place. Calibrate it below:" />
                     </TextBlock>
-                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
+
+                    <!-- #468 Existing-pins route: shown when the player already
+                         has ≥3 pins here. Identify each by name + colour/shape
+                         (UX only — the solve still pairs world↔pixel). -->
+                    <StackPanel Visibility="{Binding PinCalibration.HasUsableExistingPins, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                                Margin="0,0,0,12">
+                        <TextBlock Text="You already have pins here. Pick one, then click where it is on the map — repeat for ≥3 well-spread pins:"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8" />
+                        <ListBox ItemsSource="{Binding PinCalibration.ExistingPins}"
+                                 SelectedItem="{Binding PinCalibration.SelectedExistingPin, Mode=TwoWay}"
+                                 MaxHeight="160" HorizontalAlignment="Center" MinWidth="240"
+                                 Background="Transparent" BorderThickness="0">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontSize="{DynamicResource AppFontSizeBody}"
+                                               Foreground="{StaticResource TextPrimaryBrush}">
+                                        <Run Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text="{Binding Appearance, Mode=OneWay, StringFormat=({0})}"
+                                             Foreground="{StaticResource TextSecondaryBrush}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+
+                    <!-- Turn-order fallback: true cold-start (no usable pins /
+                         fogged brand-new area). Collapses once the existing-pins
+                         route is available. -->
+                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12"
+                                Visibility="{Binding PinCalibration.HasUsableExistingPins, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}">
                         <TextBlock Text="1.  Drop ≥3 well-spread map pins in-game (works on a fogged/blank map)"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
