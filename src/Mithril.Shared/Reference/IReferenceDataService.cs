@@ -380,6 +380,20 @@ public interface IReferenceDataService
     IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; }
 
     /// <summary>
+    /// Power <c>InternalName</c> → the <c>tsysprofiles</c> profile names whose pool
+    /// contains it (the inverse of <see cref="Profiles"/>). Powers the Silmarillion
+    /// Treasure-tab Power-detail "Appears in pools" Confirmed Links (#435). The
+    /// <c>tsysprofiles</c> join is authoritative/normalized, so this reverse-view is a
+    /// <em>Confirmed</em> edge — G-d Unconfirmed does not apply (precedent on #404). Built
+    /// whenever <c>tsysprofiles.json</c> reloads. Defaults to empty so test fakes don't
+    /// need to opt in.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> ProfilesByPower => EmptyStringListIndex;
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EmptyStringListIndex
+        = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Quest envelope key (e.g. <c>"quest_10001"</c>) → the full <see cref="Quest"/> POCO from
     /// <c>quests.json</c>. Carries typed <see cref="Quest.Requirements"/>, <see cref="Quest.Rewards"/>,
     /// <see cref="Quest.Objectives"/>, follow-ups, NPC refs, reuse timers, and the description /

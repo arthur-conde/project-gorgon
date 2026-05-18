@@ -18,6 +18,18 @@ public enum LinkGlyph
     Location,
     Item,
     CombatAbility,
+
+    /// <summary>
+    /// Treasure-System pool / profile (abstract membership). The ratified #435 spec
+    /// assigns the <c>layers</c> Lucide to the Power-detail "Appears in pools" Links.
+    /// </summary>
+    Pool,
+
+    /// <summary>
+    /// Treasure-System power (abstract). The ratified #435 spec assigns the <c>zap</c>
+    /// Lucide to the per-power Links in the Profile/Pool detail's power list.
+    /// </summary>
+    Power,
 }
 
 /// <summary>
@@ -135,6 +147,8 @@ public sealed record LinkVm(
         EntityKind.Item => LinkGlyph.Item,
         EntityKind.ItemByKeyword => LinkGlyph.Item,
         EntityKind.Ability => LinkGlyph.CombatAbility,
+        EntityKind.Profile => LinkGlyph.Pool,
+        EntityKind.Power => LinkGlyph.Power,
         _ => LinkGlyph.None,
     };
 

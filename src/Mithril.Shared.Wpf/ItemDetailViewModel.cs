@@ -88,6 +88,7 @@ public sealed partial class ItemDetailViewModel
             () => ConsumedAsKeywordInPopup is not null);
         AwardedByQuests = context.AwardedByQuests ?? [];
         BestowsLorebook = context.BestowsLorebook;
+        TreasureProfile = context.TreasureProfile;
         Sources = context.Sources ?? [];
         _poolPresenter = poolPresenter;
 
@@ -122,6 +123,7 @@ public sealed partial class ItemDetailViewModel
         ConsumedByRecipeLinks = ConsumedByRecipes.Select(LinkVm.From).ToList();
         ConsumedAsKeywordInLinks = ConsumedAsKeywordIn.Select(LinkVm.From).ToList();
         BestowsLorebookLink = BestowsLorebook is null ? null : LinkVm.From(BestowsLorebook);
+        TreasureProfileLink = TreasureProfile is null ? null : LinkVm.From(TreasureProfile);
 
         // "View all N →" drawers → summary-form Set-reference (matrix #11 /
         // EffectDetailView §7 "Required by abilities"), actionable via the
@@ -270,6 +272,16 @@ public sealed partial class ItemDetailViewModel
     public EntityChipVm? BestowsLorebook { get; }
 
     /// <summary>
+    /// The Treasure-System pool this item's gear rolls from, resolved from
+    /// <see cref="Item.TSysProfile"/> via <see cref="EntityRef.Profile"/> — the outbound
+    /// 1:1 cross-link that's the natural payoff of the Treasure tab shipping (#435).
+    /// Navigable once the Profile kind target is registered (Silmarillion); degrades to
+    /// plain text otherwise (e.g. Celebrimbor's context). Null when the item carries no
+    /// <see cref="Item.TSysProfile"/>.
+    /// </summary>
+    public EntityChipVm? TreasureProfile { get; }
+
+    /// <summary>
     /// Item sources (NPC vendors, monster drops, quest rewards, …) — rendered as a list of
     /// <see cref="ItemSourceChipVm"/>. Most v1 sources aren't navigable to a tab; the chip
     /// VM carries an <see cref="ItemSourceChipVm.IsNavigable"/> flag that drives clickable
@@ -331,6 +343,12 @@ public sealed partial class ItemDetailViewModel
     /// <see cref="LinkVm"/> (matrix #6), or null when the item bestows no book
     /// (the section hides — bind via the object-safe <c>NullToVis</c>).</summary>
     public LinkVm? BestowsLorebookLink { get; }
+
+    /// <summary>"Treasure pool" outbound 1:1 cross-link as a single
+    /// <see cref="LinkVm"/> (#435), or null when the item carries no
+    /// <see cref="Item.TSysProfile"/> (the section hides — bind via the
+    /// object-safe <c>NullToVis</c>). <c>layers</c> glyph (LinkGlyph.Pool).</summary>
+    public LinkVm? TreasureProfileLink { get; }
 
     /// <summary>
     /// The "Used in · N matches →" drawer as a summary-form Set-reference

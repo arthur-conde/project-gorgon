@@ -184,6 +184,23 @@
                     </ContentControl>
                 </StackPanel>
 
+                <!-- Treasure pool — outbound 1:1 cross-link (#435): Item.TSysProfile
+                     → the Treasure tab's Profile detail. Single Link; section hides
+                     when the item carries no TSysProfile. NullToVis (object) — NOT
+                     the string-only NullOrEmptyToVis (repo footgun). -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding TreasureProfileLink, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="Treasure pool" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ContentControl Content="{Binding TreasureProfileLink}" HorizontalAlignment="Left">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:Link Density="List"
+                                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:ItemDetailView}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
+                </StackPanel>
+
                 <!-- Used in — recipes that consume this item directly (#318
                      slice 4, surface 1). Capped Link cluster + always-visible
                      "Used in · N matches →" Set-ref summary-form opening the

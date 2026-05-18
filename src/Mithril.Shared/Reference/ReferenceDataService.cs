@@ -208,6 +208,15 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _profilesSnapshot;
 
+    // Power → containing profiles, the inverse of tsysprofiles (Silmarillion Treasure
+    // tab "Appears in pools", #435). Pure reverse-view of the authoritative
+    // tsysprofiles join; rebuilt by BuildProfilesByPowerIndex whenever tsysprofiles
+    // reloads. (Item.TSysProfile / recipe joins were deferred to #214 — the only
+    // in-scope recipe chain was near-catalog-granular via the "All" pool; the
+    // power-precise join is recipe ResultEffects via ResultEffectsParser.)
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> _profilesByPower =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
     // Quests (quests.json) — keyed by "quest_N" plus InternalName secondary lookup.
     // Exposes the full Mithril.Reference.Models.Quests.Quest POCO with typed Requirements,
     // Rewards, Objectives etc. for Silmarillion's Quests tab and Gandalf's repeatable-quest
@@ -395,6 +404,7 @@ public sealed class ReferenceDataService : IReferenceDataService
     public IReadOnlyDictionary<string, AttributeEntry> Attributes => _attributes;
     public IReadOnlyDictionary<string, PowerEntry> Powers => _powers;
     public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles => _profiles;
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> ProfilesByPower => _profilesByPower;
     public IReadOnlyDictionary<string, Quest> Quests => _quests;
     public IReadOnlyDictionary<string, Quest> QuestsByInternalName => _questsByInternalName;
     public IReadOnlyDictionary<string, IReadOnlyList<Quest>> QuestsByGiverNpc => _questsByGiverNpc;
@@ -743,6 +753,45 @@ public sealed class ReferenceDataService : IReferenceDataService
         _recipesSnapshot = new ReferenceFileSnapshot("recipes", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byKey.Count);
         BuildRecipeCrossLinkIndices();
         BuildNpcCrossLinkIndices();
+    }
+
+    /// <summary>
+    /// Builds <see cref="_profilesByPower"/> — power InternalName → the profile names
+    /// whose <c>tsysprofiles</c> array contains it (the inverse of <see cref="_profiles"/>,
+    /// for the Silmarillion Treasure Power-detail "Appears in pools" Confirmed Links,
+    /// #435). A pure reverse-view of the authoritative <c>tsysprofiles</c> join,
+    /// single-reason (membership), so no provenance reason is retained. Depends only on
+    /// <c>tsysprofiles</c>, so it is rebuilt solely from <see cref="ParseAndSwapProfiles"/>.
+    /// <para>
+    /// The <c>Item.TSysProfile</c> / recipe legs were deliberately <b>not</b> built:
+    /// the only in-scope chain (<c>power → profile → Item.TSysProfile → produced-by
+    /// recipe</c>) is near-catalog-granular (almost every power is in the catch-all
+    /// <c>"All"</c> profile), so it cannot honestly be presented as power-specific. The
+    /// power-precise recipe join is recipe <c>ResultEffects</c> via
+    /// <c>ResultEffectsParser</c> — deferred to #214 (the #433 Carry-forward #2 bound
+    /// recipe-side to #214).
+    /// </para>
+    /// </summary>
+    private void BuildProfilesByPowerIndex()
+    {
+        var profilesByPower = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (profileName, powerNames) in _profiles)
+        {
+            if (powerNames is null) continue;
+            foreach (var powerName in powerNames)
+            {
+                if (string.IsNullOrEmpty(powerName)) continue;
+                if (!profilesByPower.TryGetValue(powerName, out var list))
+                {
+                    list = new List<string>();
+                    profilesByPower[powerName] = list;
+                }
+                if (!list.Contains(profileName))
+                    list.Add(profileName);
+            }
+        }
+        _profilesByPower = profilesByPower.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value, StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -1710,7 +1759,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         // Key the output by PowerEntry.InternalName so recipe effects
         // (AddItemTSysPower(<InternalName>, <tier>)) resolve directly.
         var byInternalName = new Dictionary<string, PowerEntry>(raw.Count, StringComparer.Ordinal);
-        foreach (var (_, v) in raw)
+        foreach (var (envelopeKey, v) in raw)
         {
             if (string.IsNullOrEmpty(v.InternalName)) continue;
 
@@ -1740,7 +1789,9 @@ public sealed class ReferenceDataService : IReferenceDataService
                 Skill: v.Skill ?? "",
                 Slots: v.Slots ?? (IReadOnlyList<string>)[],
                 Suffix: string.IsNullOrEmpty(v.Suffix) ? null : v.Suffix,
-                Tiers: tiers);
+                Tiers: tiers,
+                Prefix: string.IsNullOrEmpty(v.Prefix) ? null : v.Prefix,
+                EnvelopeKey: envelopeKey);
             byInternalName[entry.InternalName] = entry;
         }
         _powers = byInternalName;
@@ -1757,6 +1808,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         _profiles = byProfile;
         _profilesSnapshot = new ReferenceFileSnapshot("tsysprofiles", meta.Source, meta.CdnVersion, meta.FetchedAtUtc, byProfile.Count);
+        BuildProfilesByPowerIndex();
     }
 
     private void ParseAndSwapQuests(IReadOnlyDictionary<string, Quest> raw, ReferenceFileMetadata meta)

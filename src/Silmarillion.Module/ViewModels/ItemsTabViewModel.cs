@@ -162,6 +162,7 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
             ConsumedAsKeywordIn: consumedAsKeyword,
             AwardedByQuests: BuildAwardedByQuestChips(item.InternalName!),
             BestowsLorebook: BuildBestowsLorebookChip(item),
+            TreasureProfile: BuildTreasureProfileChip(item),
             Sources: BuildSourceChips(item.InternalName!, reverseRecipeNames, reverseQuestNames),
             ConsumedByRecipesPopup: popup,
             ConsumedAsKeywordInPopup: keywordPopup);
@@ -173,6 +174,26 @@ public sealed partial class ItemsTabViewModel : ObservableObject, ITabViewModel
     /// it as a single navigable chip. Null when the item bestows no book or the id doesn't
     /// resolve (defensive — a dangling id shouldn't render a dead chip).
     /// </summary>
+    /// <summary>
+    /// Outbound 1:1 cross-link (#435): surface <see cref="Item.TSysProfile"/> (a single
+    /// Treasure-System pool name, e.g. <c>"Sword"</c> — verified v470 to match
+    /// <c>tsysprofiles</c> keys) as a single navigable chip to the Treasure tab's Profile
+    /// detail. The "audit existing surfaces when shipping a new EntityKind" wiring for
+    /// <see cref="EntityKind.Profile"/>: <c>CanOpen</c>-gated, so it lights up exactly
+    /// when the Treasure tab ships and degrades to plain text otherwise. Null when the
+    /// item carries no <c>TSysProfile</c> (ReferenceDataService normalises empty → null).
+    /// </summary>
+    private EntityChipVm? BuildTreasureProfileChip(Item item)
+    {
+        if (string.IsNullOrEmpty(item.TSysProfile)) return null;
+        var reference = EntityRef.Profile(item.TSysProfile!);
+        return new EntityChipVm(
+            DisplayName: _nameResolver.Resolve(reference),
+            IconId: 0,
+            Reference: reference,
+            IsNavigable: _navigator.CanOpen(reference));
+    }
+
     private EntityChipVm? BuildBestowsLorebookChip(Item item)
     {
         if (item.BestowLoreBook is not { } bookId) return null;

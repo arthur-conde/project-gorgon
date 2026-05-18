@@ -25,6 +25,24 @@ public enum EntityKind
     /// resolver covers the rendering case while leaving navigation as a follow-up.
     /// </summary>
     Skill,
+
+    /// <summary>
+    /// A Treasure-System power from <c>tsysclientinfo.json</c> (e.g. <c>"SwordBoost"</c>).
+    /// InternalName is the power's own <c>InternalName</c> — the catalog row key on the
+    /// Silmarillion Treasure tab (#435). Powers have no <c>DisplayName</c> and no resolvable
+    /// strings entry; the name resolver returns the InternalName verbatim (the #434 Q1
+    /// ruling — see <c>pg_tsys_power_naming_ceiling</c>). Dispatched by PowerKindTarget.
+    /// </summary>
+    Power,
+
+    /// <summary>
+    /// A Treasure-System profile / pool from <c>tsysprofiles.json</c> (e.g. <c>"Sword"</c>,
+    /// <c>"MainHandAugment"</c>). InternalName is the profile name — also the pool's
+    /// catalog row key and its G-a footer KEY. The profile name is the equipment family
+    /// the pool rolls onto, NOT the contained powers' own skills (#435). Dispatched by
+    /// ProfileKindTarget; also the #214 "pool-query" deep-link target.
+    /// </summary>
+    Profile,
     // EntityKind.RecipeIngredientKeyword retired in #318 slice 4 (surface 2) — the
     // item-detail "Used as" 1:N surface is now a provenance popup fed
     // RecipesByIngredientKeywordWithReason directly (no synthetic-kind deep link /
@@ -135,6 +153,20 @@ public sealed record EntityRef(EntityKind Kind, string InternalName)
     public static EntityRef PlayerTitle(string internalName) => new(EntityKind.PlayerTitle, internalName);
     public static EntityRef StorageVault(string internalName) => new(EntityKind.StorageVault, internalName);
     public static EntityRef Skill(string skillKey) => new(EntityKind.Skill, skillKey);
+
+    /// <summary>
+    /// Construct a Treasure-System Power reference. <paramref name="internalName"/> is the
+    /// power's own <c>InternalName</c> (e.g. <c>"SwordBoost"</c>) — the Treasure-tab catalog
+    /// key. No normalisation: Powers have no envelope-slug form in any consumer.
+    /// </summary>
+    public static EntityRef Power(string internalName) => new(EntityKind.Power, internalName);
+
+    /// <summary>
+    /// Construct a Treasure-System Profile/Pool reference. <paramref name="profileName"/>
+    /// is the bare <c>tsysprofiles</c> key (e.g. <c>"Sword"</c>) — also the pool's
+    /// catalog key and footer KEY, and the #214 "pool-query" deep-link payload.
+    /// </summary>
+    public static EntityRef Profile(string profileName) => new(EntityKind.Profile, profileName);
     // EntityRef.RecipeIngredientKeyword retired in #318 slice 4 (surface 2) — the
     // item-detail "Used as" 1:N surface is now a provenance popup fed
     // RecipesByIngredientKeywordWithReason directly.

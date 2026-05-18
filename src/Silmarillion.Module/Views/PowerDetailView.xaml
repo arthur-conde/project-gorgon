@@ -1,0 +1,224 @@
+<UserControl x:Class="Silmarillion.Views.PowerDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:local="clr-namespace:Silmarillion.Views"
+             xmlns:vm="clr-namespace:Silmarillion.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             FontFamily="{DynamicResource AppFontFamily}"
+             FontSize="{DynamicResource AppFontSize}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Inline Prose / list-density Link (canonical pilot patterns; mirrors
+                 AbilityDetailView). -->
+            <DataTemplate x:Key="InlineLinkTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="Prose"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:PowerDetailView}}}"/>
+            </DataTemplate>
+            <DataTemplate x:Key="PoolLinkListTemplate" DataType="{x:Type c:LinkVm}">
+                <c:Link Density="List" Margin="0,0,0,3"
+                        ClickCommand="{Binding DataContext.OpenEntityCommand, RelativeSource={RelativeSource AncestorType={x:Type local:PowerDetailView}}}"/>
+            </DataTemplate>
+
+            <!-- One Tiers-ladder row (Fact-inert: no surface, no gold, no click; the
+                 only decoration is a 1px bottom divider). -->
+            <DataTemplate x:Key="TierRowTemplate" DataType="{x:Type vm:TreasureTierRow}">
+                <Border BorderBrush="#14FFFFFF" BorderThickness="0,0,0,1" Padding="0,3">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="26"/>
+                            <ColumnDefinition Width="84"/>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="118"/>
+                            <ColumnDefinition Width="92"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Ordinal}"
+                                   Foreground="#66FFFFFF"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeSmall}"
+                                   VerticalAlignment="Center"/>
+                        <!-- Level-band micro-chart. Q3 dual-encodes MinLevel/MaxLevel
+                             (graphic plus numerals). Rare-or-above uses info-blue
+                             weight plus an inset outline, NEVER accent-gold (Apply 2,
+                             G-b). -->
+                        <Border Grid.Column="1" Width="72" Height="9" Margin="0,0,12,0"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Background="#14FFFFFF" CornerRadius="1">
+                            <Canvas ClipToBounds="True">
+                                <Rectangle Height="9" Canvas.Top="0"
+                                           Canvas.Left="{Binding BandLeftPx}"
+                                           Width="{Binding BandWidthPx}" RadiusX="1" RadiusY="1">
+                                    <Rectangle.Style>
+                                        <Style TargetType="Rectangle">
+                                            <Setter Property="Fill" Value="#8C88B0E0"/>
+                                            <Setter Property="Stroke" Value="Transparent"/>
+                                            <Setter Property="StrokeThickness" Value="0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsAboveBaseRarity}" Value="True">
+                                                    <Setter Property="Fill" Value="#FF88B0E0"/>
+                                                    <Setter Property="Stroke" Value="#FFFFFFFF"/>
+                                                    <Setter Property="StrokeThickness" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Rectangle.Style>
+                                </Rectangle>
+                            </Canvas>
+                        </Border>
+                        <TextBlock Grid.Column="2" Text="{Binding LevelText}"
+                                   Foreground="#DDFFFFFF"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="{Binding SkillPrereqText}"
+                                   Foreground="#DDFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="4" Text="{Binding RarityText}"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <!-- Q2 Option A: a constant MinRarity column is dimmed
+                                         in place (quaternary), never hoisted. -->
+                                    <Setter Property="Foreground" Value="#DDFFFFFF"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RarityDimmed}" Value="True">
+                                            <Setter Property="Foreground" Value="#66FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ItemsControl Grid.Column="5" ItemsSource="{Binding EffectLines}"
+                                      ItemTemplate="{StaticResource EffectLineTemplate}"
+                                      VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <c:DetailExportHost>
+        <Border Padding="14,12">
+            <StackPanel>
+                <!-- 1. Identity header — Fact-title = InternalName verbatim (Q1).
+                     No title-glyph: Powers ship no icon. -->
+                <TextBlock Text="{Binding DisplayName}"
+                           Style="{StaticResource FactTitleStyle}"
+                           Margin="0,0,0,6"/>
+
+                <!-- 2. Affix flavor — illustrative Fact-body only, present parts only,
+                     never a reconstructed canonical name (Q1 / #434). -->
+                <TextBlock Text="{Binding AffixIllustration}"
+                           Style="{StaticResource FactBodyStyle}"
+                           Foreground="#88FFFFFF" FontStyle="Italic"
+                           MaxWidth="560" HorizontalAlignment="Left" Margin="0,0,0,12"
+                           Visibility="{Binding HasAffix, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- 3. Skill (Structure prefix + Confirmed sparkles Link) -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
+                            Visibility="{Binding SkillLink, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="Skill:" Style="{StaticResource StructureInlinePrefixStyle}"
+                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ContentControl Content="{Binding SkillLink}"
+                                    ContentTemplate="{StaticResource InlineLinkTemplate}"
+                                    VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- 4. Slots (Structure prefix + tag-form Set-references, inert) -->
+                <StackPanel Margin="0,0,0,12"
+                            Visibility="{Binding SlotSetRefs.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Slots:" Style="{StaticResource StructureInlinePrefixStyle}"
+                               Margin="0,0,0,3"/>
+                    <ItemsControl ItemsSource="{Binding SlotSetRefs}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type c:SetRefVm}">
+                                <c:SetRef Margin="0,0,5,4"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 5. Tiers ladder — CF#3 FactTable (Q2 Option A whole-table-shape
+                     polymorphism). Section self-hides at N=0 (TierLadder == null). -->
+                <StackPanel Margin="0,0,0,12"
+                            Visibility="{Binding TierLadder, Converter={StaticResource NullToVis}}">
+                    <TextBlock Text="Tiers" Style="{StaticResource StructureSectionLabelStyle}"/>
+
+                    <!-- N >= 2 : the full 6-column Fact-inert grid + band micro-chart -->
+                    <StackPanel Visibility="{Binding TierLadder.IsGrid, Converter={StaticResource BoolToVis}}">
+                        <Grid Margin="0,2,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="118"/>
+                                <ColumnDefinition Width="92"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="Band" Style="{StaticResource StructureGroupHeaderStyle}"/>
+                            <TextBlock Grid.Column="2" Text="Level" Style="{StaticResource StructureGroupHeaderStyle}"/>
+                            <TextBlock Grid.Column="3" Text="Skill prereq" Style="{StaticResource StructureGroupHeaderStyle}"/>
+                            <TextBlock Grid.Column="4" Text="Min rarity" Style="{StaticResource StructureGroupHeaderStyle}"/>
+                            <TextBlock Grid.Column="5" Text="Effect" Style="{StaticResource StructureGroupHeaderStyle}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding TierLadder.Rows}"
+                                      ItemTemplate="{StaticResource TierRowTemplate}"
+                                      VirtualizingStackPanel.IsVirtualizing="True"/>
+                    </StackPanel>
+
+                    <!-- N = 1 : CF#3 flat-scalar degrade — inline, no header, no chart -->
+                    <StackPanel Visibility="{Binding TierLadder.IsScalar, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                            <TextBlock Text="Level" Style="{StaticResource StructureInlinePrefixStyle}" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding TierLadder.SingleRow.LevelText}" Foreground="#DDFFFFFF"
+                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,14,0"/>
+                            <TextBlock Text="Skill prereq" Style="{StaticResource StructureInlinePrefixStyle}" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding TierLadder.SingleRow.SkillPrereqText}" Foreground="#DDFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,14,0"/>
+                            <TextBlock Text="Min rarity" Style="{StaticResource StructureInlinePrefixStyle}" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding TierLadder.SingleRow.RarityText}" Foreground="#DDFFFFFF"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding TierLadder.SingleRow.EffectLines}"
+                                      ItemTemplate="{StaticResource EffectLineTemplate}"
+                                      Margin="0,4,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 6. Appears in pools — Confirmed layers Links (authoritative
+                     tsysprofiles join; G-d does not apply). -->
+                <StackPanel Margin="0,0,0,12"
+                            Visibility="{Binding PoolLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Appears in pools" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <ItemsControl ItemsSource="{Binding PoolLinks}"
+                                  ItemTemplate="{StaticResource PoolLinkListTemplate}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Recipes cross-link is deferred to #214 (verified out of scope):
+                     the only in-scope join is near-catalog-granular via the "All"
+                     pool, so it cannot honestly be presented as power-specific. The
+                     power-precise join is recipe ResultEffects (AddItemTSysPower /
+                     ExtractTSysPower / TSysCraftedEquipment) via ResultEffectsParser —
+                     the #214 surface. No recipes section is rendered until #214. -->
+
+                <!-- G-a footer: copyable KEY (= title text, kept deliberately) +
+                     inert ROW (power_NNNN). -->
+                <c:FactFooter DataContext="{Binding Footer}"/>
+            </StackPanel>
+        </Border>
+    </c:DetailExportHost>
+</UserControl>

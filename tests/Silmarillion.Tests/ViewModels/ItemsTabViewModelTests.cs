@@ -507,6 +507,61 @@ public sealed class ItemsTabViewModelTests
         }
     }
 
+    [Fact]
+    public void TreasureProfile_ItemWithTSysProfile_ProfileKindRegistered_NavigableChip()
+    {
+        // #435 audit-existing-surfaces: shipping EntityKind.Profile must light up the
+        // Item.TSysProfile → Profile 1:1 cross-link on the (shared) item detail.
+        var sword = new Item { Id = 1, InternalName = "BattleHardenedSword", Name = "Battle-Hardened Sword", TSysProfile = "Sword" };
+        var refData = new StubReferenceData { ItemsByName = { ["BattleHardenedSword"] = sword } };
+        var vm = new ItemsTabViewModel(refData, new SilmarillionReferenceNavigator(
+            new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Profile) }),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = sword;
+
+        var chip = vm.DetailViewModel!.TreasureProfile;
+        chip.Should().NotBeNull();
+        chip!.Reference.Should().Be(EntityRef.Profile("Sword"));
+        chip.DisplayName.Should().Be("Sword", "Profile resolves to the bare pool name");
+        chip.IsNavigable.Should().BeTrue("the Profile kind target is registered");
+        vm.DetailViewModel.TreasureProfileLink.Should().NotBeNull();
+        vm.DetailViewModel.TreasureProfileLink!.Glyph.Should().Be(LinkGlyph.Pool);
+    }
+
+    [Fact]
+    public void TreasureProfile_ProfileKindUnregistered_ChipDegradesNotNull()
+    {
+        // G-c: when the Treasure tab isn't shipped the chip still renders (plain text),
+        // it does not vanish — IsNavigable false, but the link is present.
+        var sword = new Item { Id = 1, InternalName = "BattleHardenedSword", Name = "Battle-Hardened Sword", TSysProfile = "Sword" };
+        var refData = new StubReferenceData { ItemsByName = { ["BattleHardenedSword"] = sword } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = sword;
+
+        vm.DetailViewModel!.TreasureProfile.Should().NotBeNull();
+        vm.DetailViewModel.TreasureProfile!.IsNavigable.Should().BeFalse();
+        vm.DetailViewModel.TreasureProfileLink.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void TreasureProfile_ItemWithoutTSysProfile_ChipNull_SectionHidden()
+    {
+        var plain = new Item { Id = 1, InternalName = "PlainBoots", Name = "Plain Boots" };
+        var refData = new StubReferenceData { ItemsByName = { ["PlainBoots"] = plain } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = plain;
+
+        vm.DetailViewModel!.TreasureProfile.Should().BeNull();
+        vm.DetailViewModel.TreasureProfileLink.Should().BeNull();
+    }
+
     private static SilmarillionReferenceNavigator NavWithRecipe() =>
         new(new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Recipe) });
 

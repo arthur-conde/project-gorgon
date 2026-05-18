@@ -90,6 +90,25 @@ public sealed class SilmarillionDeepLinkHandlerTests
         nav.LastOpened.Should().Be(EntityRef.StorageVault(expectedName));
     }
 
+    [Theory]
+    [InlineData("power/SwordBoost", EntityKind.Power, "SwordBoost")]
+    [InlineData("Power/SwordBoost", EntityKind.Power, "SwordBoost")]
+    [InlineData("profile/Sword", EntityKind.Profile, "Sword")]
+    [InlineData("PROFILE/MainHandAugment", EntityKind.Profile, "MainHandAugment")]
+    public void TryHandle_TreasureKinds_Dispatch(string subPath, EntityKind kind, string name)
+    {
+        // #214 deep-link scope: the Treasure System kinds route via the generic
+        // Enum.TryParse<EntityKind> dispatch (Power-select / pool-query) — no handler
+        // change needed once the enum values exist. Locks the route in place.
+        Enum.TryParse<EntityKind>(kind.ToString(), ignoreCase: true, out _).Should().BeTrue();
+
+        var nav = new PermissiveNavigator();
+        var handler = new SilmarillionDeepLinkHandler(nav);
+
+        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        nav.LastOpened.Should().Be(new EntityRef(kind, name));
+    }
+
     [Fact]
     public void DeepLinkRouter_UrlEncodedStar_DecodesAndDispatchesToStorageVault()
     {
