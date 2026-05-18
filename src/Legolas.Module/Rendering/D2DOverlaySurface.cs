@@ -39,7 +39,18 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
         _hostImage = new Image
         {
             Source = _d3dImage,
-            Stretch = Stretch.None,
+            // Stretch.Fill, NOT None. The back buffer is allocated in device
+            // pixels (ActualWidth * DpiScaleX) and the D3DImage stays at the
+            // default 96 DPI, so WPF would lay out one back-buffer pixel as one
+            // DIP. With Stretch.None that mis-scales the whole pin layer by the
+            // display-scale factor at any scaling != 100% (pins drift off the
+            // game map proportional to distance from the top-left, bottom-right
+            // pins get clipped by ViewportRoot). Fill maps the (W*s)x(H*s)
+            // device-pixel buffer onto the element's W x H DIP box, which WPF
+            // composites back to exactly W*s x H*s device pixels — 1:1, no
+            // resample. This is what keeps canvas px == screen px == game-map px
+            // at non-100% scaling.
+            Stretch = Stretch.Fill,
             // Click-through: mouse events route to the parent Viewport so the
             // existing drag-to-correct gesture still works without a per-pin
             // hit-test. Mirrors the WPF version's `IsHitTestVisible="False"`
@@ -88,7 +99,15 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
     protected override Size MeasureOverride(Size availableSize)
     {
         _hostImage.Measure(availableSize);
-        return _hostImage.DesiredSize;
+        // Don't return _hostImage.DesiredSize: under Stretch.Fill the hosted
+        // Image's desired size is the back-buffer's device-pixel extent (e.g.
+        // ActualWidth * 1.5 at 150% scaling), which would inflate this element
+        // if a parent honoured it. The surface has no intrinsic size — it fills
+        // whatever box the overlay Grid gives it. Report the available box
+        // (finite dimensions only; an infinite axis collapses to 0).
+        return new Size(
+            double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width,
+            double.IsInfinity(availableSize.Height) ? 0 : availableSize.Height);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
