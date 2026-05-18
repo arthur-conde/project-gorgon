@@ -98,6 +98,14 @@
                                 <Button Content="Clear verify"
                                         Command="{Binding ClearTestPinsCommand}" Padding="8,4" />
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Content="Project landmarks (ghosts)"
+                                        ToolTip="Drop every unplaced landmark at its calibrated position — they should sit on the real landmarks"
+                                        Command="{Binding ProjectLandmarksCommand}"
+                                        Padding="8,4" Margin="0,0,6,0" />
+                                <Button Content="Clear ghosts"
+                                        Command="{Binding ClearGhostsCommand}" Padding="8,4" />
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- Placed references -->
@@ -264,6 +272,33 @@
                                         <TextBlock Text="{Binding Name}" Foreground="#FF8FF0AB" FontSize="11" />
                                     </Border>
                                 </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Ghost landmarks (magenta). DELIBERATELY a different,
+                         minimal render idiom from the crosshair: the template
+                         root is a single Ellipse (no nested Canvas/Grid) so if
+                         these draw and the crosshairs don't, the crosshair
+                         template is the bug. Centred via negative Margin. -->
+                    <ItemsControl ItemsSource="{Binding GhostPins}" IsHitTestVisible="False"
+                                  Padding="0" BorderThickness="0" Margin="0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Ellipse Width="11" Height="11" Margin="-5.5,-5.5,0,0"
+                                         Fill="#CCFF2BD6" Stroke="White" StrokeThickness="1"
+                                         ToolTip="{Binding Name}" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

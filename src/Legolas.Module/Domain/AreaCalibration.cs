@@ -22,6 +22,17 @@ public sealed record AreaCalibration(
     double ResidualPixels)
 {
     /// <summary>
+    /// Which world-axis→compass handedness the solver chose: when true, world
+    /// North = −Z (a reflection of the +Z convention). A similarity transform
+    /// cannot absorb a reflection, so this MUST be carried to re-project raw
+    /// world coords (e.g. the ghost-landmark test). Irrelevant to survey
+    /// projection (surveys already arrive in compass E/N). Additive — old saved
+    /// calibrations default false; recalibrate if a mirrored area's ghosts look
+    /// flipped. Default false (the +Z convention).
+    /// </summary>
+    public bool MirrorNorth { get; init; }
+
+    /// <summary>
     /// Schema version for this persisted record. Bump alongside any shape change
     /// and migrate in <see cref="LegolasSettings.Migrate"/>. Default 1 (current).
     /// </summary>

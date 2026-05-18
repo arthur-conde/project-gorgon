@@ -226,6 +226,52 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
+    public void ProjectLandmarks_ghosts_only_unplaced_refs_via_full_world_transform()
+    {
+        var svc = new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 10, 20), Ref("B", 40, -15) },
+            // Full solved transform: scale 1, rot 0, world-origin pixel (100,100).
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 100, 100, 2, 0.3) { MirrorNorth = false },
+        };
+        var vm = new CalibrationSessionViewModel(svc);
+
+        // A is "used" (placed); only B should ghost.
+        vm.SelectedReference = vm.References.First(r => r.Name == "A");
+        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(0, 0));
+
+        vm.ProjectLandmarksCommand.Execute(null);
+
+        vm.GhostPins.Should().ContainSingle();
+        var g = vm.GhostPins[0];
+        g.Name.Should().Be("B");
+        // East=40,North=-15 → px = 100 + 1*40 = 140 ; py = 100 - 1*(-15) = 115
+        g.X.Should().BeApproximately(140, 1e-6);
+        g.Y.Should().BeApproximately(115, 1e-6);
+
+        vm.ClearGhostsCommand.Execute(null);
+        vm.GhostPins.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ProjectLandmarks_without_a_calibration_warns()
+    {
+        var vm = new CalibrationSessionViewModel(new FakeService
+        {
+            CurrentAreaFriendlyName = "Eltibule",
+            CurrentAreaKey = "AreaEltibule",
+            Refs = { Ref("A", 1, 1) },
+        });
+
+        vm.ProjectLandmarksCommand.Execute(null);
+
+        vm.GhostPins.Should().BeEmpty();
+        vm.ClickWarning.Should().Contain("Solve a calibration");
+    }
+
+    [Fact]
     public void NudgeSelected_is_a_noop_with_nothing_selected()
     {
         var vm = new CalibrationSessionViewModel(new FakeService());

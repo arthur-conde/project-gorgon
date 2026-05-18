@@ -35,6 +35,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
     public ObservableCollection<CalibrationReference> References { get; } = new();
     public ObservableCollection<PlacedReference> Placements { get; } = new();
 
+    /// <summary>Projected positions of the *unplaced* landmarks per the solved
+    /// calibration — a pure world→pixel sanity check (they never feed the solve,
+    /// which would be circular). If the math is right they sit on the real
+    /// landmarks on the in-game map.</summary>
+    public ObservableCollection<GhostPin> GhostPins { get; } = new();
+
     /// <summary>Projected test pins (a survey/treasure fired while test mode is
     /// on, projected from <see cref="TestOrigin"/> via the live calibration).</summary>
     public ObservableCollection<TestPin> TestPins { get; } = new();
@@ -100,7 +106,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         $"sel={SelectedReference?.Name ?? "-"}  pins={Placements.Count}  " +
         $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
         $"you={(TestOrigin is { } o ? $"({o.X:0},{o.Y:0})" : "-")}  " +
-        $"test={TestMode}  pinsShown={TestPins.Count}";
+        $"test={TestMode}  pinsShown={TestPins.Count}  ghosts={GhostPins.Count}";
 
     private void RaiseDebug() => OnPropertyChanged(nameof(DebugState));
 
@@ -336,6 +342,44 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         RaiseDebug();
     }
 
+    /// <summary>
+    /// Drop a magenta "ghost" at every *unplaced* landmark/NPC's projected
+    /// position per the solved calibration. Pure world→pixel — these never feed
+    /// the solve (that'd be circular). If the math is right each ghost sits on
+    /// the real landmark on the in-game map; rotated/mirrored ghosts expose a
+    /// convention error directly, with no survey or position involved.
+    /// </summary>
+    [RelayCommand]
+    private void ProjectLandmarks()
+    {
+        GhostPins.Clear();
+        if (_service.CurrentCalibration is not { } c)
+        {
+            ClickWarning = "Solve a calibration first — nothing to project.";
+            RaiseDebug();
+            return;
+        }
+
+        var worldOrigin = new PixelPoint(c.OriginX, c.OriginY);
+        foreach (var r in References)
+        {
+            // Skip the ones used to solve — only the *remaining* landmarks test it.
+            if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
+            var north = c.MirrorNorth ? -r.World.Z : r.World.Z;
+            var px = Project(c, worldOrigin, new MetreOffset(r.World.X, north));
+            GhostPins.Add(new GhostPin(r.Name, px));
+        }
+        ClickWarning = null;
+        RaiseDebug();
+    }
+
+    [RelayCommand]
+    private void ClearGhosts()
+    {
+        GhostPins.Clear();
+        RaiseDebug();
+    }
+
     private void OnSurveyObserved(object? sender, CalibrationSurveyObservation obs)
     {
         var disp = Application.Current?.Dispatcher;
@@ -451,6 +495,23 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
 /// <summary>A reference the user has pinned on the map. Observable so an
 /// arrow-key nudge to <see cref="Pixel"/> moves the on-map marker and updates
 /// the Placed list live; <see cref="X"/>/<see cref="Y"/> drive Canvas placement.</summary>
+/// <summary>A projected unplaced-landmark "ghost" — pure world→pixel sanity
+/// marker. Static; deliberately minimal so its render path differs from the
+/// crosshair template (doubles as a render probe).</summary>
+public sealed class GhostPin
+{
+    public GhostPin(string name, PixelPoint pixel)
+    {
+        Name = name;
+        Pixel = pixel;
+    }
+
+    public string Name { get; }
+    public PixelPoint Pixel { get; }
+    public double X => Pixel.X;
+    public double Y => Pixel.Y;
+}
+
 /// <summary>A projected test reading. Keeps its source <see cref="Offset"/> so
 /// it can be re-projected when the test origin (your position) is nudged —
 /// the green pins track your position live while you align them.</summary>

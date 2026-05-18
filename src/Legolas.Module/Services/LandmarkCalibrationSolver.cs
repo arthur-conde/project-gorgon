@@ -121,7 +121,10 @@ public static class LandmarkCalibrationSolver
         }
         var residual = Math.Sqrt(sumSq / n);
 
-        return new AreaCalibration(scale, rotation, originX, originY, n, residual);
+        return new AreaCalibration(scale, rotation, originX, originY, n, residual)
+        {
+            MirrorNorth = mirrorNorth, // carried so raw world coords re-project
+        };
     }
 
     private static double NormaliseAngle(double radians)
