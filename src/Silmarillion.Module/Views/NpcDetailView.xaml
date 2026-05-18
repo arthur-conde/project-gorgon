@@ -133,44 +133,136 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Teaches recipes — Link enumeration (Density="List"). -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding TaughtRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Teaches recipes — capped Link enumeration + "Teaches
+                     recipes · N matches →" Set-ref drawer opening the shared
+                     provenance popup (#318 idiom; mirrors ItemDetailView
+                     "Used in"). Capping the icon-bearing chip clusters is what
+                     keeps a dense NPC (Amutasa: ~60 recipes + ~37 items) from
+                     stalling the pane on selection. Visible whenever the capped
+                     cluster OR the drawer exists. -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TaughtRecipeLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <!-- NullToVis (object) — NOT NullOrEmptyToVis. -->
+                                <DataTrigger Binding="{Binding TaughtRecipesSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Teaches recipes" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding TaughtRecipeLinks}"
                                   ItemTemplate="{StaticResource EntityLinkListTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <ContentControl Content="{Binding TaughtRecipesSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding TaughtRecipesSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowTaughtRecipesPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- Teaches abilities -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding TaughtAbilityLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Teaches abilities — same cap + drawer shape. -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TaughtAbilityLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding TaughtAbilitiesSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Teaches abilities" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding TaughtAbilityLinks}"
                                   ItemTemplate="{StaticResource EntityLinkListTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <ContentControl Content="{Binding TaughtAbilitiesSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding TaughtAbilitiesSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowTaughtAbilitiesPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- Sells items -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding SoldItemLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Sells items — same cap + drawer shape. -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SoldItemLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SoldItemsSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Sells items" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding SoldItemLinks}"
                                   ItemTemplate="{StaticResource EntityLinkListTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <ContentControl Content="{Binding SoldItemsSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding SoldItemsSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowSoldItemsPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
-                <!-- Quests this NPC gives, turns in, or anchors favor for. -->
-                <StackPanel Margin="0,0,0,10"
-                            Visibility="{Binding QuestLinks.Count, Converter={StaticResource PositiveIntToVis}}">
+                <!-- Quests this NPC gives, turns in, or anchors favor for —
+                     same cap + drawer shape. -->
+                <StackPanel Margin="0,0,0,10">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding QuestLinks.Count, Converter={StaticResource PositiveIntToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding QuestsSetRef, Converter={StaticResource NullToVis}}" Value="Visible">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <TextBlock Text="Quests" Style="{StaticResource StructureSectionLabelStyle}"/>
                     <ItemsControl ItemsSource="{Binding QuestLinks}"
                                   ItemTemplate="{StaticResource EntityLinkListTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <ContentControl Content="{Binding QuestsSetRef}"
+                                    HorizontalAlignment="Left" Margin="0,4,0,0"
+                                    Visibility="{Binding QuestsSetRef, Converter={StaticResource NullToVis}}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <c:SetRef ActivateCommand="{Binding DataContext.ShowQuestsPopupCommand, RelativeSource={RelativeSource AncestorType={x:Type ContentControl}}}"/>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
                 </StackPanel>
 
                 <!-- Gift preferences — section label → Structure. The Desire

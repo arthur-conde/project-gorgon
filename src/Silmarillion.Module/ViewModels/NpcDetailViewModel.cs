@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
@@ -20,6 +21,22 @@ public sealed class NpcDetailViewModel
 {
     private readonly IEntityNameResolver _nameResolver;
 
+    /// <summary>
+    /// Host-supplied opener for the four NPC-detail provenance popups ("Teaches recipes" /
+    /// "Teaches abilities" / "Sells items" / "Quests"). Defaults to
+    /// <see cref="ShowProvenancePopupWindow"/> (creates + <c>Show()</c>s a
+    /// <see cref="ProvenancePopupWindow"/>). Tests swap in a capturing delegate so the VM is
+    /// fully assertable without spawning a window. Opening the popup this way never calls
+    /// <c>IReferenceNavigator</c>, so it pushes no back/forward history — identical
+    /// non-navigating contract to <c>AreaDetailViewModel.ProvenancePopupOpener</c> /
+    /// <c>ItemDetailViewModel.ProvenancePopupOpener</c>.
+    /// </summary>
+    public static Action<ProvenancePopupViewModel, ICommand?> ProvenancePopupOpener { get; set; }
+        = ShowProvenancePopupWindow;
+
+    private static void ShowProvenancePopupWindow(ProvenancePopupViewModel vm, ICommand? chipClick) =>
+        new ProvenancePopupWindow { DataContext = vm, ChipClickCommand = chipClick }.Show();
+
     public NpcDetailViewModel(
         Npc npc,
         string internalName,
@@ -32,7 +49,11 @@ public sealed class NpcDetailViewModel
         IReadOnlyList<NpcPreferenceRow> preferences,
         IReadOnlyList<string> giftSentimentTiers,
         EntityChipVm? areaChip = null,
-        ICommand? openEntityCommand = null)
+        ICommand? openEntityCommand = null,
+        ProvenancePopupViewModel? taughtRecipesPopup = null,
+        ProvenancePopupViewModel? taughtAbilitiesPopup = null,
+        ProvenancePopupViewModel? soldItemsPopup = null,
+        ProvenancePopupViewModel? questsPopup = null)
     {
         Npc = npc;
         InternalName = internalName;
@@ -70,6 +91,50 @@ public sealed class NpcDetailViewModel
         TaughtAbilityLinks = TaughtAbilities.Select(LinkVm.From).ToList();
         SoldItemLinks = SoldItems.Select(LinkVm.From).ToList();
         QuestLinks = Quests.Select(LinkVm.From).ToList();
+
+        // "View all N →" drawers (#318 idiom — mirrors AreaDetailViewModel /
+        // ItemDetailViewModel). The capped Link cluster above carries the first
+        // SilmarillionSettings.NpcChipCap; the full set is the popup. Each SetRef is the
+        // summary-form "{label} · N matches →" actionable via its Show…PopupCommand. Null
+        // popup ⇒ null SetRef ⇒ the section's SetRef row hides; the count mirrors the
+        // popup's TotalCount so it cannot diverge. Amutasa (teaches ~60 recipes, sells ~37
+        // items) renders 12+12 chips instead of ~100 synchronous icon decodes — the NPC
+        // detail no longer stalls the pane on selection.
+        TaughtRecipesPopup = taughtRecipesPopup;
+        TaughtRecipesTotal = taughtRecipesPopup?.TotalCount ?? 0;
+        ShowTaughtRecipesPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(TaughtRecipesPopup!, OpenEntityCommand),
+            () => TaughtRecipesPopup is not null);
+        TaughtRecipesSetRef = taughtRecipesPopup is null
+            ? null
+            : new SetRefVm("Teaches recipes", MatchCount: TaughtRecipesTotal, IsActionable: true);
+
+        TaughtAbilitiesPopup = taughtAbilitiesPopup;
+        TaughtAbilitiesTotal = taughtAbilitiesPopup?.TotalCount ?? 0;
+        ShowTaughtAbilitiesPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(TaughtAbilitiesPopup!, OpenEntityCommand),
+            () => TaughtAbilitiesPopup is not null);
+        TaughtAbilitiesSetRef = taughtAbilitiesPopup is null
+            ? null
+            : new SetRefVm("Teaches abilities", MatchCount: TaughtAbilitiesTotal, IsActionable: true);
+
+        SoldItemsPopup = soldItemsPopup;
+        SoldItemsTotal = soldItemsPopup?.TotalCount ?? 0;
+        ShowSoldItemsPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(SoldItemsPopup!, OpenEntityCommand),
+            () => SoldItemsPopup is not null);
+        SoldItemsSetRef = soldItemsPopup is null
+            ? null
+            : new SetRefVm("Sells items", MatchCount: SoldItemsTotal, IsActionable: true);
+
+        QuestsPopup = questsPopup;
+        QuestsTotal = questsPopup?.TotalCount ?? 0;
+        ShowQuestsPopupCommand = new RelayCommand(
+            () => ProvenancePopupOpener(QuestsPopup!, OpenEntityCommand),
+            () => QuestsPopup is not null);
+        QuestsSetRef = questsPopup is null
+            ? null
+            : new SetRefVm("Quests", MatchCount: QuestsTotal, IsActionable: true);
 
         ServiceRowVms = Services
             .Select(s => new NpcServiceRowVm(
@@ -147,6 +212,64 @@ public sealed class NpcDetailViewModel
     /// <summary>Quest cross-links as <see cref="LinkVm"/> (Density="List"; G-c
     /// degrade keeps them identical at rest until the Quests tab ships).</summary>
     public IReadOnlyList<LinkVm> QuestLinks { get; }
+
+    // ── "View all N →" drawers (#318 idiom; mirrors Area/Item detail) ──────────
+    // Each section's capped Link cluster is paired with a flat provenance popup
+    // over the full set + a summary-form Set-reference. Null popup ⇒ null SetRef
+    // ⇒ the SetRef row hides (the capped cluster, if any, still renders).
+
+    /// <summary>"Teaches recipes" provenance popup (full set), or null when the NPC teaches
+    /// no recipes. Built by <see cref="NpcsTabViewModel"/> from
+    /// <see cref="IReferenceDataService.RecipesTaughtByNpc"/>.</summary>
+    public ProvenancePopupViewModel? TaughtRecipesPopup { get; }
+
+    /// <summary>Distinct recipe count — equals <see cref="ProvenancePopupViewModel.TotalCount"/>
+    /// of <see cref="TaughtRecipesPopup"/>. Drives the "View all N →" label.</summary>
+    public int TaughtRecipesTotal { get; }
+
+    /// <summary>Opens <see cref="TaughtRecipesPopup"/> via <see cref="ProvenancePopupOpener"/>
+    /// (non-navigating; pushes no navigator history).</summary>
+    public ICommand ShowTaughtRecipesPopupCommand { get; }
+
+    /// <summary>Summary-form Set-reference ("Teaches recipes · N matches →") for the
+    /// always-visible drawer; null when no recipes (the row hides).</summary>
+    public SetRefVm? TaughtRecipesSetRef { get; }
+
+    /// <summary>"Teaches abilities" provenance popup (full set), or null when none.</summary>
+    public ProvenancePopupViewModel? TaughtAbilitiesPopup { get; }
+
+    /// <summary>Distinct ability count — equals <see cref="TaughtAbilitiesPopup"/>'s TotalCount.</summary>
+    public int TaughtAbilitiesTotal { get; }
+
+    /// <summary>Opens <see cref="TaughtAbilitiesPopup"/> (non-navigating).</summary>
+    public ICommand ShowTaughtAbilitiesPopupCommand { get; }
+
+    /// <summary>Summary-form Set-reference for the abilities drawer; null when none.</summary>
+    public SetRefVm? TaughtAbilitiesSetRef { get; }
+
+    /// <summary>"Sells items" provenance popup (full set), or null when none.</summary>
+    public ProvenancePopupViewModel? SoldItemsPopup { get; }
+
+    /// <summary>Distinct sold-item count — equals <see cref="SoldItemsPopup"/>'s TotalCount.</summary>
+    public int SoldItemsTotal { get; }
+
+    /// <summary>Opens <see cref="SoldItemsPopup"/> (non-navigating).</summary>
+    public ICommand ShowSoldItemsPopupCommand { get; }
+
+    /// <summary>Summary-form Set-reference for the sold-items drawer; null when none.</summary>
+    public SetRefVm? SoldItemsSetRef { get; }
+
+    /// <summary>"Quests" provenance popup (full set), or null when none.</summary>
+    public ProvenancePopupViewModel? QuestsPopup { get; }
+
+    /// <summary>Distinct quest count — equals <see cref="QuestsPopup"/>'s TotalCount.</summary>
+    public int QuestsTotal { get; }
+
+    /// <summary>Opens <see cref="QuestsPopup"/> (non-navigating).</summary>
+    public ICommand ShowQuestsPopupCommand { get; }
+
+    /// <summary>Summary-form Set-reference for the quests drawer; null when none.</summary>
+    public SetRefVm? QuestsSetRef { get; }
 
     /// <summary>
     /// Services wrapped for the grammar: the gold Type label is dropped (named

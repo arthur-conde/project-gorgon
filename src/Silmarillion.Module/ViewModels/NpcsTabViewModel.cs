@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Reference.Models.Abilities;
@@ -43,16 +44,27 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     private readonly IReferenceDataService _refData;
     private readonly IReferenceNavigator _navigator;
     private readonly IEntityNameResolver _nameResolver;
+    private readonly SilmarillionSettings _settings;
     private readonly RelayCommand<EntityRef?> _openEntityCommand;
 
     public NpcsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver)
+        : this(refData, navigator, nameResolver, settings: null)
+    {
+    }
+
+    public NpcsTabViewModel(IReferenceDataService refData, IReferenceNavigator navigator, IEntityNameResolver nameResolver, SilmarillionSettings? settings)
     {
         _refData = refData;
         _navigator = navigator;
         _nameResolver = nameResolver;
+        // null → owned default instance keeps non-DI callers (tests) working without forcing
+        // every fixture to construct one. The DI path always passes the live singleton
+        // (see SilmarillionModule). Mirrors ItemsTabViewModel.
+        _settings = settings ?? new SilmarillionSettings();
         _openEntityCommand = new RelayCommand<EntityRef?>(r => { if (r is not null) _navigator.Open(r); });
         _allNpcs = BuildAllNpcs(refData);
         refData.FileUpdated += OnFileUpdated;
+        _settings.PropertyChanged += OnSettingsChanged;
     }
 
     [ObservableProperty]
@@ -120,6 +132,21 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         });
     }
 
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // NpcChipCap controls the per-section overflow threshold; rebuild the live detail VM
+        // when it changes so the slider feels immediate. Toggle through null to sidestep
+        // [ObservableProperty]'s reference-equality check (mirrors ItemsTabViewModel).
+        if (e.PropertyName != nameof(SilmarillionSettings.NpcChipCap)) return;
+        var captured = SelectedRow;
+        if (captured is null) return;
+        UiThread.Run(() =>
+        {
+            SelectedRow = null;
+            SelectedRow = captured;
+        });
+    }
+
     private IReadOnlyList<NpcListRow> BuildAllNpcs(IReferenceDataService refData) =>
         refData.NpcsByInternalName
             .Select(kv => BuildRow(kv.Key, kv.Value))
@@ -166,10 +193,10 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     private NpcDetailViewModel BuildDetailViewModel(NpcListRow row)
     {
         var services = BuildServiceRows(row.Npc);
-        var taught = BuildTaughtRecipeChips(row.InternalName);
-        var taughtAbilities = BuildTaughtAbilityChips(row.InternalName);
-        var sold = BuildSoldItemChips(row.InternalName);
-        var quests = BuildQuestLinks(row.InternalName);
+        var taught = BuildTaughtRecipeChips(row.InternalName, row.Name);
+        var taughtAbilities = BuildTaughtAbilityChips(row.InternalName, row.Name);
+        var sold = BuildSoldItemChips(row.InternalName, row.Name);
+        var quests = BuildQuestLinks(row.InternalName, row.Name);
         var preferences = BuildPreferenceRows(row.Npc);
         var giftTiers = row.Npc.ItemGifts ?? (IReadOnlyList<string>)[];
         var areaChip = BuildAreaChip(row.Npc);
@@ -179,14 +206,18 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
             row.InternalName,
             _nameResolver,
             services,
-            taught,
-            taughtAbilities,
-            sold,
-            quests,
+            taught.Capped,
+            taughtAbilities.Capped,
+            sold.Capped,
+            quests.Capped,
             preferences,
             giftTiers,
             areaChip,
-            _openEntityCommand);
+            _openEntityCommand,
+            taughtRecipesPopup: taught.Popup,
+            taughtAbilitiesPopup: taughtAbilities.Popup,
+            soldItemsPopup: sold.Popup,
+            questsPopup: quests.Popup);
     }
 
     /// <summary>
@@ -350,11 +381,36 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         return chips;
     }
 
-    private IReadOnlyList<EntityChipVm> BuildTaughtRecipeChips(string npcInternalName)
+    /// <summary>
+    /// Cap a fully-materialized chip list to <see cref="SilmarillionSettings.NpcChipCap"/>
+    /// and build the single-section flat provenance popup over the <em>full</em> set. Both
+    /// the capped cluster and the popup are views over the same <paramref name="allChips"/>
+    /// list — no second derivation, so the popup's "View all N" count cannot diverge
+    /// (the #318 invariant; mirrors <c>AreaDetailViewModel.BuildNpcs</c>). The relationship
+    /// is single-reason so the popup collapses to a flat list (#318 Discipline);
+    /// ToQueryCommand intentionally unset (the popup-from-index is the count-bearing
+    /// surface). Returns <c>([], null)</c> for an empty input so the section hides.
+    /// </summary>
+    private (IReadOnlyList<EntityChipVm> Capped, ProvenancePopupViewModel? Popup) CapAndPopup(
+        IReadOnlyList<EntityChipVm> allChips, string title, string sectionLabel)
+    {
+        if (allChips.Count == 0) return ([], null);
+        var cap = _settings.NpcChipCap;
+        var capped = cap == 0
+            ? (IReadOnlyList<EntityChipVm>)Array.Empty<EntityChipVm>()
+            : allChips.Take(cap).ToList();
+        var popup = new ProvenancePopupViewModel(
+            title: title,
+            sections: new List<ProvenancePopupSection> { new(sectionLabel, allChips) });
+        return (capped, popup);
+    }
+
+    private (IReadOnlyList<EntityChipVm> Capped, ProvenancePopupViewModel? Popup) BuildTaughtRecipeChips(
+        string npcInternalName, string npcDisplayName)
     {
         if (!_refData.RecipesTaughtByNpc.TryGetValue(npcInternalName, out var recipes) || recipes.Count == 0)
-            return [];
-        return recipes
+            return ([], null);
+        var allChips = recipes
             .OrderBy(r => r.Name ?? r.InternalName ?? r.Key, StringComparer.OrdinalIgnoreCase)
             .Select(r => new EntityChipVm(
                 DisplayName: r.Name ?? r.InternalName ?? r.Key,
@@ -362,6 +418,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
                 Reference: EntityRef.Recipe(r.InternalName ?? r.Key),
                 IsNavigable: _navigator.CanOpen(EntityRef.Recipe(r.InternalName ?? r.Key))))
             .ToList();
+        return CapAndPopup(allChips, $"Recipes taught by {npcDisplayName}", "Teaches recipes");
     }
 
     private int ResolveRecipeFallbackIcon(Recipe recipe)
@@ -376,11 +433,12 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
         return 0;
     }
 
-    private IReadOnlyList<EntityChipVm> BuildTaughtAbilityChips(string npcInternalName)
+    private (IReadOnlyList<EntityChipVm> Capped, ProvenancePopupViewModel? Popup) BuildTaughtAbilityChips(
+        string npcInternalName, string npcDisplayName)
     {
         if (!_refData.AbilitiesTaughtByNpc.TryGetValue(npcInternalName, out var abilities) || abilities.Count == 0)
-            return [];
-        return abilities
+            return ([], null);
+        var allChips = abilities
             .Where(a => !string.IsNullOrEmpty(a.InternalName))
             .OrderBy(a => a.Skill ?? "", StringComparer.OrdinalIgnoreCase)
             .ThenBy(a => a.Level)
@@ -395,13 +453,15 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
                     IsNavigable: _navigator.CanOpen(reference));
             })
             .ToList();
+        return CapAndPopup(allChips, $"Abilities taught by {npcDisplayName}", "Teaches abilities");
     }
 
-    private IReadOnlyList<EntityChipVm> BuildSoldItemChips(string npcInternalName)
+    private (IReadOnlyList<EntityChipVm> Capped, ProvenancePopupViewModel? Popup) BuildSoldItemChips(
+        string npcInternalName, string npcDisplayName)
     {
         if (!_refData.ItemsSoldByNpc.TryGetValue(npcInternalName, out var items) || items.Count == 0)
-            return [];
-        return items
+            return ([], null);
+        var allChips = items
             .OrderBy(i => i.Name ?? i.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
             .Select(i => new EntityChipVm(
                 DisplayName: i.Name ?? i.InternalName ?? "",
@@ -409,6 +469,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
                 Reference: EntityRef.Item(i.InternalName ?? ""),
                 IsNavigable: _navigator.CanOpen(EntityRef.Item(i.InternalName ?? ""))))
             .ToList();
+        return CapAndPopup(allChips, $"Items sold by {npcDisplayName}", "Sells items");
     }
 
     /// <summary>
@@ -417,11 +478,12 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
     /// NPC is the giver, the turn-in, or the favor anchor all surface. Rendered as navigable
     /// <see cref="EntityChipVm"/> chips that route to the Quests tab via <see cref="EntityRef.Quest"/>.
     /// </summary>
-    private IReadOnlyList<EntityChipVm> BuildQuestLinks(string npcInternalName)
+    private (IReadOnlyList<EntityChipVm> Capped, ProvenancePopupViewModel? Popup) BuildQuestLinks(
+        string npcInternalName, string npcDisplayName)
     {
         if (!_refData.QuestsByGiverNpc.TryGetValue(npcInternalName, out var quests) || quests.Count == 0)
-            return [];
-        return quests
+            return ([], null);
+        var allChips = quests
             .OrderBy(q => q.Name ?? q.InternalName ?? "", StringComparer.OrdinalIgnoreCase)
             .Select(q =>
             {
@@ -434,6 +496,7 @@ public sealed partial class NpcsTabViewModel : ObservableObject, ITabViewModel
                     IsNavigable: _navigator.CanOpen(reference));
             })
             .ToList();
+        return CapAndPopup(allChips, $"Quests from {npcDisplayName}", "Quests");
     }
 
     private static IReadOnlyList<NpcPreferenceRow> BuildPreferenceRows(Npc npc)
