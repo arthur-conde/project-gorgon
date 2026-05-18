@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.GameState.Areas;
+using Mithril.GameState.Celestial;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.Shared.Reference;
@@ -26,19 +27,25 @@ namespace Palantir.ViewModels;
 /// <para>Pins are push-driven: <see cref="IPlayerPinTracker.Subscribe"/>
 /// replays the current set synchronously then delivers add / remove / area
 /// swap live (PG bulk-replays the set on every login / zone, idempotently).
-/// Both tracker subscriptions fire on the GameState ingestion thread, so
+/// All tracker subscriptions fire on the GameState ingestion thread, so
 /// every handler marshals through <see cref="_dispatch"/> before touching
 /// bound state.</para>
+///
+/// <para>The lunar phase (<see cref="IPlayerCelestialState"/>) is push-driven
+/// too — replayed on subscribe, then delivered live on every phase
+/// roll-over.</para>
 /// </summary>
 public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 {
     private readonly IPlayerPositionTracker _positionTracker;
     private readonly PlayerAreaTracker _areaTracker;
     private readonly IPlayerPinTracker _pinTracker;
+    private readonly IPlayerCelestialState _celestial;
     private readonly IReferenceDataService? _refData;
     private readonly Action<Action> _dispatch;
     private IDisposable? _subscription;
     private IDisposable? _pinSubscription;
+    private IDisposable? _celestialSubscription;
 
     [ObservableProperty] private string _areaKey = "(unknown)";
     [ObservableProperty] private string _areaFriendlyName = "(area not yet known)";
@@ -54,6 +61,11 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _hasPins;
     [ObservableProperty] private string _pinsObservedAtText = "—";
 
+    [ObservableProperty] private bool _hasMoonPhase;
+    [ObservableProperty] private string _moonPhaseText = "(no celestial info observed yet)";
+    [ObservableProperty] private string _moonPhaseRawText = "—";
+    [ObservableProperty] private string _moonMeasuredAtText = "—";
+
     /// <summary>The current area's pins as presentation rows. Mutated only
     /// on the dispatched (UI) thread — see <see cref="OnPins"/>.</summary>
     public ObservableCollection<MapPinRow> Pins { get; } = [];
@@ -62,8 +74,9 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         IPlayerPositionTracker positionTracker,
         PlayerAreaTracker areaTracker,
         IPlayerPinTracker pinTracker,
+        IPlayerCelestialState celestial,
         IReferenceDataService? refData = null)
-        : this(positionTracker, areaTracker, pinTracker, refData, dispatch: null)
+        : this(positionTracker, areaTracker, pinTracker, celestial, refData, dispatch: null)
     { }
 
     /// <summary>
@@ -74,19 +87,23 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         IPlayerPositionTracker positionTracker,
         PlayerAreaTracker areaTracker,
         IPlayerPinTracker pinTracker,
+        IPlayerCelestialState celestial,
         IReferenceDataService? refData,
         Action<Action>? dispatch)
     {
         _positionTracker = positionTracker;
         _areaTracker = areaTracker;
         _pinTracker = pinTracker;
+        _celestial = celestial;
         _refData = refData;
         _dispatch = dispatch ?? DefaultDispatch;
 
         RefreshArea();
-        // Replay-on-subscribe seeds position / the pin set if already known.
+        // Replay-on-subscribe seeds position / the pin set / the phase if
+        // already known.
         _subscription = _positionTracker.Subscribe(OnPosition);
         _pinSubscription = _pinTracker.Subscribe(OnPins);
+        _celestialSubscription = _celestial.Subscribe(OnCelestial);
     }
 
     private void OnPosition(PlayerPosition p) => _dispatch(() =>
@@ -132,6 +149,23 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         });
     }
 
+    /// <summary>
+    /// Surface the current lunar phase. <see cref="CelestialInfo"/> is an
+    /// immutable record — safe to read off the ingestion thread before
+    /// dispatching. The raw token is shown alongside the friendly name so an
+    /// unrecognised / future phase token is still inspectable on this debug
+    /// surface.
+    /// </summary>
+    private void OnCelestial(CelestialInfo c) => _dispatch(() =>
+    {
+        HasMoonPhase = true;
+        MoonPhaseText = c.DisplayName;
+        MoonPhaseRawText = c.Phase == MoonPhase.Unknown
+            ? $"{c.RawPhase} (unrecognised token)"
+            : c.RawPhase;
+        MoonMeasuredAtText = c.MeasuredAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+    });
+
     [RelayCommand]
     private void Refresh() => _dispatch(RefreshArea);
 
@@ -171,6 +205,8 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         _subscription = null;
         _pinSubscription?.Dispose();
         _pinSubscription = null;
+        _celestialSubscription?.Dispose();
+        _celestialSubscription = null;
     }
 
     private static void DefaultDispatch(Action action)

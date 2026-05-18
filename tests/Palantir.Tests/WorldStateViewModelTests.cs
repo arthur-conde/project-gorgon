@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
+using Mithril.GameState.Celestial;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.Reference.Models.Items;
@@ -92,7 +93,7 @@ public sealed class WorldStateViewModelTests
         pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T, PlayerPositionSource.Spawn));
         using var vm = new WorldStateViewModel(
             pos, new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), null, a => a());
+            new FakePinTracker(), new FakeCelestialState(), null, a => a());
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 1.00   Y 2.00   Z 3.00");
@@ -122,7 +123,7 @@ public sealed class WorldStateViewModelTests
             Pin(10, -20, "Vendor"), Pin(-5.5, 99.25, ""));
         using var vm = new WorldStateViewModel(
             new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            pins, null, a => a());
+            pins, new FakeCelestialState(), null, a => a());
 
         vm.HasPins.Should().BeTrue();
         vm.PinCount.Should().Be(2);
@@ -203,19 +204,87 @@ public sealed class WorldStateViewModelTests
         vm.HasPins.Should().BeFalse("the disposed VM must unsubscribe from pins");
     }
 
+    // --- Moon phase -------------------------------------------------------
+
+    [Fact]
+    public void No_celestial_info_shows_default()
+    {
+        using var vm = NewVm(out _, out _, out _, out _);
+
+        vm.HasMoonPhase.Should().BeFalse();
+        vm.MoonPhaseText.Should().Contain("no celestial");
+        vm.MoonMeasuredAtText.Should().Be("—");
+    }
+
+    [Fact]
+    public void Celestial_event_surfaces_phase_raw_token_and_instant()
+    {
+        using var vm = NewVm(out _, out _, out _, out var celestial);
+
+        celestial.Fire(new CelestialInfo(MoonPhase.WaxingCrescent, "WaxingCrescentMoon", T));
+
+        vm.HasMoonPhase.Should().BeTrue();
+        vm.MoonPhaseText.Should().Be("Waxing Crescent");
+        vm.MoonPhaseRawText.Should().Be("WaxingCrescentMoon");
+        vm.MoonMeasuredAtText.Should().Be("2026-05-18 10:45:47Z");
+    }
+
+    [Fact]
+    public void Unrecognised_phase_token_is_flagged_but_still_shown()
+    {
+        using var vm = NewVm(out _, out _, out _, out var celestial);
+
+        celestial.Fire(new CelestialInfo(MoonPhase.Unknown, "BloodMoonEclipse", T));
+
+        vm.HasMoonPhase.Should().BeTrue();
+        vm.MoonPhaseText.Should().Be("Blood Moon Eclipse");
+        vm.MoonPhaseRawText.Should().Be("BloodMoonEclipse (unrecognised token)");
+    }
+
+    [Fact]
+    public void Replay_on_subscribe_seeds_existing_phase()
+    {
+        var celestial = new FakeCelestialState();
+        celestial.PreloadAsCurrent(new CelestialInfo(MoonPhase.FullMoon, "FullMoon", T));
+        using var vm = new WorldStateViewModel(
+            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
+            new FakePinTracker(), celestial, null, a => a());
+
+        vm.HasMoonPhase.Should().BeTrue();
+        vm.MoonPhaseText.Should().Be("Full Moon");
+    }
+
+    [Fact]
+    public void Dispose_stops_observing_celestial()
+    {
+        using var vm = NewVm(out _, out _, out _, out var celestial);
+        vm.Dispose();
+
+        celestial.Fire(new CelestialInfo(MoonPhase.FullMoon, "FullMoon", T));
+
+        vm.HasMoonPhase.Should().BeFalse("the disposed VM must unsubscribe from celestial");
+    }
+
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area, IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out _, refData);
+        => NewVm(out pos, out area, out _, out _, refData);
 
     private static WorldStateViewModel NewVm(
         out FakePositionTracker pos, out PlayerAreaTracker area,
         out FakePinTracker pins, IReferenceDataService? refData = null)
+        => NewVm(out pos, out area, out pins, out _, refData);
+
+    private static WorldStateViewModel NewVm(
+        out FakePositionTracker pos, out PlayerAreaTracker area,
+        out FakePinTracker pins, out FakeCelestialState celestial,
+        IReferenceDataService? refData = null)
     {
         pos = new FakePositionTracker();
         area = new PlayerAreaTracker(new AreaTransitionParser());
         pins = new FakePinTracker();
+        celestial = new FakeCelestialState();
         // Synchronous dispatcher: test thread is the WPF thread.
-        return new WorldStateViewModel(pos, area, pins, refData, a => a());
+        return new WorldStateViewModel(pos, area, pins, celestial, refData, a => a());
     }
 
     private sealed class FakePositionTracker : IPlayerPositionTracker
@@ -279,6 +348,34 @@ public sealed class WorldStateViewModelTests
         }
 
         private sealed class Sub(FakePinTracker owner) : IDisposable
+        {
+            public void Dispose() => owner._handler = null;
+        }
+    }
+
+    private sealed class FakeCelestialState : IPlayerCelestialState
+    {
+        private CelestialInfo? _current;
+        private Action<CelestialInfo>? _handler;
+
+        public CelestialInfo? Current => _current;
+
+        public void PreloadAsCurrent(CelestialInfo c) => _current = c;
+
+        public void Fire(CelestialInfo c)
+        {
+            _current = c;
+            _handler?.Invoke(c);
+        }
+
+        public IDisposable Subscribe(Action<CelestialInfo> handler)
+        {
+            if (_current is not null) handler(_current);
+            _handler = handler;
+            return new Sub(this);
+        }
+
+        private sealed class Sub(FakeCelestialState owner) : IDisposable
         {
             public void Dispose() => owner._handler = null;
         }

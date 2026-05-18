@@ -38,7 +38,10 @@
                 set. Position is sparse — it only updates on teleport /
                 zone-in, so the measured instant can lag wall-clock by a long
                 way. Pins are push-driven and area-local: PG idempotently
-                replays the whole set on every login / zone change.
+                replays the whole set on every login / zone change. The lunar
+                phase comes from Player.log ProcessSetCelestialInfo (login +
+                every phase roll-over) and backs the moon-gated recipes /
+                quests.
             </TextBlock>
 
             <!-- Map / area -->
@@ -166,6 +169,38 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Moon / celestial -->
+            <TextBlock Text="MOON" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}"
+                       FontWeight="SemiBold" Margin="0,16,0,4"/>
+            <Border Background="#FF252525" CornerRadius="4" Padding="14,10">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Text="Phase"
+                                   Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding MoonPhaseText}"
+                                   Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Text="Raw token"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding MoonPhaseRawText}"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   Foreground="#88FFFFFF"/>
+                    </DockPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="Measured (UTC)"
+                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding MoonMeasuredAtText}"
+                                   FontFamily="{DynamicResource AppMonoFontFamily}"
+                                   Foreground="#88FFFFFF"/>
+                    </DockPanel>
                 </StackPanel>
             </Border>
 
