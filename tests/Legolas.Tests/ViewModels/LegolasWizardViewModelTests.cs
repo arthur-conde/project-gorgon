@@ -437,7 +437,7 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void Chip_click_on_a_calibrated_area_arms_the_recalibrate_guard()
+    public void Chip_click_on_a_calibrated_area_opens_the_inline_recalibrate_gate()
     {
         var calib = new FakeAreaCalib { Calibrated = true };
         var (wizard, _, _, _, _) = BuildSut(calib);
@@ -445,18 +445,18 @@ public class LegolasWizardViewModelTests
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
         wizard.CanCalibrateThisArea.Should().BeTrue();
 
-        // #501/#477B: a single chip click must NOT destroy a good calibration
-        // — it only arms the confirm guard (the header popup).
+        // #501 reworked: the chip routes into Calibrating with the inline
+        // confirm gate showing — and the existing calibration is NOT touched.
         wizard.CalibrateThisAreaCommand.Execute(null);
-        wizard.IsConfirmingRecalibrate.Should().BeTrue();
-        calib.Calibrated.Should().BeTrue("one click never wipes a persisted calibration");
-        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue("the inline gate is showing");
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("the old calibration stays live until a new one is saved");
 
-        // Confirm routes back into the cold-start pin route.
+        // Acknowledging the gate reveals the drop/pair body — still no delete.
         wizard.ConfirmRecalibrateCommand.Execute(null);
-        calib.Calibrated.Should().BeFalse();
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("solving the new fit is what overwrites it, later");
         wizard.PinCalibration.IsArmed.Should().BeTrue();
     }
 
@@ -591,33 +591,48 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void Recalibrate_is_guarded_then_clears_and_routes_back_into_Calibrating()
+    public void Recalibrate_defers_the_delete_until_a_new_fit_is_saved()
     {
         var calib = new FakeAreaCalib { Calibrated = true };
-        var (wizard, _, _, _, _) = BuildSut(calib);
+        var pins = new FakePlayerPinTracker();
+        var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
 
-        // First click only arms the confirm guard — no destruction.
+        // Entry routes into Calibrating with the inline gate showing — the
+        // old calibration is NOT touched.
         wizard.RecalibrateCommand.Execute(null);
         wizard.IsConfirmingRecalibrate.Should().BeTrue();
-        calib.Calibrated.Should().BeTrue("a misclick must not wipe a good calibration");
-        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("the existing fit stays live behind the gate");
 
-        // Cancel backs out cleanly.
+        // Cancel exits with the calibration entirely intact.
         wizard.CancelRecalibrateCommand.Execute(null);
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
-        calib.Calibrated.Should().BeTrue();
+        calib.Calibrated.Should().BeTrue("cancelling a recalibration loses nothing");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.PinCalibration.IsArmed.Should().BeFalse("leaving Calibrating disarms");
 
-        // Confirmed: clears the persisted calibration; Changed → RecomputeStep
-        // routes back into Calibrating via the same pin route as cold start,
-        // and OnCurrentStepChanged re-arms PinCalibration.
+        // Re-enter, acknowledge the gate → still no delete; drop/pair body up.
         wizard.RecalibrateCommand.Execute(null);
         wizard.ConfirmRecalibrateCommand.Execute(null);
-        calib.Calibrated.Should().BeFalse();
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue("re-entry arms the guided flow");
+        calib.Calibrated.Should().BeTrue("acknowledging the gate still doesn't delete");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+
+        // Completing the guided flow is what overwrites it.
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        pins.Add(5, 6);
+        wizard.ToggleCalibrationPhaseCommand.Execute(null);
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.ConfirmCalibrationCommand.Execute(null);
+
+        calib.Calibrated.Should().BeTrue("a fresh fit was saved (overwrite, not delete-then-maybe)");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening, "recalibration finished");
     }
 
     // ---- #495 Validate-calibration availability gate -------------------

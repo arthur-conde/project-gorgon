@@ -117,6 +117,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             {
                 _motherlodeCalibrationRequested = false;
                 _calibrationRequested = false;   // #502: one-shot consumed
+                _recalibrating = false;          // #501: new fit persisted
             }
             RecomputeStep();
         };
@@ -349,28 +350,51 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     [ObservableProperty]
     private bool _isConfirmingRecalibrate;
 
-    /// <summary>#477B: in-flow recalibration entry — only meaningful when the
-    /// current area is already calibrated. Arms the confirm guard rather than
-    /// destroying immediately.</summary>
-    [RelayCommand]
-    private void Recalibrate() => IsConfirmingRecalibrate = true;
+    /// <summary>#501 (reworked): a recalibration is in progress — forces the
+    /// <see cref="WizardStep.Calibrating"/> step even though the area is still
+    /// calibrated (the old fit stays live, so a bailed redo loses nothing).
+    /// Set by <see cref="Recalibrate"/>, cleared on cancel, on the new fit
+    /// persisting, and on mode change.</summary>
+    private bool _recalibrating;
 
-    /// <summary>#477B: confirmed recalibrate. Clears the current area's
-    /// persisted calibration; <see cref="IAreaCalibrationService.Changed"/>
-    /// makes <see cref="RecomputeStep"/> route back into
-    /// <see cref="WizardStep.Calibrating"/> via the same pin route as cold
-    /// start (<see cref="OnCurrentStepChanged"/> re-arms PinCalibration), so
-    /// Part A's guided correctable flow applies on the redo.</summary>
+    /// <summary>#477B/#501: recalibration entry — only meaningful when the
+    /// area is already calibrated. Routes into the guided
+    /// <see cref="WizardStep.Calibrating"/> flow with an inline confirm gate
+    /// shown first (<see cref="IsConfirmingRecalibrate"/>); it does NOT delete
+    /// anything. The old calibration stays active until a new fit is solved &amp;
+    /// saved (which overwrites it), so cancelling loses nothing.</summary>
     [RelayCommand]
-    private void ConfirmRecalibrate()
+    private void Recalibrate()
     {
-        IsConfirmingRecalibrate = false;
-        _areaCalibration.ClearCurrentAreaCalibration();
+        _recalibrating = true;
+        IsConfirmingRecalibrate = true;
+        RecomputeStep();   // → Calibrating, inline gate showing
     }
 
-    /// <summary>#477B: back out of the recalibrate confirm guard.</summary>
+    /// <summary>#501: acknowledge the inline gate — proceed to drop/pair. The
+    /// persisted calibration is intentionally NOT cleared here; the existing
+    /// <see cref="ConfirmCalibrationCommand"/> at the end of the guided flow
+    /// solves and overwrites it. Still in <see cref="WizardStep.Calibrating"/>;
+    /// just reveal the body (gate hidden).</summary>
     [RelayCommand]
-    private void CancelRecalibrate() => IsConfirmingRecalibrate = false;
+    private void ConfirmRecalibrate() => IsConfirmingRecalibrate = false;
+
+    /// <summary>#501: back out of the recalibrate gate with the existing
+    /// calibration untouched. Clears the in-progress flag and re-derives the
+    /// step (→ back to Listening / the Motherlode stage / PickMode). Mirrors
+    /// the pre-pick chip-escape overlay cleanup when no mode is picked.</summary>
+    [RelayCommand]
+    private void CancelRecalibrate()
+    {
+        IsConfirmingRecalibrate = false;
+        _recalibrating = false;
+        if (!HasPickedMode)
+        {
+            _session.IsMapVisible = false;
+            _session.IsInventoryVisible = false;
+        }
+        RecomputeStep();
+    }
 
     /// <summary>#477B: a "Recalibrate this area" affordance is offered only
     /// when there is a persisted calibration to redo (Listening step).</summary>
@@ -533,6 +557,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             _motherlodeFlow.Reset();
         _motherlodeCalibrationRequested = false;
         _calibrationRequested = false;   // #502: don't re-enter Calibrating from PickMode
+        _recalibrating = false;          // #501: abandon any pending recalibrate
         _session.IsMapVisible = false;
         _session.IsInventoryVisible = false;
         HasPickedMode = false;
@@ -638,7 +663,9 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             // start it before a mode is picked. Honour the one-shot before the
             // PickMode fallthrough; clicking the chip again clears it (the
             // chip is the escape, since Back/breadcrumb are mode-gated).
-            if (_calibrationRequested && IsAreaKnown && !_areaCalibration.IsCurrentAreaCalibrated)
+            if (IsAreaKnown
+                && ((_calibrationRequested && !_areaCalibration.IsCurrentAreaCalibrated)
+                    || _recalibrating))
                 CurrentStep = WizardStep.Calibrating;
             else
                 CurrentStep = WizardStep.PickMode;
@@ -653,7 +680,8 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             // on-map dot in an uncalibrated area. Reuses the Survey guided
             // walkthrough; areaCalibration.Changed clears the request and
             // re-runs this, dropping back to the stage below.
-            if (_motherlodeCalibrationRequested && !_areaCalibration.IsCurrentAreaCalibrated)
+            if ((_motherlodeCalibrationRequested && !_areaCalibration.IsCurrentAreaCalibrated)
+                || _recalibrating)
             {
                 CurrentStep = WizardStep.Calibrating;
                 return;
@@ -677,7 +705,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         // re-runs this once Solve persists one. #454 collapsed the rest of
         // the Survey FSM (no AwaitingPosition/Ready); Listening is the
         // resting/default step and its UI adapts to an empty Surveys list.
-        if (!_areaCalibration.IsCurrentAreaCalibrated)
+        if (!_areaCalibration.IsCurrentAreaCalibrated || _recalibrating)
         {
             CurrentStep = WizardStep.Calibrating;
             return;
