@@ -18,6 +18,7 @@ public sealed class GourmandIngestionService : BackgroundService
     private readonly PerCharacterView<GourmandState> _view;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
+    private readonly ThrottledWarn _warn;
 
     public GourmandIngestionService(
         IPlayerLogStream stream,
@@ -35,6 +36,7 @@ public sealed class GourmandIngestionService : BackgroundService
         _view = view;
         _diag = diag;
         _gate = gates.For("pippin");
+        _warn = new ThrottledWarn(diag, "Pippin.Ingestion");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,12 +54,16 @@ public sealed class GourmandIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            var evt = _parser.TryParse(raw.Line, raw.Timestamp);
-            if (evt is GourmandEvent ge)
+            try
             {
-                _diag?.Trace("Pippin.Parse", $"FoodsConsumedReport with {(ge as FoodsConsumedReport)?.Foods.Count ?? 0} entries");
-                Dispatch(() => _state.Apply(ge));
+                var evt = _parser.TryParse(raw.Line, raw.Timestamp);
+                if (evt is GourmandEvent ge)
+                {
+                    _diag?.Trace("Pippin.Parse", $"FoodsConsumedReport with {(ge as FoodsConsumedReport)?.Foods.Count ?? 0} entries");
+                    Dispatch(() => _state.Apply(ge));
+                }
             }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 

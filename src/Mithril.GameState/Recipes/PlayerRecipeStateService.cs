@@ -34,6 +34,7 @@ public sealed class PlayerRecipeStateService : BackgroundService, IPlayerRecipeS
     private readonly IPlayerLogStream _stream;
     private readonly RecipeLogParser _parser;
     private readonly IDiagnosticsSink? _diag;
+    private readonly ThrottledWarn _warn;
 
     private readonly object _lock = new();
     private readonly List<Action<PlayerRecipeSnapshot>> _handlers = new();
@@ -48,6 +49,7 @@ public sealed class PlayerRecipeStateService : BackgroundService, IPlayerRecipeS
         _stream = stream;
         _parser = parser;
         _diag = diag;
+        _warn = new ThrottledWarn(diag, "GameState.Recipes");
     }
 
     public PlayerRecipeSnapshot Current => _current;
@@ -80,15 +82,19 @@ public sealed class PlayerRecipeStateService : BackgroundService, IPlayerRecipeS
         _diag?.Info("GameState.Recipes", "Subscribing to Player.log for recipe-state events");
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            switch (_parser.TryParse(raw.Line, raw.Timestamp))
+            try
             {
-                case RecipesSnapshotEvent snap:
-                    ReplaceAll(snap);
-                    break;
-                case RecipeUpdateEvent upd:
-                    Upsert(upd);
-                    break;
+                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                {
+                    case RecipesSnapshotEvent snap:
+                        ReplaceAll(snap);
+                        break;
+                    case RecipeUpdateEvent upd:
+                        Upsert(upd);
+                        break;
+                }
             }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 
