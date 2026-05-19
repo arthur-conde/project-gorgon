@@ -225,12 +225,16 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
     partial void OnCurrentStepChanged(WizardStep value)
     {
-        // #460: the Calibrating gate arms pin-capture on the map overlay
+        // #460: the Calibrating step arms pin-capture on the map overlay
         // (which it opens); any other step disarms (flushes pending/pairs).
+        // #501: a recalibration shows the inline confirm gate first — don't
+        // pop the overlay / arm until the user acknowledges (cold-start has no
+        // gate, so it begins immediately). ConfirmRecalibrate then calls
+        // BeginGuidedCalibration directly (no step change to re-trigger this).
         if (value == WizardStep.Calibrating)
         {
-            PinCalibration.Arm();
-            _session.IsMapVisible = true;
+            if (!IsConfirmingRecalibrate)
+                BeginGuidedCalibration();
         }
         else if (PinCalibration.IsArmed)
         {
@@ -374,10 +378,25 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// <summary>#501: acknowledge the inline gate — proceed to drop/pair. The
     /// persisted calibration is intentionally NOT cleared here; the existing
     /// <see cref="ConfirmCalibrationCommand"/> at the end of the guided flow
-    /// solves and overwrites it. Still in <see cref="WizardStep.Calibrating"/>;
-    /// just reveal the body (gate hidden).</summary>
+    /// solves and overwrites it. Still in <see cref="WizardStep.Calibrating"/>
+    /// (no step change), so begin the guided flow directly — this is the point
+    /// the overlay should pop, not the earlier chip click.</summary>
     [RelayCommand]
-    private void ConfirmRecalibrate() => IsConfirmingRecalibrate = false;
+    private void ConfirmRecalibrate()
+    {
+        IsConfirmingRecalibrate = false;
+        BeginGuidedCalibration();
+    }
+
+    /// <summary>#460/#501: arm pin-capture and open the map overlay for the
+    /// guided drop/pair. The single place that "starts" calibration work —
+    /// reached on entering <see cref="WizardStep.Calibrating"/> with no gate
+    /// (cold-start) or on acknowledging the recalibrate gate.</summary>
+    private void BeginGuidedCalibration()
+    {
+        PinCalibration.Arm();
+        _session.IsMapVisible = true;
+    }
 
     /// <summary>#501: back out of the recalibrate gate with the existing
     /// calibration untouched. Clears the in-progress flag and re-derives the

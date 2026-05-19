@@ -605,6 +605,8 @@ public class LegolasWizardViewModelTests
         wizard.IsConfirmingRecalibrate.Should().BeTrue();
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
         calib.Calibrated.Should().BeTrue("the existing fit stays live behind the gate");
+        wizard.PinCalibration.IsArmed.Should().BeFalse(
+            "#501: don't arm pin-capture until the gate is acknowledged");
 
         // Cancel exits with the calibration entirely intact.
         wizard.CancelRecalibrateCommand.Execute(null);
@@ -633,6 +635,42 @@ public class LegolasWizardViewModelTests
 
         calib.Calibrated.Should().BeTrue("a fresh fit was saved (overwrite, not delete-then-maybe)");
         wizard.CurrentStep.Should().Be(WizardStep.Listening, "recalibration finished");
+    }
+
+    [Fact]
+    public void Recalibrate_gate_does_not_pop_the_overlay_until_acknowledged()
+    {
+        // Pre-pick (map hidden at PickMode) gives a clean "was it forced
+        // open?" assertion. Calibrated chip → gate, no overlay/arm yet.
+        var calib = new FakeAreaCalib { Calibrated = true };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+        session.IsMapVisible.Should().BeFalse();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue();
+        session.IsMapVisible.Should().BeFalse("the overlay must not pop under the confirm gate");
+        wizard.PinCalibration.IsArmed.Should().BeFalse();
+
+        wizard.ConfirmRecalibrateCommand.Execute(null);
+        session.IsMapVisible.Should().BeTrue("acknowledging is when the guided flow begins");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Cold_start_calibration_opens_the_overlay_immediately_no_gate()
+    {
+        // No calibration ⇒ no gate ⇒ the overlay/arm begin at once (you need
+        // the map to drop pins).
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+
+        wizard.CalibrateThisAreaCommand.Execute(null);   // pre-pick cold-start
+
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.IsConfirmingRecalibrate.Should().BeFalse("cold-start has nothing to confirm");
+        session.IsMapVisible.Should().BeTrue();
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
     }
 
     // ---- #495 Validate-calibration availability gate -------------------
