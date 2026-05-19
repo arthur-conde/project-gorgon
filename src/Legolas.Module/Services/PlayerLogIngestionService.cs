@@ -4,7 +4,6 @@ using Legolas.Flow;
 using Legolas.ViewModels;
 using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
@@ -53,7 +52,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly LegolasSettings _settings;
     private readonly ModuleGates _gates;
-    private readonly GameConfig _config;
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
 
@@ -79,7 +77,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
         ModuleGates gates,
-        GameConfig config,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
@@ -92,7 +89,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _motherlode = motherlode;
         _settings = settings;
         _gates = gates;
-        _config = config;
         _time = time ?? TimeProvider.System;
         _diag = diag;
     }
@@ -106,10 +102,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
         // buffer, so a finished run's targets don't repopulate as fresh pins.
         _liveSince = _time.GetUtcNow().UtcDateTime;
 
-        // One-shot reverse-scan for the most recent LOADING LEVEL Area* line
-        // before the live tail kicks in — best-effort, never blocks ingestion.
-        if (!string.IsNullOrEmpty(_config.PlayerLogPath))
-            _areaTracker.SeedFromLog(_config.PlayerLogPath);
+        // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
+        // owned — mithril#514); this consumer only reads it.
         ApplyAreaIfChanged();
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))

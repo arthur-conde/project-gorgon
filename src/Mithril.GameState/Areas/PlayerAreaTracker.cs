@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 
 namespace Mithril.GameState.Areas;
@@ -32,13 +33,25 @@ public sealed class PlayerAreaTracker
 {
     private readonly AreaTransitionParser _parser;
     private readonly IDiagnosticsSink? _diag;
+    private readonly GameConfig? _config;
     private readonly object _lock = new();
+    private readonly object _seedLock = new();
+    private bool _seedAttempted;
     private string? _currentArea;
 
-    public PlayerAreaTracker(AreaTransitionParser parser, IDiagnosticsSink? diag = null)
+    /// <param name="config">Optional. When supplied, the tracker owns its own
+    /// one-shot pre-login-preamble seed (lazily, on the first
+    /// <see cref="CurrentArea"/> read or <see cref="Observe(string,DateTime)"/>)
+    /// — consumers no longer trigger <see cref="SeedFromLog"/>. Null in tests
+    /// that drive state directly.</param>
+    public PlayerAreaTracker(
+        AreaTransitionParser parser,
+        IDiagnosticsSink? diag = null,
+        GameConfig? config = null)
     {
         _parser = parser;
         _diag = diag;
+        _config = config;
     }
 
     /// <summary>
@@ -51,7 +64,7 @@ public sealed class PlayerAreaTracker
     /// </summary>
     public string? CurrentArea
     {
-        get { lock (_lock) return _currentArea; }
+        get { EnsureSeeded(); lock (_lock) return _currentArea; }
     }
 
     /// <summary>
@@ -60,6 +73,14 @@ public sealed class PlayerAreaTracker
     /// state).
     /// </summary>
     public void Observe(string line, DateTime timestamp)
+    {
+        EnsureSeeded();
+        Apply(line, timestamp);
+    }
+
+    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp);
+
+    private void Apply(string line, DateTime timestamp)
     {
         if (_parser.TryParse(line, timestamp) is AreaTransitionEvent evt)
         {
@@ -75,7 +96,32 @@ public sealed class PlayerAreaTracker
         }
     }
 
-    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp);
+    /// <summary>
+    /// Idempotent, owned, one-shot pre-login-preamble seed. Runs at most once
+    /// per instance (lazily, on the first <see cref="CurrentArea"/> read or
+    /// <see cref="Observe(string,DateTime)"/>), so consumers never trigger the
+    /// scan and a new consumer can't forget to. With no log path / no
+    /// <c>LOADING LEVEL</c> found, "area unknown" is surfaced once rather than
+    /// being a silent null. See mithril#514.
+    /// </summary>
+    private void EnsureSeeded()
+    {
+        lock (_seedLock)
+        {
+            if (_seedAttempted) return;
+            _seedAttempted = true;
+        }
+
+        var path = _config?.PlayerLogPath;
+        if (!string.IsNullOrEmpty(path)) ScanForArea(path);
+
+        bool unknown;
+        lock (_lock) unknown = _currentArea is null;
+        if (unknown)
+            _diag?.Info("GameState.Area",
+                "Area unknown after one-shot preamble seed (no LOADING LEVEL " +
+                "found / no log path) — null until the first live transition");
+    }
 
     /// <summary>
     /// One-shot startup seed. Reads <paramref name="logPath"/> backward in
@@ -90,7 +136,19 @@ public sealed class PlayerAreaTracker
     /// start of the file is reached, so the scan is bounded by file size,
     /// not the chunk constant.
     /// </remarks>
+    /// <summary>
+    /// Explicit one-shot seed. Retained for tests and any caller that already
+    /// holds the log path; marks the seed attempted so the lazy
+    /// <see cref="EnsureSeeded"/> path won't re-scan. Production consumers do
+    /// <b>not</b> call this — the tracker self-seeds (mithril#514).
+    /// </summary>
     public void SeedFromLog(string logPath)
+    {
+        lock (_seedLock) _seedAttempted = true;
+        ScanForArea(logPath);
+    }
+
+    private void ScanForArea(string logPath)
     {
         if (!File.Exists(logPath)) return;
 
@@ -126,7 +184,7 @@ public sealed class PlayerAreaTracker
                     // "[HH:MM:SS]" prefix but PlayerLogTailReader strips it
                     // before normal parsing; for the seed we only care about
                     // the AreaKey, not the timestamp, so wall-clock-now is fine.
-                    Observe(line, DateTime.UtcNow);
+                    Apply(line, DateTime.UtcNow);
                     return;
                 }
                 if (scanFrom == 0) break;

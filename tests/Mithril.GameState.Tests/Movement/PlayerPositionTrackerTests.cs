@@ -23,8 +23,7 @@ public sealed class PlayerPositionTrackerTests
         "[10:00:00] LocalPlayer: ProcessAddPlayer(1, 2, \"@Base2-m(sex=m;Face=@eq(a=1))\", \"Emraell\", \"A player!\", System.String[], (1522.22, 112.27, 288.13), (0,0,0,1), Idle, Standing, 0, 0, True)";
 
     private static PlayerPositionTracker NewTracker(ScriptedStream stream, PlayerAreaTracker? area = null) =>
-        new(stream, new PlayerPositionParser(), area ?? new PlayerAreaTracker(new AreaTransitionParser()),
-            new GameConfig() /* empty GameRoot ⇒ no SeedFromLog file IO */);
+        new(stream, new PlayerPositionParser(), area ?? new PlayerAreaTracker(new AreaTransitionParser()));
 
     [Fact]
     public async Task Position_line_populates_Current_with_coords_and_utc_instant()
