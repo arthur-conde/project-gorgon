@@ -59,10 +59,13 @@ public readonly record struct MotherlodePositionSample(
 /// One motherlode treasure being located. <see cref="DistancesByLocation"/> is
 /// parallel to the shared <see cref="MotherlodeSession.LocationSamples"/> list:
 /// element <c>k</c> is the ChatLog distance read at location <c>k</c> for this
-/// slot. The k-th distance line emitted at a location binds to slot k — the
-/// batching contract (no per-target identity exists in the log; a player
-/// carries an inventory of maps and clicks them in a stable order at every
-/// spot). Slots are solved independently against the shared samples.
+/// slot. Slots are <b>created on use/read</b> (never from holding inventory):
+/// the k-th read at the defining (first) spot creates working slot k; later
+/// spots re-read the same working set in the same order — the declared-order
+/// contract (no per-target identity exists in the log; Survey/Treasure-
+/// Cartography assumptions: same order every spot, maps arranged sequentially).
+/// Serial mode is the degenerate single-active-slot case. Slots are solved
+/// independently against the shared samples.
 /// </summary>
 public sealed record MotherlodeSurvey(
     Guid Id,
@@ -81,6 +84,15 @@ public sealed record MotherlodeSurvey(
     /// the slot has been solved at least once.
     /// </summary>
     public Services.MultilaterationQuality? Quality { get; init; }
+
+    /// <summary>
+    /// Map <i>type</i> display label this slot was created from (e.g.
+    /// "Kur Mountains Simple Metal Motherlode Map"), taken from the
+    /// <c>ProcessDoDelayLoop</c> use line. A label only — identical across a
+    /// same-type stack; binding stays order-based. Null when the use line
+    /// carried no name (carryover / fallback).
+    /// </summary>
+    public string? MapName { get; init; }
 
     public static MotherlodeSurvey Create() =>
         new(Guid.NewGuid(), Array.Empty<int>(), null, null, null, false, null);

@@ -32,23 +32,35 @@ public sealed partial class PlayerLogParser : ILogParser
     private static partial Regex MapFxRx();
 
     // Motherlode-map use gesture: ProcessDoDelayLoop whose quoted action text
-    // mentions a Motherlode map. Label-agnostic — only the fact + timestamp are
-    // used for pairing (#488); the map's full name is intentionally not
-    // captured. Grammar mirrors Gandalf's InteractionDelayLoopParser (no
-    // cross-module dependency taken).
+    // mentions a Motherlode map. The quoted text is captured for its map *type*
+    // name (e.g. "Kur Mountains Simple Metal Motherlode Map") — a display label
+    // only; binding stays order-based (the type is identical across a same-type
+    // stack, no per-map identity). Grammar mirrors Gandalf's
+    // InteractionDelayLoopParser (no cross-module dependency taken).
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*\w+\s*,\s*"[^"]*Motherlode Map[^"]*"\s*,""",
+        """LocalPlayer:\s*ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*\w+\s*,\s*"(?<map>[^"]*Motherlode Map[^"]*)"\s*,""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex MotherlodeUseRx();
+
+    private static string? NormalizeMapName(string raw)
+    {
+        var s = raw.Trim();
+        // PG action text is "Using <Item Name>"; strip the verb prefix so the
+        // label is the bare map name.
+        if (s.StartsWith("Using ", StringComparison.OrdinalIgnoreCase))
+            s = s["Using ".Length..].Trim();
+        return s.Length == 0 ? null : s;
+    }
 
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrEmpty(line)) return null;
 
         if (line.Contains("ProcessDoDelayLoop(", StringComparison.Ordinal)
-            && MotherlodeUseRx().IsMatch(line))
+            && MotherlodeUseRx().Match(line) is { Success: true } use)
         {
-            return new MotherlodeUseDetected(timestamp);
+            return new MotherlodeUseDetected(
+                timestamp, NormalizeMapName(use.Groups["map"].Value));
         }
 
         if (line.Contains("ProcessMapFx", StringComparison.Ordinal)

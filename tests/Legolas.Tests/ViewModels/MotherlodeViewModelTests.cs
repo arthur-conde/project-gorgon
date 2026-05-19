@@ -86,9 +86,20 @@ public class MotherlodeViewModelTests
     }
 
     [Fact]
-    public void Collecting_the_only_treasure_reaches_Done()
+    public void Digging_the_only_treasure_reaches_Done()
     {
-        var (vm, coord, pos, _) = Build();
+        var pos = new FakePlayerPositionTracker();
+        var pins = new FakePlayerPinTracker();
+        var inv = new FakeInventoryService();
+        var refData = new FakeMotherlodeRefData(
+            ("MiningSurveyKurMountains1X", "Kur Mountains Simple Metal Motherlode Map"));
+        var flow = new MotherlodeFlowController(new SessionState());
+        var coord = new MotherlodeMeasurementCoordinator(
+            new MultilaterationSolver(), flow, pos, pins, inv, refData, new LegolasSettings());
+        var optimizer = new AdaptiveRouteOptimizer(
+            new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
+        var vm = new MotherlodeViewModel(coord, optimizer, flow, pins, new FakeAreaCalibrationService());
+        inv.Add(1, "MiningSurveyKurMountains1X");          // register (create-on-use ⇒ no slot)
         (double X, double Z) target = (420, -260);
 
         Measure(coord, pos, 0, 0, target, T0);
@@ -96,10 +107,11 @@ public class MotherlodeViewModelTests
         Measure(coord, pos, 0, -800, target, T0.AddMinutes(4));
         vm.Stage.Should().Be(MotherlodeStage.Walk);
 
-        coord.OnItemCollected("Iron Metal Slab");
+        inv.Delete(1, T0.AddMinutes(6).UtcDateTime);       // the dig
 
         vm.Stage.Should().Be(MotherlodeStage.Done);
-        vm.Slots.Should().ContainSingle().Which.Collected.Should().BeTrue();
+        vm.Slots.Should().BeEmpty();                       // active-only: the retired slot drops out
+        vm.MapsDug.Should().Be(1);
     }
 
     [Fact]

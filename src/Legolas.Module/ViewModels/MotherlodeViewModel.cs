@@ -33,6 +33,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private readonly MotherlodeFlowController _flow;
     private readonly IPlayerPinTracker? _pinTracker;
     private readonly IAreaCalibrationService? _areaCalibration;
+    private readonly LegolasSettings? _settings;
 
     private static readonly IReadOnlyList<MapPin> NoPins = Array.Empty<MapPin>();
     private static readonly IReadOnlyList<CalibrationReference> NoReferences = Array.Empty<CalibrationReference>();
@@ -42,15 +43,46 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         IRouteOptimizer optimizer,
         MotherlodeFlowController flow,
         IPlayerPinTracker? pinTracker = null,
-        IAreaCalibrationService? areaCalibration = null)
+        IAreaCalibrationService? areaCalibration = null,
+        LegolasSettings? settings = null)
     {
         _coordinator = coordinator;
         _optimizer = optimizer;
         _flow = flow;
         _pinTracker = pinTracker;
         _areaCalibration = areaCalibration;
+        _settings = settings;
         _coordinator.Changed += OnCoordinatorChanged;
+        if (_settings is not null)
+            _settings.PropertyChanged += OnSettingsChanged;
         Rebuild();
+    }
+
+    private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(LegolasSettings.MotherlodeMultiMapMode))
+        {
+            OnPropertyChanged(nameof(MultiMapMode));
+            RecomputeContractText();
+        }
+    }
+
+    /// <summary>
+    /// #488 Multi-map mode. Two-way, setting-backed (not a snapshot
+    /// projection) — this is an operational control the player flips mid-run,
+    /// deliberately surfaced on the Motherlode panel rather than the Legolas
+    /// settings tab (it belongs where the action is; the value still persists
+    /// via <see cref="LegolasSettings.MotherlodeMultiMapMode"/>). Default true
+    /// when no settings instance is available (tests).
+    /// </summary>
+    public bool MultiMapMode
+    {
+        get => _settings?.MotherlodeMultiMapMode ?? true;
+        set
+        {
+            if (_settings is null || _settings.MotherlodeMultiMapMode == value) return;
+            _settings.MotherlodeMultiMapMode = value;   // OnSettingsChanged raises the notification
+        }
     }
 
     public MotherlodeFlowController Flow => _flow;
@@ -61,10 +93,44 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _locationsWithFix;
     [ObservableProperty] private string? _guidance;
 
+    /// <summary>Per-spot bound-reading tally, parallel to the measured spots —
+    /// the passive multi-map shape surface ("Spot 1: 5 · Spot 2: 4").</summary>
+    [ObservableProperty] private IReadOnlyList<int> _readsPerLocation = Array.Empty<int>();
+
+    /// <summary>Session summary: motherlode maps dug (treasures found). Loot is
+    /// a documented data ceiling (dig spawns a node — yield decoupled), so the
+    /// summary is this + elapsed time only.</summary>
+    [ObservableProperty] private int _mapsDug;
+
+    /// <summary>Preformatted per-spot tally ("Spot 1: 5 · Spot 2: 4"), or null
+    /// when nothing has been read yet.</summary>
+    [ObservableProperty] private string? _readsSummary;
+
+    /// <summary>Multi-map contract hint ("expecting N maps per spot"), or null
+    /// when single-map / serial / inventory unknown.</summary>
+    [ObservableProperty] private string? _contractHint;
+
+    private void RecomputeContractText()
+    {
+        var reads = ReadsPerLocation;
+        ReadsSummary = reads.Count == 0 || reads.All(r => r == 0)
+            ? null
+            : string.Join("  ·  ", reads.Select((r, i) => $"Spot {i + 1}: {r}"));
+        // Working-set based (never inventory-held): hint only once a multi-map
+        // batch is actually in progress (≥2 active slots).
+        ContractHint = MultiMapMode && Slots.Count > 1
+            ? "Multi-map mode — read your maps in the same order at every spot"
+            : null;
+    }
+
     /// <summary>#113 Layer 4: the derived progress stage the wizard projects
     /// onto its Motherlode sub-steps. Recomputed every <see cref="Rebuild"/>;
     /// the FSM stays coarse — this is purely a snapshot projection.</summary>
     [ObservableProperty] private MotherlodeStage _stage;
+
+    /// <summary>True when there is a bound reading the player can undo (the
+    /// "oops" button is enabled). Multi-level.</summary>
+    [ObservableProperty] private bool _canUndo;
 
     /// <summary>Treasures with a confident fix so far — the headline number.</summary>
     public int SolvedCount => Slots.Count(s => s.HasFix);
@@ -90,9 +156,13 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
             .Select(s => (Guid?)s.Id)
             .FirstOrDefault();
 
+        // Active-only projection: a retired (dug) slot drops out immediately —
+        // the list is the working set, never a completed graveyard, so cost is
+        // O(active) regardless of how many were farmed this session.
         Slots.Clear();
         foreach (var s in snap.Surveys)
         {
+            if (s.Collected) continue;
             var bearing = s.SolvedWorld is { } w
                 ? MotherlodeReferenceLocator.Nearest(w, snap.Locations, pins, gazetteer)
                 : null;
@@ -102,10 +172,14 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         LocationCount = snap.LocationCount;
         LocationsWithFix = snap.LocationsWithFix;
         Guidance = snap.Guidance;
+        ReadsPerLocation = snap.ReadsPerLocation;
+        MapsDug = snap.MapsDug;
+        CanUndo = snap.CanUndo;
+        RecomputeContractText();
         OnPropertyChanged(nameof(SolvedCount));
 
         Stage =
-            Slots.Count > 0 && Slots.All(s => s.Collected) ? MotherlodeStage.Done
+            MapsDug > 0 && Slots.Count == 0 ? MotherlodeStage.Done
             : Slots.Any(s => s.HasFix) ? MotherlodeStage.Walk
             : LocationCount > 0 || Slots.Count > 0 ? MotherlodeStage.Locating
             : MotherlodeStage.Measuring;
@@ -132,10 +206,21 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         _coordinator.ApplyRouteOrder(order.Select(i => ids[i]).ToList());
     }
 
+    /// <summary>"Oops, I accidentally checked a map" — reverse the last bound
+    /// reading (multi-level). Cheap correction vs. nuking the batch with
+    /// Reset.</summary>
+    [RelayCommand]
+    private void UndoLastReading() => _coordinator.UndoLastReading();
+
     [RelayCommand]
     private void Reset() => _coordinator.Reset();
 
-    public void Dispose() => _coordinator.Changed -= OnCoordinatorChanged;
+    public void Dispose()
+    {
+        _coordinator.Changed -= OnCoordinatorChanged;
+        if (_settings is not null)
+            _settings.PropertyChanged -= OnSettingsChanged;
+    }
 }
 
 /// <summary>Derived Motherlode progress stage (#113 Layer 4). Projected onto
@@ -160,14 +245,17 @@ public sealed class MotherlodeSlotViewModel
         RouteText = m.RouteOrder is { } r ? $"{r + 1}." : "•";
         DistanceCount = m.DistancesByLocation.Count(d => d > 0);
         HasFix = m.SolvedWorld is not null;
+        MapName = m.MapName;
 
         // Headline: the actionable relative phrase when solved; otherwise the
-        // progress toward the 3-reading minimum.
-        HeadlineText = HasFix
+        // progress toward the 3-reading minimum. Prefixed with the inventory
+        // map name when known (#488) so juggled multi-map slots are legible.
+        var core = HasFix
             ? bearing?.ToDisplayString() ?? "located — no nearby reference"
             : DistanceCount < 3
                 ? $"locating… ({DistanceCount}/3 readings)"
                 : "locating…";
+        HeadlineText = string.IsNullOrWhiteSpace(MapName) ? core : $"{MapName} — {core}";
 
         Quality = m.Quality switch
         {
@@ -200,6 +288,7 @@ public sealed class MotherlodeSlotViewModel
     public string RouteText { get; }
     public int DistanceCount { get; }
     public bool HasFix { get; }
+    public string? MapName { get; }
     public string HeadlineText { get; }
     public MotherlodeFixQuality Quality { get; }
     public string? QualityText { get; }

@@ -214,4 +214,19 @@ public class LegolasSettingsMigrationTests
         c.ResidualPixels.Should().BeApproximately(1.75, 1e-9);
         c.SchemaVersion.Should().Be(1);
     }
+
+    [Fact]
+    public void MotherlodeMultiMapMode_defaults_true_and_round_trips()
+    {
+        // Additive (#488): a v4 blob without the key loads the true default,
+        // so no SchemaVersion bump / Migrate branch is needed.
+        var legacy = JsonSerializer.Deserialize(
+            "{ \"schemaVersion\": 4 }", LegolasSettingsJsonContext.Default.LegolasSettings)!;
+        legacy.MotherlodeMultiMapMode.Should().BeTrue();
+
+        var settings = new LegolasSettings { MotherlodeMultiMapMode = false };
+        var written = JsonSerializer.Serialize(settings, LegolasSettingsJsonContext.Default.LegolasSettings);
+        var reloaded = JsonSerializer.Deserialize(written, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+        reloaded.MotherlodeMultiMapMode.Should().BeFalse();
+    }
 }

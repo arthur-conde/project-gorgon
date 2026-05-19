@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows.Data;
@@ -10,11 +12,14 @@ namespace Legolas.ViewModels;
 public sealed partial class InventoryOverlayViewModel : ObservableObject
 {
     private readonly SessionState _session;
+    private readonly MotherlodeViewModel? _motherlode;
 
-    public InventoryOverlayViewModel(InventoryGridSettings grid, SessionState session)
+    public InventoryOverlayViewModel(InventoryGridSettings grid, SessionState session,
+        MotherlodeViewModel? motherlode = null)
     {
         Grid = grid;
         _session = session;
+        _motherlode = motherlode;
         Slots = CollectionViewSource.GetDefaultView(_session.Surveys);
         Slots.Filter = item => item is SurveyItemViewModel s && !s.Collected;
 
@@ -23,6 +28,51 @@ public sealed partial class InventoryOverlayViewModel : ObservableObject
         _session.Surveys.CollectionChanged += OnSurveysChanged;
         foreach (var s in _session.Surveys)
             s.PropertyChanged += OnItemChanged;
+
+        // #488: in Motherlode mode the overlay guides the multi-map read-order
+        // contract — it lists the tracked motherlode maps (name + 1-based read
+        // ordinal) so the player lays them in inventory in that order and reads
+        // top-to-bottom at every spot. Sourced from the Motherlode coordinator
+        // (via MotherlodeViewModel), kept entirely separate from Survey state.
+        if (_motherlode is not null)
+            _motherlode.Slots.CollectionChanged += (_, _) => RebuildMotherlodeSlots();
+        _session.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SessionState.Mode))
+            {
+                RebuildMotherlodeSlots();
+                OnPropertyChanged(nameof(ActiveSlots));
+            }
+        };
+        RebuildMotherlodeSlots();
+    }
+
+    /// <summary>Motherlode read-order guidance items (uncollected tracked maps,
+    /// in stable ordinal order). Reuses <see cref="SurveyItemViewModel"/> so the
+    /// existing inventory tile template renders them unchanged: Name = map
+    /// display name, GridIndex = 1-based read ordinal, IsActiveTarget = the
+    /// next map to read.</summary>
+    public ObservableCollection<SurveyItemViewModel> MotherlodeSlots { get; } = new();
+
+    /// <summary>The collection the overlay binds to — Survey pins or, in
+    /// Motherlode mode, the read-order map list.</summary>
+    public IEnumerable ActiveSlots =>
+        _session.Mode == SessionMode.Motherlode ? MotherlodeSlots : Slots;
+
+    private void RebuildMotherlodeSlots()
+    {
+        MotherlodeSlots.Clear();
+        if (_motherlode is null || _session.Mode != SessionMode.Motherlode) return;
+
+        var ordinal = 0;
+        foreach (var m in _motherlode.Slots)
+        {
+            if (m.Collected) continue;                       // mirrors the Survey "uncollected only" filter
+            var name = string.IsNullOrWhiteSpace(m.MapName) ? $"Map {ordinal + 1}" : m.MapName!;
+            var survey = Survey.Create(name, MetreOffset.Zero, ordinal) with { Collected = false };
+            MotherlodeSlots.Add(new SurveyItemViewModel(survey) { IsActiveTarget = m.IsNextUp });
+            ordinal++;
+        }
     }
 
     private void OnSurveysChanged(object? sender, NotifyCollectionChangedEventArgs e)
