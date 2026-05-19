@@ -359,11 +359,11 @@ Applies to *every* module; owner-confirmed 2026-05-16:
 
 ## Radagast — environment & world-state (player-facing)
 
-> **(Proposed module — not yet a `*.Module` project; does not count against the
-> "all 12 projects charactered" coverage statement above. ⚠️ Claude draft,
-> pending owner sign-off — confirm/correct/delete before treating as binding.)**
+> **(Owner-confirmed 2026-05-19 — binding. Radagast is a *proposed* module, not
+> yet a `*.Module` project, so it does not count against the "all 12 projects
+> charactered" coverage statement above.)**
 
-- **Owns: ⚠️ inferred (Claude draft, pending owner sign-off)** — the
+- **Owns: ✅ confirmed (owner, 2026-05-19)** — the
   **player-facing surface** for server-keyed environment state: moon phase,
   per-map weather, and the server-keyed gardening buff. Two halves: **display**
   the live state, and the **community consume→display** path — surface the
@@ -466,9 +466,10 @@ libraries; the charter follows the code:
   (same date):** the client/server community-sync *transport* (publish + consume)
   is **shared Mithril infra**, owned by no module — Radagast owns only its
   `"radagast"` key + payload slice. Added a "Cross-module shared infra" entry for
-  the community-sync pipeline and a does-not-own bullet for it. Entire entry
-  **⚠️ inferred, pending owner sign-off**; Radagast is not yet a `*.Module`
-  project so the 12-project coverage statement is unaffected.
+  the community-sync pipeline and a does-not-own bullet for it. **Owner-confirmed
+  2026-05-19** ("charter statement matches my mental model") — entry promoted
+  ⚠️→✅ and now binding; Radagast is not yet a `*.Module` project so the
+  12-project coverage statement is unaffected.
 - **2026-05-17** — **Silmarillion TSys: popup → tab (owner-ratified).** The
   2026-05-16 "show possible TSys rolls in a *popup*" framing is superseded by a
   dedicated **Treasure System tab** (#412). Verified v470: `tsysclientinfo` (Power
