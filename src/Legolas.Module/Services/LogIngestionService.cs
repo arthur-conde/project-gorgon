@@ -1,4 +1,5 @@
 using System.Windows;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Legolas.Domain;
@@ -22,6 +23,7 @@ public sealed class LogIngestionService : BackgroundService
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly IAreaCalibrationService _areaCalibration;
+    private readonly ThrottledWarn _warn;
 
     public LogIngestionService(
         IChatLogStream stream,
@@ -29,7 +31,8 @@ public sealed class LogIngestionService : BackgroundService
         ModuleGates gates,
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
-        IAreaCalibrationService areaCalibration)
+        IAreaCalibrationService areaCalibration,
+        IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
@@ -37,6 +40,7 @@ public sealed class LogIngestionService : BackgroundService
         _session = session;
         _motherlode = motherlode;
         _areaCalibration = areaCalibration;
+        _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
     }
 
     // Both tail readers normalize their <c>[HH:MM:SS]</c> prefix to UTC via the
@@ -53,8 +57,12 @@ public sealed class LogIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            if (_parser.TryParse(raw.Line, raw.Timestamp) is GameEvent evt)
-                Dispatch(evt);
+            try
+            {
+                if (_parser.TryParse(raw.Line, raw.Timestamp) is GameEvent evt)
+                    Dispatch(evt);
+            }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 

@@ -1,3 +1,4 @@
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
@@ -12,17 +13,20 @@ public sealed class SarumanChatIngestionService : BackgroundService
     private readonly WordOfPowerChatParser _parser;
     private readonly SarumanCodebookService _codebook;
     private readonly ModuleGate _gate;
+    private readonly ThrottledWarn _warn;
 
     public SarumanChatIngestionService(
         IChatLogStream stream,
         WordOfPowerChatParser parser,
         SarumanCodebookService codebook,
-        ModuleGates gates)
+        ModuleGates gates,
+        IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
         _codebook = codebook;
         _gate = gates.For("saruman");
+        _warn = new ThrottledWarn(diag, "Saruman.Ingestion");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -31,8 +35,12 @@ public sealed class SarumanChatIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            if (_parser.TryParse(raw.Line, raw.Timestamp) is WordOfPowerSpoken s)
-                _codebook.MarkSpent(s.Code, s.Timestamp);
+            try
+            {
+                if (_parser.TryParse(raw.Line, raw.Timestamp) is WordOfPowerSpoken s)
+                    _codebook.MarkSpent(s.Code, s.Timestamp);
+            }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 }

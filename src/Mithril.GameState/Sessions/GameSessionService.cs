@@ -32,6 +32,7 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
     private readonly IPlayerLogStream _stream;
     private readonly SessionAnchor? _anchor;
     private readonly IDiagnosticsSink? _diag;
+    private readonly ThrottledWarn _warn;
 
     private readonly object _lock = new();
     private readonly List<Action<GameSession>> _handlers = [];
@@ -45,6 +46,7 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
         _stream = stream;
         _anchor = anchor;
         _diag = diag;
+        _warn = new ThrottledWarn(diag, "Session");
     }
 
     public GameSession? Current
@@ -73,8 +75,12 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
         _diag?.Info("Session", "Subscribing to Player.log for login banner");
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            if (!LoginBannerParser.TryParse(raw.Line, out var session)) continue;
-            Publish(session);
+            try
+            {
+                if (!LoginBannerParser.TryParse(raw.Line, out var session)) continue;
+                Publish(session);
+            }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 
