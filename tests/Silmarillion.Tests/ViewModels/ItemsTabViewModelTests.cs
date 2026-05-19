@@ -562,6 +562,55 @@ public sealed class ItemsTabViewModelTests
         vm.DetailViewModel.TreasureProfileLink.Should().BeNull();
     }
 
+    // ── Footer — InternalName KEY + item_{Id} ROW ──────────────────────────────
+    // Matrix #14 · G-a · ratified E5. The named identifier is the copyable KEY;
+    // the JSON envelope (recovered as `item_{Id}` from the lifted Id) is the
+    // inert storage-only ROW, mirroring Effect's `effect_XXXX` envelope path.
+
+    [Fact]
+    public void Footer_ItemWithIdAndInternalName_HasKeyAndRowCells()
+    {
+        var item = new Item { Id = 5010, InternalName = "GardenSalad", Name = "Garden Salad" };
+        var refData = new StubReferenceData { ItemsByName = { ["GardenSalad"] = item } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = item;
+
+        var footer = vm.DetailViewModel!.Footer;
+        footer.HasIds.Should().BeTrue();
+        footer.Ids.Should().HaveCount(2);
+
+        footer.Ids[0].LabelTag.Should().Be("KEY");
+        footer.Ids[0].Value.Should().Be("GardenSalad");
+        footer.Ids[0].Copyable.Should().BeTrue(
+            "InternalName is the cross-entity reference key (E5)");
+
+        footer.Ids[1].LabelTag.Should().Be("ROW");
+        footer.Ids[1].Value.Should().Be("item_5010",
+            "the ROW cell rebuilds the JSON envelope from the lifted Id");
+        footer.Ids[1].Copyable.Should().BeFalse(
+            "the envelope is a storage-only key, not a cross-entity reference (E5)");
+    }
+
+    [Fact]
+    public void Footer_ItemWithIdButNoInternalName_ShowsOnlyRow()
+    {
+        // Belt-and-braces: a missing InternalName must not suppress the ROW
+        // cell — each cell is independently gated. Reached via direct VM
+        // construction since ItemsTab keys on Name.
+        var item = new Item { Id = 5010, Name = "Mystery Item" };
+        var refData = new StubReferenceData();
+
+        var detail = new ItemDetailViewModel(item, refData);
+
+        detail.Footer.Ids.Should().HaveCount(1);
+        detail.Footer.Ids[0].LabelTag.Should().Be("ROW");
+        detail.Footer.Ids[0].Value.Should().Be("item_5010");
+        detail.Footer.Ids[0].Copyable.Should().BeFalse();
+    }
+
     // ── Keywords — raw classification tags as an inert Fact strip ──────────────
     // Item keywords are non-navigable (no Keyword entity) ⇒ Fact tier, not a
     // Link, even though the query engine can filter on them. Verbatim JSON form

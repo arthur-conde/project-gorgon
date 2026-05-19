@@ -155,13 +155,26 @@ public sealed partial class ItemDetailViewModel
             ? null
             : new SetRefVm("Used as", MatchCount: ConsumedAsKeywordInTotal, IsActionable: true);
 
-        // Footer ID (matrix #14 · G-a · ratified E5). The Item InternalName is a
-        // cross-entity reference KEY — recipes/quests/NPCs resolve items by it —
-        // ⇒ the copyable `KEY` cell (NOT the inert storage-only `ROW`; cf.
-        // EffectDetailView's EnvelopeKey). None() self-hides when absent.
-        Footer = string.IsNullOrEmpty(InternalName)
+        // Footer ID (matrix #14 · G-a · ratified E5). Two cells (G-a caps at 2):
+        //   • InternalName — the cross-entity reference KEY (recipes / quests /
+        //     NPCs resolve items by it) ⇒ copyable.
+        //   • `item_{Id}` — the JSON envelope from which Id was lifted; a
+        //     storage-only key (sources_items.json / itemuses.json reference items
+        //     this way alongside InternalName, but the envelope is the record
+        //     position, not the named identifier) ⇒ the inert `ROW` cell, exactly
+        //     EffectDetailView's `effect_XXXX` EnvelopeKey path. Rebuilt from Id
+        //     verbatim — the deserializer lifts the envelope key into Id, so
+        //     `$"item_{Id}"` recovers the JSON form.
+        // None() self-hides when both are absent; a missing InternalName still
+        // surfaces the ROW (and vice-versa).
+        var footerIds = new List<FactFooterId>(2);
+        if (!string.IsNullOrEmpty(InternalName))
+            footerIds.Add(new FactFooterId("KEY", InternalName, copyable: true));
+        if (Item.Id > 0)
+            footerIds.Add(new FactFooterId("ROW", $"item_{Item.Id}", copyable: false));
+        Footer = footerIds.Count == 0
             ? FactFooterVm.None()
-            : FactFooterVm.Key(InternalName);
+            : FactFooterVm.Of(footerIds.ToArray());
     }
 
     public Item Item { get; }
@@ -397,10 +410,12 @@ public sealed partial class ItemDetailViewModel
     public SetRefVm? ConsumedAsKeywordInSetRef { get; }
 
     /// <summary>
-    /// Footer identifier strip (matrix #14 · G-a · ratified E5). The Item
-    /// <see cref="InternalName"/> is a cross-entity reference KEY (recipes /
-    /// quests / NPCs resolve items by it) ⇒ a single copyable <c>KEY</c> cell;
-    /// <c>None()</c> (the strip self-hides) when the item has no internal name.
+    /// Footer identifier strip (matrix #14 · G-a · ratified E5). Up to two
+    /// cells (G-a caps at 2): the cross-entity reference <c>KEY</c>
+    /// (<see cref="InternalName"/> — copyable) and the inert <c>ROW</c>
+    /// (<c>item_{Id}</c> — the JSON envelope from which <see cref="Item.Id"/>
+    /// was lifted; mirrors EffectDetailView's <c>effect_XXXX</c> EnvelopeKey).
+    /// <see cref="FactFooterVm.None"/> (self-hides) when both are absent.
     /// </summary>
     public FactFooterVm Footer { get; }
 
