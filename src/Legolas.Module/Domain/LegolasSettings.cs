@@ -226,6 +226,31 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     }
 
     /// <summary>
+    /// Motherlode multi-map mode (#488). Default <c>true</c> — carrying several
+    /// motherlode maps is the common case. ON declares the read-order contract:
+    /// after re-locating, the player reads map 1, map 2, … map N in the same
+    /// fixed order at every spot, so the k-th reading at a spot binds to the
+    /// k-th tracked treasure (the log carries no per-read identity). OFF =
+    /// single-active-treasure serial mode. Persisted but surfaced/edited on the
+    /// Motherlode panel, not the settings tab (an operational toggle flipped
+    /// mid-run — see <c>MotherlodeViewModel.MultiMapMode</c>). Additive: old
+    /// settings JSON without this key deserializes to the <c>true</c> default,
+    /// so no <see cref="SchemaVersion"/> bump / <see cref="Migrate"/> branch is
+    /// needed (same additive convention as <see cref="MapTargetDedupRadiusMetres"/>).
+    /// </summary>
+    private bool _motherlodeMultiMapMode = true;
+    public bool MotherlodeMultiMapMode
+    {
+        get => _motherlodeMultiMapMode;
+        set
+        {
+            if (_motherlodeMultiMapMode == value) return;
+            _motherlodeMultiMapMode = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MotherlodeMultiMapMode)));
+        }
+    }
+
+    /// <summary>
     /// Hide both overlays on Done→Ready (session ends) and re-show them on
     /// Ready→Listening (next survey lands). Lets the user keep the game
     /// window uncluttered between cycles without manual toggling. Default on

@@ -63,11 +63,14 @@ public sealed record MotherlodeDistance(
 /// "Using … Motherlode Map", …)</c> — the player clicked a carried metal-slab
 /// (Motherlode) map. The <b>use gesture</b> the measurement coordinator
 /// temporally correlates a position feeder fix and the following ChatLog
-/// <see cref="MotherlodeDistance"/> line(s) against (#488, label-agnostic
-/// pairing — the map's name is never used to bind, only the timestamp).
+/// <see cref="MotherlodeDistance"/> line(s) against (#488). Pairing/binding is
+/// still order-based, not name-based — the use-line name is the map <i>type</i>
+/// (identical across a same-type stack, no per-map identity), carried only as a
+/// display label for the working slot it creates (create-on-use).
 /// </summary>
 public sealed record MotherlodeUseDetected(
-    DateTime Timestamp) : GameEvent(Timestamp);
+    DateTime Timestamp,
+    string? MapName = null) : GameEvent(Timestamp);
 
 /// <summary>
 /// The chat-log area banner (<c>"******* Entering Area: Eltibule"</c>). Carries

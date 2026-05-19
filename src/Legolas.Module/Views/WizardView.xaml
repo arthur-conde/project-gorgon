@@ -168,6 +168,52 @@
                                    FontSize="{DynamicResource AppFontSizeBody}" VerticalAlignment="Center" />
                     </StackPanel>
 
+                    <!-- #488 Multi-map mode. DELIBERATELY surfaced here on the
+                         Motherlode panel, NOT in the Legolas settings tab:
+                         it's an operational control the player flips mid-run
+                         (one map vs a carried batch), so it belongs where the
+                         action is. It is still a persisted setting
+                         (LegolasSettings.MotherlodeMultiMapMode); the panel is
+                         just its edit+display surface. Do not relocate to
+                         settings. -->
+                    <CheckBox IsChecked="{Binding MultiMapMode, Mode=TwoWay}"
+                              HorizontalAlignment="Center" Margin="0,0,0,4"
+                              Content="Multi-map mode — I read my maps in the same order at every spot" />
+                    <TextBlock Text="{Binding ContractHint}" TextWrapping="Wrap"
+                               HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,8"
+                               FontSize="{DynamicResource AppFontSizeSmall}"
+                               Foreground="{StaticResource TextTertiaryBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ContractHint}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Passive per-spot read tally — the multi-map shape at a
+                         glance; the actionable warning lives in the Guidance
+                         border below. -->
+                    <TextBlock Text="{Binding ReadsSummary}" TextWrapping="Wrap"
+                               HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,10"
+                               FontSize="{DynamicResource AppFontSizeBody}"
+                               Foreground="{StaticResource TextTertiaryBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ReadsSummary}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
                             Background="{StaticResource AccentSoftBrush}">
                         <Border.Style>

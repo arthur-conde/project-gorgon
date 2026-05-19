@@ -81,9 +81,11 @@ public sealed class LogIngestionService : BackgroundService
                     HandleSurveyDetected(sd);
                     break;
                 case ItemAddedToInventory ia:
-                    if (_session.Mode == SessionMode.Motherlode)
-                        _motherlode.OnItemCollected(ia.Name);   // "… Metal Slab" gates progression
-                    else
+                    // Motherlode no longer infers completion from a "Metal Slab"
+                    // add: the dig is the map's IInventoryService Deleted event
+                    // (authoritative, exact), and loot is decoupled (the dig
+                    // spawns a mining node — no log link). Survey still uses it.
+                    if (_session.Mode != SessionMode.Motherlode)
                         HandleItemAddedToInventory(ia);
                     break;
                 case ItemCollected ic:

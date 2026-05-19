@@ -4,6 +4,8 @@ using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
+using Mithril.GameState.Areas;
+using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.Shared.Logging;
@@ -112,8 +114,19 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<MotherlodeFlowController>(),
                 sp.GetRequiredService<IPlayerPositionTracker>(),
                 sp.GetRequiredService<IPlayerPinTracker>(),
-                sp.GetService<IDiagnosticsSink>(),
-                sp.GetService<ICharacterPinAnchor>()));
+                // #488 inventory-instance identity + exact completion;
+                // IReferenceDataService resolves the motherlode-map predicate;
+                // LegolasSettings carries the Multi-map mode toggle (read live).
+                sp.GetService<IInventoryService>(),
+                sp.GetService<IReferenceDataService>(),
+                sp.GetRequiredService<LegolasSettings>(),
+                // #497 @me/character-named pin = high-confidence self position.
+                sp.GetService<ICharacterPinAnchor>(),
+                // Shared GameState current-area: a confirmed area change
+                // invalidates the area-local-frame measurement (maps are
+                // area-specific). Same tracker Gandalf consumes.
+                sp.GetService<PlayerAreaTracker>(),
+                sp.GetService<IDiagnosticsSink>()));
 
         // End-of-run report (text + PNG + JSON + share link). Singleton so the
         // latest snapshot survives FSM resets and is available for the wizard's

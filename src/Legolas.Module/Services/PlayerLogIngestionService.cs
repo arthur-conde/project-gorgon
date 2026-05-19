@@ -134,7 +134,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
                              && use.Timestamp >= _liveSince:
                         var at = new DateTimeOffset(
                             DateTime.SpecifyKind(use.Timestamp, DateTimeKind.Utc));
-                        PostToUi(() => _motherlode.OnUse(at));
+                        var useName = use.MapName;
+                        PostToUi(() => _motherlode.OnUse(at, useName));
                         break;
                 }
             }
