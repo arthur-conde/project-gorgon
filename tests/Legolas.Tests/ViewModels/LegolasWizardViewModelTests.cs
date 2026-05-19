@@ -24,7 +24,7 @@ public class LegolasWizardViewModelTests
         public bool IsCurrentAreaCalibrated => Calibrated;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
-        public string? CurrentAreaKey => "AreaTest";
+        public string? CurrentAreaKey { get; set; } = "AreaTest";
         public string? CurrentAreaFriendlyName => "Test";
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
@@ -461,18 +461,77 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void Chip_click_when_not_actionable_is_a_passive_label_noop()
+    public void Chip_click_when_area_unknown_is_a_passive_label_noop()
     {
-        // No mode picked ⇒ CanCalibrateThisArea false ⇒ the command no-ops
-        // (the chip is a status label, not a button).
-        var (wizard, _, _, _, _) = BuildSut();
-        wizard.HasPickedMode.Should().BeFalse();
+        // #502: the only remaining gate is IsAreaKnown. Area not detected ⇒
+        // the chip is a status label, not a button.
+        var calib = new FakeAreaCalib { CurrentAreaKey = null, Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
         wizard.CanCalibrateThisArea.Should().BeFalse();
 
         wizard.CalibrateThisAreaCommand.Execute(null);
 
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
         wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+    }
+
+    // ─── #502 pre-mode-pick calibration (chip is the escape) ─────────────
+
+    [Fact]
+    public void Chip_starts_calibration_before_a_mode_is_picked()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };   // known, uncalibrated
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.HasPickedMode.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanCalibrateThisArea.Should().BeTrue("area is known — no mode required");
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.HasPickedMode.Should().BeFalse("calibration is mode-independent");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Chip_is_the_escape_from_a_pre_pick_calibration()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        // Clicking the chip again backs out (no Back button pre-pick).
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.PinCalibration.IsArmed.Should().BeFalse("escape disarms the guided flow");
+        calib.Calibrated.Should().BeFalse("escaping never destroys/forces anything");
+        session.IsMapVisible.Should().BeFalse("escape mirrors ChangeMode's overlay cleanup");
+    }
+
+    [Fact]
+    public void Confirming_a_pre_pick_calibration_lands_on_PickMode_calibrated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var pins = new FakePlayerPinTracker();
+        var (wizard, _, _, _, _) = BuildSut(calib, pins);
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        pins.Add(5, 6);
+        wizard.ToggleCalibrationPhaseCommand.Execute(null);
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.ConfirmCalibrationCommand.Execute(null);
+
+        calib.Calibrated.Should().BeTrue();
+        wizard.HasPickedMode.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode, "calibrated, still no mode → back to mode pick");
     }
 
     [Fact]

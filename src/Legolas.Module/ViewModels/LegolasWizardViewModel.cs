@@ -114,7 +114,10 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             // drop the one-shot request so RecomputeStep returns to the
             // log-driven Motherlode stage instead of re-entering Calibrating.
             if (_areaCalibration.IsCurrentAreaCalibrated)
+            {
                 _motherlodeCalibrationRequested = false;
+                _calibrationRequested = false;   // #502: one-shot consumed
+            }
             RecomputeStep();
         };
         if (_reportService is not null)
@@ -398,11 +401,12 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         : IsAreaCalibrated ? $"{CurrentAreaName} · calibrated"
         : $"{CurrentAreaName} · not calibrated";
 
-    /// <summary>#501: the chip is the single calibrate/recalibrate entry point
-    /// — actionable whenever a mode is picked and the area is known
-    /// (calibrated or not); otherwise a passive status label. The
-    /// calibrated-vs-not branch lives in <see cref="CalibrateThisArea"/>.</summary>
-    public bool CanCalibrateThisArea => HasPickedMode && IsAreaKnown;
+    /// <summary>#501/#502: the chip is the single calibrate/recalibrate entry
+    /// point — actionable whenever the area is known (calibrated or not, mode
+    /// picked or not, since per-area calibration is orthogonal to the mode);
+    /// otherwise a passive status label. The calibrated / uncalibrated /
+    /// pre-pick-escape branches live in <see cref="CalibrateThisArea"/>.</summary>
+    public bool CanCalibrateThisArea => IsAreaKnown;
 
     /// <summary>#113/#501: chip click — the single calibration entry point
     /// (never the experimental overlay). Uncalibrated → start the guided
@@ -422,10 +426,36 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             Recalibrate();   // arm the confirm guard, don't destroy on one click
             return;
         }
+
+        // #502: the chip is the escape from a chip-initiated pre-pick
+        // calibration (no mode ⇒ hero Back + breadcrumb are hidden, so the
+        // always-visible chip is the toggle). Mirror ChangeMode's
+        // return-to-PickMode overlay cleanup.
+        if (!HasPickedMode && CurrentStep == WizardStep.Calibrating)
+        {
+            _calibrationRequested = false;
+            _session.IsMapVisible = false;
+            _session.IsInventoryVisible = false;
+            RecomputeStep();                 // → PickMode
+            return;
+        }
+
+        // #502: per-area calibration is orthogonal to the mode, so the chip
+        // may start it before one is picked. The one-shot drives the pre-pick
+        // RecomputeStep branch; post-pick the Survey/Motherlode gates already
+        // route to Calibrating, so it's a harmless re-arm there.
+        _calibrationRequested = true;
         if (_session.Mode == SessionMode.Motherlode)
             _motherlodeCalibrationRequested = true;
         RecomputeStep();
     }
+
+    /// <summary>#502: mode-independent one-shot — the header chip asked to
+    /// calibrate (cold-start), possibly before a mode is picked. Drives the
+    /// pre-pick <see cref="RecomputeStep"/> branch; the chip is also the
+    /// escape (clears it). Cleared once the area calibrates or on mode change,
+    /// alongside <see cref="_motherlodeCalibrationRequested"/>.</summary>
+    private bool _calibrationRequested;
 
     /// <summary>#113: one-shot request to detour into the guided
     /// <see cref="WizardStep.Calibrating"/> walkthrough from Motherlode.
@@ -502,6 +532,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         else
             _motherlodeFlow.Reset();
         _motherlodeCalibrationRequested = false;
+        _calibrationRequested = false;   // #502: don't re-enter Calibrating from PickMode
         _session.IsMapVisible = false;
         _session.IsInventoryVisible = false;
         HasPickedMode = false;
@@ -603,7 +634,14 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     {
         if (!HasPickedMode)
         {
-            CurrentStep = WizardStep.PickMode;
+            // #502: per-area calibration is mode-independent — the chip can
+            // start it before a mode is picked. Honour the one-shot before the
+            // PickMode fallthrough; clicking the chip again clears it (the
+            // chip is the escape, since Back/breadcrumb are mode-gated).
+            if (_calibrationRequested && IsAreaKnown && !_areaCalibration.IsCurrentAreaCalibrated)
+                CurrentStep = WizardStep.Calibrating;
+            else
+                CurrentStep = WizardStep.PickMode;
             return;
         }
 
