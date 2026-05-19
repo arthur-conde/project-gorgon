@@ -56,35 +56,6 @@
                 </Grid>
             </DataTemplate>
 
-            <!-- #494: always-available calibration sanity check. Projects known
-                 landmarks/NPCs onto the live map via the persisted calibration
-                 so the user can eyeball alignment. Hosted alongside the
-                 SetPosition affordance in Listening + Gathering; DataContext is
-                 the wizard VM, so MapOverlay.* binds through. -->
-            <DataTemplate x:Key="ValidateCalibrationAffordance">
-                <StackPanel Visibility="{Binding MapOverlay.IsCurrentAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <Button HorizontalAlignment="Center"
-                            Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
-                            ToolTip="Project known landmarks/NPCs onto the map to check the calibration still lines up. A consistent offset means recalibrate (usually an in-game map-zoom change).">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                <Setter Property="Content" Value="Validate calibration" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
-                                        <Setter Property="Content" Value="Hide reference markers" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <TextBlock Text="{Binding MapOverlay.CalibrationValidationStatus}"
-                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" Margin="0,8,0,0"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Visibility="{Binding MapOverlay.ShowCalibrationGhosts, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                </StackPanel>
-            </DataTemplate>
-
             <!-- #113 Layer 2: plain-language fix-confidence palette. Muted to
                  sit in the Mithril theme; semantics carried by the text too,
                  not colour alone. -->
@@ -231,11 +202,16 @@
              the area is known but uncalibrated the chip is clickable and
              starts the guided Drop/Pair calibration. -->
         <DockPanel DockPanel.Dock="Top" Margin="20,16,20,0">
-            <Border DockPanel.Dock="Right" VerticalAlignment="Center"
+            <!-- #501: the chip is the single calibrate/recalibrate entry
+                 point. Uncalibrated → guided cold-start; calibrated → arms the
+                 #477B confirm guard surfaced as the popup below (anchored
+                 here), so one click can't wipe a good calibration. -->
+            <Border x:Name="CalibrationChip"
+                    DockPanel.Dock="Right" VerticalAlignment="Center"
                     Background="{StaticResource BgSurfaceBrush}"
                     BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
                     CornerRadius="10" Padding="10,4"
-                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate (guided) when uncalibrated.">
+                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate when uncalibrated, or to redo the calibration when it's already set.">
                 <Border.InputBindings>
                     <MouseBinding Gesture="LeftClick" Command="{Binding CalibrateThisAreaCommand}" />
                 </Border.InputBindings>
@@ -277,8 +253,63 @@
                     <TextBlock Text="{Binding CalibrationChipText}" VerticalAlignment="Center"
                                FontSize="{DynamicResource AppFontSizeSmall}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- #503: the "Validate calibration" toggle, folded into
+                         the chip as a split segment (it dwarfed the chip as a
+                         standalone labelled button). The dot+text region stays
+                         the calibrate/recalibrate target via the Border
+                         MouseBinding; this trailing icon is its own Button so
+                         its click is handled and never bubbles to that binding.
+                         The whole segment is hidden when there's nothing to
+                         validate (uncalibrated). Disabled while surveying /
+                         plotting motherlodes (CanValidateCalibration), where
+                         the markers would clutter the working overlay. -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <Rectangle Width="1" Margin="9,2,8,2"
+                                   Fill="{StaticResource BorderSubtleBrush}" />
+                        <Button Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
+                                IsEnabled="{Binding CanValidateCalibration}"
+                                VerticalAlignment="Center" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="Transparent" Padding="2">
+                                        <ContentPresenter HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="ToolTip" Value="Show known landmarks/NPCs on the map to check the calibration still lines up — a consistent offset means recalibrate. Available between runs, not while surveying or plotting motherlodes." />
+                                    <Setter Property="Opacity" Value="1" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
+                                            <Setter Property="ToolTip" Value="Hide the reference markers." />
+                                        </DataTrigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.4" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <icon:PackIconLucide Width="13" Height="13" Kind="Crosshair">
+                                <icon:PackIconLucide.Style>
+                                    <Style TargetType="icon:PackIconLucide">
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </icon:PackIconLucide.Style>
+                            </icon:PackIconLucide>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
             </Border>
+
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -502,10 +533,45 @@
                      phase trigger, the named-pin prompt, the live residual,
                      and the terminal Confirm. -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=Calibrating}">
+
+                    <!-- #501 (reworked): recalibrate confirm gate, inline at
+                         the top of the Calibrating step (replaces the flaky
+                         chip popup). Shown only while IsConfirmingRecalibrate;
+                         the drop/pair body below is hidden until acknowledged.
+                         Confirm does NOT delete — the existing calibration
+                         stays live until the new fit is solved, so a bailed
+                         recalibration loses nothing. Cancel exits with the old
+                         calibration intact. -->
+                    <Border Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                            Background="{StaticResource AccentSoftBrush}"
+                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                            CornerRadius="4" Padding="16,12" Margin="0,0,0,8"
+                            HorizontalAlignment="Center" MaxWidth="420">
+                        <StackPanel>
+                            <TextBlock Text="Replace this area's saved calibration?"
+                                       TextAlignment="Center" FontWeight="SemiBold"
+                                       Foreground="{StaticResource AccentSoftTextBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,4" />
+                            <TextBlock Text="The current calibration stays active until you finish and save a new one — cancelling here keeps it unchanged."
+                                       TextAlignment="Center" TextWrapping="Wrap"
+                                       Foreground="{StaticResource AccentSoftTextBrush}"
+                                       FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,10" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Button Content="Replace calibration" Margin="0,0,8,0"
+                                        Command="{Binding ConfirmRecalibrateCommand}" />
+                                <Button Content="Cancel"
+                                        Command="{Binding CancelRecalibrateCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Drop/pair body — hidden behind the confirm gate above
+                         when a recalibration is awaiting acknowledgement. -->
+                    <StackPanel Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}">
                     <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="This area isn't calibrated yet, so pins can't place. Two steps: drop well-spread map pins in-game, then click each one through the overlay to pair it." />
+                        <Run Text="Pins place against this area's calibration. Two steps: drop well-spread map pins in-game, then click each one through the overlay to pair it." />
                     </TextBlock>
 
                     <!-- Live status (drop count / named-pin prompt). -->
@@ -587,6 +653,7 @@
                         <Button Content="Clear pins" Style="{StaticResource WizardPrimaryButton}" Margin="0"
                                 Command="{Binding ClearCalibrationPinsCommand}" />
                     </StackPanel>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Listening (#454: no AwaitingPosition step — placement is
@@ -610,35 +677,12 @@
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
-                        <!-- #477B: in-flow recalibration. Offered only when the
-                             area is already calibrated; the guided cold-start
-                             path (Part A) handles the uncalibrated case before
-                             this step is ever reached. A confirm guard protects
-                             the persisted calibration from a misclick. -->
-                        <StackPanel Margin="0,12,0,0"
-                                    Visibility="{Binding CanRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                            <Button Content="Recalibrate this area"
-                                    HorizontalAlignment="Center"
-                                    Command="{Binding RecalibrateCommand}"
-                                    Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}"
-                                    ToolTip="Pins landing wrong? Drop this area's saved calibration and redo it with the guided flow." />
-                            <Border Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
-                                    Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8"
-                                    HorizontalAlignment="Center">
-                                <StackPanel>
-                                    <TextBlock Text="This deletes the saved calibration for this area and restarts the guided flow. Continue?"
-                                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
-                                               Foreground="{StaticResource AccentSoftTextBrush}"
-                                               FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                        <Button Content="Recalibrate" Margin="0,0,8,0"
-                                                Command="{Binding ConfirmRecalibrateCommand}" />
-                                        <Button Content="Cancel"
-                                                Command="{Binding CancelRecalibrateCommand}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <!-- #501: recalibration moved to the always-visible
+                             header chip (click a calibrated chip → the
+                             header confirm popup). The old in-panel
+                             "Recalibrate this area" affordance was removed —
+                             one calibration entry point, reachable from any
+                             step. -->
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextTertiaryBrush}">
@@ -704,8 +748,6 @@
                          "marker looks wrong / area uncalibrated" escape hatch. -->
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
                                     HorizontalAlignment="Center" Margin="0,0,0,12" />
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ValidateCalibrationAffordance}"
-                                    HorizontalAlignment="Center" Margin="0,0,0,12" />
 
                     <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
@@ -747,8 +789,6 @@
 
                     <!-- #476 Option C: correct a stale anchor mid-route. -->
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
-                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ValidateCalibrationAffordance}"
                                     HorizontalAlignment="Center" Margin="0,12,0,0" />
                 </StackPanel>
 

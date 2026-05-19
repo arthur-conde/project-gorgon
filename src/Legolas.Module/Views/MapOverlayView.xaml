@@ -150,6 +150,60 @@
                                Foreground="#FFE0F4FF" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
                 </Border>
 
+                <!-- #495: "Validate calibration" reference markers. Known
+                     landmarks/NPCs projected through the persisted calibration
+                     (MapOverlayViewModel.CalibrationGhosts) so the user can
+                     eyeball alignment. WPF layered over the D2D surface (the
+                     CalibrationMarkers idiom above) so each marker carries a
+                     readable label; ShowLabel is the greedy declutter decision
+                     (the dot always draws — only crowded labels suppress).
+                     IsHitTestVisible=False so clicks reach the Viewport. -->
+                <ItemsControl ItemsSource="{Binding CalibrationGhosts}" IsHitTestVisible="False"
+                              Visibility="{Binding ShowCalibrationGhosts, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding Pixel.X}" />
+                            <Setter Property="Canvas.Top" Value="{Binding Pixel.Y}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Zero-size Canvas: every part at an exact
+                                 negative offset so the ring centres pixel-
+                                 accurately on the projected point (a Grid would
+                                 re-centre). Magenta = "projected reference",
+                                 matching the standalone calibration window. -->
+                            <Canvas Width="0" Height="0">
+                                <Ellipse Canvas.Left="-8" Canvas.Top="-8" Width="16" Height="16"
+                                         Stroke="#FFE040E0" StrokeThickness="2" />
+                                <Ellipse Canvas.Left="-2" Canvas.Top="-2" Width="4" Height="4"
+                                         Fill="#FFE040E0" />
+                                <Border Canvas.Left="9" Canvas.Top="-9"
+                                        Background="#CC000000" CornerRadius="2" Padding="3,1"
+                                        Visibility="{Binding ShowLabel, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                                    <TextBlock Text="{Binding Name}" Foreground="#FFF0B6F0" FontSize="11" />
+                                </Border>
+                            </Canvas>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- #495: on-overlay validation status banner (the in-wizard
+                     status line moved here when the toggle moved to the
+                     header). Magenta-tinted to match the markers; only while
+                     validation is showing. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,12,0,0" Padding="14,8"
+                        Background="#CC2A0A2A" BorderBrush="#FFE040E0" BorderThickness="1"
+                        CornerRadius="4" MaxWidth="520" IsHitTestVisible="False"
+                        Visibility="{Binding ShowCalibrationGhosts, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                    <TextBlock Text="{Binding CalibrationValidationStatus}"
+                               Foreground="#FFF4E0F4" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
+                </Border>
+
                 <!-- Optional on-overlay nudge pad (toggle in settings). Same VM as
                      the wizard panel's pad, so step-size selection stays in sync. -->
                 <Border HorizontalAlignment="Right" VerticalAlignment="Bottom"

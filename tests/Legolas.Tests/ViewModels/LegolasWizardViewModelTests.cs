@@ -24,7 +24,7 @@ public class LegolasWizardViewModelTests
         public bool IsCurrentAreaCalibrated => Calibrated;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
-        public string? CurrentAreaKey => "AreaTest";
+        public string? CurrentAreaKey { get; set; } = "AreaTest";
         public string? CurrentAreaFriendlyName => "Test";
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
@@ -431,8 +431,107 @@ public class LegolasWizardViewModelTests
         calib.RaiseChanged();
 
         wizard.CalibrationChipText.Should().Be("Test · calibrated");
-        wizard.CanCalibrateThisArea.Should().BeFalse("already calibrated");
+        wizard.CanCalibrateThisArea.Should().BeTrue(
+            "#501: the chip is now the single calibrate/recalibrate entry point");
         wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+    }
+
+    [Fact]
+    public void Chip_click_on_a_calibrated_area_opens_the_inline_recalibrate_gate()
+    {
+        var calib = new FakeAreaCalib { Calibrated = true };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CanCalibrateThisArea.Should().BeTrue();
+
+        // #501 reworked: the chip routes into Calibrating with the inline
+        // confirm gate showing — and the existing calibration is NOT touched.
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue("the inline gate is showing");
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("the old calibration stays live until a new one is saved");
+
+        // Acknowledging the gate reveals the drop/pair body — still no delete.
+        wizard.ConfirmRecalibrateCommand.Execute(null);
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("solving the new fit is what overwrites it, later");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Chip_click_when_area_unknown_is_a_passive_label_noop()
+    {
+        // #502: the only remaining gate is IsAreaKnown. Area not detected ⇒
+        // the chip is a status label, not a button.
+        var calib = new FakeAreaCalib { CurrentAreaKey = null, Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.CanCalibrateThisArea.Should().BeFalse();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+    }
+
+    // ─── #502 pre-mode-pick calibration (chip is the escape) ─────────────
+
+    [Fact]
+    public void Chip_starts_calibration_before_a_mode_is_picked()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };   // known, uncalibrated
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.HasPickedMode.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanCalibrateThisArea.Should().BeTrue("area is known — no mode required");
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.HasPickedMode.Should().BeFalse("calibration is mode-independent");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Chip_is_the_escape_from_a_pre_pick_calibration()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        // Clicking the chip again backs out (no Back button pre-pick).
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.PinCalibration.IsArmed.Should().BeFalse("escape disarms the guided flow");
+        calib.Calibrated.Should().BeFalse("escaping never destroys/forces anything");
+        session.IsMapVisible.Should().BeFalse("escape mirrors ChangeMode's overlay cleanup");
+    }
+
+    [Fact]
+    public void Confirming_a_pre_pick_calibration_lands_on_PickMode_calibrated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var pins = new FakePlayerPinTracker();
+        var (wizard, _, _, _, _) = BuildSut(calib, pins);
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        pins.Add(5, 6);
+        wizard.ToggleCalibrationPhaseCommand.Execute(null);
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.ConfirmCalibrationCommand.Execute(null);
+
+        calib.Calibrated.Should().BeTrue();
+        wizard.HasPickedMode.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode, "calibrated, still no mode → back to mode pick");
     }
 
     [Fact]
@@ -492,32 +591,142 @@ public class LegolasWizardViewModelTests
     }
 
     [Fact]
-    public void Recalibrate_is_guarded_then_clears_and_routes_back_into_Calibrating()
+    public void Recalibrate_defers_the_delete_until_a_new_fit_is_saved()
     {
         var calib = new FakeAreaCalib { Calibrated = true };
-        var (wizard, _, _, _, _) = BuildSut(calib);
+        var pins = new FakePlayerPinTracker();
+        var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
         wizard.CurrentStep.Should().Be(WizardStep.Listening);
 
-        // First click only arms the confirm guard — no destruction.
+        // Entry routes into Calibrating with the inline gate showing — the
+        // old calibration is NOT touched.
         wizard.RecalibrateCommand.Execute(null);
         wizard.IsConfirmingRecalibrate.Should().BeTrue();
-        calib.Calibrated.Should().BeTrue("a misclick must not wipe a good calibration");
-        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        calib.Calibrated.Should().BeTrue("the existing fit stays live behind the gate");
+        wizard.PinCalibration.IsArmed.Should().BeFalse(
+            "#501: don't arm pin-capture until the gate is acknowledged");
 
-        // Cancel backs out cleanly.
+        // Cancel exits with the calibration entirely intact.
         wizard.CancelRecalibrateCommand.Execute(null);
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
-        calib.Calibrated.Should().BeTrue();
+        calib.Calibrated.Should().BeTrue("cancelling a recalibration loses nothing");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.PinCalibration.IsArmed.Should().BeFalse("leaving Calibrating disarms");
 
-        // Confirmed: clears the persisted calibration; Changed → RecomputeStep
-        // routes back into Calibrating via the same pin route as cold start,
-        // and OnCurrentStepChanged re-arms PinCalibration.
+        // Re-enter, acknowledge the gate → still no delete; drop/pair body up.
         wizard.RecalibrateCommand.Execute(null);
         wizard.ConfirmRecalibrateCommand.Execute(null);
-        calib.Calibrated.Should().BeFalse();
         wizard.IsConfirmingRecalibrate.Should().BeFalse();
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue("re-entry arms the guided flow");
+        calib.Calibrated.Should().BeTrue("acknowledging the gate still doesn't delete");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+
+        // Completing the guided flow is what overwrites it.
+        pins.Add(1, 2);
+        pins.Add(3, 4);
+        pins.Add(5, 6);
+        wizard.ToggleCalibrationPhaseCommand.Execute(null);
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.ConfirmCalibrationCommand.Execute(null);
+
+        calib.Calibrated.Should().BeTrue("a fresh fit was saved (overwrite, not delete-then-maybe)");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening, "recalibration finished");
+    }
+
+    [Fact]
+    public void Recalibrate_gate_does_not_pop_the_overlay_until_acknowledged()
+    {
+        // Pre-pick (map hidden at PickMode) gives a clean "was it forced
+        // open?" assertion. Calibrated chip → gate, no overlay/arm yet.
+        var calib = new FakeAreaCalib { Calibrated = true };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+        session.IsMapVisible.Should().BeFalse();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue();
+        session.IsMapVisible.Should().BeFalse("the overlay must not pop under the confirm gate");
+        wizard.PinCalibration.IsArmed.Should().BeFalse();
+
+        wizard.ConfirmRecalibrateCommand.Execute(null);
+        session.IsMapVisible.Should().BeTrue("acknowledging is when the guided flow begins");
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Cold_start_calibration_opens_the_overlay_immediately_no_gate()
+    {
+        // No calibration ⇒ no gate ⇒ the overlay/arm begin at once (you need
+        // the map to drop pins).
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, session, _, _, _) = BuildSut(calib);
+
+        wizard.CalibrateThisAreaCommand.Execute(null);   // pre-pick cold-start
+
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.IsConfirmingRecalibrate.Should().BeFalse("cold-start has nothing to confirm");
+        session.IsMapVisible.Should().BeTrue();
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    // ---- #495 Validate-calibration availability gate -------------------
+
+    [Fact]
+    public void CanValidateCalibration_is_true_at_PickMode_when_calibrated()
+    {
+        var (wizard, _, _, _, _) = BuildSut();   // FakeAreaCalib defaults calibrated
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanValidateCalibration.Should().BeTrue("a between-runs diagnostic — available when not in a flow");
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_while_surveying()
+    {
+        var (wizard, session, surveyFlow, _, _) = BuildSut();
+
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CanValidateCalibration.Should().BeFalse("validation would clutter the working survey overlay");
+
+        session.Surveys.Add(Pin());
+        surveyFlow.OptimizeRoute();
+        wizard.CurrentStep.Should().Be(WizardStep.Gathering);
+        wizard.CanValidateCalibration.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_while_plotting_motherlodes()
+    {
+        var (wizard, _, _, _, _) = BuildSut();
+
+        wizard.PickMotherlodeModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+        wizard.CanValidateCalibration.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_when_the_area_is_uncalibrated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanValidateCalibration.Should().BeFalse("nothing to validate without a calibration");
+    }
+
+    [Fact]
+    public void Entering_a_flow_step_notifies_CanValidateCalibration()
+    {
+        var (wizard, _, _, _, _) = BuildSut();
+        var changes = new List<string?>();
+        wizard.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+        wizard.PickSurveyModeCommand.Execute(null);
+
+        changes.Should().Contain(nameof(LegolasWizardViewModel.CanValidateCalibration));
     }
 }

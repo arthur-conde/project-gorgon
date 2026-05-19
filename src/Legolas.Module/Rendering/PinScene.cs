@@ -20,7 +20,6 @@ public sealed record PinScene(
     IReadOnlyList<PixelPoint> RoutePoints,
     IReadOnlyList<PixelPoint> ActiveSegmentPoints,
     IReadOnlyList<WedgeArc> Wedges,
-    IReadOnlyList<GhostMarker> Ghosts,
     IReadOnlyList<PixelPoint> SurveyPins,
     IReadOnlyList<PixelPoint> MotherlodePins,
     int? ActivePinIndex,
