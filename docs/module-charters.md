@@ -357,6 +357,68 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   learn likely `Player.log` (recipe/item), utterance the chat log (typed into chat) —
   verify when the module is next touched.
 
+## Radagast — environment & world-state (player-facing)
+
+> **(Proposed module — not yet a `*.Module` project; does not count against the
+> "all 12 projects charactered" coverage statement above. ⚠️ Claude draft,
+> pending owner sign-off — confirm/correct/delete before treating as binding.)**
+
+- **Owns: ⚠️ inferred (Claude draft, pending owner sign-off)** — the
+  **player-facing surface** for server-keyed environment state: moon phase,
+  per-map weather, and the server-keyed gardening buff. Two halves: **display**
+  the live state, and the **community consume→display** path — surface the
+  aggregated community observations so a player sees current server state *before
+  their own client observes it*. Owns the **environment *slice*** of the
+  community-data pipeline — the `"radagast"` key, its payload schema (what an
+  environment observation is, server/shard-keyed), and the
+  publish-trigger/consume-render policy — parallel to how Samwise/Arwen/Smaug/
+  Gandalf own *their* calibration keys. Owns *what is shared and when*, not the
+  wire.
+- **Does NOT own:**
+  - **✅ (cross-cutting data-owner rule) — the producers.**
+    `IPlayerCelestialState` and `IPlayerWeatherTracker` live in
+    **Mithril.GameState** and are the single source of truth; Radagast
+    *subscribes*, it does not parse `Player.log`. A **gardening-buff producer
+    does not yet exist** — when built it belongs in Mithril.GameState (parser →
+    `IPlayerGardeningBuffState` → hosted service, parallel to Celestial/Weather),
+    **never in Radagast**. Radagast owns the *surface* + *community sync*, not
+    the log-parsing/producer.
+  - **✅ (cross-cutting data-owner rule) — the client/server community-sync
+    infra.** The serverless publish + consume *transport* (the
+    raw.githubusercontent.com aggregation pipeline — `CommunityCalibrationService`
+    / `MithrilRepository` and its future publish half) is a **shared Mithril
+    dependency**, owned by *neither* Radagast nor any consuming module — the
+    single source of truth all calibration keys ride on. Radagast defines and
+    consumes its `"radagast"` slice; it does not own the wire, the aggregation,
+    or the publish mechanism. Same split as the GameState producers above:
+    shared transport = data owner, Radagast = surface + payload slice.
+  - **✅ (hard) vs Palantir** — Palantir's `WorldStateView` already renders
+    moon/weather, but Palantir is **debug-only by charter** (a GameState/engine
+    inspector, not a user workflow). Radagast is the **player-facing** surface
+    over the *same* GameState producers. Same data owner, two surfaces, different
+    purpose — the data-owner-vs-surface rule, not turf. Radagast does not
+    own/replace Palantir's debug inspector.
+  - **✅ (hard) vs Samwise** — Samwise owns *what is planted and each plot's
+    lifecycle* (loss-prevention alarms). Radagast owns *server-wide environment
+    state*; the gardening buff is a server-keyed growth modifier, **not** plot
+    state. Samwise may **consume** Radagast's buff state to inform growth-rate
+    prediction/calibration; it never senses or displays the buff. Radagast never
+    tracks plots.
+  - **soft/empty** — *Environment-derived advice* ("plant now, the buff is
+    active"). Radagast surfaces state; it does not optimize gardening (mirrors
+    Samwise's soft non-feature — PG gardening is intentionally trivial).
+- **Data sources:** Mithril.GameState producers (`IPlayerCelestialState`,
+  `IPlayerWeatherTracker`, future `IPlayerGardeningBuffState`); the community
+  aggregate via the existing `CommunityCalibrationService` / `MithrilRepository`
+  raw.githubusercontent.com pattern (new `"radagast"` key + payload schema,
+  server/shard-keyed). No CDN reference data.
+- **Open (for the build issue, not charter):** the serverless *publish* half is
+  unbuilt — and is **shared-infra work** (extending `CommunityCalibrationService`
+  / `MithrilRepository`), not Radagast's, though Radagast is its first publishing
+  consumer; the community payload must be **PG-server/shard-keyed** so
+  cross-server observations aren't blended; the gardening-buff log grammar is not
+  yet decoded.
+
 ---
 
 ## Cross-module shared infra (charter-adjacent)
@@ -379,9 +441,34 @@ libraries; the charter follows the code:
   prereq-chain modelling: #341 (Silmarillion *displays*), Celebrimbor §2 (*visualises*),
   #227 (*gates on*). If the planner work lands first, downstream surfaces should consume
   its resolver rather than re-derive.
+- **Community-sync transport (`CommunityCalibrationService` /
+  `MithrilRepository`, Mithril.Shared) — consume half shipped, publish half
+  unbuilt.** The serverless raw.githubusercontent.com aggregation pipeline that
+  every calibration key (`samwise`/`arwen`/`smaug`/`gandalf`, and proposed
+  `radagast`) rides on. Owned by *no module*: modules own their key + payload
+  slice and `Subscribe`/publish; the transport, aggregation, and (future)
+  publish mechanism are the shared single source of truth. The publish half is
+  the unbuilt extension — owned here, not by Radagast (its first publishing
+  consumer). Parallel to the data-owner-vs-surface rule for live state.
 
 ## History
 
+- **2026-05-19** — **Radagast charter sketch added (⚠️ Claude draft).** A proposed
+  module for server-keyed environment state — moon phase, per-map weather,
+  server-keyed gardening buff: sense → player-facing display → serverless
+  community publish/consume. Name chosen by owner (the Brown Wizard — nature &
+  weather; sits beside Gandalf/Saruman). Charter records boundaries vs.
+  **Palantir** (debug-only inspector vs. Radagast's player-facing surface over the
+  *same* GameState producers — data-owner-vs-surface rule) and **Samwise**
+  (plot lifecycle vs. server-wide environment state; Samwise *consumes* the buff,
+  never senses it). Producers stay in Mithril.GameState (Celestial/Weather exist;
+  gardening-buff producer is unbuilt GameState work). **Owner refinement
+  (same date):** the client/server community-sync *transport* (publish + consume)
+  is **shared Mithril infra**, owned by no module — Radagast owns only its
+  `"radagast"` key + payload slice. Added a "Cross-module shared infra" entry for
+  the community-sync pipeline and a does-not-own bullet for it. Entire entry
+  **⚠️ inferred, pending owner sign-off**; Radagast is not yet a `*.Module`
+  project so the 12-project coverage statement is unaffected.
 - **2026-05-17** — **Silmarillion TSys: popup → tab (owner-ratified).** The
   2026-05-16 "show possible TSys rolls in a *popup*" framing is superseded by a
   dedicated **Treasure System tab** (#412). Verified v470: `tsysclientinfo` (Power
