@@ -20,6 +20,7 @@ public sealed class GardenIngestionService : BackgroundService
     private readonly GardenStateService _stateService;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
+    private readonly ThrottledWarn _warn;
 
     // These are pulled into the ctor so DI actually constructs them.
     // They attach to events inside their own ctors, so holding references here
@@ -46,6 +47,7 @@ public sealed class GardenIngestionService : BackgroundService
         _ = calibration;  // subscribes to state.PlotChanged in ctor
         _ = autoSaver;    // subscribes to SamwiseSettings.PropertyChanged in ctor
         _gate = gates.For("samwise");
+        _warn = new ThrottledWarn(diag, "Samwise.Ingestion");
 
         if (diag is not null)
         {
@@ -90,12 +92,16 @@ public sealed class GardenIngestionService : BackgroundService
         {
             await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
             {
+                try
+                {
                 var evt = _parser.TryParse(raw.Line, raw.Timestamp);
                 if (evt is GardenEvent ge)
                 {
                     _diag?.Trace("Samwise.Parse", Describe(ge));
                     Dispatch(() => _state.Apply(ge));
                 }
+                }
+                catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
             }
         }
         finally

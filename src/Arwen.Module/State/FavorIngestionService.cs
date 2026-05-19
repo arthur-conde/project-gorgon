@@ -20,6 +20,7 @@ public sealed class FavorIngestionService : BackgroundService
     private readonly IActiveCharacterService _activeChar;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
+    private readonly ThrottledWarn _warn;
 
     public FavorIngestionService(
         IPlayerLogStream stream,
@@ -41,6 +42,7 @@ public sealed class FavorIngestionService : BackgroundService
         _diag = diag;
         _ = autoSaver; // keep alive for PropertyChanged subscription
         _gate = gates.For("arwen");
+        _warn = new ThrottledWarn(diag, "Arwen.Ingestion");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -51,6 +53,8 @@ public sealed class FavorIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
+            try
+            {
             var evt = _parser.TryParse(raw.Line, raw.Timestamp);
             if (evt is null) continue;
 
@@ -82,6 +86,8 @@ public sealed class FavorIngestionService : BackgroundService
                     _calibration.OnDeltaFavor(delta.NpcKey, delta.Delta, ts);
                     break;
             }
+            }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 

@@ -35,6 +35,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
     private readonly SkillLogParser _parser;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
+    private readonly ThrottledWarn _warn;
 
     private readonly object _lock = new();
     private readonly List<Action<PlayerSkillSnapshot>> _handlers = new();
@@ -57,6 +58,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         _parser = parser;
         _refData = refData;
         _diag = diag;
+        _warn = new ThrottledWarn(diag, "GameState.Skills");
     }
 
     public PlayerSkillSnapshot Current => _current;
@@ -89,15 +91,19 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         _diag?.Info("GameState.Skills", "Subscribing to Player.log for skill-state events");
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
-            switch (_parser.TryParse(raw.Line, raw.Timestamp))
+            try
             {
-                case SkillsSnapshotEvent snap:
-                    ReplaceAll(snap);
-                    break;
-                case SkillProgressUpdateEvent upd:
-                    Upsert(upd);
-                    break;
+                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                {
+                    case SkillsSnapshotEvent snap:
+                        ReplaceAll(snap);
+                        break;
+                    case SkillProgressUpdateEvent upd:
+                        Upsert(upd);
+                        break;
+                }
             }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 
