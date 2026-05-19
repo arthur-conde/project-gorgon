@@ -562,6 +562,55 @@ public sealed class ItemsTabViewModelTests
         vm.DetailViewModel.TreasureProfileLink.Should().BeNull();
     }
 
+    // ── Keywords — raw classification tags as an inert Fact strip ──────────────
+    // Item keywords are non-navigable (no Keyword entity) ⇒ Fact tier, not a
+    // Link, even though the query engine can filter on them. Verbatim JSON form
+    // per tag, order preserved; the section self-hides when there are none.
+
+    [Fact]
+    public void Keywords_ItemWithKeywords_StripIsVerbatimAndOrdered()
+    {
+        var salad = new Item
+        {
+            Id = 1,
+            InternalName = "GardenSalad",
+            Name = "Garden Salad",
+            Keywords =
+            [
+                new ItemKeyword("Loot", 0),
+                new ItemKeyword("VegetarianDish", 84),
+                new ItemKeyword("Salad", 0),
+            ],
+        };
+        var refData = new StubReferenceData { ItemsByName = { ["GardenSalad"] = salad } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = salad;
+
+        var strip = vm.DetailViewModel!.KeywordStrip;
+        strip.Pairs.Select(p => p.Label).Should().AllBeEquivalentTo((string?)null,
+            "keywords render value-only — the inert StatStrip idiom");
+        strip.Pairs.Select(p => p.Value).Should().Equal(
+            "Loot", "VegetarianDish=84", "Salad");
+    }
+
+    [Fact]
+    public void Keywords_ItemWithoutKeywords_StripEmpty_SectionHidden()
+    {
+        var plain = new Item { Id = 1, InternalName = "PlainRock", Name = "Plain Rock" };
+        var refData = new StubReferenceData { ItemsByName = { ["PlainRock"] = plain } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = plain;
+
+        vm.DetailViewModel!.KeywordStrip.Pairs.Should().BeEmpty(
+            "no keywords ⇒ empty strip and the section self-hides");
+    }
+
     private static SilmarillionReferenceNavigator NavWithRecipe() =>
         new(new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Recipe) });
 

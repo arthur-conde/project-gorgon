@@ -112,6 +112,24 @@ public sealed partial class ItemDetailViewModel
             stat.Add(new FactPair(null, req));
         StatStrip = FactTableVm.Strip(stat);
 
+        // The item's raw classification keywords as a second inert Fact strip
+        // (same matrix #3 / StatStrip idiom). Item keywords are non-navigable
+        // classification — there is no Keyword entity to open — so they are a
+        // Fact tier, NOT a Link, even though the query engine can filter on
+        // them (Keywords CONTAINS 'X'): the shared/popup detail contract
+        // carries no host filter command, so the strip stays inert (G-b — no
+        // box/gold, the FactTable Strip Style owns the inert pigment). Raw
+        // verbatim JSON form per tag — "Tag" or "Tag=Quality" when Quality > 0
+        // (NOT camel-split; the maintainer chose the data-true token). Built
+        // from Item.Keywords directly (not ItemKeywordSynthesis.Enrich, which
+        // is matching machinery). Empty list ⇒ an empty strip and the section
+        // self-hides via KeywordStrip.Pairs.Count.
+        KeywordStrip = FactTableVm.Strip(
+            (Item.Keywords ?? [])
+                .Select(kw => new FactPair(
+                    null, kw.Quality > 0 ? $"{kw.Tag}={kw.Quality}" : kw.Tag))
+                .ToList());
+
         // Cross-link sections → the unified Link (matrix #6/#9/#10/#12), via the
         // ratified EntityChip/ItemSourceChip adapters; the view renders them
         // Density="List" (the canonical pilot enumeration pattern). Glyph is
@@ -309,6 +327,17 @@ public sealed partial class ItemDetailViewModel
     /// all-empty strip renders nothing.
     /// </summary>
     public FactTableVm StatStrip { get; }
+
+    /// <summary>
+    /// The item's raw <see cref="Item.Keywords"/> classification tags as one
+    /// inert Fact strip (the same StatStrip / matrix #3 idiom). Verbatim JSON
+    /// form per tag (<c>Tag</c>, or <c>Tag=Quality</c> when Quality &gt; 0).
+    /// Item keywords have no Keyword entity to navigate to ⇒ a Fact, not a
+    /// Link, even though the query engine can filter on them. Empty when the
+    /// item declares no keywords — the section self-hides via
+    /// <see cref="FactTableVm.Pairs"/>.<c>Count</c> (G-b: no box/gold).
+    /// </summary>
+    public FactTableVm KeywordStrip { get; }
 
     /// <summary>"Sources" rows as the unified <see cref="LinkVm"/> (matrix #9 —
     /// provenance suffix rides from <see cref="ItemSourceChipVm.Detail"/>).</summary>
