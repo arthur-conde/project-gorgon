@@ -137,4 +137,68 @@ public sealed class SkillLogParserTests
         // snapshot that would wipe live state.
         _parser.TryParse("[08:22:21] LocalPlayer: ProcessLoadSkills()", Ts).Should().BeNull();
     }
+
+    // ----- #525: per-row (int|long).TryParse guard (containment vs. snapshot loss) -----
+
+    [Fact]
+    public void ProcessLoadSkills_skips_oversized_field_row_and_keeps_the_rest()
+    {
+        // The middle struct's `xp` would overflow long (>= 2^63). Per #525
+        // row-skip policy, the surrounding good rows still ship — only the
+        // unparseable per-skill row drops.
+        var line = "[08:22:21] LocalPlayer: ProcessLoadSkills(" +
+                   "{type=Toolcrafting,raw=15,bonus=0,xp=26,tnl=680,max=50}, " +
+                   "{type=Tanning,raw=50,bonus=3,xp=99999999999999999999,tnl=5280,max=50}, " +
+                   "{type=Werewolf,raw=56,bonus=4,xp=13091,tnl=188650,max=70})";
+        var snap = _parser.TryParse(line, Ts).Should().BeOfType<SkillsSnapshotEvent>().Subject;
+
+        snap.Skills.Select(s => s.SkillKey).Should().Equal("Toolcrafting", "Werewolf");
+    }
+
+    [Fact]
+    public void ProcessLoadSkills_with_all_rows_degenerate_returns_null()
+    {
+        // No struct survived row-parse — fall through to the same empty-payload
+        // stance as line 92 (emit nothing, snapshot stands).
+        var line = "LocalPlayer: ProcessLoadSkills(" +
+                   "{type=A,raw=99999999999,bonus=0,xp=0,tnl=0,max=0}, " +
+                   "{type=B,raw=0,bonus=0,xp=99999999999999999999,tnl=0,max=0})";
+        _parser.TryParse(line, Ts).Should().BeNull();
+    }
+
+    [Fact]
+    public void ProcessUpdateSkill_with_oversized_struct_field_returns_null()
+    {
+        // Single-record event: a malformed struct field is unrecoverable for
+        // THIS event. Drop it; snapshot state stands.
+        var line = "[10:49:51] LocalPlayer: ProcessUpdateSkill(" +
+                   "{type=NatureAppreciation,raw=99999999999,bonus=2,xp=315,tnl=1350,max=50}, True, 110, 0, 0)";
+        _parser.TryParse(line, Ts).Should().BeNull();
+    }
+
+    [Fact]
+    public void ProcessUpdateSkill_with_oversized_arg3_defaults_XpGained_to_zero()
+    {
+        // arg3 overflowing long must not kill the event — the struct is the
+        // authoritative state. Per #525, treat a malformed arg3 the same as
+        // arg3-absent: emit the update with XpGained=0.
+        var line = "[10:49:51] LocalPlayer: ProcessUpdateSkill(" +
+                   "{type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 99999999999999999999, 0, 0)";
+        var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
+        upd.Skill.SkillKey.Should().Be("Sword");
+        upd.XpGained.Should().Be(0);
+    }
+
+    [Fact]
+    public void Oversized_token_does_not_throw_OverflowException()
+    {
+        // The whole point of #525: a single bad token must not poison the
+        // parser. (Containment in PlayerSkillStateService catches throws too,
+        // but a throw would still discard the entire snapshot.)
+        var line = "LocalPlayer: ProcessLoadSkills(" +
+                   "{type=A,raw=15,bonus=0,xp=99999999999999999999,tnl=680,max=50}, " +
+                   "{type=B,raw=50,bonus=3,xp=0,tnl=5280,max=50})";
+        Action act = () => _parser.TryParse(line, Ts);
+        act.Should().NotThrow();
+    }
 }
