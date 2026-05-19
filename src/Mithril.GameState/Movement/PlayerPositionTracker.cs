@@ -1,6 +1,5 @@
 using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
 
@@ -43,7 +42,6 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
     private readonly IPlayerLogStream _stream;
     private readonly PlayerPositionParser _parser;
     private readonly PlayerAreaTracker _areaTracker;
-    private readonly GameConfig _config;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -54,13 +52,11 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
         IPlayerLogStream stream,
         PlayerPositionParser parser,
         PlayerAreaTracker areaTracker,
-        GameConfig config,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
         _parser = parser;
         _areaTracker = areaTracker;
-        _config = config;
         _diag = diag;
     }
 
@@ -85,13 +81,8 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // One-shot reverse-scan for the most recent LOADING LEVEL line before
-        // the live tail kicks in — the replay window opens after it, so
-        // without this the shared area tracker stays null until the next
-        // zone change. Best-effort; never blocks ingestion.
-        if (!string.IsNullOrEmpty(_config.PlayerLogPath))
-            _areaTracker.SeedFromLog(_config.PlayerLogPath);
-
+        // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
+        // owned — mithril#514); this service only feeds/reads it.
         _diag?.Info("GameState.Position", "Subscribing to Player.log for ProcessNewPosition");
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {

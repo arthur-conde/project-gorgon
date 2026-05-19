@@ -2,7 +2,6 @@ using Gandalf.Parsing;
 using Mithril.GameState.Areas;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 
 namespace Gandalf.Services;
@@ -35,7 +34,6 @@ public sealed class LootIngestionService : BackgroundService
     private readonly DefeatCooldownParser _defeatCooldown;
     private readonly PlayerAreaTracker _areaTracker;
     private readonly LootSource _source;
-    private readonly GameConfig _config;
     private readonly IDiagnosticsSink? _diag;
     private bool _firstObservationLogged;
 
@@ -46,7 +44,6 @@ public sealed class LootIngestionService : BackgroundService
         DefeatCooldownParser defeatCooldown,
         PlayerAreaTracker areaTracker,
         LootSource source,
-        GameConfig config,
         IDiagnosticsSink? diag = null)
     {
         _stream = stream;
@@ -55,22 +52,13 @@ public sealed class LootIngestionService : BackgroundService
         _defeatCooldown = defeatCooldown;
         _areaTracker = areaTracker;
         _source = source;
-        _config = config;
         _diag = diag;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // One-shot reverse-scan for the most recent LOADING LEVEL Area* line
-        // before the live tail kicks in. PlayerLogStream's SessionMarker
-        // (ProcessAddPlayer) lands ~9 s after the area-load line, so the
-        // live replay window misses it; this seed closes the gap. Best-
-        // effort — failures don't block ingestion.
-        if (!string.IsNullOrEmpty(_config.PlayerLogPath))
-        {
-            _areaTracker.SeedFromLog(_config.PlayerLogPath);
-        }
-
+        // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
+        // owned — mithril#514); this consumer only reads/feeds it.
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
             try { Dispatch(raw); }

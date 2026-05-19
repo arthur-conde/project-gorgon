@@ -41,7 +41,10 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         AreaCalibration? calibration = null, GameConfig? config = null)
     {
         var stream = new ScriptedStream();
-        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
+        // #514: the shared tracker owns its one-shot seed (PLIS no longer
+        // triggers it). Route the test's config to the tracker so a
+        // startup-seed test drives the owned self-seed.
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser(), config: config);
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -60,7 +63,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
             stream, new PlayerLogParser(), tracker, spy, flow, session, motherlode, settings, gates,
-            config ?? new GameConfig(), time: clock);
+            time: clock);
         return (svc, stream, spy, session, flow);
     }
 
