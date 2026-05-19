@@ -128,6 +128,10 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     /// the FSM stays coarse — this is purely a snapshot projection.</summary>
     [ObservableProperty] private MotherlodeStage _stage;
 
+    /// <summary>True when there is a bound reading the player can undo (the
+    /// "oops" button is enabled). Multi-level.</summary>
+    [ObservableProperty] private bool _canUndo;
+
     /// <summary>Treasures with a confident fix so far — the headline number.</summary>
     public int SolvedCount => Slots.Count(s => s.HasFix);
 
@@ -170,6 +174,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         Guidance = snap.Guidance;
         ReadsPerLocation = snap.ReadsPerLocation;
         MapsDug = snap.MapsDug;
+        CanUndo = snap.CanUndo;
         RecomputeContractText();
         OnPropertyChanged(nameof(SolvedCount));
 
@@ -200,6 +205,12 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         var order = _optimizer.Optimize(start, points);
         _coordinator.ApplyRouteOrder(order.Select(i => ids[i]).ToList());
     }
+
+    /// <summary>"Oops, I accidentally checked a map" — reverse the last bound
+    /// reading (multi-level). Cheap correction vs. nuking the batch with
+    /// Reset.</summary>
+    [RelayCommand]
+    private void UndoLastReading() => _coordinator.UndoLastReading();
 
     [RelayCommand]
     private void Reset() => _coordinator.Reset();

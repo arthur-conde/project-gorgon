@@ -566,6 +566,79 @@ public class MotherlodeMeasurementCoordinatorTests
         snap.Surveys.Should().ContainSingle();                 // old slots cleared
     }
 
+    // ---- undo last reading ("oops, accidentally checked a map") ----------
+
+    [Fact]
+    public void Undo_pops_readings_LIFO_then_clears_can_undo()
+    {
+        var (coord, pos, _) = Build();                 // multi-map default
+        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        coord.OnUse(T0);                       coord.OnDistance(500, T0.AddSeconds(1));   // slot 0
+        coord.OnUse(T0.AddSeconds(2));         coord.OnDistance(600, T0.AddSeconds(3));   // slot 1
+
+        var s = coord.Snapshot();
+        s.Surveys.Should().HaveCount(2);
+        s.CanUndo.Should().BeTrue();
+
+        coord.UndoLastReading().Should().BeTrue();
+        coord.Snapshot().Surveys.Should().ContainSingle();      // slot 1 (created+empty) dropped
+
+        coord.UndoLastReading().Should().BeTrue();
+        var s2 = coord.Snapshot();
+        s2.Surveys.Should().BeEmpty();
+        s2.LocationCount.Should().Be(0);                        // the row this read created rolled out
+        s2.CanUndo.Should().BeFalse();
+
+        coord.UndoLastReading().Should().BeFalse();             // nothing left
+    }
+
+    [Fact]
+    public void Undo_rewinds_the_ordinal_so_the_corrected_read_re_takes_the_slot()
+    {
+        var (coord, pos, _) = Build();                 // multi-map default
+
+        // Spot 1 defines a 2-map working set (slots 0, 1).
+        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        coord.OnUse(T0);               coord.OnDistance(100, T0.AddSeconds(1));   // slot 0
+        coord.OnUse(T0.AddSeconds(2)); coord.OnDistance(200, T0.AddSeconds(3));   // slot 1
+
+        // Spot 2: accidentally check a map first → garbage binds slot 0 @ row 1.
+        var t2 = T0.AddMinutes(2);
+        pos.Push(900, 0, 0, PlayerPositionSource.Spawn, t2);
+        coord.OnUse(t2);               coord.OnDistance(9999, t2.AddSeconds(1));
+        coord.Snapshot().Surveys[0].DistancesByLocation[1].Should().Be(9999);
+
+        coord.UndoLastReading();                                                 // oops
+
+        // The garbage is gone and the ordinal rewound: the *next* read at this
+        // spot re-takes slot 0 (k0), not slot 1 — the contract re-aligns.
+        coord.OnUse(t2.AddSeconds(4)); coord.OnDistance(480, t2.AddSeconds(5));
+
+        var sv = coord.Snapshot().Surveys;
+        sv.Should().HaveCount(2);
+        sv[0].DistancesByLocation[1].Should().Be(480);    // corrected read landed on slot 0
+        (sv[1].DistancesByLocation.Count <= 1
+            || sv[1].DistancesByLocation[1] == 0).Should().BeTrue();   // slot 1 untouched here
+    }
+
+    [Fact]
+    public void Undo_stack_is_cleared_by_reset_and_area_change()
+    {
+        var (coord, pos, inv, area) = BuildAreaInv();
+        area.Observe("LOADING LEVEL AreaKurMountains", T0.UtcDateTime);
+        Spot(coord, pos, 0, 0, T0, 500, 600);
+        coord.Snapshot().CanUndo.Should().BeTrue();
+
+        area.Observe("LOADING LEVEL AreaEltibule", T0.AddMinutes(5).UtcDateTime);
+        coord.OnUse(T0.AddMinutes(6));                  // first use in new area clears measurement
+        coord.Snapshot().CanUndo.Should().BeFalse();    // stale undo history dropped
+
+        Spot(coord, pos, 0, 0, T0.AddMinutes(7), 700);
+        coord.Snapshot().CanUndo.Should().BeTrue();
+        coord.Reset();
+        coord.Snapshot().CanUndo.Should().BeFalse();
+    }
+
     [Fact]
     public void Same_area_re_observed_does_not_reset()
     {

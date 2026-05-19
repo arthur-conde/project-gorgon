@@ -32,7 +32,8 @@ public sealed record MotherlodeStatus(
     IReadOnlyList<MotherlodePositionSample> Locations,
     string? Guidance,
     IReadOnlyList<int> ReadsPerLocation,
-    int MapsDug);
+    int MapsDug,
+    bool CanUndo);
 
 /// <summary>
 /// Owns the rebuilt Motherlode mechanic (#488). Confirmed empirically from the
@@ -131,6 +132,14 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     // The map-type label from the most recent use, applied to a slot the next
     // read creates (display only — identical across a same-type stack).
     private string? _pendingUseName;
+
+    // Multi-level undo for an "oops, I accidentally checked a map" misclick.
+    // Each bound reading pushes enough to fully reverse it (LIFO): the row/slot
+    // it hit, the prior value there, and whether this read *created* that slot
+    // and/or that location row. Cleared whenever the measurement is cleared.
+    private readonly record struct ReadUndo(
+        int Row, int Slot, int PrevDistance, bool CreatedSlot, bool CreatedRow);
+    private readonly Stack<ReadUndo> _undo = new();
 
     // Latest feeder fix seen from a tracker (cross-thread; value-only).
     private (WorldCoord World, MotherlodePositionSource Src, PlayerPositionSource? Pos, DateTimeOffset At)? _latestFix;
@@ -267,16 +276,22 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     // A committed-but-distance-less location was a completing gesture, not a
     // measurement: roll its row out of the shared sample set so it weighs on
     // no solve and counts toward no divergence check.
-    private void DiscardOpenLocation(OpenLocation o)
+    private void DiscardOpenLocation(OpenLocation o) => DiscardRow(o.RowIndex);
+
+    // Roll a (last) location row out of the shared sample set: drop its Pᵢ and
+    // trim every survey's parallel slot, so it weighs on no solve and counts
+    // toward no divergence check. Only the final row is removable (interior
+    // removal would renumber every slot's parallel array).
+    private void DiscardRow(int row)
     {
-        if (o.RowIndex < 0 || o.RowIndex != _session.LocationSamples.Count - 1) return;
-        _session.LocationSamples.RemoveAt(o.RowIndex);
+        if (row < 0 || row != _session.LocationSamples.Count - 1) return;
+        _session.LocationSamples.RemoveAt(row);
         for (var i = 0; i < _session.Surveys.Count; i++)
         {
             var s = _session.Surveys[i];
-            if (s.DistancesByLocation.Count <= o.RowIndex) continue;
+            if (s.DistancesByLocation.Count <= row) continue;
             var d = s.DistancesByLocation.ToList();
-            d.RemoveAt(o.RowIndex);
+            d.RemoveAt(row);
             _session.Surveys[i] = s with { DistancesByLocation = d };
         }
     }
@@ -366,6 +381,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 return;
             }
 
+            var createdRow = o.RowIndex < 0;          // EnsureCommitted will add it
             EnsureCommitted(o);
             var slot = SelectSlot(o);
             if (slot < 0)
@@ -373,9 +389,14 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 _diag?.Trace("Legolas.Motherlode", $"Distance {metres}m — no slot to bind — dropped.");
                 return;
             }
+            var createdSlot = slot >= _session.Surveys.Count;
+            var prev = !createdSlot && o.RowIndex < _session.Surveys[slot].DistancesByLocation.Count
+                ? _session.Surveys[slot].DistancesByLocation[o.RowIndex]
+                : 0;
             o.DistanceCount++;
             SetDistance(o.RowIndex, slot, metres);
             ResolveSlot(slot);
+            _undo.Push(new ReadUndo(o.RowIndex, slot, prev, createdSlot, createdRow));
             if (DetectBatchDivergence() is { } div) _guidance = div;
         }
         _flow.NoteMeasurement("motherlode-distance");
@@ -423,6 +444,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         _latestFix = null;
         _guidance = null;
         _pendingUseName = null;
+        _undo.Clear();
     }
 
     public void Reset()
@@ -435,6 +457,62 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         }
         _flow.Reset();
         Raise();
+    }
+
+    /// <summary>
+    /// "Oops, I accidentally checked a map." Reverses the most recently bound
+    /// reading (multi-level, LIFO): restores the prior distance, drops the slot
+    /// and/or location row if this read created it, decrements the open spot's
+    /// per-spot ordinal so the *next* real read re-takes that position (this is
+    /// what re-aligns the multi-map declared-order contract — without it the
+    /// desync persists), re-solves, and recomputes divergence. Returns false
+    /// when there is nothing to undo.
+    /// </summary>
+    public bool UndoLastReading()
+    {
+        lock (_gate)
+        {
+            if (_undo.Count == 0) return false;
+            var u = _undo.Pop();
+
+            if (u.Slot < _session.Surveys.Count)
+            {
+                var s = _session.Surveys[u.Slot];
+                if (u.Row < s.DistancesByLocation.Count)
+                {
+                    var d = s.DistancesByLocation.ToList();
+                    d[u.Row] = u.PrevDistance;
+                    _session.Surveys[u.Slot] = s = s with { DistancesByLocation = d };
+                }
+                // LIFO ⇒ a slot this read created is the last one and has no
+                // other readings now: drop it. Otherwise just re-solve.
+                if (u.CreatedSlot && s.DistancesByLocation.All(v => v <= 0) && !s.Collected
+                    && u.Slot == _session.Surveys.Count - 1)
+                    _session.Surveys.RemoveAt(u.Slot);
+                else
+                    ResolveSlot(u.Slot);
+            }
+
+            // Re-open the ordinal so the next read at this spot re-takes it.
+            if (_open is { } o && o.RowIndex == u.Row && o.DistanceCount > 0)
+                o.DistanceCount--;
+
+            // A row this read created, now empty, rolls out (and the open
+            // location must re-commit a fresh row on its next reading).
+            if (u.CreatedRow && u.Row == _session.LocationSamples.Count - 1
+                && _session.Surveys.All(s => s.DistancesByLocation.Count <= u.Row
+                                             || s.DistancesByLocation[u.Row] <= 0))
+            {
+                DiscardRow(u.Row);
+                if (_open is { } op && op.RowIndex == u.Row) op.RowIndex = -1;
+            }
+
+            // Recompute the contract warning (clears a stale one the bad read
+            // raised; null = no issue).
+            _guidance = DetectBatchDivergence();
+        }
+        Raise();
+        return true;
     }
 
     public MotherlodeStatus Snapshot()
@@ -457,7 +535,8 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 _session.LocationSamples.ToArray(),
                 _guidance,
                 reads,
-                _dugMaps);
+                _dugMaps,
+                _undo.Count > 0);
         }
     }
 

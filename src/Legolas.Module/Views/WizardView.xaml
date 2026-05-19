@@ -860,8 +860,14 @@
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
-                    <Button Content="Reset" Padding="14,6" HorizontalAlignment="Center"
-                            Command="{Binding Motherlode.ResetCommand}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Oops — undo last check" Padding="14,6" Margin="0,0,8,0"
+                                ToolTip="Accidentally checked a map? Reverse the last reading (multi-level)."
+                                IsEnabled="{Binding Motherlode.CanUndo}"
+                                Command="{Binding Motherlode.UndoLastReadingCommand}" />
+                        <Button Content="Reset" Padding="14,6"
+                                Command="{Binding Motherlode.ResetCommand}" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- MotherlodeLocating — readings in, nothing solved yet. -->
@@ -872,8 +878,14 @@
                                Foreground="{StaticResource TextSecondaryBrush}" />
                     <ContentControl Content="{Binding Motherlode}" ContentTemplate="{StaticResource MotherlodeProgressBody}"
                                     HorizontalAlignment="Center" />
-                    <Button Content="Reset" Padding="14,6" HorizontalAlignment="Center" Margin="0,4,0,0"
-                            Command="{Binding Motherlode.ResetCommand}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <Button Content="Oops — undo last check" Padding="14,6" Margin="0,0,8,0"
+                                ToolTip="Accidentally checked a map? Reverse the last reading (multi-level)."
+                                IsEnabled="{Binding Motherlode.CanUndo}"
+                                Command="{Binding Motherlode.UndoLastReadingCommand}" />
+                        <Button Content="Reset" Padding="14,6"
+                                Command="{Binding Motherlode.ResetCommand}" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- MotherlodeWalk — ≥1 treasure located: relative guidance +
