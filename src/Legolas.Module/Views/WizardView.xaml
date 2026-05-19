@@ -253,36 +253,62 @@
                     <TextBlock Text="{Binding CalibrationChipText}" VerticalAlignment="Center"
                                FontSize="{DynamicResource AppFontSizeSmall}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- #503: the "Validate calibration" toggle, folded into
+                         the chip as a split segment (it dwarfed the chip as a
+                         standalone labelled button). The dot+text region stays
+                         the calibrate/recalibrate target via the Border
+                         MouseBinding; this trailing icon is its own Button so
+                         its click is handled and never bubbles to that binding.
+                         The whole segment is hidden when there's nothing to
+                         validate (uncalibrated). Disabled while surveying /
+                         plotting motherlodes (CanValidateCalibration), where
+                         the markers would clutter the working overlay. -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <Rectangle Width="1" Margin="9,2,8,2"
+                                   Fill="{StaticResource BorderSubtleBrush}" />
+                        <Button Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
+                                IsEnabled="{Binding CanValidateCalibration}"
+                                VerticalAlignment="Center" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="Transparent" Padding="2">
+                                        <ContentPresenter HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="ToolTip" Value="Show known landmarks/NPCs on the map to check the calibration still lines up — a consistent offset means recalibrate. Available between runs, not while surveying or plotting motherlodes." />
+                                    <Setter Property="Opacity" Value="1" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
+                                            <Setter Property="ToolTip" Value="Hide the reference markers." />
+                                        </DataTrigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.4" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <icon:PackIconLucide Width="13" Height="13" Kind="Crosshair">
+                                <icon:PackIconLucide.Style>
+                                    <Style TargetType="icon:PackIconLucide">
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </icon:PackIconLucide.Style>
+                            </icon:PackIconLucide>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
             </Border>
-
-
-            <!-- #495: "Validate calibration" toggle, beside the calibration
-                 indicator chip (declared after it so it docks to its left).
-                 Always-visible diagnostic — projects known landmarks/NPCs onto
-                 the live map (labeled, decluttered) so the user can eyeball
-                 alignment. Hidden when there's nothing to validate
-                 (uncalibrated); disabled while surveying / plotting motherlodes
-                 (CanValidateCalibration), where it would clutter the working
-                 overlay. MapOverlay.* binds through the wizard VM DataContext. -->
-            <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,8,0"
-                    Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
-                    IsEnabled="{Binding CanValidateCalibration}"
-                    Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
-                    ToolTip="Project known landmarks/NPCs onto the map to check the calibration still lines up. A consistent offset means recalibrate (usually an in-game map-zoom change). Available between runs — not while surveying or plotting motherlodes.">
-                <Button.Style>
-                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                        <Setter Property="Padding" Value="10,4" />
-                        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeSmall}" />
-                        <Setter Property="Content" Value="Validate calibration" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
-                                <Setter Property="Content" Value="Hide markers" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Button.Style>
-            </Button>
 
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
