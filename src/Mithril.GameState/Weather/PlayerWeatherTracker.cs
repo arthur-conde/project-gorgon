@@ -131,7 +131,7 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
                 _areaTracker.Observe(raw);
                 ReconcileArea();
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is WeatherChangedEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is WeatherChangedEvent evt)
                     Apply(evt);
             }
             catch (Exception ex)

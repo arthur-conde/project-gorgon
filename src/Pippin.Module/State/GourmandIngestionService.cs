@@ -56,7 +56,7 @@ public sealed class GourmandIngestionService : BackgroundService
         {
             try
             {
-                var evt = _parser.TryParse(raw.Line, raw.Timestamp);
+                var evt = _parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime);
                 if (evt is GourmandEvent ge)
                 {
                     _diag?.Trace("Pippin.Parse", $"FoodsConsumedReport with {(ge as FoodsConsumedReport)?.Foods.Count ?? 0} entries");

@@ -119,7 +119,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
                 // GameState-tier PlayerPinTracker (#468); this service handles
                 // ProcessMapFx absolute targets (#454) and the ProcessDoDelayLoop
                 // Motherlode-map use gesture (#488).
-                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                switch (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime))
                 {
                     case MapTargetDetected mt:
                         PostToUi(() => HandleMapTarget(mt));

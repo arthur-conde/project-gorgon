@@ -4,10 +4,13 @@ using System.Text;
 namespace Mithril.Shared.Logging;
 
 /// <summary>
-/// Single-file tail with session-start seek. Mirrors ws_bridge.py's
-/// _find_session_start: scans the last 10 MB for the most recent
-/// session-start marker so the consumer always receives the login event
-/// regardless of how long ago the session began.
+/// Player.log seed-strategy wrapper around <see cref="LogSourceTailer"/>.
+/// The tail mechanics (offset, residual, rotation, Sequence,
+/// ReadMonotonicTicks, timestamp normalization) live in
+/// <see cref="LogSourceTailer"/> per #513 — this class owns only the
+/// Player-side seek strategy: scan the file backwards for the most
+/// recent session-start marker so the consumer always receives the
+/// login event regardless of how long ago the session began.
 ///
 /// <para><b>Session markers.</b> Two markers identify a session start:</para>
 /// <list type="bullet">
@@ -23,14 +26,6 @@ namespace Mithril.Shared.Logging;
 /// <b>earlier</b> of the two recent occurrences so both lines appear in the
 /// replay regardless of PG's emission order. If neither is found, the seed
 /// falls through to byte 0 (replay everything).
-///
-/// Each emitted <see cref="RawLogLine"/> carries the absolute UTC of the
-/// log line itself (recovered from the <c>[HH:MM:SS]</c> prefix every PG
-/// gameplay line carries) rather than wall-clock-at-read. Past-anchored
-/// cooldown sources (Gandalf Quest/Loot) rely on this to correctly anchor
-/// rows when Mithril launches mid-session and the seed replay surfaces
-/// hours-old completions. See <see cref="LogLineTimestampSequencer"/> for
-/// the date-folding logic.
 /// </summary>
 public sealed class PlayerLogTailReader
 {
@@ -42,21 +37,18 @@ public sealed class PlayerLogTailReader
     ];
 
     private readonly string _path;
-    private readonly TimeProvider _time;
-    private readonly LogLineTimestampSequencer _sequencer;
-    private long _offset;
-    private byte[] _residual = Array.Empty<byte>();
+    private readonly LogSourceTailer _tailer;
 
     public PlayerLogTailReader(string path, TimeProvider? time = null, ISessionAnchor? sessionAnchor = null)
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
-        _time = time ?? TimeProvider.System;
-        _sequencer = new LogLineTimestampSequencer(_time, sessionAnchor);
+        var t = time ?? TimeProvider.System;
+        _tailer = new LogSourceTailer(_path, new PlayerLogClock(t, sessionAnchor), t);
     }
 
     public void SeedToSessionStart()
     {
-        if (!File.Exists(_path)) { _offset = 0; return; }
+        if (!File.Exists(_path)) { _tailer.Offset = 0; return; }
         var size = new FileInfo(_path).Length;
         using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
@@ -92,60 +84,19 @@ public sealed class PlayerLogTailReader
 
             if (bestOffset is not null)
             {
-                _offset = bestOffset.Value;
+                _tailer.Offset = bestOffset.Value;
                 return;
             }
             if (scanFrom == 0) break;
             end = scanFrom + overlap; // keep overlap so a marker spanning chunks is caught
         }
-        _offset = 0; // no marker found anywhere — replay from the top
+        _tailer.Offset = 0; // no marker found anywhere — replay from the top
     }
 
     public void SeedToEnd()
     {
-        _offset = File.Exists(_path) ? new FileInfo(_path).Length : 0;
+        _tailer.Offset = File.Exists(_path) ? new FileInfo(_path).Length : 0;
     }
 
-    public IReadOnlyList<RawLogLine> ReadNew()
-    {
-        if (!File.Exists(_path)) return Array.Empty<RawLogLine>();
-        using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        if (fs.Length < _offset) _offset = 0; // truncation / rotation
-        if (fs.Length == _offset) return Array.Empty<RawLogLine>();
-
-        fs.Seek(_offset, SeekOrigin.Begin);
-        var len = (int)Math.Min(int.MaxValue, fs.Length - _offset);
-        var buf = new byte[_residual.Length + len];
-        Buffer.BlockCopy(_residual, 0, buf, 0, _residual.Length);
-        var read = fs.Read(buf, _residual.Length, len);
-        var total = _residual.Length + read;
-
-        // Find last newline; everything after becomes residual
-        var lastNl = -1;
-        for (var i = total - 1; i >= 0; i--) { if (buf[i] == (byte)'\n') { lastNl = i; break; } }
-        if (lastNl < 0)
-        {
-            _residual = buf[..total];
-            _offset += read;
-            return Array.Empty<RawLogLine>();
-        }
-
-        var text = Encoding.UTF8.GetString(buf, 0, lastNl + 1);
-        _residual = buf[(lastNl + 1)..total];
-        _offset += read;
-
-        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0) return Array.Empty<RawLogLine>();
-
-        _sequencer.EnsureAnchored(lines, () => File.GetLastWriteTimeUtc(_path));
-
-        var result = new List<RawLogLine>(lines.Length);
-        foreach (var line in lines)
-        {
-            var trimmed = line.EndsWith('\r') ? line[..^1] : line;
-            if (trimmed.Length == 0) continue;
-            result.Add(new RawLogLine(_sequencer.StampForLine(trimmed), trimmed));
-        }
-        return result;
-    }
+    public IReadOnlyList<RawLogLine> ReadNew() => _tailer.ReadNew();
 }

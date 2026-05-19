@@ -43,14 +43,6 @@ public sealed class LogIngestionService : BackgroundService
         _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
     }
 
-    // Both tail readers normalize their <c>[HH:MM:SS]</c> prefix to UTC via the
-    // shared LogLineTimestampSequencer, so Player.log (use) and ChatLog
-    // (distance) instants are directly comparable. Specify-kind before lifting
-    // to DateTimeOffset (the #183-class timezone trap is already handled
-    // upstream; this only re-tags the Kind).
-    private static DateTimeOffset Utc(DateTime ts) =>
-        new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
@@ -59,7 +51,7 @@ public sealed class LogIngestionService : BackgroundService
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is GameEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is GameEvent evt)
                     Dispatch(evt);
             }
             catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
@@ -100,7 +92,10 @@ public sealed class LogIngestionService : BackgroundService
                     HandleItemCollected(ic);
                     break;
                 case MotherlodeDistance md when _session.Mode == SessionMode.Motherlode:
-                    _motherlode.OnDistance(md.DistanceMetres, Utc(md.Timestamp));
+                    // md.Timestamp was carried through as raw.Timestamp.UtcDateTime
+                    // at the parser boundary above, so it is Kind=Utc; lift to a
+                    // DateTimeOffset with offset 0 for the coordinator's API.
+                    _motherlode.OnDistance(md.DistanceMetres, new DateTimeOffset(md.Timestamp, TimeSpan.Zero));
                     break;
                 case AreaEntered ae:
                     _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);

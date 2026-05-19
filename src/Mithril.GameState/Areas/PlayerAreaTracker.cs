@@ -78,7 +78,7 @@ public sealed class PlayerAreaTracker
         Apply(line, timestamp);
     }
 
-    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp);
+    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp.UtcDateTime);
 
     private void Apply(string line, DateTime timestamp)
     {

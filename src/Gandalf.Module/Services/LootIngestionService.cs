@@ -74,14 +74,15 @@ public sealed class LootIngestionService : BackgroundService
         _areaTracker.Observe(raw);
         _bracket.Observe(raw);
 
-        if (_bossKill.TryParse(raw.Line, raw.Timestamp) is BossKillCreditEvent kill)
+        var ts = raw.Timestamp.UtcDateTime;
+        if (_bossKill.TryParse(raw.Line, ts) is BossKillCreditEvent kill)
         {
             _source.OnBossKillCredit(kill.NpcDisplayName, kill.Timestamp);
             FirstObservation();
             return;
         }
 
-        if (_defeatCooldown.TryParse(raw.Line, raw.Timestamp) is DefeatCooldownActiveEvent active)
+        if (_defeatCooldown.TryParse(raw.Line, ts) is DefeatCooldownActiveEvent active)
         {
             _source.OnDefeatCooldownActive(active.NpcDisplayName, active.Timestamp);
             FirstObservation();

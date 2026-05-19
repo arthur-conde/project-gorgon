@@ -104,7 +104,7 @@ public sealed partial class LootBracketTracker
     /// unrelated lines — the common case is a quick set of substring checks
     /// that don't touch state.
     /// </summary>
-    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp);
+    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp.UtcDateTime);
 
     public void Observe(string line, DateTime timestamp)
     {

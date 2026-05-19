@@ -73,7 +73,7 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is CelestialInfoEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is CelestialInfoEvent evt)
                 {
                     if (evt.Phase == MoonPhase.Unknown)
                         ReportUnknownToken(evt.RawPhase);
@@ -130,10 +130,13 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
     }
 
     /// <summary>
-    /// Player.log timestamps are reconstructed as UTC <see cref="DateTime"/>s
-    /// by <c>LogLineTimestampSequencer</c>. Stamp the kind defensively in case
-    /// a caller passes an Unspecified-kind value (tests), so the offset is
-    /// always +00:00 rather than the host's local offset.
+    /// Player.log timestamps are normalized upstream by the L0 source
+    /// clock (<c>PlayerLogClock</c>, #513) — <c>raw.Timestamp</c> arrives
+    /// as a UTC <see cref="DateTimeOffset"/>; we pass its
+    /// <c>.UtcDateTime</c> into the parser, which surfaces its event's
+    /// <see cref="DateTime"/> as Unspecified-kind. Stamp the kind
+    /// defensively here so the lifted <see cref="DateTimeOffset"/>
+    /// always has offset +00:00 rather than the host's local offset.
     /// </summary>
     private static DateTimeOffset ToOffset(DateTime ts) =>
         new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
