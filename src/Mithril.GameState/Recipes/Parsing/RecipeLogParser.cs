@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 
 namespace Mithril.GameState.Recipes.Parsing;
@@ -59,6 +61,21 @@ public sealed partial class RecipeLogParser : ILogParser
 
     private static readonly char[] Comma = [','];
 
+    private readonly ThrottledWarn _warn;
+
+    /// <summary>
+    /// Constructs the parser. Pass an <see cref="IDiagnosticsSink"/> to surface
+    /// the rare malformed-row breadcrumb that <see cref="ParseRow"/> emits when
+    /// a numeric token fails <c>int.TryParse</c> (oversized id / count via
+    /// grammar drift — guards against issue #525). A <c>null</c> sink makes the
+    /// warn a no-op; the throttle window suppresses a per-line flood from a
+    /// pathologically corrupt payload.
+    /// </summary>
+    public RecipeLogParser(IDiagnosticsSink? diag = null)
+    {
+        _warn = new ThrottledWarn(diag, "GameState.Recipes");
+    }
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         // Fast path: the vast majority of Player.log lines are neither verb.
@@ -85,9 +102,20 @@ public sealed partial class RecipeLogParser : ILogParser
             var recipes = new List<RecipeCompletionRecord>(ids.Length);
             for (int i = 0; i < ids.Length; i++)
             {
-                recipes.Add(new RecipeCompletionRecord(
-                    int.Parse(ids[i]), int.Parse(counts[i])));
+                // Per-row row-skip on overflow / non-numeric: parallel-array
+                // alignment is preserved when the bad (id, count) PAIR drops
+                // together. A 999-of-1000 partial snapshot is better than zero
+                // — the missing row recovers on the next ProcessLoadRecipes
+                // (zone / session transition). See #525.
+                if (TryParseRow(ids[i], counts[i], out var record))
+                    recipes.Add(record);
             }
+
+            // All rows were degenerate — fall through to the same "emit
+            // nothing" stance as line 83 (empty / mismatched payload). The
+            // already-published snapshot stands until the next transition.
+            if (recipes.Count == 0) return null;
+
             return new RecipesSnapshotEvent(timestamp, recipes);
         }
 
@@ -95,12 +123,28 @@ public sealed partial class RecipeLogParser : ILogParser
         {
             var m = UpdateRecipePayloadRx().Match(line);
             if (!m.Success) return null;
-            return new RecipeUpdateEvent(timestamp, new RecipeCompletionRecord(
-                int.Parse(m.Groups["id"].ValueSpan),
-                int.Parse(m.Groups["count"].ValueSpan)));
+
+            // Whole-event is one row; if either field overflows, drop the
+            // event entirely (with breadcrumb). Snapshot state stands.
+            if (!TryParseRow(m.Groups["id"].Value, m.Groups["count"].Value, out var record))
+                return null;
+            return new RecipeUpdateEvent(timestamp, record);
         }
 
         return null;
+    }
+
+    private bool TryParseRow(string idText, string countText, out RecipeCompletionRecord record)
+    {
+        if (int.TryParse(idText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+            && int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count))
+        {
+            record = new RecipeCompletionRecord(id, count);
+            return true;
+        }
+        _warn.Warn($"Dropping recipe row with unparseable numeric token (id='{idText}', count='{countText}')");
+        record = default;
+        return false;
     }
 
     private static string[] Split(string list) =>

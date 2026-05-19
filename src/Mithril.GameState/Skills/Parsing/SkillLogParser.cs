@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 
 namespace Mithril.GameState.Skills.Parsing;
@@ -68,6 +70,21 @@ public sealed partial class SkillLogParser : ILogParser
         RegexOptions.CultureInvariant)]
     private static partial Regex SkillTupleRx();
 
+    private readonly ThrottledWarn _warn;
+
+    /// <summary>
+    /// Constructs the parser. Pass an <see cref="IDiagnosticsSink"/> to surface
+    /// the rare malformed-row breadcrumb that <see cref="TryToRecord"/> emits
+    /// when a numeric token fails <c>(int|long).TryParse</c> (oversized
+    /// raw/bonus/xp/tnl/max via grammar drift — guards against issue #525). A
+    /// <c>null</c> sink makes the warn a no-op; the throttle window suppresses
+    /// a per-line flood from a pathologically corrupt payload.
+    /// </summary>
+    public SkillLogParser(IDiagnosticsSink? diag = null)
+    {
+        _warn = new ThrottledWarn(diag, "GameState.Skills");
+    }
+
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         // Fast path: the vast majority of Player.log lines are neither verb.
@@ -83,7 +100,12 @@ public sealed partial class SkillLogParser : ILogParser
             var skills = new List<SkillProgressRecord>();
             foreach (Match m in SkillTupleRx().Matches(line))
             {
-                skills.Add(ToRecord(m));
+                // Per-row row-skip on numeric overflow / non-integer: keep the
+                // surrounding ~124 well-formed skills rather than dropping the
+                // whole snapshot. The missing row recovers on the next
+                // ProcessLoadSkills (zone / session transition). See #525.
+                if (TryToRecord(m, out var record))
+                    skills.Add(record);
             }
 
             // A ProcessLoadSkills line with no parseable struct is degenerate
@@ -96,22 +118,49 @@ public sealed partial class SkillLogParser : ILogParser
         {
             var m = SkillTupleRx().Match(line);
             if (!m.Success) return null;
+            if (!TryToRecord(m, out var record)) return null;
 
             // arg3 = XP gained this tick. Defaults to 0 if the tail is absent
             // (grammar drift) — the struct is still authoritative for state.
+            // An oversized arg3 (would-be overflow) is also treated as 0 with
+            // a breadcrumb rather than killing the otherwise-valid update.
+            long gained = 0;
             var g = XpGainRx().Match(line);
-            long gained = g.Success ? long.Parse(g.Groups["gained"].ValueSpan) : 0;
-            return new SkillProgressUpdateEvent(timestamp, ToRecord(m), gained);
+            if (g.Success
+                && !long.TryParse(g.Groups["gained"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out gained))
+            {
+                _warn.Warn($"ProcessUpdateSkill: unparseable XpGained '{g.Groups["gained"].Value}', defaulting to 0");
+                gained = 0;
+            }
+            return new SkillProgressUpdateEvent(timestamp, record, gained);
         }
 
         return null;
     }
 
-    private static SkillProgressRecord ToRecord(Match m) => new(
-        SkillKey: m.Groups["type"].Value,
-        Level: int.Parse(m.Groups["raw"].ValueSpan),
-        BonusLevels: int.Parse(m.Groups["bonus"].ValueSpan),
-        XpTowardNextLevel: long.Parse(m.Groups["xp"].ValueSpan),
-        XpNeededForNextLevel: long.Parse(m.Groups["tnl"].ValueSpan),
-        MaxLevel: int.Parse(m.Groups["max"].ValueSpan));
+    private bool TryToRecord(Match m, out SkillProgressRecord record)
+    {
+        if (int.TryParse(m.Groups["raw"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var raw)
+            && int.TryParse(m.Groups["bonus"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bonus)
+            && long.TryParse(m.Groups["xp"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var xp)
+            && long.TryParse(m.Groups["tnl"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tnl)
+            && int.TryParse(m.Groups["max"].ValueSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var max))
+        {
+            record = new SkillProgressRecord(
+                SkillKey: m.Groups["type"].Value,
+                Level: raw,
+                BonusLevels: bonus,
+                XpTowardNextLevel: xp,
+                XpNeededForNextLevel: tnl,
+                MaxLevel: max);
+            return true;
+        }
+        _warn.Warn(
+            $"Dropping skill row '{m.Groups["type"].Value}' with unparseable numeric field " +
+            $"(raw='{m.Groups["raw"].Value}', bonus='{m.Groups["bonus"].Value}', " +
+            $"xp='{m.Groups["xp"].Value}', tnl='{m.Groups["tnl"].Value}', " +
+            $"max='{m.Groups["max"].Value}')");
+        record = default!;
+        return false;
+    }
 }
