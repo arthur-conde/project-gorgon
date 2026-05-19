@@ -15,6 +15,15 @@ namespace Mithril.Shared.Tests;
 /// chat lines never carry it) and the L0 redesign splits Player and chat
 /// onto separate per-source clocks, so the synthetic-grammar tests no
 /// longer make sense and have been replaced.
+///
+/// <para><b>Several tests below are anchored on live captures from real
+/// chat logs</b> (%LocalAppData%Low\Elder Game\Project Gorgon\ChatLogs\,
+/// pulled 2026-05-19). They are tagged <c>LIVE CAPTURE</c> inline with
+/// the file date. The point is to prove the parser doesn't rely on
+/// shapes that only happen in our test fixtures (e.g. the real chat log
+/// contains free-form Trade-channel chatter with embedded
+/// <c>[Item: …]</c> markup spanning multiple physical lines, which the
+/// synthetic tests would never produce).</para>
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
@@ -39,18 +48,24 @@ public sealed class ChatLogTailReaderTests : IDisposable
         // time. L0 parses the prefix and emits a DateTimeOffset whose offset
         // is the local zone's offset for that instant — so consumers see a
         // TZ-correct absolute instant without having to know chat is local.
+        //
+        // ── LIVE CAPTURE Chat-26-05-19.log ─────────────────────────────
+        // Two consecutive lines from the real Global channel right after
+        // local midnight on 2026-05-19. Demonstrates the parser handles
+        // both timestamped and free-form-text channel content (the second
+        // line is an LFG broadcast — typical of what the parser sees).
         var path = Path.Combine(_dir, "Chat.Global.log");
         File.WriteAllText(path,
-            "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory.\n" +
-            "26-04-25 15:11:00\t[Global] Alice: hi\n");
+            "26-05-19 00:00:44\t[Global] Rin: LFG Q daily\n" +
+            "26-05-19 00:01:36\t[Global] Bludde: Last call for 3 more for AM.\n");
 
         var reader = new ChatLogTailReader();
         var lines = reader.ReadNew(path);
 
         lines.Should().HaveCount(2);
-        var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 4, 25, 15, 10, 48));
-        lines[0].Timestamp.Should().Be(new DateTimeOffset(2026, 4, 25, 15, 10, 48, localOffset));
-        lines[1].Timestamp.Should().Be(new DateTimeOffset(2026, 4, 25, 15, 11, 0, localOffset));
+        var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 5, 19, 0, 0, 44));
+        lines[0].Timestamp.Should().Be(new DateTimeOffset(2026, 5, 19, 0, 0, 44, localOffset));
+        lines[1].Timestamp.Should().Be(new DateTimeOffset(2026, 5, 19, 0, 1, 36, localOffset));
     }
 
     [Fact]
@@ -64,17 +79,24 @@ public sealed class ChatLogTailReaderTests : IDisposable
         // local zone we can assert the offset is not Zero; if it does run
         // at UTC we still assert the offset matches the local zone (which
         // happens to be Zero), so the test is robust to runner TZ.
+        //
+        // ── LIVE CAPTURE Chat-26-04-06.log ─────────────────────────────
+        // Real [Status] line — these are the readouts that Legolas's
+        // survey-distance ingestion path consumes, so they're the
+        // highest-stakes case for getting the TZ right (a wrong-by-an-hour
+        // stamp on a survey would silently miscredit the bracket).
         var path = Path.Combine(_dir, "Chat.Global.log");
-        File.WriteAllText(path, "26-04-25 15:10:48\t[Status] x\n");
+        File.WriteAllText(path,
+            "26-04-06 17:18:07\t[Status] The Citrine is 1731m east and 1476m south.\n");
 
         var reader = new ChatLogTailReader();
         var lines = reader.ReadNew(path);
 
-        var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 4, 25, 15, 10, 48));
+        var localOffset = TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 4, 6, 17, 18, 7));
         lines.Should().ContainSingle().Which.Timestamp.Offset.Should().Be(localOffset);
         // And the absolute instant the offset implies is consistent: applying
         // the local offset gets us back to the wall-clock the file recorded.
-        lines[0].Timestamp.LocalDateTime.Should().Be(new DateTime(2026, 4, 25, 15, 10, 48));
+        lines[0].Timestamp.LocalDateTime.Should().Be(new DateTime(2026, 4, 6, 17, 18, 7));
     }
 
     [Fact]

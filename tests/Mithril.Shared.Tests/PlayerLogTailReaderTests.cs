@@ -5,6 +5,18 @@ using Xunit;
 
 namespace Mithril.Shared.Tests;
 
+// Several tests in this file are anchored on **live captures from a real
+// Project Gorgon Player.log**, taken from %LocalAppData%Low\Elder Game\
+// Project Gorgon\Player.log on 2026-05-19 (character Emraell). They are
+// tagged "LIVE CAPTURE 2026-05-19" inline. The point of mixing live and
+// synthetic input is twofold: (a) live input proves the parser doesn't
+// rely on shapes that only happen in our test fixtures (e.g. the real
+// session banner's `Time UTC=05/19/2026 20:01:14. Timezone Offset
+// 01:00:00` is wider and has a trailing `:00` we'd never write by hand);
+// (b) synthetic input is still required for the edge-case tests
+// (midnight rollover, out-of-order writes, truncation) where the real
+// log doesn't conveniently contain the shape under test.
+
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
 public sealed class PlayerLogTailReaderTests : IDisposable
@@ -28,19 +40,29 @@ public sealed class PlayerLogTailReaderTests : IDisposable
     {
         // Anchors the contract: the [HH:MM:SS] prefix is in UTC (PG writes
         // UTC into Player.log; verified against the file's own mtime and
-        // against ChatLog's "Timezone Offset" login banner). The sequencer
+        // against ChatLog's "Timezone Offset" login banner). The clock
         // folds the tod over file-mtime-UTC to produce an absolute UTC stamp.
+        //
+        // ── LIVE CAPTURE 2026-05-19 ────────────────────────────────────
+        // Three consecutive Player.log lines from the live session right
+        // after login (Player.log, character Emraell, 2026-05-19 20:01:18
+        // UTC). Real verbs, real argument shapes — the test fails the
+        // same way it would fail in production if the prefix parser
+        // regressed on real input, not just on the test-fixture shape.
         File.WriteAllText(_logPath,
-            "[14:30:00] LocalPlayer: ProcessAddPlayer(1, 2, \"desc\", \"TestChar\")\n" +
-            "[15:30:00] LocalPlayer: ProcessCompleteQuest(17415332, 28505)\n");
-        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
+            "[20:01:18] LocalPlayer: ProcessSetAreaSettings(AreaSettingsFromServer)\n" +
+            "[20:01:18] LocalPlayer: ProcessSetWeather(\"Clear Sky\", True)\n" +
+            "[20:01:18] LocalPlayer: ProcessSetCelestialInfo(WaxingCrescentMoon)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 19, 20, 1, 18, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         var lines = reader.ReadNew();
 
-        lines.Should().HaveCount(2);
-        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
-        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 10, 15, 30, 0, DateTimeKind.Utc));
+        lines.Should().HaveCount(3);
+        lines[0].Timestamp.Should().Be(new DateTime(2026, 5, 19, 20, 1, 18, DateTimeKind.Utc));
+        lines[1].Timestamp.Should().Be(new DateTime(2026, 5, 19, 20, 1, 18, DateTimeKind.Utc));
+        lines[2].Timestamp.Should().Be(new DateTime(2026, 5, 19, 20, 1, 18, DateTimeKind.Utc));
+        lines[1].Line.Should().Contain("ProcessSetWeather(\"Clear Sky\", True)");
     }
 
     [Fact]
@@ -289,12 +311,20 @@ public sealed class PlayerLogTailReaderTests : IDisposable
         // anchors at the BANNER so GameSessionService can parse it from the
         // replay; ProcessAddPlayer is still in the replay because it comes
         // after.
+        //
+        // ── LIVE CAPTURE 2026-05-19 ────────────────────────────────────
+        // The banner string is the actual line written by the PG client at
+        // 2026-05-19 20:01:14 UTC for character Emraell (Player.log). The
+        // ProcessAddPlayer in the live log is 4KB of character-appearance
+        // payload; truncated here for readability since this test asserts
+        // on the substring match, not the full payload (the live
+        // ProcessAddPlayer exercise lives in GameSessionServiceTests etc.).
         File.WriteAllText(_logPath,
             "[00:00:00] stale-pre-session-noise\n" +
-            "[12:25:04] Logged in as character Emraell. Time UTC=05/11/2026 12:25:04. Timezone Offset 01:00:00\n" +
-            "[12:25:05] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")\n" +
-            "[12:25:10] LocalPlayer: ProcessCompleteQuest(1, 1)\n");
-        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 11, 12, 25, 10, DateTimeKind.Utc));
+            "[20:01:14] Logged in as character Emraell. Time UTC=05/19/2026 20:01:14. Timezone Offset 01:00:00\n" +
+            "[20:01:17] LocalPlayer: ProcessAddPlayer(-1107394649, 25042203, \"@Base2-m(sex=m;race=e;...\", \"Emraell\", \"A player!\", System.String[], (2550.51, 299.58, 1998.36), (0.00000, 0.96352, 0.00000, -0.26764), Idle, Standing, 0, 0, True)\n" +
+            "[20:01:18] LocalPlayer: ProcessSetWeather(\"Clear Sky\", True)\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 19, 20, 1, 18, DateTimeKind.Utc));
 
         var reader = new PlayerLogTailReader(_logPath);
         reader.SeedToSessionStart();
@@ -303,7 +333,7 @@ public sealed class PlayerLogTailReaderTests : IDisposable
         lines.Should().HaveCount(3);
         lines[0].Line.Should().Contain("Logged in as character");
         lines[1].Line.Should().Contain("ProcessAddPlayer");
-        lines[2].Line.Should().Contain("ProcessCompleteQuest");
+        lines[2].Line.Should().Contain("ProcessSetWeather");
     }
 
     [Fact]
