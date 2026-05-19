@@ -9,8 +9,9 @@ namespace Mithril.GameState.Sessions;
 /// Subscribe pattern so late joiners observe the current session synchronously.
 ///
 /// Also surfaces as <see cref="Mithril.Shared.Logging.ISessionAnchor"/> so
-/// <see cref="Mithril.Shared.Logging.LogLineTimestampSequencer"/> can anchor
-/// log-line dates on the banner's UTC instead of file mtime.
+/// <see cref="Mithril.Shared.Logging.PlayerLogClock"/> (the Player.log L0
+/// source clock, #513) can anchor log-line dates on the banner's UTC
+/// instead of file mtime.
 /// </summary>
 public interface IGameSessionService
 {

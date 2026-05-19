@@ -43,11 +43,15 @@ public sealed class LogIngestionService : BackgroundService
         _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
     }
 
-    // Both tail readers normalize their <c>[HH:MM:SS]</c> prefix to UTC via the
-    // shared LogLineTimestampSequencer, so Player.log (use) and ChatLog
-    // (distance) instants are directly comparable. Specify-kind before lifting
-    // to DateTimeOffset (the #183-class timezone trap is already handled
-    // upstream; this only re-tags the Kind).
+    // The L0 source clocks (#513) emit TZ-correct absolute DateTimeOffset
+    // instants on both sides — PlayerLogClock with TimeSpan.Zero (the
+    // Player.log [HH:MM:SS] prefix is UTC), ChatLogClock with the host's
+    // local UTC offset (the chat yy-MM-dd HH:mm:ss prefix is local time).
+    // Both surface as raw.Timestamp; we pass raw.Timestamp.UtcDateTime
+    // into the parser, which strips offset info and surfaces its event's
+    // Timestamp as an Unspecified-kind DateTime. Specify-kind here so
+    // the lifted DateTimeOffset has offset +00:00 — the #183-class trap
+    // is already handled upstream, this only re-tags the Kind.
     private static DateTimeOffset Utc(DateTime ts) =>
         new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
 
