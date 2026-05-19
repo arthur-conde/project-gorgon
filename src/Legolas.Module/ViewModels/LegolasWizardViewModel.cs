@@ -398,18 +398,30 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         : IsAreaCalibrated ? $"{CurrentAreaName} · calibrated"
         : $"{CurrentAreaName} · not calibrated";
 
-    /// <summary>The chip is an actionable "calibrate now" affordance only when
-    /// a mode is picked, the area is known, and it isn't already calibrated;
-    /// otherwise it's a passive status label.</summary>
-    public bool CanCalibrateThisArea => HasPickedMode && IsAreaKnown && !IsAreaCalibrated;
+    /// <summary>#501: the chip is the single calibrate/recalibrate entry point
+    /// — actionable whenever a mode is picked and the area is known
+    /// (calibrated or not); otherwise a passive status label. The
+    /// calibrated-vs-not branch lives in <see cref="CalibrateThisArea"/>.</summary>
+    public bool CanCalibrateThisArea => HasPickedMode && IsAreaKnown;
 
-    /// <summary>#113: start the guided Drop/Pair calibration from the header
-    /// chip (never the experimental overlay). Survey already gates an
-    /// uncalibrated area into <see cref="WizardStep.Calibrating"/>; Motherlode
-    /// needs the explicit opt-in (it's calibration-free by default).</summary>
+    /// <summary>#113/#501: chip click — the single calibration entry point
+    /// (never the experimental overlay). Uncalibrated → start the guided
+    /// Drop/Pair flow (Survey already gates an uncalibrated area into
+    /// <see cref="WizardStep.Calibrating"/>; Motherlode needs the explicit
+    /// opt-in, it's calibration-free by default). Already calibrated → arm the
+    /// #477B confirm guard (a single click must never wipe a good persisted
+    /// calibration); the header popup's Confirm clears it, and
+    /// <see cref="IAreaCalibrationService.Changed"/> routes
+    /// <see cref="RecomputeStep"/> back into the cold-start pin route.</summary>
     [RelayCommand]
     private void CalibrateThisArea()
     {
+        if (!CanCalibrateThisArea) return;   // chip is a passive label here
+        if (IsAreaCalibrated)
+        {
+            Recalibrate();   // arm the confirm guard, don't destroy on one click
+            return;
+        }
         if (_session.Mode == SessionMode.Motherlode)
             _motherlodeCalibrationRequested = true;
         RecomputeStep();

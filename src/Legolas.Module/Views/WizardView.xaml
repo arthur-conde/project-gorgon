@@ -202,11 +202,16 @@
              the area is known but uncalibrated the chip is clickable and
              starts the guided Drop/Pair calibration. -->
         <DockPanel DockPanel.Dock="Top" Margin="20,16,20,0">
-            <Border DockPanel.Dock="Right" VerticalAlignment="Center"
+            <!-- #501: the chip is the single calibrate/recalibrate entry
+                 point. Uncalibrated → guided cold-start; calibrated → arms the
+                 #477B confirm guard surfaced as the popup below (anchored
+                 here), so one click can't wipe a good calibration. -->
+            <Border x:Name="CalibrationChip"
+                    DockPanel.Dock="Right" VerticalAlignment="Center"
                     Background="{StaticResource BgSurfaceBrush}"
                     BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1"
                     CornerRadius="10" Padding="10,4"
-                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate (guided) when uncalibrated.">
+                    ToolTip="The area Legolas detected and whether it's calibrated. Calibration is only needed for the on-map dot — the relative directions are exact without it. Click to calibrate when uncalibrated, or to redo the calibration when it's already set.">
                 <Border.InputBindings>
                     <MouseBinding Gesture="LeftClick" Command="{Binding CalibrateThisAreaCommand}" />
                 </Border.InputBindings>
@@ -250,6 +255,35 @@
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </StackPanel>
             </Border>
+
+            <!-- #501/#477B: recalibrate confirm guard, anchored to the chip.
+                 Clicking an already-calibrated chip arms IsConfirmingRecalibrate
+                 (CalibrateThisArea → Recalibrate); this popup is the only thing
+                 that destroys the persisted calibration, and only via Confirm.
+                 StaysOpen=False so a click-away closes it; the TwoWay IsOpen
+                 binding pushes that back to IsConfirmingRecalibrate=false — an
+                 implicit cancel (Confirm is the only path that destroys). -->
+            <Popup PlacementTarget="{Binding ElementName=CalibrationChip}"
+                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                   PopupAnimation="Fade" HorizontalOffset="0" VerticalOffset="6"
+                   IsOpen="{Binding IsConfirmingRecalibrate, Mode=TwoWay}">
+                <Border Background="{StaticResource AccentSoftBrush}"
+                        BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="14,10" MaxWidth="300">
+                    <StackPanel>
+                        <TextBlock Text="This deletes the saved calibration for this area and restarts the guided flow. Continue?"
+                                   TextAlignment="Center" TextWrapping="Wrap"
+                                   Foreground="{StaticResource AccentSoftTextBrush}"
+                                   FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,10" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Content="Recalibrate" Margin="0,0,8,0"
+                                    Command="{Binding ConfirmRecalibrateCommand}" />
+                            <Button Content="Cancel"
+                                    Command="{Binding CancelRecalibrateCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
 
             <!-- #495: "Validate calibration" toggle, beside the calibration
                  indicator chip (declared after it so it docks to its left).
@@ -609,35 +643,12 @@
                                        FontSize="{DynamicResource AppFontSizeBody}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,2" />
                         </StackPanel>
-                        <!-- #477B: in-flow recalibration. Offered only when the
-                             area is already calibrated; the guided cold-start
-                             path (Part A) handles the uncalibrated case before
-                             this step is ever reached. A confirm guard protects
-                             the persisted calibration from a misclick. -->
-                        <StackPanel Margin="0,12,0,0"
-                                    Visibility="{Binding CanRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                            <Button Content="Recalibrate this area"
-                                    HorizontalAlignment="Center"
-                                    Command="{Binding RecalibrateCommand}"
-                                    Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Inverse}}"
-                                    ToolTip="Pins landing wrong? Drop this area's saved calibration and redo it with the guided flow." />
-                            <Border Visibility="{Binding IsConfirmingRecalibrate, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
-                                    Background="{StaticResource AccentSoftBrush}" CornerRadius="3" Padding="12,8"
-                                    HorizontalAlignment="Center">
-                                <StackPanel>
-                                    <TextBlock Text="This deletes the saved calibration for this area and restarts the guided flow. Continue?"
-                                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
-                                               Foreground="{StaticResource AccentSoftTextBrush}"
-                                               FontSize="{DynamicResource AppFontSizeBody}" Margin="0,0,0,8" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                        <Button Content="Recalibrate" Margin="0,0,8,0"
-                                                Command="{Binding ConfirmRecalibrateCommand}" />
-                                        <Button Content="Cancel"
-                                                Command="{Binding CancelRecalibrateCommand}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <!-- #501: recalibration moved to the always-visible
+                             header chip (click a calibrated chip → the
+                             header confirm popup). The old in-panel
+                             "Recalibrate this area" affordance was removed —
+                             one calibration entry point, reachable from any
+                             step. -->
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center" Margin="0,12,0,0"
                                    FontSize="{DynamicResource AppFontSizeBody}"
                                    Foreground="{StaticResource TextTertiaryBrush}">

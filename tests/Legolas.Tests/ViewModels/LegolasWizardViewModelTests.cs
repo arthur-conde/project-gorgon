@@ -431,8 +431,48 @@ public class LegolasWizardViewModelTests
         calib.RaiseChanged();
 
         wizard.CalibrationChipText.Should().Be("Test · calibrated");
-        wizard.CanCalibrateThisArea.Should().BeFalse("already calibrated");
+        wizard.CanCalibrateThisArea.Should().BeTrue(
+            "#501: the chip is now the single calibrate/recalibrate entry point");
         wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+    }
+
+    [Fact]
+    public void Chip_click_on_a_calibrated_area_arms_the_recalibrate_guard()
+    {
+        var calib = new FakeAreaCalib { Calibrated = true };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CanCalibrateThisArea.Should().BeTrue();
+
+        // #501/#477B: a single chip click must NOT destroy a good calibration
+        // — it only arms the confirm guard (the header popup).
+        wizard.CalibrateThisAreaCommand.Execute(null);
+        wizard.IsConfirmingRecalibrate.Should().BeTrue();
+        calib.Calibrated.Should().BeTrue("one click never wipes a persisted calibration");
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+
+        // Confirm routes back into the cold-start pin route.
+        wizard.ConfirmRecalibrateCommand.Execute(null);
+        calib.Calibrated.Should().BeFalse();
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
+        wizard.PinCalibration.IsArmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Chip_click_when_not_actionable_is_a_passive_label_noop()
+    {
+        // No mode picked ⇒ CanCalibrateThisArea false ⇒ the command no-ops
+        // (the chip is a status label, not a button).
+        var (wizard, _, _, _, _) = BuildSut();
+        wizard.HasPickedMode.Should().BeFalse();
+        wizard.CanCalibrateThisArea.Should().BeFalse();
+
+        wizard.CalibrateThisAreaCommand.Execute(null);
+
+        wizard.IsConfirmingRecalibrate.Should().BeFalse();
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
     }
 
     [Fact]
