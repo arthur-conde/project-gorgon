@@ -4,14 +4,16 @@ namespace Mithril.Shared.Logging;
 /// Abstract base for typed parser events (L2 territory). Every parser
 /// (<see cref="ILogParser"/> / <see cref="IChatLogParser"/>) returns a
 /// concrete subclass — <c>WeatherChangedEvent</c>, <c>QuestAcceptedEvent</c>,
-/// <c>MapPinLogEvent</c>, etc. <c>Timestamp</c> is the in-game wall-clock
-/// instant the event occurred; carried as <see cref="DateTime"/> because
-/// parsers accept <c>(string line, DateTime timestamp)</c> per the
-/// standing "convert at the boundary" convention — the L0
-/// <see cref="RawLogLine.Timestamp"/> (which is a TZ-correct
-/// <see cref="DateTimeOffset"/>) is converted via <c>.UtcDateTime</c> at
-/// the parser invocation site, and the resulting <see cref="LogEvent"/>
-/// keeps the simpler <see cref="DateTime"/>.
+/// <c>MapPinLogEvent</c>, etc. <c>Timestamp</c> is the <b>UTC</b> instant
+/// the event occurred — carried as <see cref="DateTime"/> (Kind=Utc)
+/// because parsers accept <c>(string line, DateTime timestamp)</c> per the
+/// standing "convert at the boundary" convention. The L0
+/// <see cref="RawLogLine.Timestamp"/> is a TZ-correct
+/// <see cref="DateTimeOffset"/> (UTC for Player.log lines, host-local for
+/// chat lines); consumers fold it to UTC via <c>.UtcDateTime</c> at the
+/// parser invocation site, so the resulting <see cref="LogEvent"/> always
+/// holds the same UTC instant regardless of source — not the local
+/// wall-clock for chat-derived events.
 ///
 /// <para><b>Not related to <see cref="RawLogLine"/></b> beyond a shared
 /// historical accident. <see cref="RawLogLine"/> is L0 (tailed-from-disk,
@@ -50,7 +52,13 @@ public abstract record LogEvent(DateTime Timestamp);
 /// consistent with N, so an L1 consumer's persisted high-water key
 /// continues to filter correctly (#511 deliverable 3). The point of
 /// deriving from log position rather than from a process counter is
-/// exactly this restart-stability — see #513 scope addition A.</para>
+/// exactly this restart-stability — see #513 scope addition A.
+/// <em>Caveat: on detected rotation/truncation (<c>fs.Length &lt; _offset</c>)
+/// the sequence space resets to 0 alongside the file offset</em> — the prior
+/// physical file's sequence space ends; consumers must observe rotations
+/// distinctly (the L1 high-water filter scopes its key to the same
+/// physical-source generation). See <c>LogSourceTailer</c> for the
+/// implementing contract.</para>
 ///
 /// <para><b><see cref="ReadMonotonicTicks"/></b> — the high-resolution
 /// monotonic instant <see cref="TimeProvider.GetTimestamp"/> reported

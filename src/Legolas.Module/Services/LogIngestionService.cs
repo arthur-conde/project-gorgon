@@ -43,18 +43,6 @@ public sealed class LogIngestionService : BackgroundService
         _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
     }
 
-    // The L0 source clocks (#513) emit TZ-correct absolute DateTimeOffset
-    // instants on both sides — PlayerLogClock with TimeSpan.Zero (the
-    // Player.log [HH:MM:SS] prefix is UTC), ChatLogClock with the host's
-    // local UTC offset (the chat yy-MM-dd HH:mm:ss prefix is local time).
-    // Both surface as raw.Timestamp; we pass raw.Timestamp.UtcDateTime
-    // into the parser, which strips offset info and surfaces its event's
-    // Timestamp as an Unspecified-kind DateTime. Specify-kind here so
-    // the lifted DateTimeOffset has offset +00:00 — the #183-class trap
-    // is already handled upstream, this only re-tags the Kind.
-    private static DateTimeOffset Utc(DateTime ts) =>
-        new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
@@ -104,7 +92,10 @@ public sealed class LogIngestionService : BackgroundService
                     HandleItemCollected(ic);
                     break;
                 case MotherlodeDistance md when _session.Mode == SessionMode.Motherlode:
-                    _motherlode.OnDistance(md.DistanceMetres, Utc(md.Timestamp));
+                    // md.Timestamp was carried through as raw.Timestamp.UtcDateTime
+                    // at the parser boundary above, so it is Kind=Utc; lift to a
+                    // DateTimeOffset with offset 0 for the coordinator's API.
+                    _motherlode.OnDistance(md.DistanceMetres, new DateTimeOffset(md.Timestamp, TimeSpan.Zero));
                     break;
                 case AreaEntered ae:
                     _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);

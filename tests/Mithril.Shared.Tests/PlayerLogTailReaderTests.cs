@@ -383,6 +383,42 @@ public sealed class PlayerLogTailReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadNew_Sequence_UsesUtf8ByteCountNotCharCount()
+    {
+        // Sequence is the byte offset of the line's first character in the
+        // source file — not the char count, which would mis-key on any
+        // line containing a multi-byte UTF-8 character. Player.log content
+        // is overwhelmingly ASCII in practice, but the implementation must
+        // still account for byte vs char when accumulating the running
+        // offset across lines (the L0 hot-path GetByteCount call exists
+        // for exactly this case; this test exercises its correctness
+        // justification).
+        //
+        // line-one contains "café" — the 'é' (U+00E9) encodes as two UTF-8
+        // bytes (0xC3 0xA9), so line-one's char count differs from its
+        // byte count by 1. If the tailer used Length instead of
+        // GetByteCount when accumulating, line-two's Sequence would be
+        // off-by-one from the true file byte position.
+        const string l0 = "[10:00:00] LocalPlayer: line-zero\n";
+        const string l1 = "[10:00:01] LocalPlayer: café-one\n";
+        const string l2 = "[10:00:02] LocalPlayer: line-two\n";
+        File.WriteAllBytes(_logPath, System.Text.Encoding.UTF8.GetBytes(l0 + l1 + l2));
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 2, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(3);
+        lines[0].Sequence.Should().Be(0);
+        lines[1].Sequence.Should().Be(System.Text.Encoding.UTF8.GetByteCount(l0));
+        lines[2].Sequence.Should().Be(
+            System.Text.Encoding.UTF8.GetByteCount(l0) + System.Text.Encoding.UTF8.GetByteCount(l1));
+        // Belt-and-braces: line-one's byte count is exactly one greater
+        // than its char count (the 'é' costs an extra byte).
+        System.Text.Encoding.UTF8.GetByteCount(l1).Should().Be(l1.Length + 1);
+    }
+
+    [Fact]
     public void ReadNew_Sequence_StrictlyMonotonicAcrossBatches()
     {
         // The second batch's Sequence values continue past where the

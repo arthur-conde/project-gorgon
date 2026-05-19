@@ -26,8 +26,13 @@ namespace Mithril.Shared.Logging;
 /// runs once per chat line on the seed-replay path; the format is
 /// fixed-width; the consumer cost matters (cf. #507). Lines without the
 /// prefix (rare — typically only the file's blank header lines) inherit
-/// the prior emitted stamp; a leading run of unprefixed lines falls
-/// through to <see cref="TimeProvider.GetUtcNow"/>.</para>
+/// the prior emitted stamp; a leading run of unprefixed lines (before
+/// any prefixed line has anchored <c>_lastEmitted</c>) falls through to
+/// <see cref="TimeProvider.GetUtcNow"/> <em>re-tagged with the host's
+/// local UTC offset</em>, so every value this clock emits carries the
+/// same (local) offset semantics — mixing Zero-offset (UTC) and
+/// local-offset values from one source would break a future
+/// offset-comparing consumer.</para>
 ///
 /// <para><see cref="EnsureAnchored"/> is a no-op: the chat prefix
 /// carries its own absolute date, so there is no equivalent of the
@@ -72,7 +77,16 @@ internal sealed class ChatLogClock : ILogSourceClock
             return _lastEmitted.Value;
         }
 
-        return _lastEmitted ??= _time.GetUtcNow();
+        if (_lastEmitted is { } prior) return prior;
+        // No prefix has anchored _lastEmitted yet (leading-unprefixed run,
+        // typically chat-file header lines). Use wall-clock-now, but re-tag
+        // with the host's local UTC offset so every value this clock emits
+        // carries the same offset semantics — mixing Zero-offset (UTC) and
+        // local-offset values from one source would break any future
+        // offset-comparing consumer.
+        var nowUtc = _time.GetUtcNow();
+        _lastEmitted = nowUtc.ToOffset(_localTz.GetUtcOffset(nowUtc.UtcDateTime));
+        return _lastEmitted.Value;
     }
 
     /// <summary>
