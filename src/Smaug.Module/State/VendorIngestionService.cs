@@ -21,6 +21,7 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly IActiveCharacterService _activeCharacter;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
+    private readonly ThrottledWarn _warn;
 
     public VendorIngestionService(
         IPlayerLogStream stream,
@@ -38,6 +39,7 @@ public sealed class VendorIngestionService : BackgroundService
         _activeCharacter = activeCharacter;
         _diag = diag;
         _gate = gates.For("smaug");
+        _warn = new ThrottledWarn(diag, "Smaug.Ingestion");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,6 +59,8 @@ public sealed class VendorIngestionService : BackgroundService
 
         await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
+            try
+            {
             var evt = _parser.TryParse(raw.Line, raw.Timestamp);
             if (evt is null) continue;
 
@@ -96,6 +100,8 @@ public sealed class VendorIngestionService : BackgroundService
                         new DateTimeOffset(raw.Timestamp, TimeSpan.Zero));
                     break;
             }
+            }
+            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
         }
     }
 
