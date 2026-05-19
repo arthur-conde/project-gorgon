@@ -56,35 +56,6 @@
                 </Grid>
             </DataTemplate>
 
-            <!-- #494: always-available calibration sanity check. Projects known
-                 landmarks/NPCs onto the live map via the persisted calibration
-                 so the user can eyeball alignment. Hosted alongside the
-                 SetPosition affordance in Listening + Gathering; DataContext is
-                 the wizard VM, so MapOverlay.* binds through. -->
-            <DataTemplate x:Key="ValidateCalibrationAffordance">
-                <StackPanel Visibility="{Binding MapOverlay.IsCurrentAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <Button HorizontalAlignment="Center"
-                            Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
-                            ToolTip="Project known landmarks/NPCs onto the map to check the calibration still lines up. A consistent offset means recalibrate (usually an in-game map-zoom change).">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                <Setter Property="Content" Value="Validate calibration" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
-                                        <Setter Property="Content" Value="Hide reference markers" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <TextBlock Text="{Binding MapOverlay.CalibrationValidationStatus}"
-                               TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" Margin="0,8,0,0"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="{DynamicResource AppFontSizeBody}"
-                               Visibility="{Binding MapOverlay.ShowCalibrationGhosts, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                </StackPanel>
-            </DataTemplate>
-
             <!-- #113 Layer 2: plain-language fix-confidence palette. Muted to
                  sit in the Mithril theme; semantics carried by the text too,
                  not colour alone. -->
@@ -279,6 +250,34 @@
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </StackPanel>
             </Border>
+
+            <!-- #495: "Validate calibration" toggle, beside the calibration
+                 indicator chip (declared after it so it docks to its left).
+                 Always-visible diagnostic — projects known landmarks/NPCs onto
+                 the live map (labeled, decluttered) so the user can eyeball
+                 alignment. Hidden when there's nothing to validate
+                 (uncalibrated); disabled while surveying / plotting motherlodes
+                 (CanValidateCalibration), where it would clutter the working
+                 overlay. MapOverlay.* binds through the wizard VM DataContext. -->
+            <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,8,0"
+                    Command="{Binding MapOverlay.ToggleCalibrationValidationCommand}"
+                    IsEnabled="{Binding CanValidateCalibration}"
+                    Visibility="{Binding IsAreaCalibrated, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                    ToolTip="Project known landmarks/NPCs onto the map to check the calibration still lines up. A consistent offset means recalibrate (usually an in-game map-zoom change). Available between runs — not while surveying or plotting motherlodes.">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Setter Property="Padding" Value="10,4" />
+                        <Setter Property="FontSize" Value="{DynamicResource AppFontSizeSmall}" />
+                        <Setter Property="Content" Value="Validate calibration" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">
+                                <Setter Property="Content" Value="Hide markers" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
             <StackPanel Orientation="Horizontal">
                 <Image Source="pack://application:,,,/Legolas.Module;component/Resources/legolas.ico"
                        Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -704,8 +703,6 @@
                          "marker looks wrong / area uncalibrated" escape hatch. -->
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
                                     HorizontalAlignment="Center" Margin="0,0,0,12" />
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ValidateCalibrationAffordance}"
-                                    HorizontalAlignment="Center" Margin="0,0,0,12" />
 
                     <Button Content="Go!" Style="{StaticResource WizardPrimaryButton}"
                             HorizontalAlignment="Center" Margin="0"
@@ -747,8 +744,6 @@
 
                     <!-- #476 Option C: correct a stale anchor mid-route. -->
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SetPositionAffordance}"
-                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ValidateCalibrationAffordance}"
                                     HorizontalAlignment="Center" Margin="0,12,0,0" />
                 </StackPanel>
 

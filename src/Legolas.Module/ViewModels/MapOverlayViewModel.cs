@@ -327,6 +327,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CalibrationValidationStatus))]
     private bool _showCalibrationGhosts;
 
+    /// <summary>The map overlay's user-intended visibility captured the moment
+    /// validation forced it on, so toggling validation off restores it instead
+    /// of leaving the overlay stuck open. Null when validation isn't showing.</summary>
+    private bool? _mapVisibleBeforeValidation;
+
     /// <summary>Honest status: the ghosts are an independent visual check; the
     /// fit residual is pin-click consistency, NOT accuracy.</summary>
     public string CalibrationValidationStatus
@@ -346,30 +351,55 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     }
 
     /// <summary>Toggle the calibration-validation ghost overlay. Disabled when
-    /// the area isn't calibrated (nothing to validate).</summary>
+    /// the area isn't calibrated (nothing to validate). The not-surveying /
+    /// not-plotting-motherlodes gate lives on the wizard
+    /// (<c>LegolasWizardViewModel.CanValidateCalibration</c> drives the header
+    /// button's enablement and auto-calls <see cref="ForceHideCalibrationValidation"/>
+    /// when a flow step is entered) so the command itself only needs the
+    /// "is there anything to validate" guard.</summary>
     [RelayCommand(CanExecute = nameof(IsCurrentAreaCalibrated))]
-    private void ToggleCalibrationValidation()
+    private void ToggleCalibrationValidation() =>
+        SetCalibrationValidation(!ShowCalibrationGhosts);
+
+    /// <summary>Single on/off path. Turning on captures the overlay's current
+    /// user-intended visibility then forces it up so the markers are visible;
+    /// turning off clears the markers and restores that captured visibility
+    /// (don't leave the overlay stuck open just because validation opened it).</summary>
+    private void SetCalibrationValidation(bool on)
     {
-        ShowCalibrationGhosts = !ShowCalibrationGhosts;
-        if (ShowCalibrationGhosts)
+        if (on)
         {
-            // Ensure the map overlay is up so the ghosts are actually visible.
+            _mapVisibleBeforeValidation = _session.IsMapVisible;
+            ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
             RebuildCalibrationGhosts();
         }
         else
         {
+            ShowCalibrationGhosts = false;
             CalibrationGhosts.Clear();
+            if (_mapVisibleBeforeValidation is { } prev)
+                _session.IsMapVisible = prev;
+            _mapVisibleBeforeValidation = null;
         }
         OnPropertyChanged(nameof(CalibrationValidationStatus));
+    }
+
+    /// <summary>#495: the wizard calls this when the user enters a step where
+    /// validation isn't available (surveying / plotting motherlodes) — remove
+    /// the markers and restore the overlay's prior visibility. No-op when not
+    /// showing.</summary>
+    public void ForceHideCalibrationValidation()
+    {
+        if (ShowCalibrationGhosts) SetCalibrationValidation(false);
     }
 
     private void RebuildCalibrationGhosts()
     {
         CalibrationGhosts.Clear();
         if (_areaCalibration?.CurrentCalibration is not { } cal) return;
-        foreach (var r in _areaCalibration.CurrentAreaReferences)
-            CalibrationGhosts.Add(new GhostMarker(r.Name, cal.ProjectWorld(r.World)));
+        foreach (var g in GhostLabelDeclutter.Build(_areaCalibration.CurrentAreaReferences, cal))
+            CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
     }
 
@@ -381,8 +411,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         ToggleCalibrationValidationCommand.NotifyCanExecuteChanged();
         if (!IsCurrentAreaCalibrated && ShowCalibrationGhosts)
         {
-            ShowCalibrationGhosts = false;   // calibration gone — drop the overlay
-            CalibrationGhosts.Clear();
+            SetCalibrationValidation(false);   // calibration gone — drop + restore
         }
         else if (ShowCalibrationGhosts)
         {

@@ -107,6 +107,9 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
             OnPropertyChanged(nameof(IsAreaKnown));
             OnPropertyChanged(nameof(CalibrationChipText));
             OnPropertyChanged(nameof(CanCalibrateThisArea));
+            // #495: losing/gaining a calibration flips the header validate
+            // button's enablement (it needs something to validate).
+            OnPropertyChanged(nameof(CanValidateCalibration));
             // #113: once this area is calibrated the Motherlode dot can place;
             // drop the one-shot request so RecomputeStep returns to the
             // log-driven Motherlode stage instead of re-entering Calibrating.
@@ -198,7 +201,23 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CurrentStepTitle))]
+    [NotifyPropertyChangedFor(nameof(CanValidateCalibration))]
     private WizardStep _currentStep = WizardStep.PickMode;
+
+    /// <summary>#495: "Validate calibration" is a between-runs diagnostic — it
+    /// scatters reference markers across the live map, which would clutter the
+    /// working overlay mid-flow. Available only when the area is calibrated
+    /// (something to validate) and the user is not actively surveying or
+    /// plotting motherlodes. <see cref="CurrentStep"/> is the right signal: it
+    /// is <see cref="WizardStep.PickMode"/> before a mode is chosen, unlike the
+    /// raw survey FSM which defaults to <c>Listening</c>.</summary>
+    public bool CanValidateCalibration =>
+        IsAreaCalibrated
+        && CurrentStep is not (WizardStep.Listening
+                            or WizardStep.Gathering
+                            or WizardStep.MotherlodeMeasuring
+                            or WizardStep.MotherlodeLocating
+                            or WizardStep.MotherlodeWalk);
 
     partial void OnCurrentStepChanged(WizardStep value)
     {
@@ -229,6 +248,13 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
         // the calibration-gated marker — open it so the dot is visible.
         if (value == WizardStep.MotherlodeWalk)
             _session.IsMapVisible = true;
+
+        // #495: validation is a between-runs diagnostic. Entering a
+        // surveying / motherlode-plotting step makes it unavailable — pull the
+        // markers and restore the overlay's prior visibility so it doesn't
+        // clutter the working flow.
+        if (!CanValidateCalibration)
+            MapOverlay.ForceHideCalibrationValidation();
     }
 
     /// <summary>Headline displayed inline with the wizard's per-step nav row.</summary>

@@ -520,4 +520,61 @@ public class LegolasWizardViewModelTests
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
         wizard.PinCalibration.IsArmed.Should().BeTrue("re-entry arms the guided flow");
     }
+
+    // ---- #495 Validate-calibration availability gate -------------------
+
+    [Fact]
+    public void CanValidateCalibration_is_true_at_PickMode_when_calibrated()
+    {
+        var (wizard, _, _, _, _) = BuildSut();   // FakeAreaCalib defaults calibrated
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanValidateCalibration.Should().BeTrue("a between-runs diagnostic — available when not in a flow");
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_while_surveying()
+    {
+        var (wizard, session, surveyFlow, _, _) = BuildSut();
+
+        wizard.PickSurveyModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.Listening);
+        wizard.CanValidateCalibration.Should().BeFalse("validation would clutter the working survey overlay");
+
+        session.Surveys.Add(Pin());
+        surveyFlow.OptimizeRoute();
+        wizard.CurrentStep.Should().Be(WizardStep.Gathering);
+        wizard.CanValidateCalibration.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_while_plotting_motherlodes()
+    {
+        var (wizard, _, _, _, _) = BuildSut();
+
+        wizard.PickMotherlodeModeCommand.Execute(null);
+        wizard.CurrentStep.Should().Be(WizardStep.MotherlodeMeasuring);
+        wizard.CanValidateCalibration.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanValidateCalibration_is_false_when_the_area_is_uncalibrated()
+    {
+        var calib = new FakeAreaCalib { Calibrated = false };
+        var (wizard, _, _, _, _) = BuildSut(calib);
+
+        wizard.CurrentStep.Should().Be(WizardStep.PickMode);
+        wizard.CanValidateCalibration.Should().BeFalse("nothing to validate without a calibration");
+    }
+
+    [Fact]
+    public void Entering_a_flow_step_notifies_CanValidateCalibration()
+    {
+        var (wizard, _, _, _, _) = BuildSut();
+        var changes = new List<string?>();
+        wizard.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+        wizard.PickSurveyModeCommand.Execute(null);
+
+        changes.Should().Contain(nameof(LegolasWizardViewModel.CanValidateCalibration));
+    }
 }

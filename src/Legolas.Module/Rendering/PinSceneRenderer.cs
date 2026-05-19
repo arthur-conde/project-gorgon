@@ -24,15 +24,6 @@ internal static class PinSceneRenderer
     private const float ActiveSegmentThickness = 4f;
     private const float WedgeStrokeThickness = 1f;
 
-    // #494 calibration-validation ghost: a hollow magenta ring + small centre
-    // dot, matching the standalone calibration window's ghost idiom so users
-    // recognise "ghost = projected reference". Drawn topmost.
-    private const float GhostRingDiameter = 16f;
-    private const float GhostRingThickness = 2f;
-    private const float GhostDotDiameter = 3f;
-    private static readonly System.Windows.Media.Color GhostColor =
-        System.Windows.Media.Color.FromRgb(0xE0, 0x40, 0xE0);
-
     public static void Render(
         PinScene scene,
         ID2D1RenderTarget rt,
@@ -47,26 +38,11 @@ internal static class PinSceneRenderer
         DrawSurveyPins(scene, rt, factory, brushes);
         DrawMotherlodePins(scene, rt, factory, brushes);
         DrawPlayerAnchor(scene, rt, factory, brushes);
-        // Ghosts topmost: a diagnostic overlay must never be occluded by a
-        // real pin sitting at the same spot (that coincidence is the "good
-        // calibration" signal the user is checking for).
-        DrawGhosts(scene, rt, brushes);
-    }
-
-    private static void DrawGhosts(PinScene scene, ID2D1RenderTarget rt, D2DBrushCache brushes)
-    {
-        if (scene.Ghosts.Count == 0) return;
-        var brush = brushes.Get(GhostColor);
-        if (brush is null) return;
-
-        const float ringRadius = GhostRingDiameter / 2f;
-        const float dotRadius = GhostDotDiameter / 2f;
-        foreach (var g in scene.Ghosts)
-        {
-            var c = new Vector2((float)g.Pixel.X, (float)g.Pixel.Y);
-            rt.DrawEllipse(new Ellipse(c, ringRadius, ringRadius), brush, GhostRingThickness);
-            rt.FillEllipse(new Ellipse(c, dotRadius, dotRadius), brush);
-        }
+        // #495: the calibration-validation reference markers are no longer
+        // drawn here — they moved to a WPF ItemsControl layered over this
+        // surface so each can carry a readable, decluttered label (D2D has no
+        // DirectWrite). WPF draws above the D2D surface, preserving the
+        // "markers never occluded by a real pin" property.
     }
 
     // #113 Layer 5: solved-treasure markers. Survey and Motherlode modes are
