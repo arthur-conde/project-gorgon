@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Input;
@@ -155,23 +156,28 @@ public sealed partial class ItemDetailViewModel
             ? null
             : new SetRefVm("Used as", MatchCount: ConsumedAsKeywordInTotal, IsActionable: true);
 
-        // Footer ID (matrix #14 · G-a · ratified E5). Two cells (G-a caps at 2):
-        //   • InternalName — the cross-entity reference KEY (recipes / quests /
-        //     NPCs resolve items by it) ⇒ copyable.
-        //   • `item_{Id}` — the JSON envelope from which Id was lifted; a
-        //     storage-only key (sources_items.json / itemuses.json reference items
-        //     this way alongside InternalName, but the envelope is the record
-        //     position, not the named identifier) ⇒ the inert `ROW` cell, exactly
-        //     EffectDetailView's `effect_XXXX` EnvelopeKey path. Rebuilt from Id
-        //     verbatim — the deserializer lifts the envelope key into Id, so
-        //     `$"item_{Id}"` recovers the JSON form.
-        // None() self-hides when both are absent; a missing InternalName still
-        // surfaces the ROW (and vice-versa).
+        // Footer ID (matrix #14 · G-a · ratified E5). Two cells (G-a caps at 2),
+        // BOTH `KEY`/copyable — items have two distinct cross-entity reference
+        // identifiers and E5 demands both be copyable:
+        //   • InternalName — the named cross-entity reference (recipes /
+        //     quests / NPCs that resolve items by name use this form).
+        //   • Item.Id rendered as a bare integer — recipes index every
+        //     ingredient and result by `{"ItemCode": <int>}`, so the numeric
+        //     id IS the primary cross-entity reference from the recipe graph.
+        //     Bare int (not the `item_XXXX` envelope wrapper) matches the
+        //     recipe ItemCode form verbatim, which is the most useful copy
+        //     payload (recipe analysis tools, planner inputs).
+        // The Effect precedent (single inert ROW for `effect_XXXX`) is NOT a
+        // template — Effect lacks a clean InternalName, so its envelope is the
+        // only handle; for Item both identifiers exist and are cross-referenced.
+        // None() self-hides when both are absent; each cell is independently
+        // gated so a missing InternalName still surfaces the id cell, and
+        // vice-versa.
         var footerIds = new List<FactFooterId>(2);
         if (!string.IsNullOrEmpty(InternalName))
             footerIds.Add(new FactFooterId("KEY", InternalName, copyable: true));
         if (Item.Id > 0)
-            footerIds.Add(new FactFooterId("ROW", $"item_{Item.Id}", copyable: false));
+            footerIds.Add(new FactFooterId("KEY", Item.Id.ToString(CultureInfo.InvariantCulture), copyable: true));
         Footer = footerIds.Count == 0
             ? FactFooterVm.None()
             : FactFooterVm.Of(footerIds.ToArray());
@@ -411,10 +417,16 @@ public sealed partial class ItemDetailViewModel
 
     /// <summary>
     /// Footer identifier strip (matrix #14 · G-a · ratified E5). Up to two
-    /// cells (G-a caps at 2): the cross-entity reference <c>KEY</c>
-    /// (<see cref="InternalName"/> — copyable) and the inert <c>ROW</c>
-    /// (<c>item_{Id}</c> — the JSON envelope from which <see cref="Item.Id"/>
-    /// was lifted; mirrors EffectDetailView's <c>effect_XXXX</c> EnvelopeKey).
+    /// cells (G-a caps at 2), both <c>KEY</c>/copyable — items have two
+    /// distinct cross-entity reference identifiers:
+    /// <list type="bullet">
+    /// <item><see cref="InternalName"/> — the named cross-entity reference
+    /// (recipe / quest / NPC consumers that resolve items by name).</item>
+    /// <item><see cref="Item.Id"/> as a bare integer — recipes index every
+    /// ingredient and result by <c>{"ItemCode": &lt;int&gt;}</c>, so the id
+    /// IS the cross-entity reference from the recipe graph; bare-int form
+    /// matches the <c>ItemCode</c> payload verbatim.</item>
+    /// </list>
     /// <see cref="FactFooterVm.None"/> (self-hides) when both are absent.
     /// </summary>
     public FactFooterVm Footer { get; }
