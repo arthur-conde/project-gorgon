@@ -18,6 +18,7 @@
       "PowerShell($asm = [System.Reflection.Assembly]::LoadFile\\('C:/Users/arthu/.nuget/packages/mahapps.metro.iconpacks.lucide/6.0.0/lib/net8.0-windows7.0/MahApps.Metro.IconPacks.Lucide.dll'\\); $enumType = $asm.GetTypes\\(\\) | Where-Object { $_.Name -eq 'PackIconLucideKind' }; [Enum]::GetNames\\($enumType\\) | Where-Object { $_ -match 'Help|Info|Question' } | Sort-Object)",
       "mcp__pg-data__*",
       "mcp__mithril-logs__*",
+      "mcp__github__*",
       "Read(//c/Users/arthu/AppData/Local/Mithril/Legolas/perf/**)"
     ]
   },
@@ -29,6 +30,18 @@
             "type": "command",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/ensure-mithril-logs-built.ps1\"",
             "timeout": 300
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-mithril-running.ps1\"",
+            "timeout": 10
           }
         ]
       }

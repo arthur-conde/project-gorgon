@@ -82,6 +82,8 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 - **Log parsing**: implement `ILogParser.TryParse(string line, DateTime timestamp)` returning a `LogEvent?`; state machines consume events from `IPlayerLogStream`/`IChatLogStream`
 - **HostedServices** for background work; gated behind `ModuleGate.WaitAsync()` for lazy modules
 - **WPF resources** shared via `Mithril.Shared.Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
+- **Before editing any `*.xaml` or writing a new view, read [docs/wpf-gotchas.md](docs/wpf-gotchas.md)** — catalogues runtime-only WPF traps (hit-testing, null-leak templates, binding-mode defaults, `ItemContainerStyle` rules, etc.) that build green + tests green but break the UI silently.
+- **For C# work touching >1 type, load the LSP tool first** (`csharp-lsp` plugin is enabled; `ToolSearch query: "select:LSP"` to fetch its schema, then use it for go-to-def / find-refs / type info). Grep alone misses partial classes, source-generated members (`[ObservableProperty]` setters, JSON contexts), and overload signatures, so a "no callers" or "no implementations" claim from text search alone is not load-bearing.
 
 ### Game Data Paths
 
