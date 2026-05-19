@@ -127,7 +127,7 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
                 _areaTracker.Observe(raw);
                 ReconcileArea();
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is MapPinLogEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is MapPinLogEvent evt)
                     Apply(evt);
             }
             catch (Exception ex)

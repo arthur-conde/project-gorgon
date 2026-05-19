@@ -59,7 +59,7 @@ public sealed class LogIngestionService : BackgroundService
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is GameEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is GameEvent evt)
                     Dispatch(evt);
             }
             catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }

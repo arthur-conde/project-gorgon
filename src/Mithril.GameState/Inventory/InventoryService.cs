@@ -223,17 +223,18 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         await foreach (var raw in _stream.SubscribeAsync(ct).ConfigureAwait(false))
         {
+            var ts = raw.Timestamp.UtcDateTime;
             var add = AddItemRx().Match(raw.Line);
             if (add.Success && long.TryParse(add.Groups[2].ValueSpan, out var addId))
             {
-                HandleAddItem(addId, add.Groups[1].Value, raw.Timestamp);
+                HandleAddItem(addId, add.Groups[1].Value, ts);
                 continue;
             }
 
             var del = DeleteItemRx().Match(raw.Line);
             if (del.Success && long.TryParse(del.Groups[1].ValueSpan, out var delId))
             {
-                HandleDeleteItem(delId, raw.Timestamp);
+                HandleDeleteItem(delId, ts);
                 continue;
             }
 
@@ -242,7 +243,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 && long.TryParse(upd.Groups[1].ValueSpan, out var updId)
                 && long.TryParse(upd.Groups[2].ValueSpan, out var code))
             {
-                HandleUpdateItemCode(updId, code, raw.Timestamp);
+                HandleUpdateItemCode(updId, code, ts);
                 continue;
             }
 
@@ -251,7 +252,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 && long.TryParse(vault.Groups[1].ValueSpan, out var vaultId)
                 && int.TryParse(vault.Groups[2].ValueSpan, out var vaultSize))
             {
-                HandleRemoveFromStorageVault(vaultId, vaultSize, raw.Timestamp);
+                HandleRemoveFromStorageVault(vaultId, vaultSize, ts);
             }
         }
     }
@@ -263,7 +264,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         {
             var parsed = InventoryStatusChatParser.TryParse(raw.Line);
             if (parsed is null) continue;
-            HandleChatStatusAdd(parsed.Value.DisplayName, parsed.Value.Count, raw.Timestamp);
+            HandleChatStatusAdd(parsed.Value.DisplayName, parsed.Value.Count, raw.Timestamp.UtcDateTime);
         }
     }
 

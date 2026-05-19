@@ -94,7 +94,7 @@ public sealed class GardenIngestionService : BackgroundService
             {
                 try
                 {
-                var evt = _parser.TryParse(raw.Line, raw.Timestamp);
+                var evt = _parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime);
                 if (evt is GardenEvent ge)
                 {
                     _diag?.Trace("Samwise.Parse", Describe(ge));

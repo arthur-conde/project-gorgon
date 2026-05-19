@@ -73,7 +73,7 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is CelestialInfoEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is CelestialInfoEvent evt)
                 {
                     if (evt.Phase == MoonPhase.Unknown)
                         ReportUnknownToken(evt.RawPhase);

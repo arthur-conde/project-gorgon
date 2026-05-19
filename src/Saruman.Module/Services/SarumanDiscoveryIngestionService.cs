@@ -37,7 +37,7 @@ public sealed class SarumanDiscoveryIngestionService : BackgroundService
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is WordOfPowerDiscovered d)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is WordOfPowerDiscovered d)
                     _codebook.RecordDiscovery(d);
             }
             catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }

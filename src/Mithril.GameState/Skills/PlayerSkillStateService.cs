@@ -93,7 +93,7 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         {
             try
             {
-                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                switch (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime))
                 {
                     case SkillsSnapshotEvent snap:
                         ReplaceAll(snap);

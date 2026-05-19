@@ -326,6 +326,124 @@ public sealed class PlayerLogTailReaderTests : IDisposable
         lines[1].Line.Should().Contain("ProcessCompleteQuest");
     }
 
+    // ── #513 scope additions: Sequence + ReadMonotonicTicks ─────────
+
+    [Fact]
+    public void ReadNew_Sequence_EqualsByteOffsetOfLineStartInFile()
+    {
+        // L0 (#513 scope addition A) mints RawLogLine.Sequence as the
+        // byte offset of the line's first character in the source file.
+        // Restart-stability + within-source monotonicity both flow from
+        // this — an L1 high-water filter (#511 deliverable 3) can use
+        // Sequence as a restart-stable dedup key precisely because it is
+        // derived from log position, not a process counter.
+        const string l0 = "[10:00:00] LocalPlayer: line-zero\n";
+        const string l1 = "[10:00:01] LocalPlayer: line-one\n";
+        const string l2 = "[10:00:02] LocalPlayer: line-two\n";
+        File.WriteAllText(_logPath, l0 + l1 + l2);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 2, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var lines = reader.ReadNew();
+
+        lines.Should().HaveCount(3);
+        lines[0].Sequence.Should().Be(0);
+        lines[1].Sequence.Should().Be(l0.Length);
+        lines[2].Sequence.Should().Be(l0.Length + l1.Length);
+    }
+
+    [Fact]
+    public void ReadNew_Sequence_StrictlyMonotonicAcrossBatches()
+    {
+        // The second batch's Sequence values continue past where the
+        // first batch ended (no reset). This is the "restart-stable"
+        // half of the contract: a Mithril restart that re-seeds to a
+        // mid-file byte offset N emits subsequent Sequence values
+        // starting at N, matching what the pre-restart tailer would
+        // have emitted.
+        const string l0 = "[10:00:00] LocalPlayer: line-zero\n";
+        const string l1 = "[10:00:01] LocalPlayer: line-one\n";
+        File.WriteAllText(_logPath, l0 + l1);
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 1, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var first = reader.ReadNew();
+        first.Should().HaveCount(2);
+        first[1].Sequence.Should().Be(l0.Length);
+
+        const string l2 = "[10:00:02] LocalPlayer: line-two\n";
+        File.AppendAllText(_logPath, l2);
+        var second = reader.ReadNew();
+        second.Should().ContainSingle()
+            .Which.Sequence.Should().Be(l0.Length + l1.Length);
+    }
+
+    [Fact]
+    public void ReadNew_OnTruncation_SequenceResetsAlongsideOffset()
+    {
+        // Rotation/truncation: fs.Length < _offset resets _offset to 0,
+        // so the post-rotation Sequence space restarts at 0. Correct
+        // semantics — the consumer's high-water key was scoped to the
+        // file identity that no longer exists.
+        File.WriteAllText(_logPath, "[10:00:00] LocalPlayer: this is the original long content\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var first = reader.ReadNew();
+        first.Should().ContainSingle().Which.Sequence.Should().Be(0);
+
+        // Replacement is strictly shorter than the original so
+        // fs.Length < _offset fires the rotation/truncation branch.
+        File.WriteAllText(_logPath, "[11:00:00] x\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 11, 0, 0, DateTimeKind.Utc));
+
+        var second = reader.ReadNew();
+        second.Should().ContainSingle().Which.Sequence.Should().Be(0);
+    }
+
+    [Fact]
+    public void ReadNew_ReadMonotonicTicks_SharedAcrossBatch_StrictlyAdvancesBetweenBatches()
+    {
+        // Per-batch (not per-line) granularity is the L0 contract: all
+        // lines in one ReadNew share the same tick value. Between two
+        // ReadNew calls the tick advances strictly (TimeProvider sampled
+        // at distinct instants).
+        File.WriteAllText(_logPath,
+            "[10:00:00] LocalPlayer: a\n" +
+            "[10:00:01] LocalPlayer: b\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 10, 0, 1, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var first = reader.ReadNew();
+
+        first.Should().HaveCount(2);
+        first[0].ReadMonotonicTicks.Should().NotBe(0);
+        first[1].ReadMonotonicTicks.Should().Be(first[0].ReadMonotonicTicks);
+
+        File.AppendAllText(_logPath, "[10:00:02] LocalPlayer: c\n");
+        var second = reader.ReadNew();
+        second.Should().ContainSingle();
+        second[0].ReadMonotonicTicks.Should().BeGreaterThan(first[0].ReadMonotonicTicks);
+    }
+
+    [Fact]
+    public void ReadNew_PlayerTimestampOffsetIsZero()
+    {
+        // Player.log is always UTC; the L0 contract is that PlayerLogClock
+        // emits DateTimeOffset with TimeSpan.Zero offset. (The boilerplate
+        // removal half of #513: every consumer that today wraps
+        // `raw.Timestamp` in `new DateTimeOffset(ts, TimeSpan.Zero)` is
+        // wrapping a value that already has the correct offset.)
+        File.WriteAllText(_logPath, "[14:30:00] LocalPlayer: line\n");
+        File.SetLastWriteTimeUtc(_logPath, new DateTime(2026, 5, 10, 14, 30, 0, DateTimeKind.Utc));
+
+        var reader = new PlayerLogTailReader(_logPath);
+        var lines = reader.ReadNew();
+
+        lines.Should().ContainSingle()
+            .Which.Timestamp.Offset.Should().Be(TimeSpan.Zero);
+    }
+
     [Fact]
     public void SeedToSessionStart_WithProcessAddPlayerBeforeBanner_StillStartsAtTheEarlierOne()
     {

@@ -55,13 +55,14 @@ public sealed class FavorIngestionService : BackgroundService
         {
             try
             {
-            var evt = _parser.TryParse(raw.Line, raw.Timestamp);
+            var evt = _parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime);
             if (evt is null) continue;
 
-            // raw.Timestamp is the log-line UTC (post-#183 + #201 session anchor),
-            // stable across Mithril restarts. Plumb it through so replay produces
-            // the same persisted GiftObservation.Timestamp and dedup short-circuits.
-            var ts = new DateTimeOffset(raw.Timestamp, TimeSpan.Zero);
+            // raw.Timestamp is the log-line instant, TZ-correct via the L0 source
+            // clock (#513) and stable across Mithril restarts. Plumb it through so
+            // replay produces the same persisted GiftObservation.Timestamp and
+            // dedup short-circuits.
+            var ts = raw.Timestamp;
             switch (evt)
             {
                 case FavorUpdate update:

@@ -92,7 +92,7 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
                 // tracker warm even when no other module is feeding it.
                 _areaTracker.Observe(raw);
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is PlayerPositionEvent evt)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is PlayerPositionEvent evt)
                     Publish(new PlayerPosition(evt.X, evt.Y, evt.Z, ToOffset(evt.Timestamp), evt.Source));
             }
             catch (Exception ex)

@@ -37,7 +37,7 @@ public sealed class SarumanChatIngestionService : BackgroundService
         {
             try
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp) is WordOfPowerSpoken s)
+                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is WordOfPowerSpoken s)
                     _codebook.MarkSpent(s.Code, s.Timestamp);
             }
             catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }

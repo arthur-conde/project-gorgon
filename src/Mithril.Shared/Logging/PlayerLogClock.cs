@@ -1,45 +1,49 @@
 namespace Mithril.Shared.Logging;
 
 /// <summary>
-/// Recovers absolute UTC timestamps for log lines whose only embedded time
-/// information is a <c>[HH:MM:SS]</c> prefix (PG's gameplay log format).
-/// The prefix is in <b>UTC</b> — verified against the same file's mtime
-/// (Player.log mtime minus the player's TZ offset matches the prefix's
-/// time-of-day) and against the ChatLog login banner's reported
-/// <c>Timezone Offset</c>, which equals the offset between Player.log
-/// prefixes and ChatLog lines.
+/// <see cref="ILogSourceClock"/> for Player.log. Recovers an absolute UTC
+/// instant from the <c>[HH:MM:SS]</c> prefix every PG gameplay line
+/// carries (UTC, no date — verified against the file's own mtime and the
+/// ChatLog login banner's <c>Timezone Offset</c>), folded over a date
+/// anchored from one of two sources:
 ///
-/// <para><b>Date anchoring.</b> Two anchor strategies, picked dynamically:</para>
 /// <list type="bullet">
-///   <item><b>Session anchor (preferred).</b> If an <see cref="ISessionAnchor"/>
-///   has observed a <c>Logged in as character … Time UTC=…</c> banner, the
-///   sequencer pins <c>_currentUtcDate</c> to <c>LoggedInUtc.Date</c> and
-///   primes <c>_prevUtcTimeOfDay</c> with the login time-of-day. The login
-///   instant is the earliest known point in the relevant window, so
-///   <see cref="StampForLine"/>'s existing forward-rollover detection
-///   (HH-wraps-backward &gt; 12h ⇒ +1 day) carries the date across every
-///   subsequent midnight without further intervention. On
-///   <see cref="ISessionAnchor.AnchorChanged"/> (PG re-login), the sequencer
-///   re-anchors to the new banner's date. Self-describing from inside the
-///   file — robust to copies, runs spanning midnight, and clock drift.</item>
-///   <item><b>mtime anchor (fallback).</b> No session known: walk the date
-///   <i>backward</i> from the LAST timestamped line in the first batch,
+///   <item><b>Session anchor (preferred).</b> If an
+///   <see cref="ISessionAnchor"/> has observed a <c>Logged in as
+///   character … Time UTC=…</c> banner, pin <c>_currentUtcDate</c> to
+///   <c>LoggedInUtc.Date</c> and prime <c>_prevUtcTimeOfDay</c> with the
+///   login time-of-day. The login instant is the earliest known point in
+///   the relevant window, so the forward-rollover detection in
+///   <see cref="StampForLine"/> (HH wraps backward &gt; 12h ⇒ +1 day)
+///   carries the date across every subsequent midnight without further
+///   intervention. On <see cref="ISessionAnchor.AnchorChanged"/> (PG
+///   re-login), re-anchor to the new banner's date. Self-describing from
+///   inside the file — robust to copies, runs spanning midnight, and
+///   clock drift.</item>
+///   <item><b>mtime anchor (fallback).</b> No session known: walk the
+///   date backward from the LAST timestamped line in the first batch,
 ///   subtracting in-batch rollover count, so the last line lines up with
-///   the file's mtime (or mtime - 1 day if the line's tod is past mtime's
-///   tod). Preserves pre-<c>ISessionAnchor</c> behaviour for pre-banner
-///   lines (engine boot) and for chat logs that never emit a banner.</item>
+///   the file's mtime (or mtime - 1 day if the line's tod is past
+///   mtime's tod). Preserves pre-<see cref="ISessionAnchor"/> behaviour
+///   for pre-banner lines (engine boot) and for the rare case where the
+///   banner hasn't been parsed yet.</item>
 /// </list>
 ///
-/// Shared by <see cref="PlayerLogTailReader"/> (single-file Player.log)
-/// and <see cref="ChatLogTailReader"/> (per-channel chat logs); each chat
-/// file gets its own sequencer instance so dates fold independently.
-/// Note: real chat-log lines don't carry the <c>[HH:MM:SS]</c> prefix
-/// (their format is <c>yy-MM-dd HH:MM:SS\t...</c> in <i>local</i> time),
-/// so chat lines fall through the prefix parse and rely on the inherited
-/// stamp or wall-clock-now. A future chat-content parser that wants
-/// absolute past-anchored stamps needs its own extraction path.
+/// Emits <see cref="DateTimeOffset"/> with offset
+/// <see cref="TimeSpan.Zero"/> — Player.log is always UTC. (This is the
+/// "boilerplate removal" half of #513: every consumer that today wraps
+/// <c>raw.Timestamp</c> in <c>new DateTimeOffset(ts, TimeSpan.Zero)</c>
+/// is wrapping a <see cref="DateTimeOffset"/> that already has the
+/// correct offset; the wrap goes away.)
+///
+/// Renamed from <c>LogLineTimestampSequencer</c> as part of the L0
+/// collapse — the sequencer was already shared by Player and chat tail
+/// readers but was named after the Player-shaped grammar it implements;
+/// the L0 redesign moves chat's actual grammar to
+/// <see cref="ChatLogClock"/> and makes this class explicitly the
+/// Player-side clock.
 /// </summary>
-internal sealed class LogLineTimestampSequencer
+internal sealed class PlayerLogClock : ILogSourceClock
 {
     private readonly TimeProvider _time;
     private readonly ISessionAnchor? _sessionAnchor;
@@ -51,7 +55,7 @@ internal sealed class LogLineTimestampSequencer
     // re-anchor mid-stream. Null when running under the mtime fallback.
     private DateTime? _appliedSessionAnchor;
 
-    public LogLineTimestampSequencer(TimeProvider time, ISessionAnchor? sessionAnchor = null)
+    public PlayerLogClock(TimeProvider time, ISessionAnchor? sessionAnchor = null)
     {
         _time = time;
         _sessionAnchor = sessionAnchor;
@@ -72,29 +76,6 @@ internal sealed class LogLineTimestampSequencer
         _appliedSessionAnchor = anchor;
     }
 
-    /// <summary>
-    /// Anchor the date for the first content batch. Two strategies:
-    ///
-    /// <para><b>Session anchor.</b> If an <see cref="ISessionAnchor"/> has
-    /// already observed the <c>Logged in as character</c> banner, pin the
-    /// date to <c>LoggedInUtc.Date</c> directly. The banner is the
-    /// authoritative earliest known instant in the session, so no
-    /// back-walk is needed and pre-banner lines in the same batch
-    /// (engine boot) inherit <c>LoggedInUtc.Date</c> too — slight
-    /// imprecision on pre-session lines is benign because no ingestion
-    /// service consumes them.</para>
-    ///
-    /// <para><b>mtime fallback.</b> No session known: pre-scan
-    /// <paramref name="lines"/> for <c>[HH:MM:SS]</c> prefixes, count
-    /// midnight rollovers in the batch, and walk the start back so the
-    /// LAST timestamped line lines up with file mtime (or mtime - 1 day
-    /// if its tod is past mtime's tod). Preserves pre-session-anchor
-    /// behaviour for chat logs and for any state where the banner
-    /// hasn't been parsed yet.</para>
-    ///
-    /// No-op once anchored, and no-op for batches with no prefixed lines
-    /// (defers init to a later batch that has at least one).
-    /// </summary>
     public void EnsureAnchored(IReadOnlyList<string> lines, Func<DateTime> mtimeUtcAccessor)
     {
         if (_currentUtcDate is not null) return;
@@ -136,15 +117,7 @@ internal sealed class LogLineTimestampSequencer
         _currentUtcDate = anchorDate.AddDays(-rollovers);
     }
 
-    /// <summary>
-    /// Compute the UTC stamp for a single log line. Parses the
-    /// <c>[HH:MM:SS]</c> prefix (interpreted as UTC) and folds it over
-    /// the current date, detecting midnight rollovers (HH wraps backward
-    /// by &gt;12h). Lines without the prefix inherit the prior stamp; a
-    /// leading run of unprefixed lines falls through to
-    /// <see cref="TimeProvider.GetUtcNow"/>.
-    /// </summary>
-    public DateTime StampForLine(string line)
+    public DateTimeOffset StampForLine(string line)
     {
         if (TryParseTimestampPrefix(line, out var tod) && _currentUtcDate.HasValue)
         {
@@ -174,7 +147,7 @@ internal sealed class LogLineTimestampSequencer
         // else: inherit prior _lastEmittedUtc (engine noise interleaved
         // with gameplay lines stays anchored on the most recent gameplay tod).
 
-        return _lastEmittedUtc;
+        return new DateTimeOffset(_lastEmittedUtc, TimeSpan.Zero);
     }
 
     /// <summary>

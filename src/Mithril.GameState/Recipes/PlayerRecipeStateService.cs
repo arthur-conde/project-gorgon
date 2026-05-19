@@ -84,7 +84,7 @@ public sealed class PlayerRecipeStateService : BackgroundService, IPlayerRecipeS
         {
             try
             {
-                switch (_parser.TryParse(raw.Line, raw.Timestamp))
+                switch (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime))
                 {
                     case RecipesSnapshotEvent snap:
                         ReplaceAll(snap);

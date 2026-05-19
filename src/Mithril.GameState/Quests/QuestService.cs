@@ -127,17 +127,18 @@ public sealed class QuestService : BackgroundService, IQuestService
 
     private void Dispatch(RawLogLine raw)
     {
-        if (_journalLoadParser.TryParse(raw.Line, raw.Timestamp) is QuestJournalLoadedEvent loaded)
+        var ts = raw.Timestamp.UtcDateTime;
+        if (_journalLoadParser.TryParse(raw.Line, ts) is QuestJournalLoadedEvent loaded)
         {
             HandleJournalLoaded(loaded);
             return;
         }
-        if (_acceptedParser.TryParse(raw.Line, raw.Timestamp) is QuestAcceptedEvent accepted)
+        if (_acceptedParser.TryParse(raw.Line, ts) is QuestAcceptedEvent accepted)
         {
             HandleAccepted(accepted);
             return;
         }
-        if (_completedParser.TryParse(raw.Line, raw.Timestamp) is QuestCompletedEvent completed)
+        if (_completedParser.TryParse(raw.Line, ts) is QuestCompletedEvent completed)
         {
             HandleCompleted(completed);
         }
