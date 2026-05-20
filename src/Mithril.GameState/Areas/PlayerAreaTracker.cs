@@ -19,13 +19,14 @@ namespace Mithril.GameState.Areas;
 /// <see cref="ILogStreamDriver"/> is supplied, the tracker is a
 /// <see cref="BackgroundService"/> that subscribes to L0.5's
 /// <see cref="ISystemSignalLogStream"/> typed pipe through the L1 driver,
-/// filtered for <see cref="SystemSignalKind.AreaLoading"/>. The shared
-/// state then updates without any other GameState producer feeding it via
-/// <see cref="Observe(RawLogLine)"/>. Both feed paths update the same
-/// state idempotently: the area key is string-compared, last-writer-wins,
-/// so a double-feed during the Phase 3 migration window is safe. The
-/// <see cref="Observe(RawLogLine)"/> overload retires in Phase 3's final
-/// PR (once Pin/Weather/Position move to the unified pipe).</para>
+/// filtered for <see cref="SystemSignalKind.AreaLoading"/>. This is the
+/// canonical update path for shared area state in production.
+/// <see cref="Observe(string,DateTime)"/> remains for the two consumers
+/// (Legolas's <c>PlayerLogIngestionService</c> and Gandalf's
+/// <c>LootIngestionService</c>) that still feed already-classified data
+/// inline; both feed paths converge on the same string-equality,
+/// last-writer-wins state, so concurrent updates against the same area
+/// key are idempotent.</para>
 ///
 /// <para><b>Startup seeding.</b> <see cref="PlayerLogTailReader.SeedToSessionStart"/>
 /// rewinds the live replay window to the most recent <c>ProcessAddPlayer(</c>
