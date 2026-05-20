@@ -12,7 +12,8 @@ public sealed partial class ChatLogRules : ILogSourceRules
     // Chat lines: "yy-MM-dd HH:MM:SS\t[Channel] Speaker: msg".
     // Shape matches saruman.WordOfPowerChatParser.ChatLineRx in log-patterns.json.
     // "****"-prefixed system lines (area announcements) don't match the [Channel] bracket and are silently dropped.
-    [GeneratedRegex(@"^\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\t\[(?<channel>[^\]]+)\] (?<name>[^:]+):", RegexOptions.CultureInvariant)]
+    // Exclude `<` from the speaker capture so already-sanitized "<PLAYER_N>" speakers don't get re-discovered.
+    [GeneratedRegex(@"^\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\t\[(?<channel>[^\]]+)\] (?<name>[^:<]+):", RegexOptions.CultureInvariant)]
     private static partial Regex ChatLinePattern();
 
     public void DiscoverNames(string line, NameRegistry registry)

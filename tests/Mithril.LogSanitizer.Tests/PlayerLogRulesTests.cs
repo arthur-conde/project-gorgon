@@ -69,4 +69,26 @@ public sealed class PlayerLogRulesTests
         registry.TokenFor("Bob").Should().Be("<PLAYER_2>");
         registry.AllMappings.Should().HaveCount(2);
     }
+
+    [Fact]
+    public void Banner_alreadySanitized_isNoOp()
+    {
+        var registry = new NameRegistry();
+        var rules = new PlayerLogRules();
+
+        rules.DiscoverNames("[20:01:14] Logged in as character <CHARACTER>. Time UTC=05/19/2026 20:01:14", registry);
+
+        registry.AllMappings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ProcessAddPlayer_alreadySanitized_isNoOp()
+    {
+        var registry = new NameRegistry();
+        var rules = new PlayerLogRules();
+
+        rules.DiscoverNames(@"[12:34:56] LocalPlayer: ProcessAddPlayer(-1, 2, ""@a"", ""<PLAYER_1>"", ""x"")", registry);
+
+        registry.AllMappings.Should().BeEmpty();
+    }
 }

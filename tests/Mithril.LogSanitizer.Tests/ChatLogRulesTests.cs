@@ -52,4 +52,26 @@ public sealed class ChatLogRulesTests
 
         registry.AllMappings.Should().BeEmpty();
     }
+
+    [Fact]
+    public void ChatBanner_alreadySanitized_isNoOp()
+    {
+        var registry = new NameRegistry();
+        var rules = new ChatLogRules();
+
+        rules.DiscoverNames("26-04-09 19:29:36\t**************************************** Logged In As <CHARACTER>. Server Laeth.", registry);
+
+        registry.AllMappings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ChatLine_alreadySanitized_isNoOp()
+    {
+        var registry = new NameRegistry();
+        var rules = new ChatLogRules();
+
+        rules.DiscoverNames("26-05-19 12:34:56\t[Global] <PLAYER_1>: hello again", registry);
+
+        registry.AllMappings.Should().BeEmpty();
+    }
 }
