@@ -96,4 +96,27 @@ public sealed class LogSanitizerTests
         output.Should().NotContain("Bobby");
         output.Should().NotContain("<PLAYER_1>by");
     }
+
+    [Fact]
+    public void Sanitize_playerNameSubstringOfWindowsUsername_pathStillScrubbed()
+    {
+        // If a registered player name is a substring of the capture-machine Windows username
+        // (here, player "art" vs username "arthu"), running name replacement before path scrub
+        // turns the path into "C:\Users\<PLAYER_1>hu\..."; the scrubber's [^\\/:*?""<>|]+ class
+        // then refuses to match across the embedded "<", leaving "hu" exposed and leaking
+        // a partial real username into the committed fixture.
+        // Path scrubbing must run BEFORE name replacements.
+        var input =
+            """
+            [12:34:56] LocalPlayer: ProcessAddPlayer(-1, 2, "@a", "art", "x")
+            InvalidOperationException at C:\Users\arthu\AppData\Local\PG\foo.dll
+            """;
+
+        var output = new LogSanitizer(new PlayerLogRules()).Sanitize(input);
+
+        output.Should().Contain("\"<PLAYER_1>\"");
+        output.Should().Contain(@"C:\Users\<USER>\AppData\Local\PG\foo.dll");
+        output.Should().NotContain(@"\arthu\");
+        output.Should().NotContain("<PLAYER_1>hu");
+    }
 }

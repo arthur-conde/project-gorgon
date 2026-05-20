@@ -48,14 +48,20 @@ public sealed class LogSanitizer
 
     private static string ApplyReplacements(string line, NameRegistry registry)
     {
-        var working = line;
-        // Apply longer names first. Without this, "Bob" registered before "Bobby" would replace
-        // first and mangle "Bobby" → "<PLAYER_1>by"; the later "Bobby" → "<PLAYER_2>" lookup
-        // would no longer match, leaking the real name into the committed fixture.
+        // Scrub paths FIRST. If a registered name is a substring of the capture-machine
+        // Windows username (e.g. player "art" vs username "arthu"), running name replacement
+        // first would turn "C:\Users\arthu\…" into "C:\Users\<PLAYER_1>hu\…"; the scrubber's
+        // [^\\/:*?"<>|]+ class then refuses to match across the embedded "<", leaving a
+        // partial real username exposed.
+        var working = WindowsUsernameScrubber.Scrub(line);
+
+        // Apply longer names first. Without length-descending order, "Bob" registered before
+        // "Bobby" would replace first and mangle "Bobby" → "<PLAYER_1>by"; the later
+        // "Bobby" → "<PLAYER_2>" lookup would no longer match.
         foreach (var (name, token) in registry.AllMappings.OrderByDescending(kvp => kvp.Key.Length))
         {
             working = working.Replace(name, token, StringComparison.Ordinal);
         }
-        return WindowsUsernameScrubber.Scrub(working);
+        return working;
     }
 }
