@@ -25,13 +25,20 @@ namespace Mithril.Shared.Tests.Logging;
 ///   to <c>Chat-26-05-20.log</c>) does not affect the round-trip — the
 ///   clock reads the in-line date prefix, not the filename, so the UTC
 ///   reconstruction lands on May 19 (the actual UTC day) regardless.</item>
-///   <item>Pair 3 with <see cref="TimeZoneInfo.Local"/>-flavoured
-///   injection (rather than the originating banner's offset) is the
-///   <b>gap-witness</b>: <see cref="ChatLogClock"/> today folds via
-///   <see cref="TimeZoneInfo.Local"/>, which is wrong for replay of
-///   another machine's chat logs. The skip-tagged fact below converts
-///   that silent mis-conversion risk into an explicit, future-flippable
-///   regression target.</item>
+///   <item>Pair 3 — alt machine's UTC-7 chat banner replayed on a
+///   UTC+1 host TZ — round-trips correctly because <see cref="ChatLogClock"/>
+///   reads the in-line <c>Logged In As … Timezone Offset HH:MM:SS.</c>
+///   banner and folds via the banner's offset rather than the host TZ.
+///   This was the #538 gap-witness; the fix lands with this fixture
+///   green.</item>
+///   <item>Pre-banner lines (the leading run before the
+///   <c>Logged In As …</c> banner has been observed) fall through to
+///   the injected/local TZ, preserving live-tail behaviour where the
+///   host machine wrote the log.</item>
+///   <item>A second <c>Logged In As</c> banner mid-stream (PG re-login)
+///   re-anchors the offset for subsequent lines, the same way
+///   <see cref="ISessionAnchor.AnchorChanged"/> re-anchors the Player
+///   clock.</item>
 /// </list>
 /// </summary>
 public sealed class ChatLogClockTests
@@ -121,31 +128,86 @@ public sealed class ChatLogClockTests
         stamp.DateTime.Date.Should().Be(new DateTime(2026, 5, 20));
     }
 
-    // ── Pair 3 gap-witness (skipped) ───────────────────────────────
-    // Today ChatLogClock folds via TimeZoneInfo.Local rather than the
-    // originating banner's Timezone Offset. That is correct for the
-    // common case (Mithril reading the host machine's own chat logs)
-    // and wrong for replay of another machine's chat logs. This
-    // fixture encodes the gap so the refactor tracked in #538 can flip
-    // Skip to null and gain a green regression test in the same commit.
+    // ── Pair 3 banner-wins-over-injected-TZ (was #538 gap-witness) ─
 
-    [Fact(Skip = "Tracking gap #538 — ChatLogClock uses TimeZoneInfo.Local; flip Skip when #538 lands. See doc comment above for the full reason.")]
-    public void Pair3_WithReplayMachineTimeZone_GapWitness()
+    [Fact]
+    public void Pair3_BannerOffsetWinsOverInjectedReplayMachineTimeZone()
     {
-        // Simulate the user replaying the alt machine's chat log (whose
-        // offset is UTC-7) on Arthur's machine (UTC+1). ChatLogClock
-        // today reads TimeZoneInfo.Local — so the alt machine's
-        // local-stamped `26-05-19 09:36:04` gets folded as if it were
-        // 09:36:04 UTC+1 ⇒ 08:36:04 UTC, off by 8 hours from the true
-        // 16:36:04 UTC instant. The assertion below is what we WANT to
-        // hold; it will hold the moment ChatLogClock consumes the
-        // banner's offset instead.
+        // The user replays the alt machine's chat log (whose banner records
+        // UTC-7) on Arthur's machine (UTC+1). The clock must reconstruct
+        // 16:36:04 UTC from the alt-machine local stamp `09:36:04` by
+        // reading the banner's `Timezone Offset -07:00:00.` — *not* by
+        // folding through the injected UTC+1 (which would land 8 hours off
+        // at 08:36:04 UTC). This is the #538 fix: in-clock banner parse
+        // wins over the constructor-injected fallback TZ.
         var replayMachineTz = FixedOffsetZone(TimeSpan.FromHours(1));
         var clock = new ChatLogClock(TimeProvider.System, replayMachineTz);
 
         var stamp = clock.StampForLine(Pair3ChatBanner);
 
         stamp.UtcDateTime.Should().Be(Pair3ExpectedUtc);
+        stamp.Offset.Should().Be(Pair3OriginOffset);
+    }
+
+    // ── Pre-banner fallback ─────────────────────────────────────────
+
+    [Fact]
+    public void StampForLine_BeforeBannerSeen_FoldsViaInjectedFallbackTimeZone()
+    {
+        // Lines that arrive before any `Logged In As …` banner (typical
+        // chat-file headers, plus the rare leading content line on a
+        // freshly-rotated file before login) preserve today's behaviour:
+        // fold via the injected (or `TimeZoneInfo.Local`) fallback. The
+        // banner-derived offset only kicks in once a banner has actually
+        // been observed; this keeps live-tail on the host machine
+        // bit-identical to pre-#538 behaviour.
+        var fallbackTz = FixedOffsetZone(TimeSpan.FromHours(5));
+        var clock = new ChatLogClock(TimeProvider.System, fallbackTz);
+        const string preBannerStatusLine =
+            "26-05-19 12:00:00\t[Status] Some pre-login status notification.";
+
+        var stamp = clock.StampForLine(preBannerStatusLine);
+
+        // 12:00:00 local in UTC+5 ⇒ 07:00:00 UTC.
+        stamp.UtcDateTime.Should().Be(new DateTime(2026, 5, 19, 7, 0, 0, DateTimeKind.Utc));
+        stamp.Offset.Should().Be(TimeSpan.FromHours(5));
+    }
+
+    // ── Mid-stream re-anchor on a second banner (PG re-login) ──────
+
+    [Fact]
+    public void StampForLine_SecondBannerMidStream_ReAnchorsOffsetForSubsequentLines()
+    {
+        // PG re-login during the same Mithril run: a second
+        // `Logged In As …` banner with a different `Timezone Offset`
+        // value must re-anchor the offset for subsequent chat lines,
+        // mirroring the Player-clock's response to
+        // ISessionAnchor.AnchorChanged. Without re-anchoring, the chat
+        // clock would silently keep using the first banner's offset and
+        // mis-convert every post-relogin line by the offset delta.
+        //
+        // Sequence: Pair-1 banner (UTC+1) ⇒ generic line under UTC+1 ⇒
+        // Pair-3 banner (UTC-7) ⇒ generic line under UTC-7. Asserting
+        // the *generic* lines (not the banners themselves) is what
+        // proves the offset state carried forward correctly.
+        var clock = new ChatLogClock(TimeProvider.System);
+        const string postPair1Line =
+            "26-05-19 21:05:00\t[Status] Generic line after Pair-1 banner.";
+        const string postPair3Line =
+            "26-05-19 10:00:00\t[Status] Generic line after Pair-3 banner.";
+
+        clock.StampForLine(Pair1ChatBanner);
+        var firstFollowup = clock.StampForLine(postPair1Line);
+        clock.StampForLine(Pair3ChatBanner);
+        var secondFollowup = clock.StampForLine(postPair3Line);
+
+        // 21:05:00 local in UTC+1 ⇒ 20:05:00 UTC (Pair-1 offset).
+        firstFollowup.UtcDateTime.Should().Be(new DateTime(2026, 5, 19, 20, 5, 0, DateTimeKind.Utc));
+        firstFollowup.Offset.Should().Be(Pair1OriginOffset);
+
+        // 10:00:00 local in UTC-7 ⇒ 17:00:00 UTC (Pair-3 offset).
+        secondFollowup.UtcDateTime.Should().Be(new DateTime(2026, 5, 19, 17, 0, 0, DateTimeKind.Utc));
+        secondFollowup.Offset.Should().Be(Pair3OriginOffset);
     }
 
     // ── Helpers ────────────────────────────────────────────────────
