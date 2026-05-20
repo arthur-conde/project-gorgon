@@ -158,33 +158,55 @@ template for "fails cleanly on inversion."
 
 ## Tier 3 — live read-order tiebreak
 
-> ⚠️ **Blocked on L1's `IsReplay` flag** ([#511](https://github.com/moumantai-gg/mithril/issues/511)
-> deliverable 3, not yet built). This section is a forward-reference
-> contract; the mechanism becomes usable when L1 ships.
-
 **Recognition.** Tiers 1 and 2 don't apply — no shared key, no causal
 request/response — but you only need to tiebreak the order of two events
 *within a shared game-second*. Both streams are tailed live by the same
 Mithril process, so the order they were read off disk is a real signal.
 
-**Contract sketch.** L0 mints a high-resolution monotonic
+**Contract.** L0 mints a high-resolution monotonic
 [`ReadMonotonicTicks`](../src/Mithril.Shared/Logging/LogEvent.cs) field on
-every emitted line (from `TimeProvider.GetTimestamp()` at tail time). When
-L1's forthcoming `IsReplay == false` is set on a line — i.e. the line came
-from live tailing, not the session-replay backlog — `ReadMonotonicTicks` is
-a usable cross-source tiebreaker within a shared game-second. When
-`IsReplay == true` (replay), read-order is meaningless: PG slurped the
-backlog file in bulk and no live tailing happened, so the tiebreaker
-collapses to nonsense and the consumer must fall back to per-source
-`Sequence` + game-second + Tier 1/2 keyed correlation.
+every emitted line (from `TimeProvider.GetTimestamp()` at tail time). L1
+ships the
+[`LogEnvelope<T>.IsReplay`](../src/Mithril.Shared/Logging/LogEnvelope.cs)
+bit alongside every delivered payload (PR [#554](https://github.com/moumantai-gg/mithril/pull/554)),
+so a Tier-3 consumer can gate the tiebreak on a per-envelope basis:
+`ReadMonotonicTicks` is a usable cross-source tiebreaker within a shared
+game-second **only when** `IsReplay == false` (the envelope came from live
+tailing, not the session-replay backlog). When `IsReplay == true`,
+read-order is meaningless — PG slurped the backlog file in bulk and no
+live tailing happened, so the tiebreaker collapses to nonsense and the
+consumer must fall back to per-source `Sequence` + game-second + Tier 1/2
+keyed correlation.
 
 **Failure mode.** Read-order is also unreliable when live tailing falls
 behind (the [#507](https://github.com/moumantai-gg/mithril/issues/507)
-condition). That state is **alarmed and observable**, not silent — when L1
-lands, Tier-3 consumers should refuse to tiebreak while #507's lag signal
-is set, rather than producing a confidently-wrong ordering.
+condition). That state is **alarmed and observable**, not silent —
+Tier-3 consumers should refuse to tiebreak while #507's lag signal is
+set, rather than producing a confidently-wrong ordering.
 
-**In-repo reference.** None yet; pending L1.
+**In-repo reference.** No consumer currently sits in Tier 3. The four
+producers that the [#556](https://github.com/moumantai-gg/mithril/issues/556)
+multi-pipe split initially flagged as Tier-3 candidates ended up solved
+differently:
+
+- **Pin / Weather / Position** — migrated to the unified
+  `IClassifiedPlayerLogLine` pipe (#556 phases 1–3 / PRs
+  [#567](https://github.com/moumantai-gg/mithril/pull/567) /
+  [#568](https://github.com/moumantai-gg/mithril/pull/568) /
+  [#569](https://github.com/moumantai-gg/mithril/pull/569)). That is a
+  *same-source cross-pipe* mechanism — every consumer reads a single
+  classified Player.log stream that preserves in-source order across
+  pipes — which is a structurally different problem than Tier 3's
+  *cross-source same-game-second tiebreak*.
+- **Inventory** — solved as two parallel L1 subscriptions (Player.log
+  `ProcessAddItem` and chat `[Status] added`) feeding the existing
+  `PendingCorrelator<TKey,TReq>`. That's Tier 1, keyed by `InternalName`
+  — see PR [#566](https://github.com/moumantai-gg/mithril/pull/566) and
+  the `InventoryService` row in the mapping table.
+
+Tier 3 remains available for a future cross-source consumer that genuinely
+needs to tiebreak two unrelated events within a shared game-second; no
+such consumer exists in-repo today.
 
 ## Tier 4 — order-insensitive consumer (the irreducible case)
 
@@ -221,13 +243,14 @@ If one ever does, this section gets the first reference.
 | `InventoryService` (`ProcessAddItem` ↔ chat `[Status] added`) | 1 | Keyed by `InternalName`, 5 s TTL |
 | `Legolas.Services.LogIngestionService` (chat `added` ↔ chat `collected!`) | 1 | Keyed by item name, 5 s TTL; credit-0 + warn on unmatched takes; Trace on TTL eviction (post-#541) |
 | `Legolas.Services.MotherlodeMeasurementCoordinator` (Player.log `ProcessDoDelayLoop` ↔ chat `[Status] The treasure is N meters`) | 2 | Currently cross-source; k-th-to-slot-k binding; label-agnostic temporal pairing. Same-source migration to Player.log `ProcessScreenText(ImportantInfo, …)` is feasible but deferred to #511 deliverable 6 |
-| *(future Tier-3 consumer)* | 3 | Awaits L1 (#511 deliverable 3) |
+| *(no in-repo consumer)* | 3 | Tier-3 mechanism is available (L1 ships `LogEnvelope<T>.IsReplay`, PR #554) but unused — the four #556 candidates resolved via the unified pipe (Pin/Weather/Position) or Tier 1 (Inventory). Slot reserved for a future cross-source same-game-second tiebreak need. |
 
 ## Open questions / future work
 
-- **L1 / `IsReplay`** lands (#511 deliverable 3) → Tier-3 implementation
-  becomes possible; the first Tier-3 consumer reference moves into the
-  mapping table above.
+- **First Tier-3 consumer**, if one ever surfaces (cross-source pair, no
+  shared key, no causal request/response, same-game-second tiebreak
+  required), gets the first in-repo reference in §Tier 3 — the mechanism
+  is available now that L1 ships `LogEnvelope<T>.IsReplay` (PR #554).
 - **First Tier-4 consumer**, if one ever surfaces, gets the first reference
   in §Tier 4.
 - **PG's ADD-before-COLLECT emission order** across the survey vocabulary is
