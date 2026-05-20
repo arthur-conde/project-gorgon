@@ -46,6 +46,15 @@ public sealed class LegolasModule : IMithrilModule
         var settingsPath = Path.Combine(dir, "settings.json");
 
         services.AddMithrilVersionedSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
+
+        // Per-character L1 ingestion bookkeeping (#550 PR 3): persists the
+        // PlayerLog Sequence high-water so a Mithril restart resumes from
+        // where the prior session left off rather than re-applying every
+        // already-processed envelope in the session-replay drain.
+        // PlayerLogIngestionService is the sole consumer.
+        services.AddPerCharacterModuleStore<LegolasIngestionState>(
+            "legolas-ingestion",
+            LegolasIngestionStateJsonContext.Default.LegolasIngestionState);
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
         services.AddSingleton<LegolasColors>(sp =>

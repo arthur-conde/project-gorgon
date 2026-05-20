@@ -23,6 +23,12 @@ namespace Legolas.Services;
 /// common — see <see cref="WorldCoord"/>). Lines that aren't
 /// <c>ProcessMapFx</c> (incl. Motherlode's <c>ProcessScreenText</c>) fast-path
 /// to null, so Motherlode is excluded with no special-casing.
+///
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the <c>MotherlodeUseRx</c> guard no longer re-anchors on it. Same
+/// pattern as the GameState parsers post-#555.</para>
 /// </summary>
 public sealed partial class PlayerLogParser : ILogParser
 {
@@ -37,8 +43,10 @@ public sealed partial class PlayerLogParser : ILogParser
     // only; binding stays order-based (the type is identical across a same-type
     // stack, no per-map identity). Grammar mirrors Gandalf's
     // InteractionDelayLoopParser (no cross-module dependency taken).
+    // Post-#550: the LocalPlayer: actor envelope is eaten upstream by L0.5;
+    // this guard no longer re-anchors on it.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*\w+\s*,\s*"(?<map>[^"]*Motherlode Map[^"]*)"\s*,""",
+        """ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*\w+\s*,\s*"(?<map>[^"]*Motherlode Map[^"]*)"\s*,""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex MotherlodeUseRx();
 
