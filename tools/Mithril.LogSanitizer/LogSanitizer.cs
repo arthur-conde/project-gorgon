@@ -28,6 +28,8 @@ public sealed class LogSanitizer
         }
 
         // Pass 2: replace names + scrub paths.
+        // Note: line endings are normalized to LF — StringReader.ReadLine strips both \r\n and \n,
+        // and we always emit \n. CRLF inputs become LF-only outputs. Idempotence holds either way.
         var result = new StringBuilder(input.Length);
         using (var reader = new StringReader(input))
         {
