@@ -7,7 +7,12 @@ public sealed partial class GourmandLogParser : ILogParser
 {
     // Match the ProcessBook line containing the Foods Consumed report.
     // The body uses literal \n escapes (not real newlines) in the log file.
-    [GeneratedRegex(@"LocalPlayer:\s*ProcessBook\(""Skill Info"",\s*""(Foods Consumed:\\n\\n(?:[^""\\]|\\.)*)"".*""SkillReport""")]
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope before this parser
+    // sees the line — the anchor is dropped per the #550 PR #555 review
+    // ("downstream never re-matches the actor envelope"). The L1 driver
+    // surface this consumer migrated to delivers a LocalPlayerLogLine.Data
+    // string that starts at ProcessBook(...).
+    [GeneratedRegex(@"ProcessBook\(""Skill Info"",\s*""(Foods Consumed:\\n\\n(?:[^""\\]|\\.)*)"".*""SkillReport""")]
     private static partial Regex ProcessBookFoodsRx();
 
     // Match a single food entry line: "  FoodName (HAS TAG, HAS TAG): count"
