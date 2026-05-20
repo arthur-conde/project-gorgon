@@ -1,0 +1,67 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+
+namespace Mithril.Tools.LogSanitizer;
+
+public sealed class LogSanitizer
+{
+    private readonly ILogSourceRules _rules;
+
+    public LogSanitizer(ILogSourceRules rules)
+    {
+        _rules = rules;
+    }
+
+    public string Sanitize(string input)
+    {
+        var registry = new NameRegistry();
+
+        // Pass 1: discover names.
+        using (var reader = new StringReader(input))
+        {
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                _rules.DiscoverNames(line, registry);
+            }
+        }
+
+        // Pass 2: replace names + scrub paths.
+        // Note: line endings are normalized to LF — StringReader.ReadLine strips both \r\n and \n,
+        // and we always emit \n. CRLF inputs become LF-only outputs. Idempotence holds either way.
+        var result = new StringBuilder(input.Length);
+        using (var reader = new StringReader(input))
+        {
+            string? line;
+            var first = true;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                if (!first) result.Append('\n');
+                first = false;
+                result.Append(ApplyReplacements(line, registry));
+            }
+        }
+        return result.ToString();
+    }
+
+    private static string ApplyReplacements(string line, NameRegistry registry)
+    {
+        // Scrub paths FIRST. If a registered name is a substring of the capture-machine
+        // Windows username (e.g. player "art" vs username "arthu"), running name replacement
+        // first would turn "C:\Users\arthu\…" into "C:\Users\<PLAYER_1>hu\…"; the scrubber's
+        // [^\\/:*?"<>|]+ class then refuses to match across the embedded "<", leaving a
+        // partial real username exposed.
+        var working = WindowsUsernameScrubber.Scrub(line);
+
+        // Apply longer names first. Without length-descending order, "Bob" registered before
+        // "Bobby" would replace first and mangle "Bobby" → "<PLAYER_1>by"; the later
+        // "Bobby" → "<PLAYER_2>" lookup would no longer match.
+        foreach (var (name, token) in registry.AllMappings.OrderByDescending(kvp => kvp.Key.Length))
+        {
+            working = working.Replace(name, token, StringComparison.Ordinal);
+        }
+        return working;
+    }
+}

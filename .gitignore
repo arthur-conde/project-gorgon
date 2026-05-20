@@ -17,6 +17,9 @@ src/temp
 .claude/worktrees/
 reviews/
 
+# Raw log captures + local scratch (per scratch_data_location_not_tmp memory)
+scratch/
+
 # Legacy browser-based garden helper (superseded by Samwise module)
 garden/
 

@@ -1,0 +1,2 @@
+[20:01:19] entity_25021745: OnAttackHitMe(Bear Bite (Pet)). Evaded = False
+  at Combatant.OnAttackHitMe (Attack attack, System.Boolean isProjectile) [0x00000] in <00000000000000000000000000000000>:0

@@ -23,12 +23,14 @@
   <Folder Name="/tools/">
     <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
     <Project Path="tools/RefreshAndValidate/RefreshAndValidate.csproj" />
+    <Project Path="tools/Mithril.LogSanitizer/Mithril.LogSanitizer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />
     <Project Path="tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj" />
     <Project Path="tests/Mithril.GameState.Tests/Mithril.GameState.Tests.csproj" />
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
+    <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Pippin.Tests/Pippin.Tests.csproj" />
     <Project Path="tests/Samwise.Tests/Samwise.Tests.csproj" />

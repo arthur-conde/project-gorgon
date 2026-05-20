@@ -1,0 +1,20 @@
+UnloadTime: 0.160500 ms
+UnloadTime: 0.431500 ms
+Uploading Crash Report
+Uploading Crash Report
+Downloading config file https://client.projectgorgon.com/clientconfig.json?ts=639148202157828949
+UnloadTime: 3.991700 ms
+UnloadTime: 0.390200 ms
+UnloadTime: 4.729400 ms
+UnloadTime: 0.410000 ms
+Downloading Map [0e88b64bdd834cc41a23b8357802f254] GUID 0e88b64bdd834cc41a23b8357802f254 for area Kur Mountains runtime key 0e88b64bdd834cc41a23b8357802f254[Map_AreaKurMountains]
+Completed load of [0e88b64bdd834cc41a23b8357802f254]: ChainOperation<IList`1> - Dependencies [Assets/Art/Maps/Map_AreaKurMountains.png, Assets/Art/Maps/Map_AreaKurMountains.png]. Succeeded. 
+Completed load of [0e88b64bdd834cc41a23b8357802f254]: ChainOperation<IList`1> - Dependencies [Assets/Art/Maps/Map_AreaKurMountains.png, Assets/Art/Maps/Map_AreaKurMountains.png]. Succeeded. 
+UnloadTime: 490.844800 ms
+UnloadTime: 0.514600 ms
+UnloadTime: 3.803400 ms
+UnloadTime: 0.445300 ms
+UnloadTime: 5.891400 ms
+UnloadTime: 0.486400 ms
+Downloading Map [0e88b64bdd834cc41a23b8357802f254] GUID 0e88b64bdd834cc41a23b8357802f254 for area Kur Mountains runtime key 0e88b64bdd834cc41a23b8357802f254[Map_AreaKurMountains]
+Completed load of [0e88b64bdd834cc41a23b8357802f254]: ChainOperation<IList`1> - Dependencies [Assets/Art/Maps/Map_AreaKurMountains.png, Assets/Art/Maps/Map_AreaKurMountains.png]. Succeeded. 
