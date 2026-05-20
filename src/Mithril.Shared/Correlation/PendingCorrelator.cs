@@ -5,11 +5,14 @@ namespace Mithril.Shared.Correlation;
 /// <summary>
 /// Tier-1 keyed-correlation primitive (see #523 / #511 design notes): a thin
 /// multi-map of <typeparamref name="TKey"/> → FIFO list of <typeparamref name="TReq"/>
-/// entries, each timestamped at enqueue time. Entries are evicted by TTL — lazily
-/// on every access and eagerly via <see cref="DrainStale"/> — and every evicted
-/// entry is routed through an optional unmatched callback so the consumer's
-/// "what to do when correlation fails" policy is explicit rather than a silent
-/// drop.
+/// entries, each timestamped at enqueue time. Entries are evicted by TTL —
+/// lazily on <see cref="TryTake"/> (stale entries at the head of a bucket are
+/// evicted along the way) and eagerly via <see cref="DrainStale"/>. Neither
+/// <see cref="Add"/> nor <see cref="Count"/> triggers eviction, so consumers
+/// that only enqueue without taking must call <see cref="DrainStale"/>
+/// periodically to bound bucket growth. Every evicted entry is routed through
+/// an optional unmatched callback so the consumer's "what to do when
+/// correlation fails" policy is explicit rather than a silent drop.
 ///
 /// Intended use is the cross-source half-correlation pattern that
 /// <c>InventoryService</c> already implements by hand: one stream carries a
@@ -30,7 +33,11 @@ namespace Mithril.Shared.Correlation;
 /// callback is invoked *outside* the lock so it may safely call back into the
 /// correlator (or take other application locks) without deadlocking. Each
 /// eviction sweep collects evicted entries into a local list and fires the
-/// callback after releasing the gate.
+/// callback after releasing the gate; if a callback throws, the remaining
+/// callbacks for the same sweep still run, and any exceptions are aggregated
+/// into a single <see cref="AggregateException"/> thrown after the sweep
+/// completes. The "explicit policy" guarantee — every evicted entry receives
+/// its callback — holds even when individual callbacks fault.
 ///
 /// Performance: designed for small N (handful of distinct keys, single-digit
 /// entries per key — exactly the InventoryService pattern). All operations are
@@ -107,6 +114,15 @@ public sealed class PendingCorrelator<TKey, TReq>
     /// enqueue time from the injected <see cref="TimeProvider"/> at call time.
     /// Multiple requests under the same key are retained in FIFO order.
     /// </summary>
+    /// <remarks>
+    /// Invariant: the per-key bucket is in non-decreasing <c>EnqueuedAt</c>
+    /// order because <see cref="Add"/> is the only writer and always appends
+    /// with a freshly-read <c>now</c>. Eviction relies on this — it scans the
+    /// head of the bucket and stops at the first non-stale entry. A future
+    /// caller that inserted mid-bucket or used a non-monotonic
+    /// <see cref="TimeProvider"/> would break the invariant and silently leave
+    /// stale entries behind.
+    /// </remarks>
     public void Add(TKey key, TReq request)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -215,9 +231,24 @@ public sealed class PendingCorrelator<TKey, TReq>
         list.RemoveRange(0, evictCount);
     }
 
+    /// <summary>Invokes the unmatched callback on each evicted entry. Runs
+    /// outside <see cref="_gate"/> so a callback may safely re-enter the
+    /// correlator. Exceptions from individual callbacks are aggregated and
+    /// thrown after the sweep completes — the "explicit policy" guarantee
+    /// (every evicted entry receives its callback) holds even when individual
+    /// callbacks fault.</summary>
     private void FireUnmatched(List<(TKey Key, TReq Value)>? evicted)
     {
         if (evicted is null || _onUnmatched is null) return;
-        foreach (var (k, v) in evicted) _onUnmatched(k, v);
+        List<Exception>? exceptions = null;
+        foreach (var (k, v) in evicted)
+        {
+            try { _onUnmatched(k, v); }
+            catch (Exception ex) { (exceptions ??= new List<Exception>()).Add(ex); }
+        }
+        if (exceptions is not null)
+            throw new AggregateException(
+                "One or more PendingCorrelator unmatched callbacks threw; the sweep continued and every evicted entry received its callback.",
+                exceptions);
     }
 }

@@ -71,8 +71,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private FileSystemWatcher? _seedWatcher;
     private Timer? _seedDebounce;
 
-    // _subLock guards _map, _handlers, _pendingChat, and _pendingAdd. Both ingestion
-    // loops (player log and chat) take it while mutating shared state.
+    // _subLock guards _map and _handlers. _pendingChat / _pendingAdd are
+    // PendingCorrelator instances that are independently thread-safe via their own
+    // internal _gate; they don't require _subLock for correctness, but both
+    // ingestion loops take _subLock around correlator calls anyway so the
+    // drain-then-mutate-_map sequence stays atomic within a handler.
     private readonly object _subLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
     private readonly List<Action<InventoryEvent>> _handlers = new();
@@ -88,7 +91,13 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // pre-extraction TtlList design only consulted the TTL on the matching path).
     // Both correlators pass onUnmatched: null — InventoryService's policy for an
     // un-correlated half-event is the same "silent drop" the original code had;
-    // promoting that to an explicit policy is a separate change.
+    // promoting that to an explicit policy is a separate change. Lock-ordering
+    // hazard for that future change: handlers hold _subLock when invoking the
+    // correlator, so a non-null onUnmatched callback would inherit
+    // _subLock → _gate → callback ordering. A callback that synchronously took a
+    // different module's lock would create a cross-module ordering constraint;
+    // design the callback to be dispatch-only (queue + drain off-handler) rather
+    // than synchronously taking foreign locks.
     private readonly PendingCorrelator<string, int> _pendingChat;
     private readonly PendingCorrelator<string, long> _pendingAdd;
 
@@ -108,6 +117,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // those carryover stacks at quantity=1 instead of routing them to the
     // pending-observation queue. Confirmation flips on at:
     //   - HandleAddItem chat-correlation hit
+    //   - HandleAddItem non-stackable (MaxStackSize == 1) short-circuit
     //   - HandleAddItem export-seed hit
     //   - HandleUpdateItemCode
     //   - HandleRemoveFromStorageVault
@@ -468,11 +478,13 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     }
 
     /// <summary>
-    /// Lazy piggyback drain — call from every event handler under <see cref="_subLock"/>.
-    /// Walks both pending correlators, evicting stale entries via the shared
-    /// <see cref="PendingCorrelator{TKey,TReq}"/> primitive. Cost is O(distinct
-    /// InternalNames in pending), trivial in practice (rarely more than a
-    /// handful at a time).
+    /// Lazy piggyback drain — called from every event handler. The
+    /// <see cref="PendingCorrelator{TKey,TReq}"/> primitive is self-synchronizing,
+    /// so this method no longer requires <c>_subLock</c> to be held for
+    /// correctness; callers take it anyway so the drain-then-mutate-<see cref="_map"/>
+    /// sequence stays atomic within a handler. Walks both pending correlators,
+    /// evicting stale entries. Cost is O(distinct InternalNames in pending),
+    /// trivial in practice (rarely more than a handful at a time).
     /// </summary>
     private void DrainPendingStale()
     {

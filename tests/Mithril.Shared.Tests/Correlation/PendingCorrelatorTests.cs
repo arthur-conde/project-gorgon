@@ -378,6 +378,50 @@ public sealed class PendingCorrelatorTests
         removed.Should().Be(added);
     }
 
+    [Fact]
+    public void ConcurrentTryTakeUnderEviction_AllEntriesReceiveCallback_NoDeadlock()
+    {
+        // Pressure-test the lock+eviction interaction under contention: many
+        // stale entries across several keys, multiple threads each calling
+        // TryTake which evicts under the lock and then fires the unmatched
+        // callback outside it. Sibling of
+        // ConcurrentAddAndTake_NoExceptions_AllEntriesAccountedFor — that test
+        // uses a 1-hour TTL so EvictStale never runs; this one drives every
+        // TryTake through the eviction path concurrently, verifying the
+        // lock-release-then-callback dispatch in FireUnmatched is
+        // contention-safe and that the "explicit policy" guarantee (every
+        // evicted entry receives its callback) holds across keys racing in
+        // parallel.
+        var time = new ManualTimeProvider(Origin);
+        var ttl = TimeSpan.FromMilliseconds(100);
+        var unmatchedCount = 0;
+        var sut = new PendingCorrelator<string, int>(
+            ttl,
+            time,
+            onUnmatched: (_, _) => Interlocked.Increment(ref unmatchedCount));
+
+        const int keys = 16;
+        const int perKey = 200;
+        var total = keys * perKey;
+        for (var k = 0; k < keys; k++)
+            for (var i = 0; i < perKey; i++)
+                sut.Add($"k{k}", k * perKey + i);
+
+        time.Advance(ttl + TimeSpan.FromSeconds(1)); // every entry now stale
+
+        var threads = Enumerable.Range(0, 8).Select(_ => new Thread(() =>
+        {
+            for (var k = 0; k < keys; k++)
+                while (sut.TryTake($"k{k}", out _)) { /* drain */ }
+        })).ToList();
+
+        foreach (var t in threads) t.Start();
+        foreach (var t in threads) t.Join();
+
+        unmatchedCount.Should().Be(total);
+        sut.Count.Should().Be(0);
+    }
+
     private static DateTime Origin { get; } = new(2026, 5, 20, 14, 0, 0, DateTimeKind.Utc);
 
     /// <summary>
