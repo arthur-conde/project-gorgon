@@ -80,8 +80,10 @@ public static class GameStateServiceCollectionExtensions
 
         // Player position is shared live game-state (Palantir debug surface,
         // future overlay/positioning consumers). Self-feeding hosted service —
-        // also warms PlayerAreaTracker so the area is known without Legolas /
-        // Gandalf being active (idempotent when they are).
+        // since #556 Phase 3 subscribes via the L1 driver's unified
+        // classified pipe (LocalPlayer ProcessNewPosition + SystemSignal
+        // PlayerAdded). PlayerAreaTracker self-feeds independently
+        // (#556 Phase 2), so no warming dependency from here.
         services.AddSingleton<PlayerPositionParser>();
         services
             .AddSingleton<PlayerPositionTracker>()
@@ -93,7 +95,9 @@ public static class GameStateServiceCollectionExtensions
         // verb, so the service owns the full lifecycle (replay = idempotent
         // upsert, area change = swap) — Legolas's calibration consumes the
         // area-scoped set instead of hand-rolling a replay-arming gate.
-        // Self-feeding; also warms PlayerAreaTracker (idempotent).
+        // Subscribes via the L1 driver's unified classified pipe so the
+        // AreaLoading envelope always precedes the pin-burst for that area
+        // (#556 Phase 3).
         services.AddSingleton<MapPinParser>();
         services
             .AddSingleton<PlayerPinTracker>()

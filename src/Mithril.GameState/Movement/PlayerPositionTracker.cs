@@ -1,4 +1,3 @@
-using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
@@ -7,9 +6,11 @@ namespace Mithril.GameState.Movement;
 
 /// <summary>
 /// Hosted-service implementation of <see cref="IPlayerPositionTracker"/>.
-/// Tails <see cref="IPlayerLogStream"/>, parses <c>ProcessNewPosition</c> and
-/// the local player's <c>ProcessAddPlayer</c> via
-/// <see cref="PlayerPositionParser"/>, and holds the latest
+/// Subscribes to L1's unified classified pipe (#556 Phase 3), parses
+/// <c>ProcessNewPosition</c> on the <see cref="LocalPlayerLogLine"/>
+/// payload and the local player's <c>ProcessAddPlayer</c> on the
+/// <see cref="SystemSignalLogLine"/> { <see cref="SystemSignalKind.PlayerAdded"/> }
+/// payload via <see cref="PlayerPositionParser"/>, and holds the latest
 /// <see cref="PlayerPosition"/> (coords + the line's UTC instant + source).
 /// The <c>ProcessAddPlayer</c> spawn line is the live-replay seed point, so
 /// position is populated at session start rather than null until the first
@@ -19,44 +20,50 @@ namespace Mithril.GameState.Movement;
 /// <see cref="Sessions.GameSessionService"/> / <c>QuestService</c>: the
 /// position is shared live game-state and must be available to consumers
 /// (e.g. Palantir's debug surface) without depending on any other module
-/// being activated. Unlike the passive <see cref="PlayerAreaTracker"/>
-/// (which is fed by Legolas/Gandalf consumers), this owns its own
-/// subscription.</para>
+/// being activated.</para>
 ///
-/// <para><b>Also warms the shared area tracker.</b> The <c>LOADING LEVEL</c>
-/// area line lives in the same Player.log, so this loop also feeds the
-/// shared <see cref="PlayerAreaTracker"/> (and reverse-scan-seeds it at
-/// startup, since the live replay window opens <em>after</em> the current
-/// area's <c>LOADING LEVEL</c> line). Double-observing the tracker is
-/// idempotent — Legolas/Gandalf may also feed it when active; last-writer
-/// wins on the same key. This makes the area half of Palantir's
-/// map+position view populate standalone.</para>
+/// <para><b>Why the unified pipe and not the LocalPlayer typed pipe.</b>
+/// L0.5 routes <c>LocalPlayer: ProcessAddPlayer(…)</c> to the
+/// <see cref="ISystemSignalLogStream"/> { <see cref="SystemSignalKind.PlayerAdded"/> }
+/// pipe — distinct from the LocalPlayer typed pipe — even though the
+/// originating actor envelope says <c>LocalPlayer:</c>. Subscribing through
+/// the L0.5 unified pipe is the simplest way to see both verb classes in
+/// source-Sequence order through a single subscription, eliminating the
+/// cross-pipe two-pump race documented in #556.</para>
 ///
-/// <para><b>Threading.</b> Ingestion runs on the hosted-service loop thread;
-/// <see cref="Current"/> reads and subscriber dispatch happen under
-/// <c>_lock</c>. Subscribers doing non-trivial work should marshal off-thread
-/// immediately (the Palantir VM dispatches to the UI thread).</para>
+/// <para><b>No area-tracker dependency.</b> The
+/// <see cref="Areas.PlayerAreaTracker"/> self-feeds via L1 since Phase 2
+/// (#556 / PR #568); this tracker no longer warms it. Combat envelopes
+/// silently no-op on the unified pipe (no <c>switch</c> case matches them
+/// — by design; a future <c>default</c> warning would flood the diag log
+/// under heavy combat).</para>
+///
+/// <para><b>Threading.</b> The L1 driver's <c>InlineBridge</c> invokes the
+/// handler on its pump thread; <see cref="Current"/> reads and subscriber
+/// dispatch happen under <c>_lock</c>. Subscribers doing non-trivial work
+/// should marshal off-thread immediately (the Palantir VM dispatches to
+/// the UI thread).</para>
 /// </summary>
 public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTracker
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly PlayerPositionParser _parser;
-    private readonly PlayerAreaTracker _areaTracker;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
     private readonly List<Action<PlayerPosition>> _handlers = [];
     private PlayerPosition? _current;
+    private ILogSubscription? _subscription;
+
+    private const string DiagCategory = "GameState.Position";
 
     public PlayerPositionTracker(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         PlayerPositionParser parser,
-        PlayerAreaTracker areaTracker,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _parser = parser;
-        _areaTracker = areaTracker;
         _diag = diag;
     }
 
@@ -81,25 +88,76 @@ public sealed class PlayerPositionTracker : BackgroundService, IPlayerPositionTr
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
-        // owned — mithril#514); this service only feeds/reads it.
-        _diag?.Info("GameState.Position", "Subscribing to Player.log for ProcessNewPosition");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            try
-            {
-                // Same line stream carries area transitions; keep the shared
-                // tracker warm even when no other module is feeding it.
-                _areaTracker.Observe(raw);
+        _diag?.Info(DiagCategory,
+            "Subscribing to L1 driver (unified classified pipe) for ProcessNewPosition + ProcessAddPlayer");
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is PlayerPositionEvent evt)
-                    Publish(new PlayerPosition(evt.X, evt.Y, evt.Z, ToOffset(evt.Timestamp), evt.Source));
-            }
-            catch (Exception ex)
+        _subscription = _driver.Subscribe<IClassifiedPlayerLogLine>(
+            envelope =>
             {
-                _diag?.Warn("GameState.Position", $"Ingestion error: {ex.Message}");
-            }
+                // Risk 4 (#556 brainstorm): L0.5 routes ProcessAddPlayer to
+                // SystemSignal { Kind: PlayerAdded } — NOT to the LocalPlayer
+                // pipe — even though the actor envelope says LocalPlayer.
+                // ProcessNewPosition lives on the LocalPlayer pipe. So the
+                // tracker must accept both payload classes off the unified
+                // pipe to recover the full pre-#556 behaviour.
+                switch (envelope.Payload)
+                {
+                    case LocalPlayerLogLine l:
+                        // Bare verb (envelope eaten) — the parser's
+                        // ProcessNewPosition regex doesn't anchor on the
+                        // actor token, so this works on Data directly.
+                        if (_parser.TryParse(l.Data, l.Timestamp.UtcDateTime)
+                            is PlayerPositionEvent posEvt)
+                        {
+                            Publish(new PlayerPosition(
+                                posEvt.X, posEvt.Y, posEvt.Z,
+                                ToOffset(posEvt.Timestamp), posEvt.Source));
+                        }
+                        break;
+
+                    case SystemSignalLogLine { Kind: SystemSignalKind.PlayerAdded } s:
+                        // Spawn seed. The parser's TryParseSpawnFromData
+                        // skips the actor-token gate (L0.5 already enforced
+                        // it before routing this envelope).
+                        if (_parser.TryParseSpawnFromData(s.Data, s.Timestamp.UtcDateTime)
+                            is PlayerPositionEvent spawnEvt)
+                        {
+                            Publish(new PlayerPosition(
+                                spawnEvt.X, spawnEvt.Y, spawnEvt.Z,
+                                ToOffset(spawnEvt.Timestamp), spawnEvt.Source));
+                        }
+                        break;
+
+                    // CombatActorLogLine / other SystemSignal kinds silently
+                    // no-op. The unified pipe carries everything in source
+                    // order; we only care about our two verbs. A default
+                    // warning here would flood the diag log under heavy
+                    // combat or session-banner traffic.
+                }
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = DiagCategory,
+            });
+
+        // Park until host stop; the L1 subscription runs its own pump.
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
+    }
+
+    public override void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
     }
 
     private void Publish(PlayerPosition position)

@@ -330,22 +330,18 @@ public sealed class PlayerAreaTrackerTests : IDisposable
         await tracker.StartAsync(cts.Token);
         try
         {
-            // Both paths see the same transition.
+            // Both paths see the same transition. Observe(string, DateTime)
+            // is still alive — used by Legolas / Gandalf — so the
+            // double-feed regression remains relevant. (#556 Phase 3
+            // retired Observe(RawLogLine); Pin/Weather/Position now
+            // self-feed via the L1 unified pipe.)
             driver.PushLive(MakeAreaLoading("AreaSerbule", seq: 1));
             await driver.DrainSystemAsync();
-            tracker.Observe(new RawLogLine(
-                Timestamp: DateTimeOffset.UtcNow,
-                Line: "[10:00:00] LOADING LEVEL AreaSerbule",
-                Sequence: 1,
-                ReadMonotonicTicks: 0));
+            tracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
             tracker.CurrentArea.Should().Be("AreaSerbule");
 
             // Race on the next transition: Observe lands first, then L1.
-            tracker.Observe(new RawLogLine(
-                Timestamp: DateTimeOffset.UtcNow,
-                Line: "[10:01:00] LOADING LEVEL AreaEltibule",
-                Sequence: 2,
-                ReadMonotonicTicks: 0));
+            tracker.Observe("LOADING LEVEL AreaEltibule", DateTime.UtcNow);
             tracker.CurrentArea.Should().Be("AreaEltibule");
 
             driver.PushLive(MakeAreaLoading("AreaEltibule", seq: 2));

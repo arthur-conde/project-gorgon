@@ -1,4 +1,4 @@
-using Mithril.GameState.Areas;
+using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
@@ -6,10 +6,11 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Pins;
 
 /// <summary>
-/// Hosted-service implementation of <see cref="IPlayerPinTracker"/>. Tails
-/// <see cref="IPlayerLogStream"/>, parses <c>ProcessMapPin{Add,Remove}</c> via
-/// <see cref="MapPinParser"/>, and folds the stream into the current area's
-/// pin set (#468).
+/// Hosted-service implementation of <see cref="IPlayerPinTracker"/>.
+/// Subscribes to L1's unified classified pipe (#556 Phase 3), parses
+/// <c>ProcessMapPin{Add,Remove}</c> on the <see cref="LocalPlayerLogLine"/>
+/// payload via <see cref="MapPinParser"/>, and folds the stream into the
+/// current area's pin set (#468).
 ///
 /// <para><b>Lifecycle the service owns</b> (so no consumer hand-rolls it):</para>
 /// <list type="bullet">
@@ -21,32 +22,34 @@ namespace Mithril.GameState.Pins;
 ///   <item><b>No edit/move verb.</b> A rename/move is <c>Remove</c>+<c>Add</c>;
 ///   it surfaces as a <see cref="PinSetChange.Removed"/> then
 ///   <see cref="PinSetChange.Added"/>, which is faithful to the log.</item>
-///   <item><b>Area transition = swap.</b> Pins are area-local; on any
-///   <c>PlayerAreaTracker.CurrentArea</c> change the set is dropped and a
-///   <see cref="PinSetChange.AreaChanged"/> (empty set) is raised. The
-///   subsequent replay burst repopulates it for the new area.</item>
+///   <item><b>Area transition = swap.</b> Pins are area-local; the tracker
+///   parses <see cref="SystemSignalKind.AreaLoading"/> envelopes off the
+///   unified pipe and clears the set on any change, raising a
+///   <see cref="PinSetChange.AreaChanged"/> (empty set). The subsequent
+///   replay burst repopulates it for the new area.</item>
 /// </list>
 ///
-/// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
-/// <see cref="Movement.PlayerPositionTracker"/> — shared live game-state must
-/// be available without any module being activated. It also calls
-/// <see cref="PlayerAreaTracker.Observe(RawLogLine)"/> to keep the shared area
-/// tracker warm (idempotent when the position tracker / Legolas also feed it).
-/// No area reverse-scan seed is needed: the pin replay burst lands inside the
-/// live window (after the login <c>ProcessAddPlayer</c> the window is seeded
-/// to), so the set self-populates.</para>
+/// <para><b>Why the unified pipe.</b> Pre-#556 this tracker read
+/// <c>PlayerAreaTracker.CurrentArea</c> for the area-reconcile and tailed
+/// the raw Player.log for pin events — a two-pump arrangement that risked
+/// reading a stale area at the moment a pin-burst arrived. Subscribing to
+/// the L0.5 unified classified pipe gives one ordered stream of
+/// <c>AreaLoading</c> and <c>LocalPlayer</c> envelopes through a single
+/// subscription, so the area reconcile always precedes the pins for that
+/// area. Combat envelopes silently no-op.</para>
 ///
-/// <para><b>Threading.</b> Ingestion runs on the hosted-service loop thread;
-/// <see cref="CurrentArea"/>/<see cref="CurrentAreaPins"/> reads, state
-/// mutation and subscriber dispatch are serialised under <c>_lock</c>; each
-/// notification carries an immutable snapshot, so handlers may hold it. They
-/// run on the ingestion thread — non-trivial / UI work must marshal off.</para>
+/// <para><b>Threading.</b> The L1 driver's <c>InlineBridge</c> invokes the
+/// handler on its pump thread; <see cref="CurrentArea"/>/<see cref="CurrentAreaPins"/>
+/// reads, state mutation, and subscriber dispatch are serialised under
+/// <c>_lock</c>; each notification carries an immutable snapshot, so
+/// handlers may hold it. They run on the L1 pump thread — non-trivial / UI
+/// work must marshal off.</para>
 /// </summary>
 public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly MapPinParser _parser;
-    private readonly PlayerAreaTracker _areaTracker;
+    private readonly AreaTransitionParser _areaParser;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -58,23 +61,29 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
     private readonly Dictionary<PinKey, MapPin> _pins = new();
     private string? _trackedArea;
     private bool _areaInitialised;
+    private ILogSubscription? _subscription;
 
-    /// <param name="stream">The shared Player.log line stream this service
-    /// tails (its live replay window already covers the login pin burst).</param>
+    private const string DiagCategory = "GameState.Pins";
+
+    /// <param name="driver">L1 driver — subscribed to via the
+    /// <see cref="IClassifiedPlayerLogLine"/> unified pipe.</param>
     /// <param name="parser">Stateless line→<see cref="MapPinLogEvent"/> parser.</param>
-    /// <param name="areaTracker">Shared area key source; also fed every line
-    /// here so it stays warm without another module being active.</param>
+    /// <param name="areaParser">Stateless parser used to extract the area
+    /// key from each <see cref="SystemSignalKind.AreaLoading"/> envelope
+    /// observed on the unified pipe. The tracker tracks its own area state
+    /// locally rather than reading from <c>PlayerAreaTracker</c>, so the
+    /// reconcile never depends on a separate pump's progress.</param>
     /// <param name="diag">Optional diagnostics sink (info on subscribe,
     /// warnings on ingestion / subscriber faults).</param>
     public PlayerPinTracker(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         MapPinParser parser,
-        PlayerAreaTracker areaTracker,
+        AreaTransitionParser areaParser,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _parser = parser;
-        _areaTracker = areaTracker;
+        _areaParser = areaParser;
         _diag = diag;
     }
 
@@ -108,44 +117,81 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
     }
 
     /// <summary>
-    /// The hosted-service ingestion loop: for every Player.log line, warm the
-    /// shared area tracker, reconcile an area change, then fold a parsed
-    /// pin event into the set. Exits when <paramref name="stoppingToken"/> is
-    /// cancelled or the stream completes; per-line exceptions are logged and
-    /// swallowed so one bad line never stops ingestion.
+    /// The hosted-service entry point. Opens an L1 subscription to the
+    /// unified classified pipe and parks until host shutdown — the L1
+    /// subscription runs its own pump on a <see cref="Task.Run(Func{Task})"/>,
+    /// invoking the handler inline for each envelope in source order.
     /// </summary>
     /// <param name="stoppingToken">Host shutdown signal.</param>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("GameState.Pins", "Subscribing to Player.log for ProcessMapPin*");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            try
-            {
-                // Same line stream carries area transitions; keep the shared
-                // tracker warm even when no other feeder is active.
-                _areaTracker.Observe(raw);
-                ReconcileArea();
+        _diag?.Info(DiagCategory,
+            "Subscribing to L1 driver (unified classified pipe) for ProcessMapPin* + area reconcile");
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is MapPinLogEvent evt)
-                    Apply(evt);
-            }
-            catch (Exception ex)
+        _subscription = _driver.Subscribe<IClassifiedPlayerLogLine>(
+            envelope =>
             {
-                _diag?.Warn("GameState.Pins", $"Ingestion error: {ex.Message}");
-            }
+                // Both classes of envelopes arrive in source order on the
+                // unified pipe, so a LOADING LEVEL always lands before its
+                // following pin-replay burst — no cross-pump race.
+                switch (envelope.Payload)
+                {
+                    case SystemSignalLogLine { Kind: SystemSignalKind.AreaLoading } s:
+                        // The area parser handles the empty / ChooseCharacter
+                        // forms by returning AreaKey == null.
+                        if (_areaParser.TryParse(s.Data, s.Timestamp.UtcDateTime)
+                            is Areas.Parsing.AreaTransitionEvent areaEvt)
+                        {
+                            ReconcileArea(areaEvt.AreaKey);
+                        }
+                        break;
+
+                    case LocalPlayerLogLine l:
+                        if (_parser.TryParse(l.Data, l.Timestamp.UtcDateTime)
+                            is MapPinLogEvent pinEvt)
+                        {
+                            Apply(pinEvt);
+                        }
+                        break;
+
+                    // CombatActorLogLine / other SystemSignal kinds silently
+                    // no-op. Combat envelopes are rare on this consumer set;
+                    // a default warning would flood the diag log.
+                }
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = DiagCategory,
+            });
+
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
     }
 
-    /// <summary>
-    /// Drop the set whenever the shared area key changes (including the first
-    /// time it becomes known). The set is area-local; the new area's replay
-    /// burst — which follows the <c>LOADING LEVEL</c> line that moved the key
-    /// — repopulates it.
-    /// </summary>
-    private void ReconcileArea()
+    public override void Dispose()
     {
-        var area = _areaTracker.CurrentArea;
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
+    }
+
+    /// <summary>
+    /// Drop the set whenever the area key changes (including the first
+    /// time it becomes known). The set is area-local; the new area's replay
+    /// burst — which follows the <c>LOADING LEVEL</c> envelope that moved
+    /// the key — repopulates it. Called from the unified-pipe handler when a
+    /// new <see cref="SystemSignalKind.AreaLoading"/> envelope arrives.
+    /// </summary>
+    private void ReconcileArea(string? area)
+    {
         PinSetChanged? note = null;
         lock (_lock)
         {

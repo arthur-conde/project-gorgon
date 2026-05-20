@@ -1,4 +1,4 @@
-using Mithril.GameState.Areas;
+using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
@@ -6,55 +6,56 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Weather;
 
 /// <summary>
-/// Hosted-service implementation of <see cref="IPlayerWeatherTracker"/>. Tails
-/// <see cref="IPlayerLogStream"/>, parses <c>ProcessSetWeather</c> via
-/// <see cref="WeatherLogParser"/>, and holds the current <b>map's</b>
-/// <see cref="WeatherState"/> (condition + opaque flag + the line's UTC
-/// instant).
+/// Hosted-service implementation of <see cref="IPlayerWeatherTracker"/>.
+/// Subscribes to L1's unified classified pipe (#556 Phase 3), parses
+/// <c>ProcessSetWeather</c> on the <see cref="LocalPlayerLogLine"/>
+/// payload via <see cref="WeatherLogParser"/>, and holds the current
+/// <b>map's</b> <see cref="WeatherState"/> (condition + opaque flag + the
+/// line's UTC instant).
 ///
 /// <para><b>Lifecycle the service owns</b> (so no consumer hand-rolls it) —
 /// the same area-scoped shape as <see cref="Pins.PlayerPinTracker"/> because
 /// weather is per-map (owner-confirmed):</para>
 /// <list type="bullet">
-///   <item><b>Map change = drop.</b> Weather belongs to the map; on any
-///   <c>PlayerAreaTracker.CurrentArea</c> change the value is cleared and a
-///   <see cref="WeatherChangeKind.AreaChanged"/> (<c>State == null</c>) is
-///   raised. <c>null</c> reads as "weather unknown for this map" — for the
-///   <c>Vampirism</c> consumer that is distinct from a known clear sky, so a
-///   stale foggy/sunny value never bleeds across a zone.</item>
+///   <item><b>Map change = drop.</b> Weather belongs to the map; the
+///   tracker parses <see cref="SystemSignalKind.AreaLoading"/> envelopes
+///   off the unified pipe and clears the value on any change, raising a
+///   <see cref="WeatherChangeKind.AreaChanged"/> (<c>State == null</c>).
+///   <c>null</c> reads as "weather unknown for this map" — for the
+///   <c>Vampirism</c> consumer that is distinct from a known clear sky, so
+///   a stale foggy/sunny value never bleeds across a zone.</item>
 ///   <item><b>Genuine change = update + notify.</b> A new condition/flag for
 ///   the current map updates <see cref="Current"/> and raises
 ///   <see cref="WeatherChangeKind.Changed"/>.</item>
 ///   <item><b>Idempotent re-emit.</b> If PG re-emits the current weather on
 ///   zone entry (replay — unverified but plausible), the repeat is a no-op and
-///   raises nothing, so consumers stay quiet through a backlog (the same
-///   idempotence stance as <c>PlayerPinTracker</c>'s replay burst).</item>
+///   raises nothing, so consumers stay quiet through a backlog.</item>
 /// </list>
 ///
-/// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
-/// <see cref="Pins.PlayerPinTracker"/> / <see cref="Movement.PlayerPositionTracker"/>:
-/// shared live game-state must be available to consumers (the future
-/// <c>Vampirism</c> sun-damage feature; Palantir's debug surface) without
-/// depending on any module being activated. It also calls
-/// <see cref="PlayerAreaTracker.Observe(RawLogLine)"/> to keep the shared area
-/// tracker warm (idempotent when the position/pin trackers also feed it). No
-/// reverse-scan seed is needed here: the shared <see cref="PlayerAreaTracker"/>
-/// singleton is already seeded at startup by the position tracker, and a
-/// per-map weather emit lands inside the live window after its
-/// <c>LOADING LEVEL</c> line.</para>
+/// <para><b>Why the unified pipe — the race fix.</b> Pre-#556 this tracker
+/// read <c>PlayerAreaTracker.CurrentArea</c> for the map reconcile and
+/// tailed the raw Player.log for weather events. A zone-change burst
+/// (<c>LOADING LEVEL Foo</c> immediately followed by
+/// <c>ProcessSetWeather Sunny</c>) could be processed by the two pumps
+/// out of order — Weather seeing the new weather before the area tracker
+/// had advanced — and the resulting reconcile would drop the just-set
+/// value as a "stale prior-area" emit. Subscribing to the L0.5 unified
+/// classified pipe puts both envelopes on one ordered stream through a
+/// single subscription, so the area reconcile always precedes the weather
+/// emit for that area. Combat envelopes silently no-op.</para>
 ///
-/// <para><b>Threading.</b> Ingestion runs on the hosted-service loop thread;
-/// <see cref="CurrentArea"/>/<see cref="Current"/> reads, state mutation and
-/// subscriber dispatch are serialised under <c>_lock</c>; each notification
-/// carries an immutable record, so handlers may hold it. They run on the
-/// ingestion thread — non-trivial / UI work must marshal off (mirrors
-/// PlayerPinTracker).</para>
+/// <para><b>Threading.</b> The L1 driver's <c>InlineBridge</c> invokes the
+/// handler on its pump thread; <see cref="CurrentArea"/>/<see cref="Current"/>
+/// reads, state mutation and subscriber dispatch are serialised under
+/// <c>_lock</c>; each notification carries an immutable record, so handlers
+/// may hold it. They run on the L1 pump thread — non-trivial / UI work
+/// must marshal off (mirrors PlayerPinTracker).</para>
 /// </summary>
 public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTracker
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly WeatherLogParser _parser;
-    private readonly PlayerAreaTracker _areaTracker;
+    private readonly AreaTransitionParser _areaParser;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -62,22 +63,30 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
     private WeatherState? _current;
     private string? _trackedArea;
     private bool _areaInitialised;
+    private ILogSubscription? _subscription;
 
-    /// <param name="stream">The shared Player.log line stream this service tails.</param>
+    private const string DiagCategory = "GameState.Weather";
+
+    /// <param name="driver">L1 driver — subscribed to via the
+    /// <see cref="IClassifiedPlayerLogLine"/> unified pipe.</param>
     /// <param name="parser">Stateless line→<see cref="WeatherChangedEvent"/> parser.</param>
-    /// <param name="areaTracker">Shared map key source; also fed every line
-    /// here so it stays warm without another module being active.</param>
+    /// <param name="areaParser">Stateless parser used to extract the area
+    /// key from each <see cref="SystemSignalKind.AreaLoading"/> envelope
+    /// observed on the unified pipe. The tracker tracks its own area state
+    /// locally rather than reading from <c>PlayerAreaTracker</c>, so the
+    /// reconcile never depends on a separate pump's progress — closing the
+    /// pre-#556 zone-change race.</param>
     /// <param name="diag">Optional diagnostics sink (info on subscribe,
     /// warnings on ingestion / subscriber faults).</param>
     public PlayerWeatherTracker(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         WeatherLogParser parser,
-        PlayerAreaTracker areaTracker,
+        AreaTransitionParser areaParser,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _parser = parser;
-        _areaTracker = areaTracker;
+        _areaParser = areaParser;
         _diag = diag;
     }
 
@@ -111,45 +120,75 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
     }
 
     /// <summary>
-    /// The hosted-service ingestion loop: for every Player.log line, warm the
-    /// shared area tracker, reconcile a map change, then fold a parsed weather
-    /// event into the current map's state. Exits when
-    /// <paramref name="stoppingToken"/> is cancelled or the stream completes;
-    /// per-line exceptions are logged and swallowed so one bad line never
-    /// stops ingestion.
+    /// The hosted-service entry point. Opens an L1 subscription to the
+    /// unified classified pipe and parks until host shutdown — the L1
+    /// subscription runs its own pump, invoking the handler inline for
+    /// each envelope in source order.
     /// </summary>
     /// <param name="stoppingToken">Host shutdown signal.</param>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("GameState.Weather", "Subscribing to Player.log for ProcessSetWeather");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            try
-            {
-                // Same line stream carries map transitions; keep the shared
-                // tracker warm even when no other feeder is active.
-                _areaTracker.Observe(raw);
-                ReconcileArea();
+        _diag?.Info(DiagCategory,
+            "Subscribing to L1 driver (unified classified pipe) for ProcessSetWeather + area reconcile");
 
-                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is WeatherChangedEvent evt)
-                    Apply(evt);
-            }
-            catch (Exception ex)
+        _subscription = _driver.Subscribe<IClassifiedPlayerLogLine>(
+            envelope =>
             {
-                _diag?.Warn("GameState.Weather", $"Ingestion error: {ex.Message}");
-            }
+                switch (envelope.Payload)
+                {
+                    case SystemSignalLogLine { Kind: SystemSignalKind.AreaLoading } s:
+                        if (_areaParser.TryParse(s.Data, s.Timestamp.UtcDateTime)
+                            is AreaTransitionEvent areaEvt)
+                        {
+                            ReconcileArea(areaEvt.AreaKey);
+                        }
+                        break;
+
+                    case LocalPlayerLogLine l:
+                        if (_parser.TryParse(l.Data, l.Timestamp.UtcDateTime)
+                            is WeatherChangedEvent weatherEvt)
+                        {
+                            Apply(weatherEvt);
+                        }
+                        break;
+
+                    // CombatActorLogLine / other SystemSignal kinds silently
+                    // no-op (combat envelopes on the unified pipe — by
+                    // design; a default warning would flood the diag log).
+                }
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = DiagCategory,
+            });
+
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
     }
 
-    /// <summary>
-    /// Drop the weather whenever the shared map key changes (including the
-    /// first time it becomes known). Weather is per-map; the new map's
-    /// <c>ProcessSetWeather</c> — which follows the <c>LOADING LEVEL</c> line
-    /// that moved the key — repopulates it.
-    /// </summary>
-    private void ReconcileArea()
+    public override void Dispose()
     {
-        var area = _areaTracker.CurrentArea;
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
+    }
+
+    /// <summary>
+    /// Drop the weather whenever the map key changes (including the first
+    /// time it becomes known). Weather is per-map; the new map's
+    /// <c>ProcessSetWeather</c> — which follows the <c>LOADING LEVEL</c>
+    /// envelope on the same unified pipe — repopulates it.
+    /// </summary>
+    private void ReconcileArea(string? area)
+    {
         WeatherChanged? note = null;
         lock (_lock)
         {

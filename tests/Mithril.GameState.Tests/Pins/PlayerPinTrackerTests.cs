@@ -1,37 +1,66 @@
-using System.Threading.Channels;
 using FluentAssertions;
-using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Pins;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Logging;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Pins;
 
+/// <summary>
+/// L0.5 #556 Phase 3 — PlayerPinTracker now subscribes to the L1 driver's
+/// unified classified pipe instead of tailing the raw Player.log stream.
+/// Tests drive it via <see cref="TestLogStreamDriver"/> which pushes
+/// classified envelopes (LocalPlayer or SystemSignal) into the unified
+/// dispatch path that the splitter would have produced in production.
+/// </summary>
 public sealed class PlayerPinTrackerTests
 {
-    private static readonly DateTime Stamp = new(2026, 5, 18, 10, 10, 3, DateTimeKind.Utc);
+    private static readonly DateTimeOffset Ts =
+        new(2026, 5, 18, 10, 10, 3, TimeSpan.Zero);
 
-    private static PlayerPinTracker NewTracker(ScriptedStream stream, PlayerAreaTracker? area = null) =>
-        new(stream, new MapPinParser(),
-            area ?? new PlayerAreaTracker(new AreaTransitionParser()));
+    private static PlayerPinTracker NewTracker(TestLogStreamDriver driver) =>
+        new(driver, new MapPinParser(), new AreaTransitionParser());
 
-    private static string Area(string key) => $"[10:00:00] LOADING LEVEL {key}";
-    private static string Add(double x, double z, string label, int b = 0, int c = 0) =>
-        $"[10:10:03] LocalPlayer: ProcessMapPinAdd(1, {b}, {c}, ({x:0.00}, 0.00, {z:0.00}), \"{label}\")";
-    private static string Remove(double x, double z, string label) =>
-        $"[10:10:03] LocalPlayer: ProcessMapPinRemove(1, 0, 0, ({x:0.00}, 0.00, {z:0.00}), \"{label}\")";
+    /// <summary>
+    /// Builds a SystemSignal { AreaLoading } envelope carrying the
+    /// envelope-eaten <c>LOADING LEVEL …</c> payload (what the L0.5
+    /// splitter produces in production for the raw line
+    /// <c>[ts] LOADING LEVEL …</c>).
+    /// </summary>
+    private static SystemSignalLogLine AreaEnvelope(string areaKey, long seq) =>
+        new(
+            Timestamp: Ts,
+            Kind: SystemSignalKind.AreaLoading,
+            Data: $"LOADING LEVEL {areaKey}",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
+
+    private static LocalPlayerLogLine PinAdd(double x, double z, string label, long seq, int b = 0, int c = 0) =>
+        new(
+            Timestamp: Ts,
+            Data: $"ProcessMapPinAdd(1, {b}, {c}, ({x:0.00}, 0.00, {z:0.00}), \"{label}\")",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
+
+    private static LocalPlayerLogLine PinRemove(double x, double z, string label, long seq) =>
+        new(
+            Timestamp: Ts,
+            Data: $"ProcessMapPinRemove(1, 0, 0, ({x:0.00}, 0.00, {z:0.00}), \"{label}\")",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
 
     [Fact]
     public async Task Add_populates_current_area_pins_with_decoded_appearance()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(1425.06, 2924.99, "South", seq: 2, b: 1, c: 1));
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(1425.06, 2924.99, "South", b: 1, c: 1));
-            await RunUntilDrainedAsync(svc, stream);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentArea.Should().Be("AreaSerbule");
             var pin = svc.CurrentAreaPins.Should().ContainSingle().Subject;
@@ -48,47 +77,44 @@ public sealed class PlayerPinTrackerTests
     [Fact]
     public async Task Replay_burst_is_idempotent_no_duplicates_no_extra_events()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(10, 20, "A", seq: 2));
+        driver.PushReplay(PinAdd(30, 40, "B", seq: 3));
+        // Login/area-entry re-emits the whole set verbatim.
+        driver.PushReplay(PinAdd(10, 20, "A", seq: 4));
+        driver.PushReplay(PinAdd(30, 40, "B", seq: 5));
+
+        var svc = NewTracker(driver);
         try
         {
             var seen = new List<PinSetChanged>();
             using var sub = svc.Subscribe(seen.Add);
 
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(10, 20, "A"));
-            stream.Push(Stamp, Add(30, 40, "B"));
-            await stream.WaitForDrainAsync(cts.Token);
-            // Login/area-entry re-emits the whole set verbatim.
-            stream.Push(Stamp, Add(10, 20, "A"));
-            stream.Push(Stamp, Add(30, 40, "B"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentAreaPins.Should().HaveCount(2);
+            // 1 Snapshot from Subscribe (above) + 2 Adds (idempotent re-adds
+            // produce no notification).
             seen.Count(n => n.Kind == PinSetChange.Added).Should().Be(2);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task Remove_deletes_by_coordinate()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(10, 20, "A", seq: 2));
+        driver.PushReplay(PinRemove(10, 20, "A", seq: 3));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(10, 20, "A"));
-            stream.Push(Stamp, Remove(10, 20, "A"));
-            await RunUntilDrainedAsync(svc, stream);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentAreaPins.Should().BeEmpty();
         }
@@ -98,15 +124,17 @@ public sealed class PlayerPinTrackerTests
     [Fact]
     public async Task Rename_is_remove_then_add_at_same_coord()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(10, 20, "", seq: 2));
+        driver.PushReplay(PinRemove(10, 20, "", seq: 3));
+        driver.PushReplay(PinAdd(10, 20, "Calib 1", seq: 4));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(10, 20, ""));
-            stream.Push(Stamp, Remove(10, 20, ""));
-            stream.Push(Stamp, Add(10, 20, "Calib 1"));
-            await RunUntilDrainedAsync(svc, stream);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentAreaPins.Should().ContainSingle()
                 .Which.Label.Should().Be("Calib 1");
@@ -117,47 +145,41 @@ public sealed class PlayerPinTrackerTests
     [Fact]
     public async Task Area_change_swaps_the_set_and_raises_AreaChanged()
     {
-        var stream = new ScriptedStream();
-        var area = new PlayerAreaTracker(new AreaTransitionParser());
-        var svc = NewTracker(stream, area);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(10, 20, "A", seq: 2));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(10, 20, "A"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             var seen = new List<PinSetChanged>();
             using var sub = svc.Subscribe(seen.Add); // Snapshot replay first
-            stream.Push(Stamp, Area("AreaEltibule"));
-            await stream.WaitForDrainAsync(cts.Token);
+
+            driver.PushLive(AreaEnvelope("AreaEltibule", seq: 3));
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentArea.Should().Be("AreaEltibule");
             svc.CurrentAreaPins.Should().BeEmpty();
             seen.Should().Contain(n => n.Kind == PinSetChange.AreaChanged && n.Area == "AreaEltibule");
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task Subscribe_replays_snapshot_synchronously_then_delivers_live()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(10, 20, "A", seq: 2));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Add(10, 20, "A"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             var seen = new List<PinSetChanged>();
             using var sub = svc.Subscribe(seen.Add);
@@ -165,31 +187,56 @@ public sealed class PlayerPinTrackerTests
                 .Which.Should().Match<PinSetChanged>(n =>
                     n.Kind == PinSetChange.Snapshot && n.Pins.Count == 1);
 
-            stream.Push(Stamp, Add(30, 40, "B"));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(PinAdd(30, 40, "B", seq: 3));
+            await driver.DrainClassifiedAsync();
 
             var added = seen.Last();
             added.Kind.Should().Be(PinSetChange.Added);
             added.Pin!.Label.Should().Be("B");
             added.ObservedAt.Offset.Should().Be(TimeSpan.Zero);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
-    private static async Task RunUntilDrainedAsync(PlayerPinTracker svc, ScriptedStream stream)
+    [Fact]
+    public async Task Cross_pipe_ordering_AreaLoading_precedes_PinBurst_no_stale_drop()
+    {
+        // The unified-pipe race-fix property (#556 §1) — Pin tracker
+        // observes the LOADING LEVEL envelope BEFORE the pin replay burst
+        // for that area, so the ReconcileArea() drop fires first and the
+        // subsequent pins land in the *new* area's set rather than being
+        // wiped by a late-arriving area transition.
+        using var driver = new TestLogStreamDriver();
+        // Initial area + one pin.
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(PinAdd(100, 200, "OLD", seq: 2));
+
+        var svc = NewTracker(driver);
+        try
+        {
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
+            svc.CurrentArea.Should().Be("AreaSerbule");
+            svc.CurrentAreaPins.Should().ContainSingle().Which.Label.Should().Be("OLD");
+
+            // Live zone change burst: LOADING LEVEL followed immediately
+            // by the new area's pin-add. On the unified pipe these arrive
+            // in source-Sequence order through the single subscription,
+            // so AreaLoading is observed first.
+            driver.PushLive(AreaEnvelope("AreaEltibule", seq: 3));
+            driver.PushLive(PinAdd(500, 600, "NEW", seq: 4));
+            await driver.DrainClassifiedAsync();
+
+            svc.CurrentArea.Should().Be("AreaEltibule");
+            svc.CurrentAreaPins.Should().ContainSingle().Which.Label.Should().Be("NEW");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    private static async Task StartAsync(PlayerPinTracker svc)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var runTask = svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
-        await cts.CancelAsync();
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-        _ = runTask;
+        await svc.StartAsync(cts.Token);
     }
 
     private static async Task StopAsync(PlayerPinTracker svc)
@@ -197,40 +244,5 @@ public sealed class PlayerPinTrackerTests
         try { await svc.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)); }
         catch { /* test cleanup */ }
         svc.Dispose();
-    }
-
-    private sealed class ScriptedStream : IPlayerLogStream
-    {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
-
-        public ScriptedStream() => _drained.TrySetResult();
-
-        public void Push(DateTime ts, string line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(ts, line));
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
