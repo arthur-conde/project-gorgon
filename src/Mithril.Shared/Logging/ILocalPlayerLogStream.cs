@@ -13,4 +13,25 @@ namespace Mithril.Shared.Logging;
 public interface ILocalPlayerLogStream
 {
     IAsyncEnumerable<LocalPlayerLogLine> SubscribeAsync(CancellationToken ct);
+
+    /// <summary>
+    /// L1-facing variant: yields the same envelopes as
+    /// <see cref="SubscribeAsync"/> wrapped in <see cref="LogEnvelope{T}"/>
+    /// so each carries the structural <c>IsReplay</c> bit the L0.5 router
+    /// can answer authoritatively (a yield from the per-pipe replay
+    /// snapshot vs. a live emission from the bounded-channel branch).
+    /// Added in #550 PR 1 so L1's <see cref="LogEnvelope{T}.IsReplay"/>
+    /// flag is sourced from the upstream's own boundary rather than a
+    /// sync-vs-async heuristic. Existing consumers (pre-L1) continue to
+    /// use <see cref="SubscribeAsync"/> unchanged.
+    /// <para>The default implementation throws — implementors that drive
+    /// L1 (today: <see cref="PlayerLogActorRouter"/>) MUST override.
+    /// Non-L0.5 implementors (test fakes that never feed L1) can keep
+    /// the default thrower.</para>
+    /// </summary>
+    IAsyncEnumerable<LogEnvelope<LocalPlayerLogLine>> SubscribeWithReplayMarkerAsync(CancellationToken ct)
+        => throw new NotSupportedException(
+            "Implementors must override to mint authoritative replay markers. " +
+            "L0.5 only — the L1 driver (#550) consumes this. " +
+            "Non-L0.5 implementors (e.g. test fakes) can keep the default thrower if they don't drive L1.");
 }

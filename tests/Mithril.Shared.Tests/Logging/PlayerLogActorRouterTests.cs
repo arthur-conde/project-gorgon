@@ -173,6 +173,63 @@ public sealed class PlayerLogActorRouterTests
     }
 
     [Fact]
+    public async Task SubscribeWithReplayMarker_FlagsReplayThenLiveAuthoritatively()
+    {
+        // L1 (#550 PR 1) added the *WithReplayMarker variant; the router's
+        // direct-yield-replay branch flags IsReplay=true, the channel-read
+        // branch flags IsReplay=false. The L1 driver reads this bit; the
+        // L0.5 API gains a corresponding pin so future router refactors
+        // can't silently drop the boundary signal.
+        var upstream = new ScriptedPlayerLogStream();
+        using var router = new PlayerLogActorRouter(upstream);
+
+        // Seed three lines into the upstream BEFORE we subscribe, so the
+        // router's per-pipe replay buffer accumulates them. Then attach a
+        // first subscriber that holds the replay buffer open while a
+        // second subscriber late-joins via the marker variant.
+        upstream.Push("[20:01:17] LocalPlayer: ProcessAddItem(A(1), -1, False)");
+        upstream.Push("[20:01:18] LocalPlayer: ProcessAddItem(B(2), -1, False)");
+
+        using var holderCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var holderSink = new List<LocalPlayerLogLine>();
+        var holderTask = Task.Run(async () =>
+        {
+            await foreach (var item in router.SubscribeAsync(holderCts.Token))
+                holderSink.Add(item);
+        });
+        await WaitUntilAsync(() => holderSink.Count >= 2, TimeSpan.FromSeconds(5));
+
+        // Late-subscribe through the marker variant. The replay buffer
+        // should hand both prior lines back as IsReplay=true.
+        var collected = new List<LogEnvelope<LocalPlayerLogLine>>();
+        using var lateCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var lateTask = Task.Run(async () =>
+        {
+            await foreach (var envelope in router.SubscribeWithReplayMarkerAsync(lateCts.Token))
+            {
+                collected.Add(envelope);
+                if (collected.Count >= 3) break;
+            }
+        });
+
+        await WaitUntilAsync(() => collected.Count >= 2, TimeSpan.FromSeconds(5));
+        // Push one live line — the marker variant should flag it false
+        upstream.Push("[20:01:19] LocalPlayer: ProcessAddItem(C(3), -1, False)");
+        await lateTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        collected.Should().HaveCount(3);
+        collected[0].IsReplay.Should().BeTrue();
+        collected[0].Payload.Data.Should().StartWith("ProcessAddItem(A");
+        collected[1].IsReplay.Should().BeTrue();
+        collected[1].Payload.Data.Should().StartWith("ProcessAddItem(B");
+        collected[2].IsReplay.Should().BeFalse();
+        collected[2].Payload.Data.Should().StartWith("ProcessAddItem(C");
+
+        holderCts.Cancel();
+        try { await holderTask; } catch (OperationCanceledException) { }
+    }
+
+    [Fact]
     public async Task Fast_unsub_then_resub_does_not_double_route_lines_to_new_subscriber()
     {
         // #547 race: PlayerLogActorRouter.StopRunning previously nulled _runTask

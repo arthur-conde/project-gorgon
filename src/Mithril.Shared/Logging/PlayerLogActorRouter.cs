@@ -93,6 +93,15 @@ public sealed class PlayerLogActorRouter :
     IAsyncEnumerable<SystemSignalLogLine> ISystemSignalLogStream.SubscribeAsync(CancellationToken ct) =>
         Subscribe(_system, ct);
 
+    public IAsyncEnumerable<LogEnvelope<LocalPlayerLogLine>> SubscribeWithReplayMarkerAsync(
+        CancellationToken ct) => SubscribeWithMarker(_localPlayer, ct);
+
+    IAsyncEnumerable<LogEnvelope<CombatActorLogLine>> ICombatActorLogStream.SubscribeWithReplayMarkerAsync(
+        CancellationToken ct) => SubscribeWithMarker(_combat, ct);
+
+    IAsyncEnumerable<LogEnvelope<SystemSignalLogLine>> ISystemSignalLogStream.SubscribeWithReplayMarkerAsync(
+        CancellationToken ct) => SubscribeWithMarker(_system, ct);
+
     /// <summary>
     /// Diagnostics-only counters: total cheap-discards, total anomalies,
     /// total anomaly samples actually emitted to <see cref="IDiagnosticsSink"/>
@@ -143,6 +152,59 @@ public sealed class PlayerLogActorRouter :
             await foreach (var item in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 yield return item;
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                pipe.RemoveSubscriber(channel);
+                channel.Writer.TryComplete();
+                if (NoSubscribers()) StopRunning();
+            }
+        }
+    }
+
+    /// <summary>
+    /// L1-facing variant of <see cref="Subscribe{T}"/> (added #550 PR 1).
+    /// Same backlog-then-live-tail shape; each yielded item is paired with
+    /// the boundary bit that L0.5 can answer authoritatively (replay yields
+    /// from the snapshot; live yields from the channel branch). L1's driver
+    /// reads IsReplay directly off this method rather than guessing from
+    /// the iterator's sync-vs-async timing — the timing-based heuristic
+    /// loses items when the live channel happens to be non-empty by the
+    /// moment the L1 pump enters its read branch.
+    /// </summary>
+    private async IAsyncEnumerable<LogEnvelope<T>> SubscribeWithMarker<T>(
+        PipeRegistry<T> pipe, [EnumeratorCancellation] CancellationToken ct)
+        where T : class
+    {
+        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(1024)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = true,
+        });
+
+        T[] replay;
+        lock (_gate)
+        {
+            replay = pipe.SnapshotReplay();
+            pipe.AddSubscriber(channel);
+            EnsureRunning();
+        }
+
+        try
+        {
+            foreach (var item in replay)
+            {
+                if (ct.IsCancellationRequested) yield break;
+                yield return new LogEnvelope<T>(item, IsReplay: true);
+            }
+
+            await foreach (var item in channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                yield return new LogEnvelope<T>(item, IsReplay: false);
             }
         }
         finally
