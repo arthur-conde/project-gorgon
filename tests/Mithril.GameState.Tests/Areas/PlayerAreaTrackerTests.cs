@@ -5,6 +5,7 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
+using Mithril.Shared.Logging;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Areas;
@@ -236,5 +237,143 @@ public sealed class PlayerAreaTrackerTests : IDisposable
         // parser's "^" anchor. Use BOM-less UTF-8 to mirror live shape.
         File.WriteAllText(path, string.Join('\n', lines) + "\n", new UTF8Encoding(false));
         return path;
+    }
+
+    // ---- #556 Phase 2: L1 self-feed via SystemSignal pipe -----------------
+
+    private static SystemSignalLogLine MakeAreaLoading(string area, long seq) =>
+        new(
+            Timestamp: DateTimeOffset.UtcNow,
+            Kind: SystemSignalKind.AreaLoading,
+            Data: $"LOADING LEVEL {area}",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
+
+    private static SystemSignalLogLine MakeSignal(SystemSignalKind kind, string data, long seq) =>
+        new(
+            Timestamp: DateTimeOffset.UtcNow,
+            Kind: kind,
+            Data: data,
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
+
+    [Fact]
+    public async Task L1_self_feed_updates_CurrentArea_from_AreaLoading_envelopes()
+    {
+        // Phase 2 — AreaTracker subscribes via the L1 driver to the typed
+        // SystemSignal pipe and folds AreaLoading envelopes into CurrentArea.
+        // No other producer needs to call Observe(raw) for this state to
+        // stay live.
+        using var driver = new Mithril.GameState.Tests.TestSupport.TestLogStreamDriver();
+        driver.PushReplay(MakeAreaLoading("AreaSerbule", seq: 1));
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser(), driver: driver);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await tracker.StartAsync(cts.Token);
+        try
+        {
+            await driver.DrainSystemAsync();
+            tracker.CurrentArea.Should().Be("AreaSerbule");
+
+            driver.PushLive(MakeAreaLoading("AreaEltibule", seq: 2));
+            await driver.DrainSystemAsync();
+            tracker.CurrentArea.Should().Be("AreaEltibule");
+        }
+        finally
+        {
+            await tracker.StopAsync(CancellationToken.None);
+            tracker.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task L1_self_feed_ignores_non_AreaLoading_kinds()
+    {
+        // The handler filters for Kind == AreaLoading; other SystemSignal
+        // kinds (LoginBanner, PlayerAdded, SessionLifecycle) must not
+        // overwrite CurrentArea even when the typed pipe carries them.
+        using var driver = new Mithril.GameState.Tests.TestSupport.TestLogStreamDriver();
+        driver.PushReplay(MakeAreaLoading("AreaSerbule", seq: 1));
+        driver.PushReplay(MakeSignal(SystemSignalKind.LoginBanner,
+            "Logged in as character X. Time UTC=...", seq: 2));
+        driver.PushReplay(MakeSignal(SystemSignalKind.PlayerAdded,
+            "ProcessAddPlayer(...)", seq: 3));
+        driver.PushReplay(MakeSignal(SystemSignalKind.SessionLifecycle,
+            "loginCharacter", seq: 4));
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser(), driver: driver);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await tracker.StartAsync(cts.Token);
+        try
+        {
+            await driver.DrainSystemAsync();
+            tracker.CurrentArea.Should().Be("AreaSerbule");
+        }
+        finally
+        {
+            await tracker.StopAsync(CancellationToken.None);
+            tracker.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task L1_self_feed_and_Observe_double_feed_is_idempotent()
+    {
+        // Load-bearing Phase 2 safety: during the Phase 3 migration window
+        // both feed paths are live (L1 self-feed AND Pin/Weather/Position
+        // calling Observe(raw)). The double-feed must be idempotent under
+        // string-equality / last-writer-wins on the area key.
+        using var driver = new Mithril.GameState.Tests.TestSupport.TestLogStreamDriver();
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser(), driver: driver);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await tracker.StartAsync(cts.Token);
+        try
+        {
+            // Both paths see the same transition.
+            driver.PushLive(MakeAreaLoading("AreaSerbule", seq: 1));
+            await driver.DrainSystemAsync();
+            tracker.Observe(new RawLogLine(
+                Timestamp: DateTimeOffset.UtcNow,
+                Line: "[10:00:00] LOADING LEVEL AreaSerbule",
+                Sequence: 1,
+                ReadMonotonicTicks: 0));
+            tracker.CurrentArea.Should().Be("AreaSerbule");
+
+            // Race on the next transition: Observe lands first, then L1.
+            tracker.Observe(new RawLogLine(
+                Timestamp: DateTimeOffset.UtcNow,
+                Line: "[10:01:00] LOADING LEVEL AreaEltibule",
+                Sequence: 2,
+                ReadMonotonicTicks: 0));
+            tracker.CurrentArea.Should().Be("AreaEltibule");
+
+            driver.PushLive(MakeAreaLoading("AreaEltibule", seq: 2));
+            await driver.DrainSystemAsync();
+            // Same area key — last-writer-wins is a no-op.
+            tracker.CurrentArea.Should().Be("AreaEltibule");
+        }
+        finally
+        {
+            await tracker.StopAsync(CancellationToken.None);
+            tracker.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_with_null_driver_parks_cleanly()
+    {
+        // Test-path constructors omit the driver. ExecuteAsync must still
+        // start and stop cleanly without throwing.
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        await tracker.StartAsync(cts.Token);
+        // Observe path still works while parked.
+        tracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+        tracker.CurrentArea.Should().Be("AreaSerbule");
+
+        await tracker.StopAsync(CancellationToken.None);
+        tracker.Dispose();
     }
 }

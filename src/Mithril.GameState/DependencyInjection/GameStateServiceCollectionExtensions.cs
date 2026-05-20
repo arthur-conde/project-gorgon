@@ -47,8 +47,15 @@ public static class GameStateServiceCollectionExtensions
         // Area tracking is shared live game-state (Gandalf chest-area
         // stamping, Legolas per-area survey calibration, …). One parser,
         // one tracker, registered once here — consumers inject the tracker.
+        // Self-feeding hosted service since #556 Phase 2 — subscribes to
+        // the L0.5 SystemSignal pipe through the L1 driver and folds
+        // AreaLoading envelopes into CurrentArea. Pin/Weather/Position
+        // still call Observe(raw) until Phase 3 retires that surface;
+        // the double-feed is idempotent under last-writer-wins.
         services.AddSingleton<AreaTransitionParser>();
-        services.AddSingleton<PlayerAreaTracker>();
+        services
+            .AddSingleton<PlayerAreaTracker>()
+            .AddHostedService(sp => sp.GetRequiredService<PlayerAreaTracker>());
 
         // Shared live skill state from Player.log (ProcessLoadSkills /
         // ProcessUpdateSkill) — no character re-export required. Single parser,
