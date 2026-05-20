@@ -16,8 +16,12 @@ namespace Gandalf.Parsing;
 /// </summary>
 public sealed partial class InteractionEndParser : ILogParser
 {
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim, so this regex sees just the
+    // ProcessEndInteraction(...) body.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessEndInteraction\((?<id>-?\d+)\)""",
+        """ProcessEndInteraction\((?<id>-?\d+)\)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex EndRx();
 

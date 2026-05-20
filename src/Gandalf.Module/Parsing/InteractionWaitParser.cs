@@ -16,8 +16,12 @@ namespace Gandalf.Parsing;
 /// </summary>
 public sealed partial class InteractionWaitParser : ILogParser
 {
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim, so this regex sees just the
+    // ProcessWaitInteraction(...) body.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessWaitInteraction\((?<id>-?\d+),\s*\d+,\s*"(?<body>[^"]*)",""",
+        """ProcessWaitInteraction\((?<id>-?\d+),\s*\d+,\s*"(?<body>[^"]*)",""",
         RegexOptions.CultureInvariant)]
     private static partial Regex WaitRx();
 

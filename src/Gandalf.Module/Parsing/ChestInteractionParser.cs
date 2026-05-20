@@ -20,8 +20,12 @@ namespace Gandalf.Parsing;
 /// </summary>
 public sealed partial class ChestInteractionParser : ILogParser
 {
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim, so this regex sees just the
+    // ProcessStartInteraction(...) body.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessStartInteraction\((?<id>-?\d+),\s*\d+,\s*\d+,\s*(?:True|False),\s*"(?<name>[^"]+)"\)""",
+        """ProcessStartInteraction\((?<id>-?\d+),\s*\d+,\s*\d+,\s*(?:True|False),\s*"(?<name>[^"]+)"\)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex InteractionRx();
 

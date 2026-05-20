@@ -30,8 +30,13 @@ namespace Gandalf.Parsing;
 /// </summary>
 public sealed partial class BossKillCreditParser : ILogParser
 {
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim, so this regex sees just the
+    // ProcessScreenText(...) body. The substring guard above is unchanged
+    // — it's the cheap hot-path filter, not an envelope check.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessScreenText\(CombatInfo,\s*"You earned [\d\.]+\s*Combat Wisdom:\s*Killed (?:a |an |the )?(?<npc>[^"]+)"\)""",
+        """ProcessScreenText\(CombatInfo,\s*"You earned [\d\.]+\s*Combat Wisdom:\s*Killed (?:a |an |the )?(?<npc>[^"]+)"\)""",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex KillCreditRx();
 
