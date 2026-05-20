@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
@@ -45,7 +46,7 @@ public sealed class QuestServiceTests : IDisposable
 
         var stream = new ScriptedStream(Array.Empty<string>());
         var svc = new QuestService(
-            stream,
+            stream.Driver,
             new QuestJournalLoadParser(),
             new QuestAcceptedParser(refData),
             new QuestCompletedParser(refData),
@@ -280,7 +281,7 @@ public sealed class QuestServiceTests : IDisposable
                 QuestServiceStateJsonContext.Default.QuestServiceState);
             var bobView = new PerCharacterView<QuestServiceState>(bobActive, bobStore);
             var bobStream = new ScriptedStream(Array.Empty<string>());
-            var bobSvc = new QuestService(bobStream, new QuestJournalLoadParser(),
+            var bobSvc = new QuestService(bobStream.Driver, new QuestJournalLoadParser(),
                 new QuestAcceptedParser(refData), new QuestCompletedParser(refData), bobView, refData);
             try
             {
@@ -357,60 +358,108 @@ public sealed class QuestServiceTests : IDisposable
     }
 
     /// <summary>
-    /// In-memory <see cref="IPlayerLogStream"/> that lets tests push lines and
-    /// await drain. Mirrors the helper used by InventoryServiceTests.
+    /// Byte-equivalence regression test (#550 PR 2): the producer is a
+    /// state-rebuilder, so feeding the same backlog twice (cold start, then
+    /// a FromSessionStart replay of the very same lines) must yield
+    /// identical active/completed dicts on both runs.
     /// </summary>
-    private sealed class ScriptedStream : IPlayerLogStream
+    [Fact]
+    public async Task L1_replay_idempotence_byte_equivalence()
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        var quests = new[]
+        {
+            QuestFactory.Repeatable("quest_1", "Q1", "Quest 1", TimeSpan.FromHours(1)),
+            QuestFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1)),
+        };
+        IReadOnlyDictionary<string, QuestJournalEntry> firstActive;
+        IReadOnlyDictionary<string, QuestCompletionState> firstCompleted;
+        {
+            var (svc, stream, _, _, _) = Build(quests, character: "ReplayUser1");
+            try
+            {
+                stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
+                stream.Push("[10:01:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_2_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
+                stream.Push("[10:02:00] LocalPlayer: ProcessCompleteQuest(123, 1)");
+                await RunUntilDrainedAsync(svc, stream);
+                firstActive = svc.ActiveQuests;
+                firstCompleted = svc.CompletionHistory;
+            }
+            finally { await StopAsync(svc); }
+        }
 
-        public ScriptedStream(params string[] lines) : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
+        // Second pass — same lines surfaced as FromSessionStart replay (with
+        // a fresh character so persistence doesn't merge with the first
+        // pass's saved state).
+        {
+            var (svc, stream, _, _, _) = Build(quests, character: "ReplayUser2");
+            try
+            {
+                stream.Driver.PushReplay(MakeLocal(
+                    "ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+                    new DateTime(2026, 5, 18, 10, 0, 0, DateTimeKind.Utc)));
+                stream.Driver.PushReplay(MakeLocal(
+                    "ProcessBook(\"New Quest: <<<quest_2_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+                    new DateTime(2026, 5, 18, 10, 1, 0, DateTimeKind.Utc)));
+                stream.Driver.PushReplay(MakeLocal(
+                    "ProcessCompleteQuest(123, 1)",
+                    new DateTime(2026, 5, 18, 10, 2, 0, DateTimeKind.Utc)));
+                await RunUntilDrainedAsync(svc, stream);
+                svc.ActiveQuests.Keys.Should().BeEquivalentTo(firstActive.Keys);
+                svc.CompletionHistory.Keys.Should().BeEquivalentTo(firstCompleted.Keys);
+            }
+            finally { await StopAsync(svc); }
+        }
+    }
+
+    private static LocalPlayerLogLine MakeLocal(string dataNoEnvelope, DateTime ts) =>
+        new(new DateTimeOffset(ts, TimeSpan.Zero), dataNoEnvelope,
+            Sequence: 0, ReadMonotonicTicks: 0);
+
+    /// <summary>
+    /// Post-#550 PR 2: adapter that lets these tests keep scripting full
+    /// <c>[ts] LocalPlayer: …</c> Player.log lines while the
+    /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via
+    /// the L1 driver.
+    /// </summary>
+    private sealed class ScriptedStream : IDisposable
+    {
+        private const int TsPrefixLen = 11; // "[HH:MM:SS] "
+        private const string ActorToken = "LocalPlayer: ";
+
+        public TestLogStreamDriver Driver { get; } = new();
+
+        public ScriptedStream(params string[] lines)
+            : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            if (lines.Length == 0)
+            foreach (var line in lines) Driver.PushLive(ToLocal(line));
+        }
+
+        public void Push(string line) => Driver.PushLive(ToLocal(new RawLogLine(DateTime.UtcNow, line)));
+        public void Push(RawLogLine line) => Driver.PushLive(ToLocal(line));
+
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) =>
+            Driver.DrainLocalPlayerAsync(timeout);
+
+        public void Dispose() => Driver.Dispose();
+
+        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
+        {
+            var line = raw.Line;
+            var idx = 0;
+            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
+                idx = TsPrefixLen;
+            if (idx + ActorToken.Length <= line.Length
+                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
             {
-                _drained.TrySetResult();
-                return;
+                idx += ActorToken.Length;
             }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(line);
+            var data = idx == 0 ? line : line.Substring(idx);
+            return new LocalPlayerLogLine(
+                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
         }
-
-        public void Push(string line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
-        }
-
-        public void Push(RawLogLine line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(line);
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
-
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

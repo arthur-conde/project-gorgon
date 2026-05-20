@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Quests;
 
 /// <summary>
-/// Tails <see cref="IPlayerLogStream"/> for quest signals
+/// Subscribes to the L1 (#550) driver's LocalPlayer pipe for quest signals
 /// (<c>ProcessLoadQuests</c> bulk login + <c>ProcessBook("New Quest:" …)</c>
 /// per-accept + <c>ProcessCompleteQuest</c>) and maintains the per-character
 /// active journal + completion history. Mirrors the
@@ -23,15 +23,16 @@ namespace Mithril.GameState.Quests;
 /// session). Saving on each mutation; quest events arrive at most every few
 /// seconds, no debouncing needed.
 ///
-/// Threading: ingestion runs on the hosted-service thread, character-switch
-/// reloads run on the <see cref="PerCharacterView{T}.CurrentChanged"/>
-/// callback thread (typically the active-character service thread). Both
-/// dispatch to subscribers under the same lock as the snapshot accessors —
-/// subscribers must dispatch off-thread for non-trivial work.
+/// Threading: ingestion runs on the L1 driver's pump thread (archetype-A
+/// default = <c>DeliveryContext.Inline</c>), character-switch reloads run on
+/// the <see cref="PerCharacterView{T}.CurrentChanged"/> callback thread
+/// (typically the active-character service thread). Both dispatch to
+/// subscribers under the same lock as the snapshot accessors — subscribers
+/// must dispatch off-thread for non-trivial work.
 /// </summary>
 public sealed class QuestService : BackgroundService, IQuestService
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly QuestJournalLoadParser _journalLoadParser;
     private readonly QuestAcceptedParser _acceptedParser;
     private readonly QuestCompletedParser _completedParser;
@@ -44,9 +45,10 @@ public sealed class QuestService : BackgroundService, IQuestService
     private readonly Dictionary<string, QuestJournalEntry> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestCompletionState> _completed = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Action<QuestEvent>> _handlers = [];
+    private ILogSubscription? _subscription;
 
     public QuestService(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         QuestJournalLoadParser journalLoadParser,
         QuestAcceptedParser acceptedParser,
         QuestCompletedParser completedParser,
@@ -55,7 +57,7 @@ public sealed class QuestService : BackgroundService, IQuestService
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _journalLoadParser = journalLoadParser;
         _acceptedParser = acceptedParser;
         _completedParser = completedParser;
@@ -117,28 +119,47 @@ public sealed class QuestService : BackgroundService, IQuestService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("Quests", "Subscribing to Player.log for quest events");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
+        _diag?.Info("Quests", "Subscribing to L1 driver (LocalPlayer pipe) for quest events");
+        // archetype-A defaults — FromSessionStart replay + Inline delivery.
+        // Driver-owned containment retires the previous catch + _diag.Warn
+        // around Dispatch (capability C of #550).
+        _subscription = _driver.Subscribe<LocalPlayerLogLine>(
+            envelope =>
+            {
+                var line = "LocalPlayer: " + envelope.Payload.Data;
+                var ts = envelope.Payload.Timestamp.UtcDateTime;
+                Dispatch(line, ts);
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = "Quests",
+            });
+
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
         {
-            try { Dispatch(raw); }
-            catch (Exception ex) { _diag?.Warn("Quests", $"Ingestion error: {ex.Message}"); }
+            _subscription?.Dispose();
+            _subscription = null;
         }
     }
 
-    private void Dispatch(RawLogLine raw)
+    private void Dispatch(string line, DateTime ts)
     {
-        var ts = raw.Timestamp.UtcDateTime;
-        if (_journalLoadParser.TryParse(raw.Line, ts) is QuestJournalLoadedEvent loaded)
+        if (_journalLoadParser.TryParse(line, ts) is QuestJournalLoadedEvent loaded)
         {
             HandleJournalLoaded(loaded);
             return;
         }
-        if (_acceptedParser.TryParse(raw.Line, ts) is QuestAcceptedEvent accepted)
+        if (_acceptedParser.TryParse(line, ts) is QuestAcceptedEvent accepted)
         {
             HandleAccepted(accepted);
             return;
         }
-        if (_completedParser.TryParse(raw.Line, ts) is QuestCompletedEvent completed)
+        if (_completedParser.TryParse(line, ts) is QuestCompletedEvent completed)
         {
             HandleCompleted(completed);
         }
@@ -322,6 +343,8 @@ public sealed class QuestService : BackgroundService, IQuestService
     public override void Dispose()
     {
         _view.CurrentChanged -= OnViewCurrentChanged;
+        _subscription?.Dispose();
+        _subscription = null;
         base.Dispose();
     }
 

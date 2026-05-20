@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Mithril.TestSupport;
@@ -18,10 +19,10 @@ public sealed class PlayerSkillStateServiceTests
         "{type=Augmentation,raw=0,bonus=2,xp=0,tnl=1,max=0})";
 
     private static PlayerSkillStateService NewService(ScriptedStream stream)
-        => new(stream, new SkillLogParser());
+        => new(stream.Driver, new SkillLogParser());
 
     private static PlayerSkillStateService NewService(ScriptedStream stream, IReferenceDataService refData)
-        => new(stream, new SkillLogParser(), refData);
+        => new(stream.Driver, new SkillLogParser(), refData);
 
     private static SkillEntry SkillRef(string key, string display, string xpTable, int maxBonus = 25)
         => new(key, display, Id: 0, Combat: false, XpTable: xpTable, MaxBonusLevels: maxBonus,
@@ -388,6 +389,49 @@ public sealed class PlayerSkillStateServiceTests
         t.Level.Should().Be(10); // log progression untouched by enrichment
     }
 
+    /// <summary>
+    /// Byte-equivalence regression test (#550 PR 2): the producer is a
+    /// state-rebuilder, so feeding the same backlog twice (cold start, then
+    /// a FromSessionStart replay of the very same lines) must yield
+    /// identical snapshot state on both runs.
+    /// </summary>
+    [Fact]
+    public async Task L1_replay_idempotence_byte_equivalence()
+    {
+        IReadOnlyDictionary<string, SkillProgressSnapshot> firstPass;
+        DateTime firstMeasured;
+        {
+            using var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
+            var svc = NewService(stream);
+            await RunUntilDrainedAsync(svc, stream);
+            firstPass = svc.Current.Skills;
+            firstMeasured = svc.Current.MeasuredAt!.Value;
+        }
+
+        // Second pass — same line replayed under FromSessionStart (driver's
+        // replay phase). Final state must match.
+        {
+            using var stream = new ScriptedStream();
+            stream.Driver.PushReplay(MakeLocal(LoadLine, Ts(8, 22, 21)));
+            var svc = NewService(stream);
+            await RunUntilDrainedAsync(svc, stream);
+            svc.Current.Skills.Should().BeEquivalentTo(firstPass);
+            svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
+        }
+    }
+
+    private static LocalPlayerLogLine MakeLocal(string fullLine, DateTime ts)
+    {
+        // Strip "[ts] LocalPlayer: " envelope the same way L0.5 would.
+        const string Envelope = "[08:22:21] LocalPlayer: ";
+        var data = fullLine.StartsWith(Envelope, StringComparison.Ordinal)
+            ? fullLine.Substring(Envelope.Length)
+            : fullLine;
+        return new LocalPlayerLogLine(
+            new DateTimeOffset(ts, TimeSpan.Zero), data,
+            Sequence: 0, ReadMonotonicTicks: 0);
+    }
+
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
 
     private static async Task RunUntilDrainedAsync(PlayerSkillStateService svc, ScriptedStream stream)
@@ -398,48 +442,53 @@ public sealed class PlayerSkillStateServiceTests
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// Post-#550 PR 2: thin adapter that lets the existing test fixtures keep
+    /// scripting <see cref="RawLogLine"/>s while the service-under-test
+    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver. The
+    /// adapter classifies each input line the same way L0.5 would —
+    /// stripping the <c>[ts] LocalPlayer: </c> envelope where present —
+    /// and pushes the resulting <see cref="LocalPlayerLogLine"/> at the
+    /// underlying <see cref="TestLogStreamDriver"/>.
+    /// </summary>
+    private sealed class ScriptedStream : IDisposable
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        private const int TsPrefixLen = 11; // length of "[HH:MM:SS] "
+        private const string ActorToken = "LocalPlayer: ";
+
+        public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            if (lines.Length == 0)
-            {
-                _drained.TrySetResult();
-                return;
-            }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(line);
+            foreach (var line in lines) Driver.PushLive(ToLocal(line));
         }
 
-        public void Push(string line)
+        public void Push(string line) => Driver.PushLive(ToLocal(new RawLogLine(DateTime.UtcNow, line)));
+
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) =>
+            Driver.DrainLocalPlayerAsync(timeout);
+
+        public void Dispose() => Driver.Dispose();
+
+        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
         {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
-
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            // L0.5 classification: strip optional [ts] prefix + LocalPlayer:
+            // envelope. Tests pass full Player.log shapes; the driver's
+            // consumers see the post-classification Data payload.
+            var line = raw.Line;
+            var idx = 0;
+            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
+                idx = TsPrefixLen;
+            if (idx + ActorToken.Length <= line.Length
+                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
             {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
+                idx += ActorToken.Length;
             }
+            var data = idx == 0 ? line : line.Substring(idx);
+            return new LocalPlayerLogLine(
+                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
         }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

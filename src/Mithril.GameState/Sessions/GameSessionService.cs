@@ -6,9 +6,11 @@ namespace Mithril.GameState.Sessions;
 
 /// <summary>
 /// Hosted-service implementation of <see cref="IGameSessionService"/>.
-/// Consumes the L0.5 (#532) <see cref="ISystemSignalLogStream"/> — filters
-/// for <see cref="SystemSignalKind.LoginBanner"/>, parses the banner body
-/// via <see cref="LoginBannerParser"/>, and publishes session transitions to
+/// Consumes the L0.5 (#532) <see cref="ISystemSignalLogStream"/> via the L1
+/// (#550) <see cref="ILogStreamDriver"/> — subscribes for
+/// <see cref="SystemSignalLogLine"/>, filters for
+/// <see cref="SystemSignalKind.LoginBanner"/>, parses the banner body via
+/// <see cref="LoginBannerParser"/>, and publishes session transitions to
 /// subscribers + the shared <see cref="SessionAnchor"/> consumer. This is the
 /// L0.5 migration reference; pre-L0.5 the service consumed
 /// <see cref="IPlayerLogStream"/> and matched the banner shape itself.
@@ -20,36 +22,45 @@ namespace Mithril.GameState.Sessions;
 /// is a Mithril.Shared leaf that both depend on; only this service writes to
 /// it.</para>
 ///
-/// <para>Threading: ingestion runs on the hosted-service loop thread; subscriber
-/// dispatch happens under <c>_lock</c> both during replay (on the subscriber's
-/// thread) and during live publish (on the ingestion thread). Subscribers
-/// doing non-trivial work should dispatch off-thread immediately.</para>
+/// <para>Threading: the L1 driver delivers envelopes inline (the
+/// archetype-A default), so handler invocation runs on the driver's pump
+/// thread; subscriber dispatch happens under <c>_lock</c> both during replay
+/// (on the subscriber's thread) and during live publish (on the pump
+/// thread). Subscribers doing non-trivial work should dispatch off-thread
+/// immediately.</para>
 ///
 /// <para>Idempotency: a banner whose parsed <see cref="GameSession.SessionId"/>
 /// equals the current one (replay-on-relaunch within the same PG session) is
 /// dropped at this layer — neither <see cref="SessionStarted"/> nor the
 /// anchor's <c>AnchorChanged</c> re-fires.</para>
+///
+/// <para>Containment: the L1 driver wraps each handler invocation in
+/// try/catch + rate-limited Warn, retiring the per-service
+/// <see cref="ThrottledWarn"/> instance this service used to hold (#550
+/// capability C). Failures surface on
+/// <c>IDiagnosticsSink</c> under the <c>Session</c> category via the
+/// driver's <see cref="LogSubscriptionOptions.DiagnosticCategory"/>
+/// override.</para>
 /// </summary>
 public sealed class GameSessionService : BackgroundService, IGameSessionService
 {
-    private readonly ISystemSignalLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly SessionAnchor? _anchor;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ThrottledWarn _warn;
 
     private readonly object _lock = new();
     private readonly List<Action<GameSession>> _handlers = [];
     private GameSession? _current;
+    private ILogSubscription? _subscription;
 
     public GameSessionService(
-        ISystemSignalLogStream stream,
+        ILogStreamDriver driver,
         SessionAnchor? anchor = null,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _anchor = anchor;
         _diag = diag;
-        _warn = new ThrottledWarn(diag, "Session");
     }
 
     public GameSession? Current
@@ -75,20 +86,48 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("Session", "Subscribing to L0.5 system-signal pipe for login banner");
-        await foreach (var signal in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            // L0.5 already classified the line as a system signal — we only
-            // care about LoginBanner here. Other kinds (AreaLoading,
-            // PlayerAdded, SessionLifecycle) flow past without us.
-            if (signal.Kind != SystemSignalKind.LoginBanner) continue;
-            try
+        _diag?.Info("Session", "Subscribing to L1 driver (SystemSignal pipe) for login banner");
+        // archetype-A defaults — FromSessionStart replay + Inline delivery.
+        // Containment is owned by the driver; no per-service try/catch around
+        // the handler body (capability C of #550). A degraded subscription
+        // surfaces on IAttentionAggregator via the L1 attention source.
+        _subscription = _driver.Subscribe<SystemSignalLogLine>(
+            envelope =>
             {
-                if (!LoginBannerParser.TryParse(signal.Data, out var session)) continue;
-                Publish(session);
-            }
-            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
+                var signal = envelope.Payload;
+                // L0.5 already classified the line as a system signal — we only
+                // care about LoginBanner here. Other kinds (AreaLoading,
+                // PlayerAdded, SessionLifecycle) flow past without us.
+                if (signal.Kind != SystemSignalKind.LoginBanner) return ValueTask.CompletedTask;
+                if (LoginBannerParser.TryParse(signal.Data, out var session))
+                {
+                    Publish(session);
+                }
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = "Session",
+            });
+
+        // Park until the host stops. The L1 subscription runs its own pump
+        // on a Task.Run; ExecuteAsync's job is to dispose it on shutdown.
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
+    }
+
+    public override void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
     }
 
     private void Publish(GameSession session)

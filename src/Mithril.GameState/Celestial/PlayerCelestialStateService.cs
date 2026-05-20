@@ -7,7 +7,7 @@ namespace Mithril.GameState.Celestial;
 
 /// <summary>
 /// Hosted-service implementation of <see cref="IPlayerCelestialState"/>.
-/// Tails <see cref="IPlayerLogStream"/>, parses
+/// Subscribes to the L1 (#550) driver's LocalPlayer pipe, parses
 /// <c>ProcessSetCelestialInfo</c> via <see cref="CelestialLogParser"/>, and
 /// holds the latest <see cref="CelestialInfo"/> (phase + the line's UTC
 /// instant). Last-writer-wins keeps it advancing across phase roll-overs and
@@ -21,14 +21,15 @@ namespace Mithril.GameState.Celestial;
 /// position, there is no second source line and no area to warm, so the loop
 /// is a plain parse-and-publish.</para>
 ///
-/// <para><b>Threading.</b> Ingestion runs on the hosted-service loop thread;
+/// <para><b>Threading.</b> The L1 driver delivers envelopes on its pump
+/// thread (archetype-A default = <c>DeliveryContext.Inline</c>);
 /// <see cref="Current"/> reads and subscriber dispatch happen under
 /// <c>_lock</c>. Subscribers doing non-trivial work should marshal off-thread
 /// immediately (the Palantir VM dispatches to the UI thread).</para>
 /// </summary>
 public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCelestialState
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly CelestialLogParser _parser;
     private readonly IDiagnosticsSink? _diag;
 
@@ -36,13 +37,14 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
     private readonly List<Action<CelestialInfo>> _handlers = [];
     private readonly HashSet<string> _reportedUnknownTokens = new(StringComparer.Ordinal);
     private CelestialInfo? _current;
+    private ILogSubscription? _subscription;
 
     public PlayerCelestialStateService(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         CelestialLogParser parser,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _parser = parser;
         _diag = diag;
     }
@@ -68,12 +70,18 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("GameState.Celestial", "Subscribing to Player.log for ProcessSetCelestialInfo");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            try
+        _diag?.Info("GameState.Celestial",
+            "Subscribing to L1 driver (LocalPlayer pipe) for ProcessSetCelestialInfo");
+        // archetype-A defaults — FromSessionStart replay + Inline delivery.
+        // The parser uses a `(?<![A-Za-z])LocalPlayer:` lookbehind to reject
+        // sibling actor tokens like `NonLocalPlayer:`; re-prepend the envelope
+        // so that anchor still fires.
+        _subscription = _driver.Subscribe<LocalPlayerLogLine>(
+            envelope =>
             {
-                if (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime) is CelestialInfoEvent evt)
+                var line = "LocalPlayer: " + envelope.Payload.Data;
+                var ts = envelope.Payload.Timestamp.UtcDateTime;
+                if (_parser.TryParse(line, ts) is CelestialInfoEvent evt)
                 {
                     if (evt.Phase == MoonPhase.Unknown)
                         ReportUnknownToken(evt.RawPhase);
@@ -82,12 +90,29 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
                     _diag?.Trace("GameState.Celestial",
                         $"Moon phase: {evt.RawPhase} ({evt.Phase}) @ {evt.Timestamp:O}");
                 }
-            }
-            catch (Exception ex)
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
             {
-                _diag?.Warn("GameState.Celestial", $"Ingestion error: {ex.Message}");
-            }
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = "GameState.Celestial",
+            });
+
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
+    }
+
+    public override void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
     }
 
     /// <summary>
