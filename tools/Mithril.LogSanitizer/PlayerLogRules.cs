@@ -4,10 +4,14 @@ namespace Mithril.Tools.LogSanitizer;
 
 public sealed partial class PlayerLogRules : ILogSourceRules
 {
-    [GeneratedRegex(@"Logged in as character (?<name>\S+)", RegexOptions.CultureInvariant)]
+    // Banner: "[ts] Logged in as character <Name>. Time UTC=..." — \w+ stops at the trailing period.
+    [GeneratedRegex(@"Logged in as character (?<name>\w+)", RegexOptions.CultureInvariant)]
     private static partial Regex BannerPattern();
 
-    [GeneratedRegex(@"LocalPlayer: ProcessAddPlayer\((?<name>[^,)]+)", RegexOptions.CultureInvariant)]
+    // Real format: "LocalPlayer: ProcessAddPlayer(<int>, <int>, ""@appearance"", ""Name"", ""Description"", ...)".
+    // Player name is the 4th argument — second quoted string. First quoted string is the "@"-prefixed appearance.
+    // Skip past leading args + first quoted string, then capture the second quoted string.
+    [GeneratedRegex(@"LocalPlayer: ProcessAddPlayer\([^""]*""[^""]*"",\s*""(?<name>[^""]+)""", RegexOptions.CultureInvariant)]
     private static partial Regex AddPlayerPattern();
 
     public void DiscoverNames(string line, NameRegistry registry)

@@ -12,7 +12,7 @@ public sealed class PlayerLogRulesTests
         var registry = new NameRegistry();
         var rules = new PlayerLogRules();
 
-        rules.DiscoverNames("Logged in as character Daedric", registry);
+        rules.DiscoverNames("[20:01:14] Logged in as character Daedric. Time UTC=05/19/2026 20:01:14. Timezone Offset 01:00:00", registry);
 
         registry.TokenFor("Daedric").Should().Be("<CHARACTER>");
     }
@@ -23,7 +23,10 @@ public sealed class PlayerLogRulesTests
         var registry = new NameRegistry();
         var rules = new PlayerLogRules();
 
-        rules.DiscoverNames("[12:34:56] LocalPlayer: ProcessAddPlayer(Alice, 12345, 50.0, 30.0)", registry);
+        // Real Player.log ProcessAddPlayer has shape: (entity_id, sub_id, "@appearance", "Name", "Description", ...).
+        // The player name is the 4th argument — the second quoted string. The first quoted string is the
+        // appearance blob (starts with "@"). The regex must skip past the appearance to capture the name.
+        rules.DiscoverNames(@"[12:34:56] LocalPlayer: ProcessAddPlayer(-1107394649, 25042203, ""@Base2-m(sex=m)"", ""Alice"", ""A player!"", System.String[], (1,2,3))", registry);
 
         registry.TokenFor("Alice").Should().Be("<PLAYER_1>");
     }
@@ -34,8 +37,8 @@ public sealed class PlayerLogRulesTests
         var registry = new NameRegistry();
         var rules = new PlayerLogRules();
 
-        rules.DiscoverNames("Logged in as character Daedric", registry);
-        rules.DiscoverNames("[12:34:56] LocalPlayer: ProcessAddPlayer(Daedric, 12345, 50.0, 30.0)", registry);
+        rules.DiscoverNames("[20:01:14] Logged in as character Daedric. Time UTC=05/19/2026 20:01:14. Timezone Offset 01:00:00", registry);
+        rules.DiscoverNames(@"[12:34:56] LocalPlayer: ProcessAddPlayer(-1107394649, 25042203, ""@Base2-m(sex=m)"", ""Daedric"", ""A player!"", System.String[], (1,2,3))", registry);
 
         registry.TokenFor("Daedric").Should().Be("<CHARACTER>");
         registry.AllMappings.Should().HaveCount(1);
@@ -58,9 +61,9 @@ public sealed class PlayerLogRulesTests
         var registry = new NameRegistry();
         var rules = new PlayerLogRules();
 
-        rules.DiscoverNames("[12:34:56] LocalPlayer: ProcessAddPlayer(Alice, 1, 0, 0)", registry);
-        rules.DiscoverNames("[12:34:57] LocalPlayer: ProcessAddPlayer(Bob, 2, 0, 0)", registry);
-        rules.DiscoverNames("[12:34:58] LocalPlayer: ProcessAddPlayer(Alice, 1, 0, 0)", registry);
+        rules.DiscoverNames(@"[12:34:56] LocalPlayer: ProcessAddPlayer(-1, 2, ""@a"", ""Alice"", ""x"")", registry);
+        rules.DiscoverNames(@"[12:34:57] LocalPlayer: ProcessAddPlayer(-2, 2, ""@a"", ""Bob"", ""x"")", registry);
+        rules.DiscoverNames(@"[12:34:58] LocalPlayer: ProcessAddPlayer(-1, 2, ""@a"", ""Alice"", ""x"")", registry);
 
         registry.TokenFor("Alice").Should().Be("<PLAYER_1>");
         registry.TokenFor("Bob").Should().Be("<PLAYER_2>");
