@@ -84,6 +84,7 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 - **WPF resources** shared via `Mithril.Shared.Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
 - **Before editing any `*.xaml` or writing a new view, read [docs/wpf-gotchas.md](docs/wpf-gotchas.md)** — catalogues runtime-only WPF traps (hit-testing, null-leak templates, binding-mode defaults, `ItemContainerStyle` rules, etc.) that build green + tests green but break the UI silently.
 - **For C# work touching >1 type, load the LSP tool first** (`csharp-lsp` plugin is enabled; `ToolSearch query: "select:LSP"` to fetch its schema, then use it for go-to-def / find-refs / type info). Grep alone misses partial classes, source-generated members (`[ObservableProperty]` setters, JSON contexts), and overload signatures, so a "no callers" or "no implementations" claim from text search alone is not load-bearing.
+- **Cross-source correlation** — before wiring a new consumer that fuses Player.log + chat (or any two streams), read [docs/cross-source-correlation.md](docs/cross-source-correlation.md). It defines the Tier 1/2/3/4 decision tree and points at the canonical references (`PendingCorrelator<TKey,TReq>` for Tier 1, `MotherlodeMeasurementCoordinator` for Tier 2). Skip a tier and you'll reinvent the pre-#541 "credit at least 1 if the add never arrived" folk fallback.
 
 ### Game Data Paths
 
