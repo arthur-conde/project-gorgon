@@ -3,7 +3,7 @@
   "version": 1,
   "regexes": {
     "samwise.GardenLogParser.SetPetOwnerRx": {
-      "pattern": "LocalPlayer: ProcessSetPetOwner\\((\\d+),",
+      "pattern": "ProcessSetPetOwner\\((\\d+),",
       "source": "player",
       "module": "samwise",
       "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "SetPetOwnerRx" },

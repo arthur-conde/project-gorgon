@@ -6,11 +6,25 @@ namespace Samwise.Parsing;
 /// <summary>
 /// Parses Project Gorgon Player.log lines into GardenEvents.
 /// Patterns mirror GorgonHelper.html (lines 2683, 2691, 2727, 2788, 2842, 2867, 2885, 2890, 2861).
+///
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the <see cref="SetPetOwnerRx"/> guard no longer re-anchors on it.
+/// Pre-L0.5 anchored prefixes also stayed on the parser for the
+/// <c>IInventoryService</c>-sourced events (AddItem/DeleteItem moved to
+/// <c>InventoryService</c> per #525 and never reach this parser); the
+/// L1 migration only removes the actor anchor on the LocalPlayer-pipe
+/// patterns this parser still owns. All callers still pass raw test
+/// lines that include the <c>LocalPlayer:</c> prefix for back-compat —
+/// the unanchored regex matches both shapes.</para>
 /// </summary>
 public sealed partial class GardenLogParser : ILogParser
 {
     // Active-character tracking lives in ActiveCharacterLogSynchronizer.
-    [GeneratedRegex(@"LocalPlayer: ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]
+    // Post-L1 the LocalPlayer: actor envelope is already eaten upstream by
+    // L0.5; this parser sees only verbs from LocalPlayer-actored lines.
+    [GeneratedRegex(@"ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]
     private static partial Regex SetPetOwnerRx();
 
     [GeneratedRegex(@"Download appearance loop @(\w+)\(scale=([\d.]+)\)", RegexOptions.CultureInvariant)]
