@@ -96,6 +96,18 @@
                     </TextBlock>
                 </StackPanel>
 
+                <!-- Keywords — the item's raw classification tags as a second
+                     inert Fact strip (matrix #3, same idiom as the StatStrip
+                     above). Item keywords are non-navigable classification
+                     (no Keyword entity) ⇒ Fact tier, not a Link, even though
+                     the query engine can filter on them. Section (label +
+                     strip) self-hides when the item declares no keywords. -->
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding KeywordStrip.Pairs.Count, Converter={StaticResource PositiveIntToVis}}">
+                    <TextBlock Text="Keywords" Style="{StaticResource StructureSectionLabelStyle}"/>
+                    <c:FactTable DataContext="{Binding KeywordStrip}" HorizontalAlignment="Left"/>
+                </StackPanel>
+
                 <!-- Sources (vendor / drop / quest reward / …). ItemSourceChip →
                      Link enumeration (Density="List"; provenance suffix rides
                      from the source Detail via LinkVm.From). -->

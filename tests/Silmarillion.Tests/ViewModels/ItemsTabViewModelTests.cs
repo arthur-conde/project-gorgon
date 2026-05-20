@@ -562,6 +562,107 @@ public sealed class ItemsTabViewModelTests
         vm.DetailViewModel.TreasureProfileLink.Should().BeNull();
     }
 
+    // ── Footer — InternalName + Id, both KEY/copyable ──────────────────────────
+    // Matrix #14 · G-a · ratified E5. Items have two cross-entity reference
+    // identifiers: InternalName (used by name-keyed consumers) and the numeric
+    // Id (recipes index ingredients/results by {"ItemCode": <int>}, so the id
+    // is the primary cross-reference from the recipe graph). E5 demands both
+    // are copyable — neither is storage-only. NOT the Effect precedent (which
+    // uses ROW because its envelope is the only handle, no clean InternalName).
+
+    [Fact]
+    public void Footer_ItemWithIdAndInternalName_BothCellsAreCopyableKey()
+    {
+        var item = new Item { Id = 5010, InternalName = "GardenSalad", Name = "Garden Salad" };
+        var refData = new StubReferenceData { ItemsByName = { ["GardenSalad"] = item } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = item;
+
+        var footer = vm.DetailViewModel!.Footer;
+        footer.HasIds.Should().BeTrue();
+        footer.Ids.Should().HaveCount(2);
+
+        footer.Ids[0].LabelTag.Should().Be("KEY");
+        footer.Ids[0].Value.Should().Be("GardenSalad");
+        footer.Ids[0].Copyable.Should().BeTrue(
+            "InternalName is a cross-entity reference (named-key consumers — E5)");
+
+        footer.Ids[1].LabelTag.Should().Be("KEY");
+        footer.Ids[1].Value.Should().Be("5010",
+            "bare-int Id matches recipes' ItemCode cross-reference form");
+        footer.Ids[1].Copyable.Should().BeTrue(
+            "Id is a cross-entity reference (recipes index by ItemCode — E5)");
+    }
+
+    [Fact]
+    public void Footer_ItemWithIdButNoInternalName_ShowsOnlyIdCell()
+    {
+        // Belt-and-braces: a missing InternalName must not suppress the id
+        // cell — each cell is independently gated. Reached via direct VM
+        // construction since ItemsTab keys on Name.
+        var item = new Item { Id = 5010, Name = "Mystery Item" };
+        var refData = new StubReferenceData();
+
+        var detail = new ItemDetailViewModel(item, refData);
+
+        detail.Footer.Ids.Should().HaveCount(1);
+        detail.Footer.Ids[0].LabelTag.Should().Be("KEY");
+        detail.Footer.Ids[0].Value.Should().Be("5010");
+        detail.Footer.Ids[0].Copyable.Should().BeTrue();
+    }
+
+    // ── Keywords — raw classification tags as an inert Fact strip ──────────────
+    // Item keywords are non-navigable (no Keyword entity) ⇒ Fact tier, not a
+    // Link, even though the query engine can filter on them. Verbatim JSON form
+    // per tag, order preserved; the section self-hides when there are none.
+
+    [Fact]
+    public void Keywords_ItemWithKeywords_StripIsVerbatimAndOrdered()
+    {
+        var salad = new Item
+        {
+            Id = 1,
+            InternalName = "GardenSalad",
+            Name = "Garden Salad",
+            Keywords =
+            [
+                new ItemKeyword("Loot", 0),
+                new ItemKeyword("VegetarianDish", 84),
+                new ItemKeyword("Salad", 0),
+            ],
+        };
+        var refData = new StubReferenceData { ItemsByName = { ["GardenSalad"] = salad } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = salad;
+
+        var strip = vm.DetailViewModel!.KeywordStrip;
+        strip.Pairs.Select(p => p.Label).Should().AllBeEquivalentTo((string?)null,
+            "keywords render value-only — the inert StatStrip idiom");
+        strip.Pairs.Select(p => p.Value).Should().Equal(
+            "Loot", "VegetarianDish=84", "Salad");
+    }
+
+    [Fact]
+    public void Keywords_ItemWithoutKeywords_StripEmpty_SectionHidden()
+    {
+        var plain = new Item { Id = 1, InternalName = "PlainRock", Name = "Plain Rock" };
+        var refData = new StubReferenceData { ItemsByName = { ["PlainRock"] = plain } };
+        var vm = new ItemsTabViewModel(refData,
+            new SilmarillionReferenceNavigator(Array.Empty<IReferenceKindTarget>()),
+            new ReferenceDataEntityNameResolver(refData));
+
+        vm.SelectedItem = plain;
+
+        vm.DetailViewModel!.KeywordStrip.Pairs.Should().BeEmpty(
+            "no keywords ⇒ empty strip and the section self-hides");
+    }
+
     private static SilmarillionReferenceNavigator NavWithRecipe() =>
         new(new IReferenceKindTarget[] { new StubKindTarget(EntityKind.Recipe) });
 
