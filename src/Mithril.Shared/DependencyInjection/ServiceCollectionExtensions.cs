@@ -106,6 +106,42 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Register the L1 subscription driver (#511 deliverable 3 / #550 PR 1).
+    /// Sits between the L0.5 typed pipes (registered by
+    /// <see cref="AddMithrilLogActorRouter"/>) + the L0
+    /// <see cref="IChatLogStream"/>, and produces typed
+    /// <see cref="LogEnvelope{T}"/> subscriptions with cross-cutting
+    /// concerns owned by the driver: <see cref="ReplayMode"/>,
+    /// <see cref="LogEnvelope{T}.IsReplay"/>, per-handler containment,
+    /// drop accounting, <see cref="DeliveryContext"/> marshalling,
+    /// opt-in <see cref="LogSubscriptionOptions.SkipProcessedHighWater"/>
+    /// idempotence filter, and a per-subscription fault SM that surfaces
+    /// degraded subscriptions on <see cref="IAttentionAggregator"/> via the
+    /// <see cref="LogStreamAttentionSource"/> registered alongside.
+    ///
+    /// <para>This registration is a NO-OP for existing consumers — every
+    /// archetype-A producer and archetype-B consumer continues to consume
+    /// the L0 / L0.5 surfaces directly until the consumer-migration PRs land.
+    /// PR 1 of #550 ships the driver only.</para>
+    /// </summary>
+    public static IServiceCollection AddMithrilLogStreamDriver(this IServiceCollection services)
+    {
+        services.AddSingleton<LogStreamAttentionSource>();
+        // Surface the attention source via the shared IAttentionSource
+        // contract so AttentionAggregator picks it up alongside the
+        // per-module sources.
+        services.AddSingleton<Modules.IAttentionSource>(sp => sp.GetRequiredService<LogStreamAttentionSource>());
+        services.AddSingleton<ILogStreamDriver>(sp => new LogStreamDriver(
+            sp.GetRequiredService<ILocalPlayerLogStream>(),
+            sp.GetRequiredService<ICombatActorLogStream>(),
+            sp.GetRequiredService<ISystemSignalLogStream>(),
+            sp.GetRequiredService<IChatLogStream>(),
+            sp.GetRequiredService<LogStreamAttentionSource>(),
+            sp.GetService<IDiagnosticsSink>()));
+        return services;
+    }
+
+    /// <summary>
     /// Register the root directory for per-character storage (typically
     /// <c>%LocalAppData%/Mithril/characters</c>). Must be called before any
     /// <see cref="AddPerCharacterStore{T}"/> / <see cref="AddPerCharacterModuleStore{T}"/>.
