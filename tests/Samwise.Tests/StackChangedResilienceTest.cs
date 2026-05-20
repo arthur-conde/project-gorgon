@@ -53,14 +53,14 @@ public class StackChangedResilienceTest
         });
 
         // 1) ProcessAddItem — fires Added, creates the entry.
-        stream.Push(new RawLogLine(new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
-            "[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)"));
+        stream.Push("[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)",
+            new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc));
         await stream.WaitForDrainAsync(cts.Token);
 
         // 2) ProcessUpdateItemCode — fires StackChanged on the existing entry.
         //    Pre-fix this triggered InvalidOperationException in OnInventoryEvent.
-        stream.Push(new RawLogLine(new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc),
-            "[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)"));
+        stream.Push("[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)",
+            new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
         await stream.WaitForDrainAsync(cts.Token);
 
         observed.Should().BeNull(
@@ -73,35 +73,98 @@ public class StackChangedResilienceTest
         _ = runTask;
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// Minimal <see cref="ILogStreamDriver"/> fake for Samwise tests after the
+    /// L1 migration (#565): only the <see cref="LocalPlayerLogLine"/> pipe is
+    /// exercised here (no chat). Strips the standard
+    /// <c>[HH:MM:SS] LocalPlayer: </c> envelope from pushed Player.log shapes
+    /// so the test reads like the pre-L1 raw-line stream did.
+    /// </summary>
+    private sealed class ScriptedStream : ILogStreamDriver
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
+        private const int TsPrefixLen = 11;             // length of "[HH:MM:SS] "
+        private const string ActorToken = "LocalPlayer: ";
+
+        private readonly Channel<LocalPlayerLogLine> _channel =
+            Channel.CreateUnbounded<LocalPlayerLogLine>();
         private long _pending;
         private TaskCompletionSource _drained = NewDrainTcs();
 
-        public void Push(RawLogLine line)
+        public ILogSubscription Subscribe<T>(
+            Func<LogEnvelope<T>, ValueTask> handler,
+            LogSubscriptionOptions? options = null) where T : class
+        {
+            if (typeof(T) == typeof(LocalPlayerLogLine))
+            {
+                var typed = (Func<LogEnvelope<LocalPlayerLogLine>, ValueTask>)(object)handler;
+                var cts = new CancellationTokenSource();
+                _ = Task.Run(() => PumpAsync(typed, cts.Token));
+                // Fire-and-forget cancel on dispose. Any in-flight handler invocation
+                // unwinds on its own thread; tests don't need to wait for it.
+                return new Sub(() => { try { cts.Cancel(); } catch { } });
+            }
+            // Chat / other pipes: accept-and-ignore so InventoryService's second
+            // Subscribe<RawLogLine> call doesn't blow up. Samwise tests don't
+            // exercise the chat path.
+            return new Sub(() => { });
+        }
+
+        public void Push(string line, DateTime? timestamp = null)
         {
             Interlocked.Increment(ref _pending);
             Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(line);
+            _channel.Writer.TryWrite(new LocalPlayerLogLine(
+                new DateTimeOffset(timestamp ?? DateTime.UtcNow, TimeSpan.Zero),
+                StripEnvelope(line), 0, 0));
         }
 
         public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        private async Task PumpAsync(
+            Func<LogEnvelope<LocalPlayerLogLine>, ValueTask> handler, CancellationToken ct)
         {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            try
             {
-                while (_channel.Reader.TryRead(out var line))
+                while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
                 {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0) _drained.TrySetResult();
+                    while (_channel.Reader.TryRead(out var line))
+                    {
+                        try { await handler(new LogEnvelope<LocalPlayerLogLine>(line, IsReplay: false)).ConfigureAwait(false); }
+                        catch { /* mirror driver containment */ }
+                        finally
+                        {
+                            if (Interlocked.Decrement(ref _pending) == 0) _drained.TrySetResult();
+                        }
+                    }
                 }
             }
+            catch (OperationCanceledException) { /* expected on dispose */ }
+        }
+
+        private static string StripEnvelope(string line)
+        {
+            var idx = 0;
+            if (line.Length > TsPrefixLen
+                && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
+                idx = TsPrefixLen;
+            if (idx + ActorToken.Length <= line.Length
+                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
+                idx += ActorToken.Length;
+            return idx == 0 ? line : line.Substring(idx);
         }
 
         private static TaskCompletionSource NewDrainTcs() =>
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private sealed class Sub : ILogSubscription
+        {
+            private readonly Action _onDispose;
+            public Sub(Action onDispose) { _onDispose = onDispose; }
+            public string Id => "samwise#scripted";
+            public LogSubscriptionDiagnostics Diagnostics =>
+                new(0, 0, 0, 0, 0, LogSubscriptionState.Healthy);
+            public event EventHandler? StateChanged { add { } remove { } }
+            public void Dispose() => _onDispose();
+        }
     }
 }
