@@ -1,9 +1,9 @@
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using System.IO;
-using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
@@ -19,7 +19,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessAddItem(AppleJuice(99), -1, False)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         svc.TryResolve(42, out var a).Should().BeTrue();
@@ -39,7 +39,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         svc.TryResolve(42, out var name).Should().BeTrue();
@@ -52,7 +52,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
 
@@ -72,7 +72,7 @@ public sealed class InventoryServiceTests
     {
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessDeleteItem(999)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var deleted = new List<InventoryEvent>();
         using var sub = svc.Subscribe(e => { if (e.Kind == InventoryEventKind.Deleted) deleted.Add(e); });
 
@@ -92,7 +92,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         var replayed = new List<InventoryEvent>();
@@ -116,7 +116,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         var replayed = new List<InventoryEvent>();
@@ -139,7 +139,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             new RawLogLine(ts1, "[10:00:00] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)"),
             new RawLogLine(ts2, "[10:00:01] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)"));
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         var replayed = new List<InventoryEvent>();
@@ -154,7 +154,7 @@ public sealed class InventoryServiceTests
     public async Task DisposeSubscription_StopsFurtherEvents()
     {
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -184,7 +184,7 @@ public sealed class InventoryServiceTests
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)"); // size 4
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunUntilDrainedAsync(svc, stream);
 
         var replayed = new List<InventoryEvent>();
@@ -200,7 +200,7 @@ public sealed class InventoryServiceTests
     public async Task UpdateItemCode_FiresStackChangedEventWithNewSize()
     {
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -233,7 +233,7 @@ public sealed class InventoryServiceTests
         // numeric size matches. So set up a confirmed entry first, then
         // verify a literal repeat is suppressed.
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -265,7 +265,7 @@ public sealed class InventoryServiceTests
         // so subscribers know the size is now trustworthy — even when the decoded
         // size happens to be 1.
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -293,7 +293,7 @@ public sealed class InventoryServiceTests
     public async Task RemoveFromStorageVault_FiresStackChangedWithLiteralSize()
     {
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -322,7 +322,7 @@ public sealed class InventoryServiceTests
             "[00:00:01] LocalPlayer: ProcessAddItem(GiantSkull(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 3211264, True)", // size 50
             "[00:00:03] LocalPlayer: ProcessDeleteItem(100)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
 
@@ -342,7 +342,7 @@ public sealed class InventoryServiceTests
         // DrainPendingStale at entry, so the next unrelated event evicts it.
         var time = new ManualTimeProvider(new DateTime(2026, 4, 25, 14, 0, 0, DateTimeKind.Utc));
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, time: time);
+        var svc = new InventoryService(stream.Driver, time: time);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         // 1) Drive an AddItem with no chat correlation → enqueues _pendingAdd["Moonstone"].
@@ -386,7 +386,7 @@ public sealed class InventoryServiceTests
 }
 """);
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -424,7 +424,7 @@ public sealed class InventoryServiceTests
 }
 """);
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -465,7 +465,7 @@ public sealed class InventoryServiceTests
 }
 """);
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -489,7 +489,7 @@ public sealed class InventoryServiceTests
         // export's authoritative size and fire StackChanged so subscribers see it.
         using var fixture = new SeedFixture();
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -538,7 +538,7 @@ public sealed class InventoryServiceTests
         // and just refresh _seededStackSizes for future AddItems.
         using var fixture = new SeedFixture();
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -594,7 +594,7 @@ public sealed class InventoryServiceTests
 }
 """);
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var runTask = svc.StartAsync(CancellationToken.None);
 
         var events = new List<InventoryEvent>();
@@ -620,7 +620,7 @@ public sealed class InventoryServiceTests
     {
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
 
         var goodEvents = new List<InventoryEvent>();
         using var bad = svc.Subscribe(_ => throw new InvalidOperationException("boom"));
@@ -726,53 +726,39 @@ public sealed class InventoryServiceTests
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// Driver-backed test stream. Wraps <see cref="TestLogStreamDriver"/> and
+    /// pre-strips Player.log shapes onto the LocalPlayer pipe via
+    /// <see cref="TestLogEnvelopeFactory.FromRawLine(RawLogLine)"/> — matches
+    /// the L0.5 router's envelope-strip behaviour so InventoryService's
+    /// LocalPlayer subscription sees the same shape as in production. Ctor
+    /// pushes lines as <em>replay</em> (so they're available before the
+    /// subscription starts); <see cref="Push"/> pushes <em>live</em>.
+    /// </summary>
+    internal sealed class ScriptedStream : IDisposable
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        public TestLogStreamDriver Driver { get; } = new();
 
-        public ScriptedStream(params string[] lines) : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
+        public ScriptedStream(params string[] lines)
+            : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            if (lines.Length == 0)
-            {
-                // No initial lines — leave _drained signalled so callers can use Push.
-                _drained.TrySetResult();
-                return;
-            }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(line);
+            foreach (var line in lines)
+                Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(string line)
-        {
-            // Reset drain latch for the next batch so callers can wait on the
-            // newly pushed line(s) without a stale completion firing.
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
-        }
+        public void Push(string line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
 
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
+        public void Push(RawLogLine line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) =>
+            Driver.DrainLocalPlayerAsync(timeout);
 
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Dispose() => Driver.Dispose();
     }
 }

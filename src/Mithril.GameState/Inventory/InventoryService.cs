@@ -11,12 +11,25 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Inventory;
 
 /// <summary>
-/// Eagerly subscribes to <see cref="IPlayerLogStream"/> at shell startup and
-/// maintains the canonical <c>instanceId → (InternalName, StackSize)</c> map.
-/// The stream's session-replay buffer guarantees that the initial flush of
-/// <c>ProcessAddItem</c> events is observed here regardless of subscriber
-/// ordering; modules that need inventory lookups should depend on
-/// <see cref="IInventoryService"/> rather than re-parsing the log.
+/// Eagerly subscribes to the L1 driver's LocalPlayer + chat pipes at shell
+/// startup and maintains the canonical <c>instanceId → (InternalName, StackSize)</c>
+/// map. The driver's per-pipe session-replay buffer guarantees that the
+/// initial flush of <c>ProcessAddItem</c> events is observed here regardless
+/// of subscriber ordering; modules that need inventory lookups should depend
+/// on <see cref="IInventoryService"/> rather than re-parsing the log.
+///
+/// <para><b>L1 migration (#565).</b> Player.log consumption moved from
+/// <see cref="IPlayerLogStream"/> to
+/// <see cref="ILogStreamDriver.Subscribe{T}"/> over
+/// <see cref="LocalPlayerLogLine"/>; chat moved from
+/// <see cref="IChatLogStream"/> to <see cref="RawLogLine"/>. The Tier-1
+/// <see cref="PendingCorrelator{TKey,TReq}"/> stays — chat + Player.log are
+/// two physically separate sources with no shared total order, so the
+/// 5-second TTL correlator is the right ordering primitive (not the L1
+/// multi-pipe shape used by Position / Pin / Weather in #556). What L1
+/// adds: per-message handler containment, drop accounting, and the fault
+/// state machine that surfaces a degraded subscription on
+/// <see cref="Mithril.Shared.Modules.IAttentionAggregator"/>.</para>
 ///
 /// Subscribers attach via <see cref="Subscribe"/>, which atomically replays
 /// the current live-map contents before going live. This closes the late-join
@@ -33,9 +46,10 @@ namespace Mithril.GameState.Inventory;
 ///   splits, merges, plant-consumption, and similar in-place mutations.</item>
 ///   <item><c>ProcessRemoveFromStorageVault(_, _, Id, N)</c> carries the literal
 ///   stack size for vault-to-bag transfers. Authoritative when present.</item>
-///   <item>Chat <c>[Status] X [xN] added to inventory.</c> via
-///   <see cref="IChatLogStream"/> carries the count for fresh additions —
-///   correlated to <c>ProcessAddItem</c> by InternalName + arrival window.</item>
+///   <item>Chat <c>[Status] X [xN] added to inventory.</c> via the L1
+///   <c>Subscribe&lt;RawLogLine&gt;</c> chat pipe carries the count for fresh
+///   additions — correlated to <c>ProcessAddItem</c> by InternalName +
+///   arrival window.</item>
 /// </list>
 /// Stack size for entries marked <c>Deleted</c> is retained so late lookups
 /// (Arwen's gift-attribution path) can see the pre-removal size.
@@ -62,20 +76,23 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // Chat-side correlation has a small staleness window; entries older than this are dropped.
     private static readonly TimeSpan PendingChatTtl = TimeSpan.FromSeconds(5);
 
-    private readonly IPlayerLogStream _stream;
-    private readonly IChatLogStream? _chatStream;
+    private readonly ILogStreamDriver _driver;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
     private readonly GameConfig? _gameConfig;
     private readonly TimeProvider _time;
     private FileSystemWatcher? _seedWatcher;
     private Timer? _seedDebounce;
+    private ILogSubscription? _playerSubscription;
+    private ILogSubscription? _chatSubscription;
 
     // _subLock guards _map and _handlers. _pendingChat / _pendingAdd are
     // PendingCorrelator instances that are independently thread-safe via their own
-    // internal _gate; they don't require _subLock for correctness, but both
-    // ingestion loops take _subLock around correlator calls anyway so the
-    // drain-then-mutate-_map sequence stays atomic within a handler.
+    // internal _gate; they don't require _subLock for correctness, but both L1
+    // subscription handlers (OnLocalPlayer, OnChat) take _subLock around correlator
+    // calls anyway so the drain-then-mutate-_map sequence stays atomic within a
+    // handler. The two subscriptions have independent pump threads, so _subLock is
+    // load-bearing for cross-pipe serialization too.
     private readonly object _subLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
     private readonly List<Action<InventoryEvent>> _handlers = new();
@@ -134,16 +151,14 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private readonly record struct LiveEntrySnapshot(long Id, int Size, bool Confirmed);
 
     public InventoryService(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         IDiagnosticsSink? diag = null,
-        IChatLogStream? chatStream = null,
         IReferenceDataService? refData = null,
         GameConfig? gameConfig = null,
         TimeProvider? time = null)
     {
-        _stream = stream;
+        _driver = driver;
         _diag = diag;
-        _chatStream = chatStream;
         _refData = refData;
         _gameConfig = gameConfig;
         _time = time ?? TimeProvider.System;
@@ -210,77 +225,85 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
         try
         {
-            _diag?.Info("Inventory", "Subscribing to Player.log for inventory events");
-            var playerTask = ConsumePlayerLogAsync(stoppingToken);
+            _diag?.Info("GameState.Inventory", "Subscribing to L1 driver (LocalPlayer + chat pipes) for inventory events");
+            _playerSubscription = _driver.Subscribe<LocalPlayerLogLine>(
+                OnLocalPlayer,
+                new LogSubscriptionOptions
+                {
+                    ReplayMode = ReplayMode.FromSessionStart,
+                    DeliveryContext = DeliveryContext.Inline,
+                    DiagnosticCategory = "GameState.Inventory",
+                });
+            // Chat carries no backlog by construction — L1 coerces any
+            // non-LiveOnly request to LiveOnly. Asking for it explicitly so
+            // the intent reads at the call site.
+            _chatSubscription = _driver.Subscribe<RawLogLine>(
+                OnChat,
+                new LogSubscriptionOptions
+                {
+                    ReplayMode = ReplayMode.LiveOnly,
+                    DeliveryContext = DeliveryContext.Inline,
+                    DiagnosticCategory = "GameState.Inventory",
+                });
 
-            if (_chatStream is not null)
-            {
-                _diag?.Info("Inventory", "Subscribing to ChatLogs for [Status] correlation");
-                var chatTask = ConsumeChatLogAsync(stoppingToken);
-                await Task.WhenAll(playerTask, chatTask).ConfigureAwait(false);
-            }
-            else
-            {
-                // No chat stream registered (test path); player log alone still tracks
-                // sizes via UpdateItemCode and RemoveFromStorageVault — just no
-                // chat-correlated AddItem sizing.
-                await playerTask.ConfigureAwait(false);
-            }
+            try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) { /* expected on host stop */ }
         }
         finally
         {
+            _playerSubscription?.Dispose();
+            _playerSubscription = null;
+            _chatSubscription?.Dispose();
+            _chatSubscription = null;
             _seedDebounce?.Dispose();
             _seedWatcher?.Dispose();
         }
     }
 
-    private async Task ConsumePlayerLogAsync(CancellationToken ct)
+    private ValueTask OnLocalPlayer(LogEnvelope<LocalPlayerLogLine> envelope)
     {
-        await foreach (var raw in _stream.SubscribeAsync(ct).ConfigureAwait(false))
+        var data = envelope.Payload.Data;
+        var ts = envelope.Payload.Timestamp.UtcDateTime;
+
+        var add = AddItemRx().Match(data);
+        if (add.Success && long.TryParse(add.Groups[2].ValueSpan, out var addId))
         {
-            var ts = raw.Timestamp.UtcDateTime;
-            var add = AddItemRx().Match(raw.Line);
-            if (add.Success && long.TryParse(add.Groups[2].ValueSpan, out var addId))
-            {
-                HandleAddItem(addId, add.Groups[1].Value, ts);
-                continue;
-            }
-
-            var del = DeleteItemRx().Match(raw.Line);
-            if (del.Success && long.TryParse(del.Groups[1].ValueSpan, out var delId))
-            {
-                HandleDeleteItem(delId, ts);
-                continue;
-            }
-
-            var upd = UpdateItemCodeRx().Match(raw.Line);
-            if (upd.Success
-                && long.TryParse(upd.Groups[1].ValueSpan, out var updId)
-                && long.TryParse(upd.Groups[2].ValueSpan, out var code))
-            {
-                HandleUpdateItemCode(updId, code, ts);
-                continue;
-            }
-
-            var vault = RemoveFromStorageVaultRx().Match(raw.Line);
-            if (vault.Success
-                && long.TryParse(vault.Groups[1].ValueSpan, out var vaultId)
-                && int.TryParse(vault.Groups[2].ValueSpan, out var vaultSize))
-            {
-                HandleRemoveFromStorageVault(vaultId, vaultSize, ts);
-            }
+            HandleAddItem(addId, add.Groups[1].Value, ts);
+            return ValueTask.CompletedTask;
         }
+
+        var del = DeleteItemRx().Match(data);
+        if (del.Success && long.TryParse(del.Groups[1].ValueSpan, out var delId))
+        {
+            HandleDeleteItem(delId, ts);
+            return ValueTask.CompletedTask;
+        }
+
+        var upd = UpdateItemCodeRx().Match(data);
+        if (upd.Success
+            && long.TryParse(upd.Groups[1].ValueSpan, out var updId)
+            && long.TryParse(upd.Groups[2].ValueSpan, out var code))
+        {
+            HandleUpdateItemCode(updId, code, ts);
+            return ValueTask.CompletedTask;
+        }
+
+        var vault = RemoveFromStorageVaultRx().Match(data);
+        if (vault.Success
+            && long.TryParse(vault.Groups[1].ValueSpan, out var vaultId)
+            && int.TryParse(vault.Groups[2].ValueSpan, out var vaultSize))
+        {
+            HandleRemoveFromStorageVault(vaultId, vaultSize, ts);
+        }
+        return ValueTask.CompletedTask;
     }
 
-    private async Task ConsumeChatLogAsync(CancellationToken ct)
+    private ValueTask OnChat(LogEnvelope<RawLogLine> envelope)
     {
-        if (_chatStream is null) return;
-        await foreach (var raw in _chatStream.SubscribeAsync(ct).ConfigureAwait(false))
-        {
-            var parsed = InventoryStatusChatParser.TryParse(raw.Line);
-            if (parsed is null) continue;
-            HandleChatStatusAdd(parsed.Value.DisplayName, parsed.Value.Count, raw.Timestamp.UtcDateTime);
-        }
+        var parsed = InventoryStatusChatParser.TryParse(envelope.Payload.Line);
+        if (parsed is not null)
+            HandleChatStatusAdd(parsed.Value.DisplayName, parsed.Value.Count, envelope.Payload.Timestamp.UtcDateTime);
+        return ValueTask.CompletedTask;
     }
 
     private void HandleAddItem(long instanceId, string internalName, DateTime timestamp)
@@ -297,7 +320,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             if (_map.TryGetValue(instanceId, out var existing) && !existing.Deleted)
             {
                 _map[instanceId] = existing with { Timestamp = timestamp };
-                _diag?.Trace("Inventory",
+                _diag?.Trace("GameState.Inventory",
                     $"Add-reemit id={instanceId} name={existing.InternalName} size={existing.StackSize} confirmed={existing.SizeConfirmed}");
                 return;
             }
@@ -346,7 +369,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 : seeded ? " (export-seeded)"
                 : confirmed ? " (chat)"
                 : " (unconfirmed)";
-            _diag?.Trace("Inventory", $"Add    id={instanceId} name={internalName} size={size}{sourceTag} (total={_map.Count})");
+            _diag?.Trace("GameState.Inventory", $"Add    id={instanceId} name={internalName} size={size}{sourceTag} (total={_map.Count})");
             Fire(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size, confirmed));
         }
     }
@@ -376,7 +399,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             DrainPendingStale();
             if (!_map.TryGetValue(instanceId, out var entry))
             {
-                _diag?.Trace("Inventory", $"Delete id={instanceId} — not in map, ignored");
+                _diag?.Trace("GameState.Inventory", $"Delete id={instanceId} — not in map, ignored");
                 return;
             }
             if (entry.Deleted)
@@ -389,7 +412,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // gift-attribution path) can still resolve an id whose delete line
             // they've already read past.
             _map[instanceId] = entry with { Deleted = true, Timestamp = timestamp };
-            _diag?.Trace("Inventory", $"Delete id={instanceId} name={entry.InternalName} size={entry.StackSize} (retained)");
+            _diag?.Trace("GameState.Inventory", $"Delete id={instanceId} name={entry.InternalName} size={entry.StackSize} (retained)");
             Fire(new InventoryEvent(InventoryEventKind.Deleted, instanceId, entry.InternalName, timestamp, entry.StackSize, entry.SizeConfirmed));
         }
     }
@@ -407,7 +430,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             {
                 // Update for an InstanceId we've never seen — game can emit these for
                 // entries that pre-date the session log. Skip; we'd have no InternalName.
-                _diag?.Trace("Inventory", $"UpdateCode id={instanceId} size={newSize} — not in map, ignored");
+                _diag?.Trace("GameState.Inventory", $"UpdateCode id={instanceId} size={newSize} — not in map, ignored");
                 return;
             }
             // UpdateCode is authoritative for the post-event size, so confirmation
@@ -417,7 +440,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // both size and confirmation status match what's already there.
             if (entry.StackSize == newSize && entry.SizeConfirmed) return;
             _map[instanceId] = entry with { StackSize = newSize, Timestamp = timestamp, SizeConfirmed = true };
-            _diag?.Trace("Inventory", $"UpdateCode id={instanceId} name={entry.InternalName} size={newSize}");
+            _diag?.Trace("GameState.Inventory", $"UpdateCode id={instanceId} name={entry.InternalName} size={newSize}");
             Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, newSize, SizeConfirmed: true));
         }
     }
@@ -436,7 +459,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             if (entry.StackSize == stackSize && entry.SizeConfirmed) return;
 
             _map[instanceId] = entry with { StackSize = stackSize, Timestamp = timestamp, SizeConfirmed = true };
-            _diag?.Trace("Inventory", $"RemoveFromVault id={instanceId} name={entry.InternalName} size={stackSize}");
+            _diag?.Trace("GameState.Inventory", $"RemoveFromVault id={instanceId} name={entry.InternalName} size={stackSize}");
             Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, entry.InternalName, timestamp, stackSize, SizeConfirmed: true));
         }
     }
@@ -451,7 +474,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             // reference data — likely a name-mapping miss (renamed item, localization
             // variant, or new item not in the bundled fallback). Logging here is the
             // bread-crumb that lets us spot the gap when an AddItem stays unconfirmed.
-            _diag?.Trace("Inventory", $"Chat status: '{displayName}' (x{count}) — no InternalName match in reference data");
+            _diag?.Trace("GameState.Inventory", $"Chat status: '{displayName}' (x{count}) — no InternalName match in reference data");
             return;
         }
 
@@ -465,7 +488,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                     && (entry.StackSize != count || !entry.SizeConfirmed))
                 {
                     _map[instanceId] = entry with { StackSize = count, Timestamp = timestamp, SizeConfirmed = true };
-                    _diag?.Trace("Inventory", $"Chat → Add id={instanceId} name={internalName} size={count}");
+                    _diag?.Trace("GameState.Inventory", $"Chat → Add id={instanceId} name={internalName} size={count}");
                     Fire(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, internalName, timestamp, count, SizeConfirmed: true));
                 }
                 return;
@@ -520,14 +543,14 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             newest = StorageReportLoader.ScanForReports(dir).FirstOrDefault();
             if (newest is null)
             {
-                _diag?.Trace("Inventory", $"Seed: no exports found in {dir}");
+                _diag?.Trace("GameState.Inventory", $"Seed: no exports found in {dir}");
                 return;
             }
             report = StorageReportLoader.Load(newest.FilePath);
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Inventory", $"Seed: failed to load export: {ex.Message}");
+            _diag?.Warn("GameState.Inventory", $"Seed: failed to load export: {ex.Message}");
             return;
         }
 
@@ -556,7 +579,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             {
                 if (count == 1) _seededStackSizes[name] = sizes[name];
             }
-            _diag?.Trace("Inventory", $"Seeded {_seededStackSizes.Count} stack sizes from {Path.GetFileName(newest.FilePath)}");
+            _diag?.Trace("GameState.Inventory", $"Seeded {_seededStackSizes.Count} stack sizes from {Path.GetFileName(newest.FilePath)}");
 
             // Non-stackable confirm pass: any un-confirmed live entry whose item has
             // MaxStackSize == 1 is trivially size = 1. The export trigger is just a
@@ -572,12 +595,12 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 if (itemEntry.MaxStackSize != 1) continue;
 
                 _map[id] = entry with { StackSize = 1, Timestamp = nowNs, SizeConfirmed = true };
-                _diag?.Trace("Inventory", $"Non-stack confirm id={id} name={entry.InternalName} size=1");
+                _diag?.Trace("GameState.Inventory", $"Non-stack confirm id={id} name={entry.InternalName} size=1");
                 Fire(new InventoryEvent(InventoryEventKind.StackChanged, id, entry.InternalName, nowNs, 1, SizeConfirmed: true));
                 nonStackConfirmed++;
             }
             if (nonStackConfirmed > 0)
-                _diag?.Info("Inventory", $"Confirmed {nonStackConfirmed} non-stackable live entries from reference data");
+                _diag?.Info("GameState.Inventory", $"Confirmed {nonStackConfirmed} non-stackable live entries from reference data");
 
             // Reconcile already-tracked instances against the fresh export. Tally
             // un-deleted live entries by InternalName; mark any name that appears
@@ -616,13 +639,13 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
                 var entry = _map[live.Id];
                 _map[live.Id] = entry with { StackSize = exportSize, Timestamp = now, SizeConfirmed = true };
-                _diag?.Trace("Inventory",
+                _diag?.Trace("GameState.Inventory",
                     $"Export reconcile id={live.Id} name={name} size {live.Size} → {exportSize}{(live.Confirmed ? "" : " (confirming)")}");
                 Fire(new InventoryEvent(InventoryEventKind.StackChanged, live.Id, name, now, exportSize, SizeConfirmed: true));
                 reconciled++;
             }
             if (reconciled > 0)
-                _diag?.Info("Inventory", $"Export reconciled {reconciled} live entries against {Path.GetFileName(newest.FilePath)}");
+                _diag?.Info("GameState.Inventory", $"Export reconciled {reconciled} live entries against {Path.GetFileName(newest.FilePath)}");
         }
     }
 
@@ -646,7 +669,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Inventory", $"Seed: watcher setup failed: {ex.Message}");
+            _diag?.Warn("GameState.Inventory", $"Seed: watcher setup failed: {ex.Message}");
         }
     }
 
@@ -658,7 +681,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             new Timer(_ =>
             {
                 try { LoadExportSeeds(); }
-                catch (Exception ex) { _diag?.Warn("Inventory", $"Seed: refresh failed: {ex.Message}"); }
+                catch (Exception ex) { _diag?.Warn("GameState.Inventory", $"Seed: refresh failed: {ex.Message}"); }
             }, null, TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan));
         prev?.Dispose();
     }
@@ -699,7 +722,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private void Invoke(Action<InventoryEvent> handler, InventoryEvent evt)
     {
         try { handler(evt); }
-        catch (Exception ex) { _diag?.Warn("Inventory", $"Subscriber threw: {ex.Message}"); }
+        catch (Exception ex) { _diag?.Warn("GameState.Inventory", $"Subscriber threw: {ex.Message}"); }
     }
 
     /// <summary>

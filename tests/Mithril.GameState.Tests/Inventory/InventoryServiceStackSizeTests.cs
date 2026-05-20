@@ -1,8 +1,8 @@
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
-using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -26,7 +26,7 @@ public sealed class InventoryServiceStackSizeTests
         // distinguish "we know it's a single item" from "we replayed an AddItem
         // for a carryover stack of 10 and have no idea what size to trust."
         var stream = new ScriptedPlayerStream("[00:00:01] LocalPlayer: ProcessAddItem(BirdEgg(100), -1, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(100, out _).Should().BeFalse(
@@ -43,7 +43,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 70848, True)",
             "[00:00:03] LocalPlayer: ProcessUpdateItemCode(100, 136384, True)",
             "[00:00:04] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(100, out var size).Should().BeTrue();
@@ -55,7 +55,7 @@ public sealed class InventoryServiceStackSizeTests
     {
         var stream = new ScriptedPlayerStream(
             "[00:00:01] LocalPlayer: ProcessUpdateItemCode(999, 136384, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(999, out _).Should().BeFalse();
@@ -74,7 +74,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)", // grow to 4
             "[00:00:03] LocalPlayer: ProcessUpdateItemCode(100, 136384, False)", // split: now 3
             "[00:00:03] LocalPlayer: ProcessAddItem(Guava(101), -1, True)"); // split-off
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(100, out var origSize).Should().BeTrue();
@@ -94,7 +94,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:01] LocalPlayer: ProcessAddItem(GiantSkull(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 3211264, True)", // size 50
             "[00:00:03] LocalPlayer: ProcessDeleteItem(100)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         // Entry retained with name AND size after delete.
@@ -113,7 +113,7 @@ public sealed class InventoryServiceStackSizeTests
         var stream = new ScriptedPlayerStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), 116, True)",
             "[00:00:01] LocalPlayer: ProcessRemoveFromStorageVault(-131, -1, 100, 46)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(100, out var size).Should().BeTrue();
@@ -130,7 +130,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 2757824, True)", // size 43 from bag merge
             "[00:00:02] LocalPlayer: ProcessRemoveFromStorageVault(4368409, -1, 999, 42)"); // vault id we don't know
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         await RunAsync(svc, stream);
 
         svc.TryGetStackSize(100, out var size).Should().BeTrue();
@@ -143,18 +143,17 @@ public sealed class InventoryServiceStackSizeTests
     {
         // Chat status arrives before its ProcessAddItem within the correlation window.
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
-        var playerStream = new ScriptedPlayerStream();
-        var chatStream = new ScriptedPlayerStream();
+        var stream = new ScriptedPlayerStream();
         var refData = new FakeRefData(("Phlogiston1", "Shoddy Phlogiston"));
-        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var svc = new InventoryService(stream.Driver, diag: null, refData: refData);
         var run = svc.StartAsync(CancellationToken.None);
 
         // Chat first.
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
         // Then AddItem.
-        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
         svc.TryGetStackSize(100, out var size).Should().BeTrue();
         size.Should().Be(5);
@@ -169,20 +168,19 @@ public sealed class InventoryServiceStackSizeTests
         // Reverse arrival order: AddItem fires first (defaults size to 1), chat lands
         // moments later and back-fills the size.
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
-        var playerStream = new ScriptedPlayerStream();
-        var chatStream = new ScriptedPlayerStream();
+        var stream = new ScriptedPlayerStream();
         var refData = new FakeRefData(("Phlogiston1", "Shoddy Phlogiston"));
-        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var svc = new InventoryService(stream.Driver, diag: null, refData: refData);
         var run = svc.StartAsync(CancellationToken.None);
 
-        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
         // Without chat yet, the default-1 size is unconfirmed.
         svc.TryGetStackSize(100, out _).Should().BeFalse(
             because: "AddItem-default-1 is unconfirmed until chat or a code-update lands");
 
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
 
         svc.TryGetStackSize(100, out var postChatSize).Should().BeTrue();
         postChatSize.Should().Be(5);
@@ -200,7 +198,7 @@ public sealed class InventoryServiceStackSizeTests
         // lands this session — even one that would set size 1 again — the
         // entry flips to confirmed and the size is trustworthy.
         var stream = new ScriptedPlayerStream();
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var run = svc.StartAsync(CancellationToken.None);
 
         stream.Push(new RawLogLine(DateTime.UtcNow, "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)"));
@@ -227,7 +225,7 @@ public sealed class InventoryServiceStackSizeTests
         // so subscribers see the transition.
         using var fixture = new InventoryServiceTests.SeedFixture();
         var stream = new ScriptedPlayerStream();
-        var svc = new InventoryService(stream, refData: fixture.RefData, gameConfig: fixture.GameConfig);
+        var svc = new InventoryService(stream.Driver, refData: fixture.RefData, gameConfig: fixture.GameConfig);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         var run = svc.StartAsync(CancellationToken.None);
@@ -265,18 +263,17 @@ public sealed class InventoryServiceStackSizeTests
         // event-driven views (Palantir) need the StackChanged signal — TryGetStackSize
         // alone wouldn't trigger a re-render.
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
-        var playerStream = new ScriptedPlayerStream();
-        var chatStream = new ScriptedPlayerStream();
+        var stream = new ScriptedPlayerStream();
         var refData = new FakeRefData(("Phlogiston1", "Shoddy Phlogiston"));
-        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var svc = new InventoryService(stream.Driver, diag: null, refData: refData);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         var run = svc.StartAsync(CancellationToken.None);
 
-        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Shoddy Phlogiston x5 added to inventory."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
 
         // Subscribe-on-startup wins: first the Added (size 1), then the StackChanged (size 5).
         events.Should().HaveCount(2);
@@ -295,17 +292,16 @@ public sealed class InventoryServiceStackSizeTests
     public async Task NonStatusChatLines_AreIgnored()
     {
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
-        var playerStream = new ScriptedPlayerStream();
-        var chatStream = new ScriptedPlayerStream();
+        var stream = new ScriptedPlayerStream();
         var refData = new FakeRefData(("Phlogiston1", "Shoddy Phlogiston"));
-        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var svc = new InventoryService(stream.Driver, diag: null, refData: refData);
         var run = svc.StartAsync(CancellationToken.None);
 
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Trade] Joltknocker: wtb 1 phoenix egg 25k"));
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Guild status changed."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
-        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Trade] Joltknocker: wtb 1 phoenix egg 25k"));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Guild status changed."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(Phlogiston1(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
         // No correlation found → unconfirmed default 1, reported as unknown.
         svc.TryGetStackSize(100, out _).Should().BeFalse();
@@ -328,7 +324,7 @@ public sealed class InventoryServiceStackSizeTests
             "[01:06:03] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, False)",
             "[01:48:58] LocalPlayer: ProcessAddItem(HumanSkull(108233134), -1, False)",
             "[01:52:45] LocalPlayer: ProcessDeleteItem(108233134)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         await RunAsync(svc, stream);
@@ -344,35 +340,34 @@ public sealed class InventoryServiceStackSizeTests
         // A re-emit must not dequeue from _pendingChat — chat correlation must remain
         // available for the next genuine new-stack AddItem of the same InternalName.
         var ts = new DateTime(2026, 4, 25, 14, 10, 48, DateTimeKind.Utc);
-        var playerStream = new ScriptedPlayerStream();
-        var chatStream = new ScriptedPlayerStream();
+        var stream = new ScriptedPlayerStream();
         var refData = new FakeRefData(("HumanSkull", "Human Skull"));
-        var svc = new InventoryService(playerStream, diag: null, chatStream: chatStream, refData: refData);
+        var svc = new InventoryService(stream.Driver, diag: null, refData: refData);
         var run = svc.StartAsync(CancellationToken.None);
 
         // Chat-first establishes id=100 at confirmed size 2 via the pending-chat path,
         // which leaves _pendingAdd empty (avoids the "chat back-fills the still-queued
         // original AddItem" interaction unrelated to this test).
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Human Skull x2 added to inventory."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
-        playerStream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:48\t[Status] Human Skull x2 added to inventory."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:48] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
         svc.TryGetStackSize(100, out var seedSize).Should().BeTrue();
         seedSize.Should().Be(2);
 
         // Queue a chat count of 7 for the *next* HumanSkull pickup.
-        chatStream.Push(new RawLogLine(ts, "26-04-25 15:10:49\t[Status] Human Skull x7 added to inventory."));
-        await chatStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.PushChat(new RawLogLine(ts, "26-04-25 15:10:49\t[Status] Human Skull x7 added to inventory."));
+        await stream.WaitForChatDrainAsync(TimeSpan.FromSeconds(2));
 
         // Re-emit pulse for id=100 — must NOT dequeue the queued 7 from _pendingChat.
-        playerStream.Push(new RawLogLine(ts, "[14:10:50] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:50] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
         svc.TryGetStackSize(100, out var afterReemit).Should().BeTrue();
         afterReemit.Should().Be(2);
 
         // Genuinely new AddItem (different id) — should consume the queued 7.
-        playerStream.Push(new RawLogLine(ts, "[14:10:51] LocalPlayer: ProcessAddItem(HumanSkull(200), -1, True)"));
-        await playerStream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+        stream.Push(new RawLogLine(ts, "[14:10:51] LocalPlayer: ProcessAddItem(HumanSkull(200), -1, True)"));
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
         svc.TryGetStackSize(200, out var newSize).Should().BeTrue();
         newSize.Should().Be(7);
@@ -391,7 +386,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)", // size 4
             "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)",
             "[00:00:04] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, False)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         await RunAsync(svc, stream);
@@ -413,7 +408,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:01] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(100)",
             "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(100), -1, True)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         await RunAsync(svc, stream);
@@ -434,7 +429,7 @@ public sealed class InventoryServiceStackSizeTests
             "[00:00:02] LocalPlayer: ProcessAddItem(HumanSkull(108363377), -1, False)",
             "[00:00:03] LocalPlayer: ProcessAddItem(HumanSkull(108363377), -1, False)",
             "[00:00:04] LocalPlayer: ProcessDeleteItem(108363377)");
-        var svc = new InventoryService(stream);
+        var svc = new InventoryService(stream.Driver);
         var events = new List<InventoryEvent>();
         using var sub = svc.Subscribe(events.Add);
         await RunAsync(svc, stream);
@@ -454,57 +449,43 @@ public sealed class InventoryServiceStackSizeTests
     }
 
     /// <summary>
-    /// Reusable scripted stream that satisfies both <see cref="IPlayerLogStream"/> and
-    /// <see cref="IChatLogStream"/> (same shape — both yield <see cref="RawLogLine"/>).
+    /// Driver-backed test stream supporting both the LocalPlayer pipe (via
+    /// <see cref="TestLogEnvelopeFactory.FromRawLine(RawLogLine)"/> envelope
+    /// stripping) and the chat <see cref="RawLogLine"/> pipe — InventoryService
+    /// is the only producer that consumes both. Push helpers separate the two
+    /// pipes so test bodies stay explicit about which source they're driving.
     /// </summary>
-    private sealed class ScriptedPlayerStream : IPlayerLogStream, IChatLogStream
+    internal sealed class ScriptedPlayerStream : IDisposable
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        public TestLogStreamDriver Driver { get; } = new();
 
-        public ScriptedPlayerStream() { _drained.TrySetResult(); }
+        public ScriptedPlayerStream() { }
 
         public ScriptedPlayerStream(params string[] lines)
             : this(lines.Select(l => new RawLogLine(DateTime.UtcNow, l)).ToArray()) { }
 
         public ScriptedPlayerStream(RawLogLine[] lines)
         {
-            if (lines.Length == 0)
-            {
-                _drained.TrySetResult();
-                return;
-            }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(line);
+            foreach (var line in lines)
+                Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(RawLogLine line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(line);
-        }
+        /// <summary>Push a Player.log line as a LIVE envelope on the LocalPlayer pipe.</summary>
+        public void Push(RawLogLine line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
 
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
+        /// <summary>Push a chat line as a LIVE envelope on the chat (RawLogLine) pipe.</summary>
+        public void PushChat(RawLogLine line) => Driver.PushLive(line);
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) =>
+            Driver.DrainLocalPlayerAsync(timeout);
 
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task WaitForChatDrainAsync(TimeSpan timeout) =>
+            Driver.DrainChatAsync(timeout);
+
+        public void Dispose() => Driver.Dispose();
     }
 
     /// <summary>
