@@ -18,8 +18,12 @@ namespace Gandalf.Parsing;
 /// </summary>
 public sealed partial class InteractionDelayLoopParser : ILogParser
 {
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim, so this regex sees just the
+    // ProcessDoDelayLoop(...) body.
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*(?<verb>\w+)\s*,\s*"[^"]*"\s*,\s*-?\d+\s*,\s*\w+(?<flags>(?:\s*,\s*\w+)*)\s*\)""",
+        """ProcessDoDelayLoop\(\s*\d+(?:\.\d+)?\s*,\s*(?<verb>\w+)\s*,\s*"[^"]*"\s*,\s*-?\d+\s*,\s*\w+(?<flags>(?:\s*,\s*\w+)*)\s*\)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex DelayLoopRx();
 

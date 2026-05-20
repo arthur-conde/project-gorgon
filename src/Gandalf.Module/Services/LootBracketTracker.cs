@@ -84,18 +84,22 @@ public sealed partial class LootBracketTracker
     /// <c>IvynsChest</c>. Any of these inside an in-flight bracket discards
     /// the bracket without committing.
     /// </summary>
+    // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; downstream never
+    // re-matches the actor envelope (#550 PR #555 review). The L1 driver
+    // hands LocalPlayerLogLine.Data verbatim through LootIngestionService,
+    // so these regexes see just the Process<Verb>(...) bodies.
     [GeneratedRegex(
-        """LocalPlayer:\s*Process(?:(?:Pre)?TalkScreen|ShowStorageVault|ShowRecipes|InputBox)\(""",
+        """Process(?:(?:Pre)?TalkScreen|ShowStorageVault|ShowRecipes|InputBox)\(""",
         RegexOptions.CultureInvariant)]
     private static partial Regex DialogDiscardRx();
 
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessAddItem\(""",
+        """ProcessAddItem\(""",
         RegexOptions.CultureInvariant)]
     private static partial Regex AddItemRx();
 
     [GeneratedRegex(
-        """LocalPlayer:\s*ProcessEnableInteractors\(\[\],\s*\[(?<id>-?\d+),\]\)""",
+        """ProcessEnableInteractors\(\[\],\s*\[(?<id>-?\d+),\]\)""",
         RegexOptions.CultureInvariant)]
     private static partial Regex EnableInteractorsRx();
 
