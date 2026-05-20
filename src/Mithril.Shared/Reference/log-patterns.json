@@ -183,7 +183,7 @@
       ]
     },
     "pippin.GourmandLogParser.ProcessBookFoodsRx": {
-      "pattern": "LocalPlayer:\\s*ProcessBook\\(\"Skill Info\",\\s*\"(Foods Consumed:\\\\n\\\\n(?:[^\"\\\\]|\\\\.)*)\".*\"SkillReport\"",
+      "pattern": "ProcessBook\\(\"Skill Info\",\\s*\"(Foods Consumed:\\\\n\\\\n(?:[^\"\\\\]|\\\\.)*)\".*\"SkillReport\"",
       "source": "player",
       "module": "pippin",
       "csharp": { "type": "Pippin.Parsing.GourmandLogParser", "method": "ProcessBookFoodsRx" },

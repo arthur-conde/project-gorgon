@@ -59,6 +59,22 @@ public sealed class GourmandState : IVersionedState<GourmandState>
     public DateTimeOffset? LastReportTime { get; set; }
 
     /// <summary>
+    /// L1 (#550) restart-stability high-water. The driver-side
+    /// <see cref="Mithril.Shared.Logging.LogSubscriptionOptions.SkipProcessedHighWater"/>
+    /// filter drops every envelope whose <c>Sequence</c> is <c>&lt;=</c> this
+    /// value before handler invocation, so a cold-start that re-reads the
+    /// session's <c>Player.log</c> doesn't re-run the snapshot-overwrite
+    /// <c>HandleReport</c> apply path on a report Mithril already processed.
+    /// Pippin is the canonical demo of the high-water shape (#549): the apply
+    /// is in-session idempotent (Clear + repopulate) but every cold start
+    /// re-runs the full apply absent this gate; the filter introduces restart
+    /// stability where none existed pre-L1. <c>null</c> = no prior session
+    /// processed (first run / pre-#550 fresh state) — every envelope is
+    /// delivered.
+    /// </summary>
+    public long? LastProcessedSequence { get; set; }
+
+    /// <summary>
     /// Display-name-keyed entries inherited from a v1 file that the catalog hasn't yet
     /// resolved into <see cref="EatenFoodsByInternalName"/> + <see cref="UnknownByName"/>.
     /// Drained by <c>GourmandStateService.PromoteLegacyIfReady</c> once the catalog is
