@@ -1,0 +1,15 @@
+InvalidOperationException: Insecure connection not allowed
+  at UnityEngine.Networking.UnityWebRequest.SendWebRequest () [0x00000] in <00000000000000000000000000000000>:0
+  at WwwLoader+<retrieve>d__9.MoveNext () [0x00000] in <00000000000000000000000000000000>:0
+  at UnityEngine.SetupCoroutine.InvokeMoveNext (System.Collections.IEnumerator enumerator, System.IntPtr returnValueAddress) [0x00000] in <00000000000000000000000000000000>:0
+  at UIPlayerActivityController+<CoroPollForUpdates>d__17.MoveNext () [0x00000] in <00000000000000000000000000000000>:0
+  at UIPlayerActivityController.Update () [0x00000] in <00000000000000000000000000000000>:0
+NullReferenceException: Object reference not set to an instance of an object.
+  at UINewsDisplay.ParseJson (WwwLoader jsonFile) [0x00000] in <00000000000000000000000000000000>:0
+  at UIPlayerActivityController+<CoroPollForUpdates>d__17.MoveNext () [0x00000] in <00000000000000000000000000000000>:0
+NullReferenceException: Object reference not set to an instance of an object.
+  at Combatant.OnAttackHitMe (Attack attack, System.Boolean isProjectile) [0x00000] in <00000000000000000000000000000000>:0
+  at Combatant.OnIAttacked (Attack attack) [0x00000] in <00000000000000000000000000000000>:0
+  at AreaCmdProcessor_NewGui.ProcessAttack (Attack attack) [0x00000] in <00000000000000000000000000000000>:0
+InvalidOperationException: Callback dispatcher is not initialized.
+  at Steamworks.CallbackDispatcher.RunFrame (System.Boolean isGameServer) [0x00000] in <00000000000000000000000000000000>:0

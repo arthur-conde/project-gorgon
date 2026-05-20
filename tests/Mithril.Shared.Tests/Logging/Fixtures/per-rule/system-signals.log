@@ -1,0 +1,9 @@
+[19:50:03] LOADING LEVEL ChooseCharacter
+[20:01:14] LOADING LEVEL AreaKurMountains
+[20:01:14] Logged in as character <CHARACTER>. Time UTC=05/19/2026 20:01:14. Timezone Offset 01:00:00
+[21:04:45] Logged in as character <CHARACTER>. Time UTC=05/19/2026 21:04:45. Timezone Offset 01:00:00
+EVENT(Ok): loginCharacter, numChars=2
+EVENT(Ok): sessionUpdate, playTime=300
+EVENT(Ok): playing
+EVENT(Ok): sessionUpdate, playTime=600
+EVENT(Ok): playing
