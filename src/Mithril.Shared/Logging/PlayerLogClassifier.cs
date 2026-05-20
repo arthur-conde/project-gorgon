@@ -101,10 +101,29 @@ public sealed class PlayerLogClassifier : IClassifiedPlayerLogStream, IDisposabl
 
     /// <summary>
     /// L1-facing subscription. Same backlog-then-live-tail shape as the
-    /// L0.5 typed pipes; each yielded item is paired with the
-    /// <see cref="LogEnvelope{T}.IsReplay"/> bit answered authoritatively
-    /// by the structural boundary (replay yields from the snapshot; live
-    /// yields from the channel branch).
+    /// L0.5 typed pipes; each yielded item is paired with an
+    /// <see cref="LogEnvelope{T}.IsReplay"/> bit answered by the
+    /// classifier's own per-subscriber structural boundary (true when the
+    /// item came out of this subscriber's snapshot of <c>_unified._replay</c>;
+    /// false when it came off this subscriber's live channel).
+    ///
+    /// <para><b>Important — semantics, not session-replay vs live.</b> The
+    /// bit does NOT track L0's session-replay-vs-live boundary. The
+    /// classifier subscribes upstream via <see cref="IPlayerLogStream.SubscribeAsync"/>,
+    /// which has no marker variant; everything upstream emits — including
+    /// the session-start backlog L0 holds for late-joiners — is published
+    /// downstream uniformly. The first subscriber to attach receives EVERY
+    /// classified item via its live channel and so sees <c>IsReplay=false</c>
+    /// for all of them, even items L0 considers backlog. Late subscribers
+    /// (who joined after some items were already buffered classified) see
+    /// <c>IsReplay=true</c> for the buffered portion and <c>false</c>
+    /// thereafter. Current Phase 3 consumers all use
+    /// <see cref="ReplayMode.FromSessionStart"/>, so the gap is dormant.
+    /// A future consumer that picks <see cref="ReplayMode.LiveOnly"/> or
+    /// <see cref="ReplayMode.SinceSubscribe"/> on the unified pipe needs
+    /// to be aware that the live filter only suppresses items the
+    /// classifier classifies as "from this subscriber's replay," not the
+    /// broader L0 session backlog.</para>
     /// </summary>
     private async IAsyncEnumerable<LogEnvelope<T>> SubscribeWithMarker<T>(
         PipeRegistry<T> pipe, [EnumeratorCancellation] CancellationToken ct)

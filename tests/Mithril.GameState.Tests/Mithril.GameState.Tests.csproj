@@ -20,9 +20,6 @@
          blobs, not synthetic toys. -->
     <None Include="Movement\Fixtures\real_player_log_position_lines.log"
           CopyToOutputDirectory="PreserveNewest" />
-    <!-- Synthetic assumed non-local shapes (no real capture exists). -->
-    <None Include="Movement\Fixtures\synthetic_nonlocal_addplayer_assumed.log"
-          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared test helpers opted into per-project (see tests/Directory.Build.props

@@ -46,19 +46,22 @@ public sealed partial class PlayerPositionParser : ILogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex NewPositionRx();
 
-    // The actor token must be exactly `LocalPlayer` — the negative lookbehind
-    // for a letter rejects `NonLocalPlayer:`/`RemoteLocalPlayer:` etc. (a plain
-    // substring check is fooled, as the synthetic non-local fixture proves).
-    [GeneratedRegex(
-        """(?<![A-Za-z])LocalPlayer:\s*ProcessAddPlayer\b""",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
-    private static partial Regex LocalAddPlayerRx();
-
     [GeneratedRegex(
         """System\.String\[\]\s*,\s*\(\s*(?<x>-?\d+(?:\.\d+)?)\s*,\s*(?<y>-?\d+(?:\.\d+)?)\s*,\s*(?<z>-?\d+(?:\.\d+)?)\s*\)""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex AddPlayerPosRx();
 
+    /// <summary>
+    /// Parses <c>ProcessNewPosition</c> on a <see cref="LocalPlayerLogLine"/>
+    /// payload (post-L0.5, envelope eaten). The <c>ProcessNewPosition</c>
+    /// regex is actor-agnostic, so it matches bare verb data correctly.
+    ///
+    /// <para><c>ProcessAddPlayer</c> is NOT handled here — L0.5 routes it
+    /// to <see cref="SystemSignalLogLine"/> { <see cref="SystemSignalKind.PlayerAdded"/> }
+    /// instead, and consumers feed that body to
+    /// <see cref="TryParseSpawnFromData"/>. See #556 Phase 3's
+    /// <c>PlayerPositionTracker</c> switch.</para>
+    /// </summary>
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
         if (string.IsNullOrEmpty(line)) return null;
@@ -70,20 +73,6 @@ public sealed partial class PlayerPositionParser : ILogParser
             TryNum(m1.Groups["z"].ValueSpan, out var z1))
         {
             return new PlayerPositionEvent(timestamp, x1, y1, z1, PlayerPositionSource.Movement);
-        }
-
-        // ProcessAddPlayer: only the local player's own line is ours (the
-        // actor token must be exactly `LocalPlayer`, boundary-checked — not a
-        // naive substring). Then anchor on the System.String[] arg that
-        // precedes the position triple.
-        if (line.Contains("ProcessAddPlayer", StringComparison.Ordinal) &&
-            LocalAddPlayerRx().IsMatch(line) &&
-            AddPlayerPosRx().Match(line) is { Success: true } m2 &&
-            TryNum(m2.Groups["x"].ValueSpan, out var x2) &&
-            TryNum(m2.Groups["y"].ValueSpan, out var y2) &&
-            TryNum(m2.Groups["z"].ValueSpan, out var z2))
-        {
-            return new PlayerPositionEvent(timestamp, x2, y2, z2, PlayerPositionSource.Spawn);
         }
 
         return null;
