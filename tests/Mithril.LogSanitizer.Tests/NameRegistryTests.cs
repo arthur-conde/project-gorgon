@@ -47,6 +47,7 @@ public sealed class NameRegistryTests
         registry.RegisterOwnCharacter("Daedric");
 
         registry.TokenFor("Daedric").Should().Be("<CHARACTER>");
+        registry.AllMappings.Should().HaveCount(1);
     }
 
     [Fact]
