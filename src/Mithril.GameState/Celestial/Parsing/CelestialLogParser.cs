@@ -5,25 +5,25 @@ namespace Mithril.GameState.Celestial.Parsing;
 
 /// <summary>
 /// Parses the local player's lunar phase from Project Gorgon's
-/// <c>Player.log</c>. One line carries it:
+/// <c>Player.log</c>. Consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload (post-#550 L1 migration) —
+/// the L0.5 router (#532) has already classified the line as
+/// <c>LocalPlayer:</c>-actored and eaten the envelope, so this parser sees
+/// the bare <c>Verb(args)</c> shape:
 ///
 /// <code>
-/// [19:50:42] LocalPlayer: ProcessSetCelestialInfo(WaxingCrescentMoon)
+/// ProcessSetCelestialInfo(WaxingCrescentMoon)
 /// </code>
 ///
-/// <para>The actor token must be exactly <c>LocalPlayer</c> — the negative
-/// lookbehind for a letter rejects <c>NonLocalPlayer:</c> /
-/// <c>RemoteLocalPlayer:</c> etc. (mirrors
-/// <c>PlayerPositionParser</c>'s boundary discipline). The single argument is
-/// a phase token of one of three observed spellings; mapping to a canonical
-/// <see cref="MoonPhase"/> is total (unrecognised ⇒
-/// <see cref="MoonPhase.Unknown"/>, raw token retained). Unrelated lines
-/// fast-path to <c>null</c>; the parser never throws.</para>
+/// <para>The single argument is a phase token of one of three observed
+/// spellings; mapping to a canonical <see cref="MoonPhase"/> is total
+/// (unrecognised ⇒ <see cref="MoonPhase.Unknown"/>, raw token retained).
+/// Unrelated lines fast-path to <c>null</c>; the parser never throws.</para>
 /// </summary>
 public sealed partial class CelestialLogParser : ILogParser
 {
     [GeneratedRegex(
-        """(?<![A-Za-z])LocalPlayer:\s*ProcessSetCelestialInfo\(\s*(?<phase>[A-Za-z]+)\s*\)""",
+        """ProcessSetCelestialInfo\(\s*(?<phase>[A-Za-z]+)\s*\)""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex CelestialRx();
 

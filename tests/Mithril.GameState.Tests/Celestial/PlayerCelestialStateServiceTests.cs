@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Xunit;
@@ -19,7 +20,7 @@ public sealed class PlayerCelestialStateServiceTests
 
     private static PlayerCelestialStateService NewService(
         ScriptedStream stream, IDiagnosticsSink? diag = null) =>
-        new(stream, new CelestialLogParser(), diag);
+        new(stream.Driver, new CelestialLogParser(), diag);
 
     [Fact]
     public async Task Cold_start_Current_is_null()
@@ -218,38 +219,82 @@ public sealed class PlayerCelestialStateServiceTests
         svc.Dispose();
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// Byte-equivalence regression test (#550 PR 2): state-rebuilder ⇒ same
+    /// input replayed yields identical final state.
+    /// </summary>
+    [Fact]
+    public async Task L1_replay_idempotence_byte_equivalence()
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        // First pass — live tail.
+        MoonPhase firstPhase;
+        string firstRaw;
+        {
+            var stream = new ScriptedStream();
+            var svc = NewService(stream);
+            try
+            {
+                stream.Push(Stamp, CrescentLine);
+                stream.Push(Stamp.AddMinutes(40), FullLine);
+                await RunUntilDrainedAsync(svc, stream);
+                svc.Current.Should().NotBeNull();
+                firstPhase = svc.Current!.Phase;
+                firstRaw = svc.Current.RawPhase;
+            }
+            finally { await StopAsync(svc); }
+        }
 
-        public ScriptedStream() => _drained.TrySetResult();
+        // Second pass — same lines split across the replay→live boundary so
+        // the test exercises the production FromSessionStart shape: half the
+        // input drains as IsReplay=true envelopes, the rest comes in live.
+        {
+            var stream = new ScriptedStream();
+            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(CrescentLine, Stamp));
+            var svc = NewService(stream);
+            try
+            {
+                // Live half pushed AFTER subscription is up so it lands on the
+                // live channel rather than the replay snapshot.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var runTask = svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
+                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(FullLine, Stamp.AddMinutes(40)));
+                await stream.WaitForDrainAsync(cts.Token);
+
+                svc.Current.Should().NotBeNull();
+                svc.Current!.Phase.Should().Be(firstPhase);
+                svc.Current.RawPhase.Should().Be(firstRaw);
+
+                await cts.CancelAsync();
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+                _ = runTask;
+            }
+            finally { await StopAsync(svc); }
+        }
+    }
+
+    /// <summary>
+    /// Post-#550 PR 2: adapter that lets these tests keep scripting
+    /// <see cref="RawLogLine"/>-shaped Player.log lines while the
+    /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via
+    /// the L1 driver. Stripping is delegated to
+    /// <see cref="TestLogEnvelopeFactory"/> so all four producer-tests share
+    /// one strip semantics.
+    /// </summary>
+    private sealed class ScriptedStream : IDisposable
+    {
+        public TestLogStreamDriver Driver { get; } = new();
+
+        public ScriptedStream() { }
 
         public void Push(DateTime ts, string line)
         {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(ts, line));
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(ts, line)));
         }
 
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Dispose() => Driver.Dispose();
     }
 }

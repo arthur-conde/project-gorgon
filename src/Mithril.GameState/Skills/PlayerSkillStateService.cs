@@ -7,12 +7,12 @@ using Mithril.Shared.Reference;
 namespace Mithril.GameState.Skills;
 
 /// <summary>
-/// Eagerly tails <see cref="IPlayerLogStream"/> at shell startup and maintains
-/// the canonical live <see cref="PlayerSkillSnapshot"/> from
-/// <c>ProcessLoadSkills</c> (full replace) and <c>ProcessUpdateSkill</c>
-/// (per-skill upsert) lines. The single owner of player skill state derived
-/// from the log — modules depend on <see cref="IPlayerSkillState"/> rather than
-/// re-parsing the stream.
+/// Eagerly subscribes to the L1 (#550) driver's LocalPlayer pipe at shell
+/// startup and maintains the canonical live <see cref="PlayerSkillSnapshot"/>
+/// from <c>ProcessLoadSkills</c> (full replace) and
+/// <c>ProcessUpdateSkill</c> (per-skill upsert) lines. The single owner of
+/// player skill state derived from the log — modules depend on
+/// <see cref="IPlayerSkillState"/> rather than re-parsing the stream.
 ///
 /// <para><b>Self-heal / warm-up.</b> <c>ProcessLoadSkills</c> is emitted at
 /// login and again on every zone / session transition, so a wholesale replace
@@ -23,24 +23,35 @@ namespace Mithril.GameState.Skills;
 /// snapshot (better than nothing — the next <c>ProcessLoadSkills</c> makes it
 /// whole). This window is the documented contract.</para>
 ///
-/// <para><b>Threading.</b> The snapshot reference is swapped under
-/// <see cref="_lock"/>; <see cref="Current"/> reads are lock-free (reference
-/// read of an immutable object). <see cref="Subscribe"/> replays and attaches
-/// atomically under the same lock the ingestion loop fires under, which closes
-/// the late-subscribe race exactly as <c>InventoryService</c> does.</para>
+/// <para><b>Threading.</b> The L1 driver delivers envelopes on its pump
+/// thread (archetype-A default = <c>DeliveryContext.Inline</c>). The
+/// snapshot reference is swapped under <see cref="_lock"/>;
+/// <see cref="Current"/> reads are lock-free (reference read of an immutable
+/// object). <see cref="Subscribe"/> replays and attaches atomically under
+/// the same lock the ingestion loop fires under, which closes the
+/// late-subscribe race exactly as <c>InventoryService</c> does.</para>
+///
+/// <para><b>Containment.</b> The L1 driver wraps each handler invocation
+/// in try/catch + rate-limited Warn, retiring the per-service
+/// <see cref="ThrottledWarn"/> instance this service used to hold (#550
+/// capability C). Failures surface on <c>IDiagnosticsSink</c> under the
+/// <c>GameState.Skills</c> category via the driver's
+/// <see cref="LogSubscriptionOptions.DiagnosticCategory"/> override. The
+/// parser's own <see cref="ThrottledWarn"/> (per-row numeric-overflow
+/// guard, #525) is unrelated and stays.</para>
 /// </summary>
 public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillState
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ILogStreamDriver _driver;
     private readonly SkillLogParser _parser;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ThrottledWarn _warn;
 
     private readonly object _lock = new();
     private readonly List<Action<PlayerSkillSnapshot>> _handlers = new();
     private readonly List<Action<SkillChange>> _changeHandlers = new();
     private volatile PlayerSkillSnapshot _current = PlayerSkillSnapshot.Empty;
+    private ILogSubscription? _subscription;
 
     /// <param name="refData">Optional (#470). When present, each projected
     /// <see cref="SkillProgressSnapshot"/> is enriched with authoritative
@@ -49,16 +60,15 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
     /// the verified log-only proxies. Mirrors <c>InventoryService</c>'s
     /// optional <c>IReferenceDataService?</c> dependency.</param>
     public PlayerSkillStateService(
-        IPlayerLogStream stream,
+        ILogStreamDriver driver,
         SkillLogParser parser,
         IReferenceDataService? refData = null,
         IDiagnosticsSink? diag = null)
     {
-        _stream = stream;
+        _driver = driver;
         _parser = parser;
         _refData = refData;
         _diag = diag;
-        _warn = new ThrottledWarn(diag, "GameState.Skills");
     }
 
     public PlayerSkillSnapshot Current => _current;
@@ -88,12 +98,16 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("GameState.Skills", "Subscribing to Player.log for skill-state events");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
-        {
-            try
+        _diag?.Info("GameState.Skills", "Subscribing to L1 driver (LocalPlayer pipe) for skill-state events");
+        // archetype-A defaults — FromSessionStart replay + Inline delivery.
+        // The parser consumes the envelope-stripped LocalPlayerLogLine.Data
+        // directly — L0.5 (#532) owns actor classification, downstream
+        // never re-matches the envelope (#550 PR #555 review).
+        _subscription = _driver.Subscribe<LocalPlayerLogLine>(
+            envelope =>
             {
-                switch (_parser.TryParse(raw.Line, raw.Timestamp.UtcDateTime))
+                var ts = envelope.Payload.Timestamp.UtcDateTime;
+                switch (_parser.TryParse(envelope.Payload.Data, ts))
                 {
                     case SkillsSnapshotEvent snap:
                         ReplaceAll(snap);
@@ -102,9 +116,29 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
                         Upsert(upd);
                         break;
                 }
-            }
-            catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
+                return ValueTask.CompletedTask;
+            },
+            new LogSubscriptionOptions
+            {
+                ReplayMode = ReplayMode.FromSessionStart,
+                DeliveryContext = DeliveryContext.Inline,
+                DiagnosticCategory = "GameState.Skills",
+            });
+
+        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
         }
+    }
+
+    public override void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        base.Dispose();
     }
 
     /// <summary>Wholesale replace from a <c>ProcessLoadSkills</c> dump. Emits a

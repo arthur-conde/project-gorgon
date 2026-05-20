@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Mithril.TestSupport;
@@ -18,10 +19,10 @@ public sealed class PlayerSkillStateServiceTests
         "{type=Augmentation,raw=0,bonus=2,xp=0,tnl=1,max=0})";
 
     private static PlayerSkillStateService NewService(ScriptedStream stream)
-        => new(stream, new SkillLogParser());
+        => new(stream.Driver, new SkillLogParser());
 
     private static PlayerSkillStateService NewService(ScriptedStream stream, IReferenceDataService refData)
-        => new(stream, new SkillLogParser(), refData);
+        => new(stream.Driver, new SkillLogParser(), refData);
 
     private static SkillEntry SkillRef(string key, string display, string xpTable, int maxBonus = 25)
         => new(key, display, Id: 0, Combat: false, XpTable: xpTable, MaxBonusLevels: maxBonus,
@@ -388,6 +389,62 @@ public sealed class PlayerSkillStateServiceTests
         t.Level.Should().Be(10); // log progression untouched by enrichment
     }
 
+    /// <summary>
+    /// Byte-equivalence regression test (#550 PR 2 + PR #555 review): the
+    /// producer is a state-rebuilder, so feeding the same backlog twice
+    /// (cold start, then split replay→live like the production
+    /// FromSessionStart shape) must yield identical snapshot state on both
+    /// runs. Splitting the input across the replay boundary catches a
+    /// regression where a handler early-outs on
+    /// <c>envelope.IsReplay == true</c>.
+    /// </summary>
+    [Fact]
+    public async Task L1_replay_idempotence_byte_equivalence()
+    {
+        IReadOnlyDictionary<string, SkillProgressSnapshot> firstPass;
+        DateTime firstMeasured;
+        {
+            using var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
+            var svc = NewService(stream);
+            await RunUntilDrainedAsync(svc, stream);
+            firstPass = svc.Current.Skills;
+            firstMeasured = svc.Current.MeasuredAt!.Value;
+        }
+
+        // Second pass — split input across the replay→live boundary. The full
+        // skill snapshot arrives as IsReplay=true; a subsequent re-emit of
+        // the same ProcessLoadSkills line arrives as live. The state-rebuilder
+        // must yield identical final state (the second snapshot replaces
+        // with the same content at the same timestamp, so MeasuredAt also
+        // matches the first pass).
+        {
+            using var stream = new ScriptedStream();
+            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
+            var svc = NewService(stream);
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
+
+                // Live tail: same line, same timestamp. Snapshot replaces
+                // with identical content → no spurious state change.
+                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
+                await stream.WaitForDrainAsync(cts.Token);
+
+                svc.Current.Skills.Should().BeEquivalentTo(firstPass);
+                svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
+
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+            }
+            catch
+            {
+                try { await svc.StopAsync(CancellationToken.None); } catch { }
+                throw;
+            }
+        }
+    }
+
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
 
     private static async Task RunUntilDrainedAsync(PlayerSkillStateService svc, ScriptedStream stream)
@@ -398,48 +455,30 @@ public sealed class PlayerSkillStateServiceTests
         try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// Post-#550 PR 2: thin adapter that lets the existing test fixtures keep
+    /// scripting <see cref="RawLogLine"/>s while the service-under-test
+    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver.
+    /// Stripping is delegated to <see cref="TestLogEnvelopeFactory"/> so all
+    /// four producer-tests share one strip semantics.
+    /// </summary>
+    private sealed class ScriptedStream : IDisposable
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
+        public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            if (lines.Length == 0)
-            {
-                _drained.TrySetResult();
-                return;
-            }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(line);
+            foreach (var line in lines) Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(string line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
-        }
+        public void Push(string line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
 
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
+        public Task WaitForDrainAsync(CancellationToken ct) =>
+            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
+        public Task WaitForDrainAsync(TimeSpan timeout) =>
+            Driver.DrainLocalPlayerAsync(timeout);
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Dispose() => Driver.Dispose();
     }
 }

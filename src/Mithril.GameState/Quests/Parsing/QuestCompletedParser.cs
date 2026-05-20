@@ -14,12 +14,17 @@ namespace Mithril.GameState.Quests.Parsing;
 /// Anchors the cooldown clock on this Timestamp so log-replay produces the
 /// right elapsed time.
 ///
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the verb guard no longer re-anchors on it.</para>
+///
 /// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#processcompletequest--quest-turned-in
 /// </summary>
 public sealed partial class QuestCompletedParser : ILogParser
 {
     [GeneratedRegex(
-        @"LocalPlayer:\s*ProcessCompleteQuest\(\s*-?\d+\s*,\s*(?<id>\d+)\s*\)",
+        @"ProcessCompleteQuest\(\s*-?\d+\s*,\s*(?<id>\d+)\s*\)",
         RegexOptions.CultureInvariant)]
     private static partial Regex CompleteRx();
 

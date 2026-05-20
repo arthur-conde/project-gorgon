@@ -54,6 +54,11 @@ public static class ShellComposition
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
             .AddMithrilLogActorRouter(sp => () => sp.GetRequiredService<ShellSettings>().CaptureRawPlayerLogLines)
+            // L1 driver — consumed by archetype-A GameState producers (#550 PR 2)
+            // and the archetype-B consumer fleet (#550 PR 3..N). Registered
+            // between the L0.5 router (which it consumes via the typed pipes)
+            // and AddMithrilGameState (whose producers depend on ILogStreamDriver).
+            .AddMithrilLogStreamDriver()
             .AddMithrilGameState()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)

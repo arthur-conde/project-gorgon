@@ -16,12 +16,17 @@ namespace Mithril.GameState.Quests.Parsing;
 /// <see cref="IReferenceDataService.Quests"/> so downstream consumers
 /// (e.g. <c>QuestService</c>) can track the journal by stable name.
 ///
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the verb guard no longer re-anchors on it.</para>
+///
 /// Wiki: https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#processaddquest--quest-accepted
 /// </summary>
 public sealed partial class QuestAcceptedParser : ILogParser
 {
     [GeneratedRegex(
-        @"LocalPlayer:\s*ProcessBook\(""New Quest: <<<quest_(?<id>\d+)_Name>>>""",
+        @"ProcessBook\(""New Quest: <<<quest_(?<id>\d+)_Name>>>""",
         RegexOptions.CultureInvariant)]
     private static partial Regex AcceptRx();
 

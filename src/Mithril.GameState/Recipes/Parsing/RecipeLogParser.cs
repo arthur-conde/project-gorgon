@@ -9,24 +9,22 @@ namespace Mithril.GameState.Recipes.Parsing;
 /// Parses Project Gorgon's two recipe-state log lines into typed events:
 ///
 /// <list type="bullet">
-///   <item><c>LocalPlayer: ProcessLoadRecipes([id,…], [count,…])</c> — the full
-///   known-recipe dump emitted at login and on zone / session transitions: two
-///   parallel, equal-length integer arrays (recipe ids ‖ lifetime completion
-///   counts). Yields a <see cref="RecipesSnapshotEvent"/> carrying every
-///   parsed row.</item>
-///   <item><c>LocalPlayer: ProcessUpdateRecipe(id, count)</c> — a single
-///   recipe's new <em>absolute</em> completion count (<c>0</c> for a just-learned
-///   recipe, <c>&gt;=1</c> for a craft). Yields a
-///   <see cref="RecipeUpdateEvent"/>.</item>
+///   <item><c>ProcessLoadRecipes([id,…], [count,…])</c> — the full known-recipe
+///   dump emitted at login and on zone / session transitions: two parallel,
+///   equal-length integer arrays (recipe ids ‖ lifetime completion counts).
+///   Yields a <see cref="RecipesSnapshotEvent"/> carrying every parsed row.</item>
+///   <item><c>ProcessUpdateRecipe(id, count)</c> — a single recipe's new
+///   <em>absolute</em> completion count (<c>0</c> for a just-learned recipe,
+///   <c>&gt;=1</c> for a craft). Yields a <see cref="RecipeUpdateEvent"/>.</item>
 /// </list>
 ///
-/// <para>The regexes are unanchored — the convention every other
-/// <c>Player.log</c> parser uses — and the guards pin the <c>LocalPlayer:</c>
-/// prefix so an unrelated line that merely mentions the verb cannot trigger a
-/// parse. A cheap substring pre-check short-circuits the (overwhelmingly
-/// common) unrelated line before any regex runs. The arrays' trailing comma
-/// (PG emits <c>[1,2,3,]</c>) is absorbed by splitting with empty-entry
-/// removal.</para>
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the verb guards no longer re-anchor on it. A cheap substring pre-check
+/// short-circuits the (overwhelmingly common) unrelated line before any regex
+/// runs. The arrays' trailing comma (PG emits <c>[1,2,3,]</c>) is absorbed by
+/// splitting with empty-entry removal.</para>
 ///
 /// <para>Mirrors <see cref="Mithril.GameState.Skills.Parsing.SkillLogParser"/>
 /// (the #462 template). Catalogued in <c>log-patterns.json</c> as
@@ -36,13 +34,13 @@ namespace Mithril.GameState.Recipes.Parsing;
 /// </summary>
 public sealed partial class RecipeLogParser : ILogParser
 {
-    // Guard: a real ProcessLoadRecipes line (full known-recipe dump). Pins the
-    // LocalPlayer: prefix so only the genuine emitter matches.
-    [GeneratedRegex(@"LocalPlayer: ProcessLoadRecipes\(", RegexOptions.CultureInvariant)]
+    // Guard: a real ProcessLoadRecipes line (full known-recipe dump). Post-L1
+    // the LocalPlayer: actor envelope is already eaten upstream by L0.5.
+    [GeneratedRegex(@"ProcessLoadRecipes\(", RegexOptions.CultureInvariant)]
     private static partial Regex LoadRecipesRx();
 
     // Guard: a real ProcessUpdateRecipe line.
-    [GeneratedRegex(@"LocalPlayer: ProcessUpdateRecipe\(", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"ProcessUpdateRecipe\(", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateRecipeRx();
 
     // ProcessLoadRecipes payload: the two bracketed integer lists. PG separates
