@@ -129,7 +129,7 @@ public sealed class ChatLogClockTests
     // fixture encodes the gap so the refactor tracked in #538 can flip
     // Skip to null and gain a green regression test in the same commit.
 
-    [Fact(Skip = "Tracking gap #538: ChatLogClock uses TimeZoneInfo.Local instead of the originating banner's Timezone Offset, so cross-machine chat-log replay produces a wrong-by-the-offset UTC. Flip Skip to null once #538 lands.")]
+    [Fact(Skip = "Tracking gap #538 — ChatLogClock uses TimeZoneInfo.Local; flip Skip when #538 lands. See doc comment above for the full reason.")]
     public void Pair3_WithReplayMachineTimeZone_GapWitness()
     {
         // Simulate the user replaying the alt machine's chat log (whose
@@ -160,10 +160,10 @@ public sealed class ChatLogClockTests
 
     private static TimeZoneInfo FixedOffsetZone(TimeSpan offset)
     {
-        // Per-call unique id so two callers with the same offset don't
-        // collide on the global TimeZoneInfo registry under parallel
-        // xunit execution.
-        var id = $"FixedOffsetTestZone_{offset.Ticks}_{Guid.NewGuid():N}";
+        // CreateCustomTimeZone doesn't register in any global table —
+        // each call returns a fresh instance — so the id only needs to
+        // be human-readable, not globally unique.
+        var id = $"FixedOffsetTestZone_{offset.Ticks}";
         return TimeZoneInfo.CreateCustomTimeZone(id, offset, id, id);
     }
 }
