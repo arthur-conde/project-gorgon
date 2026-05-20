@@ -20,4 +20,4 @@ public sealed record SystemSignalLogLine(
     string Data,
     long Sequence,
     long ReadMonotonicTicks,
-    string? Raw = null);
+    string? Raw = null) : IClassifiedPlayerLogLine;

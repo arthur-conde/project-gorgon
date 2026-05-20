@@ -1,0 +1,210 @@
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+using FluentAssertions;
+using Mithril.Shared.Logging;
+using Xunit;
+
+namespace Mithril.Shared.Tests.Logging;
+
+/// <summary>
+/// L0.5 (#556) <see cref="PlayerLogPipeSplitter"/> unit tests. The
+/// splitter is tested in isolation via a controllable
+/// <see cref="IClassifiedPlayerLogStream"/> stub so the test
+/// (a) doesn't depend on the classifier's own behaviour (covered by
+/// <see cref="PlayerLogClassifierTests"/>) and
+/// (b) doesn't depend on concurrent task scheduling under parallel-test
+/// pressure. The full classifier + splitter end-to-end behaviour is
+/// covered by <see cref="PlayerLogPipelineTests"/>.
+/// </summary>
+public sealed class PlayerLogPipeSplitterTests
+{
+    private static readonly DateTimeOffset Ts =
+        new(2026, 5, 19, 20, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Union_of_typed_pipes_equals_unified_pipe_input()
+    {
+        // Feed a mixed batch of Local/Combat/System envelopes into the
+        // splitter. The union of the three typed pipes' output must equal
+        // the unified pipe's input set (by Sequence) — the splitter's
+        // faithful-projection contract.
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        var localTask = CollectAsync(((ILocalPlayerLogStream)splitter).SubscribeAsync, 3);
+        var combatTask = CollectAsync(((ICombatActorLogStream)splitter).SubscribeAsync, 1);
+        var systemTask = CollectAsync(((ISystemSignalLogStream)splitter).SubscribeAsync, 2);
+
+        var inputs = new IClassifiedPlayerLogLine[]
+        {
+            new SystemSignalLogLine(Ts, SystemSignalKind.AreaLoading, "AreaKurMountains", 1, 0),
+            new LocalPlayerLogLine(Ts, "ProcessAddItem(A)", 2, 0),
+            new LocalPlayerLogLine(Ts, "ProcessAddItem(B)", 3, 0),
+            new CombatActorLogLine(Ts, 25021745, "OnAttackHitMe(X)", 4, 0),
+            new LocalPlayerLogLine(Ts, "ProcessRemoveEffects(Y)", 5, 0),
+            new SystemSignalLogLine(Ts, SystemSignalKind.LoginBanner, "banner", 6, 0),
+        };
+        foreach (var line in inputs) classified.PushLive(line);
+
+        var local = await localTask.WaitAsync(TimeSpan.FromSeconds(15));
+        var combat = await combatTask.WaitAsync(TimeSpan.FromSeconds(15));
+        var system = await systemTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // Union of typed pipes equals unified pipe input (set equality by Sequence).
+        var unionSeqs = local.Select(x => x.Sequence)
+            .Concat(combat.Select(x => x.Sequence))
+            .Concat(system.Select(x => x.Sequence))
+            .OrderBy(x => x)
+            .ToList();
+        var inputSeqs = inputs.Select(x => x.Sequence).OrderBy(x => x).ToList();
+        unionSeqs.Should().Equal(inputSeqs);
+
+        // Per-typed-pipe: monotonic Sequence ordering preserved.
+        local.Select(x => x.Sequence).Should().BeInAscendingOrder();
+        combat.Select(x => x.Sequence).Should().BeInAscendingOrder();
+        system.Select(x => x.Sequence).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public async Task Faithful_projection_typed_pipe_yields_same_instance_as_input()
+    {
+        // The splitter dispatches the SAME instance to typed pipes — it
+        // doesn't allocate a new record on dispatch. This pins the
+        // faithful-projection invariant at the type-system level: a future
+        // refactor that wrapped/copied the record would be caught here.
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        var localTask = CollectAsync(((ILocalPlayerLogStream)splitter).SubscribeAsync, 3);
+
+        var a = new LocalPlayerLogLine(Ts, "ProcessAddItem(A)", 1, 0);
+        var b = new LocalPlayerLogLine(Ts, "ProcessAddItem(B)", 2, 0);
+        var c = new LocalPlayerLogLine(Ts, "ProcessAddItem(C)", 3, 0);
+        classified.PushLive(a);
+        classified.PushLive(b);
+        classified.PushLive(new CombatActorLogLine(Ts, 1, "OnX", 4, 0)); // not Local — filtered
+        classified.PushLive(c);
+
+        var typedLocal = await localTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+        typedLocal.Should().HaveCount(3);
+        ReferenceEquals(typedLocal[0], a).Should().BeTrue();
+        ReferenceEquals(typedLocal[1], b).Should().BeTrue();
+        ReferenceEquals(typedLocal[2], c).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Marker_variant_forwards_IsReplay_bit_unchanged()
+    {
+        // The splitter's marker variant must forward the IsReplay bit
+        // from the unified pipe unchanged onto the typed-pipe envelope.
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        var collectTask = CollectMarkerAsync(
+            ((ILocalPlayerLogStream)splitter).SubscribeWithReplayMarkerAsync, 3);
+
+        classified.Push(new LocalPlayerLogLine(Ts, "REPLAY1", 1, 0), isReplay: true);
+        classified.Push(new LocalPlayerLogLine(Ts, "REPLAY2", 2, 0), isReplay: true);
+        classified.Push(new LocalPlayerLogLine(Ts, "LIVE", 3, 0), isReplay: false);
+
+        var collected = await collectTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+        collected.Select(e => e.IsReplay).Should().Equal(true, true, false);
+        collected.Select(e => e.Payload.Data).Should().Equal("REPLAY1", "REPLAY2", "LIVE");
+    }
+
+    [Fact]
+    public async Task Combat_envelopes_on_unified_pipe_do_not_reach_local_typed_pipe()
+    {
+        // The Pin/Weather/Position unified-pipe subscribers will receive
+        // CombatActorLogLine envelopes and no-op on them. The reciprocal
+        // direction is also true for the typed pipes: subscribing to the
+        // local typed pipe never observes combat envelopes — proves
+        // dispatch is by runtime type, not "everything that implements
+        // IClassifiedPlayerLogLine".
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        var localTask = CollectAsync(((ILocalPlayerLogStream)splitter).SubscribeAsync, 2);
+
+        classified.PushLive(new LocalPlayerLogLine(Ts, "L1", 1, 0));
+        classified.PushLive(new CombatActorLogLine(Ts, 1, "OnX", 2, 0));
+        classified.PushLive(new LocalPlayerLogLine(Ts, "L2", 3, 0));
+
+        var local = await localTask.WaitAsync(TimeSpan.FromSeconds(15));
+
+        local.Select(x => x.Data).Should().Equal("L1", "L2");
+    }
+
+    private static async Task<List<T>> CollectAsync<T>(
+        Func<CancellationToken, IAsyncEnumerable<T>> subscribe,
+        int expected,
+        TimeSpan? timeBudget = null)
+    {
+        var budget = timeBudget ?? TimeSpan.FromSeconds(15);
+        using var cts = new CancellationTokenSource(budget);
+        var result = new List<T>();
+        try
+        {
+            await foreach (var item in subscribe(cts.Token).ConfigureAwait(false))
+            {
+                result.Add(item);
+                if (result.Count >= expected) break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        return result;
+    }
+
+    private static async Task<List<LogEnvelope<LocalPlayerLogLine>>>
+        CollectMarkerAsync(
+            Func<CancellationToken, IAsyncEnumerable<LogEnvelope<LocalPlayerLogLine>>> subscribe,
+            int expected,
+            TimeSpan? timeBudget = null)
+    {
+        var budget = timeBudget ?? TimeSpan.FromSeconds(15);
+        using var cts = new CancellationTokenSource(budget);
+        var result = new List<LogEnvelope<LocalPlayerLogLine>>();
+        try
+        {
+            await foreach (var item in subscribe(cts.Token).ConfigureAwait(false))
+            {
+                result.Add(item);
+                if (result.Count >= expected) break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        return result;
+    }
+
+    /// <summary>
+    /// In-memory <see cref="IClassifiedPlayerLogStream"/> the splitter can
+    /// subscribe to. Push items via <see cref="PushLive"/> or
+    /// <see cref="Push"/>; the splitter receives them through its single
+    /// subscription's bounded channel. Decouples the splitter test from
+    /// the classifier's own lifecycle so the test exercises only the
+    /// splitter's behaviour.
+    /// </summary>
+    private sealed class StubClassifiedStream : IClassifiedPlayerLogStream
+    {
+        private readonly Channel<LogEnvelope<IClassifiedPlayerLogLine>> _ch =
+            Channel.CreateUnbounded<LogEnvelope<IClassifiedPlayerLogLine>>();
+
+        public void PushLive(IClassifiedPlayerLogLine line) =>
+            _ch.Writer.TryWrite(new LogEnvelope<IClassifiedPlayerLogLine>(line, IsReplay: false));
+
+        public void Push(IClassifiedPlayerLogLine line, bool isReplay) =>
+            _ch.Writer.TryWrite(new LogEnvelope<IClassifiedPlayerLogLine>(line, isReplay));
+
+        public async IAsyncEnumerable<LogEnvelope<IClassifiedPlayerLogLine>> SubscribeWithReplayMarkerAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            while (await _ch.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (_ch.Reader.TryRead(out var env))
+                    yield return env;
+            }
+        }
+    }
+}

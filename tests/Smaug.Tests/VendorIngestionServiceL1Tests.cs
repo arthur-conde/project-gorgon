@@ -147,6 +147,7 @@ public sealed class VendorIngestionServiceL1Tests
                 upstream,
                 NoopCombat.Instance,
                 NoopSystem.Instance,
+                NoopClassified.Instance,
                 NoopChat.Instance,
                 attention);
 
@@ -368,7 +369,7 @@ public sealed class VendorIngestionServiceL1Tests
     /// <summary>
     /// In-memory driver shaped like the production L1 driver — pushes envelopes
     /// at the handler with the IsReplay bit minted off the replay/live phase
-    /// boundary, mirroring <c>PlayerLogActorRouter</c>'s direct-yield-replay
+    /// boundary, mirroring <c>PlayerLogPipeSplitter</c>'s direct-yield-replay
     /// /bounded-channel-live shape. Keeps the test file self-contained
     /// (Smaug.Tests doesn't reference Mithril.GameState.Tests' TestLogStreamDriver).
     /// </summary>
@@ -571,6 +572,18 @@ public sealed class VendorIngestionServiceL1Tests
     {
         public static readonly NoopChat Instance = new();
         public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            try { await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            yield break;
+        }
+    }
+
+    private sealed class NoopClassified : IClassifiedPlayerLogStream
+    {
+        public static readonly NoopClassified Instance = new();
+        public async IAsyncEnumerable<LogEnvelope<IClassifiedPlayerLogLine>> SubscribeWithReplayMarkerAsync(
             [EnumeratorCancellation] CancellationToken ct)
         {
             try { await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false); }

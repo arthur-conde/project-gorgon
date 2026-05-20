@@ -25,7 +25,7 @@ public interface ILocalPlayerLogStream
     /// sync-vs-async heuristic. Existing consumers (pre-L1) continue to
     /// use <see cref="SubscribeAsync"/> unchanged.
     /// <para>The default implementation throws — implementors that drive
-    /// L1 (today: <see cref="PlayerLogActorRouter"/>) MUST override.
+    /// L1 (today: <see cref="PlayerLogPipeSplitter"/>) MUST override.
     /// Non-L0.5 implementors (test fakes that never feed L1) can keep
     /// the default thrower.</para>
     /// </summary>

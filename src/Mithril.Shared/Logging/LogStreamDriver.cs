@@ -6,10 +6,11 @@ namespace Mithril.Shared.Logging;
 
 /// <summary>
 /// Default <see cref="ILogStreamDriver"/> implementation (#511 deliverable 3
-/// / #550 PR 1). Wraps the four upstream surfaces — the three L0.5 pipes
-/// (<see cref="ILocalPlayerLogStream"/>, <see cref="ICombatActorLogStream"/>,
-/// <see cref="ISystemSignalLogStream"/>) plus the chat
-/// <see cref="IChatLogStream"/> — and produces typed
+/// / #550 PR 1 / #556). Wraps the five upstream surfaces — the three
+/// L0.5 typed pipes (<see cref="ILocalPlayerLogStream"/>,
+/// <see cref="ICombatActorLogStream"/>, <see cref="ISystemSignalLogStream"/>)
+/// plus the L0.5 unified pipe (<see cref="IClassifiedPlayerLogStream"/>) and
+/// the chat <see cref="IChatLogStream"/> — and produces typed
 /// <see cref="LogEnvelope{T}"/> subscriptions with consumer-side
 /// containment, drop accounting, dispatcher marshalling, idempotence
 /// filtering, and a fault state machine.
@@ -31,19 +32,20 @@ namespace Mithril.Shared.Logging;
 /// Sourced directly from each upstream pipe's L1-facing
 /// <c>SubscribeWithReplayMarkerAsync</c> method (added to
 /// <see cref="ILocalPlayerLogStream"/> / <see cref="ICombatActorLogStream"/>
-/// / <see cref="ISystemSignalLogStream"/> in #550 PR 1, implemented on
-/// <see cref="PlayerLogActorRouter"/>'s direct-yield-replay /
-/// bounded-channel-live boundary). The L0.5 router can answer the
-/// IsReplay question authoritatively because it owns the structural
-/// boundary; L1 forwards the bit unchanged on each envelope. Chat-backed
-/// subscriptions hard-code IsReplay = false (chat has no backlog by
-/// construction — Divergence 1 in #549).</para>
+/// / <see cref="ISystemSignalLogStream"/> in #550 PR 1, plus
+/// <see cref="IClassifiedPlayerLogStream"/> in #556). The L0.5
+/// classifier+splitter pair answers the IsReplay question authoritatively
+/// because the classifier owns the structural boundary and the splitter
+/// forwards the bit unchanged; L1 forwards it unchanged again on each
+/// envelope. Chat-backed subscriptions hard-code IsReplay = false (chat
+/// has no backlog by construction — Divergence 1 in #549).</para>
 /// </summary>
 public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
 {
     private readonly ILocalPlayerLogStream _localPlayer;
     private readonly ICombatActorLogStream _combat;
     private readonly ISystemSignalLogStream _system;
+    private readonly IClassifiedPlayerLogStream _classified;
     private readonly IChatLogStream _chat;
     private readonly LogStreamAttentionSource _attention;
     private readonly IDiagnosticsSink? _diag;
@@ -57,6 +59,7 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
         ILocalPlayerLogStream localPlayer,
         ICombatActorLogStream combat,
         ISystemSignalLogStream system,
+        IClassifiedPlayerLogStream classified,
         IChatLogStream chat,
         LogStreamAttentionSource attention,
         IDiagnosticsSink? diag = null,
@@ -65,6 +68,7 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
         _localPlayer = localPlayer ?? throw new ArgumentNullException(nameof(localPlayer));
         _combat = combat ?? throw new ArgumentNullException(nameof(combat));
         _system = system ?? throw new ArgumentNullException(nameof(system));
+        _classified = classified ?? throw new ArgumentNullException(nameof(classified));
         _chat = chat ?? throw new ArgumentNullException(nameof(chat));
         _attention = attention ?? throw new ArgumentNullException(nameof(attention));
         _diag = diag;
@@ -106,6 +110,21 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
             sequenceOf = item => ((SystemSignalLogLine)(object)item).Sequence;
             streamKind = "System";
         }
+        else if (typeof(T) == typeof(IClassifiedPlayerLogLine))
+        {
+            // L0.5 unified pipe (#556). Cross-pipe-ordering-sensitive
+            // consumers (Pin/Weather/Position) subscribe here to observe
+            // every classified line in source-Sequence order through one
+            // subscription, rather than racing three independent typed
+            // pipes. The dispatch chain uses `typeof(T) ==` exact-equality,
+            // so Subscribe<LocalPlayerLogLine> continues to route to the
+            // typed pipe (the Splitter), NOT the unified pipe — even
+            // though LocalPlayerLogLine implements IClassifiedPlayerLogLine.
+            upstream = ct => (IAsyncEnumerable<LogEnvelope<T>>)(object)
+                _classified.SubscribeWithReplayMarkerAsync(ct);
+            sequenceOf = item => ((IClassifiedPlayerLogLine)(object)item).Sequence;
+            streamKind = "Classified";
+        }
         else if (typeof(T) == typeof(RawLogLine))
         {
             // Chat — see Divergence 1 in #549. Chat has no backlog by
@@ -132,8 +151,9 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
         {
             throw new ArgumentException(
                 $"L1 driver does not support subscriptions of type {typeof(T).Name}. " +
-                "Supported: LocalPlayerLogLine, CombatActorLogLine, SystemSignalLogLine, RawLogLine (chat). " +
-                "For Player.log RawLogLine subscribe through one of the three L0.5 pipes instead.",
+                "Supported: LocalPlayerLogLine, CombatActorLogLine, SystemSignalLogLine, " +
+                "IClassifiedPlayerLogLine (unified pipe), RawLogLine (chat). " +
+                "For Player.log RawLogLine subscribe through one of the L0.5 pipes instead.",
                 nameof(T));
         }
 
