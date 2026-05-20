@@ -28,7 +28,7 @@ public sealed class GameSessionServiceTests
             GameSession? captured = null;
             svc.SessionStarted += (_, s) => captured = s;
 
-            stream.Push(BannerEmraell);
+            stream.PushBanner(BannerEmraell);
             await RunUntilDrainedAsync(svc, stream);
 
             svc.Current.Should().NotBeNull();
@@ -55,9 +55,9 @@ public sealed class GameSessionServiceTests
             svc.SessionStarted += (_, _) => startedCount++;
             anchor.AnchorChanged += (_, _) => anchorChangedCount++;
 
-            stream.Push(BannerEmraell);
-            stream.Push(BannerEmraell);
-            stream.Push(BannerEmraell);
+            stream.PushBanner(BannerEmraell);
+            stream.PushBanner(BannerEmraell);
+            stream.PushBanner(BannerEmraell);
             await RunUntilDrainedAsync(svc, stream);
 
             startedCount.Should().Be(1);
@@ -76,8 +76,8 @@ public sealed class GameSessionServiceTests
             var sessions = new List<GameSession>();
             svc.SessionStarted += (_, s) => sessions.Add(s);
 
-            stream.Push(BannerEmraell);
-            stream.Push(BannerSecond);
+            stream.PushBanner(BannerEmraell);
+            stream.PushBanner(BannerSecond);
             await RunUntilDrainedAsync(svc, stream);
 
             sessions.Should().HaveCount(2);
@@ -99,8 +99,8 @@ public sealed class GameSessionServiceTests
             var sessions = new List<GameSession>();
             svc.SessionStarted += (_, s) => sessions.Add(s);
 
-            stream.Push(BannerEmraell);
-            stream.Push(BannerOtherCharacter);
+            stream.PushBanner(BannerEmraell);
+            stream.PushBanner(BannerOtherCharacter);
             await RunUntilDrainedAsync(svc, stream);
 
             sessions.Should().HaveCount(2);
@@ -120,7 +120,7 @@ public sealed class GameSessionServiceTests
         var runTask = svc.StartAsync(cts.Token);
         try
         {
-            stream.Push(BannerEmraell);
+            stream.PushBanner(BannerEmraell);
             await stream.WaitForDrainAsync(cts.Token);
 
             var replayed = new List<GameSession>();
@@ -131,7 +131,7 @@ public sealed class GameSessionServiceTests
 
             // Live event still arrives without re-subscribing — the service is
             // still running and a second banner mints + delivers a new session.
-            stream.Push(BannerSecond);
+            stream.PushBanner(BannerSecond);
             await stream.WaitForDrainAsync(cts.Token);
 
             replayed.Should().HaveCount(2);
@@ -168,8 +168,11 @@ public sealed class GameSessionServiceTests
     }
 
     [Fact]
-    public async Task Non_banner_lines_do_not_affect_session()
+    public async Task Non_LoginBanner_system_signals_do_not_affect_session()
     {
+        // Post-L0.5: GameSessionService only sees system-signal-classified lines.
+        // Other Kinds (AreaLoading, PlayerAdded, SessionLifecycle) flow past
+        // without affecting session state.
         var stream = new ScriptedStream(Array.Empty<string>());
         var svc = new GameSessionService(stream);
         try
@@ -177,10 +180,11 @@ public sealed class GameSessionServiceTests
             var starts = 0;
             svc.SessionStarted += (_, _) => starts++;
 
-            stream.Push("[12:25:00] LocalPlayer: ProcessAddPlayer(1, 2, \"\", \"Emraell\")");
-            stream.Push("[12:25:01] Some unrelated engine log line.");
-            stream.Push(BannerEmraell);
-            stream.Push("[12:25:05] LocalPlayer: ProcessAddItem(Barley(1), 0, False)");
+            stream.Push(SystemSignalKind.AreaLoading, "LOADING LEVEL AreaSerbule");
+            stream.Push(SystemSignalKind.PlayerAdded, "ProcessAddPlayer(1, 2, \"\", \"Emraell\")");
+            stream.Push(SystemSignalKind.SessionLifecycle, "EVENT(Ok): playing");
+            stream.PushBanner(BannerEmraell);
+            stream.Push(SystemSignalKind.SessionLifecycle, "EVENT(Ok): sessionUpdate, playTime=60");
             await RunUntilDrainedAsync(svc, stream);
 
             starts.Should().Be(1);
@@ -206,34 +210,53 @@ public sealed class GameSessionServiceTests
         svc.Dispose();
     }
 
-    private sealed class ScriptedStream : IPlayerLogStream
+    /// <summary>
+    /// In-memory <see cref="ISystemSignalLogStream"/> that emits pre-classified
+    /// signals to the service under test — the same shape the L0.5 router
+    /// would produce in production. <see cref="PushBanner"/> takes a raw
+    /// <c>[ts] Logged in as character …</c> line, strips the <c>[ts] </c>
+    /// prefix, and emits with <see cref="SystemSignalKind.LoginBanner"/>;
+    /// <see cref="Push(SystemSignalKind, string)"/> emits an arbitrary
+    /// kind+data pair for the non-banner cases.
+    /// </summary>
+    private sealed class ScriptedStream : ISystemSignalLogStream
     {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
+        private const int TsPrefixLen = 11; // length of "[HH:MM:SS] "
+        private readonly Channel<SystemSignalLogLine> _channel = Channel.CreateUnbounded<SystemSignalLogLine>();
         private long _pending;
         private TaskCompletionSource _drained = NewDrainTcs();
 
-        public ScriptedStream(params string[] lines)
+        public ScriptedStream(params string[] bannerLines)
         {
-            if (lines.Length == 0)
+            if (bannerLines.Length == 0)
             {
                 _drained.TrySetResult();
                 return;
             }
-            Interlocked.Add(ref _pending, lines.Length);
-            foreach (var line in lines) _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
+            Interlocked.Add(ref _pending, bannerLines.Length);
+            foreach (var line in bannerLines)
+                _channel.Writer.TryWrite(MakeBanner(line));
         }
 
-        public void Push(string line)
+        public void PushBanner(string fullBannerLine)
         {
             Interlocked.Increment(ref _pending);
             Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(DateTime.UtcNow, line));
+            _channel.Writer.TryWrite(MakeBanner(fullBannerLine));
+        }
+
+        public void Push(SystemSignalKind kind, string data)
+        {
+            Interlocked.Increment(ref _pending);
+            Interlocked.Exchange(ref _drained, NewDrainTcs());
+            _channel.Writer.TryWrite(new SystemSignalLogLine(
+                DateTimeOffset.UtcNow, kind, data, Sequence: 0, ReadMonotonicTicks: 0));
         }
 
         public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
         public Task WaitForDrainAsync(TimeSpan timeout) => _drained.Task.WaitAsync(timeout);
 
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
+        public async IAsyncEnumerable<SystemSignalLogLine> SubscribeAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
         {
             while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
@@ -245,6 +268,17 @@ public sealed class GameSessionServiceTests
                         _drained.TrySetResult();
                 }
             }
+        }
+
+        private static SystemSignalLogLine MakeBanner(string fullLine)
+        {
+            // Tolerate inputs without the [ts] prefix so tests can read either way.
+            var data = fullLine.Length > TsPrefixLen && fullLine[0] == '['
+                ? fullLine.Substring(TsPrefixLen)
+                : fullLine;
+            return new SystemSignalLogLine(
+                DateTimeOffset.UtcNow, SystemSignalKind.LoginBanner, data,
+                Sequence: 0, ReadMonotonicTicks: 0);
         }
 
         private static TaskCompletionSource NewDrainTcs() =>

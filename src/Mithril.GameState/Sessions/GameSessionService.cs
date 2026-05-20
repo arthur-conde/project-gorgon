@@ -5,10 +5,13 @@ using Microsoft.Extensions.Hosting;
 namespace Mithril.GameState.Sessions;
 
 /// <summary>
-/// Hosted-service implementation of <see cref="IGameSessionService"/>. Tails
-/// <see cref="IPlayerLogStream"/>, parses the login banner via
-/// <see cref="LoginBannerParser"/>, and publishes session transitions to
-/// subscribers + the shared <see cref="SessionAnchor"/> consumer.
+/// Hosted-service implementation of <see cref="IGameSessionService"/>.
+/// Consumes the L0.5 (#532) <see cref="ISystemSignalLogStream"/> — filters
+/// for <see cref="SystemSignalKind.LoginBanner"/>, parses the banner body
+/// via <see cref="LoginBannerParser"/>, and publishes session transitions to
+/// subscribers + the shared <see cref="SessionAnchor"/> consumer. This is the
+/// L0.5 migration reference; pre-L0.5 the service consumed
+/// <see cref="IPlayerLogStream"/> and matched the banner shape itself.
 ///
 /// <para>The anchor is pushed-to, not implemented-by, to avoid a DI cycle:
 /// the streams that consume the anchor are in <c>Mithril.Shared</c>, and
@@ -29,7 +32,7 @@ namespace Mithril.GameState.Sessions;
 /// </summary>
 public sealed class GameSessionService : BackgroundService, IGameSessionService
 {
-    private readonly IPlayerLogStream _stream;
+    private readonly ISystemSignalLogStream _stream;
     private readonly SessionAnchor? _anchor;
     private readonly IDiagnosticsSink? _diag;
     private readonly ThrottledWarn _warn;
@@ -39,7 +42,7 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
     private GameSession? _current;
 
     public GameSessionService(
-        IPlayerLogStream stream,
+        ISystemSignalLogStream stream,
         SessionAnchor? anchor = null,
         IDiagnosticsSink? diag = null)
     {
@@ -72,12 +75,16 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info("Session", "Subscribing to Player.log for login banner");
-        await foreach (var raw in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
+        _diag?.Info("Session", "Subscribing to L0.5 system-signal pipe for login banner");
+        await foreach (var signal in _stream.SubscribeAsync(stoppingToken).ConfigureAwait(false))
         {
+            // L0.5 already classified the line as a system signal — we only
+            // care about LoginBanner here. Other kinds (AreaLoading,
+            // PlayerAdded, SessionLifecycle) flow past without us.
+            if (signal.Kind != SystemSignalKind.LoginBanner) continue;
             try
             {
-                if (!LoginBannerParser.TryParse(raw.Line, out var session)) continue;
+                if (!LoginBannerParser.TryParse(signal.Data, out var session)) continue;
                 Publish(session);
             }
             catch (Exception ex) { _warn.Warn($"Ingestion error: {ex.Message}"); }
