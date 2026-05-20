@@ -41,6 +41,13 @@ public sealed record MotherlodeStatus(
 /// per-map identity (type name only) and the inventory slot ≠ the grid the
 /// player arranges by, so read→treasure binding cannot be derived from the log.
 ///
+/// <para>This is the canonical <b>Tier-2 (causal protocol state machine)</b>
+/// reference in the cross-source-correlation hierarchy — see
+/// <c>docs/cross-source-correlation.md</c>. The use-line (request) and
+/// distance-line (response) carry no shared join key; the SM pairs them by
+/// arrival order within a TTL window (k-th-to-slot-k label-agnostic temporal
+/// binding) rather than by label.</para>
+///
 /// <para><b>Create-on-use, not on stock.</b> A working slot is created lazily
 /// by a <i>reading</i>, never by holding inventory — so carrying 100+ maps
 /// costs nothing until measured. The map <i>type</i> name from the

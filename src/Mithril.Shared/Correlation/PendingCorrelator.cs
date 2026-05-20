@@ -3,8 +3,10 @@ using System.Diagnostics.CodeAnalysis;
 namespace Mithril.Shared.Correlation;
 
 /// <summary>
-/// Tier-1 keyed-correlation primitive (see #523 / #511 design notes): a thin
-/// multi-map of <typeparamref name="TKey"/> → FIFO list of <typeparamref name="TReq"/>
+/// Tier-1 keyed-correlation primitive — see
+/// <c>docs/cross-source-correlation.md</c> for the full tier hierarchy this
+/// sits inside (#523 / #511 design notes). A thin multi-map of
+/// <typeparamref name="TKey"/> → FIFO list of <typeparamref name="TReq"/>
 /// entries, each timestamped at enqueue time. Entries are evicted by TTL —
 /// lazily on <see cref="TryTake"/> (stale entries at the head of a bucket are
 /// evicted along the way) and eagerly via <see cref="DrainStale"/>. Neither
