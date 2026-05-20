@@ -78,6 +78,34 @@ public static class ServiceCollectionExtensions
             .AddHostedService<ActiveCharacterLogSynchronizer>();
 
     /// <summary>
+    /// Register the L0.5 actor-keyed envelope router (#532). Consumes
+    /// <see cref="IPlayerLogStream"/>, classifies each line, and emits typed
+    /// records on three pipes: <see cref="ILocalPlayerLogStream"/>,
+    /// <see cref="ICombatActorLogStream"/>, <see cref="ISystemSignalLogStream"/>.
+    ///
+    /// <para><paramref name="captureRawAccessor"/> is a late-bound read of an
+    /// infra diagnostic setting (typically a <c>ShellSettings</c> property)
+    /// — when it returns <c>true</c> the router fills the <c>Raw</c> field on
+    /// emitted records with the exact source line; when <c>false</c> (the
+    /// default) <c>Raw</c> stays <c>null</c> and no per-line string
+    /// allocation occurs. Mirrors the perf-trace pattern: flip the setting
+    /// and subsequent emissions reflect the new state.</para>
+    /// </summary>
+    public static IServiceCollection AddMithrilLogActorRouter(
+        this IServiceCollection services,
+        Func<IServiceProvider, Func<bool>>? captureRawAccessor = null)
+    {
+        services.AddSingleton<PlayerLogActorRouter>(sp => new PlayerLogActorRouter(
+            sp.GetRequiredService<IPlayerLogStream>(),
+            sp.GetService<IDiagnosticsSink>(),
+            captureRawAccessor?.Invoke(sp)));
+        services.AddSingleton<ILocalPlayerLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
+        services.AddSingleton<ICombatActorLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
+        services.AddSingleton<ISystemSignalLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
+        return services;
+    }
+
+    /// <summary>
     /// Register the root directory for per-character storage (typically
     /// <c>%LocalAppData%/Mithril/characters</c>). Must be called before any
     /// <see cref="AddPerCharacterStore{T}"/> / <see cref="AddPerCharacterModuleStore{T}"/>.

@@ -53,6 +53,7 @@ public static class ShellComposition
             .AddMithrilDiagnostics(o.LogDir)
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
+            .AddMithrilLogActorRouter(sp => () => sp.GetRequiredService<ShellSettings>().CaptureRawPlayerLogLines)
             .AddMithrilGameState()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
