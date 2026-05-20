@@ -62,7 +62,12 @@ public sealed class PlayerLogActorRouter :
     private readonly PipeRegistry<SystemSignalLogLine> _system = new();
 
     private CancellationTokenSource? _runCts;
-    private Task? _runTask;
+    // Chain of consecutive RunAsync invocations. A new run is queued via
+    // ContinueWith so it can only start after the prior task has fully
+    // unwound its `await foreach` over the upstream feed — closing the
+    // restart race (#547) where a fast unsub→sub previously spawned a
+    // second RunAsync concurrently with the still-draining first.
+    private Task _runChain = Task.CompletedTask;
     private long _discardCount;
     private long _anomalyCount;
     private long _samplesEmitted;
@@ -155,17 +160,50 @@ public sealed class PlayerLogActorRouter :
 
     private void EnsureRunning()
     {
-        if (_runTask is { IsCompleted: false }) return;
-        _runCts = new CancellationTokenSource();
-        _runTask = Task.Run(() => RunAsync(_runCts.Token));
+        // A healthy uncancelled run already in progress? Keep it.
+        if (_runCts is { IsCancellationRequested: false } && !_runChain.IsCompleted) return;
+
+        // Otherwise queue a new RunAsync at the tail of the chain. Using
+        // ContinueWith guarantees the prior task has fully drained its
+        // `await foreach` over upstream before the new one subscribes —
+        // upstream sees at most one active subscription at any moment.
+        // ConfigureAwait/ExecuteSynchronously isn't used so the continuation
+        // runs on the thread pool rather than whatever happened to complete
+        // the previous task.
+        var cts = new CancellationTokenSource();
+        _runCts = cts;
+        _runChain = _runChain.ContinueWith(
+            _ => RunChainLinkAsync(cts),
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default).Unwrap();
+    }
+
+    private async Task RunChainLinkAsync(CancellationTokenSource cts)
+    {
+        try
+        {
+            // A StopRunning landing between queueing and this point makes
+            // the queued link a no-op — don't subscribe to upstream just to
+            // see "already canceled" on the first iteration.
+            bool shouldRun;
+            lock (_gate) shouldRun = !NoSubscribers() && !cts.IsCancellationRequested;
+            if (!shouldRun) return;
+            await RunAsync(cts.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     private void StopRunning()
     {
+        // Signal cancellation; the chain links observe it and unwind. The
+        // CTS itself is disposed by the link's finally — we DON'T null it
+        // out here, because EnsureRunning needs to read IsCancellationRequested
+        // to decide whether to queue a successor.
         try { _runCts?.Cancel(); } catch { }
-        _runCts?.Dispose();
-        _runCts = null;
-        _runTask = null;
         _localPlayer.ClearReplay();
         _combat.ClearReplay();
         _system.ClearReplay();

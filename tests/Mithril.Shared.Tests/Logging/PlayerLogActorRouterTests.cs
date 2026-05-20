@@ -172,6 +172,99 @@ public sealed class PlayerLogActorRouterTests
         return result;
     }
 
+    [Fact]
+    public async Task Fast_unsub_then_resub_does_not_double_route_lines_to_new_subscriber()
+    {
+        // #547 race: PlayerLogActorRouter.StopRunning previously nulled _runTask
+        // synchronously while the prior RunAsync's `await foreach` was still
+        // unwinding. A fast unsubscribe → subscribe → push then spawned a
+        // SECOND RunAsync alongside the still-draining first; both routed the
+        // same upstream emission to the new subscriber's pipe channel.
+        //
+        // We expose the window deterministically with a per-subscriber upstream
+        // whose enumerator only completes once externally released — the
+        // router's old RunAsync remains alive and subscribed to upstream
+        // through the moment the new subscriber attaches.
+        var upstream = new BlockingPerSubscriberStream();
+        using var router = new PlayerLogActorRouter(upstream);
+
+        // First subscriber: receives line 1 then closes.
+        var firstCollected = await CollectOneThenCloseAsync(router.SubscribeAsync, async () =>
+        {
+            await WaitUntilAsync(() => upstream.SubscriberCount == 1, TimeSpan.FromSeconds(5));
+            upstream.Push("[20:01:17] LocalPlayer: ProcessAddItem(A(1), -1, False)");
+        });
+        firstCollected.Should().HaveCount(1);
+        firstCollected[0].Data.Should().StartWith("ProcessAddItem(A");
+
+        // At this moment: the first consumer has exited (StopRunning fired
+        // synchronously inside its finally{}), but the prior RunAsync may
+        // still be inside upstream's await foreach because the upstream
+        // enumerator hasn't been released yet — exactly the race window.
+
+        // Second subscriber attaches. With the bug, EnsureRunning saw
+        // _runTask is null (StopRunning had nulled it) and spawned a SECOND
+        // RunAsync alongside the still-draining first; upstream then had
+        // TWO subscribers and any push routed twice to the new pipe channel.
+        //
+        // With the chain-serialize fix, EnsureRunning queues the new run via
+        // ContinueWith — it only subscribes to upstream after the prior run
+        // unwinds. So while upstream is held open, only the PRIOR RunAsync
+        // is subscribed; the new pipe channel receives exactly one
+        // emission per push (routed by the prior RunAsync, which is still
+        // alive and observing PipeRegistry).
+        //
+        // CollectAsync runs synchronously up to the first await in its body
+        // — past `router.SubscribeAsync.GetAsyncEnumerator().MoveNextAsync()`,
+        // which has already done lock + AddSubscriber + EnsureRunning by the
+        // time `lateTask` is assigned, so the new pipe subscriber is in
+        // place. We still wait briefly for upstream to reach two subscribers
+        // — on UNFIXED code this succeeds (proves the race is observably
+        // open) and a subsequent push routes twice; on FIXED code this
+        // times out (only one subscriber ever; the chain serializes
+        // restarts), the catch swallows the timeout, and the subsequent
+        // push routes only once via the still-alive prior RunAsync. Either
+        // branch leads to the same assertion: exactly one emission.
+        var lateTask = CollectAsync(router.SubscribeAsync, expected: 5, timeBudget: TimeSpan.FromSeconds(2));
+        try { await WaitUntilAsync(() => upstream.SubscriberCount >= 2, TimeSpan.FromSeconds(1)); }
+        catch (TimeoutException) { /* fix path — count stays at 1; proceed */ }
+
+        upstream.Push("[20:01:18] LocalPlayer: ProcessAddItem(B(2), -1, False)");
+        var collected = await lateTask;
+
+        // Release the held-open upstream subscriptions so they unwind cleanly
+        // for the test's disposal.
+        upstream.Release();
+
+        // Exactly-once: the new subscriber observes line B once, not twice.
+        // Before the fix: 2 items (both RunAsync instances routed the line).
+        // After the fix:  1 item (only one RunAsync subscribed at a time).
+        collected.Should().HaveCount(1,
+            because: $"observed Data values: [{string.Join(", ", collected.Select(x => $"\"{x.Data[..Math.Min(30, x.Data.Length)]}\""))}]");
+        collected[0].Data.Should().StartWith("ProcessAddItem(B");
+    }
+
+    /// <summary>
+    /// Subscribe once, run <paramref name="trigger"/> while subscribed, collect
+    /// exactly one item, then exit the iteration (triggering the router's
+    /// no-subscribers StopRunning path).
+    /// </summary>
+    private static async Task<List<LocalPlayerLogLine>> CollectOneThenCloseAsync(
+        Func<CancellationToken, IAsyncEnumerable<LocalPlayerLogLine>> subscribe,
+        Func<Task> trigger)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = new List<LocalPlayerLogLine>();
+        var triggerTask = Task.Run(trigger);
+        await foreach (var item in subscribe(cts.Token))
+        {
+            result.Add(item);
+            if (result.Count >= 1) break;
+        }
+        await triggerTask;
+        return result;
+    }
+
     private sealed class ScriptedPlayerLogStream : IPlayerLogStream
     {
         private readonly Channel<RawLogLine> _ch = Channel.CreateUnbounded<RawLogLine>();
@@ -193,6 +286,67 @@ public sealed class PlayerLogActorRouterTests
             {
                 while (_ch.Reader.TryRead(out var line))
                     yield return line;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Per-subscriber upstream that mirrors <see cref="PlayerLogStream"/>'s
+    /// real fan-out shape (each subscriber gets its own channel — needed to
+    /// reproduce #547; a shared-channel test stream hides the bug because
+    /// only one router instance ever reads the line). Subscriber enumerators
+    /// stay alive after cancellation until <see cref="Release"/> is called,
+    /// so a test can deterministically hold open the prior RunAsync's
+    /// `await foreach` while a new subscriber attaches.
+    /// </summary>
+    private sealed class BlockingPerSubscriberStream : IPlayerLogStream
+    {
+        private readonly object _gate = new();
+        private readonly List<Channel<RawLogLine>> _subs = new();
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private long _seq;
+
+        public int SubscriberCount { get { lock (_gate) return _subs.Count; } }
+
+        public void Push(string line)
+        {
+            Channel<RawLogLine>[] snapshot;
+            lock (_gate) snapshot = _subs.ToArray();
+            var seq = Interlocked.Increment(ref _seq);
+            var raw = new RawLogLine(
+                Timestamp: new DateTimeOffset(2026, 5, 19, 20, 0, 0, TimeSpan.Zero),
+                Line: line, Sequence: seq, ReadMonotonicTicks: 0);
+            foreach (var ch in snapshot) ch.Writer.TryWrite(raw);
+        }
+
+        public void Release() => _release.TrySetResult();
+
+        public async IAsyncEnumerable<RawLogLine> SubscribeAsync([EnumeratorCancellation] CancellationToken ct)
+        {
+            var ch = Channel.CreateUnbounded<RawLogLine>();
+            lock (_gate) _subs.Add(ch);
+            try
+            {
+                // Pump lines as they arrive. We deliberately do NOT pass `ct`
+                // to WaitToReadAsync so a cancellation does not immediately
+                // exit the iteration — the enumerator only completes once
+                // `Release()` fires (or the channel is closed). This matches
+                // the spirit of an upstream whose `await foreach` is "still
+                // in flight" while the router's StopRunning has already
+                // returned.
+                while (!_release.Task.IsCompleted)
+                {
+                    var any = await Task.WhenAny(
+                        ch.Reader.WaitToReadAsync().AsTask(),
+                        _release.Task);
+                    if (any == _release.Task) break;
+                    while (ch.Reader.TryRead(out var line)) yield return line;
+                }
+            }
+            finally
+            {
+                lock (_gate) _subs.Remove(ch);
             }
         }
     }

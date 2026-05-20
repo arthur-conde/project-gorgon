@@ -29,7 +29,12 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     // session, bounded in practice by one game session's log volume.
     private List<RawLogLine>? _sessionReplay;
     private CancellationTokenSource? _runCts;
-    private Task? _runTask;
+    // Chain of consecutive RunAsync invocations. See #547 — a fast
+    // unsub→sub previously spawned a second RunAsync while the first was
+    // still mid-poll, briefly putting two file readers into the publish
+    // path. ContinueWith guarantees the next run only starts after the
+    // prior unwinds. The chain replaces the nullable _runTask field.
+    private Task _runChain = Task.CompletedTask;
     private string? _activePath;
 
     public PlayerLogStream(
@@ -107,20 +112,48 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
 
     private void EnsureRunning()
     {
-        if (_runTask is { IsCompleted: false }) return;
+        // Healthy uncancelled run already in progress? Keep it.
+        if (_runCts is { IsCancellationRequested: false } && !_runChain.IsCompleted) return;
+
         var path = _config.PlayerLogPath;
         if (string.IsNullOrEmpty(path)) return;
         _activePath = path;
-        _runCts = new CancellationTokenSource();
-        _runTask = Task.Run(() => RunAsync(path, _runCts.Token));
+
+        // Queue a new RunAsync at the tail of the chain via ContinueWith so
+        // it only starts after the prior task has fully drained its poll
+        // loop — at most one file reader is active at any moment (#547).
+        var cts = new CancellationTokenSource();
+        _runCts = cts;
+        _runChain = _runChain.ContinueWith(
+            _ => RunChainLinkAsync(path, cts),
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default).Unwrap();
+    }
+
+    private async Task RunChainLinkAsync(string path, CancellationTokenSource cts)
+    {
+        try
+        {
+            // A StopRunning landing between queueing and this point makes
+            // the queued link a no-op.
+            bool shouldRun;
+            lock (_gate) shouldRun = _subs.Count > 0 && !cts.IsCancellationRequested;
+            if (!shouldRun) return;
+            await RunAsync(path, cts.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     private void StopRunning()
     {
+        // Signal cancellation; the chain link observes it and unwinds. We
+        // DON'T null _runCts here, because EnsureRunning reads
+        // IsCancellationRequested to decide whether to queue a successor.
         try { _runCts?.Cancel(); } catch { }
-        _runCts?.Dispose();
-        _runCts = null;
-        _runTask = null;
         _activePath = null;
         _sessionReplay = null;
     }
