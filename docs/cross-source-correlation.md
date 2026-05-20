@@ -47,6 +47,39 @@ with TTL-based eviction (lazy on `TryTake`, eager via `DrainStale`) and an
 explicit `onUnmatched` callback fired for each evicted entry. The side that
 arrives first `Add`s; the side that arrives second `TryTake`s.
 
+**Operational invariants.** Three contracts on `PendingCorrelator` are
+load-bearing and easy to overlook — the primitive's XML doc carries the full
+text, mirrored here so the doc stands alone:
+
+1. **`DrainStale` discipline.** Neither `Add` nor `Count` triggers eviction;
+   only `TryTake` (per the bucket it touches, lazy) and `DrainStale` (across
+   every bucket, eager) do. A consumer that only `Add`s for some keys — and
+   never `TryTake`s those keys, because the matching response never arrives
+   — must call `DrainStale` periodically (e.g. piggybacked on every event
+   handler, the pattern used by `InventoryService.DrainPendingStale` and
+   `Legolas.LogIngestionService.DrainPendingStale`). Without it, the bucket
+   for that key grows unbounded for the process lifetime. PR #541 hit this
+   exactly: dropping the pre-PR `PendingAddBufferCap = 32` without wiring
+   `DrainStale` produced a real memory-growth defect, caught and fixed in
+   the same PR's post-review pass.
+2. **Unmatched callback exception aggregation.** `FireUnmatched` runs each
+   `onUnmatched` invocation outside the internal lock, so callbacks may
+   safely re-enter the correlator. If a callback throws, the sweep continues
+   for the remaining evicted entries and any thrown exceptions are
+   aggregated into a single `AggregateException` raised after the sweep —
+   the "every evicted entry receives its callback" guarantee holds even
+   when individual callbacks fault. Callbacks should still be designed to
+   not throw, but a buggy callback in one consumer can't silently drop
+   evictions for other entries in the same sweep.
+3. **Monotonic-time invariant.** `EvictStale` walks the head of the bucket
+   and stops at the first non-stale entry, so the bucket MUST be in
+   non-decreasing `EnqueuedAt` order. `Add` is the only writer and always
+   appends with a freshly-read `now`, which holds the invariant for any
+   monotonic `TimeProvider` (production `TimeProvider.System` is monotonic;
+   test `ManualTimeProvider`s typically advance forward). A future caller
+   that inserted mid-bucket or used a non-monotonic provider would silently
+   leave stale entries behind.
+
 **In-repo references.**
 
 - **`InventoryService`** ([`src/Mithril.GameState/Inventory/InventoryService.cs`](../src/Mithril.GameState/Inventory/InventoryService.cs))
@@ -89,15 +122,25 @@ for the canonical pattern.
 
 **In-repo reference.**
 [`Legolas.Services.MotherlodeMeasurementCoordinator`](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs)
-binds `LocalPlayer: ProcessDoDelayLoop("Using <Map>")` (the request, in
-Player.log) to `LocalPlayer: ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`
-(the response, also in Player.log, ~1 s offset) — see the Player-Log-Signals
-wiki capture ("Motherlode maps → Source") for the same-source emission
-evidence. The pair is **same-source via Player.log** (the chat `[Status]` line
-is a redundant mirror, [verified](https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#source--playerlog-is-canonical-the-chat-mirror-is-redundant)),
-which strips the cross-source coupling entirely — a Tier-2 SM operating on
-one stream's well-defined `Sequence` ordering, with no second-resolution tie
-to break.
+binds the request — `LocalPlayer: ProcessDoDelayLoop("Using <Map>")`, parsed
+from **Player.log** by `PlayerLogParser` into `MotherlodeUseDetected` — to
+the response — chat `[Status] The treasure is N meters from here.`, parsed
+from the **chat log** by `ChatLogParser.MotherlodeRegex` into
+`MotherlodeDistance`. So this consumer is **currently cross-source** (Player.log
+request ↔ chat response, ~1 s offset between them), and the same-game-second
+tiebreaker risk that Tier-3 will eventually mitigate applies.
+
+PG also emits the same distance readout in Player.log as
+`LocalPlayer: ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`
+— see the [Player-Log-Signals wiki capture (Motherlode maps → Source)](https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#source--playerlog-is-canonical-the-chat-mirror-is-redundant)
+documenting the same-source emission evidence. Migrating the consumer to read
+the Player.log line instead of the chat one would strip the cross-source
+coupling and let the SM operate on a single stream's well-defined
+`Sequence` ordering — but that migration is a **separate planned change**
+([#541](https://github.com/moumantai-gg/mithril/pull/541)'s PR body called it
+explicitly out-of-scope; #511 deliverable 6 is the structural home). Until it
+lands, the consumer is the canonical example of a *Tier-2 SM operating on a
+cross-source pair*, not a same-source one.
 
 **Why no shared primitive.** Tier-2 SMs have heterogeneous state
 (per-consumer unmatched policies, batching contracts, response shapes,
@@ -177,7 +220,7 @@ If one ever does, this section gets the first reference.
 |---|---|---|
 | `InventoryService` (`ProcessAddItem` ↔ chat `[Status] added`) | 1 | Keyed by `InternalName`, 5 s TTL |
 | `Legolas.Services.LogIngestionService` (chat `added` ↔ chat `collected!`) | 1 | Keyed by item name, 5 s TTL; credit-0 + warn on unmatched takes; Trace on TTL eviction (post-#541) |
-| `Legolas.Services.MotherlodeMeasurementCoordinator` (`ProcessDoDelayLoop` ↔ `ProcessScreenText`) | 2 | Same-source via Player.log; k-th-to-slot-k binding; label-agnostic temporal pairing |
+| `Legolas.Services.MotherlodeMeasurementCoordinator` (Player.log `ProcessDoDelayLoop` ↔ chat `[Status] The treasure is N meters`) | 2 | Currently cross-source; k-th-to-slot-k binding; label-agnostic temporal pairing. Same-source migration to Player.log `ProcessScreenText(ImportantInfo, …)` is feasible but deferred to #511 deliverable 6 |
 | *(future Tier-3 consumer)* | 3 | Awaits L1 (#511 deliverable 3) |
 
 ## Open questions / future work
