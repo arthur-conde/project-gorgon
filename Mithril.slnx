@@ -30,6 +30,7 @@
     <Project Path="tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj" />
     <Project Path="tests/Mithril.GameState.Tests/Mithril.GameState.Tests.csproj" />
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
+    <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Pippin.Tests/Pippin.Tests.csproj" />
     <Project Path="tests/Samwise.Tests/Samwise.Tests.csproj" />
