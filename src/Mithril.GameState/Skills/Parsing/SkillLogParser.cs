@@ -9,10 +9,10 @@ namespace Mithril.GameState.Skills.Parsing;
 /// Parses Project Gorgon's two skill-progression log lines into typed events:
 ///
 /// <list type="bullet">
-///   <item><c>LocalPlayer: ProcessLoadSkills({type=…}, {type=…}, …)</c> — the
-///   full skill-table dump emitted at login and on zone / session transitions.
+///   <item><c>ProcessLoadSkills({type=…}, {type=…}, …)</c> — the full
+///   skill-table dump emitted at login and on zone / session transitions.
 ///   Yields a <see cref="SkillsSnapshotEvent"/> carrying every parsed row.</item>
-///   <item><c>LocalPlayer: ProcessUpdateSkill({type=…}, &lt;bool&gt;, &lt;delta&gt;, 0, 0)</c>
+///   <item><c>ProcessUpdateSkill({type=…}, &lt;bool&gt;, &lt;delta&gt;, 0, 0)</c>
 ///   — a single skill's progression delta. Yields a
 ///   <see cref="SkillProgressUpdateEvent"/> for the one row in the leading
 ///   struct; the trailing positionals are deliberately ignored (see
@@ -23,12 +23,12 @@ namespace Mithril.GameState.Skills.Parsing;
 /// struct grammar; <see cref="SkillTupleRx"/> is the single workhorse applied
 /// over the whole line (one match for an update, ~125 for a snapshot).
 ///
-/// <para>The regexes are unanchored — the same convention every other
-/// <c>Player.log</c> parser in the codebase uses — and the
-/// <see cref="LoadSkillsRx"/> / <see cref="UpdateSkillRx"/> guards both pin the
-/// <c>LocalPlayer:</c> prefix so an unrelated line that merely mentions the
-/// verb cannot trigger a parse. A cheap substring pre-check short-circuits the
-/// (overwhelmingly common) unrelated line before any regex runs.</para>
+/// <para>Post-#550 L1 migration: consumes the envelope-stripped
+/// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already
+/// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
+/// so the verb guards no longer re-anchor on it. A cheap substring pre-check
+/// short-circuits the (overwhelmingly common) unrelated line before any regex
+/// runs.</para>
 ///
 /// <para>This parser is independent of Samwise's
 /// <c>GardenLogParser.GardeningXpRx</c> (<c>ProcessUpdateSkill.*type=Gardening</c>):
@@ -43,14 +43,15 @@ namespace Mithril.GameState.Skills.Parsing;
 /// </summary>
 public sealed partial class SkillLogParser : ILogParser
 {
-    // Guard: a real ProcessLoadSkills line (full-table dump). Pins the
-    // LocalPlayer: prefix so only the genuine emitter matches.
-    [GeneratedRegex(@"LocalPlayer: ProcessLoadSkills\(", RegexOptions.CultureInvariant)]
+    // Guard: a real ProcessLoadSkills line (full-table dump). Post-L1 the
+    // LocalPlayer: actor envelope is already eaten upstream by L0.5; this
+    // parser sees only verbs from LocalPlayer-actored lines.
+    [GeneratedRegex(@"ProcessLoadSkills\(", RegexOptions.CultureInvariant)]
     private static partial Regex LoadSkillsRx();
 
     // Guard: a real ProcessUpdateSkill line. The trailing `\{` ensures the
     // leading argument is the skill struct (not some other overload form).
-    [GeneratedRegex(@"LocalPlayer: ProcessUpdateSkill\(\{", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"ProcessUpdateSkill\(\{", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateSkillRx();
 
     // ProcessUpdateSkill's third positional: XP earned this tick. Anchored on

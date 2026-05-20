@@ -100,19 +100,14 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
     {
         _diag?.Info("GameState.Skills", "Subscribing to L1 driver (LocalPlayer pipe) for skill-state events");
         // archetype-A defaults — FromSessionStart replay + Inline delivery.
-        // The parser expects the original log line shape including the
-        // `LocalPlayer: ` envelope (its regex is anchored on the actor token
-        // for false-positive defence — a non-LocalPlayer mention of
-        // ProcessLoadSkills must not parse). L0.5 strips that envelope from
-        // `Data`; re-prepend before invoking the parser so the regex still
-        // matches and the parser stays byte-equivalent to its pre-migration
-        // tests.
+        // The parser consumes the envelope-stripped LocalPlayerLogLine.Data
+        // directly — L0.5 (#532) owns actor classification, downstream
+        // never re-matches the envelope (#550 PR #555 review).
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
-                var line = "LocalPlayer: " + envelope.Payload.Data;
                 var ts = envelope.Payload.Timestamp.UtcDateTime;
-                switch (_parser.TryParse(line, ts))
+                switch (_parser.TryParse(envelope.Payload.Data, ts))
                 {
                     case SkillsSnapshotEvent snap:
                         ReplaceAll(snap);

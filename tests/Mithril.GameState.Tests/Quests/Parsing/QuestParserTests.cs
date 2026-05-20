@@ -14,7 +14,8 @@ public sealed class QuestJournalLoadParserTests
     {
         // From Player-prev.log:2173, captured 2026-04-29 15:12:44. Trimmed for
         // readability — full capture has ~18 work-order ids and ~280 regular ids.
-        var line = "[15:12:44] LocalPlayer: ProcessLoadQuests(8285856, TransitionalQuestState[], "
+        // Envelope-stripped per #550 L1 (L0.5 eats `[ts] LocalPlayer: `).
+        var line = "ProcessLoadQuests(8285856, TransitionalQuestState[], "
                  + "[50208,51252,51258,50675,], [3,4,5,21001,21501,])";
         var evt = (QuestJournalLoadedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
@@ -26,7 +27,7 @@ public sealed class QuestJournalLoadParserTests
     [Fact]
     public void Parses_empty_lists()
     {
-        var line = "LocalPlayer: ProcessLoadQuests(123, TransitionalQuestState[], [], [])";
+        var line = "ProcessLoadQuests(123, TransitionalQuestState[], [], [])";
         var evt = (QuestJournalLoadedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
         evt.Should().NotBeNull();
@@ -38,11 +39,11 @@ public sealed class QuestJournalLoadParserTests
     public void Returns_null_for_singular_ProcessLoadQuest() =>
         // Defensive — the placeholder-era regex matched a (non-existent)
         // singular ProcessLoadQuest line. Confirm the new parser ignores it.
-        _parser.TryParse("LocalPlayer: ProcessLoadQuest(\"Quest_X\", 0, True)", DateTime.UtcNow).Should().BeNull();
+        _parser.TryParse("ProcessLoadQuest(\"Quest_X\", 0, True)", DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_unrelated_line() =>
-        _parser.TryParse("LocalPlayer: ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
+        _parser.TryParse("ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_empty_line() =>
@@ -67,7 +68,8 @@ public sealed class QuestAcceptedParserTests
     [Fact]
     public void Parses_real_capture_quest_25212()
     {
-        var line = "[01:10:53] LocalPlayer: ProcessBook(\"New Quest: <<<quest_25212_Name>>>\", "
+        // Envelope-stripped per #550 L1.
+        var line = "ProcessBook(\"New Quest: <<<quest_25212_Name>>>\", "
                  + "\"<<<quest_25212_Preface>>>\", \"\", \"\", \"\", False, False, False, False, False, \"\")";
         var evt = (QuestAcceptedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
@@ -78,7 +80,7 @@ public sealed class QuestAcceptedParserTests
     [Fact]
     public void Parses_real_capture_quest_25211()
     {
-        var line = "[12:48:03] LocalPlayer: ProcessBook(\"New Quest: <<<quest_25211_Name>>>\", "
+        var line = "ProcessBook(\"New Quest: <<<quest_25211_Name>>>\", "
                  + "\"<<<quest_25211_Preface>>>\", \"\", \"\", \"\", False, False, False, False, False, \"\")";
         var evt = (QuestAcceptedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
@@ -91,19 +93,19 @@ public sealed class QuestAcceptedParserTests
         // Other ProcessBook lines (lore books, NPC dialog, etc) never carry
         // the "New Quest:" prefix.
         _parser.TryParse(
-            "LocalPlayer: ProcessBook(\"Whispers from the Void\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+            "ProcessBook(\"Whispers from the Void\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
             DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_unknown_quest_id() =>
         // questId not in reference data — drop silently.
         _parser.TryParse(
-            "LocalPlayer: ProcessBook(\"New Quest: <<<quest_999999_Name>>>\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
+            "ProcessBook(\"New Quest: <<<quest_999999_Name>>>\", \"...\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
             DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_unrelated_line() =>
-        _parser.TryParse("LocalPlayer: ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
+        _parser.TryParse("ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_empty_line() =>
@@ -130,7 +132,8 @@ public sealed class QuestCompletedParserTests
     [Fact]
     public void Parses_real_capture_quest_14003()
     {
-        var line = "[15:34:16] LocalPlayer: ProcessCompleteQuest(8298169, 14003)";
+        // Envelope-stripped per #550 L1.
+        var line = "ProcessCompleteQuest(8298169, 14003)";
         var evt = _parser.TryParse(line, DateTime.UtcNow);
 
         evt.Should().BeOfType<QuestCompletedEvent>();
@@ -140,7 +143,7 @@ public sealed class QuestCompletedParserTests
     [Fact]
     public void Parses_real_capture_quest_20803()
     {
-        var line = "[01:44:49] LocalPlayer: ProcessCompleteQuest(8705565, 20803)";
+        var line = "ProcessCompleteQuest(8705565, 20803)";
         var evt = (QuestCompletedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
         evt.Should().NotBeNull();
@@ -150,7 +153,7 @@ public sealed class QuestCompletedParserTests
     [Fact]
     public void Parses_real_capture_quest_25010()
     {
-        var line = "[04:15:38] LocalPlayer: ProcessCompleteQuest(8819335, 25010)";
+        var line = "ProcessCompleteQuest(8819335, 25010)";
         var evt = (QuestCompletedEvent?)_parser.TryParse(line, DateTime.UtcNow);
 
         evt.Should().NotBeNull();
@@ -162,7 +165,7 @@ public sealed class QuestCompletedParserTests
     {
         var ts = new DateTime(2026, 4, 30, 12, 34, 56, DateTimeKind.Utc);
         var evt = (QuestCompletedEvent?)_parser.TryParse(
-            "LocalPlayer: ProcessCompleteQuest(8298169, 14003)", ts);
+            "ProcessCompleteQuest(8298169, 14003)", ts);
 
         evt.Should().NotBeNull();
         evt!.Timestamp.Should().Be(ts);
@@ -173,13 +176,13 @@ public sealed class QuestCompletedParserTests
     {
         // Game-data drift: a line with a questId not present in the reference
         // data is dropped silently rather than throwing.
-        var line = "LocalPlayer: ProcessCompleteQuest(1, 999999)";
+        var line = "ProcessCompleteQuest(1, 999999)";
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
     }
 
     [Fact]
     public void Returns_null_for_unrelated_line() =>
-        _parser.TryParse("LocalPlayer: ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
+        _parser.TryParse("ProcessAddItem(Apple(1234), -1, True)", DateTime.UtcNow).Should().BeNull();
 
     [Fact]
     public void Returns_null_for_empty_line() =>
@@ -189,5 +192,5 @@ public sealed class QuestCompletedParserTests
     public void Returns_null_for_old_quoted_string_shape() =>
         // Defensive — confirms the rewritten regex no longer matches the
         // pre-#77 placeholder shape (would hide a regression in the lookup).
-        _parser.TryParse("LocalPlayer: ProcessCompleteQuest(\"Q1\")", DateTime.UtcNow).Should().BeNull();
+        _parser.TryParse("ProcessCompleteQuest(\"Q1\")", DateTime.UtcNow).Should().BeNull();
 }

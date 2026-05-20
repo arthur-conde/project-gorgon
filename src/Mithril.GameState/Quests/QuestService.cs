@@ -122,13 +122,14 @@ public sealed class QuestService : BackgroundService, IQuestService
         _diag?.Info("Quests", "Subscribing to L1 driver (LocalPlayer pipe) for quest events");
         // archetype-A defaults — FromSessionStart replay + Inline delivery.
         // Driver-owned containment retires the previous catch + _diag.Warn
-        // around Dispatch (capability C of #550).
+        // around Dispatch (capability C of #550). Each parser consumes the
+        // envelope-stripped LocalPlayerLogLine.Data directly — L0.5 (#532)
+        // owns actor classification (#550 PR #555 review).
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
-                var line = "LocalPlayer: " + envelope.Payload.Data;
                 var ts = envelope.Payload.Timestamp.UtcDateTime;
-                Dispatch(line, ts);
+                Dispatch(envelope.Payload.Data, ts);
                 return ValueTask.CompletedTask;
             },
             new LogSubscriptionOptions

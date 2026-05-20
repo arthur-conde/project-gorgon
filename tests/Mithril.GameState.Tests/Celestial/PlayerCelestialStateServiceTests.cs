@@ -244,79 +244,57 @@ public sealed class PlayerCelestialStateServiceTests
             finally { await StopAsync(svc); }
         }
 
-        // Second pass — same lines surfaced as FromSessionStart replay.
+        // Second pass — same lines split across the replay→live boundary so
+        // the test exercises the production FromSessionStart shape: half the
+        // input drains as IsReplay=true envelopes, the rest comes in live.
         {
             var stream = new ScriptedStream();
-            stream.Driver.PushReplay(MakeLocal(CrescentLine, Stamp));
-            stream.Driver.PushReplay(MakeLocal(FullLine, Stamp.AddMinutes(40)));
+            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(CrescentLine, Stamp));
             var svc = NewService(stream);
             try
             {
-                await RunUntilDrainedAsync(svc, stream);
+                // Live half pushed AFTER subscription is up so it lands on the
+                // live channel rather than the replay snapshot.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var runTask = svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
+                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(FullLine, Stamp.AddMinutes(40)));
+                await stream.WaitForDrainAsync(cts.Token);
+
                 svc.Current.Should().NotBeNull();
                 svc.Current!.Phase.Should().Be(firstPhase);
                 svc.Current.RawPhase.Should().Be(firstRaw);
+
+                await cts.CancelAsync();
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+                _ = runTask;
             }
             finally { await StopAsync(svc); }
         }
-    }
-
-    private static LocalPlayerLogLine MakeLocal(string fullLine, DateTime ts)
-    {
-        const int TsPrefixLen = 11; // length of "[HH:MM:SS] "
-        const string ActorToken = "LocalPlayer: ";
-        var idx = 0;
-        if (fullLine.Length > TsPrefixLen && fullLine[0] == '[') idx = TsPrefixLen;
-        if (idx + ActorToken.Length <= fullLine.Length
-            && fullLine.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-        {
-            idx += ActorToken.Length;
-        }
-        var data = idx == 0 ? fullLine : fullLine.Substring(idx);
-        return new LocalPlayerLogLine(
-            new DateTimeOffset(ts, TimeSpan.Zero), data,
-            Sequence: 0, ReadMonotonicTicks: 0);
     }
 
     /// <summary>
     /// Post-#550 PR 2: adapter that lets these tests keep scripting
     /// <see cref="RawLogLine"/>-shaped Player.log lines while the
     /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via
-    /// the L1 driver.
+    /// the L1 driver. Stripping is delegated to
+    /// <see cref="TestLogEnvelopeFactory"/> so all four producer-tests share
+    /// one strip semantics.
     /// </summary>
     private sealed class ScriptedStream : IDisposable
     {
-        private const int TsPrefixLen = 11;
-        private const string ActorToken = "LocalPlayer: ";
-
         public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream() { }
 
         public void Push(DateTime ts, string line)
         {
-            Driver.PushLive(ToLocal(new RawLogLine(ts, line)));
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(ts, line)));
         }
 
         public Task WaitForDrainAsync(CancellationToken ct) =>
             Driver.DrainLocalPlayerAsync().WaitAsync(ct);
 
         public void Dispose() => Driver.Dispose();
-
-        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
-        {
-            var line = raw.Line;
-            var idx = 0;
-            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
-                idx = TsPrefixLen;
-            if (idx + ActorToken.Length <= line.Length
-                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-            {
-                idx += ActorToken.Length;
-            }
-            var data = idx == 0 ? line : line.Substring(idx);
-            return new LocalPlayerLogLine(
-                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
-        }
     }
 }

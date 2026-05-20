@@ -336,10 +336,13 @@ public sealed class PlayerRecipeStateServiceTests
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
 
     /// <summary>
-    /// Byte-equivalence regression test (#550 PR 2): the producer is a
-    /// state-rebuilder, so feeding the same backlog twice (cold start, then
-    /// a FromSessionStart replay of the very same lines) must yield
-    /// identical snapshot state on both runs.
+    /// Byte-equivalence regression test (#550 PR 2 + PR #555 review): the
+    /// producer is a state-rebuilder, so feeding the same backlog twice
+    /// (cold start, then split replay→live like the production
+    /// FromSessionStart shape) must yield identical snapshot state on both
+    /// runs. Splitting the input across the replay boundary catches a
+    /// regression where a handler early-outs on
+    /// <c>envelope.IsReplay == true</c>.
     /// </summary>
     [Fact]
     public async Task L1_replay_idempotence_byte_equivalence()
@@ -354,26 +357,37 @@ public sealed class PlayerRecipeStateServiceTests
             firstMeasured = svc.Current.MeasuredAt!.Value;
         }
 
-        // Second pass — same line replayed as FromSessionStart replay.
+        // Second pass — split input across the replay→live boundary.
+        // Snapshot (load) arrives as IsReplay=true; a subsequent
+        // ProcessUpdateRecipe arrives as live (and is at the same count, so
+        // doesn't move state — keeps the byte-equivalence assertion valid).
         {
             using var stream = new ScriptedStream();
-            stream.Driver.PushReplay(MakeLocal(LoadLine, Ts(10, 10, 3)));
+            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(10, 10, 3)));
             var svc = NewService(stream);
-            await RunUntilDrainedAsync(svc, stream);
-            svc.Current.Recipes.Should().BeEquivalentTo(firstPass);
-            svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
-        }
-    }
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
 
-    private static LocalPlayerLogLine MakeLocal(string fullLine, DateTime ts)
-    {
-        const string Envelope = "[10:10:03] LocalPlayer: ";
-        var data = fullLine.StartsWith(Envelope, StringComparison.Ordinal)
-            ? fullLine.Substring(Envelope.Length)
-            : fullLine;
-        return new LocalPlayerLogLine(
-            new DateTimeOffset(ts, TimeSpan.Zero), data,
-            Sequence: 0, ReadMonotonicTicks: 0);
+                // Live tail: idempotent re-emit (count matches snapshot). The
+                // handler must accept this on the post-replay live channel.
+                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(
+                    new RawLogLine(Ts(10, 22, 39), "ProcessUpdateRecipe(7025, 607)")));
+                await stream.WaitForDrainAsync(cts.Token);
+
+                svc.Current.Recipes.Should().BeEquivalentTo(firstPass);
+                svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
+
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+            }
+            catch
+            {
+                try { await svc.StopAsync(CancellationToken.None); } catch { }
+                throw;
+            }
+        }
     }
 
     private static async Task RunUntilDrainedAsync(PlayerRecipeStateService svc, ScriptedStream stream)
@@ -387,42 +401,25 @@ public sealed class PlayerRecipeStateServiceTests
     /// <summary>
     /// Post-#550 PR 2: thin adapter that lets the existing test fixtures keep
     /// scripting <see cref="RawLogLine"/>s while the service-under-test
-    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver. See
-    /// PlayerSkillStateServiceTests.ScriptedStream for the shared shape.
+    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver.
+    /// Stripping is delegated to <see cref="TestLogEnvelopeFactory"/> so all
+    /// four producer-tests share one strip semantics.
     /// </summary>
     private sealed class ScriptedStream : IDisposable
     {
-        private const int TsPrefixLen = 11;
-        private const string ActorToken = "LocalPlayer: ";
-
         public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            foreach (var line in lines) Driver.PushLive(ToLocal(line));
+            foreach (var line in lines) Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(string line) => Driver.PushLive(ToLocal(new RawLogLine(DateTime.UtcNow, line)));
+        public void Push(string line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
 
         public Task WaitForDrainAsync(CancellationToken ct) =>
             Driver.DrainLocalPlayerAsync().WaitAsync(ct);
 
         public void Dispose() => Driver.Dispose();
-
-        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
-        {
-            var line = raw.Line;
-            var idx = 0;
-            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
-                idx = TsPrefixLen;
-            if (idx + ActorToken.Length <= line.Length
-                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-            {
-                idx += ActorToken.Length;
-            }
-            var data = idx == 0 ? line : line.Substring(idx);
-            return new LocalPlayerLogLine(
-                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
-        }
     }
 }

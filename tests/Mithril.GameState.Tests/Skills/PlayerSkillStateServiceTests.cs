@@ -390,10 +390,13 @@ public sealed class PlayerSkillStateServiceTests
     }
 
     /// <summary>
-    /// Byte-equivalence regression test (#550 PR 2): the producer is a
-    /// state-rebuilder, so feeding the same backlog twice (cold start, then
-    /// a FromSessionStart replay of the very same lines) must yield
-    /// identical snapshot state on both runs.
+    /// Byte-equivalence regression test (#550 PR 2 + PR #555 review): the
+    /// producer is a state-rebuilder, so feeding the same backlog twice
+    /// (cold start, then split replay→live like the production
+    /// FromSessionStart shape) must yield identical snapshot state on both
+    /// runs. Splitting the input across the replay boundary catches a
+    /// regression where a handler early-outs on
+    /// <c>envelope.IsReplay == true</c>.
     /// </summary>
     [Fact]
     public async Task L1_replay_idempotence_byte_equivalence()
@@ -408,28 +411,38 @@ public sealed class PlayerSkillStateServiceTests
             firstMeasured = svc.Current.MeasuredAt!.Value;
         }
 
-        // Second pass — same line replayed under FromSessionStart (driver's
-        // replay phase). Final state must match.
+        // Second pass — split input across the replay→live boundary. The full
+        // skill snapshot arrives as IsReplay=true; a subsequent re-emit of
+        // the same ProcessLoadSkills line arrives as live. The state-rebuilder
+        // must yield identical final state (the second snapshot replaces
+        // with the same content at the same timestamp, so MeasuredAt also
+        // matches the first pass).
         {
             using var stream = new ScriptedStream();
-            stream.Driver.PushReplay(MakeLocal(LoadLine, Ts(8, 22, 21)));
+            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
             var svc = NewService(stream);
-            await RunUntilDrainedAsync(svc, stream);
-            svc.Current.Skills.Should().BeEquivalentTo(firstPass);
-            svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
-        }
-    }
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
 
-    private static LocalPlayerLogLine MakeLocal(string fullLine, DateTime ts)
-    {
-        // Strip "[ts] LocalPlayer: " envelope the same way L0.5 would.
-        const string Envelope = "[08:22:21] LocalPlayer: ";
-        var data = fullLine.StartsWith(Envelope, StringComparison.Ordinal)
-            ? fullLine.Substring(Envelope.Length)
-            : fullLine;
-        return new LocalPlayerLogLine(
-            new DateTimeOffset(ts, TimeSpan.Zero), data,
-            Sequence: 0, ReadMonotonicTicks: 0);
+                // Live tail: same line, same timestamp. Snapshot replaces
+                // with identical content → no spurious state change.
+                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
+                await stream.WaitForDrainAsync(cts.Token);
+
+                svc.Current.Skills.Should().BeEquivalentTo(firstPass);
+                svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
+
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+            }
+            catch
+            {
+                try { await svc.StopAsync(CancellationToken.None); } catch { }
+                throw;
+            }
+        }
     }
 
     private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
@@ -445,25 +458,21 @@ public sealed class PlayerSkillStateServiceTests
     /// <summary>
     /// Post-#550 PR 2: thin adapter that lets the existing test fixtures keep
     /// scripting <see cref="RawLogLine"/>s while the service-under-test
-    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver. The
-    /// adapter classifies each input line the same way L0.5 would —
-    /// stripping the <c>[ts] LocalPlayer: </c> envelope where present —
-    /// and pushes the resulting <see cref="LocalPlayerLogLine"/> at the
-    /// underlying <see cref="TestLogStreamDriver"/>.
+    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver.
+    /// Stripping is delegated to <see cref="TestLogEnvelopeFactory"/> so all
+    /// four producer-tests share one strip semantics.
     /// </summary>
     private sealed class ScriptedStream : IDisposable
     {
-        private const int TsPrefixLen = 11; // length of "[HH:MM:SS] "
-        private const string ActorToken = "LocalPlayer: ";
-
         public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            foreach (var line in lines) Driver.PushLive(ToLocal(line));
+            foreach (var line in lines) Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(string line) => Driver.PushLive(ToLocal(new RawLogLine(DateTime.UtcNow, line)));
+        public void Push(string line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
 
         public Task WaitForDrainAsync(CancellationToken ct) =>
             Driver.DrainLocalPlayerAsync().WaitAsync(ct);
@@ -471,24 +480,5 @@ public sealed class PlayerSkillStateServiceTests
             Driver.DrainLocalPlayerAsync(timeout);
 
         public void Dispose() => Driver.Dispose();
-
-        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
-        {
-            // L0.5 classification: strip optional [ts] prefix + LocalPlayer:
-            // envelope. Tests pass full Player.log shapes; the driver's
-            // consumers see the post-classification Data payload.
-            var line = raw.Line;
-            var idx = 0;
-            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
-                idx = TsPrefixLen;
-            if (idx + ActorToken.Length <= line.Length
-                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-            {
-                idx += ActorToken.Length;
-            }
-            var data = idx == 0 ? line : line.Substring(idx);
-            return new LocalPlayerLogLine(
-                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
-        }
     }
 }

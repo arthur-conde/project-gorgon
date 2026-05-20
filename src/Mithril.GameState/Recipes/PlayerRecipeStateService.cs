@@ -92,15 +92,14 @@ public sealed class PlayerRecipeStateService : BackgroundService, IPlayerRecipeS
     {
         _diag?.Info("GameState.Recipes", "Subscribing to L1 driver (LocalPlayer pipe) for recipe-state events");
         // archetype-A defaults — FromSessionStart replay + Inline delivery.
-        // Parser regex pins the `LocalPlayer:` actor token as a false-positive
-        // guard; L0.5 strips that envelope from `Data`, so re-prepend before
-        // invoking the parser to keep its match guarantees byte-equivalent.
+        // The parser consumes the envelope-stripped LocalPlayerLogLine.Data
+        // directly — L0.5 (#532) owns actor classification, downstream
+        // never re-matches the envelope (#550 PR #555 review).
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
-                var line = "LocalPlayer: " + envelope.Payload.Data;
                 var ts = envelope.Payload.Timestamp.UtcDateTime;
-                switch (_parser.TryParse(line, ts))
+                switch (_parser.TryParse(envelope.Payload.Data, ts))
                 {
                     case RecipesSnapshotEvent snap:
                         ReplaceAll(snap);

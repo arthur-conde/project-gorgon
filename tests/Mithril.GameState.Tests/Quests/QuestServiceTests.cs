@@ -387,45 +387,53 @@ public sealed class QuestServiceTests : IDisposable
             finally { await StopAsync(svc); }
         }
 
-        // Second pass — same lines surfaced as FromSessionStart replay (with
-        // a fresh character so persistence doesn't merge with the first
-        // pass's saved state).
+        // Second pass — same input split across the replay→live boundary
+        // so the test exercises the production FromSessionStart shape (first
+        // half drains as IsReplay=true envelopes, then the rest is live).
+        // Uses a fresh character so persistence doesn't merge with the first
+        // pass's saved state.
         {
             var (svc, stream, _, _, _) = Build(quests, character: "ReplayUser2");
             try
             {
-                stream.Driver.PushReplay(MakeLocal(
+                stream.Driver.PushReplay(TestLogEnvelopeFactory.MakeLocalPlayer(
                     "ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
                     new DateTime(2026, 5, 18, 10, 0, 0, DateTimeKind.Utc)));
-                stream.Driver.PushReplay(MakeLocal(
+                stream.Driver.PushReplay(TestLogEnvelopeFactory.MakeLocalPlayer(
                     "ProcessBook(\"New Quest: <<<quest_2_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")",
                     new DateTime(2026, 5, 18, 10, 1, 0, DateTimeKind.Utc)));
-                stream.Driver.PushReplay(MakeLocal(
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var runTask = svc.StartAsync(cts.Token);
+                await stream.WaitForDrainAsync(cts.Token);
+
+                // Tail pushed live, AFTER subscription is up.
+                stream.Driver.PushLive(TestLogEnvelopeFactory.MakeLocalPlayer(
                     "ProcessCompleteQuest(123, 1)",
                     new DateTime(2026, 5, 18, 10, 2, 0, DateTimeKind.Utc)));
-                await RunUntilDrainedAsync(svc, stream);
+                await stream.WaitForDrainAsync(cts.Token);
+
                 svc.ActiveQuests.Keys.Should().BeEquivalentTo(firstActive.Keys);
                 svc.CompletionHistory.Keys.Should().BeEquivalentTo(firstCompleted.Keys);
+
+                await cts.CancelAsync();
+                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+                _ = runTask;
             }
             finally { await StopAsync(svc); }
         }
     }
 
-    private static LocalPlayerLogLine MakeLocal(string dataNoEnvelope, DateTime ts) =>
-        new(new DateTimeOffset(ts, TimeSpan.Zero), dataNoEnvelope,
-            Sequence: 0, ReadMonotonicTicks: 0);
-
     /// <summary>
     /// Post-#550 PR 2: adapter that lets these tests keep scripting full
     /// <c>[ts] LocalPlayer: …</c> Player.log lines while the
     /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via
-    /// the L1 driver.
+    /// the L1 driver. Stripping is delegated to
+    /// <see cref="TestLogEnvelopeFactory"/> so all four producer-tests share
+    /// one strip semantics.
     /// </summary>
     private sealed class ScriptedStream : IDisposable
     {
-        private const int TsPrefixLen = 11; // "[HH:MM:SS] "
-        private const string ActorToken = "LocalPlayer: ";
-
         public TestLogStreamDriver Driver { get; } = new();
 
         public ScriptedStream(params string[] lines)
@@ -433,11 +441,13 @@ public sealed class QuestServiceTests : IDisposable
 
         public ScriptedStream(params RawLogLine[] lines)
         {
-            foreach (var line in lines) Driver.PushLive(ToLocal(line));
+            foreach (var line in lines) Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
         }
 
-        public void Push(string line) => Driver.PushLive(ToLocal(new RawLogLine(DateTime.UtcNow, line)));
-        public void Push(RawLogLine line) => Driver.PushLive(ToLocal(line));
+        public void Push(string line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
+        public void Push(RawLogLine line) =>
+            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
 
         public Task WaitForDrainAsync(CancellationToken ct) =>
             Driver.DrainLocalPlayerAsync().WaitAsync(ct);
@@ -445,21 +455,5 @@ public sealed class QuestServiceTests : IDisposable
             Driver.DrainLocalPlayerAsync(timeout);
 
         public void Dispose() => Driver.Dispose();
-
-        private static LocalPlayerLogLine ToLocal(RawLogLine raw)
-        {
-            var line = raw.Line;
-            var idx = 0;
-            if (line.Length > TsPrefixLen && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
-                idx = TsPrefixLen;
-            if (idx + ActorToken.Length <= line.Length
-                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-            {
-                idx += ActorToken.Length;
-            }
-            var data = idx == 0 ? line : line.Substring(idx);
-            return new LocalPlayerLogLine(
-                raw.Timestamp, data, raw.Sequence, raw.ReadMonotonicTicks);
-        }
     }
 }

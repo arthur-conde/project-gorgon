@@ -316,7 +316,7 @@
       ]
     },
     "shared.SkillLogParser.LoadSkillsRx": {
-      "pattern": "LocalPlayer: ProcessLoadSkills\\(",
+      "pattern": "ProcessLoadSkills\\(",
       "source": "player",
       "module": "shared",
       "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "LoadSkillsRx" },
@@ -326,7 +326,7 @@
       "fields": []
     },
     "shared.SkillLogParser.UpdateSkillRx": {
-      "pattern": "LocalPlayer: ProcessUpdateSkill\\(\\{",
+      "pattern": "ProcessUpdateSkill\\(\\{",
       "source": "player",
       "module": "shared",
       "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "UpdateSkillRx" },
@@ -363,7 +363,7 @@
       ]
     },
     "shared.RecipeLogParser.LoadRecipesRx": {
-      "pattern": "LocalPlayer: ProcessLoadRecipes\\(",
+      "pattern": "ProcessLoadRecipes\\(",
       "source": "player",
       "module": "shared",
       "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "LoadRecipesRx" },
@@ -373,7 +373,7 @@
       "fields": []
     },
     "shared.RecipeLogParser.UpdateRecipeRx": {
-      "pattern": "LocalPlayer: ProcessUpdateRecipe\\(",
+      "pattern": "ProcessUpdateRecipe\\(",
       "source": "player",
       "module": "shared",
       "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "UpdateRecipeRx" },

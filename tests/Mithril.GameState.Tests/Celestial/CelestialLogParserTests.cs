@@ -10,9 +10,10 @@ public sealed class CelestialLogParserTests
     private static readonly CelestialLogParser Parser = new();
     private static readonly DateTime Ts = new(2026, 5, 18, 19, 50, 42, DateTimeKind.Utc);
 
-    // Byte-exact from a real Player.log (this machine, 2026-05-18).
+    // Real Player.log payload (this machine, 2026-05-18) — envelope-stripped
+    // (post-#550 L1 migration: L0.5 eats the `[ts] LocalPlayer: ` prefix).
     private const string RealLine =
-        "[19:50:42] LocalPlayer: ProcessSetCelestialInfo(WaxingCrescentMoon)";
+        "ProcessSetCelestialInfo(WaxingCrescentMoon)";
 
     [Fact]
     public void Real_line_parses_to_canonical_phase_and_keeps_raw_token()
@@ -41,7 +42,8 @@ public sealed class CelestialLogParserTests
     [InlineData("NewMoon ", MoonPhase.NewMoon)]
     public void Maps_all_observed_token_spellings(string token, MoonPhase expected)
     {
-        var line = $"[19:50:42] LocalPlayer: ProcessSetCelestialInfo({token})";
+        // Envelope-stripped: post-L0.5 the parser sees only the verb payload.
+        var line = $"ProcessSetCelestialInfo({token})";
         var evt = Parser.TryParse(line, Ts).Should().BeOfType<CelestialInfoEvent>().Subject;
 
         evt.Phase.Should().Be(expected);
@@ -51,7 +53,7 @@ public sealed class CelestialLogParserTests
     [Fact]
     public void Unrecognised_token_yields_Unknown_but_retains_raw_string()
     {
-        var line = "[19:50:42] LocalPlayer: ProcessSetCelestialInfo(BloodMoonEclipse)";
+        var line = "ProcessSetCelestialInfo(BloodMoonEclipse)";
         var evt = Parser.TryParse(line, Ts).Should().BeOfType<CelestialInfoEvent>().Subject;
 
         evt.Phase.Should().Be(MoonPhase.Unknown);
@@ -60,21 +62,11 @@ public sealed class CelestialLogParserTests
         evt.Phase.DisplayName(evt.RawPhase).Should().Be("Blood Moon Eclipse");
     }
 
-    [Fact]
-    public void Rejects_non_local_actor_token()
-    {
-        // A bare substring check would be fooled — the boundary lookbehind
-        // must reject this (mirrors PlayerPositionParser's discipline).
-        Parser.TryParse(
-                "[19:50:42] NonLocalPlayer: ProcessSetCelestialInfo(FullMoon)", Ts)
-            .Should().BeNull();
-    }
-
     [Theory]
     [InlineData("")]
-    [InlineData("[19:50:42] LocalPlayer: ProcessAddItem(Barley(1), 0, False)")]
+    [InlineData("ProcessAddItem(Barley(1), 0, False)")]
     [InlineData("LOADING LEVEL AreaSerbule")]
-    [InlineData("[19:50:42] LocalPlayer: ProcessSetCelestialInfo()")]
+    [InlineData("ProcessSetCelestialInfo()")]
     public void Returns_null_for_unrelated_or_malformed_lines(string line)
     {
         Parser.TryParse(line, Ts).Should().BeNull();

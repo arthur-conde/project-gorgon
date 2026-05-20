@@ -73,15 +73,14 @@ public sealed class PlayerCelestialStateService : BackgroundService, IPlayerCele
         _diag?.Info("GameState.Celestial",
             "Subscribing to L1 driver (LocalPlayer pipe) for ProcessSetCelestialInfo");
         // archetype-A defaults — FromSessionStart replay + Inline delivery.
-        // The parser uses a `(?<![A-Za-z])LocalPlayer:` lookbehind to reject
-        // sibling actor tokens like `NonLocalPlayer:`; re-prepend the envelope
-        // so that anchor still fires.
+        // The parser consumes the envelope-stripped LocalPlayerLogLine.Data
+        // directly — L0.5 (#532) owns actor classification, downstream
+        // never re-matches the envelope (#550 PR #555 review).
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
-                var line = "LocalPlayer: " + envelope.Payload.Data;
                 var ts = envelope.Payload.Timestamp.UtcDateTime;
-                if (_parser.TryParse(line, ts) is CelestialInfoEvent evt)
+                if (_parser.TryParse(envelope.Payload.Data, ts) is CelestialInfoEvent evt)
                 {
                     if (evt.Phase == MoonPhase.Unknown)
                         ReportUnknownToken(evt.RawPhase);

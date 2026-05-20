@@ -10,9 +10,10 @@ public sealed class SkillLogParserTests
     private static readonly DateTime Ts = new(2026, 5, 18, 10, 49, 51, DateTimeKind.Utc);
 
     // Real capture (trimmed to 5 representative rows incl. a capped skill and a
-    // max=0 pseudo-skill) from Player.log's login dump.
+    // max=0 pseudo-skill) from Player.log's login dump — envelope-stripped
+    // (post-#550 L1 migration: L0.5 eats the `[ts] LocalPlayer: ` prefix).
     private const string LoadSkillsLine =
-        "[08:22:21] LocalPlayer: ProcessLoadSkills(" +
+        "ProcessLoadSkills(" +
         "{type=Toolcrafting,raw=15,bonus=0,xp=26,tnl=680,max=50}, " +
         "{type=Tanning,raw=50,bonus=3,xp=0,tnl=5280,max=50}, " +
         "{type=Augmentation,raw=0,bonus=2,xp=0,tnl=1,max=0}, " +
@@ -20,7 +21,7 @@ public sealed class SkillLogParserTests
         "{type=Anatomy_Bears,raw=27,bonus=0,xp=1435,tnl=1500,max=50})";
 
     private const string UpdateSkillLine =
-        "[10:49:51] LocalPlayer: ProcessUpdateSkill(" +
+        "ProcessUpdateSkill(" +
         "{type=NatureAppreciation,raw=26,bonus=2,xp=315,tnl=1350,max=50}, True, 110, 0, 0)";
 
     [Fact]
@@ -80,7 +81,7 @@ public sealed class SkillLogParserTests
     [InlineData("{type=Anatomy_Bears,raw=27,bonus=0,xp=1483,tnl=1500,max=50}", 48)] // chat: "48 XP in Bear and Bugbear Anatomy"
     public void ProcessUpdateSkill_XpGained_matches_chat_Status_oracle(string structText, long gained)
     {
-        var line = $"[11:36:42] LocalPlayer: ProcessUpdateSkill({structText}, False, {gained}, 0, 0)";
+        var line = $"ProcessUpdateSkill({structText}, False, {gained}, 0, 0)";
         var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
         upd.XpGained.Should().Be(gained);
     }
@@ -91,7 +92,7 @@ public sealed class SkillLogParserTests
         // Real captured Tailoring level-up (raw 9→10). arg3 is the GROSS gain
         // (160, = chat "earned 160 XP and reached level 12"), NOT split across
         // the rollover; struct xp/tnl are the post-level-up values.
-        var line = "[12:39:02] LocalPlayer: ProcessUpdateSkill(" +
+        var line = "ProcessUpdateSkill(" +
                    "{type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)";
         var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
         upd.Skill.Level.Should().Be(10);
@@ -104,7 +105,7 @@ public sealed class SkillLogParserTests
     public void ProcessUpdateSkill_with_no_tail_defaults_XpGained_to_zero()
     {
         // Grammar drift / truncation: struct is still authoritative for state.
-        var line = "LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50})";
+        var line = "ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50})";
         var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
         upd.Skill.Level.Should().Be(2);
         upd.XpGained.Should().Be(0);
@@ -115,7 +116,7 @@ public sealed class SkillLogParserTests
     {
         // Samwise's GardenLogParser also matches this line; SkillLogParser must
         // fold Gardening into skill state regardless — no ordering coupling.
-        var line = "[10:00:00] LocalPlayer: ProcessUpdateSkill(" +
+        var line = "ProcessUpdateSkill(" +
                    "{type=Gardening,raw=30,bonus=1,xp=100,tnl=900,max=50}, True, 50, 0, 0)";
 
         var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
@@ -124,8 +125,8 @@ public sealed class SkillLogParserTests
     }
 
     [Theory]
-    [InlineData("[10:46:47] LocalPlayer: ProcessSetActiveSkills(Riding, Riding)")]
-    [InlineData("[10:46:47] entity_23984278: OnAttackHitMe(Big Cat Claw). Evaded = False")]
+    [InlineData("ProcessSetActiveSkills(Riding, Riding)")]
+    [InlineData("OnAttackHitMe(Big Cat Claw). Evaded = False")]
     [InlineData("Loading preferences from C:/Users/x/GorgonSettings.txt")]
     public void Unrelated_lines_return_null(string line)
         => _parser.TryParse(line, Ts).Should().BeNull();
@@ -135,7 +136,7 @@ public sealed class SkillLogParserTests
     {
         // Truncated / grammar-drift line: emit nothing rather than an empty
         // snapshot that would wipe live state.
-        _parser.TryParse("[08:22:21] LocalPlayer: ProcessLoadSkills()", Ts).Should().BeNull();
+        _parser.TryParse("ProcessLoadSkills()", Ts).Should().BeNull();
     }
 
     // ----- #525: per-row (int|long).TryParse guard (containment vs. snapshot loss) -----
@@ -146,7 +147,7 @@ public sealed class SkillLogParserTests
         // The middle struct's `xp` would overflow long (>= 2^63). Per #525
         // row-skip policy, the surrounding good rows still ship — only the
         // unparseable per-skill row drops.
-        var line = "[08:22:21] LocalPlayer: ProcessLoadSkills(" +
+        var line = "ProcessLoadSkills(" +
                    "{type=Toolcrafting,raw=15,bonus=0,xp=26,tnl=680,max=50}, " +
                    "{type=Tanning,raw=50,bonus=3,xp=99999999999999999999,tnl=5280,max=50}, " +
                    "{type=Werewolf,raw=56,bonus=4,xp=13091,tnl=188650,max=70})";
@@ -160,7 +161,7 @@ public sealed class SkillLogParserTests
     {
         // No struct survived row-parse — fall through to the same empty-payload
         // stance as line 92 (emit nothing, snapshot stands).
-        var line = "LocalPlayer: ProcessLoadSkills(" +
+        var line = "ProcessLoadSkills(" +
                    "{type=A,raw=99999999999,bonus=0,xp=0,tnl=0,max=0}, " +
                    "{type=B,raw=0,bonus=0,xp=99999999999999999999,tnl=0,max=0})";
         _parser.TryParse(line, Ts).Should().BeNull();
@@ -171,7 +172,7 @@ public sealed class SkillLogParserTests
     {
         // Single-record event: a malformed struct field is unrecoverable for
         // THIS event. Drop it; snapshot state stands.
-        var line = "[10:49:51] LocalPlayer: ProcessUpdateSkill(" +
+        var line = "ProcessUpdateSkill(" +
                    "{type=NatureAppreciation,raw=99999999999,bonus=2,xp=315,tnl=1350,max=50}, True, 110, 0, 0)";
         _parser.TryParse(line, Ts).Should().BeNull();
     }
@@ -182,7 +183,7 @@ public sealed class SkillLogParserTests
         // arg3 overflowing long must not kill the event — the struct is the
         // authoritative state. Per #525, treat a malformed arg3 the same as
         // arg3-absent: emit the update with XpGained=0.
-        var line = "[10:49:51] LocalPlayer: ProcessUpdateSkill(" +
+        var line = "ProcessUpdateSkill(" +
                    "{type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 99999999999999999999, 0, 0)";
         var upd = _parser.TryParse(line, Ts).Should().BeOfType<SkillProgressUpdateEvent>().Subject;
         upd.Skill.SkillKey.Should().Be("Sword");
@@ -195,7 +196,7 @@ public sealed class SkillLogParserTests
         // The whole point of #525: a single bad token must not poison the
         // parser. (Containment in PlayerSkillStateService catches throws too,
         // but a throw would still discard the entire snapshot.)
-        var line = "LocalPlayer: ProcessLoadSkills(" +
+        var line = "ProcessLoadSkills(" +
                    "{type=A,raw=15,bonus=0,xp=99999999999999999999,tnl=680,max=50}, " +
                    "{type=B,raw=50,bonus=3,xp=0,tnl=5280,max=50})";
         Action act = () => _parser.TryParse(line, Ts);

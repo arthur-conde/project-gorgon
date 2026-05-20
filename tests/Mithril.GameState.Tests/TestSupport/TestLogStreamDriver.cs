@@ -129,11 +129,24 @@ public sealed class TestLogStreamDriver : ILogStreamDriver, IDisposable
         private long _pending;
         private TaskCompletionSource _drained = NewDrainTcsResolved();
         private readonly object _gate = new();
+        private bool _replaySnapshotted;
 
+        /// <summary>
+        /// Append a replay-phase item. MUST be called BEFORE any subscription
+        /// starts consuming the pipe — once the pump's <see cref="SubscribeAsync"/>
+        /// snapshots the replay list, late additions are silently dropped (the
+        /// snapshot already passed, the pump never delivers, <see cref="DrainAsync"/>
+        /// times out). Throws if called after the snapshot has been taken so the
+        /// misuse fails fast instead of hanging.
+        /// </summary>
         internal void AddReplay(T line)
         {
             lock (_gate)
             {
+                if (_replaySnapshotted)
+                    throw new InvalidOperationException(
+                        "AddReplay must be called before any Subscribe<T> consumes the pipe — " +
+                        "call it during setup, not after the pump starts.");
                 Interlocked.Increment(ref _pending);
                 _replay.Add(line);
                 Interlocked.Exchange(ref _drained, NewDrainTcs());
@@ -167,9 +180,11 @@ public sealed class TestLogStreamDriver : ILogStreamDriver, IDisposable
             [EnumeratorCancellation] CancellationToken ct)
         {
             // Snapshot the replay list so a concurrent AddReplay after the
-            // pump starts doesn't get clobbered into the replay phase.
+            // pump starts doesn't get clobbered into the replay phase. Setting
+            // _replaySnapshotted under the same lock makes subsequent AddReplay
+            // calls fail fast rather than hang DrainAsync (see AddReplay doc).
             T[] replaySnap;
-            lock (_gate) { replaySnap = _replay.ToArray(); }
+            lock (_gate) { replaySnap = _replay.ToArray(); _replaySnapshotted = true; }
             foreach (var line in replaySnap)
             {
                 if (ct.IsCancellationRequested) yield break;
