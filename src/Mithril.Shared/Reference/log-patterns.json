@@ -231,7 +231,7 @@
       ]
     },
     "saruman.WordOfPowerDiscoveredParser.DiscoveryRx": {
-      "pattern": "LocalPlayer:\\s*ProcessBook\\(\"You discovered a word of power!\",\\s*\"You've discovered a word of power: <sel>(?<code>[A-Z]+)</sel>.*?<b><size=125%>Word of Power: (?<effect>[^<]+)</size></b>\\\\n(?<desc>.+?)\\\\n\\\\n<i>",
+      "pattern": "ProcessBook\\(\"You discovered a word of power!\",\\s*\"You've discovered a word of power: <sel>(?<code>[A-Z]+)</sel>.*?<b><size=125%>Word of Power: (?<effect>[^<]+)</size></b>\\\\n(?<desc>.+?)\\\\n\\\\n<i>",
       "source": "player",
       "module": "saruman",
       "csharp": { "type": "Saruman.Parsing.WordOfPowerDiscoveredParser", "method": "DiscoveryRx" },

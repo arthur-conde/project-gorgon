@@ -1,4 +1,5 @@
 using Mithril.Shared.Character;
+using Mithril.Shared.Logging;
 using Saruman.Domain;
 using Saruman.Settings;
 
@@ -52,7 +53,15 @@ public sealed class SarumanCodebookService
     /// <see cref="KnownWord.DiscoveryCount"/>; re-discovery of a spent word flips it
     /// back to <see cref="WordOfPowerState.Known"/>. No-op when no character is active.
     /// </summary>
-    public void RecordDiscovery(WordOfPowerDiscovered evt)
+    /// <param name="sequence">
+    /// Optional <c>LocalPlayerLogLine.Sequence</c> of the originating log envelope.
+    /// When supplied, the active character's
+    /// <see cref="SarumanState.DiscoveryHighWaterSequence"/> is advanced to
+    /// <c>max(prior, sequence)</c> as part of the same persist. The discovery
+    /// ingestion service supplies this; tests / chat-driven callers may pass
+    /// null and the high-water is left untouched.
+    /// </param>
+    public void RecordDiscovery(WordOfPowerDiscovered evt, long? sequence = null)
     {
         var state = _view.Current;
         if (state is null) return;
@@ -79,9 +88,33 @@ public sealed class SarumanCodebookService
                     FirstDiscoveredAt = evt.Timestamp,
                 };
             }
+            if (sequence is long s && (state.DiscoveryHighWaterSequence is not long prior || s > prior))
+            {
+                state.DiscoveryHighWaterSequence = s;
+            }
             Persist();
         }
         CodebookChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Read the persisted high-water Player.log sequence for the active
+    /// character — what the L1 driver should pass as
+    /// <see cref="LogSubscriptionOptions.SkipProcessedHighWater"/> on the
+    /// discovery subscription so replayed envelopes whose sequence is
+    /// <c>&lt;= HighWater</c> are dropped before the handler runs and the
+    /// monotonic <see cref="KnownWord.DiscoveryCount"/> doesn't re-inflate
+    /// across a Mithril restart. Returns null when no character is active
+    /// or the character has never recorded a discovery.
+    /// </summary>
+    public long? DiscoveryHighWaterSequence
+    {
+        get
+        {
+            var state = _view.Current;
+            if (state is null) return null;
+            lock (_lock) return state.DiscoveryHighWaterSequence;
+        }
     }
 
     public bool MarkSpent(string code, DateTime spokenAt)
