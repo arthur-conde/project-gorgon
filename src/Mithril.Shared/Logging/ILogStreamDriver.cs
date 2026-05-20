@@ -3,7 +3,8 @@ namespace Mithril.Shared.Logging;
 /// <summary>
 /// L1 of the layered log pipeline (#511 deliverable 3 / #550 — this PR
 /// ships PR 1 of #550: the driver only, no consumer migration). Sits
-/// between L0.5 (the actor-keyed router in <see cref="PlayerLogActorRouter"/>)
+/// between L0.5 (the classifier + splitter pair —
+/// <see cref="PlayerLogClassifier"/> and <see cref="PlayerLogPipeSplitter"/>)
 /// and L2 (future verb/arg recognition). L1 owns the cross-cutting concerns
 /// that today are hand-rolled per consumer:
 ///

@@ -44,8 +44,9 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _autoStartPerfTrace;
     public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
 
-    /// <summary>When true, the L0.5 actor-router (#532 / <c>PlayerLogActorRouter</c>)
-    /// fills <see cref="Mithril.Shared.Logging.LocalPlayerLogLine.Raw"/> (and the
+    /// <summary>When true, the L0.5 classifier (#532 / #556 /
+    /// <c>PlayerLogClassifier</c>) fills
+    /// <see cref="Mithril.Shared.Logging.LocalPlayerLogLine.Raw"/> (and the
     /// equivalent fields on the combat / system pipes) with the exact source
     /// <see cref="Mithril.Shared.Logging.RawLogLine.Line"/>. <c>null</c> by
     /// default — no per-line string allocation. Use when diagnosing an

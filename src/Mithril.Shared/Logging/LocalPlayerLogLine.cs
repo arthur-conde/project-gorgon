@@ -25,4 +25,4 @@ public sealed record LocalPlayerLogLine(
     string Data,
     long Sequence,
     long ReadMonotonicTicks,
-    string? Raw = null);
+    string? Raw = null) : IClassifiedPlayerLogLine;

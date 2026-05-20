@@ -78,37 +78,55 @@ public static class ServiceCollectionExtensions
             .AddHostedService<ActiveCharacterLogSynchronizer>();
 
     /// <summary>
-    /// Register the L0.5 actor-keyed envelope router (#532). Consumes
-    /// <see cref="IPlayerLogStream"/>, classifies each line, and emits typed
-    /// records on three pipes: <see cref="ILocalPlayerLogStream"/>,
-    /// <see cref="ICombatActorLogStream"/>, <see cref="ISystemSignalLogStream"/>.
+    /// Register the L0.5 classifier + splitter pair (#556). The
+    /// <see cref="PlayerLogClassifier"/> consumes <see cref="IPlayerLogStream"/>,
+    /// classifies each line, and publishes the surviving ~5% on the
+    /// unified <see cref="IClassifiedPlayerLogStream"/> pipe. The
+    /// <see cref="PlayerLogPipeSplitter"/> subscribes to that unified pipe
+    /// and fans out to three per-Kind typed pipes:
+    /// <see cref="ILocalPlayerLogStream"/>, <see cref="ICombatActorLogStream"/>,
+    /// <see cref="ISystemSignalLogStream"/>.
+    ///
+    /// <para>Cross-pipe-ordering-sensitive consumers subscribe to the
+    /// unified pipe via the L1 driver (using
+    /// <see cref="IClassifiedPlayerLogLine"/> as the subscription type).
+    /// Consumers needing only one Kind subscribe to the typed pipes.</para>
     ///
     /// <para><paramref name="captureRawAccessor"/> is a late-bound read of an
     /// infra diagnostic setting (typically a <c>ShellSettings</c> property)
-    /// — when it returns <c>true</c> the router fills the <c>Raw</c> field on
-    /// emitted records with the exact source line; when <c>false</c> (the
-    /// default) <c>Raw</c> stays <c>null</c> and no per-line string
-    /// allocation occurs. Mirrors the perf-trace pattern: flip the setting
-    /// and subsequent emissions reflect the new state.</para>
+    /// — when it returns <c>true</c> the classifier fills the <c>Raw</c>
+    /// field on emitted records with the exact source line; when
+    /// <c>false</c> (the default) <c>Raw</c> stays <c>null</c> and no
+    /// per-line string allocation occurs. Mirrors the perf-trace pattern:
+    /// flip the setting and subsequent emissions reflect the new state.</para>
     /// </summary>
-    public static IServiceCollection AddMithrilLogActorRouter(
+    public static IServiceCollection AddMithrilLogActorPipeline(
         this IServiceCollection services,
         Func<IServiceProvider, Func<bool>>? captureRawAccessor = null)
     {
-        services.AddSingleton<PlayerLogActorRouter>(sp => new PlayerLogActorRouter(
+        services.AddSingleton<PlayerLogClassifier>(sp => new PlayerLogClassifier(
             sp.GetRequiredService<IPlayerLogStream>(),
             sp.GetService<IDiagnosticsSink>(),
             captureRawAccessor?.Invoke(sp)));
-        services.AddSingleton<ILocalPlayerLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
-        services.AddSingleton<ICombatActorLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
-        services.AddSingleton<ISystemSignalLogStream>(sp => sp.GetRequiredService<PlayerLogActorRouter>());
+        services.AddSingleton<IClassifiedPlayerLogStream>(sp =>
+            sp.GetRequiredService<PlayerLogClassifier>());
+
+        services.AddSingleton<PlayerLogPipeSplitter>(sp => new PlayerLogPipeSplitter(
+            sp.GetRequiredService<IClassifiedPlayerLogStream>(),
+            sp.GetService<IDiagnosticsSink>()));
+        services.AddSingleton<ILocalPlayerLogStream>(sp =>
+            sp.GetRequiredService<PlayerLogPipeSplitter>());
+        services.AddSingleton<ICombatActorLogStream>(sp =>
+            sp.GetRequiredService<PlayerLogPipeSplitter>());
+        services.AddSingleton<ISystemSignalLogStream>(sp =>
+            sp.GetRequiredService<PlayerLogPipeSplitter>());
         return services;
     }
 
     /// <summary>
     /// Register the L1 subscription driver (#511 deliverable 3 / #550 PR 1).
-    /// Sits between the L0.5 typed pipes (registered by
-    /// <see cref="AddMithrilLogActorRouter"/>) + the L0
+    /// Sits between the L0.5 typed pipes + unified pipe (registered by
+    /// <see cref="AddMithrilLogActorPipeline"/>) + the L0
     /// <see cref="IChatLogStream"/>, and produces typed
     /// <see cref="LogEnvelope{T}"/> subscriptions with cross-cutting
     /// concerns owned by the driver: <see cref="ReplayMode"/>,
@@ -135,6 +153,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ILocalPlayerLogStream>(),
             sp.GetRequiredService<ICombatActorLogStream>(),
             sp.GetRequiredService<ISystemSignalLogStream>(),
+            sp.GetRequiredService<IClassifiedPlayerLogStream>(),
             sp.GetRequiredService<IChatLogStream>(),
             sp.GetRequiredService<LogStreamAttentionSource>(),
             sp.GetService<IDiagnosticsSink>()));

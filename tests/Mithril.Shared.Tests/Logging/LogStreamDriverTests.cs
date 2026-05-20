@@ -349,7 +349,8 @@ public sealed class LogStreamDriverTests
         using var diag = new CapturingDiag();
         var attention = new LogStreamAttentionSource();
         using var driver = new LogStreamDriver(
-            upstream, NoopCombat.Instance, NoopSystem.Instance, NoopChat.Instance,
+            upstream, NoopCombat.Instance, NoopSystem.Instance,
+            NoopClassified.Instance, NoopChat.Instance,
             attention, diag);
 
         // Subscribe FIRST so the drain task is running and blocked on
@@ -512,7 +513,8 @@ public sealed class LogStreamDriverTests
         using var diag = new CapturingDiag();
         var attention = new LogStreamAttentionSource();
         using var driver = new LogStreamDriver(
-            upstream, NoopCombat.Instance, NoopSystem.Instance, NoopChat.Instance,
+            upstream, NoopCombat.Instance, NoopSystem.Instance,
+            NoopClassified.Instance, NoopChat.Instance,
             attention, diag);
 
         var changedFired = 0;
@@ -541,7 +543,8 @@ public sealed class LogStreamDriverTests
         using var diag = new CapturingDiag();
         var attention = new LogStreamAttentionSource();
         using var driver = new LogStreamDriver(
-            upstream, NoopCombat.Instance, NoopSystem.Instance, NoopChat.Instance,
+            upstream, NoopCombat.Instance, NoopSystem.Instance,
+            NoopClassified.Instance, NoopChat.Instance,
             attention, diag);
 
         var failing = true;
@@ -605,7 +608,7 @@ public sealed class LogStreamDriverTests
         var attention = new LogStreamAttentionSource();
         using var driver = new LogStreamDriver(
             NoopLocalPlayer.Instance, NoopCombat.Instance, NoopSystem.Instance,
-            chat, attention, diag);
+            NoopClassified.Instance, chat, attention, diag);
 
         var collected = new List<LogEnvelope<RawLogLine>>();
         using var sub = driver.Subscribe<RawLogLine>(
@@ -677,6 +680,61 @@ public sealed class LogStreamDriverTests
     }
 
     [Fact]
+    public async Task Subscribe_OfConcreteLocalPlayer_RoutesToTypedPipe_NotUnifiedPipe()
+    {
+        // Risk 3 pin (#556). The dispatch chain uses `typeof(T) == typeof(...)`
+        // exact-equality, so even though LocalPlayerLogLine implements the
+        // IClassifiedPlayerLogLine interface, Subscribe<LocalPlayerLogLine>
+        // MUST continue to route to the typed pipe (the splitter), NOT the
+        // unified pipe (the classifier). A future "simplification" to
+        // runtime-type checks would silently break this contract — this
+        // test pins it.
+        //
+        // We assert by direction-of-flow: only the typed-pipe upstream
+        // receives any subscribe call; the unified-pipe upstream receives
+        // none.
+        var typedUpstream = new TwoPhaseLocalPlayerStream();
+        var classified = new SubscribeCountingClassifiedStream();
+        using var driver = NewDriverWith(localPlayer: typedUpstream, classified: classified);
+
+        var collected = new List<LogEnvelope<LocalPlayerLogLine>>();
+        using var sub = driver.Subscribe<LocalPlayerLogLine>(
+            e => { lock (collected) collected.Add(e); return ValueTask.CompletedTask; });
+
+        typedUpstream.PushLive(Make("CONCRETE", seq: 1));
+        await WaitUntilAsync(() => { lock (collected) return collected.Count >= 1; });
+
+        classified.SubscribeCount.Should().Be(0,
+            "Subscribe<LocalPlayerLogLine> must route to the typed pipe (splitter), " +
+            "not the unified pipe (classifier), even though LocalPlayerLogLine " +
+            "implements IClassifiedPlayerLogLine");
+    }
+
+    [Fact]
+    public async Task Subscribe_OfClassifiedInterface_RoutesToUnifiedPipe()
+    {
+        // The companion direction: subscribing to the interface DOES go to
+        // the unified pipe.
+        var typedUpstream = new TwoPhaseLocalPlayerStream();
+        var classified = new SubscribeCountingClassifiedStream();
+        using var driver = NewDriverWith(localPlayer: typedUpstream, classified: classified);
+
+        var collected = new List<LogEnvelope<IClassifiedPlayerLogLine>>();
+        using var sub = driver.Subscribe<IClassifiedPlayerLogLine>(
+            e => { lock (collected) collected.Add(e); return ValueTask.CompletedTask; });
+
+        classified.PushLive(Make("UNIFIED", seq: 1));
+        await WaitUntilAsync(() => { lock (collected) return collected.Count >= 1; });
+
+        classified.SubscribeCount.Should().Be(1);
+        lock (collected)
+        {
+            collected.Should().HaveCount(1);
+            ((LocalPlayerLogLine)collected[0].Payload).Data.Should().Be("UNIFIED");
+        }
+    }
+
+    [Fact]
     public void Dispose_OfDriver_DisposesAllSubscriptions()
     {
         var upstream = new TwoPhaseLocalPlayerStream();
@@ -707,6 +765,7 @@ public sealed class LogStreamDriverTests
 
     private static LogStreamDriver NewDriverWith(
         ILocalPlayerLogStream? localPlayer = null,
+        IClassifiedPlayerLogStream? classified = null,
         IDiagnosticsSink? diag = null)
     {
         var attention = new LogStreamAttentionSource();
@@ -714,6 +773,7 @@ public sealed class LogStreamDriverTests
             localPlayer ?? NoopLocalPlayer.Instance,
             NoopCombat.Instance,
             NoopSystem.Instance,
+            classified ?? NoopClassified.Instance,
             NoopChat.Instance,
             attention,
             diag);
@@ -841,6 +901,42 @@ public sealed class LogStreamDriverTests
             try { await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { }
             yield break;
+        }
+    }
+
+    private sealed class NoopClassified : IClassifiedPlayerLogStream
+    {
+        public static readonly NoopClassified Instance = new();
+        public async IAsyncEnumerable<LogEnvelope<IClassifiedPlayerLogLine>> SubscribeWithReplayMarkerAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            try { await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            yield break;
+        }
+    }
+
+    /// <summary>
+    /// Counts the number of times SubscribeWithReplayMarkerAsync is
+    /// enumerated. Used by the Risk 3 dispatch-pin test to verify that
+    /// Subscribe&lt;LocalPlayerLogLine&gt; never opens a subscription on
+    /// the unified pipe.
+    /// </summary>
+    private sealed class SubscribeCountingClassifiedStream : IClassifiedPlayerLogStream
+    {
+        private readonly Channel<LocalPlayerLogLine> _live = Channel.CreateUnbounded<LocalPlayerLogLine>();
+        private int _subscribeCount;
+
+        public int SubscribeCount => Volatile.Read(ref _subscribeCount);
+
+        public void PushLive(LocalPlayerLogLine line) => _live.Writer.TryWrite(line);
+
+        public async IAsyncEnumerable<LogEnvelope<IClassifiedPlayerLogLine>> SubscribeWithReplayMarkerAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            Interlocked.Increment(ref _subscribeCount);
+            await foreach (var line in _live.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+                yield return new LogEnvelope<IClassifiedPlayerLogLine>(line, IsReplay: false);
         }
     }
 
