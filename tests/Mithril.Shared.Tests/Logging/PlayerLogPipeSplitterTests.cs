@@ -137,6 +137,79 @@ public sealed class PlayerLogPipeSplitterTests
         local.Select(x => x.Data).Should().Equal("L1", "L2");
     }
 
+    [Fact]
+    public async Task Unknown_payload_type_lands_on_default_branch_and_increments_DispatchFailures()
+    {
+        // The splitter's switch covers the three concrete IClassifiedPlayerLogLine
+        // implementers; any other implementer (a future fourth typed pipe,
+        // or a test-only stub) must fall through to the default: branch,
+        // increment _dispatchFailures, and NOT crash the pump or starve
+        // typed-pipe subscribers. Risk-1 pin from the #556 brainstorm.
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        // Open a typed subscription so the splitter starts its pump.
+        var localTask = CollectAsync(((ILocalPlayerLogStream)splitter).SubscribeAsync, 1);
+
+        // Mix one unknown payload with one valid LocalPlayerLogLine. The
+        // unknown one should be counted-and-warned; the Local one should
+        // still reach the typed subscriber.
+        classified.PushLive(new UnknownClassifiedPayload(Ts, "junk", Sequence: 1));
+        classified.PushLive(new LocalPlayerLogLine(Ts, "ProcessOk", 2, 0));
+
+        var local = await localTask.WaitAsync(TimeSpan.FromSeconds(15));
+        local.Should().ContainSingle().Which.Data.Should().Be("ProcessOk");
+
+        splitter.Counters.DispatchFailures.Should().Be(1,
+            because: "the unknown-typed envelope hit the default: branch");
+    }
+
+    [Fact]
+    public async Task Handler_throw_in_typed_subscriber_does_not_kill_splitter_pump()
+    {
+        // The splitter's per-envelope try/catch contains Dispatch throws so
+        // one bad envelope doesn't take down the pump. We can't easily
+        // make the production Dispatch throw, but we can verify the
+        // surrounding lifecycle: a typed-pipe subscriber that throws gets
+        // its containment from the L1 driver's bridge — not from the
+        // splitter — so the splitter's role is structural (dispatch by
+        // type) rather than per-handler. This test pins the structural
+        // guarantee: the splitter survives a downstream channel that
+        // refuses writes (closed-channel TryWrite returns false silently).
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        // Open then close a typed subscription's channel by disposing the
+        // CTS mid-flight. Subsequent writes to that channel TryWrite-fail
+        // silently — the splitter's PublishLocal must NOT throw.
+        using var firstCts = new CancellationTokenSource();
+        var pendingTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var _ in ((ILocalPlayerLogStream)splitter).SubscribeAsync(firstCts.Token))
+                {
+                    // Cancel on first item so the subscription unwinds.
+                    firstCts.Cancel();
+                }
+            }
+            catch (OperationCanceledException) { /* expected */ }
+        });
+        classified.PushLive(new LocalPlayerLogLine(Ts, "FIRST", 1, 0));
+        await pendingTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Now push more envelopes. The first subscriber's channel is gone;
+        // the splitter must not throw, and a fresh subscription must still
+        // receive items.
+        var afterTask = CollectAsync(((ILocalPlayerLogStream)splitter).SubscribeAsync, 1);
+        classified.PushLive(new LocalPlayerLogLine(Ts, "AFTER", 2, 0));
+        var after = await afterTask.WaitAsync(TimeSpan.FromSeconds(5));
+        after.Should().ContainSingle().Which.Data.Should().Be("AFTER");
+
+        splitter.Counters.DispatchFailures.Should().Be(0,
+            because: "a closed/abandoned downstream channel is not a dispatch failure");
+    }
+
     private static async Task<List<T>> CollectAsync<T>(
         Func<CancellationToken, IAsyncEnumerable<T>> subscribe,
         int expected,
@@ -177,6 +250,21 @@ public sealed class PlayerLogPipeSplitterTests
         catch (OperationCanceledException) { }
         return result;
     }
+
+    /// <summary>
+    /// A test-only fourth implementer of <see cref="IClassifiedPlayerLogLine"/>
+    /// — none of the splitter's three switch arms match it, so it should
+    /// land on the <c>default:</c> branch and increment
+    /// <see cref="PlayerLogPipeSplitter.SplitterCounters.DispatchFailures"/>
+    /// without killing the pump. Pins the closed-set assumption documented
+    /// on <see cref="IClassifiedPlayerLogLine"/>.
+    /// </summary>
+    private sealed record UnknownClassifiedPayload(
+        DateTimeOffset Timestamp,
+        string Data,
+        long Sequence,
+        long ReadMonotonicTicks = 0,
+        string? Raw = null) : IClassifiedPlayerLogLine;
 
     /// <summary>
     /// In-memory <see cref="IClassifiedPlayerLogStream"/> the splitter can

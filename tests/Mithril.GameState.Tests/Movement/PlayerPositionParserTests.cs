@@ -24,6 +24,21 @@ public sealed class PlayerPositionParserTests
     private static string LineAt(string tsPrefix) =>
         FixtureLines().Single(l => l.StartsWith(tsPrefix, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Strip the <c>[HH:MM:SS] LocalPlayer: </c> envelope to recover the bare
+    /// <c>ProcessAddPlayer(…)</c> body — the shape L0.5 produces for the
+    /// <see cref="Mithril.Shared.Logging.SystemSignalKind.PlayerAdded"/> pipe
+    /// (Phase 3 / #569). The fixture lines are raw Player.log lines, so
+    /// tests that route through <see cref="PlayerPositionParser.TryParseSpawnFromData"/>
+    /// strip the envelope first to match the production callsite shape.
+    /// </summary>
+    private static string EatLocalPlayerEnvelope(string line)
+    {
+        const string Marker = "LocalPlayer: ";
+        var idx = line.IndexOf(Marker, StringComparison.Ordinal);
+        return idx >= 0 ? line.Substring(idx + Marker.Length) : line;
+    }
+
     [Fact]
     public void Every_real_line_parses_with_the_right_source()
     {
@@ -34,13 +49,23 @@ public sealed class PlayerPositionParserTests
 
         foreach (var line in lines)
         {
-            var evt = Parser.TryParse(line, Ts).Should().BeOfType<PlayerPositionEvent>(
-                because: $"every real position line must parse: {line[..Math.Min(60, line.Length)]}…").Subject;
+            // Route through the production entry point for each verb class:
+            //   * ProcessNewPosition → TryParse (LocalPlayer pipe in
+            //     production; the regex is actor-agnostic so it works on
+            //     bare verb data or on a full raw line).
+            //   * ProcessAddPlayer → TryParseSpawnFromData (SystemSignal
+            //     pipe in production; L0.5 eats the LocalPlayer: envelope,
+            //     so the test feeds the bare body).
+            var isSpawn = line.Contains("ProcessAddPlayer", StringComparison.Ordinal);
+            var evt = (isSpawn
+                ? Parser.TryParseSpawnFromData(EatLocalPlayerEnvelope(line), Ts)
+                : Parser.TryParse(line, Ts) as PlayerPositionEvent)
+                .Should().BeOfType<PlayerPositionEvent>(
+                    because: $"every real position line must parse: {line[..Math.Min(60, line.Length)]}…").Subject;
 
-            var expected = line.Contains("ProcessAddPlayer", StringComparison.Ordinal)
+            evt.Source.Should().Be(isSpawn
                 ? PlayerPositionSource.Spawn
-                : PlayerPositionSource.Movement;
-            evt.Source.Should().Be(expected);
+                : PlayerPositionSource.Movement);
 
             // Coords are real game values — never all-zero, always finite.
             (evt.X == 0 && evt.Y == 0 && evt.Z == 0).Should().BeFalse();
@@ -52,7 +77,7 @@ public sealed class PlayerPositionParserTests
     public void Real_ProcessAddPlayer_spot_check_positive_coords()
     {
         // [10:30:45] … System.String[], (787.86, 305.22, 3427.55), …
-        var evt = Parser.TryParse(LineAt("[10:30:45]"), Ts)
+        var evt = Parser.TryParseSpawnFromData(EatLocalPlayerEnvelope(LineAt("[10:30:45]")), Ts)
             .Should().BeOfType<PlayerPositionEvent>().Subject;
         evt.X.Should().Be(787.86);
         evt.Y.Should().Be(305.22);
@@ -65,7 +90,7 @@ public sealed class PlayerPositionParserTests
     {
         // [08:22:20] … System.String[], (-504.29, -42.05, -648.84), … —
         // proves signed handling against genuine game data, not a synthetic.
-        var evt = Parser.TryParse(LineAt("[08:22:20]"), Ts)
+        var evt = Parser.TryParseSpawnFromData(EatLocalPlayerEnvelope(LineAt("[08:22:20]")), Ts)
             .Should().BeOfType<PlayerPositionEvent>().Subject;
         evt.X.Should().Be(-504.29);
         evt.Y.Should().Be(-42.05);
@@ -86,33 +111,15 @@ public sealed class PlayerPositionParserTests
     }
 
     // --- Other-player exclusion -------------------------------------------
-    // SYNTHETIC. VERIFIED 2026-05-18 (live busy-town capture, 10 MB, 4191
-    // Process* lines): Player.log logs ONLY the local player — other players
-    // in view emit no ProcessAddPlayer at all, so no real non-local line can
-    // exist to capture. The `LocalPlayer:` gate is therefore harmless on real
-    // data; these assumed shapes still guard the boundary check (a bare
-    // substring is fooled by `NonLocalPlayer:` — see the regression below).
-    // Each line carries a valid position triple so the GATE — not a parse
-    // failure — must be what rejects it.
-
-    public static IEnumerable<object[]> AssumedNonLocalLines() =>
-        File.ReadAllLines(Path.Combine(
-                AppContext.BaseDirectory, "Movement", "Fixtures",
-                "synthetic_nonlocal_addplayer_assumed.log"))
-            .Select(l => l.Trim())
-            .Where(l => l.Length > 0 && !l.StartsWith('#'))
-            .Select(l => new object[] { l });
-
-    [Theory]
-    [MemberData(nameof(AssumedNonLocalLines))]
-    public void Synthetic_rejects_assumed_non_local_ProcessAddPlayer_shapes(string line)
-    {
-        // Sanity: the line WOULD parse if the gate weren't doing the work
-        // (it carries a real-shaped `System.String[], (x, y, z)` triple).
-        line.Should().Contain("System.String[], (");
-        Parser.TryParse(line, Ts).Should().BeNull(
-            because: $"only `LocalPlayer: ProcessAddPlayer` is ours: {line}");
-    }
+    // The previous SYNTHETIC NonLocalPlayer guard test was retired with the
+    // ProcessAddPlayer branch of TryParse (#556 follow-up). The actor
+    // boundary check now lives upstream in
+    // PlayerLogLineClassifier.Classify's literal "LocalPlayer: " prefix
+    // match — the L0.5 classifier never routes a non-LocalPlayer actor
+    // line to the SystemSignal { PlayerAdded } pipe, so by the time
+    // TryParseSpawnFromData sees data, the actor has already been
+    // structurally verified upstream. PlayerLogLineClassifierTests covers
+    // the upstream check.
 
     // --- Negative / unrelated ---------------------------------------------
 
