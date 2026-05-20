@@ -44,10 +44,11 @@ public sealed class LogIngestionService : BackgroundService
         _motherlode = motherlode;
         _areaCalibration = areaCalibration;
         _diag = diag;
-        _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
+        var clock = time ?? TimeProvider.System;
+        _warn = new ThrottledWarn(diag, "Legolas.Ingestion", time: clock);
         _pendingAdds = new PendingCorrelator<string, int>(
             PendingAddTtl,
-            time: time ?? TimeProvider.System,
+            time: clock,
             onUnmatched: (name, count) =>
                 _diag?.Trace("Legolas.PendingAdds", $"evicted {name} x{count}"),
             keyComparer: StringComparer.OrdinalIgnoreCase);
@@ -73,9 +74,12 @@ public sealed class LogIngestionService : BackgroundService
     /// "[Status] X collected!" line. PG's observed emission is ADD-then-COLLECT,
     /// emitted within ~1s, so a tight TTL window captures the real pair and
     /// naturally expires unrelated inventory noise (skinning, vendor, crafting).
-    /// Keyed by display name; case-insensitive to match the consumer's lookup
-    /// in <see cref="HandleItemCollected"/>. Migrated from a hand-rolled buffer
-    /// + cap + "credit at least 1" fallback to the shared
+    /// Keyed by display name with <see cref="StringComparer.OrdinalIgnoreCase"/>
+    /// — must stay in sync with the survey-row name-match loop in
+    /// <see cref="HandleItemCollected"/> (which compares <c>s.Name</c> ↔ <c>ic.Name</c>
+    /// with <see cref="StringComparison.OrdinalIgnoreCase"/>) so the same chat
+    /// line credits the same row regardless of casing drift. Migrated from a
+    /// hand-rolled buffer + cap + "credit at least 1" fallback to the shared
     /// <see cref="PendingCorrelator{TKey, TReq}"/> primitive (#523 deliverable 2);
     /// the credit-1 guess is replaced with an explicit credit-0 + diag.Warn
     /// policy on the take side, and TTL-evicted noise is surfaced via the
@@ -156,9 +160,14 @@ public sealed class LogIngestionService : BackgroundService
 
     private void HandleItemAddedToInventory(ItemAddedToInventory ia)
     {
-        // Assumes ia.Count > 0. The chat parser's regex (x\d+) tolerates "x0"
-        // but PG has never been observed emitting it; a zero-count enqueue
-        // would correlate but contribute nothing on take, which is harmless.
+        DrainPendingStale();
+        // Guard ia.Count > 0 at the boundary. The chat parser's regex (x\d+)
+        // tolerates "x0" and PG has never been observed emitting it, but if it
+        // ever did, a zero-count enqueue would correlate on take and write 0
+        // to CollectedItems — surfacing as "X x0" in the share card, exactly
+        // the failure mode the credit-0-skip policy was built to avoid.
+        // Dropping the enqueue at the source keeps the invariant load-bearing.
+        if (ia.Count <= 0) return;
         _pendingAdds.Add(ia.Name, ia.Count);
     }
 
@@ -170,6 +179,7 @@ public sealed class LogIngestionService : BackgroundService
         // pre-#523 silent credit-1 fallback. TTL-evicted noise (unrelated
         // skinning/vendor adds for the same name) is surfaced via the ctor's
         // eviction Trace callback.
+        DrainPendingStale();
         CreditCollect(ic.Name);
         if (!string.IsNullOrEmpty(ic.SpeedBonusItem))
             CreditCollect(ic.SpeedBonusItem!);
@@ -206,10 +216,15 @@ public sealed class LogIngestionService : BackgroundService
     /// into <see cref="SessionState.CollectedItems"/>. If no pending ADD is
     /// found, the credit-0 policy applies: warn and <em>skip the accumulate</em>
     /// entirely — the dict stays untouched so the share card omits a "x0" line
-    /// and any prior partial credit for this name isn't disturbed. The survey
-    /// row's <see cref="SurveyItemViewModel.Collected"/> flag is independent of
-    /// this path (set by the name-match loop in <see cref="HandleItemCollected"/>),
-    /// so "did I collect it" stays correct regardless of count.
+    /// and any prior partial credit for this name isn't disturbed.
+    ///
+    /// <para><b>Scope of the count credit.</b> The primary-item call path also
+    /// flips the matching survey row's <see cref="SurveyItemViewModel.Collected"/>
+    /// flag via the independent name-match loop in
+    /// <see cref="HandleItemCollected"/>, so "did I collect it" stays correct
+    /// regardless of count. The speed-bonus-item call path has no survey row
+    /// to flip (bonus items aren't surveys); for that branch this method only
+    /// affects the dict credit.</para>
     /// </summary>
     private void CreditCollect(string name)
     {
@@ -241,4 +256,16 @@ public sealed class LogIngestionService : BackgroundService
         _session.CollectedItems.TryGetValue(name, out var existing);
         _session.CollectedItems[name] = existing + count;
     }
+
+    /// <summary>
+    /// Piggyback eviction sweep across every pending key. Required because the
+    /// only consumer of pending ADDs is per-key (<see cref="PendingCorrelator{TKey, TReq}.TryTake"/>
+    /// lazy-evicts only the bucket it touches), so names that arrive on chat
+    /// adds and never see a matching <c>collected!</c> — skinning, vendor,
+    /// crafting, non-survey loot — would accumulate for the process lifetime
+    /// without this call. Mirrors <c>InventoryService.DrainPendingStale</c>:
+    /// invoked at the top of every handler that touches the correlator. Cost
+    /// is O(distinct pending names), trivial in practice.
+    /// </summary>
+    private void DrainPendingStale() => _pendingAdds.DrainStale();
 }

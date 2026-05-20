@@ -87,11 +87,11 @@ public sealed class LogIngestionServiceTests
         }
     }
 
-    private static IEnumerable<(DiagnosticLevel Level, string Category, string Message)> WarnEntries(CapturingSink sink) =>
-        sink.Entries.Where(e => e.Level == DiagnosticLevel.Warn);
+    private static List<(DiagnosticLevel Level, string Category, string Message)> WarnEntries(CapturingSink sink) =>
+        sink.Snapshot().Where(e => e.Level == DiagnosticLevel.Warn).ToList();
 
-    private static IEnumerable<(DiagnosticLevel Level, string Category, string Message)> TraceEntries(CapturingSink sink) =>
-        sink.Entries.Where(e => e.Level == DiagnosticLevel.Trace && e.Category == "Legolas.PendingAdds");
+    private static List<(DiagnosticLevel Level, string Category, string Message)> TraceEntries(CapturingSink sink) =>
+        sink.Snapshot().Where(e => e.Level == DiagnosticLevel.Trace && e.Category == "Legolas.PendingAdds").ToList();
 
     // ---- tests -----------------------------------------------------------
 
@@ -348,6 +348,99 @@ public sealed class LogIngestionServiceTests
         });
     }
 
+    /// <summary>
+    /// Regression — without a piggyback <c>DrainStale()</c> call in the
+    /// add-side handler, chat ADDs for names that never see a matching
+    /// <c>collected!</c> (skinning, vendor, crafting noise) accumulate for
+    /// the process lifetime. The fixture asserts that adds enqueued before a
+    /// later add land in the eviction Trace stream once the next handler
+    /// invocation crosses the TTL boundary.
+    /// </summary>
+    [Fact]
+    public async Task Pending_Adds_for_uncollected_names_are_evicted_on_next_handler_invocation()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            // Two adds for names that will never get a Collect — vendor/skinning noise.
+            h.Stream.Push("[Status] Crow Skin x1 added to inventory.");
+            h.Stream.Push("[Status] Salt Bag x1 added to inventory.");
+            await h.Stream.WaitForDrainAsync();
+            TraceEntries(h.Sink).Should().BeEmpty("nothing has aged past TTL yet");
+
+            // Advance past the 5s TTL and push any unrelated handler-invoking line.
+            // The next HandleItemAddedToInventory call runs DrainPendingStale at
+            // the top, evicting both stale entries even though neither key was
+            // ever TryTake'd.
+            h.Clock.Advance(TimeSpan.FromSeconds(6));
+            h.Stream.Push("[Status] Iron Ore x3 added to inventory.");
+            await h.Stream.WaitForDrainAsync();
+
+            var traces = TraceEntries(h.Sink).ToList();
+            traces.Should().HaveCount(2, "both noise adds should evict via the piggyback sweep");
+            traces.Select(e => e.Message).Should().Contain(m => m.Contains("Crow Skin"));
+            traces.Select(e => e.Message).Should().Contain(m => m.Contains("Salt Bag"));
+        });
+    }
+
+    /// <summary>
+    /// Regression — <c>ThrottledWarn</c> must be wired to the injected
+    /// <see cref="TimeProvider"/>, not <c>TimeProvider.System</c>. Without
+    /// that wiring, the throttle uses wall-clock and a test that emits
+    /// multiple unmatched collects close together would see only one warn
+    /// (suppressed by the wall-clock window) regardless of fake-clock
+    /// advance. Three unmatched collects spaced past the 5s throttle window
+    /// (default in <c>ThrottledWarn</c>) must produce three distinct warns.
+    /// </summary>
+    [Fact]
+    public async Task ThrottledWarn_uses_injected_TimeProvider_so_advancing_past_window_emits_independently()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            h.Stream.Push("[Status] Iron Ore collected!"); // warn 1
+            await h.Stream.WaitForDrainAsync();
+            h.Clock.Advance(TimeSpan.FromSeconds(6));      // past throttle window
+            h.Stream.Push("[Status] Iron Ore collected!"); // warn 2
+            await h.Stream.WaitForDrainAsync();
+            h.Clock.Advance(TimeSpan.FromSeconds(6));
+            h.Stream.Push("[Status] Iron Ore collected!"); // warn 3
+            await h.Stream.WaitForDrainAsync();
+
+            WarnEntries(h.Sink).Should().HaveCount(3,
+                "each collect crossed the throttle window via the fake clock");
+        });
+    }
+
+    /// <summary>
+    /// Boundary guard — a hypothetical <c>x0</c> ADD line (which the parser
+    /// regex would accept but PG has never been observed emitting) must NOT
+    /// enqueue and pollute a subsequent COLLECT with a credited <c>0</c> in
+    /// <see cref="SessionState.CollectedItems"/>. Verifies the documented
+    /// "ia.Count &gt; 0" invariant is load-bearing at the Add boundary, not
+    /// just an aspiration in a doc-comment.
+    /// </summary>
+    [Fact]
+    public async Task Zero_count_Add_is_dropped_at_boundary_and_does_not_pollute_dict()
+    {
+        var h = Build();
+        var survey = SeedSurvey(h.Session, "Iron Ore");
+        await Run(h, async () =>
+        {
+            // Hypothetical x0 ADD — parser accepts; production never emits.
+            h.Stream.Push("[Status] Iron Ore x0 added to inventory.");
+            h.Stream.Push("[Status] Iron Ore collected!");
+            await h.Stream.WaitForDrainAsync();
+
+            h.Session.CollectedItems.Should().NotContainKey("Iron Ore",
+                "x0 was dropped at the boundary so the take found no pending ADD; " +
+                "the credit-0 path then skipped the dict write");
+            survey.Collected.Should().BeTrue("survey-row name match is unaffected by the guard");
+            WarnEntries(h.Sink).Should().ContainSingle(
+                "the dropped x0 routed the collect through the unmatched-take warn path");
+        });
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private sealed class ScriptedChatStream : IChatLogStream
@@ -395,12 +488,24 @@ public sealed class LogIngestionServiceTests
 
     private sealed class CapturingSink : IDiagnosticsSink
     {
-        public List<(DiagnosticLevel Level, string Category, string Message)> Entries { get; } = new();
+        private readonly List<(DiagnosticLevel Level, string Category, string Message)> _entries = new();
         public void Write(DiagnosticLevel level, string category, string message)
         {
-            lock (Entries) Entries.Add((level, category, message));
+            lock (_entries) _entries.Add((level, category, message));
         }
-        public IReadOnlyList<DiagnosticEntry> Snapshot() => Array.Empty<DiagnosticEntry>();
+
+        /// <summary>Snapshot for test enumeration. Must be taken under the same
+        /// lock as <see cref="Write"/> — without this, a mid-flight Write
+        /// during a LINQ scan would throw <c>InvalidOperationException</c> on
+        /// the collection-modified guard.</summary>
+        public IReadOnlyList<(DiagnosticLevel Level, string Category, string Message)> Snapshot()
+        {
+            lock (_entries) return _entries.ToArray();
+        }
+
+        // IDiagnosticsSink ceremony — the production-typed Snapshot/EntryAdded
+        // members aren't consumed by these tests.
+        IReadOnlyList<DiagnosticEntry> IDiagnosticsSink.Snapshot() => Array.Empty<DiagnosticEntry>();
         public event EventHandler<DiagnosticEntry>? EntryAdded { add { } remove { } }
     }
 }
