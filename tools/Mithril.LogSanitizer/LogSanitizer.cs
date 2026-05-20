@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace Mithril.Tools.LogSanitizer;
@@ -48,7 +49,10 @@ public sealed class LogSanitizer
     private static string ApplyReplacements(string line, NameRegistry registry)
     {
         var working = line;
-        foreach (var (name, token) in registry.AllMappings)
+        // Apply longer names first. Without this, "Bob" registered before "Bobby" would replace
+        // first and mangle "Bobby" → "<PLAYER_1>by"; the later "Bobby" → "<PLAYER_2>" lookup
+        // would no longer match, leaking the real name into the committed fixture.
+        foreach (var (name, token) in registry.AllMappings.OrderByDescending(kvp => kvp.Key.Length))
         {
             working = working.Replace(name, token, StringComparison.Ordinal);
         }

@@ -71,4 +71,29 @@ public sealed class LogSanitizerTests
 
         output.Should().BeEmpty();
     }
+
+    [Fact]
+    public void Sanitize_substringName_doesNotClobberLongerName()
+    {
+        // Bob is a substring of Bobby. Without length-descending replacement order, Bob would be
+        // replaced first and mangle Bobby into "<PLAYER_1>by", and the Bobby → <PLAYER_2> replacement
+        // would no longer match — leaking the real name "by" remnant into the sanitized output.
+        var input =
+            """
+            [12:34:56] LocalPlayer: ProcessAddPlayer(-1, 2, "@a", "Bob", "x")
+            [12:34:57] LocalPlayer: ProcessAddPlayer(-2, 2, "@a", "Bobby", "x")
+            [12:34:58] LocalPlayer: Sells item to Bobby
+            [12:34:59] LocalPlayer: Sells item to Bob
+            """;
+
+        var output = new LogSanitizer(new PlayerLogRules()).Sanitize(input);
+
+        output.Should().Contain("\"<PLAYER_1>\"");
+        output.Should().Contain("\"<PLAYER_2>\"");
+        output.Should().Contain("Sells item to <PLAYER_2>");
+        output.Should().Contain("Sells item to <PLAYER_1>");
+        output.Should().NotContain("Bob");
+        output.Should().NotContain("Bobby");
+        output.Should().NotContain("<PLAYER_1>by");
+    }
 }
