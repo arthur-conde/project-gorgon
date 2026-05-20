@@ -1,5 +1,3 @@
-using Mithril.Shared.Modules;
-
 namespace Mithril.Shared.Logging;
 
 /// <summary>
@@ -29,7 +27,7 @@ namespace Mithril.Shared.Logging;
 ///   <c>&lt;= HighWater</c> before delivery (capability F);</item>
 ///   <item>per-subscription fault state machine — N-consecutive failures
 ///   ⇒ <see cref="LogSubscriptionState.Degraded"/> ⇒ surfaced on
-///   <see cref="IAttentionAggregator"/> via
+///   <see cref="Mithril.Shared.Modules.IAttentionAggregator"/> via
 ///   <see cref="LogStreamAttentionSource"/> (capability G).</item>
 /// </list>
 ///

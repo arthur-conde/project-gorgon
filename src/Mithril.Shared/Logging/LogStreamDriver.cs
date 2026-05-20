@@ -296,8 +296,18 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
                         continue;
                     }
 
-                    // LiveOnly — drop replay-phase emissions
-                    if (_options.ReplayMode == ReplayMode.LiveOnly && envelope.IsReplay)
+                    // LiveOnly / SinceSubscribe — drop replay-phase
+                    // emissions. SinceSubscribe is documented as
+                    // behaviourally identical to LiveOnly today
+                    // (ReplayMode.cs); future replay-window variants
+                    // (since-timestamp / since-sequence) would split here.
+                    // Saruman/Discovery's #549 disposition picks
+                    // SinceSubscribe explicitly to express that intent —
+                    // letting it fall through to replay would silently
+                    // re-inflate DiscoveryCount on its eventual migration.
+                    if ((_options.ReplayMode == ReplayMode.LiveOnly ||
+                         _options.ReplayMode == ReplayMode.SinceSubscribe) &&
+                        envelope.IsReplay)
                     {
                         continue;
                     }
@@ -335,9 +345,16 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
             _attention.NotifyHealthy(_id);
             _onDisposed(this);
             // Don't block on the pump task — disposal is synchronous and
-            // the pump will unwind on cancellation. The CTS isn't disposed
-            // here either; doing so during pump unwind would race the
-            // upstream's `await foreach`.
+            // the pump will unwind on cancellation. Dispose the CTS via a
+            // fire-and-forget continuation on the pump task: doing it
+            // inline would race the upstream's `await foreach` (it
+            // dereferences _cts.Token mid-unwind), but a continuation that
+            // runs after the pump task fully unwinds is safe.
+            _pumpTask?.ContinueWith(
+                _ => { try { _cts.Dispose(); } catch { } },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
 
         /// <summary>
@@ -364,6 +381,17 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
         /// <see cref="LogSubscriptionState.Degraded"/> if the threshold is
         /// crossed.
         /// </summary>
+        /// <remarks>
+        /// Invariant: this method is called serially by the delivery
+        /// bridges (single Inline pump loop / single Marshaled drain loop,
+        /// each awaiting the handler per envelope). The
+        /// "consecutive == threshold" exact-equality check on the
+        /// CompareExchange relies on that invariant — the threshold is
+        /// crossed exactly once per failure run, so exactly one Error
+        /// entry fires. A future bridge that parallelizes handler
+        /// invocation would break this guarantee and need a different
+        /// transition predicate.
+        /// </remarks>
         internal void RecordHandlerFailure(Exception ex)
         {
             Interlocked.Increment(ref _handlerFailures);
@@ -475,6 +503,16 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
                 // before the write so we can attribute the drop: if the
                 // channel was at capacity before TryWrite, an item was
                 // discarded by DropOldest semantics.
+                //
+                // Note: the probe is racy in the BENIGN direction. If the
+                // drain reader dequeues an item between Reader.Count and
+                // TryWrite, a successful write can be miscounted as a drop
+                // (over-count). Under-count is impossible because
+                // Reader.Count cannot drop below QueueCapacity while the
+                // queue is at capacity unless a reader runs concurrently —
+                // and that reader run is exactly what frees a slot, so the
+                // following TryWrite genuinely doesn't drop. Diagnostic-
+                // only over-count bias, not data loss.
                 var preCount = _queue.Reader.Count;
                 _queue.Writer.TryWrite(envelope);
                 if (preCount >= QueueCapacity) _sub.RecordDrop();
@@ -495,6 +533,19 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
                         // Capture the handler's failure inside the
                         // InvokeAsync delegate so the failure shape is
                         // identical between Inline and Marshaled.
+                        //
+                        // .Task.Unwrap() is load-bearing — Dispatcher.InvokeAsync
+                        // returns DispatcherOperation, whose .Task for an
+                        // async lambda is Task<Task> (the outer task
+                        // completes when the dispatcher STARTS the lambda;
+                        // the inner async body finishes later). Without
+                        // .Unwrap() the awaiter binds to the outer task,
+                        // making async handlers fire-and-forget: post-await
+                        // exceptions are lost (failure stays null),
+                        // RecordDelivered fires before delivery actually
+                        // completes, and concurrent envelopes can run
+                        // out-of-order. Unwrap() binds the await to the
+                        // inner task instead.
                         Exception? failure = null;
                         try
                         {
@@ -502,9 +553,21 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
                             {
                                 try { await _sub._handler(envelope).ConfigureAwait(true); }
                                 catch (Exception ex) { failure = ex; }
-                            }).Task.ConfigureAwait(false);
+                            }).Task.Unwrap().ConfigureAwait(false);
                         }
-                        catch (TaskCanceledException) { return; }
+                        catch (TaskCanceledException)
+                        {
+                            // Dispatcher shut down mid-drain. Complete the
+                            // channel writer so subsequent DeliverAsync
+                            // TryWrites no-op rather than spiralling drop
+                            // accounting forever (Important #3) and
+                            // surface the bridge death on the fault SM so
+                            // it's visible, not silent.
+                            _queue.Writer.TryComplete();
+                            _sub.RecordHandlerFailure(new InvalidOperationException(
+                                "Marshaled bridge dispatcher shut down mid-drain; subscription is no longer delivering."));
+                            return;
+                        }
 
                         if (failure is not null) _sub.RecordHandlerFailure(failure);
                         else _sub.RecordDelivered();
@@ -512,6 +575,14 @@ public sealed class LogStreamDriver : ILogStreamDriver, IDisposable
                 }
                 catch (Exception ex)
                 {
+                    // Drain failed unexpectedly. Complete the channel
+                    // writer so subsequent DeliverAsync writes no-op and
+                    // drop accounting stops spiralling. Surface on the
+                    // fault SM (capability G) so the subscription
+                    // transitions to Degraded rather than staying Healthy
+                    // while silently dropping every envelope.
+                    _queue.Writer.TryComplete();
+                    _sub.RecordHandlerFailure(ex);
                     _sub._diag?.Error(_sub._diagCategory, $"[{_sub._id}] marshaled bridge drain aborted: {ex}");
                 }
             }

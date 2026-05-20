@@ -6,13 +6,13 @@ namespace Mithril.Shared.Logging;
 /// subscriptions of different modes (Legolas: its area-bridge subscription
 /// wants replay; its survey-dispatch subscription wants live-only).
 ///
-/// <para>For chat-backed subscriptions (<see cref="LogStreamKind.Chat"/>)
-/// the value is structurally moot — <c>IChatLogStream</c> has no backlog by
-/// construction (the per-day file directory is seeded to current-end before
-/// the first emission). The driver accepts any value on chat subscriptions
-/// for API uniformity, treats them all as <see cref="LiveOnly"/>, and emits
-/// a diagnostic on the first mismatch so the spurious knob doesn't go
-/// unnoticed in code review.</para>
+/// <para>For chat-backed subscriptions the value is structurally moot —
+/// <c>IChatLogStream</c> has no backlog by construction (the per-day file
+/// directory is seeded to current-end before the first emission). The
+/// driver accepts any value on chat subscriptions for API uniformity,
+/// treats them all as <see cref="LiveOnly"/>, and emits a diagnostic on
+/// the first mismatch so the spurious knob doesn't go unnoticed in code
+/// review.</para>
 /// </summary>
 public enum ReplayMode
 {

@@ -83,6 +83,37 @@ public sealed class LogStreamDriverTests
     }
 
     [Fact]
+    public async Task ReplayMode_SinceSubscribe_DropsReplayPhaseEntirely()
+    {
+        // SinceSubscribe is documented (ReplayMode.cs) as behaviourally
+        // identical to LiveOnly today. The driver MUST honour that —
+        // Saruman/Discovery's #549 disposition picks SinceSubscribe
+        // explicitly to express intent, and its eventual migration would
+        // silently re-inflate DiscoveryCount if replay leaked through.
+        var upstream = new TwoPhaseLocalPlayerStream();
+        upstream.AddReplay(Make("REPLAY1", seq: 1));
+        upstream.AddReplay(Make("REPLAY2", seq: 2));
+
+        using var driver = NewDriverWith(localPlayer: upstream);
+        var collected = new List<LogEnvelope<LocalPlayerLogLine>>();
+        using var sub = driver.Subscribe<LocalPlayerLogLine>(
+            e => { lock (collected) collected.Add(e); return ValueTask.CompletedTask; },
+            new LogSubscriptionOptions { ReplayMode = ReplayMode.SinceSubscribe });
+
+        // Give the pump a chance to drain replay (which should be dropped)
+        upstream.PushLive(Make("LIVE1", seq: 3));
+        await WaitUntilAsync(() => { lock (collected) return collected.Count >= 1; });
+
+        // The replay items must NOT have been delivered
+        lock (collected)
+        {
+            collected.Should().HaveCount(1);
+            collected[0].Payload.Data.Should().Be("LIVE1");
+            collected[0].IsReplay.Should().BeFalse();
+        }
+    }
+
+    [Fact]
     public async Task ReplayMode_FromSessionStart_DeliversBacklogThenLive()
     {
         var upstream = new TwoPhaseLocalPlayerStream();
@@ -230,6 +261,144 @@ public sealed class LogStreamDriverTests
                 because: "the test thread is NOT the dispatcher thread");
         }
         dispatcher.Shutdown();
+    }
+
+    [Fact]
+    public async Task DeliveryContext_Marshaled_AsyncHandler_AwaitsInnerTask_AndCapturesPostAwaitExceptions()
+    {
+        // Regression — without `.Task.Unwrap()` in MarshaledBridge.DrainAsync,
+        // Dispatcher.InvokeAsync(async () => ...) returns a Task<Task>; the
+        // outer task completes when the dispatcher *starts* the lambda,
+        // making the inner async body fire-and-forget. That breaks two
+        // promises:
+        //   (1) sequential delivery — concurrent envelopes can interleave;
+        //   (2) post-await exception capture — exceptions thrown after the
+        //       handler's first await escape the bridge's try/catch and are
+        //       lost.
+        using var dispatcher = StaThread.Start();
+        var upstream = new TwoPhaseLocalPlayerStream();
+        using var driver = NewDriverWith(localPlayer: upstream);
+
+        var inFlight = 0;
+        var maxConcurrent = 0;
+        var order = new List<string>();
+
+        using var sub = driver.Subscribe<LocalPlayerLogLine>(
+            async e =>
+            {
+                var now = Interlocked.Increment(ref inFlight);
+                // Track the peak in-flight count atomically so a CAS race
+                // between two concurrent invocations can't lose an update.
+                int observed;
+                do
+                {
+                    observed = Volatile.Read(ref maxConcurrent);
+                    if (now <= observed) break;
+                }
+                while (Interlocked.CompareExchange(ref maxConcurrent, now, observed) != observed);
+
+                await Task.Delay(50).ConfigureAwait(true);
+                // Post-await — if the bridge does not Unwrap, the throw
+                // here is lost and HandlerFailures stays at 0.
+                if (e.Payload.Data == "THROW_AFTER_AWAIT")
+                {
+                    Interlocked.Decrement(ref inFlight);
+                    throw new InvalidOperationException("post-await throw");
+                }
+                lock (order) order.Add(e.Payload.Data);
+                Interlocked.Decrement(ref inFlight);
+            },
+            new LogSubscriptionOptions { DeliveryContext = DeliveryContext.Marshaled(dispatcher.Dispatcher) });
+
+        upstream.PushLive(Make("A", seq: 1));
+        upstream.PushLive(Make("B", seq: 2));
+        upstream.PushLive(Make("THROW_AFTER_AWAIT", seq: 3));
+        upstream.PushLive(Make("C", seq: 4));
+
+        await WaitUntilAsync(
+            () => sub.Diagnostics.Delivered + sub.Diagnostics.HandlerFailures >= 4,
+            TimeSpan.FromSeconds(10));
+
+        // (1) Sequential delivery — peak in-flight is 1, never 2+.
+        Volatile.Read(ref maxConcurrent).Should().Be(1,
+            because: "the drain awaits the inner async task via Unwrap; handlers must not run concurrently");
+
+        // (2) Post-await exception captured — HandlerFailures incremented.
+        sub.Diagnostics.HandlerFailures.Should().Be(1,
+            because: "the post-await throw must surface on HandlerFailures (Critical #1)");
+
+        // (3) Three successful deliveries (A, B, C); order preserved.
+        sub.Diagnostics.Delivered.Should().Be(3);
+        lock (order) order.Should().Equal("A", "B", "C");
+
+        dispatcher.Shutdown();
+    }
+
+    [Fact]
+    public async Task MarshaledBridge_DispatcherShutdown_StopsSilentDropSpiral()
+    {
+        // Important #3 — if DrainAsync exits unexpectedly (e.g. dispatcher
+        // shuts down so InvokeAsync.Task.Unwrap() faults), the channel
+        // writer must be completed so subsequent DeliverAsync TryWrites
+        // no-op rather than spiralling drop accounting forever. The
+        // subscription should surface the bridge death on the fault SM
+        // (Degraded) rather than staying Healthy while silently dropping
+        // every envelope.
+        using var dispatcher = StaThread.Start();
+        var upstream = new TwoPhaseLocalPlayerStream();
+        using var diag = new CapturingDiag();
+        var attention = new LogStreamAttentionSource();
+        using var driver = new LogStreamDriver(
+            upstream, NoopCombat.Instance, NoopSystem.Instance, NoopChat.Instance,
+            attention, diag);
+
+        // Subscribe FIRST so the drain task is running and blocked on
+        // ReadAllAsync (channel empty). Then shut down the dispatcher.
+        // The next pushed envelope reaches the drain; InvokeAsync on a
+        // shut-down dispatcher returns a faulted DispatcherOperation
+        // whose .Task.Unwrap() throws TaskCanceledException — exactly
+        // the path Important #3 covers.
+        using var sub = driver.Subscribe<LocalPlayerLogLine>(
+            e => ValueTask.CompletedTask,
+            new LogSubscriptionOptions
+            {
+                DeliveryContext = DeliveryContext.Marshaled(dispatcher.Dispatcher),
+                DegradedAfterConsecutiveFailures = 1,
+            });
+
+        // Shut down the dispatcher and wait for it to finish so the next
+        // InvokeAsync is GUARANTEED to fault.
+        dispatcher.Shutdown();
+
+        // Push the first envelope post-shutdown — the drain pulls it,
+        // tries InvokeAsync on the dead dispatcher, faults out.
+        upstream.PushLive(Make("L1", seq: 1));
+
+        await WaitUntilAsync(
+            () => sub.Diagnostics.State == LogSubscriptionState.Degraded,
+            TimeSpan.FromSeconds(5));
+
+        sub.Diagnostics.State.Should().Be(LogSubscriptionState.Degraded,
+            because: "a faulted drain must surface on the fault SM, not stay Healthy");
+
+        // After the drain has died, push a wave of envelopes and verify
+        // the drop count STABILIZES — i.e. once the channel writer is
+        // completed, TryWrite is a no-op and Reader.Count stops being
+        // probed against an ever-filling buffer.
+        for (var i = 0; i < 2000; i++) upstream.PushLive(Make($"X{i}", seq: i + 100));
+        await Task.Delay(200); // let the pump drain the upstream into the (dead) bridge
+        var snapshotMid = sub.Diagnostics.Dropped;
+        for (var i = 0; i < 2000; i++) upstream.PushLive(Make($"Y{i}", seq: i + 5000));
+        await Task.Delay(200);
+        var snapshotAfter = sub.Diagnostics.Dropped;
+
+        // Once the writer is completed, TryWrite returns false silently —
+        // our probe `preCount >= QueueCapacity` will only fire if the
+        // reader count is at-or-above capacity, which is impossible after
+        // the channel completes and the buffered items drain. So the drop
+        // counter must stabilize (no spiral).
+        (snapshotAfter - snapshotMid).Should().BeLessThan(2000,
+            because: "after the bridge dies the channel writer is completed; subsequent TryWrites no-op and drops must stabilize, not climb 1-for-1 with pushes");
     }
 
     [Fact]
