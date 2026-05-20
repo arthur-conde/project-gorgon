@@ -1,4 +1,5 @@
 using System.Windows;
+using Mithril.Shared.Correlation;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
@@ -23,6 +24,7 @@ public sealed class LogIngestionService : BackgroundService
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly IAreaCalibrationService _areaCalibration;
+    private readonly IDiagnosticsSink? _diag;
     private readonly ThrottledWarn _warn;
 
     public LogIngestionService(
@@ -32,7 +34,8 @@ public sealed class LogIngestionService : BackgroundService
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
         IAreaCalibrationService areaCalibration,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        TimeProvider? time = null)
     {
         _stream = stream;
         _parser = parser;
@@ -40,7 +43,15 @@ public sealed class LogIngestionService : BackgroundService
         _session = session;
         _motherlode = motherlode;
         _areaCalibration = areaCalibration;
-        _warn = new ThrottledWarn(diag, "Legolas.Ingestion");
+        _diag = diag;
+        var clock = time ?? TimeProvider.System;
+        _warn = new ThrottledWarn(diag, "Legolas.Ingestion", time: clock);
+        _pendingAdds = new PendingCorrelator<string, int>(
+            PendingAddTtl,
+            time: clock,
+            onUnmatched: (name, count) =>
+                _diag?.Trace("Legolas.PendingAdds", $"evicted {name} x{count}"),
+            keyComparer: StringComparer.OrdinalIgnoreCase);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,16 +70,23 @@ public sealed class LogIngestionService : BackgroundService
     }
 
     /// <summary>
-    /// Buffer of recent "[Status] X xN added to inventory." adds. PG fires these
-    /// before the matching "[Status] X collected!" line and they're the only
-    /// place real item counts appear. We drain matching entries on each
-    /// <see cref="ItemCollected"/> (primary + speed-bonus item if present) so
-    /// unrelated adds (skinning, crafting, vendor purchases) get discarded
-    /// instead of leaking into the survey report. Capped to bound memory if
-    /// "collected!" never arrives for some buffered entry.
+    /// Pending "[Status] X xN added to inventory." adds awaiting a matching
+    /// "[Status] X collected!" line. PG's observed emission is ADD-then-COLLECT,
+    /// emitted within ~1s, so a tight TTL window captures the real pair and
+    /// naturally expires unrelated inventory noise (skinning, vendor, crafting).
+    /// Keyed by display name with <see cref="StringComparer.OrdinalIgnoreCase"/>
+    /// — must stay in sync with the survey-row name-match loop in
+    /// <see cref="HandleItemCollected"/> (which compares <c>s.Name</c> ↔ <c>ic.Name</c>
+    /// with <see cref="StringComparison.OrdinalIgnoreCase"/>) so the same chat
+    /// line credits the same row regardless of casing drift. Migrated from a
+    /// hand-rolled buffer + cap + "credit at least 1" fallback to the shared
+    /// <see cref="PendingCorrelator{TKey, TReq}"/> primitive (#523 deliverable 2);
+    /// the credit-1 guess is replaced with an explicit credit-0 + diag.Warn
+    /// policy on the take side, and TTL-evicted noise is surfaced via the
+    /// eviction Trace callback wired in the ctor.
     /// </summary>
-    private const int PendingAddBufferCap = 32;
-    private readonly List<(string Name, int Count)> _pendingAdds = new();
+    private static readonly TimeSpan PendingAddTtl = TimeSpan.FromSeconds(5);
+    private readonly PendingCorrelator<string, int> _pendingAdds;
 
     private void Dispatch(GameEvent evt)
     {
@@ -142,25 +160,29 @@ public sealed class LogIngestionService : BackgroundService
 
     private void HandleItemAddedToInventory(ItemAddedToInventory ia)
     {
-        _pendingAdds.Add((ia.Name, ia.Count));
-        if (_pendingAdds.Count > PendingAddBufferCap)
-            _pendingAdds.RemoveRange(0, _pendingAdds.Count - PendingAddBufferCap);
+        DrainPendingStale();
+        // Guard ia.Count > 0 at the boundary. The chat parser's regex (x\d+)
+        // tolerates "x0" and PG has never been observed emitting it, but if it
+        // ever did, a zero-count enqueue would correlate on take and write 0
+        // to CollectedItems — surfacing as "X x0" in the share card, exactly
+        // the failure mode the credit-0-skip policy was built to avoid.
+        // Dropping the enqueue at the source keeps the invariant load-bearing.
+        if (ia.Count <= 0) return;
+        _pendingAdds.Add(ia.Name, ia.Count);
     }
 
     private void HandleItemCollected(ItemCollected ic)
     {
-        // Drain pending "added to inventory" entries that match this collection.
-        // Primary item + (optional) speed-bonus item are the only ones that count
-        // toward this survey; everything else in the buffer is unrelated noise
-        // (skinning drops, vendor purchases, etc.) and gets discarded after.
-        var primaryCount = DrainPendingForName(ic.Name);
-        AccumulateCollected(ic.Name, primaryCount);
+        // Primary item + (optional) speed-bonus item are the only ones we want
+        // to credit. SumPendingFor pops every matching pending ADD (FIFO);
+        // misses go through the explicit credit-0 path below rather than the
+        // pre-#523 silent credit-1 fallback. TTL-evicted noise (unrelated
+        // skinning/vendor adds for the same name) is surfaced via the ctor's
+        // eviction Trace callback.
+        DrainPendingStale();
+        CreditCollect(ic.Name);
         if (!string.IsNullOrEmpty(ic.SpeedBonusItem))
-        {
-            var bonusCount = DrainPendingForName(ic.SpeedBonusItem!);
-            AccumulateCollected(ic.SpeedBonusItem!, bonusCount);
-        }
-        _pendingAdds.Clear();
+            CreditCollect(ic.SpeedBonusItem!);
 
         SurveyItemViewModel? best = null;
         var bestOrder = int.MaxValue;
@@ -188,23 +210,45 @@ public sealed class LogIngestionService : BackgroundService
             : $"Collected: {ic.Name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
     }
 
-    private int DrainPendingForName(string name)
+    /// <summary>
+    /// Credit a <c>[Status] X collected!</c> against pending ADDs for the same
+    /// name. If at least one pending ADD is found, accumulates the summed count
+    /// into <see cref="SessionState.CollectedItems"/>. If no pending ADD is
+    /// found, the credit-0 policy applies: warn and <em>skip the accumulate</em>
+    /// entirely — the dict stays untouched so the share card omits a "x0" line
+    /// and any prior partial credit for this name isn't disturbed.
+    ///
+    /// <para><b>Scope of the count credit.</b> The primary-item call path also
+    /// flips the matching survey row's <see cref="SurveyItemViewModel.Collected"/>
+    /// flag via the independent name-match loop in
+    /// <see cref="HandleItemCollected"/>, so "did I collect it" stays correct
+    /// regardless of count. The speed-bonus-item call path has no survey row
+    /// to flip (bonus items aren't surveys); for that branch this method only
+    /// affects the dict credit.</para>
+    /// </summary>
+    private void CreditCollect(string name)
     {
-        // Walk back-to-front so we consume the most recent matching adds first
-        // (and so RemoveAt indices stay valid as we shrink the list).
-        var total = 0;
-        for (var i = _pendingAdds.Count - 1; i >= 0; i--)
+        var (total, hadAny) = SumPendingFor(name);
+        if (hadAny)
         {
-            if (string.Equals(_pendingAdds[i].Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                total += _pendingAdds[i].Count;
-                _pendingAdds.RemoveAt(i);
-            }
+            AccumulateCollected(name, total);
+            return;
         }
-        // Defensive default: if the chat-log "added to inventory" line never arrived
-        // (unusual, but timing skew can happen), credit at least one item so the
-        // report doesn't drop the collection entirely.
-        return total > 0 ? total : 1;
+        _warn.Warn(
+            $"Collect for '{name}' had no pending '[Status] added to inventory' " +
+            $"within {PendingAddTtl.TotalSeconds:0}s; crediting 0.");
+    }
+
+    private (int Total, bool HadAny) SumPendingFor(string name)
+    {
+        var total = 0;
+        var hadAny = false;
+        while (_pendingAdds.TryTake(name, out var count))
+        {
+            total += count;
+            hadAny = true;
+        }
+        return (total, hadAny);
     }
 
     private void AccumulateCollected(string name, int count)
@@ -212,4 +256,16 @@ public sealed class LogIngestionService : BackgroundService
         _session.CollectedItems.TryGetValue(name, out var existing);
         _session.CollectedItems[name] = existing + count;
     }
+
+    /// <summary>
+    /// Piggyback eviction sweep across every pending key. Required because the
+    /// only consumer of pending ADDs is per-key (<see cref="PendingCorrelator{TKey, TReq}.TryTake"/>
+    /// lazy-evicts only the bucket it touches), so names that arrive on chat
+    /// adds and never see a matching <c>collected!</c> — skinning, vendor,
+    /// crafting, non-survey loot — would accumulate for the process lifetime
+    /// without this call. Mirrors <c>InventoryService.DrainPendingStale</c>:
+    /// invoked at the top of every handler that touches the correlator. Cost
+    /// is O(distinct pending names), trivial in practice.
+    /// </summary>
+    private void DrainPendingStale() => _pendingAdds.DrainStale();
 }
