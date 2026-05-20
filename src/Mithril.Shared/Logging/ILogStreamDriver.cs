@@ -45,15 +45,23 @@ public interface ILogStreamDriver
 {
     /// <summary>
     /// Subscribe to a typed log stream. <typeparamref name="T"/> must be one
-    /// of the four supported payload types:
+    /// of the five supported payload types:
     /// <list type="bullet">
     ///   <item><see cref="LocalPlayerLogLine"/> — the L0.5 LocalPlayer pipe</item>
     ///   <item><see cref="CombatActorLogLine"/> — the L0.5 combat-actor pipe</item>
     ///   <item><see cref="SystemSignalLogLine"/> — the L0.5 system-signal pipe</item>
+    ///   <item><see cref="IClassifiedPlayerLogLine"/> — the L0.5 unified
+    ///   classified pipe (#556). Dispatch is by <c>typeof(T)</c>
+    ///   exact-equality, so a <c>Subscribe&lt;LocalPlayerLogLine&gt;</c>
+    ///   continues to route to the typed pipe above, NOT here, even though
+    ///   <see cref="LocalPlayerLogLine"/> implements the interface. Used by
+    ///   cross-pipe-ordering-sensitive consumers (Pin/Weather/Position) that
+    ///   need source-Sequence ordering across LocalPlayer and SystemSignal
+    ///   envelopes on a single subscription.</item>
     ///   <item><see cref="RawLogLine"/> — the L0 chat stream
     ///   (<see cref="IChatLogStream"/>). Note that Player.log
     ///   <see cref="RawLogLine"/> consumption stays on
-    ///   <see cref="IPlayerLogStream"/> directly — L1 routes the typed L0.5
+    ///   <see cref="IPlayerLogStream"/> directly — L1 routes the L0.5
     ///   pipes, not pre-classification raw Player.log.</item>
     /// </list>
     /// </summary>

@@ -137,10 +137,12 @@ public static class ServiceCollectionExtensions
     /// degraded subscriptions on <see cref="IAttentionAggregator"/> via the
     /// <see cref="LogStreamAttentionSource"/> registered alongside.
     ///
-    /// <para>This registration is a NO-OP for existing consumers — every
-    /// archetype-A producer and archetype-B consumer continues to consume
-    /// the L0 / L0.5 surfaces directly until the consumer-migration PRs land.
-    /// PR 1 of #550 ships the driver only.</para>
+    /// <para>The producer + consumer fleets now route through this driver
+    /// (archetype-A migrations landed across #555 / #560–#564; archetype-A
+    /// shared GameState — Pin/Weather/Position — migrated to the unified
+    /// pipe in #556 Phase 3 / #569). Archetype-B consumers continue to
+    /// migrate per the #550 plan; un-migrated consumers still subscribe to
+    /// the L0 / L0.5 surfaces directly until their PR lands.</para>
     /// </summary>
     public static IServiceCollection AddMithrilLogStreamDriver(this IServiceCollection services)
     {
