@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
-using Mithril.Shared.Collections;
+using Mithril.Shared.Correlation;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
@@ -71,8 +71,11 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private FileSystemWatcher? _seedWatcher;
     private Timer? _seedDebounce;
 
-    // _subLock guards _map, _handlers, _pendingChat, and _pendingAdd. Both ingestion
-    // loops (player log and chat) take it while mutating shared state.
+    // _subLock guards _map and _handlers. _pendingChat / _pendingAdd are
+    // PendingCorrelator instances that are independently thread-safe via their own
+    // internal _gate; they don't require _subLock for correctness, but both
+    // ingestion loops take _subLock around correlator calls anyway so the
+    // drain-then-mutate-_map sequence stays atomic within a handler.
     private readonly object _subLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
     private readonly List<Action<InventoryEvent>> _handlers = new();
@@ -82,12 +85,21 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     //   - chat first  → enqueue to _pendingChat[InternalName]; AddItem dequeues.
     //   - AddItem first → enqueue to _pendingAdd[InternalName] with the InstanceId;
     //                     chat dequeues and back-fills _map[InstanceId].StackSize.
-    // Each TtlList owns its own enqueue timestamps and lazy-evicts on access; the
-    // piggyback drain in DrainPendingStale closes the leak where an entry that
-    // never matched its counterpart would sit forever (under the prior queue
-    // design, only the matching path consulted the TTL).
-    private readonly Dictionary<string, TtlList<int>> _pendingChat = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TtlList<long>> _pendingAdd = new(StringComparer.Ordinal);
+    // PendingCorrelator owns the per-key FIFO + arrival-window TTL + lazy eviction;
+    // the piggyback drain at the top of every handler closes the leak where an
+    // entry that never matched its counterpart would otherwise sit forever (the
+    // pre-extraction TtlList design only consulted the TTL on the matching path).
+    // Both correlators pass onUnmatched: null — InventoryService's policy for an
+    // un-correlated half-event is the same "silent drop" the original code had;
+    // promoting that to an explicit policy is a separate change. Lock-ordering
+    // hazard for that future change: handlers hold _subLock when invoking the
+    // correlator, so a non-null onUnmatched callback would inherit
+    // _subLock → _gate → callback ordering. A callback that synchronously took a
+    // different module's lock would create a cross-module ordering constraint;
+    // design the callback to be dispatch-only (queue + drain off-handler) rather
+    // than synchronously taking foreign locks.
+    private readonly PendingCorrelator<string, int> _pendingChat;
+    private readonly PendingCorrelator<string, long> _pendingAdd;
 
     // InternalName → authoritative stack size, sourced from the player's most
     // recent *_items_*.json export. Populated at startup and on Reports/ writes;
@@ -105,6 +117,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // those carryover stacks at quantity=1 instead of routing them to the
     // pending-observation queue. Confirmation flips on at:
     //   - HandleAddItem chat-correlation hit
+    //   - HandleAddItem non-stackable (MaxStackSize == 1) short-circuit
     //   - HandleAddItem export-seed hit
     //   - HandleUpdateItemCode
     //   - HandleRemoveFromStorageVault
@@ -134,6 +147,8 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         _refData = refData;
         _gameConfig = gameConfig;
         _time = time ?? TimeProvider.System;
+        _pendingChat = new PendingCorrelator<string, int>(PendingChatTtl, _time, keyComparer: StringComparer.Ordinal);
+        _pendingAdd = new PendingCorrelator<string, long>(PendingChatTtl, _time, keyComparer: StringComparer.Ordinal);
     }
 
     public bool TryResolve(long instanceId, out string internalName)
@@ -292,7 +307,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             bool seeded = false;
             bool confirmed = false;
             bool nonStackable = false;
-            if (TryDequeuePendingChat(internalName, out var pendingCount))
+            if (_pendingChat.TryTake(internalName, out var pendingCount))
             {
                 size = pendingCount;
                 confirmed = true;
@@ -315,7 +330,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 seeded = true;
                 confirmed = true;
                 _seededStackSizes.Remove(internalName);
-                EnqueuePendingAdd(internalName, instanceId);
+                _pendingAdd.Add(internalName, instanceId);
             }
             else
             {
@@ -323,7 +338,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
                 // chat status can back-fill the size. Size remains the unconfirmed
                 // default — TryGetStackSize will report unknown until a confirming
                 // event lands (chat back-fill, UpdateItemCode, vault, reconcile).
-                EnqueuePendingAdd(internalName, instanceId);
+                _pendingAdd.Add(internalName, instanceId);
             }
 
             _map[instanceId] = new MapEntry(internalName, timestamp, Deleted: false, StackSize: size, SizeConfirmed: confirmed);
@@ -444,7 +459,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         {
             DrainPendingStale();
             // Try to back-fill a recent AddItem that defaulted to size = 1.
-            if (TryDequeuePendingAdd(internalName, out var instanceId))
+            if (_pendingAdd.TryTake(internalName, out var instanceId))
             {
                 if (_map.TryGetValue(instanceId, out var entry)
                     && (entry.StackSize != count || !entry.SizeConfirmed))
@@ -458,73 +473,23 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
             // No matching pending AddItem; remember this count for the next AddItem of the
             // same InternalName.
-            EnqueuePendingChat(internalName, count);
+            _pendingChat.Add(internalName, count);
         }
-    }
-
-    /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private void EnqueuePendingChat(string internalName, int count)
-    {
-        if (!_pendingChat.TryGetValue(internalName, out var list))
-        {
-            list = new TtlList<int>(PendingChatTtl, _time);
-            _pendingChat[internalName] = list;
-        }
-        list.Add(count);
-    }
-
-    /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private bool TryDequeuePendingChat(string internalName, out int count)
-    {
-        if (_pendingChat.TryGetValue(internalName, out var list) && list.TryRemoveOldest(out count))
-            return true;
-        count = 0;
-        return false;
-    }
-
-    /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private void EnqueuePendingAdd(string internalName, long instanceId)
-    {
-        if (!_pendingAdd.TryGetValue(internalName, out var list))
-        {
-            list = new TtlList<long>(PendingChatTtl, _time);
-            _pendingAdd[internalName] = list;
-        }
-        list.Add(instanceId);
-    }
-
-    /// <summary>MUST be called with <see cref="_subLock"/> held.</summary>
-    private bool TryDequeuePendingAdd(string internalName, out long instanceId)
-    {
-        if (_pendingAdd.TryGetValue(internalName, out var list) && list.TryRemoveOldest(out instanceId))
-            return true;
-        instanceId = 0;
-        return false;
     }
 
     /// <summary>
-    /// Lazy piggyback drain — call from every event handler under <see cref="_subLock"/>.
-    /// Walks both pending dictionaries, evicts each <see cref="TtlList{T}"/>'s stale
-    /// entries, and removes empty list buckets. Cost is O(distinct InternalNames in
-    /// pending), trivial in practice (rarely more than a handful at a time).
+    /// Lazy piggyback drain — called from every event handler. The
+    /// <see cref="PendingCorrelator{TKey,TReq}"/> primitive is self-synchronizing,
+    /// so this method no longer requires <c>_subLock</c> to be held for
+    /// correctness; callers take it anyway so the drain-then-mutate-<see cref="_map"/>
+    /// sequence stays atomic within a handler. Walks both pending correlators,
+    /// evicting stale entries. Cost is O(distinct InternalNames in pending),
+    /// trivial in practice (rarely more than a handful at a time).
     /// </summary>
     private void DrainPendingStale()
     {
-        DrainOne(_pendingChat);
-        DrainOne(_pendingAdd);
-
-        static void DrainOne<T>(Dictionary<string, TtlList<T>> bucket)
-        {
-            if (bucket.Count == 0) return;
-            List<string>? empties = null;
-            foreach (var (key, list) in bucket)
-            {
-                list.DropStale();
-                if (list.Count == 0) (empties ??= new()).Add(key);
-            }
-            if (empties is not null)
-                foreach (var k in empties) bucket.Remove(k);
-        }
+        _pendingChat.DrainStale();
+        _pendingAdd.DrainStale();
     }
 
     /// <summary>
@@ -738,7 +703,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     }
 
     /// <summary>
-    /// Test hook — returns the live entry counts of the two pending dictionaries
+    /// Test hook — returns the live entry counts of the two pending correlators
     /// (post-piggyback-drain if the caller has just driven an event). Used by
     /// <c>InventoryServiceTests</c> to pin the leak fix; not for production use.
     /// </summary>
@@ -746,11 +711,7 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     {
         lock (_subLock)
         {
-            int chatTotal = 0;
-            foreach (var list in _pendingChat.Values) chatTotal += list.Count;
-            int addTotal = 0;
-            foreach (var list in _pendingAdd.Values) addTotal += list.Count;
-            return (chatTotal, addTotal);
+            return (_pendingChat.Count, _pendingAdd.Count);
         }
     }
 
