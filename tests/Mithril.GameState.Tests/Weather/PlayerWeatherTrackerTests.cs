@@ -1,35 +1,55 @@
-using System.Threading.Channels;
 using FluentAssertions;
-using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
+using Mithril.GameState.Tests.TestSupport;
 using Mithril.GameState.Weather;
 using Mithril.Shared.Logging;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Weather;
 
+/// <summary>
+/// L0.5 #556 Phase 3 — PlayerWeatherTracker now subscribes to the L1
+/// driver's unified classified pipe; tests drive it via
+/// <see cref="TestLogStreamDriver"/>. The zone-change race that motivated
+/// #556 (Weather seeing a new condition before the area pump advanced)
+/// is structurally impossible with the single-subscription unified pipe;
+/// a dedicated test pins the race-elimination property.
+/// </summary>
 public sealed class PlayerWeatherTrackerTests
 {
-    private static readonly DateTime Stamp = new(2026, 5, 18, 19, 50, 42, DateTimeKind.Utc);
+    private static readonly DateTimeOffset Ts =
+        new(2026, 5, 18, 19, 50, 42, TimeSpan.Zero);
 
-    private static PlayerWeatherTracker NewTracker(ScriptedStream stream, PlayerAreaTracker? area = null) =>
-        new(stream, new WeatherLogParser(),
-            area ?? new PlayerAreaTracker(new AreaTransitionParser()));
+    private static PlayerWeatherTracker NewTracker(TestLogStreamDriver driver) =>
+        new(driver, new WeatherLogParser(), new AreaTransitionParser());
 
-    private static string Area(string key) => $"[10:00:00] LOADING LEVEL {key}";
-    private static string Set(string condition, bool flag = true) =>
-        $"[19:50:42] LocalPlayer: ProcessSetWeather(\"{condition}\", {(flag ? "True" : "False")})";
+    private static SystemSignalLogLine AreaEnvelope(string areaKey, long seq) =>
+        new(
+            Timestamp: Ts,
+            Kind: SystemSignalKind.AreaLoading,
+            Data: $"LOADING LEVEL {areaKey}",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
+
+    private static LocalPlayerLogLine WeatherEnvelope(string condition, bool flag, long seq) =>
+        new(
+            Timestamp: Ts,
+            Data: $"ProcessSetWeather(\"{condition}\", {(flag ? "True" : "False")})",
+            Sequence: seq,
+            ReadMonotonicTicks: 0);
 
     [Fact]
     public async Task First_weather_line_populates_Current_for_the_map()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Set("Foggy"));
-            await RunUntilDrainedAsync(svc, stream);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentArea.Should().Be("AreaSerbule");
             svc.Current.Should().NotBeNull();
@@ -43,14 +63,16 @@ public sealed class PlayerWeatherTrackerTests
     [Fact]
     public async Task Last_writer_wins_on_a_genuine_change()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+        driver.PushReplay(WeatherEnvelope("Clear", flag: false, seq: 3));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Set("Foggy"));
-            stream.Push(Stamp, Set("Clear", flag: false));
-            await RunUntilDrainedAsync(svc, stream);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             svc.Current!.Condition.Should().Be("Clear");
             svc.Current.Flag.Should().BeFalse();
@@ -61,24 +83,23 @@ public sealed class PlayerWeatherTrackerTests
     [Fact]
     public async Task Map_change_drops_weather_until_the_new_map_reports()
     {
-        var stream = new ScriptedStream();
-        var area = new PlayerAreaTracker(new AreaTransitionParser());
-        var svc = NewTracker(stream, area);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Set("Foggy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
             svc.Current!.Condition.Should().Be("Foggy");
 
             var seen = new List<WeatherChanged>();
             using var sub = svc.Subscribe(seen.Add); // Snapshot replay first
 
             // Leave the foggy map: weather must not bleed into the next map.
-            stream.Push(Stamp, Area("AreaEltibule"));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(AreaEnvelope("AreaEltibule", seq: 3));
+            await driver.DrainClassifiedAsync();
 
             svc.CurrentArea.Should().Be("AreaEltibule");
             svc.Current.Should().BeNull(); // unknown — NOT still Foggy
@@ -88,8 +109,8 @@ public sealed class PlayerWeatherTrackerTests
                 && n.State == null);
 
             // New map reports its own weather.
-            stream.Push(Stamp, Set("Clear", flag: false));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(WeatherEnvelope("Clear", flag: false, seq: 4));
+            await driver.DrainClassifiedAsync();
 
             svc.Current!.Condition.Should().Be("Clear");
             seen.Last().Should().Match<WeatherChanged>(n =>
@@ -97,62 +118,50 @@ public sealed class PlayerWeatherTrackerTests
                 && n.Area == "AreaEltibule"
                 && n.State!.Condition == "Clear");
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task Replay_of_unchanged_weather_is_idempotent_no_extra_events()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+        // Zone re-emits the current weather verbatim.
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 3));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 4));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Set("Foggy"));
-            await stream.WaitForDrainAsync(cts.Token);
-
             var seen = new List<WeatherChanged>();
-            using var sub = svc.Subscribe(seen.Add); // Snapshot
-            seen.Should().ContainSingle()
-                .Which.Should().Match<WeatherChanged>(n =>
-                    n.Kind == WeatherChangeKind.Snapshot && n.State!.Condition == "Foggy");
+            using var sub = svc.Subscribe(seen.Add); // Snapshot first
 
-            // Zone re-emits the current weather verbatim.
-            stream.Push(Stamp, Set("Foggy"));
-            stream.Push(Stamp, Set("Foggy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
-            seen.Should().ContainSingle(); // no further notifications
+            // 1 Snapshot (from Subscribe before Start) + 1 Changed (first
+            // Foggy line) + 0 from idempotent re-emits = 2 notifications.
+            // The Snapshot has State == null because Subscribe ran before
+            // the tracker had observed anything; the Changed brings it to
+            // Foggy and the re-emits are silent.
+            seen.Count(n => n.Kind == WeatherChangeKind.Changed).Should().Be(1);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task Subscribe_replays_snapshot_synchronously_then_delivers_live()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
-            stream.Push(Stamp, Set("Foggy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
 
             var seen = new List<WeatherChanged>();
             using var sub = svc.Subscribe(seen.Add);
@@ -160,63 +169,87 @@ public sealed class PlayerWeatherTrackerTests
                 .Which.Should().Match<WeatherChanged>(n =>
                     n.Kind == WeatherChangeKind.Snapshot && n.State!.Condition == "Foggy");
 
-            stream.Push(Stamp, Set("Rainy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(WeatherEnvelope("Rainy", flag: true, seq: 3));
+            await driver.DrainClassifiedAsync();
 
             var last = seen.Last();
             last.Kind.Should().Be(WeatherChangeKind.Changed);
             last.State!.Condition.Should().Be("Rainy");
             last.ObservedAt.Offset.Should().Be(TimeSpan.Zero);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task Disposed_subscription_stops_receiving_but_state_advances()
     {
-        var stream = new ScriptedStream();
-        var svc = NewTracker(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+
+        var svc = NewTracker(driver);
         try
         {
-            stream.Push(Stamp, Area("AreaSerbule"));
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
+
             var seen = new List<WeatherChanged>();
             var sub = svc.Subscribe(seen.Add);
-            stream.Push(Stamp, Set("Foggy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(WeatherEnvelope("Foggy", flag: true, seq: 2));
+            await driver.DrainClassifiedAsync();
             var countAtDispose = seen.Count;
             sub.Dispose();
 
-            stream.Push(Stamp, Set("Rainy"));
-            await stream.WaitForDrainAsync(cts.Token);
+            driver.PushLive(WeatherEnvelope("Rainy", flag: true, seq: 3));
+            await driver.DrainClassifiedAsync();
 
             seen.Should().HaveCount(countAtDispose); // no further delivery
             svc.Current!.Condition.Should().Be("Rainy"); // state still advances
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            _ = runTask;
-            svc.Dispose();
-        }
+        finally { await StopAsync(svc); }
     }
 
-    private static async Task RunUntilDrainedAsync(PlayerWeatherTracker svc, ScriptedStream stream)
+    [Fact]
+    public async Task Weather_survives_zone_change_burst_without_stale_state_drop()
+    {
+        // #556 race-elimination targeted test. Pre-#556 a zone-change burst
+        //   LOADING LEVEL AreaNewMap
+        //   ProcessSetWeather Sunny
+        // could be processed by two pumps in the wrong order — Weather
+        // would see Sunny first against the OLD area's tracked state,
+        // then the area pump would advance and Reconcile would DROP Sunny
+        // as if it had been a "stale prior-area" emission. On the unified
+        // pipe the two envelopes arrive on one subscription in source
+        // order, so the reconcile lands before the weather-set and Sunny
+        // is recorded under the new area.
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(AreaEnvelope("AreaSerbule", seq: 1));
+        driver.PushReplay(WeatherEnvelope("Foggy", flag: true, seq: 2));
+
+        var svc = NewTracker(driver);
+        try
+        {
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
+            svc.Current!.Condition.Should().Be("Foggy");
+
+            // The race-window burst:
+            driver.PushLive(AreaEnvelope("AreaEltibule", seq: 3));
+            driver.PushLive(WeatherEnvelope("Sunny", flag: true, seq: 4));
+            await driver.DrainClassifiedAsync();
+
+            svc.CurrentArea.Should().Be("AreaEltibule");
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Condition.Should().Be("Sunny",
+                because: "the unified pipe delivers LOADING LEVEL before ProcessSetWeather; " +
+                         "the reconcile clears Foggy first and Sunny lands in the new area");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    private static async Task StartAsync(PlayerWeatherTracker svc)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var runTask = svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
-        await cts.CancelAsync();
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-        _ = runTask;
+        await svc.StartAsync(cts.Token);
     }
 
     private static async Task StopAsync(PlayerWeatherTracker svc)
@@ -224,40 +257,5 @@ public sealed class PlayerWeatherTrackerTests
         try { await svc.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)); }
         catch { /* test cleanup */ }
         svc.Dispose();
-    }
-
-    private sealed class ScriptedStream : IPlayerLogStream
-    {
-        private readonly Channel<RawLogLine> _channel = Channel.CreateUnbounded<RawLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
-
-        public ScriptedStream() => _drained.TrySetResult();
-
-        public void Push(DateTime ts, string line)
-        {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new RawLogLine(ts, line));
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-
-        public async IAsyncEnumerable<RawLogLine> SubscribeAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        {
-            while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
-                while (_channel.Reader.TryRead(out var line))
-                {
-                    yield return line;
-                    if (Interlocked.Decrement(ref _pending) == 0)
-                        _drained.TrySetResult();
-                }
-            }
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

@@ -89,6 +89,35 @@ public sealed partial class PlayerPositionParser : ILogParser
         return null;
     }
 
+    /// <summary>
+    /// Parses the spawn position from the L0.5-classified
+    /// <see cref="SystemSignalLogLine"/> payload data — i.e. the
+    /// <c>ProcessAddPlayer(…)</c> body with the <c>[ts] LocalPlayer: </c>
+    /// envelope already eaten by L0.5 (#532). Skips the actor-token gate
+    /// that <see cref="TryParse"/> uses, because L0.5's classifier
+    /// (PlayerLogLineClassifier) already routes only <c>LocalPlayer: ProcessAddPlayer</c>
+    /// to <see cref="SystemSignalKind.PlayerAdded"/> — the actor is
+    /// guaranteed upstream, so re-checking here would be a redundant gate.
+    ///
+    /// <para>Used by the post-#556 unified-pipe migration of
+    /// <see cref="PlayerPositionTracker"/>: when the tracker pattern-matches
+    /// <c>SystemSignalLogLine { Kind: PlayerAdded }</c>, it feeds the
+    /// envelope's <see cref="SystemSignalLogLine.Data"/> here to recover
+    /// the spawn seed. <see cref="TryParse"/> remains the entry point for
+    /// pre-L0.5 raw lines (full-line callers and the
+    /// <see cref="ILogParser"/> interface contract).</para>
+    /// </summary>
+    public PlayerPositionEvent? TryParseSpawnFromData(string data, DateTime timestamp)
+    {
+        if (string.IsNullOrEmpty(data)) return null;
+        if (!data.Contains("ProcessAddPlayer", StringComparison.Ordinal)) return null;
+        if (AddPlayerPosRx().Match(data) is not { Success: true } m) return null;
+        if (!TryNum(m.Groups["x"].ValueSpan, out var x)) return null;
+        if (!TryNum(m.Groups["y"].ValueSpan, out var y)) return null;
+        if (!TryNum(m.Groups["z"].ValueSpan, out var z)) return null;
+        return new PlayerPositionEvent(timestamp, x, y, z, PlayerPositionSource.Spawn);
+    }
+
     private static bool TryNum(ReadOnlySpan<char> s, out double v) =>
         double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
 }

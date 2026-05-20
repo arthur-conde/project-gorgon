@@ -103,8 +103,6 @@ public sealed class PlayerAreaTracker : BackgroundService
         Apply(line, timestamp);
     }
 
-    public void Observe(RawLogLine raw) => Observe(raw.Line, raw.Timestamp.UtcDateTime);
-
     /// <summary>
     /// Hosted-service entry point (#556 Phase 2). When an
     /// <see cref="ILogStreamDriver"/> is configured, subscribes to L0.5's

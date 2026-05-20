@@ -31,15 +31,45 @@ public sealed class TestLogStreamDriver : ILogStreamDriver, IDisposable
     private readonly Pipe<LocalPlayerLogLine> _localPlayer = new();
     private readonly Pipe<CombatActorLogLine> _combat = new();
     private readonly Pipe<SystemSignalLogLine> _system = new();
+    private readonly Pipe<IClassifiedPlayerLogLine> _classified = new();
     private readonly Pipe<RawLogLine> _chat = new();
     private readonly List<IDisposable> _subscriptions = new();
 
-    public void PushReplay(LocalPlayerLogLine line) => _localPlayer.AddReplay(line);
-    public void PushLive(LocalPlayerLogLine line) => _localPlayer.PushLive(line);
-    public void PushReplay(SystemSignalLogLine line) => _system.AddReplay(line);
-    public void PushLive(SystemSignalLogLine line) => _system.PushLive(line);
-    public void PushReplay(CombatActorLogLine line) => _combat.AddReplay(line);
-    public void PushLive(CombatActorLogLine line) => _combat.PushLive(line);
+    // PushReplay / PushLive mirror to the unified pipe so a test pushing a
+    // typed envelope to the driver looks the same to a typed subscriber AND
+    // to a unified (IClassifiedPlayerLogLine) subscriber — matching the
+    // production splitter+classifier pair from #556. Tests pushing typed
+    // envelopes don't need a second "push to unified" call.
+    public void PushReplay(LocalPlayerLogLine line)
+    {
+        _localPlayer.AddReplay(line);
+        _classified.AddReplay(line);
+    }
+    public void PushLive(LocalPlayerLogLine line)
+    {
+        _localPlayer.PushLive(line);
+        _classified.PushLive(line);
+    }
+    public void PushReplay(SystemSignalLogLine line)
+    {
+        _system.AddReplay(line);
+        _classified.AddReplay(line);
+    }
+    public void PushLive(SystemSignalLogLine line)
+    {
+        _system.PushLive(line);
+        _classified.PushLive(line);
+    }
+    public void PushReplay(CombatActorLogLine line)
+    {
+        _combat.AddReplay(line);
+        _classified.AddReplay(line);
+    }
+    public void PushLive(CombatActorLogLine line)
+    {
+        _combat.PushLive(line);
+        _classified.PushLive(line);
+    }
     public void PushReplay(RawLogLine line) => _chat.AddReplay(line);
     public void PushLive(RawLogLine line) => _chat.PushLive(line);
 
@@ -49,6 +79,8 @@ public sealed class TestLogStreamDriver : ILogStreamDriver, IDisposable
         _system.DrainAsync(timeout ?? TimeSpan.FromSeconds(5));
     public Task DrainCombatAsync(TimeSpan? timeout = null) =>
         _combat.DrainAsync(timeout ?? TimeSpan.FromSeconds(5));
+    public Task DrainClassifiedAsync(TimeSpan? timeout = null) =>
+        _classified.DrainAsync(timeout ?? TimeSpan.FromSeconds(5));
     public Task DrainChatAsync(TimeSpan? timeout = null) =>
         _chat.DrainAsync(timeout ?? TimeSpan.FromSeconds(5));
 
@@ -82,6 +114,20 @@ public sealed class TestLogStreamDriver : ILogStreamDriver, IDisposable
             var sub = new Subscription<CombatActorLogLine>(
                 _combat,
                 (Func<LogEnvelope<CombatActorLogLine>, ValueTask>)(object)handler,
+                opts);
+            sub.Start();
+            lock (_subscriptions) _subscriptions.Add(sub);
+            return sub;
+        }
+        if (typeof(T) == typeof(IClassifiedPlayerLogLine))
+        {
+            // Unified pipe (#556). Same exact-equality dispatch as
+            // production LogStreamDriver — a concrete-type Subscribe (e.g.
+            // Subscribe<LocalPlayerLogLine>) still hits the typed-pipe
+            // branch above, not this one.
+            var sub = new Subscription<IClassifiedPlayerLogLine>(
+                _classified,
+                (Func<LogEnvelope<IClassifiedPlayerLogLine>, ValueTask>)(object)handler,
                 opts);
             sub.Start();
             lock (_subscriptions) _subscriptions.Add(sub);
