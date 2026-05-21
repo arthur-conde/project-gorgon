@@ -13,7 +13,7 @@ A per-PR babysitter agent the world-sim orchestrator hands a PR to. The shepherd
 
 ## Why this exists
 
-The orchestration plan defines the dispatch loop for workers but leaves review undefined. Its Stop Condition #2 ("If a code review flags blocking concerns, the orchestrator pauses pending resolution") references the generic `code-review` skill as one input, but doesn't say who runs it, when, or how the orchestrator consumes the result. The plan also doesn't model the iterative "review → fix → re-review" cycle the orchestrator currently expects a human to drive.
+Before this design landed, the orchestration plan defined the dispatch loop for workers but left review undefined. Its Stop Condition #2 referenced the generic `code-review` skill as one input, but didn't say who ran it, when, or how the orchestrator consumed the result. The plan also didn't model the iterative "review → fix → re-review" cycle the orchestrator otherwise expected a human to drive.
 
 The shepherd fills that gap. It owns one PR end-to-end: runs reviewers, dispatches workers to address findings, escalates to a human only when the PR can't progress hands-free.
 
@@ -138,14 +138,14 @@ The shepherd reads the issue body itself — the orchestration plan's `spawned_s
 
 ---
 
-## Files added when this lands
+## Files this design produced
 
 1. `.claude/agents/world-sim-shepherd.md` — shepherd subagent definition
 2. `.claude/agents/world-sim-reviewer.md` — specialist reviewer subagent
 3. Edits to [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md):
    - **Dispatch flow.** New step between "worker opens PR" and "orchestrator dispatches next task": orchestrator hands off to the shepherd.
-   - **Verification gates.** Add the shepherd as part of the per-PR gate alongside Tier 1 (build) and Tier 2 (test). Currently the plan has no inline code-review tier.
-   - **Stop conditions.** Stop Condition #2 ("code-review flags blocking concerns") becomes "shepherd returns `needs-human`" — the shepherd encapsulates the existing escalation rule.
+   - **Verification gates.** Shepherd review is now §Tier 2.5, sitting between Tier 2 (Test) and Tier 3 (System).
+   - **Stop conditions.** Stop Condition #2 references the shepherd's `needs-human` verdict; the generic `code-review` skill reference is gone.
 
 Optional follow-on (separate PR):
 - `tests/Mithril.WorldSim.Shepherd.Tests` — pure-function unit tests over a `ShepherdState` decision function (loop logic extracted into a plain C# library). The Agent/GitHub plumbing isn't unit-testable; the decision logic is.

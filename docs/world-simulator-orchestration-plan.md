@@ -12,7 +12,7 @@ Machine-actionable scheduling plan for the world-simulator migration. Pairs with
 
 1. Read [§Dependency graph](#dependency-graph) and current GitHub issue state.
 2. Identify **ready tasks**: tasks whose `depends_on` are all closed issues, and which aren't themselves closed/in-progress.
-3. For each ready task: spawn the [agent type](#per-task-orchestration-metadata) listed, hand over the issue body verbatim (per `spawned_session_handoff_self_contained` memory convention), and observe.
+3. For each ready task: spawn the [agent type](#per-task-orchestration-metadata) listed, hand over the issue body verbatim (per `spawned_session_handoff_self_contained` memory convention), and observe. After the worker opens its PR, dispatch the per-PR shepherd (see [§Per-PR shepherding](#per-pr-shepherding)) before advancing to verification.
 4. Verify completion using [§Verification gates](#verification-gates) before treating a task as done. The issue's own acceptance criteria are one input; cross-task invariants are another.
 5. Honor [§Stop conditions](#stop-conditions): pause for human review under specific failure modes; do not blindly retry.
 6. On a clean phase transition, run [§Cross-phase invariants](#cross-phase-invariants) before unlocking the next phase.
@@ -318,7 +318,7 @@ The shepherd returns one of three verdicts (parseable from a fenced JSON block i
 
 - `ready-to-merge` — the orchestrator does the actual `gh pr merge` per its merge policy.
 - `needs-human` — the orchestrator surfaces the shepherd's escalation reason + summary to the user. This is Stop Condition #2; do not auto-retry.
-- `conflict` — merge conflict detected; the orchestrator serializes work per Stop Condition #6 and dispatches a rebase task.
+- `conflict` — merge conflict detected; the orchestrator serializes per Stop Condition #6 (which has the later concurrent task rebase before re-dispatch).
 
 Design rationale: [`world-sim-shepherd.md`](world-sim-shepherd.md).
 
@@ -348,7 +348,7 @@ dotnet test Mithril.slnx
 
 All 20-ish test projects, no failures, no skips. This catches cross-project regressions.
 
-### Tier 2.5 — Shepherd review (every PR)
+### Tier 2.5 — Shepherd review (every task)
 
 After the worker opens its PR and before the orchestrator considers system-tier checks, the per-PR shepherd runs (see [§Per-PR shepherding](#per-pr-shepherding)). The shepherd dispatches the generic code reviewer and the world-sim specialist in parallel each iteration; findings flow back as a structured verdict. The shepherd handles its own iteration: a `needs-human` verdict is the only signal the orchestrator routes on.
 
