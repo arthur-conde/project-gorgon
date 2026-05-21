@@ -28,6 +28,16 @@ public interface IComposer
     /// correlated, not from <paramref name="clock"/>.<see cref="IWorldClock.Now"/>
     /// — this preserves the principle 1 contract that a frame's timestamp is the
     /// event time it represents.
+    ///
+    /// <para>Return type is <see cref="IFrame"/> (non-generic) rather than
+    /// <c>Frame&lt;object&gt;</c> so a composer can emit heterogeneous domain
+    /// frame types in a single call without boxing the typed payload at the
+    /// composer boundary. A composer that emits a <c>GiftObservation</c> returns
+    /// <c>new Frame&lt;GiftObservation&gt;(eventTs, observation)</c> upcast to
+    /// <see cref="IFrame"/>; the bus's typed
+    /// <see cref="IWorldEventBus.Subscribe{T}(Action{Frame{T}})"/> surface
+    /// pattern-matches on the concrete <see cref="Frame{TPayload}"/> to route
+    /// to subscribers of that payload type.</para>
     /// </summary>
-    IReadOnlyList<Frame<object>> Observe(object eventPayload, IWorldClock clock);
+    IReadOnlyList<IFrame> Observe(object eventPayload, IWorldClock clock);
 }
