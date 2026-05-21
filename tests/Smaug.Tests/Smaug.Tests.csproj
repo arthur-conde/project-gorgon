@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Smaug.Module\Smaug.Module.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.GameState\Mithril.GameState.csproj" />
   </ItemGroup>
 </Project>

@@ -39,15 +39,3 @@ public sealed record NpcInteractionStarted(
     int EntityId,
     string NpcKey) : VendorEvent(Timestamp);
 
-/// <summary>
-/// Civic Pride skill snapshot from <c>ProcessLoadSkills</c> (session start) or
-/// <c>ProcessUpdateSkill</c> (on level up). Effective level is <c>Raw + Bonus</c>.
-/// </summary>
-public sealed record CivicPrideUpdated(
-    DateTime Timestamp,
-    int Raw,
-    int Bonus) : VendorEvent(Timestamp)
-{
-    public int EffectiveLevel => Raw + Bonus;
-}
-

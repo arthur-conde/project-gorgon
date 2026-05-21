@@ -178,9 +178,6 @@ public sealed class VendorIngestionServiceL1Tests
 
                     switch (evt)
                     {
-                        case CivicPrideUpdated cp:
-                            context.CivicPrideLevel = cp.EffectiveLevel;
-                            break;
                         case NpcInteractionStarted started:
                             context.RememberEntity(started.EntityId, started.NpcKey);
                             break;
@@ -284,9 +281,6 @@ public sealed class VendorIngestionServiceL1Tests
 
                     switch (evt)
                     {
-                        case CivicPrideUpdated cp:
-                            context.CivicPrideLevel = cp.EffectiveLevel;
-                            break;
                         case NpcInteractionStarted started:
                             context.RememberEntity(started.EntityId, started.NpcKey);
                             break;
