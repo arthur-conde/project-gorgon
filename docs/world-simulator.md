@@ -25,62 +25,59 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 ## Core principles
 
 1. **Frame = `(timestamp, payload)`.** The unifying primitive. Every input that mutates simulated state is a frame; every producer stamps its output with the event time the frame represents (not the wall-clock when it was synthesized). The sim is a timestamp-ordered merger over N producers.
-2. **Two world sims, independent, no inter-sim channel.** `PlayerWorldSim` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorldSim` is deterministic over the chat stream. Neither queries the other; neither sends messages to the other.
+2. **Two worlds with sealed output boundaries; views consume across them.** `PlayerWorld` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorld` is deterministic over the chat stream. Each world has its own internal pipeline (frames → folders → change events → composers → domain frames) and its own output bus carrying its domain frames. Worlds don't query each other and don't send messages to each other — they're sealed at the bus. Cross-world consumers (views) subscribe to both world buses; nothing flows back into a world from above.
 3. **If a service currently consumes both chat and Player.log, it must be split.** No cross-source services. Each service lives in exactly one sim.
 4. **Cross-source composition lives in a view layer above the sims.** Views subscribe to both sims' published state, compose, expose the composed result. Modules consume views, not sims directly.
 5. **Dual-clock: simulated wall-clock + frame index.** `Now : DateTimeOffset` advances by frame timestamps; `Frame : long` strictly monotonic per applied frame. Coarse clock answers "how much simulated time has passed?" (1-second resolution because PG's timestamps are); fine clock answers "are we at the same point in the trajectory?" Together they identify a unique moment.
 6. **Scope: reference / world (per-server) / character (per-server-per-character).** Per [`module-signal-map.md`](module-signal-map.md) — PG has multiple servers; world state is per-server; character state is per-character within a server. Sims partition along these scopes.
 7. **Both streams self-scope independently.** Player.log identifies `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected` + `LoginBanner`); chat identifies its own scope from the chat banner. No cross-source coupling for scope.
 8. **Tier 1/2 correlator pattern survives, relocates to the view layer.** [`cross-source-correlation.md`](cross-source-correlation.md)'s tier hierarchy stays valid as a pattern catalog for view-layer joins, but loses its in-repo "reference implementation" pointers (Inventory and Motherlode both migrate).
-9. **Chat sim replays from PG-session-start, symmetric with Player.log sim.** Chat is *not* live-only — that's a today-implementation choice we're explicitly replacing. The determinism contract views can offer their consumers is upper-bounded by the determinism of both sims at *matching* simulated time windows. Asymmetric replay (Player.log replays session-start, chat live-only) = asymmetric view inputs = no replay-determinism claim possible. So both sims drain from the PG-session-start chat banner; the chat-tail seeks to the most recent chat banner matching the current Player.log session (banner-by-banner pairing on `(Character, close-in-time)`), then emits forward. Cost is bounded (~hundreds of KB of chat per day vs the 12 MB of Player.log already replayed); benefit is the FileSystemWatcher reconcile workaround in `IInventoryService` retires (chat replay covers pre-attach stack sizes natively).
+9. **Chat world replays from PG-session-start, symmetric with Player world.** Chat is *not* live-only — that's a today-implementation choice we're explicitly replacing. The determinism contract views can offer their consumers is upper-bounded by the determinism of both worlds at *matching* simulated time windows. Asymmetric replay (Player.log replays session-start, chat live-only) = asymmetric view inputs = no replay-determinism claim possible. So both worlds drain from the PG-session-start chat banner; the chat-tail seeks to the most recent chat banner matching the current Player.log session (banner-by-banner pairing on `(Character, close-in-time)`), then emits forward. Cost is bounded (~hundreds of KB of chat per day vs the 12 MB of Player.log already replayed); benefit is the FileSystemWatcher reconcile workaround in `IInventoryService` retires (chat replay covers pre-attach stack sizes natively).
+
+10. **Three state-machine kinds: folders, composers, producers.** Each has a distinct signature and dispatch position:
+    - **Folders** — `Frame<TPayload>` in, change events out. One frame is dispatched to exactly one folder (per the routing rules established by frame type). Folders mutate world state; they live inside one world. Examples: `PlayerSkillStateService` (XP frame → skill snapshot mutation), `ChatInventoryStateMachine` (stack-observation frame → name-keyed observation).
+    - **Composers** — change events in (one or more, possibly across event types), domain frames out, emitted when the multi-frame pattern is satisfied. Composers *recognize* multi-frame patterns in events PG already emits; they do not anticipate or synthesize PG behavior. Intra-world composers (e.g., Arwen gift detection — three same-source frames → `GiftObservation`) live inside one world. Cross-world composers are views (next principle). Composers chain via subscribe within a frame's resolution — they never re-emit frames into the world's merger.
+    - **Producers** — emit scheduled frames into the merger for future-time dispatch. Examples: wake-at-T for user-defined timers, PG in-game-time shift alarms, eager TTL-eviction emissions. Producer-emitted frames are first-class `Frame<T>`; the merger holds them and dispatches when the simulated clock reaches the target. Producers are the *only* mechanism for time-shifted emission; composers never play this role.
+
+11. **Per-frame resolution is a finite DAG traversal; no cycles, no merger re-entry.** Within a world, a single frame dispatches to its folder; folder emits change events; intra-world composers subscribed to those change events run and possibly emit domain frames; composers subscribed to *those* domain frames run; resolution continues until no new events are emitted. The dispatch graph is topologically ordered (composers declare their input event types); resolution depth is bounded by the graph's depth. Composers don't re-enter the merger; producers do, but only for genuinely future-time emissions. View-layer resolution is the same shape, one layer up: view-layer composers receive world domain frames, may emit higher-level domain frames consumed by other views or by modules; views never re-emit into a world.
 
 ---
 
 ## Layered architecture
 
 ```
-Source streams              Sim layer                  View layer                  Modules
-────────────────────        ──────────────────────     ──────────────────────      ──────────────
-                            │                          │                           │
-IClassifiedPlayerLogStream → PlayerWorldSim         ──┐                            │
-                            │ (frames: Player.log    │                             │
-                            │  + synthetic frames     ├──→ InventoryView  ────────→│ Samwise
-                            │  from filesystem,      │     (composed                │ Arwen
-                            │  wake-at-T, etc.)      │      stateful join,         │ …
-                            │ Owns: skill, recipe,    │     deterministic over     │
-                            │ inventory (instance     │     both sims' state)      │
-                            │ ids), quest, position, │                             │
-                            │ pin, weather, area,    │                             │
-                            │ celestial, session,    │                             │
-                            │ effects, …)            │                             │
-                            │                        │                             │
-                            │ Clock: WorldClock      │                             │
-                            └────────────────────────┘                             │
-                                                     │                             │
-chat stream              → ChatWorldSim            ──┤                             │
-                            │ (frames: chat only)    │                             │
-                            │ Owns: chat-inventory   ├──→ WordOfPowerView ────────→│ Saruman
-                            │ stack-size mirror,     │     (composed codebook:     │
-                            │ chat-WoP spent ledger  │      discovery + spent)     │
-                            │                        │                             │
-                            │ Clock: WorldClock      │                             │
-                            │ (independent, advances │                             │
-                            │  by chat frame ts)     │                             │
-                            └────────────────────────┘                             │
-                                                                                   │
-                            (other sources → other sims if/when needed)            │
+Source              World runtime                                    View layer            Modules
+                    (internal: frame → change → domain)
+─────               ───────────────────────────────────────────      ──────────────       ──────
+                    ┌─────── PlayerWorld ───────────────────────┐
+Player.log        → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┐
+(replay from        │ ↑               (change events) (domain   │   │
+ session-start)     │ │                                frames)   │   │
+                    │ └──── Producers (wake-at-T, fs reconcile,         InventoryView    Samwise
+                    │       eager TTL-eviction) ──────┘         │   │   (cross-world      Arwen
+                    └───────────────────────────────────────────┘   │   composer,        …
+                                                                    ├──→ subscribes to
+                    ┌─────── ChatWorld ─────────────────────────┐   │   both world buses,
+chat stream       → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┤   emits its own
+(replay from        │ (chat-inventory mirror,                    │   │   domain frames)
+ session-start)     │  chat-WoP spent)                           │   │
+                    └───────────────────────────────────────────┘   │   WordOfPowerView   Saruman
+                                                                    └──→ (codebook merge:
+                    (other sources → other worlds if/when needed)         discovery + spent)
 ```
 
 ### Layer responsibilities
 
-**Source streams** — raw, unfolded. Player.log frames carry source `Sequence` order; **chat replays from PG-session-start** (principle 9 — seeks to the matching chat banner, then emits forward); filesystem (character export reconcile) and wake-at-T are synthetic frame producers.
+**Source streams** — raw, unfolded. Player.log frames carry source `Sequence` order; **chat replays from PG-session-start** (principle 9 — seeks to the matching chat banner, then emits forward).
 
-**Sim layer** — two world sims, each deterministic over its own source. Each:
-- Owns a single subscription to its source(s) (plus synthetic-frame producers that target it specifically)
-- Maintains a frame merger (priority queue keyed by timestamp; tie-breaking by Sequence for native frames, by declared producer priority for synthetic frames)
+**World runtime** — two worlds, each deterministic over its own source, each with its own internal pipeline. Each:
+- Owns a single subscription to its source (plus producer registrations targeting that world's merger)
+- Maintains a frame merger (priority queue keyed by timestamp; tie-breaking by `Sequence` for native frames, by declared producer priority for producer-emitted frames)
 - Advances its own `IWorldClock` on each applied frame
-- Dispatches frames synchronously to registered frame handlers in declared dependency order
-- Exposes its handlers' state via `Subscribe(...)` / `Current` surfaces
+- Dispatches frames synchronously to folders (one frame → one folder); folders emit change events
+- Resolves composers within the frame (composers subscribed to change events fire; may emit domain frames; further composers consume those; until no new events)
+- Publishes domain frames to its own output bus (sealed; no inter-world flow)
+- Exposes folder state via `Current`/`TryGet` for synchronous reads by composers and views
 
 **View layer** — composition over both sims. Each view:
 - Subscribes to relevant events from one or both sims
@@ -167,58 +164,112 @@ public interface IFrameProducer<TPayload>
 }
 ```
 
-### Handler interface
+### Folder interface
 
 ```csharp
 /// <summary>
-/// A consumer of frames within a world sim. Handlers are registered with declared
-/// upstream dependencies; the sim topologically orders dispatch so each handler's
-/// upstreams have applied the current frame before it does. Synchronous reads of
-/// upstream handlers' state are coherent under this contract.
+/// One of three state-machine kinds (principle 10). Folders consume frames and emit
+/// change events. One frame is dispatched to exactly one folder, determined by the
+/// frame's payload type. Folders mutate world state; they live inside one world's
+/// runtime.
 /// </summary>
-public interface IFrameHandler<TPayload>
+public interface IFolder<TPayload>
 {
     /// <summary>
-    /// Apply one frame to internal state. Mutations must depend only on the frame's
-    /// payload and the handler's own prior state (plus optionally synchronous reads
-    /// of declared-upstream handlers' state). Never reads <see cref="DateTime.UtcNow"/>
-    /// or any other real-time source; uses <paramref name="clock"/> for "now."
+    /// Apply one frame to internal state. Returns the change events the mutation
+    /// produced (empty if no observable change). Mutations must depend only on the
+    /// frame's payload and the folder's own prior state. Never reads
+    /// <see cref="DateTime.UtcNow"/> or any other real-time source; uses
+    /// <paramref name="clock"/> for "now."
     /// </summary>
-    void Apply(Frame<TPayload> frame, IWorldClock clock);
+    IReadOnlyList<IChangeEvent> Apply(Frame<TPayload> frame, IWorldClock clock);
 }
 ```
 
-### Sim interface
+### Composer interface
 
 ```csharp
 /// <summary>
-/// Shared contract for both world sims. Each sim owns its own producers, handlers,
-/// clock, and frame merger.
+/// One of three state-machine kinds (principle 10). Composers consume change events
+/// (and/or domain frames from upstream composers) and emit domain frames when their
+/// multi-frame pattern is satisfied. They *recognize* multi-frame patterns in events
+/// PG already emits; they do not anticipate or synthesize PG behavior.
+///
+/// Composers chain via subscribe within a frame's resolution — they never re-emit
+/// into the world's merger. Future-time emission is the producer interface's job.
+/// </summary>
+public interface IComposer
+{
+    /// <summary>
+    /// Declared input event types (change events from folders, or domain frames from
+    /// upstream composers). The world's resolution loop uses these to topologically
+    /// order composer dispatch within a frame.
+    /// </summary>
+    IReadOnlyCollection<Type> Subscribes { get; }
+
+    /// <summary>
+    /// Observe one event from a declared input type. May update internal pending
+    /// state; may emit zero or more domain frames if the composer's pattern is
+    /// satisfied. Emitted frames carry timestamps from the event(s) they correlated,
+    /// not from <paramref name="clock"/>.<see cref="IWorldClock.Now"/>.
+    /// </summary>
+    IReadOnlyList<Frame<object>> Observe(object eventPayload, IWorldClock clock);
+}
+```
+
+### World sim interface
+
+```csharp
+/// <summary>
+/// Shared contract for both world sims (PlayerWorld, ChatWorld). Each owns its own
+/// producers, folders, composers, clock, frame merger, and output bus.
 /// </summary>
 public interface IWorldSim
 {
     IWorldClock Clock { get; }
 
     /// <summary>
-    /// Register a frame producer. Must be called before <see cref="Start"/>.
+    /// Output bus for this world's domain frames. View-layer composers subscribe
+    /// here; consumers outside the world never see change events directly — only
+    /// the domain frames the world's composers chose to emit.
+    /// </summary>
+    IWorldEventBus Bus { get; }
+
+    /// <summary>
+    /// Register a producer (log tail, wake-at-T scheduler, filesystem reconcile, …).
+    /// Must be called before <see cref="StartAsync"/>.
     /// </summary>
     void RegisterProducer<T>(IFrameProducer<T> producer);
 
     /// <summary>
-    /// Register a frame handler with declared upstream dependencies (other handlers
-    /// that must apply the current frame before this one does). The sim topologically
-    /// sorts the dispatch order at <see cref="Start"/>; cycles throw.
+    /// Register a folder for a frame payload type. The world routes frames of that
+    /// type to this folder. Exactly one folder per payload type (registering a
+    /// second throws).
     /// </summary>
-    void RegisterHandler<T>(
-        IFrameHandler<T> handler,
-        IReadOnlyCollection<IFrameHandler<T>> dependencies);
+    void RegisterFolder<T>(IFolder<T> folder);
+
+    /// <summary>
+    /// Register a composer. The world dispatches composer.Observe(…) for each input
+    /// type the composer declares, in topologically-ordered fashion within each
+    /// frame's resolution.
+    /// </summary>
+    void RegisterComposer(IComposer composer);
 
     /// <summary>
     /// Begin frame application. Closes the registration set; from here forward
-    /// the sim drains producers in timestamp order, dispatches to handlers, and
-    /// advances the clock.
+    /// the world drains producers in timestamp order, dispatches to folders,
+    /// resolves composers, publishes domain frames to <see cref="Bus"/>.
     /// </summary>
     Task StartAsync(CancellationToken ct);
+}
+
+/// <summary>
+/// Typed pub-sub for a world's domain frames. Subscribers see emissions in
+/// resolution order (deterministic over the source stream).
+/// </summary>
+public interface IWorldEventBus
+{
+    IDisposable Subscribe<T>(Action<Frame<T>> handler);
 }
 ```
 
@@ -248,8 +299,10 @@ public interface IPlayerWorldSim : IWorldSim
 }
 
 /// <summary>
-/// World sim for chat. Genuinely small: two state machines, no synthetic-frame
-/// producers in v1. Live-only by source contract.
+/// World sim for chat. Genuinely small: two folders (inventory + WoP), each with its
+/// own change-event surface; no intra-world composers in v1; session-replay from the
+/// PG-session-start chat banner (principle 9). Cross-world composers (views) consume
+/// this world's bus alongside PlayerWorld's bus.
 /// </summary>
 public interface IChatWorldSim : IWorldSim
 {
@@ -441,15 +494,15 @@ After all migrations land:
 
 ## Open questions
 
-1. **View-layer subscription contract.** Do views subscribe to sim events via `Subscribe(Action<T>)` on each sim's state services, or does the sim expose a unified event surface (`PlayerWorldSim.SubscribeToFrameApplications`)? Leaning toward per-service Subscribe for parity with today's API; revisit if cross-cutting concerns (e.g., snapshot/restore) want a unified surface.
+1. ~~**View-layer subscription contract.**~~ **Resolved: per-world `IWorldEventBus` carrying typed domain frames.** Each world has one bus (`worldSim.Bus.Subscribe<TDomain>(...)`). Folders and composers are world-internal; only domain frames cross the world boundary. Views subscribe to one or more world buses, run their own composer-shaped logic, expose their own bus surface to modules. The per-component `Subscribe(Action<TEvent>)` pattern in today's services becomes `worldSim.Bus.Subscribe<TEvent>(...)` post-migration — same ergonomics, single owner.
 
-2. **Pass-through views for single-sim consumers.** Modules that need only Player.log-derived data (Samwise's garden, Pippin's food, etc.) — do they go through a view layer (consistent API) or subscribe to `PlayerWorldSim`'s services directly (one less layer)? Leaning toward always-through-views for architectural consistency, but the cost is a trivial pass-through wrapper per service.
+2. ~~**Pass-through views for single-sim consumers.**~~ **Resolved: always-through-views for cross-world composition.** For single-world consumers (Samwise, Arwen, Saruman discovery-only), subscribing directly to a world's bus is fine — no view layer required for "I only need PlayerWorld events." The view layer exists specifically for cross-world composition (`InventoryView`, `WordOfPowerView`) and stays consistent shape-wise even when only one module consumes a given view today.
 
-3. **Snapshot / rewind.** Once both sims are clocked with frame indices, snapshot at frame N = (handler states + clock state) is well-defined. Rewind / branch is a natural follow-on. Out of scope for v1; the contracts shouldn't preclude it.
+3. **Snapshot / rewind.** Once both worlds are clocked with frame indices, snapshot at frame N = (folder states + composer pending state + clock state) is well-defined. Rewind / branch is a natural follow-on. Out of scope for v1; the contracts shouldn't preclude it.
 
 4. **Live-mode clock interpolation.** Between frames in live mode, the simulated clock should advance at real-time pace anchored to the last frame's timestamp. Concrete formula: `simClock.Now = lastFrame.Timestamp + (TimeProvider.System.GetUtcNow() - lastFrameLandedAt)`. Need to validate this against TTL-gate consumers — does the interpolated value match their expectations for "5 seconds elapsed"? Probably yes; needs a test.
 
-5. ~~**Two clocks or one?**~~ **Resolved: two sim clocks + view-derived `max(playerSim.Clock.Now, chatSim.Clock.Now)` for view-layer TTLs.** Each sim runs its own `IWorldClock`, advancing independently by its own source's frame timestamps. View-layer correlators (like `InventoryView`'s 5s TTL) read the *max of both sim clocks* as their "now" — which is well-defined and tight during steady-state replay (both sims advance lock-step over the same simulated time window per principle 9) and degrades gracefully during drain (TTLs use *event timestamps* from the frames themselves, not the sim clocks; the max-clock is only used for eviction-of-stale-pending-state). Concrete contract for views needing this: `IViewClock` is a thin read-only struct exposing `Now` and `Frame` (the latter as a tuple of `(playerFrame, chatFrame)` since the two sims have independent frame counters).
+5. ~~**Two clocks or one?**~~ **Resolved: each world owns its `IWorldClock`; views derive their own clock from observed domain-frame timestamps.** Each world's clock advances by its own source's frame timestamps. Views are composers above worlds; they observe domain frames flowing from world buses, each frame carrying its own timestamp (inherited from the originating change/source frame). View-layer TTL gates (like `InventoryView`'s 5s pairing window) use the *frame timestamps themselves* for correlation; for eviction-of-stale-pending-state, views derive a "now" from the max of the most-recently-observed frame timestamps across both world buses. Concrete contract: `IViewClock` exposes `Now : DateTimeOffset` (derived) and `Frames` as a tuple `(playerFrame, chatFrame)` of the most-recently-observed frame indices from each world's bus.
 
 6. **User actions.** Out of sim scope per earlier design — modules mutate adjacent state directly. But Gandalf's user-created timers are stateful and survive across sessions; that state has to live somewhere. Probably "user-action state services" outside the sim, persisted independently, queried by sim-driven handlers (e.g., the wake-at-T scheduler reads the user's timer definitions). Worth a brief design pass on what "adjacent state" looks like.
 
