@@ -5,6 +5,7 @@ using System.Windows.Media;
 using Celebrimbor.Domain;
 using Celebrimbor.ViewModels;
 using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Celebrimbor.Views;
 

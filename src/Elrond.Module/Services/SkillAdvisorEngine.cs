@@ -2,6 +2,7 @@ using Elrond.Domain;
 using Mithril.Leveling;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 
 namespace Elrond.Services;

@@ -2,7 +2,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Smaug.Domain;
 using static Mithril.Reference.Models.Npcs.FavorTierExtensions;
 

@@ -1,7 +1,7 @@
 using System.IO;
 using FluentAssertions;
 using Mithril.Shared.Character;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Mithril.Shared.Tests.Character;

@@ -1,4 +1,4 @@
-namespace Mithril.Shared.Storage;
+namespace Mithril.GameReports;
 
 /// <summary>
 /// A single item entry from a character storage export.

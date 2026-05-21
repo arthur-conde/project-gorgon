@@ -1,4 +1,4 @@
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Arwen.Domain;
 

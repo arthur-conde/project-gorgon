@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Recipes;
 using Bilbo.Domain;
 using FluentAssertions;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 using Xunit;
 

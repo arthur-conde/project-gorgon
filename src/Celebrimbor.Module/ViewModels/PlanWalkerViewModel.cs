@@ -169,7 +169,7 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
         OnPropertyChanged(nameof(CanAdvance));
     }
 
-    private void BuildRail(SavedLevelingPlan plan, PlanWalkState walk, Mithril.Shared.Character.CharacterSnapshot? live)
+    private void BuildRail(SavedLevelingPlan plan, PlanWalkState walk, Mithril.GameReports.CharacterSnapshot? live)
     {
         var rail = new ObservableCollection<PlanRailItemViewModel>();
         var unlocks = plan.Unlocks.OrderBy(u => u.AtLevel).ToList();
@@ -294,7 +294,7 @@ public sealed partial class PlanWalkerViewModel : ObservableObject
     [RelayCommand]
     private void BackToLibrary() => BackRequested?.Invoke(this, EventArgs.Empty);
 
-    private static string BuildStaleSummary(SavedLevelingPlan plan, Mithril.Shared.Character.CharacterSnapshot live, string skillDisplay)
+    private static string BuildStaleSummary(SavedLevelingPlan plan, Mithril.GameReports.CharacterSnapshot live, string skillDisplay)
     {
         var newRecipes = live.RecipeCompletions.Keys
             .Count(k => !plan.InitialRecipeCompletions.ContainsKey(k));

@@ -10,7 +10,7 @@ using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Arwen.Tests;

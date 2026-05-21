@@ -1,7 +1,7 @@
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Smaug.Domain;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 using static Mithril.Reference.Models.Npcs.FavorTierExtensions;

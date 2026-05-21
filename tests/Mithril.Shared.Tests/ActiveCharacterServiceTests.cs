@@ -1,5 +1,6 @@
 using System.IO;
 using FluentAssertions;
+using Mithril.GameReports;
 using Mithril.Shared.Character;
 using Mithril.Shared.Game;
 using Xunit;
@@ -13,6 +14,7 @@ public sealed class ActiveCharacterServiceTests : IDisposable
     private readonly string _dir;
     private readonly GameConfig _gameConfig;
     private readonly FakePersistence _persistence;
+    private readonly GameReportsService _reports;
 
     public ActiveCharacterServiceTests()
     {
@@ -20,17 +22,19 @@ public sealed class ActiveCharacterServiceTests : IDisposable
         _gameConfig = new GameConfig { GameRoot = Path.GetDirectoryName(_dir)! };
         Directory.CreateDirectory(_gameConfig.ReportsDirectory);
         _persistence = new FakePersistence();
+        _reports = new GameReportsService(() => _gameConfig.ReportsDirectory);
     }
 
     public void Dispose()
     {
+        _reports.Dispose();
         try { Directory.Delete(Path.GetDirectoryName(_dir)!, recursive: true); } catch { }
     }
 
     [Fact]
     public void EmptyReports_ConstructionSucceeds_WithNullActive()
     {
-        using var svc = new ActiveCharacterService(_gameConfig, _persistence);
+        using var svc = new ActiveCharacterService(_gameConfig, _persistence, _reports);
         svc.ActiveCharacterName.Should().BeNull();
         svc.ActiveCharacter.Should().BeNull();
         svc.Characters.Should().BeEmpty();
@@ -43,7 +47,7 @@ public sealed class ActiveCharacterServiceTests : IDisposable
         _persistence.ActiveCharacterName = "Emraell";
         _persistence.ActiveServer = "Alpha";
 
-        using var svc = new ActiveCharacterService(_gameConfig, _persistence);
+        using var svc = new ActiveCharacterService(_gameConfig, _persistence, _reports);
 
         svc.ActiveCharacterName.Should().Be("Emraell");
         svc.ActiveServer.Should().Be("Alpha");
@@ -52,7 +56,7 @@ public sealed class ActiveCharacterServiceTests : IDisposable
     [Fact]
     public void SetActiveCharacter_FiresEvent_AndPersists()
     {
-        using var svc = new ActiveCharacterService(_gameConfig, _persistence);
+        using var svc = new ActiveCharacterService(_gameConfig, _persistence, _reports);
         var fired = 0;
         svc.ActiveCharacterChanged += (_, _) => fired++;
 
@@ -68,7 +72,7 @@ public sealed class ActiveCharacterServiceTests : IDisposable
     [Fact]
     public void SetActiveCharacter_NoOp_DoesNotFire()
     {
-        using var svc = new ActiveCharacterService(_gameConfig, _persistence);
+        using var svc = new ActiveCharacterService(_gameConfig, _persistence, _reports);
         svc.SetActiveCharacter("Hits", "Alpha");
         var fired = 0;
         svc.ActiveCharacterChanged += (_, _) => fired++;
@@ -85,7 +89,9 @@ public sealed class ActiveCharacterServiceTests : IDisposable
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         File.WriteAllText(Path.Combine(_gameConfig.ReportsDirectory, $"Emraell_Alpha_items_{stamp}.json"), "{}");
 
-        using var svc = new ActiveCharacterService(_gameConfig, _persistence);
+        // Recreate the reports service so it picks up the file at construction.
+        using var reports = new GameReportsService(() => _gameConfig.ReportsDirectory);
+        using var svc = new ActiveCharacterService(_gameConfig, _persistence, reports);
 
         svc.StorageReports.Should().HaveCount(1);
         svc.StorageReports[0].Character.Should().Be("Emraell");

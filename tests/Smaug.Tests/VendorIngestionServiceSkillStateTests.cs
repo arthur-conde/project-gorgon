@@ -9,7 +9,7 @@ using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Smaug.Domain;
 using Smaug.Parsing;
 using Smaug.State;

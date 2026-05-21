@@ -1,4 +1,4 @@
-global using Mithril.Shared.Storage;
+global using Mithril.GameReports;
 
 using Bilbo.Domain;
 using Mithril.Shared.Reference;

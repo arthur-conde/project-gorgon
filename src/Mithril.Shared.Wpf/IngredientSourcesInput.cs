@@ -1,4 +1,5 @@
 using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Mithril.Shared.Wpf;
 

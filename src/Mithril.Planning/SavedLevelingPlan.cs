@@ -1,5 +1,6 @@
 using Mithril.Leveling;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 
 namespace Mithril.Planning;
 

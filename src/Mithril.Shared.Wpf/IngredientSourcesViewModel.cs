@@ -1,5 +1,6 @@
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
+using Mithril.GameReports;
 // Aliased, NOT `using Mithril.Reference.Models.Npcs;` — that namespace also
 // declares NpcService/NpcPreference, colliding CS0104 with the slim records
 // this file references in <see cref> doc comments (#385).

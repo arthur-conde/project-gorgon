@@ -1,6 +1,7 @@
 using Mithril.Leveling;
 using Mithril.Planning;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 
 namespace Elrond.Services;
 

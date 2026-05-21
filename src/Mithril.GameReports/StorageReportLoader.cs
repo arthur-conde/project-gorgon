@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Mithril.Shared.Storage;
+namespace Mithril.GameReports;
 
 /// <summary>
 /// Loads and transforms character storage export JSON files.

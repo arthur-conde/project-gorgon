@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Reference\Mithril.Reference.csproj" />
+    <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />

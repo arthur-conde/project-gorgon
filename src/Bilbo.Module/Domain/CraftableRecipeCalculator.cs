@@ -1,6 +1,7 @@
 using System.Globalization;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 
 namespace Bilbo.Domain;

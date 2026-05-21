@@ -1,2 +1,2 @@
-// Moved to Mithril.Shared.Storage — this file re-exports for backwards compatibility.
-global using Mithril.Shared.Storage;
+// Moved to Mithril.GameReports (#612) — this file re-exports for backwards compatibility.
+global using Mithril.GameReports;

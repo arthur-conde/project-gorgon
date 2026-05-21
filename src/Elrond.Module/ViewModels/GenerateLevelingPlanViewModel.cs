@@ -2,6 +2,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Services;
+using Mithril.GameReports;
 using Mithril.Planning;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
@@ -24,7 +25,16 @@ namespace Elrond.ViewModels;
 public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
 {
     private readonly IActiveCharacterService _activeChar;
+    private readonly IGameReportsService _gameReports;
     private readonly CrossSkillPlanner _planner;
+
+    /// <summary>
+    /// Reads the active character's snapshot via <see cref="IGameReportsService"/>
+    /// directly (#612 character-snapshot rewiring). Selection events still flow
+    /// through <see cref="IActiveCharacterService"/>.
+    /// </summary>
+    private CharacterSnapshot? ActiveCharacterSnapshot =>
+        _gameReports.GetCharacterSnapshot(_activeChar.ActiveCharacterName, _activeChar.ActiveServer);
 
     // Deferred resolution: resolving the import target at construction would
     // close a DI cycle (→ Celebrimbor's target → IModuleActivator →
@@ -41,11 +51,13 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
 
     public GenerateLevelingPlanViewModel(
         IActiveCharacterService activeChar,
+        IGameReportsService gameReports,
         CrossSkillPlanner planner,
         IReferenceDataService referenceData,
         Func<ISavedLevelingPlanImportTarget?>? importAccessor = null)
     {
         _activeChar = activeChar;
+        _gameReports = gameReports;
         _planner = planner;
         _ref = referenceData;
         _importAccessor = importAccessor;
@@ -120,7 +132,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
 
     private void RefreshSnapshot()
     {
-        var snap = _activeChar.ActiveCharacter;
+        var snap = ActiveCharacterSnapshot;
         HasActiveCharacter = snap is not null;
         if (snap is null)
         {
@@ -144,7 +156,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
 
     private void Recompute()
     {
-        var snap = _activeChar.ActiveCharacter;
+        var snap = ActiveCharacterSnapshot;
         _preview = null;
         HasPreview = false;
         AlreadyAtGoal = false;
@@ -203,7 +215,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanGenerate))]
     private void Generate()
     {
-        var snap = _activeChar.ActiveCharacter;
+        var snap = ActiveCharacterSnapshot;
         if (snap is null || _preview is not { } plan || string.IsNullOrEmpty(SelectedSkill)
             || GoalLevel is not { } goal)
             return;

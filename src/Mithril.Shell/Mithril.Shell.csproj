@@ -57,6 +57,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <!-- Foundation-layer assembly for character export reports (storage/vault
+         items, character snapshots). Mithril.Shared transitively pulls this,
+         but listing it here makes the dependency explicit per the discipline
+         note in CLAUDE.md / memory: shell must ProjectReference new shared
+         libs so their DLLs land in the app base dir for the reflection
+         module loader to resolve. -->
+    <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
     <!-- Shared leveling/planning libs. The shell must reference these so their

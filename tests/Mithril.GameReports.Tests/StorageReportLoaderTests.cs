@@ -1,17 +1,13 @@
-using Mithril.Reference.Models.Items;
-using Mithril.Reference.Models.Recipes;
 using System.IO;
 using System.Text.Json;
-using Bilbo.Domain;
-using Bilbo.Services;
-using Mithril.Shared.Reference;
-using Mithril.GameReports;
 using FluentAssertions;
+using Mithril.TestSupport;
 using Xunit;
 
-namespace Bilbo.Tests;
+namespace Mithril.GameReports.Tests;
 
-public class StorageReportLoaderTests
+[Trait("Category", "FileIO")]
+public sealed class StorageReportLoaderTests
 {
     [Fact]
     public void Load_DeserializesRoundTrip()
@@ -95,34 +91,6 @@ public class StorageReportLoaderTests
     }
 
     [Fact]
-    public void ToRows_FlattensCorrectly()
-    {
-        var report = new StorageReport("X", "Y", "", "Storage", 1,
-        [
-            new StorageItem(1, "Sword", 1, 100, "NPC_JaceSoral", "Epic", "MainHand", 30,
-                false, false, null, null, null, null, null,
-                [new TsysPower(6, "Boost1"), new TsysPower(6, "Boost2"), new TsysPower(6, "Boost3")],
-                null, null, null),
-            new StorageItem(2, "Apple", 10, 5, null, null, null, null,
-                true, false, null, null, null, null, null, null, null, null, null),
-        ]);
-
-        var rows = StorageRowMapper.ToRows(report, new EmptyRefData());
-
-        rows.Should().HaveCount(2);
-
-        rows[0].Name.Should().Be("Sword");
-        rows[0].Location.Should().Be("NPC: Jace Soral");
-        rows[0].TotalValue.Should().Be(100);
-        rows[0].ModCount.Should().Be(3);
-
-        rows[1].Name.Should().Be("Apple");
-        rows[1].Location.Should().Be("Inventory");
-        rows[1].TotalValue.Should().Be(50);
-        rows[1].ModCount.Should().Be(0);
-    }
-
-    [Fact]
     public void NormalizeLocation_HandlesAllPatterns()
     {
         StorageReportLoader.NormalizeLocation("CouncilVault", false).Should().Be("Council Vault");
@@ -136,29 +104,47 @@ public class StorageReportLoaderTests
         StorageReportLoader.NormalizeLocation(null, false).Should().Be("Inventory");
     }
 
-    private sealed class EmptyRefData : IReferenceDataService
+    [Fact]
+    public void ScanForReports_ParsesFileNamePattern_AndSortsByMtime()
     {
-        public IReadOnlyList<string> Keys { get; } = [];
-        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item>();
-        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>();
-        public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
-        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
-        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
-        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
-        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
-        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
-        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
-        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
-        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
-        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
-        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
-        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
-        public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "v469", null, 0);
-        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
-        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public void BeginBackgroundRefresh() { }
-        public event EventHandler<string>? FileUpdated { add { } remove { } }
+        var dir = TestPaths.CreateTempDir("gamereports-scan");
+        try
+        {
+            // Three reports — newest one should land first.
+            var older = Path.Combine(dir, "Alice_Alpha_items_20260101_120000.json");
+            File.WriteAllText(older, "{}");
+            File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddDays(-2));
+
+            var middle = Path.Combine(dir, "Bob_Beta_items_20260102_120000.json");
+            File.WriteAllText(middle, "{}");
+            File.SetLastWriteTimeUtc(middle, DateTime.UtcNow.AddDays(-1));
+
+            var newest = Path.Combine(dir, "Charlie_Gamma_items_20260103_120000.json");
+            File.WriteAllText(newest, "{}");
+            File.SetLastWriteTimeUtc(newest, DateTime.UtcNow);
+
+            // Non-matching pattern is ignored.
+            File.WriteAllText(Path.Combine(dir, "Character_Alice_Alpha.json"), "{}");
+            File.WriteAllText(Path.Combine(dir, "random.json"), "{}");
+
+            var results = StorageReportLoader.ScanForReports(dir);
+
+            results.Should().HaveCount(3);
+            results[0].Character.Should().Be("Charlie");
+            results[0].Server.Should().Be("Gamma");
+            results[1].Character.Should().Be("Bob");
+            results[2].Character.Should().Be("Alice");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ScanForReports_OnMissingDirectory_ReturnsEmpty()
+    {
+        StorageReportLoader.ScanForReports(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()))
+            .Should().BeEmpty();
     }
 }

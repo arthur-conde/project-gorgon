@@ -1,4 +1,4 @@
-namespace Mithril.Shared.Character;
+namespace Mithril.GameReports;
 
 /// <summary>
 /// Parsed snapshot of a character exported via the game's /exportcharacter command.

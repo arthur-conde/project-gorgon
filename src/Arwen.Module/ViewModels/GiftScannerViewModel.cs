@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Character;
 using Mithril.Shared.Game;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Arwen.ViewModels;
 

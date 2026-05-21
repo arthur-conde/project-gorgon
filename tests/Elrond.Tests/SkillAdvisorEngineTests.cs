@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Recipes;
 using Elrond.Services;
 using FluentAssertions;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 using Xunit;
 

@@ -3,6 +3,7 @@ using Mithril.Reference.Models.Recipes;
 using FluentAssertions;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Mithril.Shared.Wpf;
 using Xunit;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;

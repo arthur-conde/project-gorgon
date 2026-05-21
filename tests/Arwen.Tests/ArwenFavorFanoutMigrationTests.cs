@@ -5,7 +5,7 @@ using Arwen.State;
 using FluentAssertions;
 using Mithril.Shared.Character;
 using Mithril.Shared.Settings;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Arwen.Tests;
