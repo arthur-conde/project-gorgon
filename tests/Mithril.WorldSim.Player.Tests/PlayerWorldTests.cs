@@ -207,6 +207,65 @@ public sealed class PlayerWorldTests
         world.Clock.Mode.Should().Be(WorldMode.Live);
     }
 
+    [Fact]
+    public async Task World_with_pre_completed_mode_aware_producer_starts_Live_without_emitting_ModeChanged()
+    {
+        // Pre-completing ReachedLive before StartAsync is the synchronous
+        // analogue of "L1 seed is empty" — there is no Replaying phase to
+        // transition out of. The world starts Live and emits no ModeChanged.
+        var producer = new StubFrameProducer<string>(
+            priority: 0, modeAware: true);
+        producer.SignalReachedLive();
+        producer.PostLive(new Frame<string>(Ts(1), "x"));
+        producer.Complete();
+
+        var folder = new RecordingFolder<string>();
+        var world = new PlayerWorld();
+        world.RegisterProducer(producer);
+        world.RegisterFolder(folder);
+
+        var modeChanges = new List<Frame<ModeChanged>>();
+        using var sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await world.StartAsync(cts.Token);
+
+        world.Clock.Mode.Should().Be(WorldMode.Live);
+        modeChanges.Should().BeEmpty();
+        folder.Applied.Single().Mode.Should().Be(WorldMode.Live);
+    }
+
+    [Fact]
+    public async Task World_does_not_emit_ModeChanged_when_first_frame_is_already_live()
+    {
+        // L1 with an empty initial replay snapshot: the producer signals
+        // ReachedLive inline with the first envelope (which is live). The
+        // world flips before any frame applies — Clock.Frame == 0 at the
+        // flip — so no ModeChanged is emitted. Consumers see Mode = Live
+        // from the start.
+        var producer = new StubFrameProducer<string>(
+            priority: 0, modeAware: true);
+        producer.PostLive(new Frame<string>(Ts(5), "live-1"));
+        producer.PostLive(new Frame<string>(Ts(6), "live-2"));
+        producer.Complete();
+
+        var folder = new RecordingFolder<string>();
+        var world = new PlayerWorld();
+        world.RegisterProducer(producer);
+        world.RegisterFolder(folder);
+
+        var modeChanges = new List<Frame<ModeChanged>>();
+        using var sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await world.StartAsync(cts.Token);
+
+        modeChanges.Should().BeEmpty();
+        world.Clock.Mode.Should().Be(WorldMode.Live);
+        folder.Applied.Should().AllSatisfy(a => a.Mode.Should().Be(WorldMode.Live));
+        folder.Applied.Select(a => a.Frame.Payload).Should().Equal("live-1", "live-2");
+    }
+
     // ── Bus delivery order ──────────────────────────────────────────────
 
     [Fact]

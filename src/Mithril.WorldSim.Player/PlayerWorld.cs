@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Mithril.WorldSim.Player.Internal;
 
 namespace Mithril.WorldSim.Player;
@@ -226,9 +225,22 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
 
         var transitionAt = _clock.Now;
         _clock.SetMode(WorldMode.Live);
-        _bus.Publish(new Frame<ModeChanged>(
-            transitionAt,
-            new ModeChanged(WorldMode.Replaying, WorldMode.Live, transitionAt)));
+
+        // Only emit ModeChanged if the world actually experienced a Replaying
+        // phase — i.e., at least one frame was applied while Mode == Replaying.
+        // If we flip before any frame applies (empty L1 seed: producer signals
+        // ReachedLive on the first envelope, which is itself live; or every
+        // mode-aware producer was already complete at registration time),
+        // there is no transition to report. Consumers read Clock.Mode for
+        // initial state and subscribe to ModeChanged only for actual
+        // transitions — symmetric with the no-mode-aware-producers branch in
+        // StartAsync which sets Live up front without emitting.
+        if (_clock.Frame > 0)
+        {
+            _bus.Publish(new Frame<ModeChanged>(
+                transitionAt,
+                new ModeChanged(WorldMode.Replaying, WorldMode.Live, transitionAt)));
+        }
     }
 
     private void DispatchFrame(IFrame frame)
