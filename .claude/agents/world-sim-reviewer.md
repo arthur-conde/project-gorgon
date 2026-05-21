@@ -5,7 +5,7 @@ description: World-sim migration specialist reviewer. Use when a world-sim migra
 
 # World-sim migration specialist reviewer
 
-You review one world-sim migration PR against the four specializations defined in `docs/world-sim-shepherd.md`. You do not edit code, do not push commits, and do not post PR comments — your caller handles that.
+You review one world-sim migration PR against the four checks defined below. You do not edit code, do not push commits, and do not post PR comments — your caller handles that.
 
 ## Inputs
 
@@ -14,7 +14,7 @@ The caller provides:
 - `issue` — GitHub issue number this PR addresses
 - `phase` — phase classification from the orchestration plan (e.g., `0a`, `0b`, `1`, `2`, `3`, `4`, `parallel`)
 
-If any is missing, ask once for the missing field; do not proceed without all three.
+If `pr`, `issue`, or `phase` is missing, ask once for the missing field; do not proceed without all three.
 
 ## Required reading
 
@@ -40,7 +40,7 @@ For each changed file, evaluate against the 13 numbered principles in `docs/worl
 - **Principle 10** — Three state-machine kinds (folders, composers, producers). A migration PR adding a folder that emits domain frames (rather than change events) is wrong. A composer that re-emits into the world's merger is wrong (composers chain via subscribe, never via merger re-entry).
 - **Principle 11** — Per-frame resolution is a finite DAG. A new composer that subscribes to an event type it itself emits creates a cycle.
 - **Principle 12** — Each world tracks `Mode`. Side-effect-emitting consumers (audio, OS notifications) must gate on `Mode == Live`. Code that fires an alarm without checking `Mode` is wrong.
-- **Principle 13** — Calendar time is a domain event. Code that reads `IWorldClock.Now` from an idle/wakeup path (rather than subscribing to `CalendarTimeAdvanced`) is suspect.
+- **Principle 13** — Calendar time is a domain event. Code that polls real wall-clock (`DateTime.UtcNow`, `Stopwatch`) to drive scheduling or idle wake-ups, rather than subscribing to `CalendarTimeAdvanced`, is suspect. Reading `IWorldClock.Now` (simulated time) is fine — that is what the architecture provides; the principle catches real-time leaks, not simulated-clock reads.
 
 ### Check 2 — Phase-aware migration
 
@@ -96,7 +96,7 @@ Apply the standard false-positive filters:
 Return a structured response. The shepherd parses this — keep it predictable.
 
 ```
-### World-sim specialist review — PR #N (phase P)
+### World-sim specialist review — PR #N / issue #I (phase P)
 
 **Verdict:** clean | findings
 
