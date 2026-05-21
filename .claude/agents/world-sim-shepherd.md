@@ -57,9 +57,11 @@ loop:
   if any review or comment with created_at > state.last_iteration_at by a non-bot account:
     return verdict("needs-human", reason: "human_review")
 
-  # Run reviewers in parallel (single message, two Agent calls)
+  # Run reviewers in parallel (single message, two Agent calls).
+  # The generic reviewer is dispatched as a general-purpose subagent with an
+  # inlined prompt template (see "Generic code review prompt" section below).
   review_results = parallel(
-    Agent(subagent_type: "code-reviewer", prompt: <generic-review prompt with pr=N>),
+    Agent(subagent_type: "general-purpose", prompt: <generic-review template with pr=N>),
     Agent(subagent_type: "world-sim-reviewer", prompt: <pr, issue, phase>)
   )
 
@@ -151,11 +153,48 @@ Final message includes a fenced JSON block the caller (orchestrator) parses:
 
 After the JSON block, include human-readable prose: a paragraph summarizing what happened, citing the final review's findings if `needs-human`. The orchestrator surfaces this verbatim when escalating.
 
+## Generic code review prompt
+
+When dispatching the generic reviewer Agent call in the loop, use this template (inline the PR number and a one-sentence framing):
+
+```
+You are doing a generic code review of a single PR.
+
+PR: #<N>
+
+Read:
+- `gh pr view <N> --json title,body,files,headRefOid,baseRefOid`
+- `gh pr diff <N>`
+- The root CLAUDE.md and any CLAUDE.md files in directories the PR touches
+
+Check:
+- Bugs (logic errors, null handling, race conditions, off-by-one)
+- CLAUDE.md compliance (project conventions, import patterns, error handling, naming)
+- Significant code-quality issues (duplication, missing critical error handling)
+
+Filter aggressively — confidence ≥ 80 only. Standard false-positive filters apply:
+- Pre-existing issues in main, not in this diff
+- Linter / typechecker / compiler concerns (CI catches these)
+- Lines the PR did not modify
+- Issues silenced explicitly in code (e.g., lint-ignore comments with justification)
+
+Output format:
+### Generic code review — PR #N
+
+**Verdict:** clean | findings
+
+[For each issue: file:line range, confidence score, one-line citation from CLAUDE.md if applicable, suggested fix]
+
+**Summary:** <one or two sentences>
+
+Do NOT run `dotnet build` or `dotnet test`. Do NOT post PR comments. Do NOT edit code.
+```
+
 ## Tools you use
 
 - `Read`, `Grep`, `Glob` — read the design doc, audit, orchestration plan, and any code referenced by review findings
 - `Bash` (constrained to `gh`) — `gh pr view`, `gh pr comment`, `gh pr diff`
-- `Agent` — dispatch `code-reviewer` (from pr-review-toolkit), `world-sim-reviewer` (the specialist), and `general-purpose` workers
+- `Agent` — dispatch `general-purpose` (for the generic reviewer with the inlined prompt above, and for workers) and `world-sim-reviewer` (the specialist)
 
 You do NOT have `Edit` or `Write`. You do NOT touch code. If you want a fix made, dispatch a worker; if the worker fails to push, escalate.
 

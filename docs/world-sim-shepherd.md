@@ -32,7 +32,7 @@ Two new subagents and one set of edits to the orchestration plan.
 3. **Replay-determinism inspection** — static-analysis-style sweep for non-determinism sources: `DateTime.UtcNow`/`Stopwatch` in state-decision paths, dictionary-iteration-order assumptions, `Task.Run` / `Task.WhenAll` that could reorder side effects, etc.
 4. **Audit cross-reference** — cross-checks the PR's changed files against [`world-sim-migration-audit.md`](world-sim-migration-audit.md). If a file is listed as "needs behavioural change" and this PR is supposed to land that change, verify the change happened; if "sleeper blocker," verify it was addressed.
 
-**Generic review.** The shepherd also dispatches the existing `code-reviewer` subagent from `pr-review-toolkit` in parallel with `world-sim-reviewer` each iteration. The pr-review-toolkit reviewer covers generic bug-scanning, CLAUDE.md adherence, git-history context — work the specialist doesn't need to reproduce.
+**Generic review.** The shepherd also dispatches a `general-purpose` subagent with an inlined code-review prompt template (see the shepherd agent file's §Generic code review prompt section) in parallel with `world-sim-reviewer` each iteration. The inlined prompt covers generic bug-scanning, CLAUDE.md adherence, git-history context — work the specialist doesn't need to reproduce. (The `pr-review-toolkit` plugin's `code-reviewer` agent would have been a natural fit, but it isn't installed in this environment; the inlined-prompt-on-general-purpose pattern is the project's existing convention for Agent-dispatchable review.)
 
 ---
 
@@ -154,7 +154,7 @@ Optional follow-on (separate PR):
 
 ## Open considerations
 
-1. **Generic reviewer wart.** The existing `/code-review` is a slash command, not a callable subagent. The shepherd uses the `code-reviewer` subagent from the `pr-review-toolkit` plugin instead, which is `Agent`-dispatchable. If `pr-review-toolkit` ever changes that subagent's contract, the shepherd's invocation needs to follow.
+1. **Generic reviewer wart.** The existing `/code-review` is a slash command, not a `Agent`-callable subagent. The `pr-review-toolkit` plugin provides a `code-reviewer` agent that would be a clean fit but isn't installed in this environment. The shepherd works around this by dispatching `general-purpose` with an inlined code-review prompt template embedded in the shepherd agent file. If `pr-review-toolkit` ever gets installed, switching the dispatch to that subagent (and dropping the inline template) is a one-line change.
 
 2. **Concurrent shepherds on overlapping PRs.** If the orchestrator dispatches two shepherds on PRs that touch the same file, the second worker's commit could clobber the first. The shepherd doesn't detect this proactively; it falls back to the `conflict` verdict if a merge conflict appears. The orchestration plan's Stop Condition #6 (conflicting concurrent work → serialize) covers the policy side.
 
