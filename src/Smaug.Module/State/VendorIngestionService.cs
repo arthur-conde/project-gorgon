@@ -210,6 +210,19 @@ public sealed class VendorIngestionService : BackgroundService
     /// path or a prior live snapshot already set. The shared skill snapshot is
     /// authoritative when the key is present; absent is "not yet observed",
     /// not "the skill is unlearned".</para>
+    ///
+    /// <para><b>Threading.</b> Per the <see cref="IPlayerSkillState.Subscribe"/>
+    /// contract this runs <b>synchronously under the tracker's lock</b> — on
+    /// the caller's thread for the initial replay and on the L1 ingestion
+    /// thread for live dispatch — <b>not</b> on the WPF dispatcher. Safe today
+    /// because <c>_context.CivicPrideLevel</c> is a plain field write on a POCO
+    /// and the downstream WPF binding path
+    /// (<c>PriceCalibrationService.DataChanged</c> → <c>CalibrationViewModel</c>)
+    /// already hops to the dispatcher via the L1 subscription's
+    /// <see cref="DeliveryContext.Marshaled"/>. <b>Future trap:</b> if
+    /// <see cref="VendorSellContext"/> grows <c>INotifyPropertyChanged</c>
+    /// properties bound directly to the UI, this handler must marshal to the
+    /// UI thread before mutating them.</para>
     /// </summary>
     private void OnSkillSnapshot(PlayerSkillSnapshot snapshot)
     {
@@ -229,6 +242,16 @@ public sealed class VendorIngestionService : BackgroundService
     /// before Smaug's ingestion loop was running, pull Civic Pride from the character export.
     /// When the active character changes, overwrites unconditionally; on first prime, only fills in
     /// a zero level so a live log-parsed value is not clobbered by a stale export.
+    ///
+    /// <para><b>Ordering — live wins over export.</b> <see cref="ExecuteAsync"/>
+    /// calls this <em>before</em> subscribing to <see cref="IPlayerSkillState"/>,
+    /// so the export-derived value is in place first and the subsequent
+    /// synchronous replay of <see cref="OnSkillSnapshot"/> overwrites it with
+    /// the live tracker snapshot. This is deliberate: the character export is a
+    /// stale on-disk file (last <c>/dumpchar</c>), while <c>IPlayerSkillState</c>
+    /// reflects the current session — flipping the order would let a stale export
+    /// clobber correct live data. The post-prime <c>ActiveCharacterChanged</c>
+    /// overwrite path is the one exception (a deliberate character switch).</para>
     /// </summary>
     private void PrimeCivicPrideFromActiveCharacter(bool overwrite = false)
     {
