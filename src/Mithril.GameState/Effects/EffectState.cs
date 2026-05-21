@@ -70,7 +70,8 @@ public enum EffectEventKind
 
     /// <summary>A <c>ProcessUpdateEffectName</c> assigned a display name (and
     /// the originating instance id) to an existing entry. Fires once per Update
-    /// line; subsequent Updates for the same instance also fire if the name
-    /// actually changes.</summary>
+    /// line; subsequent Updates for the same instance route via the internal
+    /// instance-id → catalog-id bridge and also fire <em>only if the name
+    /// actually changes</em> (a same-name re-emit is suppressed).</summary>
     DisplayNameChanged,
 }

@@ -15,12 +15,12 @@ namespace Mithril.GameState.Effects;
 /// (post-#585 React-channel contract).
 ///
 /// <para><b>Threading.</b> A single <c>_lock</c> guards <c>_active</c>,
-/// <c>_eventLog</c>, <c>_handlers</c>, and <c>_unnamed</c>. Both the L1
-/// pump (via <c>OnLocalPlayer</c>) and <see cref="Subscribe"/> callers take
-/// it; live dispatch happens under the lock so the
-/// Subscribe-vs-live-event race is impossible (the new subscriber either
-/// ran its replay before the next event fires, or attached after — never
-/// in between).</para>
+/// <c>_eventLog</c>, <c>_handlers</c>, <c>_unnamed</c>, and
+/// <c>_instanceToCatalog</c>. Both the L1 pump (via <c>OnLocalPlayer</c>)
+/// and <see cref="Subscribe"/> callers take it; live dispatch happens
+/// under the lock so the Subscribe-vs-live-event race is impossible (the
+/// new subscriber either ran its replay before the next event fires, or
+/// attached after — never in between).</para>
 ///
 /// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
 /// <see cref="Mithril.GameState.Celestial.PlayerCelestialStateService"/>:
@@ -65,16 +65,25 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     private readonly object _lock = new();
     private readonly Dictionary<int, EffectState> _active = new();
     private readonly List<EffectEvent> _eventLog = new();
-    private readonly List<(Action<EffectEvent> Handler, ReplayMode Replay)> _handlers = new();
+    private readonly List<Action<EffectEvent>> _handlers = new();
 
-    // Stack of un-named catalog ids (most-recent-first) used to correlate a
-    // ProcessUpdateEffectName back to its preceding ProcessAddEffects entry.
-    // Spec wording: "the entry that was most recently added and still lacks
-    // an InstanceId" — LIFO/stack. Captured Add/Update interleaving is 1:1
-    // ([302] Add → Update 259328 → [303] Add → Update 259329), so the stack
-    // depth is typically 0 or 1; the data structure is defensive against a
-    // batched-Add pattern PG might emit but we haven't captured.
+    // Stack of un-named catalog ids (most-recent-first) used on the FIRST
+    // ProcessUpdateEffectName for an instance to correlate back to its
+    // preceding ProcessAddEffects entry. Spec wording: "the entry that was
+    // most recently added and still lacks an InstanceId" — LIFO/stack.
+    // Captured Add/Update interleaving is 1:1 ([302] Add → Update 259328 →
+    // [303] Add → Update 259329), so the stack depth is typically 0 or 1.
+    // Subsequent re-renames of an already-named instance bypass the stack and
+    // route via <see cref="_instanceToCatalog"/> below.
     private readonly Stack<int> _unnamed = new();
+
+    // instanceId → catalogId map populated when an Update first names an
+    // entry (alongside the _unnamed pop), and cleared on Remove. Re-renames
+    // of an already-named instance (e.g. level-tagged skill effect bumping
+    // from "Performance Appreciation, Level 0" to "Level 1") route via this
+    // lookup so they hit the SAME catalog id rather than popping an
+    // unrelated _unnamed entry and misrouting the DisplayNameChanged event.
+    private readonly Dictionary<long, int> _instanceToCatalog = new();
 
     private ILogSubscription? _subscription;
     private bool _eventLogCapWarned;
@@ -122,7 +131,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
                     Invoke(handler, evt);
                 }
             }
-            _handlers.Add((handler, replay));
+            _handlers.Add(handler);
             return new Subscription(this, handler);
         }
     }
@@ -163,7 +172,9 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     private ValueTask OnLocalPlayer(LogEnvelope<LocalPlayerLogLine> envelope)
     {
         var data = envelope.Payload.Data;
-        var ts = ToOffset(envelope.Payload.Timestamp.UtcDateTime);
+        // LocalPlayerLogLine.Timestamp is already a DateTimeOffset (UTC) —
+        // L0 normalizes the source clock. No round-trip needed.
+        var ts = envelope.Payload.Timestamp;
 
         var add = AddEffectsRx().Match(data);
         if (add.Success
@@ -260,6 +271,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
 
                 var removed = _active[matchedCatalogId.Value];
                 _active.Remove(matchedCatalogId.Value);
+                _instanceToCatalog.Remove(instanceId);
                 var evt = new EffectEvent(EffectEventKind.Removed, removed, timestamp);
                 AppendEventLog(evt);
                 _diag?.Trace("GameState.Effects",
@@ -273,11 +285,49 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     {
         lock (_lock)
         {
-            // Pop the most recently added un-named entry. PG's captured pattern
-            // interleaves Add/Update 1:1 at the same instant ([302] Add →
-            // Update 259328 → [303] Add → Update 259329), so the stack depth is
-            // typically 1 and pop semantics is unambiguous. Spec accepts a
-            // missing pair as "best-effort, drop with Trace; no synthetic Add."
+            // Route by instance id FIRST. A re-rename of an already-named
+            // effect (e.g. a level-tagged skill effect bumping from
+            // "Performance Appreciation, Level 0" to "Level 1") shares the
+            // same instance id; the catalog id is the existing one, not
+            // whatever happens to be on top of _unnamed. Without this lookup,
+            // a re-rename would pop an unrelated un-named entry (or warn-and-
+            // drop on empty stack) and misroute the DisplayNameChanged event.
+            if (_instanceToCatalog.TryGetValue(instanceId, out var knownCatalogId))
+            {
+                if (_active.TryGetValue(knownCatalogId, out var existing))
+                {
+                    if (existing.DisplayName == displayName)
+                    {
+                        // No-op re-emit of the same name; spec wording on
+                        // EffectEventKind.DisplayNameChanged says it fires
+                        // "if the name actually changes."
+                        _diag?.Trace("GameState.Effects",
+                            $"Update catalog={knownCatalogId} instance={instanceId} name unchanged, no event");
+                        return;
+                    }
+                    var renamed = existing with { DisplayName = displayName };
+                    _active[knownCatalogId] = renamed;
+                    var renameEvt = new EffectEvent(EffectEventKind.DisplayNameChanged, renamed, timestamp);
+                    AppendEventLog(renameEvt);
+                    _diag?.Trace("GameState.Effects",
+                        $"Update catalog={knownCatalogId} instance={instanceId} rename=\"{displayName}\" (was \"{existing.DisplayName}\")");
+                    Fire(renameEvt);
+                    return;
+                }
+                // _active entry is gone but the instance bridge survived —
+                // stale; drop the bridge and fall through to the stack path
+                // (treat as first-naming attempt against current un-named set).
+                _instanceToCatalog.Remove(instanceId);
+                _diag?.Trace("GameState.Effects",
+                    $"Update instance={instanceId} — stale bridge dropped, falling back to stack");
+            }
+
+            // First-naming path: pop the most recently added un-named entry.
+            // PG's captured pattern interleaves Add/Update 1:1 at the same
+            // instant ([302] Add → Update 259328 → [303] Add → Update 259329),
+            // so the stack depth is typically 1 and pop semantics is
+            // unambiguous. Spec accepts a missing pair as "best-effort, drop
+            // with Trace; no synthetic Add."
             while (_unnamed.Count > 0)
             {
                 var catalogId = _unnamed.Pop();
@@ -289,14 +339,15 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
                 }
                 if (state.InstanceId is not null)
                 {
-                    // Already named (defensive — pop shouldn't surface a named entry,
-                    // but the stack and _active are not strictly in lock-step if a
-                    // double-Update lands for the same catalog id). Skip.
+                    // Already named — should be rare since _instanceToCatalog
+                    // catches the common re-rename path above. Skip and keep
+                    // looking for a genuine un-named candidate.
                     continue;
                 }
 
                 var updated = state with { InstanceId = instanceId, DisplayName = displayName };
                 _active[catalogId] = updated;
+                _instanceToCatalog[instanceId] = catalogId;
                 var evt = new EffectEvent(EffectEventKind.DisplayNameChanged, updated, timestamp);
                 AppendEventLog(evt);
                 _diag?.Trace("GameState.Effects",
@@ -307,7 +358,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
 
             // No un-named candidate. Could happen if the Update fires for an
             // effect whose Add we missed (mid-session attach without snapshot
-            // replay), or a double-Update for an already-named entry.
+            // replay).
             _diag?.Warn("GameState.Effects",
                 $"Update instance={instanceId} name=\"{displayName}\" — no un-named candidate, dropped");
         }
@@ -362,7 +413,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     /// </summary>
     private void Fire(EffectEvent evt)
     {
-        foreach (var (handler, _) in _handlers) Invoke(handler, evt);
+        foreach (var handler in _handlers) Invoke(handler, evt);
     }
 
     private void Invoke(Action<EffectEvent> handler, EffectEvent evt)
@@ -370,16 +421,6 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
         try { handler(evt); }
         catch (Exception ex) { _diag?.Warn("GameState.Effects", $"Subscriber threw: {ex.Message}"); }
     }
-
-    /// <summary>
-    /// Player.log timestamps are normalized upstream by the L0 source clock
-    /// (UTC <see cref="DateTimeOffset"/>); we receive <c>.UtcDateTime</c>
-    /// here. Stamp the kind defensively so the lifted
-    /// <see cref="DateTimeOffset"/> always has offset +00:00 rather than the
-    /// host's local offset.
-    /// </summary>
-    private static DateTimeOffset ToOffset(DateTime ts) =>
-        new(DateTime.SpecifyKind(ts, DateTimeKind.Utc));
 
     private sealed class Subscription : IDisposable
     {
@@ -398,14 +439,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
             if (owner is null) return;
             lock (owner._lock)
             {
-                for (int i = owner._handlers.Count - 1; i >= 0; i--)
-                {
-                    if (owner._handlers[i].Handler == _handler)
-                    {
-                        owner._handlers.RemoveAt(i);
-                        break;
-                    }
-                }
+                owner._handlers.Remove(_handler);
             }
         }
     }

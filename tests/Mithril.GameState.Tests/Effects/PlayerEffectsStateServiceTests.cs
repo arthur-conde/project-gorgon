@@ -412,6 +412,127 @@ public sealed class PlayerEffectsStateServiceTests
         finally { await StopAsync(svc); }
     }
 
+    // ---------- Re-rename via instance-id bridge (review #593 / Finding 1) ----------
+
+    [Fact]
+    public async Task DoubleUpdate_SameInstanceId_RoutesToSameCatalog_AndFiresSecondDisplayNameChanged()
+    {
+        // Captured pattern for level-tagged skill effects: a single instance id
+        // gets renamed as the underlying skill level changes
+        // ("Performance Appreciation, Level 0" → "Level 1"). The second Update
+        // must NOT pop _unnamed (the entry is already named); it must look up
+        // the instance id directly and rename the SAME catalog id.
+        var stream = new ScriptedStream();
+        var svc = NewService(stream);
+        var seen = new List<EffectEvent>();
+        using var sub = svc.Subscribe(seen.Add);
+
+        try
+        {
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
+            stream.Push(Stamp.AddMinutes(2),
+                "[21:41:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 1\")");
+            await RunUntilDrainedAsync(svc, stream);
+
+            seen.Should().HaveCount(3, "Add + first-name + re-rename");
+            seen[0].Kind.Should().Be(EffectEventKind.Added);
+            seen[0].State.CatalogId.Should().Be(302);
+
+            seen[1].Kind.Should().Be(EffectEventKind.DisplayNameChanged);
+            seen[1].State.CatalogId.Should().Be(302);
+            seen[1].State.DisplayName.Should().Be("Performance Appreciation, Level 0");
+
+            seen[2].Kind.Should().Be(EffectEventKind.DisplayNameChanged);
+            seen[2].State.CatalogId.Should().Be(302,
+                "the re-rename must route via the instance-id bridge back to the SAME catalog id");
+            seen[2].State.InstanceId.Should().Be(259320);
+            seen[2].State.DisplayName.Should().Be("Performance Appreciation, Level 1");
+
+            svc.TryGet(302, out var state).Should().BeTrue();
+            state.DisplayName.Should().Be("Performance Appreciation, Level 1");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task DoubleUpdate_SameName_SuppressesSecondDisplayNameChanged()
+    {
+        // The interface XML on DisplayNameChanged promises "fires once per
+        // Update line; subsequent Updates ... if the name actually changes".
+        // A redundant Update with the identical name must NOT fire a second
+        // event (it would add a no-op replay entry that confuses consumers).
+        var stream = new ScriptedStream();
+        var svc = NewService(stream);
+        var seen = new List<EffectEvent>();
+        using var sub = svc.Subscribe(seen.Add);
+
+        try
+        {
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
+            stream.Push(Stamp.AddSeconds(5),
+                "[21:39:40] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
+            await RunUntilDrainedAsync(svc, stream);
+
+            seen.Should().HaveCount(2, "Add + first-name only — the same-name re-emit is suppressed");
+            seen[0].Kind.Should().Be(EffectEventKind.Added);
+            seen[1].Kind.Should().Be(EffectEventKind.DisplayNameChanged);
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task DoubleUpdate_WithUnrelatedUnnamedPushBetween_RoutesByInstanceId_NotStack()
+    {
+        // Stress case: after the first Update names instance 259320 → catalog
+        // 302, an UNRELATED equipment-bonus Add pushes catalog 13303 onto
+        // _unnamed. The second Update for instance 259320 must look up the
+        // bridge dictionary and rename catalog 302; the un-named 13303 must
+        // remain un-named (stack untouched).
+        var stream = new ScriptedStream();
+        var svc = NewService(stream);
+        var seen = new List<EffectEvent>();
+        using var sub = svc.Subscribe(seen.Add);
+
+        try
+        {
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
+            stream.Push(Stamp,
+                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
+            // Unrelated equipment-bonus add: stale _unnamed entry on the stack.
+            stream.Push(Stamp.AddMinutes(1),
+                "[21:40:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[13303, ]\", True)");
+            // Re-rename of 259320: must NOT pop 13303 off _unnamed.
+            stream.Push(Stamp.AddMinutes(2),
+                "[21:41:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 1\")");
+            await RunUntilDrainedAsync(svc, stream);
+
+            // 302 was renamed via the dictionary lookup.
+            svc.TryGet(302, out var named).Should().BeTrue();
+            named.InstanceId.Should().Be(259320);
+            named.DisplayName.Should().Be("Performance Appreciation, Level 1");
+
+            // 13303 stayed un-named — proves the dictionary won over the stack.
+            svc.TryGet(13303, out var equip).Should().BeTrue();
+            equip.InstanceId.Should().BeNull("the stack-based pop must NOT have fired for the re-rename");
+            equip.DisplayName.Should().BeNull();
+
+            // Events: Add(302), DisplayName(302, "L0"), Add(13303), DisplayName(302, "L1")
+            seen.Should().HaveCount(4);
+            seen[3].Kind.Should().Be(EffectEventKind.DisplayNameChanged);
+            seen[3].State.CatalogId.Should().Be(302,
+                "the re-rename event must carry catalog 302, not the unrelated 13303 on _unnamed");
+            seen[3].State.DisplayName.Should().Be("Performance Appreciation, Level 1");
+        }
+        finally { await StopAsync(svc); }
+    }
+
     [Fact]
     public async Task Lifecycle_EmitsSubscribingDiagnostic()
     {
