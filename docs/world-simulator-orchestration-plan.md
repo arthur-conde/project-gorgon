@@ -10,6 +10,8 @@ Machine-actionable scheduling plan for the world-simulator migration. Pairs with
 
 ## How an orchestrator should use this file
 
+> **For autonomous operation,** see [`.claude/agents/world-sim-orchestrator.md`](../.claude/agents/world-sim-orchestrator.md) — the manual instructions in this section describe what the orchestrator subagent automates. Drive it with `/loop /world-sim-orchestrate-tick`. The instructions below are still the authoritative description of orchestrator behavior; the subagent reads them as required reading each tick.
+
 1. Read [§Dependency graph](#dependency-graph) and current GitHub issue state.
 2. Identify **ready tasks**: tasks whose `depends_on` are all closed issues, and which aren't themselves closed/in-progress.
 3. For each ready task: spawn the [agent type](#per-task-orchestration-metadata) listed, hand over the issue body verbatim (per `spawned_session_handoff_self_contained` memory convention), and observe. After the worker opens its PR, dispatch the per-PR shepherd (see [§Per-PR shepherding](#per-pr-shepherding)) before advancing to verification.
