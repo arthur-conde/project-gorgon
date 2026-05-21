@@ -106,7 +106,7 @@ Project knowledge is split across four tiers. Route new content by what it is:
 | If you're writing… | Put it… |
 |---|---|
 | A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template; the dropdowns auto-apply `module:*` and `area:*` labels. |
-| Roadmap / prioritisation state | The **Mithril Roadmap** Project (`Status`, `Priority`, `Effort`, `Target Version`, `Module` custom fields). Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
+| Roadmap / prioritisation state | The [**Mithril Roadmap** Project](https://github.com/orgs/moumantai-gg/projects/1) (org-level, replaced the legacy user-level board 2026-05-21). Custom fields: `Status`, `Priority`, `Module`. (Earlier scheme had `Effort` + `Target Version`; dropped to reduce maintenance friction — re-add only if a real need surfaces.) Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
 | Stable reference, process, how-to, user guide | The [wiki](https://github.com/moumantai-gg/mithril/wiki). Stable content; doesn't co-evolve with code. |
 | Design rationale that co-evolves with code | `docs/` in this repo. Roadmap *narrative* (why we deferred X, what would unblock Y), design notebooks, architecture decisions. |
 | Implementation spec / finalized plan for a follow-up agent | The **GitHub Issue body itself**. Fold the full spec — struct dumps, caveats, "verification owed", test plan — into the issue so a cold/spawned session is self-contained from the issue alone. **GitHub is the only home for finalized plans.** |
