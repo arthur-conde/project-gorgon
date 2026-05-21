@@ -133,6 +133,25 @@ Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
 
 Use a temp file for the body — direct `--body` arguments containing multiline content trip Bash quoting issues per the `bash_tool_is_posix_not_powershell` memory convention. PowerShell here-strings (`@'…'@`) work for the commit message but `gh ... --body-file` is more robust for the comment.
 
+## Worker dispatch prompt
+
+When `build_worker_prompt` constructs the prompt passed to the dispatched worker (above), the result MUST include CLAUDE.md's tooling rules. Append this block to whatever the caller's `worker_template` provides:
+
+```
+Tooling rules — these are not negotiable:
+- For C# work touching >1 type, FIRST load LSP via
+  `ToolSearch query: "select:LSP"` — then use it for go-to-def, find-refs,
+  type info. Grep alone misses partial classes, source-generated members
+  ([ObservableProperty] setters, JSON contexts), and overload signatures.
+- For any *.xaml edit or new view, FIRST read docs/wpf-gotchas.md.
+- For new consumers fusing Player.log + chat, FIRST read
+  docs/cross-source-correlation.md.
+- The PreToolUse hook blocks dotnet build/test/publish/pack while Mithril
+  shell runs — close it before pushing.
+```
+
+The worker is a cold session — CLAUDE.md isn't auto-loaded for dispatched subagents, so the shepherd's worker prompt has to bring these rules into the prompt explicitly.
+
 ## Output contract
 
 Final message includes a fenced JSON block the caller (orchestrator) parses:
