@@ -4,6 +4,10 @@ Design rationale for the three-layer world-simulator architecture: source stream
 
 **Status:** design notebook, not implementation spec. Captures the architectural commitments, contracts, and migration plan. Concrete contracts may iterate as implementation surfaces issues; principles are load-bearing.
 
+**Companion docs:**
+- [`module-signal-map.md`](module-signal-map.md) — the topology this design feeds against (read first).
+- [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — line-by-line audit of every state-holder against the principles + migration plan in this notebook. 15 components classified; 5 need behavioural changes; 3 sleeper blockers identified. Read before starting any migration item.
+
 ---
 
 ## Why this exists
@@ -28,6 +32,7 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 6. **Scope: reference / world (per-server) / character (per-server-per-character).** Per [`module-signal-map.md`](module-signal-map.md) — PG has multiple servers; world state is per-server; character state is per-character within a server. Sims partition along these scopes.
 7. **Both streams self-scope independently.** Player.log identifies `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected` + `LoginBanner`); chat identifies its own scope from the chat banner. No cross-source coupling for scope.
 8. **Tier 1/2 correlator pattern survives, relocates to the view layer.** [`cross-source-correlation.md`](cross-source-correlation.md)'s tier hierarchy stays valid as a pattern catalog for view-layer joins, but loses its in-repo "reference implementation" pointers (Inventory and Motherlode both migrate).
+9. **Chat sim replays from PG-session-start, symmetric with Player.log sim.** Chat is *not* live-only — that's a today-implementation choice we're explicitly replacing. The determinism contract views can offer their consumers is upper-bounded by the determinism of both sims at *matching* simulated time windows. Asymmetric replay (Player.log replays session-start, chat live-only) = asymmetric view inputs = no replay-determinism claim possible. So both sims drain from the PG-session-start chat banner; the chat-tail seeks to the most recent chat banner matching the current Player.log session (banner-by-banner pairing on `(Character, close-in-time)`), then emits forward. Cost is bounded (~hundreds of KB of chat per day vs the 12 MB of Player.log already replayed); benefit is the FileSystemWatcher reconcile workaround in `IInventoryService` retires (chat replay covers pre-attach stack sizes natively).
 
 ---
 
@@ -68,7 +73,7 @@ chat stream              → ChatWorldSim            ──┤                  
 
 ### Layer responsibilities
 
-**Source streams** — raw, unfolded. Player.log frames carry source `Sequence` order; chat is live-only; filesystem (character export reconcile) and wake-at-T are synthetic frame producers.
+**Source streams** — raw, unfolded. Player.log frames carry source `Sequence` order; **chat replays from PG-session-start** (principle 9 — seeks to the matching chat banner, then emits forward); filesystem (character export reconcile) and wake-at-T are synthetic frame producers.
 
 **Sim layer** — two world sims, each deterministic over its own source. Each:
 - Owns a single subscription to its source(s) (plus synthetic-frame producers that target it specifically)
@@ -444,7 +449,7 @@ After all migrations land:
 
 4. **Live-mode clock interpolation.** Between frames in live mode, the simulated clock should advance at real-time pace anchored to the last frame's timestamp. Concrete formula: `simClock.Now = lastFrame.Timestamp + (TimeProvider.System.GetUtcNow() - lastFrameLandedAt)`. Need to validate this against TTL-gate consumers — does the interpolated value match their expectations for "5 seconds elapsed"? Probably yes; needs a test.
 
-5. **Two clocks or one?** PlayerWorldSim and ChatWorldSim each have their own `IWorldClock` advancing at their own pace. View-layer joins (like InventoryView's 5s TTL) need a clock — whose? Likely the max of both (most-recent observation across both sims), but this should be settled before InventoryView is implemented. May want a `IViewClock` derived from both sim clocks.
+5. ~~**Two clocks or one?**~~ **Resolved: two sim clocks + view-derived `max(playerSim.Clock.Now, chatSim.Clock.Now)` for view-layer TTLs.** Each sim runs its own `IWorldClock`, advancing independently by its own source's frame timestamps. View-layer correlators (like `InventoryView`'s 5s TTL) read the *max of both sim clocks* as their "now" — which is well-defined and tight during steady-state replay (both sims advance lock-step over the same simulated time window per principle 9) and degrades gracefully during drain (TTLs use *event timestamps* from the frames themselves, not the sim clocks; the max-clock is only used for eviction-of-stale-pending-state). Concrete contract for views needing this: `IViewClock` is a thin read-only struct exposing `Now` and `Frame` (the latter as a tuple of `(playerFrame, chatFrame)` since the two sims have independent frame counters).
 
 6. **User actions.** Out of sim scope per earlier design — modules mutate adjacent state directly. But Gandalf's user-created timers are stateful and survive across sessions; that state has to live somewhere. Probably "user-action state services" outside the sim, persisted independently, queried by sim-driven handlers (e.g., the wake-at-T scheduler reads the user's timer definitions). Worth a brief design pass on what "adjacent state" looks like.
 

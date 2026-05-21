@@ -6,7 +6,9 @@ Snapshot of every component's signal topology — what flows in, what closed min
 
 This is the foundation for the [world-simulator design](world-simulator.md). Before the sim's dispatch graph can be drawn, the dependency topology of state holders has to be visible. It's the read-side companion to [`gamestate-services-gap-audit.md`](gamestate-services-gap-audit.md), which catalogues *missing* GameState services — this doc inventories the ones that exist and the modules that consume them.
 
-Companion doc: [`world-simulator.md`](world-simulator.md) — the converged architecture this topology feeds into. Three layers (sources → world sims → views → modules); two independent sims (Player.log + chat) with no inter-sim channel; cross-source composition lives in views above both sims.
+Companion docs:
+- [`world-simulator.md`](world-simulator.md) — the converged architecture this topology feeds into. Three layers (sources → world sims → views → modules); two independent sims (Player.log + chat) with no inter-sim channel; cross-source composition lives in views above both sims.
+- [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — line-by-line audit of every state-holder against the architecture. 15 components; 5 need migration; 3 sleeper blockers. Where to start when planning a concrete migration step.
 
 **Update this doc when:**
 - a new GameState service ships
