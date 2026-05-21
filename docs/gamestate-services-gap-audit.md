@@ -27,9 +27,9 @@
 
 ## Summary
 
-24 findings across 11 modules: **3 Class A** (state-rebuild candidates proposing
-new or extended GameState services), **0 net-new Class B** (the correlation SMs
-were already classified by the prior audit), **15 Class C** (in-charter
+24 findings across 10 modules: **3 Class A** (state-rebuild candidates proposing
+new or extended GameState services), **2 Class B** (both prior-classified — no
+net-new correlation SMs from this audit), **13 Class C** (in-charter
 module-specific state), **5 Class D** (already consuming the right service),
 **1 Class E** (unclear / design call). The two open gap questions the
 investigation flagged a priori (Saruman's WoP set, Pippin's Gourmand set)
