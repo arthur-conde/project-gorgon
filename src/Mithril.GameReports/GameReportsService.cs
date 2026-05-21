@@ -26,6 +26,7 @@ public sealed class GameReportsService : IGameReportsService
     private string? _watchedDir;
     private FileSystemWatcher? _watcher;
     private Timer? _debounce;
+    private readonly CancellationTokenSource _disposeCts = new();
 
     private IReadOnlyList<ReportFileInfo> _storageReports = [];
     private IReadOnlyList<CharacterSnapshot> _characterSnapshots = [];
@@ -154,6 +155,11 @@ public sealed class GameReportsService : IGameReportsService
 
     public void Dispose()
     {
+        // Cancel first so any in-flight debounce callback observes the token
+        // before it touches Refresh(). Without this, the watcher could fire
+        // between the dispose-window and the timer-fire-window and call
+        // Refresh() on an already-disposed accessor.
+        _disposeCts.Cancel();
         lock (_gate)
         {
             _watcher?.Dispose();
@@ -161,6 +167,7 @@ public sealed class GameReportsService : IGameReportsService
             _debounce?.Dispose();
             _debounce = null;
         }
+        _disposeCts.Dispose();
     }
 
     // ── Private helpers ─────────────────────────────────────────────────
@@ -230,12 +237,21 @@ public sealed class GameReportsService : IGameReportsService
     {
         // Debounce chunked writes. PG's export writes the file in multiple
         // chunks and we don't want to parse a half-written JSON.
+        //
+        // The timer callback may fire after Dispose() — between the dispose
+        // and the 500ms fire-window — so it checks the cancellation token
+        // before touching Refresh(). The worst case without this check is one
+        // stale Refresh() against a torn-down accessor; innocuous, but the
+        // token keeps cleanup airtight.
         lock (_gate)
         {
+            if (_disposeCts.IsCancellationRequested) return;
             _debounce?.Dispose();
             _debounce = new Timer(_ =>
             {
+                if (_disposeCts.IsCancellationRequested) return;
                 try { Refresh(); }
+                catch (ObjectDisposedException) { /* disposed mid-callback; nothing to do. */ }
                 catch (Exception ex) { _logWarn?.Invoke("GameReports", $"Refresh failed: {ex.Message}"); }
             }, null, TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan);
         }
