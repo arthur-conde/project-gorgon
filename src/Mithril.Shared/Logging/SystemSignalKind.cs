@@ -37,4 +37,18 @@ public enum SystemSignalKind
     /// window and is handled by #514's seed facility, not here.
     /// </summary>
     SessionLifecycle,
+
+    /// <summary>
+    /// <c>Servers: [ { … }, … ]</c> — the JSON array of PG world servers
+    /// emitted once at startup after the client fetches
+    /// <c>clientconfig.json</c>. No <c>[ts]</c> prefix; lives in the preamble
+    /// before the login banner. Consumed by <c>ServerCatalogService</c>
+    /// (#610) to populate the <c>Url → ServerEntry</c> catalog that
+    /// <c>ConnectionEventParser</c> (#611) joins against. Only reaches L0.5
+    /// when L0's session-replay window opens at byte 0 (Mithril attached
+    /// before PG launched, or PG-truncation-while-Mithril-runs); a Mithril
+    /// cold-start mid-PG-session seeks past the preamble and never sees it,
+    /// in which case the catalog stays empty for the attach lifetime.
+    /// </summary>
+    Servers,
 }

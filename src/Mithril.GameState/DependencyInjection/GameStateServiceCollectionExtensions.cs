@@ -11,6 +11,8 @@ using Mithril.GameState.Recipes;
 using Mithril.GameState.Recipes.Parsing;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
+using Mithril.GameState.Servers;
+using Mithril.GameState.Servers.Parsing;
 using Mithril.GameState.Sessions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
@@ -158,6 +160,19 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerWeatherTracker>()
             .AddSingleton<IPlayerWeatherTracker>(sp => sp.GetRequiredService<PlayerWeatherTracker>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerWeatherTracker>());
+
+        // PG world server catalog parsed from Player.log's `Servers: [ … ]`
+        // startup line (#610). Reference-scope (immutable per attach) — the
+        // join target for ConnectionEventParser (#611) which augments
+        // IGameSessionService with a Server field. Catalog stays empty when
+        // Mithril cold-starts mid-PG-session (L0's seed skips the preamble);
+        // populates on a PG-restart-while-Mithril-runs (truncation re-seeds
+        // L0 from byte 0). Consumers handle the empty case explicitly.
+        services.AddSingleton<ServerCatalogParser>();
+        services
+            .AddSingleton<ServerCatalogService>()
+            .AddSingleton<IServerCatalogService>(sp => sp.GetRequiredService<ServerCatalogService>())
+            .AddHostedService(sp => sp.GetRequiredService<ServerCatalogService>());
 
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();

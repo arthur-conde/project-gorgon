@@ -86,6 +86,19 @@ internal static class PlayerLogLineClassifier
             return new Result(LineKind.Discard, -1, 0, default);
         }
 
+        // Servers: [ { … } ] — no [ts], preamble-territory system signal.
+        // PG emits this once per launch after fetching clientconfig.json,
+        // before the login banner. The trailing `[ ` discriminator keeps the
+        // rule narrow — a prose log line that happened to start with the
+        // word "Servers:" would not match. Consumed by ServerCatalogService
+        // (#610) to populate the Url→ServerEntry catalog ConnectionEvent-
+        // Parser (#611) joins against.
+        if (StartsWithLiteral(line, "Servers: ["))
+        {
+            const int dataStart = 9; // length of "Servers: "
+            return new Result(LineKind.SystemSignal, dataStart, 0, SystemSignalKind.Servers);
+        }
+
         // EVENT(Ok): lifecycle phases — no [ts], system-signal pipe.
         // Verify the EVENT( prefix and (Ok) parens, then look at the verb
         // after the colon-space.

@@ -129,6 +129,34 @@ public sealed class PlayerLogLineClassifierTests
         kinds.Should().Contain(SystemSignalKind.LoginBanner);
         kinds.Should().Contain(SystemSignalKind.PlayerAdded);
         kinds.Should().Contain(SystemSignalKind.SessionLifecycle);
+        kinds.Should().Contain(SystemSignalKind.Servers);
+    }
+
+    [Fact]
+    public void Servers_line_classifies_as_SystemSignal_and_eats_prefix()
+    {
+        // The no-[ts] preamble line PG emits after fetching clientconfig.json.
+        const string line =
+            """Servers: [ { "AllowGuests" : true, "Port" : 9002, "Description" : "<b>Laeth</b>", "Url" : "s4.projectgorgon.com", "ID" : "s4", "Name" : "Laeth" } ]""";
+        var r = PlayerLogLineClassifier.Classify(line);
+
+        r.Kind.Should().Be(PlayerLogLineClassifier.LineKind.SystemSignal);
+        r.SystemKind.Should().Be(SystemSignalKind.Servers);
+        // The "Servers: " envelope must be eaten; the payload begins with `[`.
+        r.DataStart.Should().Be("Servers: ".Length);
+        line[r.DataStart..].Should().StartWith("[");
+    }
+
+    [Fact]
+    public void Servers_prefix_without_array_does_not_match()
+    {
+        // Narrow trigger — anything not `Servers: [` falls through to other
+        // rules (or to Anomaly). Guards against absorbing unrelated lines
+        // that happen to begin with "Servers:".
+        PlayerLogLineClassifier.Classify("Servers: <not-an-array>").Kind
+            .Should().NotBe(PlayerLogLineClassifier.LineKind.SystemSignal);
+        PlayerLogLineClassifier.Classify("Servers:").Kind
+            .Should().NotBe(PlayerLogLineClassifier.LineKind.SystemSignal);
     }
 
     // --- Merged corpus: bucket distribution + anomaly cap ---
