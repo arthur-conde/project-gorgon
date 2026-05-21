@@ -2,6 +2,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Palantir.ViewModels;
 using Xunit;
@@ -137,9 +138,12 @@ public sealed class LiveInventoryViewModelTests
         public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
         public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
 
-        public IDisposable Subscribe(Action<InventoryEvent> handler)
+        public IDisposable Subscribe(
+            Action<InventoryEvent> handler,
+            ReplayMode replay = ReplayMode.FromSessionStart)
         {
-            foreach (var e in _initial) handler(e);
+            if (replay == ReplayMode.FromSessionStart)
+                foreach (var e in _initial) handler(e);
             _handler = handler;
             return new Sub(this);
         }

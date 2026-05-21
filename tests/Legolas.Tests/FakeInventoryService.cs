@@ -1,15 +1,16 @@
 using Mithril.GameState.Inventory;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
+using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 
 namespace Legolas.Tests;
 
 /// <summary>
 /// Test double for <see cref="IInventoryService"/> (#488). <see cref="Subscribe"/>
-/// atomically replays the current live (non-deleted) items as
-/// <see cref="InventoryEventKind.Added"/> then delivers live add/delete, like
-/// the real service. <see cref="Add"/>/<see cref="Delete"/> drive the stream.
+/// atomically replays the full session event log (Added / Deleted, in order)
+/// then delivers live add/delete — mirrors the real service's #585 React-channel
+/// contract. <see cref="Add"/>/<see cref="Delete"/> drive the stream.
 /// </summary>
 public sealed class FakeInventoryService : IInventoryService
 {
@@ -18,15 +19,15 @@ public sealed class FakeInventoryService : IInventoryService
     private readonly List<long> _order = new();
     private readonly Dictionary<long, Entry> _map = new();
     private readonly List<Action<InventoryEvent>> _handlers = new();
+    private readonly List<InventoryEvent> _eventLog = new();
 
-    public IDisposable Subscribe(Action<InventoryEvent> handler)
+    public IDisposable Subscribe(
+        Action<InventoryEvent> handler,
+        ReplayMode replay = ReplayMode.FromSessionStart)
     {
-        foreach (var id in _order)
+        if (replay == ReplayMode.FromSessionStart)
         {
-            var e = _map[id];
-            if (e.Deleted) continue;
-            handler(new InventoryEvent(InventoryEventKind.Added, id, e.InternalName,
-                DateTime.UtcNow, 1, true));
+            foreach (var evt in _eventLog) handler(evt);
         }
         _handlers.Add(handler);
         return new Sub(this, handler);
@@ -46,12 +47,15 @@ public sealed class FakeInventoryService : IInventoryService
     }
 
     /// <summary>Seed an item already in inventory before anyone subscribes
-    /// (mimics login replay) — raises no live event.</summary>
+    /// (mimics login replay) — appended to the event log so late subscribers
+    /// see it during their replay, but raises no live event.</summary>
     public void Seed(long instanceId, string internalName)
     {
         if (_map.ContainsKey(instanceId)) return;
         _order.Add(instanceId);
         _map[instanceId] = new Entry(internalName, false);
+        _eventLog.Add(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName,
+            DateTime.UtcNow, 1, true));
     }
 
     public void Add(long instanceId, string internalName, DateTime? at = null)
@@ -72,6 +76,7 @@ public sealed class FakeInventoryService : IInventoryService
 
     private void Raise(InventoryEvent e)
     {
+        _eventLog.Add(e);
         foreach (var h in _handlers.ToArray()) h(e);
     }
 

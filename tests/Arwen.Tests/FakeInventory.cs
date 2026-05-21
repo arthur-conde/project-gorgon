@@ -1,4 +1,5 @@
 using Mithril.GameState.Inventory;
+using Mithril.Shared.Logging;
 
 namespace Arwen.Tests;
 
@@ -27,7 +28,9 @@ internal sealed class FakeInventory : IInventoryService
         stackSize = 0;
         return false;
     }
-    public IDisposable Subscribe(Action<InventoryEvent> handler) => NoopSubscription.Instance;
+    public IDisposable Subscribe(
+        Action<InventoryEvent> handler,
+        ReplayMode replay = ReplayMode.FromSessionStart) => NoopSubscription.Instance;
 
     private sealed class NoopSubscription : IDisposable
     {
