@@ -3,6 +3,7 @@ using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
 using Mithril.GameState.Effects;
+using Mithril.GameState.Gifting;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
@@ -56,6 +57,19 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<PlayerEffectsStateService>()
             .AddSingleton<IPlayerEffectsStateService>(sp => sp.GetRequiredService<PlayerEffectsStateService>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerEffectsStateService>());
+
+        // Tier-2 signature service: emits GiftAccepted whenever the local
+        // player gives an item to an NPC and the NPC accepts. Lifts Arwen's
+        // CalibrationService verb-sequence correlator into GameState
+        // (#594 umbrella; first sub-issue is #596). Owns its own
+        // LocalPlayer L1 subscription AND its own instanceId → InternalName
+        // map populated from ProcessAddItem — explicitly does NOT consume
+        // IInventoryService.TryResolve, to retire the cross-pump race
+        // documented in #582's "Replay correctness" section.
+        services
+            .AddSingleton<GiftSignalService>()
+            .AddSingleton<IGiftSignalService>(sp => sp.GetRequiredService<GiftSignalService>())
+            .AddHostedService(sp => sp.GetRequiredService<GiftSignalService>());
 
         // Area tracking is shared live game-state (Gandalf chest-area
         // stamping, Legolas per-area survey calibration, …). One parser,
