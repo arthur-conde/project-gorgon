@@ -3,11 +3,25 @@ using Mithril.GameReports;
 namespace Mithril.Shared.Character;
 
 /// <summary>
-/// Single source of truth for the active in-game character across every module.
-/// Owns the Reports directory scan (both <c>Character_*.json</c> and <c>*_items_*.json</c>),
-/// the Player.log login signal, and the persisted user selection. Modules should
-/// never parse <c>ProcessAddPlayer</c> independently or open their own
-/// <c>FileSystemWatcher</c> against the Reports directory.
+/// Single source of truth for the <i>active</i> in-game character across every
+/// module. Owns the active-selection axis: the Player.log login signal, the
+/// persisted user selection, and a delegating snapshot view that projects the
+/// raw report data through that active <c>(name, server)</c> pair (see
+/// <see cref="ActiveCharacter"/> / <see cref="ActiveStorageReport"/>).
+///
+/// <para>The raw Reports directory scan + <c>FileSystemWatcher</c> for both
+/// <c>Character_*.json</c> and <c>*_items_*.json</c> are owned by
+/// <see cref="Mithril.GameReports.IGameReportsService"/> (the foundation
+/// service). Modules wanting the unfiltered set of reports — or reports for a
+/// character other than the active one — should consume that service
+/// directly; this interface re-exposes the active-character slice
+/// (<see cref="Characters"/>, <see cref="StorageReports"/>) only as a
+/// convenience for callers that already track the active session.</para>
+///
+/// <para>Modules should never parse <c>ProcessAddPlayer</c> independently or
+/// open their own <c>FileSystemWatcher</c> against the Reports directory —
+/// delegate to <see cref="Mithril.GameReports.IGameReportsService"/> for raw
+/// report data.</para>
 /// </summary>
 public interface IActiveCharacterService : IDisposable
 {
