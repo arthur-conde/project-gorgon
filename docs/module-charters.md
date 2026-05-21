@@ -105,14 +105,95 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   GameState service's `Subscribe(...)`," not "write your own state machine on the same
   signal."
 
-  *Known anti-pattern instance — verification owed, audit + retire.*
-  [`Gandalf.Module/Services/LootBracketTracker.cs`](../src/Gandalf.Module/Services/LootBracketTracker.cs)'s
-  `AddItemRx` regex matches `ProcessAddItem(` on the raw envelope. The retiring fix is
-  to switch the bracket tracker to `IInventoryService.Subscribe`, filtering for
-  `InventoryEventKind.Added`. Surfaced during the mithril#574 L2 spec review chain;
-  the consumption-side fix is independent of L2 and can land sooner. A full repo audit
-  for additional instances is pending — file the audit as its own issue when prioritised
-  rather than appending to this charter.
+  *Known anti-pattern instances — audit landed as
+  [#579](https://github.com/moumantai-gg/mithril/issues/579) on 2026-05-21,
+  surfacing four Class A migrations (Gandalf `LootBracketTracker.AddItemRx`,
+  Smaug CivicPride, Samwise GardeningXp, Arwen ItemDeleted) plus one Class C
+  design discussion (Samwise `ProcessUpdateItemCode` needs a new
+  `InventoryEvent.CodeChanged` event kind on `IInventoryService`).
+  Each filed as its own retiring-PR issue.
+
+- **GameState services translate log events into a developer-facing domain
+  model with three channels: query, react, and bind. ✅ owner-confirmed
+  2026-05-21.** A consumer asking *"what's in inventory right now?"*,
+  *"react when a skill XP gain fires,"* or *"bind a UI to the live pin set"*
+  gets three different APIs — each shaped for the question — never one
+  channel trying to serve all three. The GameState layer exists so consumers
+  develop against a stable domain model (`InventoryEvent`, `PinSetChanged`,
+  `SkillChange`), not the raw log events the service translates from.
+  Companion rule to the consumption-side bullet above: that one tells
+  modules what to consume; this one tells services what to expose.
+
+  **The three channels:**
+
+  - **Query** — synchronous state lookup at moment of call.
+    `IInventoryService.TryResolve(instanceId, out internalName)`,
+    `IPlayerWeatherTracker.Current`, `IPlayerPinTracker.CurrentAreaPins`,
+    etc. Returns the current value; no side effects.
+  - **React** — event stream, default `ReplayMode.FromSessionStart`.
+    Replays every in-session event atomically before live events start,
+    so a late-attaching consumer sees the full sequence — not just
+    live-from-now. Consumers pass `ReplayMode.LiveOnly` explicitly when
+    they genuinely want live-only semantics (e.g. a UI showing
+    *"changes since the panel opened"*). The handler runs on the
+    service's ingestion thread; consumers marshal off-thread for
+    non-trivial work.
+  - **Bind** — for WPF data-binding. Collection-shaped services expose
+    `IReadOnlyObservableCollection<T>`; single-value services expose
+    `INotifyPropertyChanged` properties. Mutations are marshaled to the
+    UI dispatcher inside the service, so UI consumers bind directly in
+    XAML without consumer-side dispatching. Headless / test contexts
+    where `Application.Current?.Dispatcher` is null fall back to inline
+    mutation (mirrors the existing
+    [`VendorIngestionService` pattern](../src/Smaug.Module/State/VendorIngestionService.cs)).
+
+  **Why three channels.** Each maps to a structurally different question:
+  *Query* = "what's the current state?" (point-in-time); *React* =
+  "what's happening?" (ordered event log); *Bind* = "how does this view
+  stay in sync?" (declarative, UI-safe). Conflating them costs
+  concretely. Today `IInventoryService.Subscribe` tries to serve both
+  *current-state-replay* (synthesizes `Added` events for live items) and
+  *event-log-replay* (live events forward) through one API — and
+  silently loses pre-attach `Deleted` and `StackChanged` events. Three
+  current REACT consumers silently degrade as a result:
+
+  - [`Samwise.GardenIngestionService.OnInventoryEvent`](../src/Samwise.Module/State/GardenIngestionService.cs)
+    loses `_itemIdToCrop` map entries for items added-then-deleted before
+    Mithril attached.
+  - [Arwen's gift calibration](../src/Arwen.Module/Domain/CalibrationService.cs)
+    would lose every gift made before Mithril attached in the current PG
+    session — surfaced in [#582](https://github.com/moumantai-gg/mithril/issues/582)'s
+    replay-contract analysis.
+  - [`Legolas.MotherlodeMeasurementCoordinator`](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs)
+    silently misses dig-completion signals for digs completing before
+    Mithril attached — the inline comment cites it consumes "the
+    IInventoryService Deleted event" as the authoritative completion
+    signal.
+
+  Three sharp channels with distinct semantics retires the bug class
+  structurally.
+
+  **Anti-pattern (flag immediately).** A consumer manually building
+  observable state from a GameState service's event stream
+  (`_sub = service.Subscribe(OnEvent); ... _items.Add(...)`) is doing
+  the service's job. If the service exposes a domain model, the model
+  should be observable; consumers shouldn't reinvent the state
+  assembly. Today this pattern repeats in
+  [`Palantir.LiveInventoryViewModel`](../src/Palantir.Module/ViewModels/LiveInventoryViewModel.cs),
+  [`Palantir.WorldStateViewModel`](../src/Palantir.Module/ViewModels/WorldStateViewModel.cs),
+  and several Legolas ViewModels — each a candidate for a Bind-surface
+  migration once the relevant service grows the channel. Filing those
+  migrations rather than appending to this charter.
+
+  **What this implies for L2 / log-parsing internals.** L2 recognizers,
+  L1 envelopes, L0 timestamps — all internal to GameState services.
+  Modules never see them. The service surface is the abstraction
+  boundary; the GameState layer earns its keep by translating raw log
+  flux into a stable domain model on the other side. This shapes the
+  L2 spec direction ([#574](https://github.com/moumantai-gg/mithril/issues/574)):
+  cross-cutting recognizers + event types live in `Mithril.GameState`
+  alongside the service that owns them; module consumers consume the
+  service surface, never the L2 dispatch directly.
 
 ---
 
@@ -496,6 +577,25 @@ libraries; the charter follows the code:
 
 ## History
 
+- **2026-05-21** — **GameState service-design rule added: three channels (query, react,
+  bind) over a developer-facing domain model (✅ owner-confirmed 2026-05-21).** Companion
+  rule to the consumption-side bullet landed earlier the same day in
+  [#578](https://github.com/moumantai-gg/mithril/pull/578). Together: modules consume the
+  service surface (consumption-side); services translate log events into a domain model
+  with three channels — Query for "what's the current state?", React for "what's
+  happening?", Bind for "how does this view stay in sync?". Grounded in the inventory
+  channel-conflation bug class: `IInventoryService.Subscribe` today tries to serve both
+  current-state-replay and event-log-replay through one API, with the result that three
+  current REACT consumers silently miss pre-attach `Deleted` / `StackChanged` events —
+  Samwise's plant-resolution map, Arwen's gift calibration (surfaced in
+  [#582](https://github.com/moumantai-gg/mithril/issues/582)), and Legolas's
+  Motherlode dig-completion signal. Three sharp channels with distinct semantics retire
+  the bug class structurally. Also notes the Bind-surface pattern (currently repeated
+  in 5–6 places across Palantir + Legolas ViewModels) as a candidate for service-side
+  lift. Establishes the service-design template future GameState services follow when
+  they're built. Surfaced during the L2 spec review chain
+  ([#574](https://github.com/moumantai-gg/mithril/issues/574)) and the post-#578
+  consumer audit ([#579](https://github.com/moumantai-gg/mithril/issues/579)).
 - **2026-05-21** — **Consumption-side rule added to cross-cutting ownership (✅ owner-confirmed
   2026-05-21).** The existing "data + surface" bullet stated shared services exist
   and are the single source of truth, with modules `Subscribe`/query them. The new
