@@ -71,6 +71,49 @@ Applies to *every* module; owner-confirmed 2026-05-16:
   *Recollection correction, verified:* the live-inventory sim is in **Mithril.GameState**,
   not Mithril.Shared; Mithril.Shared owns the static *export* only.
 
+- **Modules `Subscribe` to the GameState service surface; they do not subscribe to
+  raw logs for cross-cutting state. ✅ owner-confirmed 2026-05-21.** Each GameState
+  service ([`IInventoryService`](../src/Mithril.GameState/Inventory/IInventoryService.cs),
+  [`IPlayerPinTracker`](../src/Mithril.GameState/Pins/IPlayerPinTracker.cs),
+  [`IPlayerWeatherTracker`](../src/Mithril.GameState/Weather/IPlayerWeatherTracker.cs),
+  [`IPlayerPositionTracker`](../src/Mithril.GameState/Movement/IPlayerPositionTracker.cs),
+  [`IPlayerSkillState`](../src/Mithril.GameState/Skills/IPlayerSkillState.cs), and the
+  shipped Recipe / Celestial / Area trackers) owns its L1 subscription internally and
+  exposes `Subscribe(Action<TEvent>)` with atomic replay-then-live. Modules consume the
+  service surface; they do **not** `Subscribe<LocalPlayerLogLine>` /
+  `IChatLogStream` / `IClassifiedPlayerLogLine` for any data domain that has a GameState
+  service. Direct log subscription is reserved for (a) the GameState services
+  themselves; (b) module-specific domains the module owns end-to-end (Samwise/Garden,
+  Pippin/Gourmand, Arwen/Favor business logic, Gandalf/Loot business logic, etc.).
+
+  *Why.* Real, hard-to-reproduce bugs from unclear ownership when multiple modules each
+  rebuilt their own view of the same underlying state from the raw log stream. Two
+  state machines on the same signal with subtly different framing produced symptoms
+  that didn't replay deterministically. Centralising the canonical view in a GameState
+  service — with the atomic replay-then-live `Subscribe` contract — retired that whole
+  bug class. The rule is the *consumption-side* complement of the data-owner-vs-surface
+  bullet above: that bullet says shared services *exist*; this one says modules
+  *consume them*, not the underlying log.
+
+  *Anti-pattern (flag immediately).* A module subscribing to `_driver.Subscribe<LocalPlayerLogLine>`
+  /`IPlayerLogStream` / `IChatLogStream` / `IClassifiedPlayerLogLine` and matching a
+  cross-cutting verb (`ProcessAddItem`, `ProcessDeleteItem`, `ProcessUpdateItemCode`,
+  `ProcessRemoveFromStorageVault`, `ProcessLoadSkills`, `ProcessUpdateSkill`,
+  `ProcessLoadRecipes`, `ProcessUpdateRecipe`, `ProcessSetWeather`, `ProcessMapPin*`,
+  `ProcessNewPosition`, area-transition verbs, celestial / moon-phase verbs), or
+  holding its own `[GeneratedRegex]` against one. The fix is "consume the corresponding
+  GameState service's `Subscribe(...)`," not "write your own state machine on the same
+  signal."
+
+  *Known anti-pattern instance — verification owed, audit + retire.*
+  [`Gandalf.Module/Services/LootBracketTracker.cs`](../src/Gandalf.Module/Services/LootBracketTracker.cs)'s
+  `AddItemRx` regex matches `ProcessAddItem(` on the raw envelope. The retiring fix is
+  to switch the bracket tracker to `IInventoryService.Subscribe`, filtering for
+  `InventoryEventKind.Added`. Surfaced during the mithril#574 L2 spec review chain;
+  the consumption-side fix is independent of L2 and can land sooner. A full repo audit
+  for additional instances is pending — file the audit as its own issue when prioritised
+  rather than appending to this charter.
+
 ---
 
 > **Coverage:** all 12 `*.Module` projects are charactered (owner-confirmed
@@ -453,6 +496,23 @@ libraries; the charter follows the code:
 
 ## History
 
+- **2026-05-21** — **Consumption-side rule added to cross-cutting ownership (✅ owner-confirmed
+  2026-05-21).** The existing "data + surface" bullet stated shared services exist
+  and are the single source of truth, with modules `Subscribe`/query them. The new
+  bullet closes the consumption-side gap: modules **never** subscribe to raw logs
+  (`IPlayerLogStream` / `IChatLogStream` / `IClassifiedPlayerLogLine`) for any
+  cross-cutting domain that has a GameState service. Direct log subscription is
+  reserved for the GameState services themselves and for module-specific domains.
+  Grounded in real, hard-to-reproduce bugs from earlier in the project's history
+  where multiple modules each rebuilt overlapping state from raw logs and produced
+  symptoms that didn't replay deterministically. Lists the five HEAD-existent
+  GameState services (`IInventoryService`, `IPlayerPinTracker`,
+  `IPlayerWeatherTracker`, `IPlayerPositionTracker`, `IPlayerSkillState`) plus
+  recipes/celestial/area trackers; names a verb list that signals the anti-pattern;
+  records `LootBracketTracker.AddItemRx` as a known instance to retire by switching
+  the tracker to `IInventoryService.Subscribe`. Surfaced during the mithril#574
+  L2 spec review chain. A full repo audit for additional anti-pattern instances is
+  pending and will be filed as its own issue.
 - **2026-05-19** — **Radagast charter sketch added (⚠️ Claude draft).** A proposed
   module for server-keyed environment state — moon phase, per-map weather,
   server-keyed gardening buff: sense → player-facing display → serverless
