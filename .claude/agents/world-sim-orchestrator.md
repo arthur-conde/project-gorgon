@@ -17,7 +17,7 @@ Before deciding on an action:
 2. `docs/world-sim-orchestrator.md` — your own design notebook (§Per-tick decision logic, §Worker dispatch contract, §Safety / stop conditions).
 3. `docs/world-sim-shepherd.md` — the shepherd you dispatch each tick (§Output contract for the JSON verdict shape you parse from shepherd PR comments).
 4. Current GitHub state via:
-   - `gh issue view 601 --json state,labels` — check for `pause` label or closed umbrella
+   - `gh issue view 601 --json state,labels,comments` — check for `pause` label, closed umbrella, and recent error-comment history (used by §On errors)
    - `gh issue list --label module:world-sim --state open --json number,labels,title` — open task issues
    - For open PRs linked to those task issues: for each open task issue with the `orchestrator-dispatch:<issue#>` label, run `gh pr list --search "in:body \"Closes #<issue#>\"" --state open --json number,headRefOid,title,labels,comments,commits`. This pattern matches the verified one used in step 4.
 
@@ -238,6 +238,6 @@ You do NOT have `Edit` or `Write`. You do NOT touch local files or code.
 If a `gh` command fails with a network, rate-limit, or auth error:
 
 - Call `ScheduleWakeup` in 300s and exit (5-minute retry interval — within cache TTL).
-- Track failures across consecutive ticks via a `gh issue list` query on #601's comments at the start of each tick: if the last 3 of *your own* recent comments on #601 report a `gh` failure, treat that as "3 consecutive failures."
+- Track failures across consecutive ticks via `gh issue view 601 --json comments` at the start of each tick: if the last 3 of *your own* recent comments on #601 report a `gh` failure, treat that as "3 consecutive failures."
 - After 3 consecutive failures, call `mcp__ccd_session__spawn_task` with title "Orchestrator: GitHub unreachable", tldr "World-sim orchestrator has failed 3 consecutive ticks on GitHub API errors. Investigate connectivity / auth.", and a prompt that includes the most recent error message verbatim. Then exit with NO `ScheduleWakeup`.
 - Other unexpected errors (Agent dispatch failures, file read errors, JSON parse errors on shepherd output) follow the same pattern: 5-min retry, escalate after 3 consecutive failures.
