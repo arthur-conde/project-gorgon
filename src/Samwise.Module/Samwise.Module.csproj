@@ -17,6 +17,9 @@
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Samwise.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="Config\crops.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

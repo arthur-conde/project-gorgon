@@ -30,11 +30,11 @@ namespace Mithril.GameState.Skills.Parsing;
 /// short-circuits the (overwhelmingly common) unrelated line before any regex
 /// runs.</para>
 ///
-/// <para>This parser is independent of Samwise's
-/// <c>GardenLogParser.GardeningXpRx</c> (<c>ProcessUpdateSkill.*type=Gardening</c>):
-/// both can match the same Gardening update line; Samwise consumes it as a
-/// gardening heartbeat while this parser folds Gardening into the full skill
-/// state. There is no coupling or ordering dependency between them.</para>
+/// <para>Samwise consumes the Gardening update via
+/// <see cref="IPlayerSkillState.SubscribeChanges"/> (#581 — was a Samwise-side
+/// <c>ProcessUpdateSkill.*type=Gardening</c> regex pre-migration). This parser
+/// owns the single canonical match; the Samwise consumer filters the
+/// channel on <c>SkillKey == "Gardening"</c>.</para>
 ///
 /// <para>Catalogued in <c>log-patterns.json</c> as
 /// <c>shared.SkillLogParser.{LoadSkillsRx,UpdateSkillRx,SkillTupleRx}</c>

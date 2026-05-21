@@ -82,10 +82,14 @@ public class GardenLogParserTests
     }
 
     [Fact]
-    public void Parses_GardeningXp()
+    public void Ignores_ProcessUpdateSkill_Gardening()
     {
+        // Post-#581 the GardeningXp signal is sourced from
+        // IPlayerSkillState.SubscribeChanges (Mithril.GameState), not from
+        // a Samwise-side regex. The parser must return null so the line
+        // isn't double-processed by the L1 driver subscription.
         var line = @"... ProcessUpdateSkill(name=Gardening, type=Gardening, xp=100)";
-        _p.TryParse(line, T).Should().BeOfType<GardeningXp>();
+        _p.TryParse(line, T).Should().BeNull();
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Windows;
 using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Skills;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
@@ -12,10 +13,11 @@ using Samwise.Parsing;
 namespace Samwise.State;
 
 /// <summary>
-/// Bridges the L1 log driver and the <see cref="IInventoryService"/> event
-/// feed into the <see cref="GardenStateMachine"/>. Post-#550 PR 3, the
-/// Player.log path subscribes through <see cref="ILogStreamDriver"/> with
-/// the archetype-B disposition from <a href="https://github.com/moumantai-gg/mithril/issues/549">#549</a>:
+/// Bridges the L1 log driver, the <see cref="IInventoryService"/> event
+/// feed, and the <see cref="IPlayerSkillState"/> change channel into the
+/// <see cref="GardenStateMachine"/>. Post-#550 PR 3, the Player.log path
+/// subscribes through <see cref="ILogStreamDriver"/> with the archetype-B
+/// disposition from <a href="https://github.com/moumantai-gg/mithril/issues/549">#549</a>:
 ///
 /// <list type="bullet">
 ///   <item><c>ReplayMode = FromSessionStart</c> — Samwise needs the full
@@ -30,11 +32,13 @@ namespace Samwise.State;
 ///   textbook persisted-state-vs-replay collision: <see cref="GardenStateService.LoadAllAsync"/>
 ///   hydrates plot state from per-character <c>samwise.json</c>, then L1
 ///   replays the entire session. Without the filter, plant /
-///   <c>UpdateDescription</c> / <c>StartInteraction</c> / <c>GardeningXp</c>
-///   events would re-apply on top of already-persisted plots, advancing
-///   stages and burning slot caps. The <c>HandlePlant</c> plot-id
+///   <c>UpdateDescription</c> / <c>StartInteraction</c> events would
+///   re-apply on top of already-persisted plots, advancing stages and
+///   burning slot caps. The <c>HandlePlant</c> plot-id
 ///   <c>ContainsKey</c> guard is partial; the high-water makes restart
-///   semantics deterministic.</item>
+///   semantics deterministic. (Post-#581 the GardeningXp signal arrives
+///   via <see cref="IPlayerSkillState"/>, not L1; the high-water still
+///   covers the Player.log payloads Samwise still owns.)</item>
 /// </list>
 ///
 /// <para><b>Inventory stream stays as-is.</b> <see cref="IInventoryService"/>
@@ -54,11 +58,23 @@ namespace Samwise.State;
 /// rate-limited <c>Warn</c> + per-subscription fault state machine (#550
 /// capabilities C + G). The <c>InventoryService</c> path keeps its own
 /// in-process error surface (it never crossed L1).</para>
+///
+/// <para><b>Gardening XP via <see cref="IPlayerSkillState.SubscribeChanges"/>.</b>
+/// The harvest-confirmation signal (per
+/// <see cref="GardenStateMachine.Apply"/>'s <c>GardeningXp</c> arm) is
+/// sourced from the shared skill-state service rather than a Samwise-side
+/// regex (#581). Same self-marshal shape as the inventory channel —
+/// <see cref="IPlayerSkillState"/>'s callback fires on the tracker's
+/// ingestion thread under its lock, not the bound ObservableCollection's
+/// thread, so we hop via <see cref="DispatchInventory"/>.</para>
 /// </summary>
 public sealed class GardenIngestionService : BackgroundService
 {
+    private const string GardeningSkillKey = "Gardening";
+
     private readonly ILogStreamDriver _driver;
     private readonly IInventoryService _inventory;
+    private readonly IPlayerSkillState _skillState;
     private readonly GardenLogParser _parser;
     private readonly GardenStateMachine _state;
     private readonly GardenStateService _stateService;
@@ -71,6 +87,7 @@ public sealed class GardenIngestionService : BackgroundService
     public GardenIngestionService(
         ILogStreamDriver driver,
         IInventoryService inventory,
+        IPlayerSkillState skillState,
         GardenLogParser parser,
         GardenStateMachine state,
         GardenStateService stateService,
@@ -82,6 +99,7 @@ public sealed class GardenIngestionService : BackgroundService
     {
         _driver = driver;
         _inventory = inventory;
+        _skillState = skillState;
         _parser = parser;
         _state = state;
         _stateService = stateService;
@@ -138,6 +156,25 @@ public sealed class GardenIngestionService : BackgroundService
         // ObservableCollection stays single-threaded.
         var subscription = _inventory.Subscribe(OnInventoryEvent);
 
+        // Gardening XP arrival is the harvest-confirmation discriminator
+        // (GardenStateMachine.HandleGardeningXp commits the staged plot
+        // transition). Source: IPlayerSkillState's granular change channel,
+        // not a raw-log regex (#581 — consumption-side rule from #578).
+        //
+        // SubscribeChanges is event-shaped (no replay), so each Gardening
+        // delta arrives exactly once — matching the today-shape of one
+        // ProcessUpdateSkill line → one GardeningXp event. SnapshotReplace
+        // is deliberately ignored: today's regex only matched
+        // ProcessUpdateSkill, not the periodic ProcessLoadSkills re-sync,
+        // so a snapshot replay must not commit a harvest.
+        //
+        // The IPlayerSkillState callback fires on the tracker's ingestion
+        // thread under its internal lock — same shape as IInventoryService.
+        // Self-marshal via DispatchInventory for the same reason: the
+        // GardenStateMachine.Apply path raises PlotChanged → bound
+        // ObservableCollection which has UI-thread affinity.
+        var skillSubscription = _skillState.SubscribeChanges(OnSkillChange);
+
         // L1 driver subscription for the Player.log payloads Samwise still owns
         // (everything except AddItem/DeleteItem, which come via IInventoryService).
         //
@@ -188,6 +225,7 @@ public sealed class GardenIngestionService : BackgroundService
         {
             logSubscription.Dispose();
             subscription.Dispose();
+            skillSubscription.Dispose();
         }
     }
 
@@ -212,6 +250,59 @@ public sealed class GardenIngestionService : BackgroundService
         // pre-L1 ingestion did — this is NOT the L1 path, so L1's
         // Marshaled context doesn't cover it.
         DispatchInventory(() => _state.Apply(ge));
+    }
+
+    /// <summary>
+    /// Bridge from <see cref="IPlayerSkillState.SubscribeChanges"/> into the
+    /// state machine. Only Gardening Delta events matter — they are the
+    /// confirmation that closes a pending harvest interaction (#581).
+    ///
+    /// <para>SnapshotReplace is deliberately ignored: today's parser only
+    /// matched <c>ProcessUpdateSkill</c>, never the periodic
+    /// <c>ProcessLoadSkills</c> re-sync, so a snapshot reconcile must not
+    /// commit a harvest. Other skills are filtered out by the
+    /// <c>SkillKey == "Gardening"</c> check.</para>
+    ///
+    /// <para>The XP value on the <see cref="SkillChange"/> is discarded — the
+    /// state machine cares only that an update fired and at what timestamp,
+    /// mirroring the prior regex path's payload-less <see cref="GardeningXp"/>
+    /// event.</para>
+    /// </summary>
+    // internal for tests (Samwise.Tests has InternalsVisibleTo); production
+    // callers go through SubscribeChanges in ExecuteAsync above.
+    internal void OnSkillChange(SkillChange change)
+    {
+        var ge = TryProjectGardeningXp(change);
+        if (ge is null) return;
+
+        _diag?.Trace("Samwise.Parse", Describe(ge));
+        // The IPlayerSkillState callback fires on the L1 ingestion thread
+        // under the tracker's internal lock — not on the UI dispatcher.
+        // Self-marshal exactly like the inventory path so PlotChanged →
+        // bound ObservableCollection stays single-threaded.
+        DispatchInventory(() => _state.Apply(ge));
+    }
+
+    /// <summary>
+    /// Pure decision: does this <see cref="SkillChange"/> count as a
+    /// gardening-XP harvest-confirmation tick? Internal for direct unit
+    /// testing — the dispatch wrapper above adds only the diagnostics
+    /// + UI-thread hop on top of this filter.
+    ///
+    /// <list type="bullet">
+    ///   <item><see cref="SkillChangeKind.Delta"/> only — today's regex
+    ///   only matched <c>ProcessUpdateSkill</c>, not the periodic
+    ///   <c>ProcessLoadSkills</c> re-sync, so a snapshot reconcile must
+    ///   not commit a harvest.</item>
+    ///   <item><see cref="SkillChange.SkillKey"/> must equal
+    ///   <c>"Gardening"</c> — every other skill's delta is unrelated.</item>
+    /// </list>
+    /// </summary>
+    internal static GardeningXp? TryProjectGardeningXp(SkillChange change)
+    {
+        if (change.Kind != SkillChangeKind.Delta) return null;
+        if (!string.Equals(change.SkillKey, GardeningSkillKey, StringComparison.Ordinal)) return null;
+        return new GardeningXp(change.Timestamp);
     }
 
     private static string Describe(GardenEvent e) => e switch

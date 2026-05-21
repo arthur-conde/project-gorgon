@@ -59,16 +59,6 @@
         { "name": "itemId", "group": 1, "type": "string" }
       ]
     },
-    "samwise.GardenLogParser.GardeningXpRx": {
-      "pattern": "ProcessUpdateSkill.*type=Gardening",
-      "source": "player",
-      "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "GardeningXpRx" },
-      "eventType": "samwise.GardeningXp",
-      "kind": "marker",
-      "notes": "IsMatch-only; produces a payload-less GardeningXp event.",
-      "fields": []
-    },
     "samwise.GardenLogParser.ScreenTextErrorRx": {
       "pattern": "ProcessScreenText.*ErrorMessage",
       "source": "player",
@@ -332,7 +322,7 @@
       "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "UpdateSkillRx" },
       "eventType": "shared.SkillProgressUpdate",
       "kind": "marker",
-      "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx, the XP gained by XpGainRx. Independent of samwise.GardenLogParser.GardeningXpRx — both may match a Gardening update; no ordering dependency.",
+      "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx, the XP gained by XpGainRx. Samwise consumes the Gardening delta via IPlayerSkillState.SubscribeChanges (#581) rather than re-matching this line.",
       "fields": []
     },
     "shared.SkillLogParser.XpGainRx": {
