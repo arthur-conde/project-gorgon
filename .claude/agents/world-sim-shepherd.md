@@ -35,6 +35,7 @@ Before starting the loop:
 state = {
   iterations: 0,
   last_head_sha: gh pr view headRefOid,
+  last_iteration_at: now (real wall-clock; only used for the human-comment guard),
   last_review: null,
 }
 
@@ -43,14 +44,17 @@ loop:
 
   # Terminal-state short-circuits
   if pr_state.state == "MERGED":
-    return verdict("ready-to-merge", reason: "already merged")
+    return verdict("ready-to-merge", reason: null)
   if pr_state.state == "CLOSED":
-    return verdict("needs-human", reason: "PR closed without merge")
+    return verdict("needs-human", reason: "closed_without_merge")
   if pr_state.mergeable == "CONFLICTING":
-    return verdict("conflict", reason: "merge conflict against base")
+    return verdict("conflict", reason: "merge_conflict")
 
-  # Human-comment guard — do not bulldoze human input
-  if any review or comment newer than state.last_head_sha by a non-bot account:
+  # Human-comment guard — do not bulldoze human input.
+  # Compare against state.last_iteration_at (initialized to "now" at loop entry,
+  # updated at the top of each iteration). The shepherd's own comments are bot-
+  # authored and excluded by the non-bot filter.
+  if any review or comment with created_at > state.last_iteration_at by a non-bot account:
     return verdict("needs-human", reason: "human_review")
 
   # Run reviewers in parallel (single message, two Agent calls)
@@ -94,6 +98,7 @@ loop:
     return verdict("needs-human", reason: "worker_no_progress")
 
   state.last_head_sha = new_head
+  state.last_iteration_at = now
   # loop iterates
 ```
 
