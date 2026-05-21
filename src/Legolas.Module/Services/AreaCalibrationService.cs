@@ -37,16 +37,12 @@ public interface IAreaCalibrationService
     event EventHandler? Changed;
 
     /// <summary>
-    /// Handle the chat banner. Resolves the friendly name to an internal area
-    /// key; if a calibration is already persisted for it, applies it to the
-    /// projector immediately so the first survey/treasure projects correctly.
-    /// </summary>
-    void OnAreaEntered(string areaFriendlyName);
-
-    /// <summary>
-    /// Manually set the current area by internal key (the area-picker path).
-    /// Same effect as <see cref="OnAreaEntered"/> but bypasses friendly-name
-    /// resolution — used when the chat banner was missed.
+    /// Set the current area by internal key. The Player.log-driven
+    /// <c>PlayerLogIngestionService.ApplyAreaIfChanged</c> bridge calls this
+    /// whenever <see cref="Mithril.GameState.Areas.PlayerAreaTracker.CurrentArea"/>
+    /// changes (#605 — the prior chat <c>Entering Area:</c> banner path is gone;
+    /// <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/> is the
+    /// authoritative source). Also used by the manual area-picker UI.
     /// </summary>
     void SelectArea(string areaKey);
 
@@ -81,12 +77,19 @@ public interface IAreaCalibrationService
 }
 
 /// <summary>
-/// Owns the per-area calibration lifecycle: chat-banner area detection &#8594;
-/// internal-key resolution &#8594; apply persisted <see cref="AreaCalibration"/> on
-/// entry, and the solve/persist path the calibration window drives. Reference
-/// points come from <see cref="IReferenceDataService"/> (landmarks + NPCs with a
+/// Owns the per-area calibration lifecycle: area-key handoff (from the
+/// <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/>-driven
+/// <c>PlayerLogIngestionService.ApplyAreaIfChanged</c> bridge or the manual
+/// area-picker UI) &#8594; apply persisted <see cref="AreaCalibration"/> on entry,
+/// and the solve/persist path the calibration window drives. Reference points
+/// come from <see cref="IReferenceDataService"/> (landmarks + NPCs with a
 /// parseable <c>Pos</c>), which is the same engine-unit world frame the game
 /// positions the player in (verified 2026-05-18).
+///
+/// <para>The chat-log <c>Entering Area:</c> banner path was retired in #605 —
+/// per #531, <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/> already
+/// exposes the same signal authoritatively from Player.log's
+/// <c>LOADING LEVEL</c> line.</para>
 /// </summary>
 public sealed class AreaCalibrationService : IAreaCalibrationService
 {
@@ -127,14 +130,6 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             .ToList();
 
     public event EventHandler? Changed;
-
-    public void OnAreaEntered(string areaFriendlyName)
-    {
-        if (string.IsNullOrWhiteSpace(areaFriendlyName)) return;
-        // Even if the key can't be resolved (unknown / missing reference data),
-        // record the raw friendly name so the UI can show it.
-        SetArea(ResolveAreaKey(areaFriendlyName), areaFriendlyName.Trim());
-    }
 
     public void SelectArea(string areaKey)
     {
@@ -201,27 +196,6 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             _saver.Touch();
             Changed?.Invoke(this, EventArgs.Empty);
         }
-    }
-
-    /// <summary>
-    /// Friendly name &#8594; internal area key. Matches <see cref="AreaEntry.FriendlyName"/>
-    /// first, then <see cref="AreaEntry.ShortFriendlyName"/>, case-insensitively.
-    /// </summary>
-    private string? ResolveAreaKey(string friendlyName)
-    {
-        var name = friendlyName.Trim();
-        foreach (var area in _refData.Areas.Values)
-        {
-            if (string.Equals(area.FriendlyName, name, StringComparison.OrdinalIgnoreCase))
-                return area.Key;
-        }
-        foreach (var area in _refData.Areas.Values)
-        {
-            if (!string.IsNullOrEmpty(area.ShortFriendlyName)
-                && string.Equals(area.ShortFriendlyName, name, StringComparison.OrdinalIgnoreCase))
-                return area.Key;
-        }
-        return null;
     }
 
     private IReadOnlyList<CalibrationReference> BuildReferences(string areaKey)

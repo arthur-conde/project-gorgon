@@ -346,7 +346,6 @@ public class PinCalibrationCoordinatorTests
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed;
-        public void OnAreaEntered(string areaFriendlyName) { }
         public void SelectArea(string areaKey) { }
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }

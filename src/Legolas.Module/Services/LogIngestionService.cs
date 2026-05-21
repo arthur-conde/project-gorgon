@@ -13,12 +13,12 @@ namespace Legolas.Services;
 /// Background service that consumes chat-log lines from <see cref="IChatLogStream"/>,
 /// parses them via <see cref="IChatLogParser"/>, and pumps resulting events into the
 /// session: SurveyDetected adds slots, ItemCollected marks the matching slot
-/// collected, AreaEntered feeds the calibration service as a fallback (the
-/// Player.log <c>LOADING LEVEL</c> banner is the primary source). The Motherlode
-/// distance pairing was migrated to Player.log <c>ProcessScreenText</c> in #604,
-/// so the chat distance subscription previously hosted here is gone — the
-/// coordinator now pairs request + response from <see cref="PlayerLogIngestionService"/>
-/// alone.
+/// collected. The Motherlode distance pairing was migrated to Player.log
+/// <c>ProcessScreenText</c> in #604, and the redundant chat <c>Entering Area:</c>
+/// fallback was retired in #605 (<see cref="Mithril.GameState.Areas.PlayerAreaTracker"/>
+/// already exposes the area key authoritatively from Player.log's
+/// <c>LOADING LEVEL</c> line, and <c>PlayerLogIngestionService.ApplyAreaIfChanged</c>
+/// drives <see cref="IAreaCalibrationService.SelectArea"/> on every change).
 /// </summary>
 public sealed class LogIngestionService : BackgroundService
 {
@@ -110,9 +110,6 @@ public sealed class LogIngestionService : BackgroundService
                 case ItemCollected ic:
                     HandleItemCollected(ic);
                     break;
-                case AreaEntered ae:
-                    _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);
-                    break;
             }
         });
     }
@@ -123,7 +120,6 @@ public sealed class LogIngestionService : BackgroundService
         ItemAddedToInventory ia => $"Added: {ia.Name} x{ia.Count}",
         ItemCollected ic when ic.SpeedBonusItem is not null => $"Collected: {ic.Name} (+ {ic.SpeedBonusItem} speed bonus)",
         ItemCollected ic => $"Collected: {ic.Name}",
-        AreaEntered ae => $"Area: {ae.AreaFriendlyName}",
         UnknownLine ul => $"Unknown: {ul.RawLine}",
         _ => evt.GetType().Name,
     };

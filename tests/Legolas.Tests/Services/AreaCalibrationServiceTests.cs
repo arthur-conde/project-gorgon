@@ -24,34 +24,18 @@ public class AreaCalibrationServiceTests
     }
 
     [Fact]
-    public void Resolves_area_key_by_friendly_name_then_short_name()
+    public void Unknown_area_key_records_key_as_friendly_name_with_no_refs()
     {
-        var refData = new FakeRefData
-        {
-            AreasByKey =
-            {
-                ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", ""),
-                ["AreaSerbule2"] = new AreaEntry("AreaSerbule2", "Serbule Hills", "Beneath Serbule"),
-            },
-        };
-        var (svc, _, _) = Build(refData);
-
-        svc.OnAreaEntered("Eltibule");
-        svc.CurrentAreaKey.Should().Be("AreaEltibule");
-
-        svc.OnAreaEntered("Beneath Serbule"); // ShortFriendlyName match
-        svc.CurrentAreaKey.Should().Be("AreaSerbule2");
-    }
-
-    [Fact]
-    public void Unknown_area_records_friendly_name_but_null_key()
-    {
+        // SelectArea with a key that isn't in the gazetteer falls back to using
+        // the key as the friendly name verbatim — the area-picker bypass path
+        // (PlayerAreaTracker keys are always in-game-real, but a test/dev key
+        // shouldn't crash the consumer).
         var (svc, _, _) = Build(new FakeRefData());
 
-        svc.OnAreaEntered("Nowheresville");
+        svc.SelectArea("AreaNowheresville");
 
-        svc.CurrentAreaKey.Should().BeNull();
-        svc.CurrentAreaFriendlyName.Should().Be("Nowheresville");
+        svc.CurrentAreaKey.Should().Be("AreaNowheresville");
+        svc.CurrentAreaFriendlyName.Should().Be("AreaNowheresville");
         svc.CurrentAreaReferences.Should().BeEmpty();
         svc.IsCurrentAreaCalibrated.Should().BeFalse();
     }
@@ -67,7 +51,9 @@ public class AreaCalibrationServiceTests
         var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 4, 0.9);
         settings.AreaCalibrations["AreaEltibule"] = persisted;
 
-        svc.OnAreaEntered("Eltibule");
+        // PlayerLogIngestionService.ApplyAreaIfChanged drives SelectArea with
+        // the internal area key from PlayerAreaTracker — exercise that path.
+        svc.SelectArea("AreaEltibule");
 
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
         svc.CurrentCalibration.Should().Be(persisted);
@@ -97,7 +83,7 @@ public class AreaCalibrationServiceTests
         };
         var (svc, proj, _) = Build(refData);
 
-        svc.OnAreaEntered("Eltibule");
+        svc.SelectArea("AreaEltibule");
 
         proj.LastApplied.Should().BeNull(); // no persisted calibration → projector untouched
         svc.CurrentAreaReferences.Select(r => r.Name)
@@ -114,7 +100,7 @@ public class AreaCalibrationServiceTests
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
         var (svc, proj, settings) = Build(refData);
-        svc.OnAreaEntered("Eltibule");
+        svc.SelectArea("AreaEltibule");
 
         var changed = 0;
         svc.Changed += (_, _) => changed++;
@@ -154,7 +140,7 @@ public class AreaCalibrationServiceTests
             (new WorldCoord(1, 0, 1), new PixelPoint(1, 1)),
         }).Should().BeNull();
 
-        svc.OnAreaEntered("Eltibule");
+        svc.SelectArea("AreaEltibule");
         svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
         {
             (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
@@ -224,7 +210,7 @@ public class AreaCalibrationServiceTests
         };
         var (svc, _, settings) = Build(refData);
         settings.AreaCalibrations["AreaEltibule"] = new AreaCalibration(1, 0, 0, 0, 2, 0);
-        svc.OnAreaEntered("Eltibule");
+        svc.SelectArea("AreaEltibule");
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
 
         var changed = 0;

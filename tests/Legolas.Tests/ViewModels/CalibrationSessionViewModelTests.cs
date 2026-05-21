@@ -754,8 +754,6 @@ public class CalibrationSessionViewModelTests
         public IReadOnlyList<AreaEntry> AllAreas => Areas;
         public event EventHandler? Changed;
 
-        public void OnAreaEntered(string areaFriendlyName) => Changed?.Invoke(this, EventArgs.Empty);
-
         public void SelectArea(string areaKey)
         {
             SelectedAreaKey = areaKey;

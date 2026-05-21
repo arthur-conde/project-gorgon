@@ -82,17 +82,11 @@ public sealed record MotherlodeUseDetected(
     DateTime Timestamp,
     string? MapName = null) : GameEvent(Timestamp);
 
-/// <summary>
-/// The chat-log area banner (<c>"******* Entering Area: Eltibule"</c>). Carries
-/// the area's <em>friendly</em> name; the calibration service resolves it to the
-/// internal area key. A <b>complementary</b> signal: Player.log <i>does</i> have
-/// an area marker (<c>LOADING LEVEL Area&lt;Name&gt;</c>, parsed by the shared
-/// <c>PlayerAreaTracker</c> — #454/#456), which is the authoritative key source;
-/// this chat banner is the fallback when the Player.log seed missed.
-/// </summary>
-public sealed record AreaEntered(
-    DateTime Timestamp,
-    string AreaFriendlyName) : GameEvent(Timestamp);
+// The chat-log area banner ("******* Entering Area: <FriendlyName>") was
+// retired in #605. PlayerAreaTracker (Mithril.GameState.Areas) is the
+// authoritative area-key source, fed by Player.log's LOADING LEVEL line, and
+// PlayerLogIngestionService.ApplyAreaIfChanged drives the calibration service
+// directly. See #531 for the redundancy analysis.
 
 public sealed record UnknownLine(
     DateTime Timestamp,
