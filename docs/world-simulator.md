@@ -123,12 +123,31 @@ chat stream       → │ Merger ──→ Folders ──→ Composers ──→
 namespace Mithril.WorldSim;
 
 /// <summary>
+/// Non-generic frame base. Lets a composer or producer return heterogeneous
+/// frames (different payload types) from a single call without resorting to
+/// <c>Frame&lt;object&gt;</c>-with-boxing. Concrete <see cref="Frame{T}"/>
+/// implements this; consumers downcast / pattern-match on the concrete type
+/// (typically inside <see cref="IWorldEventBus"/>) to route to typed
+/// subscribers.
+/// </summary>
+public interface IFrame
+{
+    DateTimeOffset Timestamp { get; }
+    object Payload { get; }
+    Type PayloadType { get; }
+}
+
+/// <summary>
 /// One unit of simulated input. Producers stamp every frame with the event time
 /// the frame represents (NOT the wall-clock when the producer fired).
 /// </summary>
 public readonly record struct Frame<TPayload>(
     DateTimeOffset Timestamp,
-    TPayload Payload);
+    TPayload Payload) : IFrame
+{
+    object IFrame.Payload => Payload!;
+    Type IFrame.PayloadType => typeof(TPayload);
+}
 ```
 
 ### `IWorldClock`
@@ -257,8 +276,17 @@ public interface IComposer
     /// state; may emit zero or more domain frames if the composer's pattern is
     /// satisfied. Emitted frames carry timestamps from the event(s) they correlated,
     /// not from <paramref name="clock"/>.<see cref="IWorldClock.Now"/>.
+    ///
+    /// <para>Return type is <see cref="IFrame"/> (non-generic) rather than
+    /// <c>Frame&lt;object&gt;</c> so a composer can emit heterogeneous domain
+    /// frame types in a single call without boxing the typed payload at the
+    /// composer boundary. A composer that emits a <c>GiftObservation</c>
+    /// returns <c>new Frame&lt;GiftObservation&gt;(eventTs, observation)</c>
+    /// upcast to <see cref="IFrame"/>; the bus's typed
+    /// <see cref="IWorldEventBus.Subscribe{T}"/> pattern-matches on the concrete
+    /// <see cref="Frame{T}"/> to route to subscribers of that payload type.</para>
     /// </summary>
-    IReadOnlyList<Frame<object>> Observe(object eventPayload, IWorldClock clock);
+    IReadOnlyList<IFrame> Observe(object eventPayload, IWorldClock clock);
 }
 ```
 
