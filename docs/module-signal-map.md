@@ -4,10 +4,10 @@ Snapshot of every component's signal topology — what flows in, what closed min
 
 ## Why this exists
 
-This is the foundation for the [world-simulator design](world-simulator.md). Before the sim's dispatch graph can be drawn, the dependency topology of state holders has to be visible. It's the read-side companion to [`gamestate-services-gap-audit.md`](gamestate-services-gap-audit.md), which catalogues *missing* GameState services — this doc inventories the ones that exist and the modules that consume them.
+This is the foundation for the [world-simulator design](world-simulator.md). Before the worlds' dispatch graphs can be drawn, the dependency topology of state holders has to be visible. It's the read-side companion to [`gamestate-services-gap-audit.md`](gamestate-services-gap-audit.md), which catalogues *missing* GameState services — this doc inventories the ones that exist and the modules that consume them.
 
 Companion docs:
-- [`world-simulator.md`](world-simulator.md) — the converged architecture this topology feeds into. Three layers (sources → world sims → views → modules); two independent sims (Player.log + chat) with no inter-sim channel; cross-source composition lives in views above both sims.
+- [`world-simulator.md`](world-simulator.md) — the converged architecture this topology feeds into. Three layers (sources → worlds → views → modules); two independent worlds (PlayerWorld + ChatWorld) with sealed output boundaries; cross-source composition lives in views above both worlds.
 - [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — line-by-line audit of every state-holder against the architecture. 15 components; 5 need migration; 3 sleeper blockers. Where to start when planning a concrete migration step.
 
 **Update this doc when:**
@@ -21,7 +21,7 @@ Companion docs:
 - **Inputs** — signals flowing in. Grouped: log pipes / GameState services / reference data / settings / user input / other.
 - **State machines** — closed mini-FSMs the component owns. Name + one-line description of what it tracks. Transition tables are intentionally omitted; the source is canonical, and [`cross-source-correlation.md`](cross-source-correlation.md) covers cross-source patterns.
 - **Outputs** — what flows out. Grouped: GameState-style `Subscribe` / `Current` surfaces / events / persisted JSON / UI bindings.
-- **⚠️ markers** flag topology facts worth knowing (cross-FSM peeks, wall-clock-gated transitions, second event sources). Not value judgements — just things a sim-refactor designer needs to see.
+- **⚠️ markers** flag topology facts worth knowing (cross-FSM peeks, wall-clock-gated transitions, second event sources). Not value judgements — just things a world-sim refactor designer needs to see.
 
 A component classified as "no state machines" still appears if it consumes or exposes signals — pure projectors and reactors are first-class topology nodes.
 
@@ -59,7 +59,7 @@ Two streams (Player.log and chat) each **self-scope** via their own intra-source
 | `IInventoryService` | character |
 | `IQuestService` | character |
 
-The `Player*` naming on the world-scope services (`IPlayerWeatherTracker`, `IPlayerCelestialStateService`, parts of `IPlayerAreaTracker`) is misleading under this partition — they're actually world-scope readings of "what the active character can observe of the world." Rename target if/when the clocked-sim refactor lands; not worth churning ahead of that.
+The `Player*` naming on the world-scope services (`IPlayerWeatherTracker`, `IPlayerCelestialStateService`, parts of `IPlayerAreaTracker`) is misleading under this partition — they're actually world-scope readings of "what the active character can observe of the world." Rename target if/when the world-sim refactor lands; not worth churning ahead of that.
 
 ---
 
@@ -80,7 +80,7 @@ The `Player*` naming on the world-scope services (`IPlayerWeatherTracker`, `IPla
 - `FileUpdated` event per data file (`"items"`, `"recipes"`, `"npcs"`, …) — fires when a fetch (CDN or fallback) replaces the in-memory dictionary
 - Icon URL builder: `https://cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`
 
-Foundational — every module that displays an item, recipe, NPC, ability, or skill consumes this. The `FileUpdated` event is a *re-projection trigger*, not a sim frame: modules re-render derived state on refresh, but the change is orthogonal to the Player.log frame stream (and deliberately so — see [the future sim-design notebook] for the "ref-data updates are not sim inputs" decision).
+Foundational — every module that displays an item, recipe, NPC, ability, or skill consumes this. The `FileUpdated` event is a *re-projection trigger*, not a world frame: modules re-render derived state on refresh, but the change is orthogonal to the Player.log frame stream (and deliberately so — see [`world-simulator.md`](world-simulator.md) for the "ref-data updates are not world inputs" decision).
 
 ---
 
@@ -351,7 +351,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - Community export: sanitized rate aggregates only (no per-observation timestamps / NPC favor snapshots)
 - UI: favor dashboard, gift scanner, observations editor, calibration tab
 
-⚠️ The `_inventory.TryResolve` peek is the canonical Rule-1 violation discussed in the sim refactor design notes — works in live play (Add lands long before Delete), races on replay-from-session-start where both consumers drain the backlog in parallel.
+⚠️ The `_inventory.TryResolve` peek is the canonical Rule-1 violation discussed in the world-simulator design notes — works in live play (Add lands long before Delete), races on replay-from-session-start where both consumers drain the backlog in parallel.
 
 ---
 
@@ -410,7 +410,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - Share-card export
 - Persisted: per-character JSON (calibration, route plans)
 
-⚠️ Once the chat retirement lands (#531 comment), Legolas owns zero chat dependencies; the module is fully Player.log-sim-resident. The Motherlode SM stops being a cross-source consumer entirely. [`cross-source-correlation.md`](cross-source-correlation.md) loses its in-repo Tier-2 reference implementation as part of this — the pattern stays documented for future cross-source consumers, but the live example evaporates.
+⚠️ Once the chat retirement lands (#531 comment), Legolas owns zero chat dependencies; the module is PlayerWorld-resident. The Motherlode SM stops being a cross-source consumer entirely. [`cross-source-correlation.md`](cross-source-correlation.md) loses its in-repo Tier-2 reference implementation as part of this — the pattern stays documented for future cross-source consumers, but the live example evaporates.
 
 ---
 
@@ -526,12 +526,12 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 A handful of patterns are worth seeing all at once after the per-component scan. These reflect the **current state** of the codebase — the [world-simulator design](world-simulator.md) migration plan addresses each one.
 
 - **Cross-FSM peeks live in three places.** `Arwen.CalibrationService.OnItemDeleted` → `IInventoryService.TryResolve`. `Legolas.PlayerLogIngestionService` → `PlayerAreaTracker.CurrentArea` + `AreaCalibrationService.CurrentCalibration` + `SurveyFlowController.CurrentState`. `Samwise.AlarmService` → `GardenStateMachine.IsLikelyGarbageCollected`. None inside `Mithril.GameState` itself — the foundation layer is peek-free post-#556 / #587. Under the clocked-sim model these peeks become legal (declared dispatch order makes them coherent); the cross-source one (Arwen → Inventory) moves through the view layer instead.
-- **Cross-source services span both Player.log and chat in two places today.** `IInventoryService` (foundation; fuses Player.log `ProcessAddItem` with chat `[Status] added` via Tier-1 `PendingCorrelator`) and `SarumanCodebookService` (module-level; mutated from both `SarumanDiscoveryIngestionService` and `SarumanChatIngestionService`). Both **must split** per the [world-simulator rule](world-simulator.md) — Player.log half stays in Player.log sim, chat half stays in chat sim, an `IInventoryView` / `IWordOfPowerView` composes at the view layer.
-- **Chat-input surface today vs after retirement.** *Today:* three correlator-shaped consumers — `IInventoryService` (Tier-1 with Player.log), `Legolas.LogIngestionService` (Tier-1 `added`↔`collected!` plus Tier-2 motherlode-distance forwarder), `Saruman.SarumanChatIngestionService` (Tier-1-without-pairing keyed by word code). *After [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851) retirement + the two splits land:* exactly **two state machines in the chat world sim** (`ChatInventoryStateMachine` + `ChatWordOfPowerStateMachine`), zero direct chat consumers anywhere else. Legolas drops its chat tail entirely; every chat verb has a same-source Player.log equivalent.
+- **Cross-source services span both Player.log and chat in two places today.** `IInventoryService` (foundation; fuses Player.log `ProcessAddItem` with chat `[Status] added` via Tier-1 `PendingCorrelator`) and `SarumanCodebookService` (module-level; mutated from both `SarumanDiscoveryIngestionService` and `SarumanChatIngestionService`). Both **must split** per the [world-simulator rule](world-simulator.md) — Player.log half stays in PlayerWorld, chat half stays in ChatWorld, an `IInventoryView` / `IWordOfPowerView` composes at the view layer.
+- **Chat-input surface today vs after retirement.** *Today:* three correlator-shaped consumers — `IInventoryService` (Tier-1 with Player.log), `Legolas.LogIngestionService` (Tier-1 `added`↔`collected!` plus Tier-2 motherlode-distance forwarder), `Saruman.SarumanChatIngestionService` (Tier-1-without-pairing keyed by word code). *After [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851) retirement + the two splits land:* exactly **two state machines in ChatWorld** (`ChatInventoryStateMachine` + `ChatWordOfPowerStateMachine`), zero direct chat consumers anywhere else. Legolas drops its chat tail entirely; every chat verb has a same-source Player.log equivalent.
 - **Both streams self-scope independently.** Player.log identifies its `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected, url=…` + `LoginBanner` — the latter two planned). Chat identifies its `(Server, Character)` from its own `**** Logged In As X. Server Y. Timezone Offset Z.` banner. No cross-source coupling for scope determination. Cross-source agreement (both banners' character names match) is verification, not derivation.
-- **View-layer correlators must scope-check.** Once the splits land and cross-source correlation lives in the view layer, every cross-sim join must assert both sides are in the same `(Server, Character)` before firing — otherwise it's pairing across a session boundary. In single-server play this is implicitly safe; under multi-server use it's a latent correctness gap that needs the scope check to land alongside the connect-event / catalog parsers.
-- **Wall-clock-gated transitions live in five places.** `IInventoryService` correlator TTL (5s, the only foundation-layer wall-clock gate); `Samwise.GardenStateMachine.PruneWithered` + `AlarmService.IsLikelyGarbageCollected`; `Gandalf.TimerProgressService.CheckExpirations` + `TimerExpirationScheduler` + `ShiftAlarmService`; `Legolas.MotherlodeMeasurementCoordinator` (event-time but compared against a fresh foreign-FSM timestamp, which is wall-clock-shaped). Everything else uses event-time arithmetic on payload timestamps. **Under the world-sim**, all of these migrate from `_time.GetUtcNow()` to `IWorldClock.Now` and become replay-deterministic — a mechanical search-replace.
-- **Second event sources (non-log inputs that mutate state).** `IInventoryService` `FileSystemWatcher` for export-reconcile; `IQuestService` `PerCharacterView.CurrentChanged` for character-switch reload (collapses under per-character sim scope — see entry); `Gandalf` three wakeup schedulers; user-input commands across every UI-bearing module. Under the world-sim these become **timestamped synthetic-frame producers** for the sim merger (filesystem reconcile, wake-at-T) or move out of sim scope entirely (user input mutates adjacent state directly).
+- **View-layer correlators must scope-check.** Once the splits land and cross-source correlation lives in the view layer, every cross-world join must assert both sides are in the same `(Server, Character)` before firing — otherwise it's pairing across a session boundary. In single-server play this is implicitly safe; under multi-server use it's a latent correctness gap that needs the scope check to land alongside the connect-event / catalog parsers.
+- **Wall-clock-gated transitions live in five places.** `IInventoryService` correlator TTL (5s, the only foundation-layer wall-clock gate); `Samwise.GardenStateMachine.PruneWithered` + `AlarmService.IsLikelyGarbageCollected`; `Gandalf.TimerProgressService.CheckExpirations` + `TimerExpirationScheduler` + `ShiftAlarmService`; `Legolas.MotherlodeMeasurementCoordinator` (event-time but compared against a fresh foreign-FSM timestamp, which is wall-clock-shaped). Everything else uses event-time arithmetic on payload timestamps. **Under the worlds**, all of these migrate from `_time.GetUtcNow()` to `IWorldClock.Now` and become replay-deterministic — a mechanical search-replace.
+- **Second event sources (non-log inputs that mutate state).** `IInventoryService` `FileSystemWatcher` for export-reconcile; `IQuestService` `PerCharacterView.CurrentChanged` for character-switch reload (collapses under per-character world scope — see entry); `Gandalf` three wakeup schedulers; user-input commands across every UI-bearing module. Under the worlds these become **timestamped producer-emitted frames** for a world's merger (filesystem reconcile, wake-at-T) or move out of world scope entirely (user input mutates adjacent state directly).
 - **Module → GameState dependency graph is shallow.** No module depends on more than four GameState services. The deepest consumer (`Legolas.MotherlodeMeasurementCoordinator` — 4 services) is also the only Tier-2 SM. Arwen depends on 2 (`IInventoryService`, `IGameSessionService`). Samwise on 1 (`IInventoryService`). Saruman on 0 GameState services (consumes reference + per-character view only, despite being a cross-source consumer). Pippin / Bilbo / Silmarillion / Celebrimbor / Elrond on 0.
 - **Five of ten modules are pure projectors** (Pippin, Elrond, Bilbo, Silmarillion, Celebrimbor) — no log subscriptions, no GameState subscriptions for state mutation. They consume reference data + persisted JSON + user input only.
 
@@ -556,7 +556,7 @@ This is **not a roadmap** — prioritisation (target version, effort, status) is
 - `All : IReadOnlyCollection<ServerEntry>`
 - Could alternatively live as a regular `Mithril.Reference` entry (the data shape fits) — design choice deferred to implementation
 
-Notes: reference-scope (immutable per Mithril attach). The catalog itself is the join target for connection events; not a sim-state-mutating producer.
+Notes: reference-scope (immutable per Mithril attach). The catalog itself is the join target for connection events; not a world-state-mutating producer.
 
 ### `ConnectionEventParser` + `IGameSessionService.Server` field (planned)
 
@@ -586,7 +586,7 @@ Notes: world-scope. Same-source — no chat dependency. The chat-side banner (`L
 - `Current : PlayerAttributeSnapshot`
 - `SubscribeChanges(Action<AttributeChange>)`
 
-Notes: the textbook case for declared dispatch order under the clocked sim — Effects applies at frame N → PlayerAttribute reads coherent frame-N effect state. Also the first place dispatch-graph load characteristics become observable, since attribute updates fire on every combat tick.
+Notes: the textbook case for declared dispatch order under the world model — Effects applies at frame N → PlayerAttribute reads coherent frame-N effect state. Also the first place dispatch-graph load characteristics become observable, since attribute updates fire on every combat tick.
 
 ### `IPlayerDeathStateService` (planned)
 
@@ -621,7 +621,7 @@ Notes: min/max consumers want gold-over-time analysis, so the ledger is a first-
 
 ### Storage-export as synthetic-frame producer (planned)
 
-Today `IInventoryService` consumes character export JSON via `FileSystemWatcher` and synthesizes `StackChanged` events outside any frame stream. When a downstream consumer needs sim-frame coherence between storage state and inventory state (Bilbo evolving past "read once at module init"), the storage report becomes a **timestamped synthetic-frame producer**: file write → frame stamped with the export's emitted timestamp → injected into the sim's merge queue alongside Player.log frames and chat-correlator completions.
+Today `IInventoryService` consumes character export JSON via `FileSystemWatcher` and synthesizes `StackChanged` events outside any frame stream. When a downstream consumer needs world-frame coherence between storage state and inventory state (Bilbo evolving past "read once at module init"), the storage report becomes a **timestamped producer**: file write → frame stamped with the export's emitted timestamp → injected into PlayerWorld's merger alongside Player.log frames.
 
 **Inputs**
 - Filesystem: character export JSON `FileSystemWatcher` (unchanged)
@@ -630,6 +630,6 @@ Today `IInventoryService` consumes character export JSON via `FileSystemWatcher`
 - None new — produces frames consumed by `IInventoryService`'s existing reconcile logic
 
 **Outputs**
-- Synthetic frames into the sim's merge queue (timestamp from the export payload)
+- Producer-emitted frames into the world's merger queue (timestamp from the export payload)
 
 Notes: non-destructive — fills an `InternalName → stack size` map only. No urgency until a Bilbo consumer needs the coherence guarantee; today's debounced reconcile is fine in isolation.
