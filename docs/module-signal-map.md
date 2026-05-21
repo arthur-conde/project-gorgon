@@ -475,16 +475,16 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 **Charter:** storage / inventory aggregation across characters; recipe craftability projector ([`module-charters.md`](module-charters.md)).
 
 **Inputs**
-- Filesystem: character storage report JSON (read at module init / on file change)
+- Filesystem: character storage report JSON (read at module init / on file change) — owned today by `StorageReportLoader` inside Bilbo; **migrates to `Mithril.GameReports`** (shared service in foundation layer) per the [world-simulator design](world-simulator.md)'s "Three categories of data" section. Vault contents come from here — they're the canonical example of data only available in reports, not in worlds.
 - Reference: `IReferenceDataService` (recipes, items)
 - User input: craft selection, filter / search
 
 **State machines**
-- None — pure projector. `StorageReportLoader` reads JSON; `CraftableRecipeCalculator` computes craftability from inventory + recipes.
+- None — pure projector. Reads from `Mithril.GameReports` (post-migration; today: `StorageReportLoader`); `CraftableRecipeCalculator` computes craftability from inventory + recipes.
 
 **Outputs**
 - Storage grid UI, craftable-recipe UI
-- Character snapshot export to Elrond
+- (Post-migration: character snapshot is in `Mithril.GameReports`, consumed by Elrond directly from there — not exported by Bilbo.)
 
 ---
 

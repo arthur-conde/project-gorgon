@@ -23,6 +23,11 @@ Design rationale for the three-layer world-simulator architecture: source stream
   - `CalendarTimeAdvanced(Now, Mode)` — fires on second-resolution world-clock advancement
   - `TimeOfDayShift(from, to, at, Mode)` — composer-derived; PG in-game shift boundaries
   - `ModeChanged(from, to, at)` — fires on `Replaying ↔ Live` transition
+- **Three categories of data** (see Three Categories section):
+  - **World-derived state** — events from worlds (PlayerWorld, ChatWorld) and views
+  - **External shared data sources** — `Mithril.Reference`, `Mithril.GameReports`, `ICommunityCalibrationService`, `IServerCatalogService` (planned)
+  - **Module-owned adjacent state** — user-driven, module-internal, persisted alongside the module
+- **Per-session scope tier** — `(Server, Character)` derived from `IGameSessionService`. The unit of per-character-per-server partitioning. Used by both world-character-state and module-owned state. Replaces the legacy "per-character" framing in `PerCharacterView<T>` (which becomes per-session-keyed).
 
 ---
 
@@ -494,6 +499,42 @@ The view layer scope-checks: an inventory view joining a Player.log `ProcessAddI
 
 ---
 
+## Three categories of data the architecture admits
+
+A consumer (module, view, or another component) needs data. There are exactly three places that data can come from:
+
+1. **World-derived state** — observed events from Player.log or chat, transformed through the folder/composer pipeline of `PlayerWorld` or `ChatWorld`. Live, continuous, event-driven, replay-deterministic. Consumed by subscribing to world buses (or to views above them).
+
+2. **External shared data sources** — data the world doesn't produce, that multiple consumers might want. Discrete records, externally sourced (filesystem / CDN / startup log parsing), point-in-time or version-stamped:
+    - `Mithril.Reference` — CDN-fetched PG reference data (items, recipes, skills, NPCs, …)
+    - `Mithril.GameReports` — PG-exported character snapshot reports (storage / vault / skill / recipe / quest snapshots; PG's `/exportchar` output). Per-character, per-export-time. **Different semantic from `Mithril.GameState`**: GameState describes the world *as the player observes it through events*; GameReports describes *PG's authoritative snapshot at the moment of export*. They can briefly disagree, and that's fine — the world is canonical for live; the report is canonical for "what PG thinks now." Reports also contain data the world *can't see* — most notably vault contents.
+    - `ICommunityCalibrationService` — CDN-fetched community calibration data (Arwen gift rates, Legolas projector tweaks).
+    - `IServerCatalogService` (planned) — Player.log-derived but reference-shaped (parse once at attach, immutable for the session).
+
+3. **Module-owned adjacent state** — user-driven, module-internal, persisted alongside the module:
+    - Gandalf timer definitions, alarm config
+    - Saruman codebook overrides (manual mark-as-spent/known)
+    - Samwise alarm snoozes, dismissals
+    - Per-module settings (`ArwenSettings`, `LegolasSettings`, etc.)
+    - One-off documents (Celebrimbor leveling plans)
+
+### Composition
+
+**Views can compose across all three categories.** A "complete character access" view (live bag from worlds + vault from GameReports + reference data for item names) reads from PlayerWorld bus, ChatWorld bus, `Mithril.GameReports`, AND `Mithril.Reference`. The view is the universal composition point. Principle 4 ("cross-source composition lives in views above the worlds") generalizes — views compose across whatever sources need composing, not just the two worlds.
+
+### Boundaries
+
+- **Module state is owned by its module.** Cross-module reads go through the module's service interface, not directly into its JSON store.
+- **External shared data sources live in foundation-layer assemblies** (`Mithril.Reference`, `Mithril.GameReports`, etc.). Multiple modules consume the same service; no module "owns" the file.
+- **`per-session` is the scope tier** for both world-character-state and module-owned state. Session = `(Server, Character)` derived from `IGameSessionService`. The legacy `PerCharacterView<T>` evolves to key on session, not character alone.
+- **Module state mutations are not gated by world `Mode`.** Mode gates *side effects derived from state* (audio, notifications), not the state mutations themselves. User-initiated changes apply immediately whether the world is `Replaying` or `Live`.
+
+### Vault items — the canonical case that requires GameReports
+
+Player.log + chat don't see vault contents (the player isn't observing them in-bag). Only the character export report includes them. So any "what items does this character have access to" view *must* compose worlds + reports — neither alone is sufficient. This is the structural reason `Mithril.GameReports` exists as a separate assembly rather than being absorbed into the world layer: it carries data the worlds inherently cannot.
+
+---
+
 ## Migration path (concrete to-do)
 
 After this design lands, the following changes are needed:
@@ -515,11 +556,12 @@ After this design lands, the following changes are needed:
 7. **Arwen's `_inventory.TryResolve` cross-FSM peek.** Reads from the post-split `IPlayerInventoryService` half — coherent within the PlayerWorld's dispatch order, no race.
 8. **Wall-clock `_time.GetUtcNow()` state-decision uses.** Every one of them migrates to `IWorldClock.Now` of whichever world/view it lives in. Samwise `PruneWithered`, `AlarmService.IsLikelyGarbageCollected`, Gandalf `TimerProgressService.CheckExpirations`, etc.
 
-### Additions (new signal producers)
+### Additions (new shared services + parsers)
 
 9. **`ServerCatalogParser`** for the `Servers: [ … ]` startup line → `IServerCatalogService` (reference-scope, exposed as a `Mithril.Reference` entry).
 10. **`ConnectionEventParser`** for `EVENT(Ok): connected, url=…` → augments `IGameSessionService` with the `Server` field.
-11. **Wake-at-T synthetic-frame producer.** Replaces Gandalf's `DispatcherTimer`-driven schedulers. Schedules a frame at the target firing time; the world merges it into the frame queue; downstream consumers see the wake as a normal frame.
+11. **Extract character report loader → `Mithril.GameReports`** (new assembly). Per-character snapshot files (`Reports/items_X.json`, plus skills / recipes / quests / vault). `FileSystemWatcher` lives here. Bilbo's storage view migrates to subscribe to this service. Elrond's character snapshot input migrates. The previously-flagged "FileSystemWatcher reconcile retires under chat replay" framing was wrong — chat replay covers pre-attach inventory adds, but vault contents and snapshot-only data require GameReports; the two concerns separate cleanly.
+12. **Gandalf scheduler collapse.** `TimerExpirationScheduler` / `ShiftAlarmService` / `TimerProgressService.CheckExpirations` retire under principle 13. Gandalf subscribes to PlayerWorld's `CalendarTimeAdvanced` + `TimeOfDayShift` domain events; compares against module-side timer ledger; fires alarms gated on `Mode == Live`. Module-side timer definitions (in `Mithril.GameReports`-style? no — module-owned per category 3) stay; the wakeup machinery doesn't.
 
 After all migrations land:
 - No service spans both sources.
@@ -542,7 +584,7 @@ After all migrations land:
 
 5. ~~**Two clocks or one?**~~ **Resolved: each world owns its `IWorldClock`; views derive their own clock from observed domain-frame timestamps.** Each world's clock advances by its own source's frame timestamps. Views are composers above worlds; they observe domain frames flowing from world buses, each frame carrying its own timestamp (inherited from the originating change/source frame). View-layer TTL gates (like `InventoryView`'s 5s pairing window) use the *frame timestamps themselves* for correlation; for eviction-of-stale-pending-state, views derive a "now" from the max of the most-recently-observed frame timestamps across both world buses. Concrete contract: `IViewClock` exposes `Now : DateTimeOffset` (derived) and `Frames` as a tuple `(playerFrame, chatFrame)` of the most-recently-observed frame indices from each world's bus.
 
-6. **User actions.** Out of world scope per earlier design — modules mutate adjacent state directly. But Gandalf's user-created timers are stateful and survive across sessions; that state has to live somewhere. Probably "user-action state services" outside the worlds, persisted independently, queried by world-driven handlers (e.g., the wake-at-T scheduler reads the user's timer definitions). Worth a brief design pass on what "adjacent state" looks like.
+6. ~~**User actions.**~~ **Resolved: three categories of data — world-derived state, external shared data sources, module-owned adjacent state.** See the "Three categories of data" section above. Module state is owned by its module; cross-module reads via the module's service interface. Per-session scope tier (`Server`, `Character`) for both world-character-state and module-owned state. `Mithril.GameReports` extracted as a foundation-layer assembly for PG character export snapshots (consumed by Bilbo + Elrond + future). Module state mutations are not gated by `Mode`; only side effects gate. User actions remain explicitly non-deterministic — recording them as a parallel input stream for full session replay is a future capability, not in scope for v1.
 
 7. **What replaces `Mithril.Roadmap Project` as the prioritisation surface?** Per earlier conversation the Project board went stale weeks ago. The migration to-do list above needs a home — likely individual issues with the relevant `module:*` labels, but the umbrella story (this design notebook) needs an issue too. Pending the broader "where things live" revisit.
 
