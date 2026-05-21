@@ -27,7 +27,7 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 1. **Frame = `(timestamp, payload)`.** The unifying primitive. Every input that mutates simulated state is a frame; every producer stamps its output with the event time the frame represents (not the wall-clock when it was synthesized). The sim is a timestamp-ordered merger over N producers.
 2. **Two worlds with sealed output boundaries; views consume across them.** `PlayerWorld` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorld` is deterministic over the chat stream. Each world has its own internal pipeline (frames → folders → change events → composers → domain frames) and its own output bus carrying its domain frames. Worlds don't query each other and don't send messages to each other — they're sealed at the bus. Cross-world consumers (views) subscribe to both world buses; nothing flows back into a world from above.
 3. **If a service currently consumes both chat and Player.log, it must be split.** No cross-source services. Each service lives in exactly one sim.
-4. **Cross-source composition lives in a view layer above the sims.** Views subscribe to both sims' published state, compose, expose the composed result. Modules consume views, not sims directly.
+4. **Cross-source composition lives in a view layer above the worlds.** Views are composers operating one layer up — they subscribe to one or more world buses, maintain composed state, expose their own bus surface (or read-only API) to modules. Cross-world consumers (modules needing data from both Player.log and chat) always go through a view. Single-world consumers (modules needing only one source's state) may subscribe directly to that world's bus — no pass-through view required, since the view layer's purpose is *composition across worlds*, not API uniformity.
 5. **Dual-clock: simulated wall-clock + frame index.** `Now : DateTimeOffset` advances by frame timestamps; `Frame : long` strictly monotonic per applied frame. Coarse clock answers "how much simulated time has passed?" (1-second resolution because PG's timestamps are); fine clock answers "are we at the same point in the trajectory?" Together they identify a unique moment.
 6. **Scope: reference / world (per-server) / character (per-server-per-character).** Per [`module-signal-map.md`](module-signal-map.md) — PG has multiple servers; world state is per-server; character state is per-character within a server. Sims partition along these scopes.
 7. **Both streams self-scope independently.** Player.log identifies `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected` + `LoginBanner`); chat identifies its own scope from the chat banner. No cross-source coupling for scope.
@@ -79,14 +79,14 @@ chat stream       → │ Merger ──→ Folders ──→ Composers ──→
 - Publishes domain frames to its own output bus (sealed; no inter-world flow)
 - Exposes folder state via `Current`/`TryGet` for synchronous reads by composers and views
 
-**View layer** — composition over both sims. Each view:
-- Subscribes to relevant events from one or both sims
+**View layer** — composers operating above the worlds. Each view:
+- Subscribes to one or more world buses (typically both, for cross-world composition)
 - Maintains a stateful composed model (e.g., `InventoryView` maintains the fused inventory ledger with instance IDs + stack sizes)
-- Exposes the composed state as the *canonical* surface for modules
-- Is deterministic over the sims' state (which is itself deterministic over the sources)
+- Exposes the composed state as the *canonical* surface for cross-world consumers
+- Is deterministic over the worlds' bus emissions (which are themselves deterministic over their sources)
 - Scope-checks `(Server, Character)` on cross-source joins as appropriate
 
-**Modules** — consume views. Don't subscribe to sims directly. Insulated from the source split entirely.
+**Modules** — terminal consumers. Cross-world modules subscribe to views. Single-world modules may subscribe directly to a world's bus — the view layer is for cross-world composition, not mandatory pass-through.
 
 ---
 
@@ -386,7 +386,7 @@ InventoryView (composition layer):
 Modules (Samwise, Arwen, …) consume IInventoryView.
 ```
 
-The `PendingCorrelator` primitive itself doesn't change — it relocates from `IInventoryService` to `InventoryView`. The cross-source TTL gate (5 simulated seconds) now reads `InventoryView.Clock.Now` (composed from both sims) instead of `_time.GetUtcNow()`, so the gate is replay-deterministic.
+The `PendingCorrelator` primitive itself doesn't change — it relocates from `IInventoryService` to `InventoryView`. The cross-source TTL gate (5 simulated seconds) now reads from the view's `IViewClock` (derived from the max of the most-recently-observed Player/Chat bus frame timestamps, per Q5) instead of `_time.GetUtcNow()`, so the gate is replay-deterministic.
 
 ---
 
@@ -429,8 +429,8 @@ Unlike inventory, WoP composition has no TTL — the join is purely by code. The
 Each layer's determinism is derived from the layer beneath:
 
 1. **Source streams are deterministic input.** Player.log + chat corpora are the load. Replay = identical load = identical trajectory.
-2. **Each sim is deterministic over its source.** Frame merger is timestamp-ordered with explicit tie-breaking (Sequence for native frames, declared priority for synthetic). Handlers fire in topologically-sorted order per frame. Sim clock derives from frame timestamps; no real-time leaks into state decisions.
-3. **Each view is deterministic over the sims' state.** Views subscribe to sims' deterministic event streams, fold them with deterministic logic, expose the composed result. The view's own clock — for TTL gates etc. — derives from the sim clocks (typically the max of both, or whichever sim is the temporal anchor for the join).
+2. **Each world is deterministic over its source.** Frame merger is timestamp-ordered with explicit tie-breaking (`Sequence` for native frames, declared priority for producer-emitted frames). Folders fire in dispatch order per frame; composers fire in topologically-sorted order over their declared input event types within the frame's resolution. World clock derives from frame timestamps; no real-time leaks into state decisions.
+3. **Each view is deterministic over the worlds' bus emissions.** Views subscribe to worlds' deterministic domain-frame streams, fold them with deterministic logic, expose the composed result. The view's own clock (`IViewClock`) derives from observed frame timestamps — typically the max of the most-recently-observed timestamps across both buses (see Q5 resolution).
 4. **Modules consume the view layer.** Module behavior is therefore deterministic over (source streams + module-local state like settings / user input).
 
 The full stack: replayable Player.log + chat → identical sim trajectories → identical view trajectories → identical module-visible state. The only non-determinism is user input + reference data updates (CDN refresh), both explicitly out of the sim's input set.
@@ -512,7 +512,7 @@ After all migrations land:
 
 ## What this doc does NOT cover
 
-- Complete state-machine semantics for each handler. The sim layer is mostly today's GameState services with the `BackgroundService`-per-service replaced by `IFrameHandler` registration; per-service transition tables are in their source files.
+- Complete state-machine semantics for each folder/composer. The world runtime is mostly today's GameState services with the `BackgroundService`-per-service shell replaced by folder/composer registration (per principle 10); per-service transition tables are in their source files.
 - Detailed view-layer implementations. The contracts and worked examples here are starting points; concrete views write themselves once the sim layer is in place.
 - Live-vs-replay mode switching. The architecture supports both naturally (replay = source stream is a finite recorded log; live = source stream is a live tail). The sim doesn't need to know which it's in; producers do.
 - Performance characteristics under high-frame-rate scenarios (combat ticks, asset-loading bursts). The dispatch graph fans out per-frame; load behavior is empirical and won't be known until the migration is far enough along to measure.
