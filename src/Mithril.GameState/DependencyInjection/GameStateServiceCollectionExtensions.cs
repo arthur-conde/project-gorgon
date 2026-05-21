@@ -2,6 +2,7 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
+using Mithril.GameState.Effects;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
@@ -43,6 +44,18 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<InventoryService>()
             .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())
             .AddHostedService(sp => sp.GetRequiredService<InventoryService>());
+
+        // Shared live player-effects set from Player.log (ProcessAddEffects /
+        // ProcessRemoveEffects / ProcessUpdateEffectName). Foundation for the
+        // Pippin Gourmand lift (food-eaten = effect-add + inventory-delete
+        // fusion), Vampirism sun-damage (active Vampire-family effects gate
+        // sun damage), and Saruman Words-of-Power consumption side
+        // (player-side WoP arrival is the game-state truth). Self-feeding;
+        // consumers inject IPlayerEffectsStateService. See issue #590.
+        services
+            .AddSingleton<PlayerEffectsStateService>()
+            .AddSingleton<IPlayerEffectsStateService>(sp => sp.GetRequiredService<PlayerEffectsStateService>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerEffectsStateService>());
 
         // Area tracking is shared live game-state (Gandalf chest-area
         // stamping, Legolas per-area survey calibration, …). One parser,
