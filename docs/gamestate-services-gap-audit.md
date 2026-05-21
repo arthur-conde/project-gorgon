@@ -27,18 +27,17 @@
 
 ## Summary
 
-24 findings across 10 modules: **3 Class A** (state-rebuild candidates proposing
+24 findings across 10 modules: **4 Class A** (state-rebuild candidates proposing
 new or extended GameState services), **2 Class B** (both prior-classified — no
 net-new correlation SMs from this audit), **13 Class C** (in-charter
 module-specific state), **5 Class D** (already consuming the right service),
-**1 Class E** (unclear / design call). The two open gap questions the
-investigation flagged a priori (Saruman's WoP set, Pippin's Gourmand set)
-resolve differently: WoP-discoveries fit the
-inventory/skills/recipes/celestial GameState mould cleanly (Class A); the
-Gourmand set's shape is the same but its source is a snapshot report rather
-than an event stream, and the consumer set is closed — Class E pending an
-owner call on whether the principle covers report-shaped per-character
-mutable state.
+**0 Class E**. The two open gap questions the investigation flagged a priori
+(Saruman's WoP set, Pippin's Gourmand set) both resolve to Class A — same
+shape (per-character monotonically-built unlocked-identifier set parsed from
+`Player.log`), same template as `IPlayerSkillState` / `IPlayerRecipeState`.
+The Gourmand finding additionally surfaces an **adjacent gap**: the live
+"food eaten" signature requires a `ProcessAddEffects` channel that no
+GameState service owns today.
 
 The most concrete new Class A finding is **Smaug's
 `VendorSellContext.EntityToNpc` map** — a 4000-entry entityId→NpcKey rolling
@@ -62,7 +61,7 @@ completeness but deferred to the existing architectural commitment.
 | # | Module / file:line | State holder | What it models | Class | Recommended disposition |
 |---|---|---|---|---|---|
 | 1 | [Saruman/Settings/SarumanState.cs:17](../src/Saruman.Module/Settings/SarumanState.cs) | `Codebook: Dictionary<string, KnownWord>` (per-character) | Player's set of discovered Words of Power + their lifecycle state (Known / Spent, count, timestamps) | **A** | Propose `IPlayerWordOfPowerState` in `Mithril.GameState/WordsOfPower/`. Parallels `IPlayerRecipeState`/`IPlayerSkillState` — same shape (per-character unlocked-set parsed from `Player.log`). Single-consumer today, so this is anticipatory; not load-bearing yet. |
-| 2 | [Pippin/Domain/GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs) | `EatenFoodsByInternalName: Dictionary<string, int>` (per-character) | Player's set of foods eaten (the Gourmand-skill input domain) | **E** | Same shape as #1, but the canonical source is an in-game *snapshot report* (dumped to `Player.log`), not an event-stream signal. Owner call needed: does the GameState principle extend to report-shaped per-character mutable state, or is "live event-stream over `Player.log`" load-bearing in the definition? If extension → `IPlayerGourmandState`. If not → leave as Class C. |
+| 2 | [Pippin/Domain/GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs) | `EatenFoodsByInternalName: Dictionary<string, int>` (per-character) | Player's set of foods eaten (the Gourmand-skill input domain) | **A** | Same shape as #1. Live signature = `ProcessDeleteItem(<food>(...))` via `IInventoryService` (exists) **+** `ProcessAddEffects([foodEffect],...)` on the same timestamp — the effects half requires a new GameState effects tracker (no `Effects/` submodule under `Mithril.GameState/` today). Snapshot report continues to feed the historical baseline (eats before Mithril was recording). Multi-PR lift; single-consumer today — anticipatory like #1. |
 | 3 | [Smaug/State/VendorSellContext.cs:23](../src/Smaug.Module/State/VendorSellContext.cs) | `EntityToNpc: Dictionary<int, string>` (4000-entry capped) | entityId → NpcKey mapping for resolving vendor screens | **A** | Lift into `INpcStateTracker` ([#552](https://github.com/moumantai-gg/mithril/issues/552), in flight). The #552 spec explicitly names "entityId↔NpcKey binding" as in-scope — this is the second uncovered Smaug state holder under that umbrella (the first, `CivicPrideLevel`, is already filed as [#580](https://github.com/moumantai-gg/mithril/issues/580)). |
 | 4 | [Smaug/State/VendorSellContext.cs:11](../src/Smaug.Module/State/VendorSellContext.cs) | `ActiveVendorEntityId / ActiveFavorTier / ActiveNpcKey` | Transient "which vendor screen am I in" context for sell attribution | **B** | Tier-2 signature candidate. Mirrors the Arwen/Gandalf prior-audit deferrals — defer to the #552 Tier-2 work. |
 | 5 | [Smaug/State/VendorCatalogService.cs:38](../src/Smaug.Module/State/VendorCatalogService.cs) | `_entries: IReadOnlyList<VendorCatalogEntry>` | Joined projection of CDN data × `IFavorLookupService` × Civic Pride | **C** | Pure projection; consumes services correctly. Module-specific catalog view. |
@@ -126,33 +125,60 @@ etc.) was already implicit.
 Per-character `Dictionary<string, int>` of `InternalName → count` for foods
 the player has eaten
 ([GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs)).
-Populated exclusively from the in-game *Foods Consumed* report (`HandleReport`
-snapshot-replaces the dict,
-[GourmandStateMachine.cs:113](../src/Pippin.Module/State/GourmandStateMachine.cs)),
-which is parsed from `Player.log`. Charter is explicit: Pippin owns "the
-per-character set of foods already eaten."
+Today populated **exclusively** from the in-game *Foods Consumed* snapshot
+report (`HandleReport` snapshot-replaces the dict,
+[GourmandStateMachine.cs:113](../src/Pippin.Module/State/GourmandStateMachine.cs));
+Pippin subscribes to neither `IInventoryService` nor any effects channel.
+Charter is explicit: Pippin owns "the per-character set of foods already
+eaten."
 
-**Why Class E (rather than A or C):** the *data shape* is identical to #1 —
-per-character set of game-mechanic identifiers parsed from `Player.log`. But
-two attributes distinguish it from the canonical GameState services:
+**Why Class A:** the data shape is identical to #1 — per-character set of
+game-mechanic identifiers parsed from `Player.log`. The audit's earlier
+draft framed this as Class E on the premise that "the source is a snapshot
+report, not an event stream." That premise conflated *what Pippin currently
+subscribes to* with *what's available to subscribe to*. The eating-a-food
+event itself is fully observable on event-stream channels. The live
+signature is:
 
-1. **Source channel is a one-shot snapshot report**, not an event stream.
-   `IPlayerSkillState` etc. consume live deltas; Gourmand consumes a "here's
-   the whole set" report whose individual events (per-food-eaten) are not in
-   the log. The React-channel shape would be "report-replaced" semantics
-   rather than "event-stream replay."
-2. **Closed consumer set.** Unlike inventory (Samwise/Arwen/Legolas/Palantir
-   consume), eaten-foods has one consumer by charter (Pippin), and the
-   charter's *food provenance* extension
-   ([#348](https://github.com/moumantai-gg/mithril/issues/348)) is still
-   inside Pippin.
+- **`ProcessDeleteItem(<foodInternal>(<instanceId>))`** — the consumable went
+  away. Exposed today via `IInventoryService`. Classify as food via
+  `items.json`.
+- **`ProcessAddEffects(<charId>, …, [foodEffect, …], True)`** on the same /
+  adjacent timestamp — a food-effect appeared on the player. Classify as
+  food-effect via `effects.json`. **Requires a new GameState effects
+  tracker** — no `Effects/` submodule under `Mithril.GameState/`, no
+  `IPlayerEffectsService` exists today.
 
-The owner call is whether the GameState principle ("modules project; services
-emulate") extends to report-shaped state, or whether the principle's
-load-bearing context is *event-stream* state specifically. The charter's
-three-channel rule is event-stream-flavoured (React = "event stream with
-FromSessionStart"), but a snapshot-replace source still fits Query (current
-set) + Bind (observable collection) cleanly.
+The two together unambiguously identify "the player ate item X." Gourmand
+XP via `IPlayerSkillState` is **not** a useful corroborator — Gourmand
+rewards novelty (large first-time-per-character bonus, ~zero on repeat eats
+and at skill cap), so its absence doesn't disconfirm an eat. The eaten-set
+itself already encodes novelty (count-by-`InternalName`).
+
+The snapshot report stays load-bearing — but as the **historical baseline**
+(what the player ate before Mithril started recording), not the canonical
+live source. It becomes the bootstrap / reconciliation channel.
+
+**Recommended disposition:** lift into
+`Mithril.GameState/Food/IPlayerGourmandState` (collection-shaped, same
+template as `IPlayerSkillState` / `IPlayerRecipeState` / the
+`IPlayerWordOfPowerState` proposed in #1). The lift is **multi-PR** because
+of an adjacent dependency:
+
+1. Build a GameState effects tracker (`Mithril.GameState/Effects/`) —
+   needed for the `ProcessAddEffects` half of the live signature, and
+   broadly useful (Vampirism sun-damage detection, Saruman's WoP effect
+   side, future buff trackers).
+2. `IPlayerGourmandState` fusing `IInventoryService.ItemDeleted` (filtered
+   to foods via `items.json`) with the new effects tracker (filtered to
+   food-effects via `effects.json`) via a Tier-1 timestamp correlator per
+   [docs/cross-source-correlation.md](cross-source-correlation.md).
+3. Pippin becomes a thin projection over the GameState service; the
+   snapshot report continues to feed the historical baseline through the
+   service.
+
+**Caveat:** single-consumer today (Pippin), so this lift buys mostly
+*anticipation* — same caveat as #1.
 
 ### Finding 3 — Smaug's `VendorSellContext.EntityToNpc`
 
@@ -254,10 +280,15 @@ For owner consideration; *not filed by this audit*.
 - **Class A follow-up #1**: *File issue — GameState `IPlayerWordOfPowerState`
   tracker (lift from Saruman).* Three-channel design per #584. **Caveat:**
   single-consumer today, so anticipatory. Owner call on timing.
-- **Class A follow-up #2 (Pippin)**: *Owner-level discussion — does the
-  "GameState owns the emulated game" principle cover report-shaped
-  per-character state, or is event-stream semantics load-bearing?* The
-  Gourmand-state shape resolves to A or C entirely on this point.
+- **Class A follow-up #2 (Pippin + adjacent effects gap)**: *File issue —
+  GameState `IPlayerGourmandState` tracker (lift from Pippin's
+  `GourmandState.EatenFoodsByInternalName`).* Same template as #1.
+  **Adjacent dependency:** the live "food eaten" signature requires a
+  `ProcessAddEffects` channel; no GameState service owns one today. The
+  effects tracker is a separate, broader lift (also relevant to Vampirism
+  sun-damage detection, Saruman's WoP effect side, future buff trackers)
+  — worth scoping as its own issue ahead of the Gourmand-state lift.
+  Pippin's snapshot report continues to feed the historical baseline.
 - **Class A follow-up #3**: *Extend
   [#552](https://github.com/moumantai-gg/mithril/issues/552)'s
   `INpcStateTracker` spec to cover Smaug's `EntityToNpc` rolling map.* The
