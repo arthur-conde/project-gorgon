@@ -39,7 +39,51 @@ A **Does NOT own** entry is one of two kinds, and the distinction matters:
 
 ## Cross-cutting ownership (confirmed)
 
-Applies to *every* module; owner-confirmed 2026-05-16:
+**GameState owns the emulated game world; modules project subsets for UX. ✅
+owner-confirmed 2026-05-21.** This is the strategic principle the tactical
+rules below follow from. [#511](https://github.com/moumantai-gg/mithril/issues/511)'s
+layered log pipeline (L0 → L0.5 → L1 → L2) exists to rebuild the emulated
+game — the player, the NPCs, the world — from `Player.log`. The GameState
+services that have emerged organically through the project's arc —
+[`IPlayerPositionTracker`](../src/Mithril.GameState/Movement/IPlayerPositionTracker.cs)
+([#454](https://github.com/moumantai-gg/mithril/pull/454)),
+[`IPlayerSkillState`](../src/Mithril.GameState/Skills/IPlayerSkillState.cs)
+([#462](https://github.com/moumantai-gg/mithril/issues/462)/[#465](https://github.com/moumantai-gg/mithril/pull/465)),
+[`IPlayerPinTracker`](../src/Mithril.GameState/Pins/IPlayerPinTracker.cs)
+([#468](https://github.com/moumantai-gg/mithril/issues/468)),
+[`IInventoryService`](../src/Mithril.GameState/Inventory/IInventoryService.cs),
+[`IPlayerWeatherTracker`](../src/Mithril.GameState/Weather/IPlayerWeatherTracker.cs),
+[`IPlayerCelestialState`](../src/Mithril.GameState/Celestial/IPlayerCelestialState.cs)
+([#490](https://github.com/moumantai-gg/mithril/pull/490)),
+[`IPlayerRecipeState`](../src/Mithril.GameState/Recipes/IPlayerRecipeState.cs)
+([#475](https://github.com/moumantai-gg/mithril/pull/475)),
+[`IGameSessionService`](../src/Mithril.GameState/Sessions/IGameSessionService.cs),
+[`IQuestService`](../src/Mithril.GameState/Quests/IQuestService.cs),
+[`PlayerAreaTracker`](../src/Mithril.GameState/Areas/PlayerAreaTracker.cs),
+and [`INpcStateTracker`](https://github.com/moumantai-gg/mithril/issues/552)
+(#552, in flight) — are **not** parallel abstractions of their domains;
+they **are** the one canonical model of the emulated game. Modules
+**project subsets** of that emulated game with module-specific UX
+(Samwise → garden subset; Smaug → vendor-economics subset; Arwen → NPC-
+favor subset; Gandalf → timer/cooldown subset; Legolas → surveying
+subset; etc.). A module is a *surface* over GameState, never a parallel
+emulation.
+
+The two tactical rules below — *modules consume the service surface
+(not raw logs)* (added 2026-05-21 via
+[#578](https://github.com/moumantai-gg/mithril/pull/578)) and *services
+translate logs into a developer-facing domain model with three
+channels: query, react, bind* (added 2026-05-21 via
+[#584](https://github.com/moumantai-gg/mithril/pull/584)) — are
+**derivations** of this strategic principle, not separate commitments.
+The underlying direction has been in place since #511 shipped the
+layered pipeline; this paragraph articulates it explicitly so future
+module/service design questions can be answered from the principle
+directly without re-deriving.
+
+Applies to *every* module; owner-confirmed 2026-05-16 (section
+structure + bullets 1-2), 2026-05-21 (consumption-side rule, three-
+channel rule, and this strategic principle):
 
 - **Recipe / crafting → Elrond or Celebrimbor.** Anything recipe- or crafting-related
   — items as crafting ingredients, crafting *use* of an item, craft planning, leveling
@@ -577,6 +621,31 @@ libraries; the charter follows the code:
 
 ## History
 
+- **2026-05-21** — **Strategic principle made explicit: GameState owns the emulated
+  game; modules project subsets for UX (✅ owner-confirmed 2026-05-21).** The two
+  tactical rules previously landed today ([#578](https://github.com/moumantai-gg/mithril/pull/578)
+  consumption-side, [#584](https://github.com/moumantai-gg/mithril/pull/584) three-channel
+  service-design) are **derivations** of this principle, not separate commitments.
+  The underlying direction has been in place since [#511](https://github.com/moumantai-gg/mithril/issues/511)
+  shipped the layered log pipeline (L0/L0.5/L1/L2): #511's mission is rebuilding the
+  emulated game from logs, and the GameState services that emerged through the project's
+  arc (`IPlayerPositionTracker` #454, `IPlayerSkillState` #462/#465, `IPlayerPinTracker`
+  #468, `IInventoryService`, `IPlayerWeatherTracker`, `IPlayerCelestialState` #490,
+  `IPlayerRecipeState` #475, `IGameSessionService`, `IQuestService`, `PlayerAreaTracker`,
+  and `INpcStateTracker` #552 in flight) are the canonical model of that emulated game.
+  Articulating the principle explicitly clarifies that modules are *projections* of
+  subsets for UX — they consume the canonical model, they don't parallel-emulate it.
+  Future design questions ("does this thing belong in GameState or in a module?") have a
+  direct answer from the principle rather than re-derivation. Surfaced during the
+  discussion thread arising from the L2 spec review chain
+  ([#574](https://github.com/moumantai-gg/mithril/issues/574)) and the audit umbrella
+  ([#579](https://github.com/moumantai-gg/mithril/issues/579)) — specifically the
+  realisation that the audit's "Class A migration" classification was too coarse for
+  consumers using cross-cutting verbs as *temporal anchors for correlation* (Arwen
+  gift attribution, Gandalf bracket discrimination) versus consumers *rebuilding
+  cross-cutting state* (Samwise garden inventory map, Smaug CivicPride). Both share
+  the symptom (a module parsing a cross-cutting verb) but the right disposition
+  differs — the strategic principle disambiguates them.
 - **2026-05-21** — **GameState service-design rule added: three channels (query, react,
   bind) over a developer-facing domain model (✅ owner-confirmed 2026-05-21).** Companion
   rule to the consumption-side bullet landed earlier the same day in
